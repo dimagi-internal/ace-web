@@ -22,6 +22,13 @@ dev = [
     "ipython",
 ]
 
+# setuptools cannot auto-discover the package layout because the repo has
+# multiple top-level directories (apps/, config/, frontend/, staticfiles/).
+# Explicitly tell it which ones are importable Python packages.
+[tool.setuptools.packages.find]
+include = ["apps*", "config*"]
+exclude = ["frontend*", "staticfiles*", "tests*", "docs*"]
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = "test_*.py"
