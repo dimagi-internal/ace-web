@@ -5,12 +5,18 @@ import environ
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 env = environ.Env()
-environ.Env.read_env(BASE_DIR / ".env")
+# Only read .env file if it exists. Production reads from process env only
+# (Cloud Run + Secret Manager) — there is no .env file in the container.
+if (BASE_DIR / ".env").exists():
+    environ.Env.read_env(BASE_DIR / ".env")
 
 # --- Core ---
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-insecure-key-change-me")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
-ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["*"])
+# base.py default is empty so a misconfigured production deploy fails loudly
+# instead of silently disabling Host header validation. development.py overrides
+# this to ["*"] for local convenience.
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 # --- Apps ---
 INSTALLED_APPS = [
