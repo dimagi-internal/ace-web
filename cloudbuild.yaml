@@ -28,8 +28,8 @@ steps:
       - --set-env-vars=DJANGO_ALLOWED_HOSTS=${_ALLOWED_HOSTS}
       - --set-env-vars=CLOUD_SQL_CONNECTION_NAME=${_CLOUD_SQL_CONNECTION_NAME}
       - --set-env-vars=ACE_IAP_REQUIRED=True
-      - --set-secrets=DJANGO_SECRET_KEY=django-secret:latest
-      - --set-secrets=DATABASE_URL=database-url:latest
+      - --set-secrets=DJANGO_SECRET_KEY=ace-web-django-secret:latest
+      - --set-secrets=DATABASE_URL=ace-web-database-url:latest
       - --min-instances=1
       - --max-instances=1
       - --memory=1Gi

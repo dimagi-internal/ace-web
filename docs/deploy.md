@@ -49,10 +49,10 @@ gcloud sql users create ace --instance=ace-web-db --password='REPLACE_ME'
 
 ```bash
 echo -n 'long-random-django-key' | \
-  gcloud secrets create django-secret --data-file=-
+  gcloud secrets create ace-web-django-secret --data-file=-
 
 echo -n 'postgres://ace:REPLACE_ME@/ace_web?host=/cloudsql/PROJECT_ID:us-central1:ace-web-db' | \
-  gcloud secrets create database-url --data-file=-
+  gcloud secrets create ace-web-database-url --data-file=-
 ```
 
 ### 5. Initial deploy
