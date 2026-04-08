@@ -10,6 +10,7 @@ transcripts, and upload support for existing local `.jsonl` sessions.
 
 - **Design spec** (the whole vision and phase breakdown): `docs/specs/2026-04-08-ace-web-design.md`.
 - **Implementation plans** (per phase): `docs/plans/`.
+- **Pattern source** for new backend code: `../canopy-web/` (sibling repo).
 - **Deploy / GCP setup**: `docs/deploy.md`.
 - **Learnings**: `docs/learnings/` (load-bearing gotchas — read these before touching the relevant area).
 

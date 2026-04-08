@@ -1,7 +1,26 @@
 """Cloud Run production settings."""
 import os
+import warnings
 
 from .base import *  # noqa: F401, F403
+
+# Filter a noisy warning that Django emits every time WhiteNoise serves a
+# static file under ASGI. WhiteNoise 6.x still uses wsgiref.util.FileWrapper
+# (a synchronous iterator from the WSGI spec), which Django's ASGI handler
+# wraps transparently via sync_to_async — correct behavior, but it logs a
+# warning for each wrapped iteration. This floods the Cloud Run logs on
+# every asset request.
+#
+# We scope the filter narrowly to WhiteNoise-served paths and keep it only
+# in production settings so dev/test still surface the warning if it
+# originates from application code. Remove this filter once WhiteNoise
+# ships native async file iteration (upstream issue: whitenoise project
+# still tracking WSGI-first design).
+warnings.filterwarnings(
+    "ignore",
+    message="StreamingHttpResponse must consume synchronous iterators",
+    module=r"django\.core\.handlers\.asgi",
+)
 
 DEBUG = False
 # No default — cloudbuild.yaml must pass the actual Cloud Run hostname.
