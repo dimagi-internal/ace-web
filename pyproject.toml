@@ -1,0 +1,37 @@
+[project]
+name = "ace-web"
+version = "0.1.0"
+description = "Web harness for the ACE initiative"
+requires-python = ">=3.11"
+dependencies = [
+    "django>=5.0,<6.0",
+    "djangorestframework>=3.15",
+    "channels>=4.1",
+    "daphne>=4.1",
+    "uvicorn[standard]>=0.30",
+    "psycopg[binary]>=3.2",
+    "whitenoise>=6.7",
+    "django-environ>=0.11",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-django>=4.8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "ipython",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = "test_*.py"
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
