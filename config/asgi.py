@@ -11,8 +11,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
 
 django_asgi_app = get_asgi_application()
 
-# Plan 1C will populate this with WebSocket routes from apps/sessions/routing.py
-websocket_urlpatterns: list = []
+from apps.sessions.routing import websocket_urlpatterns  # noqa: E402
 
 application = ProtocolTypeRouter(
     {
