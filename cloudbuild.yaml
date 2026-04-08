@@ -33,6 +33,13 @@ steps:
       - --set-env-vars=ACE_IAP_REQUIRED=True
       - --set-secrets=DJANGO_SECRET_KEY=ace-web-django-secret:latest
       - --set-secrets=DATABASE_URL=ace-web-database-url:latest
+      - --set-env-vars=ACE_CLAUDE_HOME=/var/lib/ace-claude
+      - --set-env-vars=ACE_CLAUDE_TOKEN_FILE=/var/lib/ace-claude/oauth-token
+      - --set-env-vars=HOME=/root
+      - --add-volume=name=ace-claude-data,type=nfs,location=${_FILESTORE_IP}:/${_FILESTORE_SHARE}
+      - --add-volume-mount=volume=ace-claude-data,mount-path=/var/lib/ace-claude
+      - --vpc-connector=${_VPC_CONNECTOR}
+      - --vpc-egress=private-ranges-only
       - --min-instances=1
       - --max-instances=1
       - --memory=1Gi
@@ -43,6 +50,9 @@ substitutions:
   _SERVICE_NAME: ace-web
   _REGION: us-central1
   _ALLOWED_HOSTS: ace-web-hhhi4yut3q-uc.a.run.app
+  _FILESTORE_IP: 10.0.0.2          # Set after Filestore is provisioned
+  _FILESTORE_SHARE: ace_claude
+  _VPC_CONNECTOR: ace-web-connector
 
 options:
   logging: CLOUD_LOGGING_ONLY

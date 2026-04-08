@@ -102,6 +102,16 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
+# --- Claude CLI integration (Phase 2) ---
+ACE_CLAUDE_HOME = env(
+    "ACE_CLAUDE_HOME",
+    default=str(BASE_DIR / ".ace-claude-home"),
+)
+ACE_CLAUDE_TOKEN_FILE = env(
+    "ACE_CLAUDE_TOKEN_FILE",
+    default=str(BASE_DIR / ".ace-claude-home" / "oauth-token"),
+)
+
 # --- Logging ---
 LOGGING = {
     "version": 1,

@@ -1,0 +1,5 @@
+{"type":"assistant","message":{"id":"msg_03","content":[{"type":"text","text":"Let me read that file."}]}}
+{"type":"assistant","message":{"id":"msg_03","content":[{"type":"tool_use","id":"toolu_01","name":"Read","input":{"file_path":"/etc/hosts"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_01","content":"127.0.0.1 localhost"}]}}
+{"type":"assistant","message":{"id":"msg_03","content":[{"type":"text","text":"It contains a localhost entry."}]}}
+{"type":"result","subtype":"success","duration_ms":2000,"num_turns":1}
