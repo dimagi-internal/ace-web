@@ -26,6 +26,7 @@ staticfiles/
 # Node
 node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
 .DS_Store
 .env
 .env.local
