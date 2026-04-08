@@ -39,3 +39,6 @@ frontend/tsconfig.tsbuildinfo
 *.pem
 oauth-token
 claude-data/
+
+# Brainstorming / superpowers scratch
+.superpowers/
