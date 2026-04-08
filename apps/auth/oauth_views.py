@@ -5,6 +5,7 @@ Session-based OAuth implementation for the ACE web / labs AWS environment.
 Stores tokens in session instead of database.
 """
 
+import datetime
 import hashlib
 import logging
 import secrets
@@ -18,6 +19,7 @@ from django.contrib.auth import login, logout
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.auth.models import User
@@ -191,6 +193,20 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
         email=email,
         defaults={"display_name": display_name},
     )
+
+    # Store token info in session (NOT in the database — tokens are short-lived and
+    # user-specific, sessions are the right scope). The Django session itself is
+    # database-backed in production, so this survives across requests.
+    expires_in = token_json.get("expires_in", 1209600)  # default 2 weeks
+    request.session["labs_oauth"] = {
+        "access_token": access_token,
+        "refresh_token": token_json.get("refresh_token", ""),
+        "expires_at": (timezone.now() + datetime.timedelta(seconds=expires_in)).timestamp(),
+        "user_profile": {
+            "email": email,
+            "display_name": display_name,
+        },
+    }
 
     # Log the user in via Django's standard auth
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
