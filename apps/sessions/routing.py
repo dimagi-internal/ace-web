@@ -1,6 +1,5 @@
 """WebSocket routing for sessions. Populated in Plan 1C."""
-from django.urls import re_path
 
-websocket_urlpatterns: list = [
-    # re_path(r"ws/session/(?P<slug>[\w-]+)/$", SessionConsumer.as_asgi()),
-]
+# Placeholder: imports and route list land in Plan 1C when the session
+# WebSocket consumer ships.
+websocket_urlpatterns: list = []
