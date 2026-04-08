@@ -12,9 +12,14 @@ fi
 # Apply migrations
 python manage.py migrate --noinput
 
-# Start ASGI server
+# Start ASGI server. Add --reload in dev for hot-reload on source changes.
+RELOAD_FLAG=""
+if [ "${DJANGO_DEBUG}" = "True" ]; then
+    RELOAD_FLAG="--reload"
+fi
 exec uvicorn config.asgi:application \
     --host 0.0.0.0 \
     --port "${PORT:-8080}" \
     --workers 1 \
-    --lifespan off
+    --lifespan off \
+    $RELOAD_FLAG

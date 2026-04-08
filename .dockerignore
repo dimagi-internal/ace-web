@@ -13,6 +13,9 @@ env
 htmlcov
 dist
 build
+tests/
+apps/*/tests/
+conftest.py
 
 # Django
 db.sqlite3

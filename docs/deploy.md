@@ -81,8 +81,10 @@ that the `IAPHeaderAuthMiddleware` reads.
 
 ```bash
 URL=$(gcloud run services describe ace-web --region=us-central1 --format='value(status.url)')
-# Health check is publicly accessible (not behind IAP)
-curl -s ${URL}/api/health
+# All external requests pass through IAP first — need an identity token even
+# for /api/health. The health endpoint is middleware-exempt inside Django,
+# not IAP-exempt at the GCP layer.
+curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" ${URL}/api/health
 ```
 
 Expected: `{"data": {"status": "ok"}, "error": null}`
