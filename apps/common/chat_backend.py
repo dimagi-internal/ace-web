@@ -10,9 +10,10 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from apps.sessions.models import Session
+if TYPE_CHECKING:
+    from apps.sessions.models import Session
 
 
 class StreamEventType(StrEnum):
@@ -35,7 +36,7 @@ class StreamEvent:
 
     type: StreamEventType
     text: str | None = None
-    tool_block: dict | None = None
+    tool_block: dict[str, Any] | None = None
     session_id: str | None = None
     error: str | None = None
 
@@ -44,33 +45,24 @@ class StreamEvent:
         return cls(type=StreamEventType.DELTA, text=text)
 
     @classmethod
-    def tool_use(cls, *, block: dict) -> StreamEvent:
+    def tool_use(cls, *, block: dict[str, Any]) -> StreamEvent:
         return cls(type=StreamEventType.TOOL_USE, tool_block=block)
 
     @classmethod
-    def tool_result(cls, *, block: dict) -> StreamEvent:
+    def tool_result(cls, *, block: dict[str, Any]) -> StreamEvent:
         return cls(type=StreamEventType.TOOL_RESULT, tool_block=block)
 
     @classmethod
     def done(cls) -> StreamEvent:
         return cls(type=StreamEventType.DONE)
 
+    @classmethod
+    def for_session_id(cls, *, session_id: str) -> StreamEvent:
+        return cls(type=StreamEventType.SESSION_ID, session_id=session_id)
 
-def _session_id_constructor(cls: type[StreamEvent], *, session_id: str) -> StreamEvent:
-    return cls(type=StreamEventType.SESSION_ID, session_id=session_id)
-
-
-def _error_constructor(cls: type[StreamEvent], *, message: str) -> StreamEvent:
-    return cls(type=StreamEventType.ERROR, error=message)
-
-
-# `session_id` and `error` are both field names AND desired classmethod names on
-# StreamEvent. Defining them as classmethods inside the dataclass body causes Python
-# to store the classmethod object as the field's default value, shadowing the field
-# on every instance. We define the functions outside and attach them post-class-creation
-# so the dataclass decorator processes the fields correctly first.
-StreamEvent.session_id = classmethod(_session_id_constructor)  # type: ignore[method-assign]
-StreamEvent.error = classmethod(_error_constructor)  # type: ignore[method-assign]
+    @classmethod
+    def for_error(cls, *, message: str) -> StreamEvent:
+        return cls(type=StreamEventType.ERROR, error=message)
 
 
 @runtime_checkable

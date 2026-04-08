@@ -38,7 +38,7 @@ def test_tool_result_event_construction():
 
 
 def test_session_id_event_construction():
-    e = StreamEvent.session_id(session_id="sess_abc123")
+    e = StreamEvent.for_session_id(session_id="sess_abc123")
     assert e.type is StreamEventType.SESSION_ID
     assert e.session_id == "sess_abc123"
 
@@ -49,7 +49,7 @@ def test_done_event_construction():
 
 
 def test_error_event_construction():
-    e = StreamEvent.error(message="model failed")
+    e = StreamEvent.for_error(message="model failed")
     assert e.type is StreamEventType.ERROR
     assert e.error == "model failed"
 
@@ -60,3 +60,28 @@ def test_chat_backend_is_protocol():
     # Protocols cannot be instantiated directly
     with pytest.raises(TypeError):
         ChatBackend()
+
+
+def test_stream_event_is_frozen():
+    from dataclasses import FrozenInstanceError
+    e = StreamEvent.delta(text="hello")
+    with pytest.raises(FrozenInstanceError):
+        e.text = "mutated"  # type: ignore[misc]
+
+
+def test_chat_backend_runtime_isinstance_check():
+    """A concrete implementation satisfying the Protocol should pass isinstance,
+    and its stream_completion should be an async iterator (not a plain coroutine)."""
+    from collections.abc import AsyncIterator
+
+    from apps.sessions.models import Session
+
+    class _FakeBackend:
+        async def stream_completion(
+            self, *, session: Session, new_user_message: str
+        ) -> AsyncIterator[StreamEvent]:
+            yield StreamEvent.delta(text="ok")
+            yield StreamEvent.done()
+
+    fake = _FakeBackend()
+    assert isinstance(fake, ChatBackend)
