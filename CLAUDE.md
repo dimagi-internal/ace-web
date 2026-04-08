@@ -8,25 +8,32 @@ transcripts, and upload support for existing local `.jsonl` sessions.
 
 ## Where things live
 
-- **Architecture spec**: no unified web-harness spec file exists yet. Per-wave scope lives in `docs/plans/<date>-<plan>.md`. Pattern source for new code is `../canopy-web/` (sibling repo).
-- **Implementation plans**: `docs/plans/`.
+- **Design spec** (the whole vision and phase breakdown): `docs/specs/2026-04-08-ace-web-design.md`.
+- **Implementation plans** (per phase): `docs/plans/`.
+- **Pattern source** for new backend code: `../canopy-web/` (sibling repo).
 - **Deploy / GCP setup**: `docs/deploy.md`.
 - **Learnings**: `docs/learnings/` (load-bearing gotchas — read these before touching the relevant area).
 
-This repo is consumed as a git submodule from the `ace` repo. Day-to-day work on
-ace-web happens in this repo directly, not through the `ace` worktree — working
-through the submodule causes pointer churn.
+The broader ACE plugin (CRISPR-Connect orchestration) lives in the sibling
+`ace` repo at `../ace/`. ace-web is a separate module — its design spec lives
+here, not there. This repo is consumed as a git submodule from `ace`, but
+day-to-day work happens in this repo directly to avoid submodule pointer churn.
 
 ## Current status
 
-| Plan | Scope                                                     | Status                                    |
-|------|-----------------------------------------------------------|-------------------------------------------|
-| 1A   | Django + Channels + React skeleton, data model, IAP, GCP  | **Done** — merged in jjackson/ace-web#1   |
-| 1B   | `ChatBackend` interface, CLIBackend, chat REST API, UI    | **Next**                                  |
-| 1C   | WebSocket consumer, drafts, presence                      | Pending                                   |
-| 1D   | Session list, share tokens, `ace upload` CLI              | Pending                                   |
+The whole-product design is in `docs/specs/2026-04-08-ace-web-design.md`.
+Phases below come from that spec — they are engineering execution checkpoints,
+not user-shippable milestones (the team only uses ace-web after Phase 5).
 
-Plan 1A's 25 post-execution corrections (security, races, Docker, deploy) are
+| Phase | Name                       | Scope                                                                           | Status                                    |
+|-------|----------------------------|---------------------------------------------------------------------------------|-------------------------------------------|
+| 1     | Foundation                 | Django + Channels + React skeleton, data model, IAP, GCP                        | **Done** — merged in jjackson/ace-web#1   |
+| 2     | Conversation engine        | ChatBackend, CLIBackend, CLI auth (PTY), SSE streaming, REST + chat UI, recents | **Next**                                  |
+| 3     | Multi-player collaboration | WebSocket consumer, channels-redis, ASGI auth, drafts, presence                 | Pending                                   |
+| 4     | Library and ingest         | Session list, search/filter, share tokens, `ace upload` CLI                     | Pending                                   |
+| 5     | Polish                     | Observability, evals, accessibility, security review, demo prep, full docs     | Pending                                   |
+
+Phase 1's 25 post-execution corrections (security, races, Docker, deploy) are
 documented inline at `docs/plans/2026-04-07-1a-foundation.md` under
 **Post-execution corrections**. Read that section before touching config,
 settings, Dockerfile, or the auth/sessions models.
@@ -86,13 +93,13 @@ Infra & scaling:
 - [channels-single-instance](docs/learnings/channels-single-instance.md) — `InMemoryChannelLayer` pins Cloud Run to a single instance; Plan 1C must add `channels-redis` before scaling.
 
 Auth & identity:
-- [iap-websocket-coverage](docs/learnings/iap-websocket-coverage.md) — IAP middleware is HTTP-only; Plan 1C must add ASGI-scope auth for WebSocket handshakes.
+- [iap-websocket-coverage](docs/learnings/iap-websocket-coverage.md) — IAP middleware is HTTP-only; Phase 3 must add ASGI-scope auth for WebSocket handshakes.
 - [user-google-sub-nullable](docs/learnings/user-google-sub-nullable.md) — `google_sub` must be NULL (not `""`) and first-login races must be handled at the DB layer.
 
 API conventions:
 - [api-envelope-convention](docs/learnings/api-envelope-convention.md) — every JSON response wraps in `{data, error}`; no bare payloads, no DRF default errors.
 
-For the full Plan 1A post-execution fix list (25 items including settings hardening,
+For the full Phase 1 post-execution fix list (25 items including settings hardening,
 Dockerfile slimming, SPA catch-all, slug retries, setuptools layout), see the
 `## Post-execution corrections` section of `docs/plans/2026-04-07-1a-foundation.md`.
 
@@ -102,13 +109,18 @@ Dockerfile slimming, SPA catch-all, slug retries, setuptools layout), see the
 - **Tests**: `pytest -v` from repo root. Uses in-memory SQLite; fast hashers.
 - **Lint**: `ruff check .` — `line-length=100`, `target=py311`, rules `E,F,W,I,UP,B`.
 - **Deploy**: `gcloud builds submit --config=cloudbuild.yaml`. One-time GCP setup in `docs/deploy.md`.
-- **Plans-driven work**: Implementation follows the plan file for the current module.
-  Plan 1B will live at `docs/plans/<date>-1b-<slug>.md`. Use the superpowers
-  `subagent-driven-development` or `executing-plans` sub-skill as the plan specifies.
+- **Plans-driven work**: Implementation follows the per-phase plan file in `docs/plans/`.
+  Each phase plan is generated from the design spec via the `writing-plans` skill.
+  Use the superpowers `subagent-driven-development` or `executing-plans` sub-skill
+  to execute it, as the plan specifies.
 
 ## What does NOT ship yet
 
-- No `ChatBackend` interface, no Claude CLI integration, no chat REST API or UI — Plan 1B.
-- No WebSocket consumer, no drafts, no presence — Plan 1C.
-- No session list, share tokens, or `ace upload` CLI — Plan 1D.
-- No `CLAUDE_CODE_OAUTH_TOKEN` handling — lands with CLIBackend in Plan 1B.
+- No `ChatBackend` interface, no Claude CLI integration, no chat REST API or UI — Phase 2.
+- No `CLAUDE_CODE_OAUTH_TOKEN` handling, no in-app PTY auth flow — Phase 2.
+- No WebSocket consumer, no drafts, no presence, no channels-redis — Phase 3.
+- No session list, share tokens, or `ace upload` CLI — Phase 4.
+- No observability, no eval harness, no security review — Phase 5.
+
+See `docs/specs/2026-04-08-ace-web-design.md` for the full vision and what
+each phase covers.
