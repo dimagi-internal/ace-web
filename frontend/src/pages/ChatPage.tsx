@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { getSession } from "../api/sessions";
+import { getSession, updateSession } from "../api/sessions";
 import { sendMessage } from "../api/messages";
+import { InlineTitleEdit } from "../components/InlineTitleEdit";
 import { MessageList } from "../components/MessageList";
+import { RecentSessionsSidebar } from "../components/RecentSessionsSidebar";
 import { SendBox } from "../components/SendBox";
 import { useStreamingMessage } from "../hooks/useStreamingMessage";
 import type { SessionDetail } from "../api/types";
@@ -36,6 +38,12 @@ export function ChatPage() {
     setLiveAssistantId(result.assistant_message_id);
   };
 
+  const handleTitleSave = async (newTitle: string) => {
+    if (!session) return;
+    const updated = await updateSession(slug, { title: newTitle });
+    setSession({ ...session, title: updated.title });
+  };
+
   if (!session) {
     return <div className="p-4 text-zinc-500">Loading…</div>;
   }
@@ -43,23 +51,26 @@ export function ChatPage() {
   const isStreaming = stream.phase === "streaming";
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="border-b border-zinc-200 px-4 py-2">
-        <h1 className="text-lg font-semibold">{session.title || "Untitled"}</h1>
-      </header>
-      <main className="flex-1 overflow-y-auto">
-        <MessageList
-          messages={session.messages}
-          liveAssistantId={liveAssistantId}
-          liveText={stream.text}
+    <div className="flex h-screen">
+      <RecentSessionsSidebar currentSlug={slug} />
+      <div className="flex flex-1 flex-col">
+        <header className="border-b border-zinc-200 px-4 py-2">
+          <InlineTitleEdit value={session.title} onSave={handleTitleSave} />
+        </header>
+        <main className="flex-1 overflow-y-auto">
+          <MessageList
+            messages={session.messages}
+            liveAssistantId={liveAssistantId}
+            liveText={stream.text}
+          />
+        </main>
+        <SendBox
+          disabled={false}
+          isStreaming={isStreaming}
+          onSend={handleSend}
+          onStop={stream.cancel}
         />
-      </main>
-      <SendBox
-        disabled={false}
-        isStreaming={isStreaming}
-        onSend={handleSend}
-        onStop={stream.cancel}
-      />
+      </div>
     </div>
   );
 }
