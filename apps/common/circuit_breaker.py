@@ -22,6 +22,8 @@ class CircuitBreaker:
       half-open (implicit) — after cooldown elapses, the breaker
                              auto-transitions back to closed on the next
                              check, giving the next call a chance.
+
+    After a half-open probe, the caller is responsible for recording `record_success()` or `record_failure()` to reflect the probe's outcome; otherwise the breaker stays in the reset state as if nothing happened.
     """
 
     def __init__(self, *, threshold: int, cooldown_seconds: float):
@@ -31,20 +33,25 @@ class CircuitBreaker:
         self._consecutive_failures = 0
         self._opened_at: float | None = None
 
-    def is_open(self) -> bool:
+    def check(self) -> None:
+        """Raise CircuitOpenError if the breaker is open (atomic, single lock acquisition)."""
         with self._lock:
             if self._opened_at is None:
-                return False
+                return
             if time.monotonic() - self._opened_at >= self._cooldown:
                 # Cooldown elapsed — half-open: allow the next call through
                 self._opened_at = None
                 self._consecutive_failures = 0
-                return False
-            return True
-
-    def check(self) -> None:
-        if self.is_open():
+                return
             raise CircuitOpenError("Circuit breaker is open")
+
+    def is_open(self) -> bool:
+        """Return True if the breaker is currently rejecting calls."""
+        try:
+            self.check()
+            return False
+        except CircuitOpenError:
+            return True
 
     def record_success(self) -> None:
         with self._lock:

@@ -38,7 +38,7 @@ def test_check_raises_when_open():
 
 
 def test_half_opens_after_cooldown():
-    cb = CircuitBreaker(threshold=1, cooldown_seconds=0.1)
+    cb = CircuitBreaker(threshold=1, cooldown_seconds=0.05)
     cb.record_failure()
     assert cb.is_open()
     time.sleep(0.15)
@@ -48,7 +48,7 @@ def test_half_opens_after_cooldown():
 
 
 def test_reopens_immediately_on_first_failure_after_cooldown():
-    cb = CircuitBreaker(threshold=1, cooldown_seconds=0.1)
+    cb = CircuitBreaker(threshold=1, cooldown_seconds=0.05)
     cb.record_failure()
     time.sleep(0.15)
     cb.record_failure()
