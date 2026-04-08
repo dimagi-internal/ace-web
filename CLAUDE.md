@@ -8,8 +8,7 @@ transcripts, and upload support for existing local `.jsonl` sessions.
 
 ## Where things live
 
-- **Overall architecture spec**: `../ace/docs/superpowers/specs/2026-04-07-ace-web-harness-design.md`
-  (in the sibling `ace` repo — spec spans multiple modules, not just this one).
+- **Architecture spec**: no unified web-harness spec file exists yet. Per-wave scope lives in `docs/plans/<date>-<plan>.md`. Pattern source for new code is `../canopy-web/` (sibling repo).
 - **Implementation plans**: `docs/plans/`.
 - **Deploy / GCP setup**: `docs/deploy.md`.
 - **Learnings**: `docs/learnings/` (load-bearing gotchas — read these before touching the relevant area).
