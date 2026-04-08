@@ -1,7 +1,7 @@
 import pytest
 from rest_framework.test import APIClient
 
-from apps.sessions.models import Session
+from apps.sessions.models import Message, Session
 
 pytestmark = pytest.mark.django_db
 
@@ -106,3 +106,47 @@ def test_patch_session_rejects_unknown_field(client, user):
     assert resp.status_code == 200  # ignored, slug is read-only
     s.refresh_from_db()
     assert s.slug != "hacked"
+
+
+def test_post_message_creates_user_and_assistant_rows(client, user):
+    s = Session.objects.create(owner=user, title="x")
+    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "hello"}, format="json")
+    assert resp.status_code == 201
+    body = resp.json()["data"]
+    assert "user_message_id" in body
+    assert "assistant_message_id" in body
+
+    user_msg = Message.objects.get(id=body["user_message_id"])
+    asst_msg = Message.objects.get(id=body["assistant_message_id"])
+    assert user_msg.role == "user"
+    assert user_msg.plaintext == "hello"
+    assert user_msg.status == "complete"
+    assert asst_msg.role == "assistant"
+    assert asst_msg.status == "pending"
+
+
+def test_post_message_assigns_monotonic_turn_index(client, user):
+    s = Session.objects.create(owner=user, title="x")
+    Message.objects.create(
+        session=s, turn_index=5, role="user",
+        content={"text": "old"}, plaintext="old", status="complete",
+    )
+    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "next"}, format="json")
+    body = resp.json()["data"]
+    user_msg = Message.objects.get(id=body["user_message_id"])
+    asst_msg = Message.objects.get(id=body["assistant_message_id"])
+    assert user_msg.turn_index == 6
+    assert asst_msg.turn_index == 7
+
+
+def test_post_message_404_for_other_users_session(client, other_user):
+    s = Session.objects.create(owner=other_user)
+    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "x"}, format="json")
+    assert resp.status_code == 404
+
+
+def test_post_message_validates_empty_text(client, user):
+    s = Session.objects.create(owner=user, title="x")
+    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "   "}, format="json")
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "validation_error"

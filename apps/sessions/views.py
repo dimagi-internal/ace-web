@@ -1,6 +1,8 @@
 """REST endpoints for Session CRUD and listing."""
 from __future__ import annotations
 
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -9,7 +11,7 @@ from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
 
-from .models import Session, SessionParticipant
+from .models import Message, Session, SessionParticipant
 from .serializers import SessionDetailSerializer, SessionSerializer
 
 
@@ -74,3 +76,57 @@ def session_detail(request: Request, slug: str) -> Response:
     if updates:
         session.save(update_fields=list(updates.keys()) + ["updated_at"])
     return Response(success_response(SessionSerializer(session).data))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def send_message(request: Request, slug: str) -> Response:
+    try:
+        session = Session.objects.get(slug=slug, owner=request.user)
+    except Session.DoesNotExist:
+        return Response(
+            error_response(message="session not found", code="not_found"),
+            status=404,
+        )
+
+    text = (request.data or {}).get("text", "").strip()
+    if not text:
+        return Response(
+            error_response(message="text is required", code="validation_error"),
+            status=400,
+        )
+
+    with transaction.atomic():
+        last_turn = (
+            Message.objects.filter(session=session)
+            .order_by("-turn_index")
+            .values_list("turn_index", flat=True)
+            .first()
+        )
+        next_turn = (last_turn or 0) + 1
+        user_msg = Message.objects.create(
+            session=session,
+            turn_index=next_turn,
+            role="user",
+            sender_user=request.user,
+            content={"text": text},
+            plaintext=text,
+            status="complete",
+            completed_at=timezone.now(),
+        )
+        assistant_msg = Message.objects.create(
+            session=session,
+            turn_index=next_turn + 1,
+            role="assistant",
+            content={"text": ""},
+            plaintext="",
+            status="pending",
+        )
+
+    return Response(
+        success_response({
+            "user_message_id": user_msg.id,
+            "assistant_message_id": assistant_msg.id,
+        }),
+        status=201,
+    )
