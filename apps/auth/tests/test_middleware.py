@@ -46,3 +46,37 @@ def test_iap_dev_fake_email_when_not_required():
         client = Client()
         client.get("/admin/login/")
         assert User.objects.filter(email="dev@example.com").exists()
+
+
+@pytest.mark.django_db
+def test_existing_user_is_returned_not_recreated():
+    """Second IAP request for the same email returns the existing user, not a new one."""
+    User.objects.create_user(
+        email="repeat@example.com",
+        display_name="Repeat",
+        google_sub="initial-sub",
+    )
+    with override_settings(IAP_REQUIRED=True):
+        client = Client()
+        client.get(
+            "/admin/login/",
+            HTTP_X_GOOG_AUTHENTICATED_USER_EMAIL="accounts.google.com:repeat@example.com",
+            HTTP_X_GOOG_AUTHENTICATED_USER_ID="accounts.google.com:initial-sub",
+        )
+        assert User.objects.filter(email="repeat@example.com").count() == 1
+
+
+@pytest.mark.django_db
+def test_google_sub_is_backfilled_when_missing():
+    """Existing user with no google_sub gets it filled in on next IAP request."""
+    user = User.objects.create_user(email="backfill@example.com", display_name="B")
+    assert user.google_sub is None
+    with override_settings(IAP_REQUIRED=True):
+        client = Client()
+        client.get(
+            "/admin/login/",
+            HTTP_X_GOOG_AUTHENTICATED_USER_EMAIL="accounts.google.com:backfill@example.com",
+            HTTP_X_GOOG_AUTHENTICATED_USER_ID="accounts.google.com:new-sub-value",
+        )
+        user.refresh_from_db()
+        assert user.google_sub == "new-sub-value"

@@ -10,6 +10,7 @@ import logging
 from typing import Callable
 
 from django.conf import settings
+from django.db import IntegrityError
 from django.http import HttpRequest, HttpResponse, JsonResponse
 
 from .models import User
@@ -19,6 +20,13 @@ logger = logging.getLogger(__name__)
 
 class IAPHeaderAuthMiddleware:
     """Populate request.user from IAP headers, or fail closed if IAP is required."""
+
+    # NOTE for Plan 1C / Task 6 (Channels): this middleware only runs on HTTP
+    # requests via __call__. Django Channels' WebSocket handshakes go through
+    # ASGI scope, NOT this middleware. Task 6 must add an equivalent
+    # auth-from-IAP-headers helper for the WebSocket consumer scope, or
+    # leverage django-channels-auth-token middleware. Without this, WebSocket
+    # connections will not have an authenticated user.
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]):
         self.get_response = get_response
@@ -58,8 +66,12 @@ class IAPHeaderAuthMiddleware:
                 user.save(update_fields=["google_sub"])
             return user
         except User.DoesNotExist:
-            return User.objects.create_user(
-                email=email,
-                display_name=email.split("@")[0],
-                google_sub=google_sub or "",
-            )
+            try:
+                return User.objects.create_user(
+                    email=email,
+                    display_name=email.split("@")[0],
+                    google_sub=google_sub,
+                )
+            except IntegrityError:
+                # Concurrent request created the user first; fetch and return it.
+                return User.objects.get(email=email)
