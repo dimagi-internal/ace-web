@@ -36,8 +36,10 @@ COPY apps/ ./apps/
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Collect static assets (dummy secret key; only used at build time for collectstatic)
-RUN DJANGO_SECRET_KEY=build-time-placeholder python manage.py collectstatic --noinput
+# Collect static assets (dummy values; only used at build time for collectstatic)
+RUN DJANGO_SECRET_KEY=build-time-placeholder \
+    DJANGO_ALLOWED_HOSTS=build-time-placeholder \
+    python manage.py collectstatic --noinput
 
 # Entrypoint
 COPY entrypoint.sh /entrypoint.sh
