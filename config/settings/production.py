@@ -1,5 +1,4 @@
-"""Cloud Run production settings."""
-import os
+"""AWS ECS Fargate production settings."""
 import warnings
 
 from .base import *  # noqa: F401, F403
@@ -8,14 +7,13 @@ from .base import *  # noqa: F401, F403
 # static file under ASGI. WhiteNoise 6.x still uses wsgiref.util.FileWrapper
 # (a synchronous iterator from the WSGI spec), which Django's ASGI handler
 # wraps transparently via sync_to_async — correct behavior, but it logs a
-# warning for each wrapped iteration. This floods the Cloud Run logs on
-# every asset request.
+# warning for each wrapped iteration. This floods the logs on every asset
+# request.
 #
 # We scope the filter narrowly to WhiteNoise-served paths and keep it only
 # in production settings so dev/test still surface the warning if it
 # originates from application code. Remove this filter once WhiteNoise
-# ships native async file iteration (upstream issue: whitenoise project
-# still tracking WSGI-first design).
+# ships native async file iteration.
 warnings.filterwarnings(
     "ignore",
     message="StreamingHttpResponse must consume synchronous iterators",
@@ -23,27 +21,25 @@ warnings.filterwarnings(
 )
 
 DEBUG = False
-# No default — cloudbuild.yaml must pass the actual Cloud Run hostname.
-# Missing value causes a startup error, which is what we want in production.
-ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")  # noqa: F405
-IAP_REQUIRED = True
 
-# Production must have these set in the environment — no fallback to the
-# insecure dev default in base.py. Missing env vars cause immediate startup crash.
+# No default — fail loud on misconfiguration.
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")  # noqa: F405
+
+# No default — fail loud on misconfiguration.
 SECRET_KEY = env("DJANGO_SECRET_KEY")  # noqa: F405
 
-# Cloud SQL via Unix socket when CLOUD_SQL_CONNECTION_NAME is set
-CLOUD_SQL = os.environ.get("CLOUD_SQL_CONNECTION_NAME")
-if CLOUD_SQL:
-    DATABASES["default"]["HOST"] = f"/cloudsql/{CLOUD_SQL}"  # noqa: F405
+# Standard DATABASE_URL — AWS RDS will provide it.
+DATABASES = {"default": env.db("DATABASE_URL")}  # noqa: F405
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 
 # WARNING: CHANNEL_LAYERS in base.py uses InMemoryChannelLayer which only
-# works in single-process mode. Plan 1C must replace this with channels-redis
-# before scaling Cloud Run beyond min/max=1 instance.
+# works in single-process mode. Before scaling past a single AWS ECS Fargate
+# task, replace this with channels-redis pointing at the shared connect-labs
+# ElastiCache instance. Do not raise the ECS desired-count above 1 until that
+# is done.
 
 # Security headers — production only
 SECURE_HSTS_SECONDS = 31536000  # 1 year

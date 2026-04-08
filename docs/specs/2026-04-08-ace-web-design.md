@@ -118,20 +118,16 @@ The CLIBackend is unchanged across this transition. The `stream_completion()` as
 
 ### 5.3 Persistence
 
-- **Postgres** (Cloud SQL in prod, dockerized in dev) is the durable store for everything user-facing: users, sessions, messages, drafts, share tokens, ingest uploads.
-- **Filestore mount** at `/var/lib/ace-claude` on Cloud Run holds (a) the OAuth token and (b) the Claude CLI's `~/.claude` session store. `~/.claude` is symlinked to a subdirectory of the mount via the entrypoint script.
-  - Filestore costs ~$25/mo minimum. Acceptable for the cleaner UX.
-  - The hybrid resume strategy is the safety net: if Filestore is unavailable for any reason, Django-replay still works.
-- **docker-compose** mounts a named volume `ace-claude-data:/var/lib/ace-claude` for parity with prod.
-- **Memorystore Redis** is provisioned in Phase 3 for `channels-redis`. Same VPC as Cloud Run. No persistence needed (channels groups are ephemeral by design).
+- **Postgres** (AWS RDS in prod, dockerized in dev) is the durable store for everything user-facing: users, sessions, messages, drafts, share tokens, ingest uploads.
+- **CLI session store persistence** (the `~/.claude` directory) is deferred — ECS EFS mount or dropped entirely in favor of the hybrid-resume Django-replay path. No Filestore equivalent is provisioned; the hybrid resume strategy is the primary approach.
+- **docker-compose** uses a local Postgres container for dev; no CLI state volume is needed since hybrid resume handles cold starts.
+- **AWS ElastiCache Redis** (shared connect-labs instance, free — already provisioned) will be used in Phase 3 for `channels-redis`. No new Redis infrastructure required.
 
 ### 5.4 Authentication and authorization
 
-- **Edge: IAP.** GCP IAP is the team-membership boundary. Anyone past IAP is on the team.
-- **HTTP middleware: `IAPHeaderAuthMiddleware`.** Reads `X-Goog-Authenticated-User-Email` / `X-Goog-Authenticated-User-ID` and populates `request.user`. Already shipped in Phase 1.
-- **ASGI middleware (Phase 3): a parallel `IAPHeaderAuthMiddleware` for the Channels stack.** Reads the same headers from the WebSocket handshake scope.
+- **Edge auth:** Auth is handled at the ALB layer or via django-allauth with CommCare Connect OAuth — final decision in the AWS migration plan.
 - **Per-session authorization:** `SessionParticipant` rows. `owner` and `editor` can edit drafts and send messages; `viewer` can read only. Created automatically for the session creator on `POST /api/sessions`.
-- **Share tokens:** bypass IAP at the application layer. The `/share/<token>` route is added to the IAP-exempt list (currently only `/api/health`). The view checks `ShareToken.revoked_at IS NULL` and returns the read-only view. Note: the IAP exempt list is enforced at the GCP layer via `--allow-unauthenticated` for the specific path, OR by routing through a separate Cloud Run service with a different IAP config. **Decision deferred to Phase 4 implementation** — both routes have trade-offs and the chosen approach should be documented in a learning when the share-token work lands.
+- **Share tokens:** The `/share/<token>` route is public within the application. The view checks `ShareToken.revoked_at IS NULL` and returns the read-only view. **ALB routing details deferred to Phase 4 implementation.**
 
 ### 5.5 Data model
 
@@ -152,7 +148,7 @@ The fields that are placeholders today and become live in later phases:
 |---|---|---|---|
 | 1 | Foundation | Skeleton, IAP, data model, deploy | **Complete** — `docs/plans/2026-04-07-1a-foundation.md`, jjackson/ace-web#1 |
 | 2 | Conversation engine | ChatBackend interface, CLIBackend, CLI auth, SSE streaming, REST API for sessions/messages, single-user chat UI with recent-sessions sidebar, auto-title, stop button, tool-use rendering, Filestore mount | A user can create a session, type a message, watch streaming response, navigate back later, continue. CLI auth is in-app self-service. |
-| 3 | Multi-player collaboration | WebSocket consumer, channels-redis, ASGI IAP middleware, drafts (slots/versions), presence, real-time broadcast | Two users can sit in the same session, draft together, see each other present, see the same streaming response. |
+| 3 | Multi-player collaboration | WebSocket consumer, channels-redis (free — shared ElastiCache already exists on connect-labs), ASGI auth middleware, drafts (slots/versions), presence, real-time broadcast | Two users can sit in the same session, draft together, see each other present, see the same streaming response. |
 | 4 | Library and ingest | Session list page (search/filter/archive), share tokens, `ace upload` CLI, ingest UI, participant management | The team has a real library with search, sharing, and import. |
 | 5 | Polish | Observability, eval harness, accessibility, empty/error/loading states, security review, demo prep, full docs pass | The bar is met. The team starts using it. |
 
@@ -175,29 +171,29 @@ Deliberately excluded from the entire vision (not deferred to a "later phase" �
 
 ## 8. Open risks
 
-- **Filestore on Cloud Run is real money** (~$25/mo minimum). If finance pushes back, the hybrid resume strategy is the fallback — drop the volume and accept rehydrate-on-cold-start. This is a runtime swap, not a code change.
+- **Shared infrastructure coupling** — if connect-labs infrastructure changes or goes down, ace-web is affected. Mitigated by the small number of tenants and the team's direct ops control.
 - **`claude -p --output-format stream-json` event format is an external dependency.** Phase 2 must capture real fixtures and document the event shapes in `docs/learnings/cli-stream-json-format.md`. If the CLI changes its output format, the parser breaks. Mitigation: snapshot fixtures + an opt-in integration test that hits a real CLI.
 - **PTY auth flow is fragile.** ANSI parsing, threading, subprocess lifecycle. The canopy-web port is the proven shape; deviating from it should be deliberate.
-- **Channels-redis migration in Phase 3 is a real config change.** The Memorystore instance has a non-trivial provisioning step (VPC connector, IAM, secret rotation) and the warning comment in `production.py` should be the trigger to invest the time.
-- **Share-token IAP exemption** has two viable routes (path-level allow-unauthenticated vs. separate Cloud Run service). Both have trade-offs; the Phase 4 implementation decides and documents.
+- **Channels-redis migration in Phase 3 is a real config change.** The warning comment in `production.py` should be the trigger to invest the time. The ElastiCache instance is already provisioned (shared with connect-labs) so no new infra is needed.
+- **Share-token auth exemption** approach depends on the final AWS auth decision (ALB OIDC vs django-allauth). Phase 4 implementation decides and documents.
 
 ## 9. Key technical decisions (for cross-reference from phase plans)
 
 - CLI is the only backend that ships. `ApiBackend` and `McpBackend` are reserved enum values.
 - Hybrid CLI resume: `--resume` first, Django-replay on miss. Django is the durable source of truth.
 - SSE in Phase 2, WebSocket in Phase 3. The streaming pipeline is shared.
-- Filestore mount for `~/.claude` on Cloud Run, named volume in docker-compose, hybrid resume as safety net.
+- CLI session store persistence deferred (ECS EFS or dropped); hybrid resume is the primary strategy. No Filestore equivalent provisioned.
 - One subprocess per chat turn. Cancellation via SIGTERM then SIGKILL. No subprocess pool.
 - Tool use as nested `Message` rows under the parent assistant turn.
 - Stop button + clean cancel ships in Phase 2. Auto-titling ships in Phase 2.
-- channels-redis arrives with multi-player in Phase 3.
+- channels-redis arrives with multi-player in Phase 3, using the shared connect-labs ElastiCache instance.
 - Share links are public-by-token, revocable, anonymous-readable.
 - Polish (observability, evals, accessibility, security review, demo prep) bundled in Phase 5.
 
 ## 10. References
 
 - Phase 1 plan with post-execution corrections: `docs/plans/2026-04-07-1a-foundation.md`
-- Existing learnings: `docs/learnings/{api-envelope-convention,channels-single-instance,iap-websocket-coverage,user-google-sub-nullable}.md`
+- Existing learnings: `docs/learnings/{api-envelope-convention,channels-single-instance,user-google-sub-nullable}.md`
 - Pattern source for the CLI backend: `../canopy-web/apps/common/anthropic_client.py`
 - Pattern source for the PTY auth flow: `../canopy-web/apps/common/auth_flow.py`
 - Deploy guide: `docs/deploy.md`

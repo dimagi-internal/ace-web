@@ -24,21 +24,15 @@ services:
       DJANGO_DEBUG: "True"
       DJANGO_SECRET_KEY: dev-insecure
       DATABASE_URL: postgres://ace:ace@db:5432/ace_web
-      ACE_IAP_REQUIRED: "False"
-      ACE_CLAUDE_HOME: /var/lib/ace-claude
-      ACE_CLAUDE_TOKEN_FILE: /var/lib/ace-claude/oauth-token
-      HOME: /root
     ports:
       - "8000:8080"
     volumes:
       - ./apps:/app/apps
       - ./config:/app/config
       - ./manage.py:/app/manage.py
-      - ace-claude-data:/var/lib/ace-claude
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   ace-pg-data:
-  ace-claude-data:

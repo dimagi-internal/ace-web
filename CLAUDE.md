@@ -11,7 +11,7 @@ transcripts, and upload support for existing local `.jsonl` sessions.
 - **Design spec** (the whole vision and phase breakdown): `docs/specs/2026-04-08-ace-web-design.md`.
 - **Implementation plans** (per phase): `docs/plans/`.
 - **Pattern source** for new backend code: `../canopy-web/` (sibling repo).
-- **Deploy / GCP setup**: `docs/deploy.md`.
+- **Deploy / AWS setup**: `docs/deploy.md`.
 - **Learnings**: `docs/learnings/` (load-bearing gotchas — read these before touching the relevant area).
 
 The broader ACE plugin (CRISPR-Connect orchestration) lives in the sibling
@@ -28,7 +28,7 @@ not user-shippable milestones (the team only uses ace-web after Phase 5).
 | Phase | Name                       | Scope                                                                           | Status                                    |
 |-------|----------------------------|---------------------------------------------------------------------------------|-------------------------------------------|
 | 1     | Foundation                 | Django + Channels + React skeleton, data model, IAP, GCP                        | **Done** — merged in jjackson/ace-web#1   |
-| 2     | Conversation engine        | ChatBackend, CLIBackend, CLI auth (PTY), SSE streaming, REST + chat UI, recents | **Done**                                  |
+| 2     | Conversation engine        | Conversation engine (ChatBackend, CLIBackend, SSE, chat UI)                     | **Done**                                  |
 | 3     | Multi-player collaboration | WebSocket consumer, channels-redis, ASGI auth, drafts, presence                 | Pending                                   |
 | 4     | Library and ingest         | Session list, search/filter, share tokens, `ace upload` CLI                     | Pending                                   |
 | 5     | Polish                     | Observability, evals, accessibility, security review, demo prep, full docs     | Pending                                   |
@@ -42,8 +42,8 @@ settings, Dockerfile, or the auth/sessions models.
 
 - **Backend**: Django 5 + Channels 4 + DRF, ASGI via uvicorn, `psycopg[binary]`, WhiteNoise, `django-environ`.
 - **Frontend**: React 19, Vite 5, TypeScript 5, Tailwind 3.4, react-router-dom 6.
-- **DB**: PostgreSQL 16 (Cloud SQL in prod, local Postgres via `docker compose`).
-- **Infra**: GCP Cloud Run behind IAP + Google SSO, Cloud Build, Secret Manager, Artifact Registry.
+- **DB**: PostgreSQL 16 (AWS RDS in prod, local Postgres via `docker compose`).
+- **Infra**: AWS ECS Fargate behind the connect-labs ALB (shared infra), GitHub Actions, AWS Secrets Manager, ECR.
 - **Tests**: pytest + pytest-django + pytest-asyncio, in-memory SQLite for unit tests.
 - **Patterns source**: `../canopy-web/` — copy structure for auth flows, envelope, settings layout, Dockerfile, entrypoint.
 
@@ -52,7 +52,7 @@ settings, Dockerfile, or the auth/sessions models.
 ```
 ace-web/
 ├── apps/
-│   ├── auth/        # Custom User, IAP header middleware    (10 files)
+│   ├── auth/        # Custom User model                     (10 files)
 │   ├── common/      # Envelope, health check                (4 files)
 │   └── sessions/    # 7-table data model                    (4 files)
 ├── config/          # Split settings, ASGI, urls, routing
@@ -63,7 +63,6 @@ ace-web/
 │   ├── learnings/
 │   └── plans/2026-04-07-1a-foundation.md
 ├── Dockerfile, entrypoint.sh, docker-compose.yml
-├── cloudbuild.yaml
 └── pyproject.toml
 ```
 
@@ -74,26 +73,22 @@ The sessions data model has 7 tables: `users`, `sessions`, `session_participants
 
 ## Key architectural decisions
 
-- **Auth via IAP**: GCP IAP is the edge. `apps.auth.middleware.IAPHeaderAuthMiddleware` reads
-  `X-Goog-Authenticated-User-Email` and `X-Goog-Authenticated-User-ID` and populates
-  `request.user`. `AUTH_USER_MODEL = "ace_auth.User"`. In dev, IAP is faked via
-  `ACE_IAP_REQUIRED=False` and `ACE_IAP_DEV_FAKE_EMAIL`.
+- **Auth**: TBD — see AWS migration plan. Planned direction: CommCare Connect OAuth via
+  django-allauth, or ALB OIDC at the connect-labs layer. `AUTH_USER_MODEL = "ace_auth.User"`
+  remains; the `google_sub` field is a legacy no-op kept to avoid a schema migration.
 - **Response envelope**: Every JSON response uses `{data, error}` via
   `apps.common.envelope.success_response` / `error_response`. See
   `docs/learnings/api-envelope-convention.md`.
-- **Health check is IAP-exempt at Django, not at IAP**: `/api/health` is
-  middleware-exempt inside Django but still sits behind IAP at the GCP edge.
-  Smoke tests must pass an identity token. See `docs/deploy.md`.
-- **Single Cloud Run instance**: `min-instances=1 max-instances=1` until Channels
-  switches off `InMemoryChannelLayer`. See `docs/learnings/channels-single-instance.md`.
+- **Health check**: `/api/health` is public. See `docs/deploy.md`.
+- **Single ECS task**: Run only one ECS Fargate task until Channels switches off
+  `InMemoryChannelLayer`. See `docs/learnings/channels-single-instance.md`.
 
 ## Learnings (read before touching the relevant area)
 
 Infra & scaling:
-- [channels-single-instance](docs/learnings/channels-single-instance.md) — `InMemoryChannelLayer` pins Cloud Run to a single instance; Plan 1C must add `channels-redis` before scaling.
+- [channels-single-instance](docs/learnings/channels-single-instance.md) — `InMemoryChannelLayer` pins to a single ECS task; Plan 1C must add `channels-redis` (shared ElastiCache) before scaling.
 
 Auth & identity:
-- [iap-websocket-coverage](docs/learnings/iap-websocket-coverage.md) — IAP middleware is HTTP-only; Phase 3 must add ASGI-scope auth for WebSocket handshakes.
 - [user-google-sub-nullable](docs/learnings/user-google-sub-nullable.md) — `google_sub` must be NULL (not `""`) and first-login races must be handled at the DB layer.
 
 API conventions:
@@ -112,7 +107,7 @@ Dockerfile slimming, SPA catch-all, slug retries, setuptools layout), see the
 - **Local dev**: `docker compose up`. App at `http://localhost:8000`, Postgres at `localhost:5434`.
 - **Tests**: `pytest -v` from repo root. Uses in-memory SQLite; fast hashers.
 - **Lint**: `ruff check .` — `line-length=100`, `target=py311`, rules `E,F,W,I,UP,B`.
-- **Deploy**: `gcloud builds submit --config=cloudbuild.yaml`. One-time GCP setup in `docs/deploy.md`.
+- **Deploy**: GitHub Actions workflow — details in AWS migration plan (forthcoming). See `docs/deploy.md`.
 - **Plans-driven work**: Implementation follows the per-phase plan file in `docs/plans/`.
   Each phase plan is generated from the design spec via the `writing-plans` skill.
   Use the superpowers `subagent-driven-development` or `executing-plans` sub-skill
@@ -120,6 +115,7 @@ Dockerfile slimming, SPA catch-all, slug retries, setuptools layout), see the
 
 ## What does NOT ship yet
 
+- No AWS auth integration (ALB OIDC or CommCare Connect OAuth) — AWS migration plan.
 - No WebSocket consumer, no drafts, no presence, no channels-redis — Phase 3.
 - No session list, share tokens, or `ace upload` CLI — Phase 4.
 - No observability, no eval harness, no security review — Phase 5.
