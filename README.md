@@ -9,9 +9,8 @@ persistent transcripts, and upload support for existing local `.jsonl` sessions.
 ## Where things live
 
 - **Implementation plans** (per-module): `ace-web/docs/plans/`
-- **Overall architecture spec**: lives in the sibling [`ace` repo](../ace/) at
-  `ace/docs/superpowers/specs/2026-04-07-ace-web-harness-design.md` because it
-  spans multiple ACE modules, not just this one.
+- **Architecture spec**: no unified web-harness spec file exists yet. Per-wave
+  scope is defined in the plan file for that wave.
 
 This repo is consumed as a git submodule from the `ace` repo so cross-module
 work (plan updates, spec references) can happen in one checkout. Day-to-day
