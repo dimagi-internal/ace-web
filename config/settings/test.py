@@ -8,7 +8,6 @@ DATABASES = {
         "NAME": ":memory:",
     }
 }
-IAP_REQUIRED = False
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # Strip WhiteNoise from the middleware chain in tests. WhiteNoise's

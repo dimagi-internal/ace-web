@@ -48,8 +48,18 @@ def _get_backend() -> CLIBackend:
 
 async def stream_assistant_message(request: HttpRequest, message_id: int):
     """Async view that returns a text/event-stream response."""
-    user = await sync_to_async(lambda: request.user)()
-    if not user or not user.is_authenticated:
+    # Force-evaluate the lazy user object inside a sync thread so the
+    # session/DB lookup (from Django's AuthenticationMiddleware) does not
+    # happen in the async context. We cast to bool then fetch is_authenticated
+    # in the same thread to avoid a SynchronousOnlyOperation in async scope.
+    def _get_user_info():
+        u = request.user
+        # Access an attribute to trigger SimpleLazyObject resolution in this thread.
+        is_auth = u.is_authenticated
+        return u, is_auth
+
+    user, user_is_authenticated = await sync_to_async(_get_user_info)()
+    if not user or not user_is_authenticated:
         return StreamingHttpResponse(
             iter([_sse_frame("error", {"message": "unauthenticated"})]),
             content_type="text/event-stream",

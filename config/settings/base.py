@@ -43,7 +43,6 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "apps.auth.middleware.IAPHeaderAuthMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -87,14 +86,6 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "frontend" / "dist"]
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-
-# --- Auth / IAP ---
-IAP_HEADER_EMAIL = "HTTP_X_GOOG_AUTHENTICATED_USER_EMAIL"
-IAP_HEADER_USER_ID = "HTTP_X_GOOG_AUTHENTICATED_USER_ID"
-IAP_REQUIRED = env.bool("ACE_IAP_REQUIRED", default=False)
-# When IAP_REQUIRED is False (dev), middleware accepts a fake header for local dev.
-IAP_DEV_FAKE_EMAIL = env("ACE_IAP_DEV_FAKE_EMAIL", default="dev@example.com")
-IAP_DEV_FAKE_USER_ID = env("ACE_IAP_DEV_FAKE_USER_ID", default="dev-user-1")
 
 # --- I18N ---
 LANGUAGE_CODE = "en-us"

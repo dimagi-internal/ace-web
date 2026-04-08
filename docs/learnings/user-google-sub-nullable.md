@@ -23,4 +23,6 @@ Two rules, both load-bearing:
 1. **Coerce falsy `google_sub` to `None`** inside `UserManager.create_user` (`google_sub or None`). Any caller that passes `""`, `None`, or omits the field ends up with a NULL row. Covered by `test_two_users_without_google_sub_can_coexist`.
 2. **Handle `IntegrityError` on the create path** inside `IAPHeaderAuthMiddleware._get_or_create_user`: catch it, re-`get` by email, and return that row. Covered by concurrent-first-login semantics in the existing tests.
 
-When adding any new user-creation path (admin bulk import, management command, future API endpoint), apply both rules. The tests at `apps/auth/tests/test_middleware.py` and `apps/auth/tests/test_models.py` are the regression harness — do not weaken them.
+When adding any new user-creation path (admin bulk import, management command, future API endpoint), apply both rules. The tests at `apps/auth/tests/test_models.py` are the regression harness — do not weaken them.
+
+**Note (post GCP→AWS migration):** the google_sub field is now a legacy no-op — no IAP middleware populates it. Kept to avoid a schema migration. Will be removed in a future cleanup.

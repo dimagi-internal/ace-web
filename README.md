@@ -34,8 +34,8 @@ Then open http://localhost:8000.
 
 - Django 5 + Channels 4 + DRF (ASGI via uvicorn)
 - React 19 + Vite + Tailwind 3.4
-- PostgreSQL in Cloud SQL
-- Deployed on GCP Cloud Run behind IAP + Google SSO
+- PostgreSQL (AWS RDS in prod, local Postgres via docker compose)
+- Deployed on AWS ECS Fargate behind the connect-labs ALB
 
 ## Current status
 
