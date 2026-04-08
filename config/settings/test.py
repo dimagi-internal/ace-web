@@ -21,7 +21,7 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # fast has
 # These entries exist in base.py because they're the eventual production shape,
 # but the underlying code doesn't exist until later tasks. Tests run against a
 # trimmed config until then.
-_unbuilt_apps = {"apps.sessions.apps.SessionsConfig"}
+_unbuilt_apps: set[str] = set()
 _unbuilt_middleware: set[str] = set()
 
 INSTALLED_APPS = [a for a in INSTALLED_APPS if a not in _unbuilt_apps]  # noqa: F405

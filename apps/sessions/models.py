@@ -1,0 +1,211 @@
+"""Data models for the ACE web harness sessions, messages, and drafts.
+
+These models are designed to be:
+- Append-only for messages (no edits after status='complete')
+- Multi-player native (many-to-many user-session via SessionParticipant)
+- Extensible to future modules via nullable opportunity_id, ocs_agent_id, idd_ref
+"""
+import secrets
+
+from django.conf import settings
+from django.db import models
+
+
+def generate_slug() -> str:
+    """8-character URL-safe random slug for sessions."""
+    return secrets.token_urlsafe(6)[:8]
+
+
+def generate_share_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+class Session(models.Model):
+    BACKEND_KIND_CHOICES = [
+        ("cli", "CLI (subscription)"),
+        ("api", "API (key)"),
+        ("mcp", "MCP-augmented API"),
+    ]
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("archived", "Archived"),
+        ("imported", "Imported"),
+    ]
+    SOURCE_CHOICES = [
+        ("web", "Web"),
+        ("upload", "Upload"),
+    ]
+
+    slug = models.CharField(max_length=32, unique=True, default=generate_slug)
+    title = models.CharField(max_length=500, blank=True, default="")
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="owned_sessions"
+    )
+    backend_kind = models.CharField(max_length=16, choices=BACKEND_KIND_CHOICES, default="cli")
+    backend_config = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="active")
+    source = models.CharField(max_length=16, choices=SOURCE_CHOICES, default="web")
+
+    # Placeholders for future modules. All nullable so adding modules later
+    # does not require a schema migration.
+    opportunity_id = models.BigIntegerField(null=True, blank=True)
+    ocs_agent_id = models.CharField(max_length=200, null=True, blank=True)
+    idd_ref = models.CharField(max_length=500, null=True, blank=True)
+    cli_session_id = models.CharField(max_length=200, null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "sessions"
+        indexes = [
+            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["owner", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.slug}: {self.title or '(untitled)'}"
+
+
+class SessionParticipant(models.Model):
+    ROLE_CHOICES = [
+        ("owner", "Owner"),
+        ("editor", "Editor"),
+        ("viewer", "Viewer"),
+    ]
+
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="participants")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="session_memberships"
+    )
+    role = models.CharField(max_length=16, choices=ROLE_CHOICES, default="editor")
+    joined_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "session_participants"
+        constraints = [
+            models.UniqueConstraint(fields=["session", "user"], name="unique_participant"),
+        ]
+        indexes = [
+            models.Index(fields=["session", "last_seen_at"]),
+        ]
+
+
+class Message(models.Model):
+    ROLE_CHOICES = [
+        ("user", "User"),
+        ("assistant", "Assistant"),
+        ("system", "System"),
+        ("tool_use", "Tool use"),
+        ("tool_result", "Tool result"),
+    ]
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("streaming", "Streaming"),
+        ("complete", "Complete"),
+        ("error", "Error"),
+    ]
+
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="messages")
+    turn_index = models.IntegerField()
+    role = models.CharField(max_length=16, choices=ROLE_CHOICES)
+    sender_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sent_messages",
+    )
+    content = models.JSONField()
+    plaintext = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
+    error_detail = models.TextField(null=True, blank=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "messages"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session", "turn_index"], name="unique_session_turn"
+            ),
+        ]
+        ordering = ["session_id", "turn_index"]
+        indexes = [
+            models.Index(fields=["session", "turn_index"]),
+        ]
+
+
+class Draft(models.Model):
+    SLOT_CHOICES = [
+        ("next", "Next"),
+        ("queued", "Queued"),
+    ]
+    STATUS_CHOICES = [
+        ("open", "Open"),
+        ("sent", "Sent"),
+        ("discarded", "Discarded"),
+    ]
+
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="drafts")
+    creator_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_drafts"
+    )
+    slot = models.CharField(max_length=8, choices=SLOT_CHOICES, default="queued")
+    queue_position = models.IntegerField(null=True, blank=True)
+    body = models.TextField(blank=True, default="")
+    version = models.IntegerField(default=0)
+    last_editor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="edited_drafts"
+    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="open")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    sent_message = models.ForeignKey(
+        Message, on_delete=models.SET_NULL, null=True, blank=True, related_name="from_draft"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "drafts"
+        constraints = [
+            # Only one open "next" draft per session.
+            models.UniqueConstraint(
+                fields=["session"],
+                condition=models.Q(slot="next", status="open"),
+                name="one_next_per_session",
+            ),
+        ]
+
+
+class ShareToken(models.Model):
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="share_tokens")
+    token = models.CharField(max_length=64, unique=True, default=generate_share_token)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="share_tokens"
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "share_tokens"
+
+
+class IngestUpload(models.Model):
+    session = models.ForeignKey(
+        Session, on_delete=models.CASCADE, related_name="ingest_records"
+    )
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="uploads"
+    )
+    source_path = models.CharField(max_length=1000, blank=True, default="")
+    raw_bytes = models.BigIntegerField(default=0)
+    line_count = models.IntegerField(default=0)
+    cli_session_id = models.CharField(max_length=200, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "ingest_uploads"
