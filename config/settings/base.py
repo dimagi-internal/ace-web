@@ -84,7 +84,10 @@ CHANNEL_LAYERS = {
 # --- Static files (WhiteNoise) ---
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / "frontend" / "dist"]
+STATICFILES_DIRS = []
+_frontend_dist = BASE_DIR / "frontend" / "dist"
+if _frontend_dist.exists():
+    STATICFILES_DIRS.append(_frontend_dist)
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # --- I18N ---

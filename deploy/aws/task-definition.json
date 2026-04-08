@@ -1,0 +1,68 @@
+{
+  "family": "labs-jj-ace-web",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ace-web-exec",
+  "taskRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ace-web-task",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-ace-web:latest",
+      "essential": true,
+      "portMappings": [
+        {"containerPort": 8000, "protocol": "tcp"}
+      ],
+      "environment": [
+        {"name": "DJANGO_SETTINGS_MODULE", "value": "config.settings.connectlabs"},
+        {"name": "DJANGO_DEBUG", "value": "False"},
+        {"name": "DJANGO_ALLOWED_HOSTS", "value": "labs.connect.dimagi.com"},
+        {"name": "CONNECT_PRODUCTION_URL", "value": "https://connect.dimagi.com"},
+        {"name": "FORCE_SCRIPT_NAME", "value": "/ace"}
+      ],
+      "secrets": [
+        {"name": "DJANGO_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/django-secret-key"},
+        {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/database-url"},
+        {"name": "CONNECT_OAUTH_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/connect-oauth-client-id"},
+        {"name": "CONNECT_OAUTH_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/connect-oauth-client-secret"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/labs-jj-ace-web",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "api",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 30
+      }
+    },
+    {
+      "name": "web",
+      "image": "858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-ace-web-frontend:latest",
+      "essential": true,
+      "portMappings": [
+        {"containerPort": 3000, "protocol": "tcp"}
+      ],
+      "dependsOn": [
+        {"containerName": "api", "condition": "HEALTHY"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/labs-jj-ace-web",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "web",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}
