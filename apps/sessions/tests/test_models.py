@@ -149,9 +149,25 @@ def test_ingest_upload_creates_audit_row(session, user):
     record = IngestUpload.objects.create(
         session=session,
         uploaded_by=user,
-        source_path="/Users/jjackson/.claude/projects/-foo/abc.jsonl",
+        source_path="/tmp/test-upload.jsonl",
         raw_bytes=12345,
         line_count=42,
         cli_session_id="abc-123",
     )
     assert record.line_count == 42
+
+
+def test_open_next_draft_constraint_is_per_session(user):
+    """The one_next_per_session partial unique constraint applies per session,
+    not globally — different sessions can each have an open next draft."""
+    s1 = Session.objects.create(owner=user, title="A")
+    s2 = Session.objects.create(owner=user, title="B")
+    Draft.objects.create(
+        session=s1, creator_user=user, last_editor=user,
+        slot="next", status="open", body="A-next",
+    )
+    Draft.objects.create(
+        session=s2, creator_user=user, last_editor=user,
+        slot="next", status="open", body="B-next",
+    )
+    assert Draft.objects.filter(slot="next", status="open").count() == 2

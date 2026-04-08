@@ -1,7 +1,9 @@
 """Data models for the ACE web harness sessions, messages, and drafts.
 
 These models are designed to be:
-- Append-only for messages (no edits after status='complete')
+- Append-only for messages: the consumer in Plan 1B/1C is the sole writer
+  and never edits a row after status='complete'. Enforcement lives in the
+  consumer/serializer layer, not at the DB level.
 - Multi-player native (many-to-many user-session via SessionParticipant)
 - Extensible to future modules via nullable opportunity_id, ocs_agent_id, idd_ref
 """
@@ -17,6 +19,7 @@ def generate_slug() -> str:
 
 
 def generate_share_token() -> str:
+    """24-byte URL-safe random token for share URLs (~32 chars)."""
     return secrets.token_urlsafe(24)
 
 
@@ -66,6 +69,21 @@ class Session(models.Model):
     def __str__(self):
         return f"{self.slug}: {self.title or '(untitled)'}"
 
+    def save(self, *args, **kwargs):
+        from django.db import IntegrityError
+        if not self.slug:
+            self.slug = generate_slug()
+        for _ in range(5):
+            try:
+                return super().save(*args, **kwargs)
+            except IntegrityError:
+                if not self.pk:
+                    # Slug collision on insert — regenerate and retry
+                    self.slug = generate_slug()
+                    continue
+                raise
+        raise IntegrityError("Could not generate a unique slug after 5 attempts")
+
 
 class SessionParticipant(models.Model):
     ROLE_CHOICES = [
@@ -90,6 +108,9 @@ class SessionParticipant(models.Model):
         indexes = [
             models.Index(fields=["session", "last_seen_at"]),
         ]
+
+    def __str__(self):
+        return f"{self.user_id} in session {self.session_id} as {self.role}"
 
 
 class Message(models.Model):
@@ -121,10 +142,15 @@ class Message(models.Model):
     plaintext = models.TextField(blank=True, default="")
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
     error_detail = models.TextField(null=True, blank=True)
-    started_at = models.DateTimeField(auto_now_add=True)
+    # Set explicitly by the consumer when streaming begins (Plan 1B/1C).
+    # Distinct from `created_at`, which is set on row insert.
+    started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"[{self.session_id}] turn {self.turn_index} ({self.role})"
 
     class Meta:
         db_table = "messages"
@@ -134,9 +160,6 @@ class Message(models.Model):
             ),
         ]
         ordering = ["session_id", "turn_index"]
-        indexes = [
-            models.Index(fields=["session", "turn_index"]),
-        ]
 
 
 class Draft(models.Model):
@@ -169,6 +192,9 @@ class Draft(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        return f"Draft {self.id} ({self.slot}/{self.status})"
+
     class Meta:
         db_table = "drafts"
         constraints = [
@@ -190,6 +216,9 @@ class ShareToken(models.Model):
     revoked_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return f"Token {self.token[:8]}... for session {self.session_id}"
+
     class Meta:
         db_table = "share_tokens"
 
@@ -206,6 +235,9 @@ class IngestUpload(models.Model):
     line_count = models.IntegerField(default=0)
     cli_session_id = models.CharField(max_length=200, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Upload {self.id} to session {self.session_id}"
 
     class Meta:
         db_table = "ingest_uploads"
