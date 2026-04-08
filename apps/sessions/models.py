@@ -10,7 +10,7 @@ These models are designed to be:
 import secrets
 
 from django.conf import settings
-from django.db import models
+from django.db import IntegrityError, models, transaction
 
 
 def generate_slug() -> str:
@@ -70,12 +70,16 @@ class Session(models.Model):
         return f"{self.slug}: {self.title or '(untitled)'}"
 
     def save(self, *args, **kwargs):
-        from django.db import IntegrityError
         if not self.slug:
             self.slug = generate_slug()
+        # Each attempt runs in its own savepoint so that a duplicate-slug
+        # IntegrityError rolls back only this attempt and does not poison
+        # an enclosing transaction (Django requires a fresh savepoint after
+        # an IntegrityError before more queries can be issued).
         for _ in range(5):
             try:
-                return super().save(*args, **kwargs)
+                with transaction.atomic():
+                    return super().save(*args, **kwargs)
             except IntegrityError:
                 if not self.pk:
                     # Slug collision on insert — regenerate and retry

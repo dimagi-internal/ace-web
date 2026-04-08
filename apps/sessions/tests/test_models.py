@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from django.db import IntegrityError
 
@@ -171,3 +173,29 @@ def test_open_next_draft_constraint_is_per_session(user):
         slot="next", status="open", body="B-next",
     )
     assert Draft.objects.filter(slot="next", status="open").count() == 2
+
+
+def test_session_save_retries_on_slug_collision(user):
+    """Session.save() should catch an IntegrityError from a duplicate slug
+    and retry with a freshly generated one. 48 bits of entropy make a real
+    collision essentially impossible, so we simulate one by constructing a
+    Session with a slug that already exists in the DB.
+
+    Note: we do NOT rely on patching the `slug` field default, because that
+    default is captured as a direct function reference at class-definition
+    time and isn't affected by ``patch("apps.sessions.models.generate_slug")``.
+    Instead we pre-fill the colliding slug on the instance and verify that
+    the retry branch in ``save()`` (which calls ``generate_slug()`` by name
+    at runtime) picks up the patched version.
+    """
+    existing = Session.objects.create(owner=user, title="existing")
+    taken_slug = existing.slug
+
+    colliding = Session(owner=user, title="colliding", slug=taken_slug)
+
+    with patch("apps.sessions.models.generate_slug", return_value="fresh1234"):
+        colliding.save()
+
+    assert colliding.slug == "fresh1234"
+    assert Session.objects.filter(slug=taken_slug).count() == 1  # existing untouched
+    assert Session.objects.filter(slug="fresh1234").count() == 1  # retried row landed
