@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in — ace-web</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .container { background: #fff; border-radius: 8px; padding: 2.5rem 3rem; max-width: 400px; width: 100%; box-shadow: 0 2px 8px rgba(0,0,0,.1); text-align: center; }
+    h1 { font-size: 1.4rem; margin: 0 0 1rem; color: #1a1a1a; }
+    p { color: #555; margin: 0 0 1.5rem; line-height: 1.5; }
+    .btn { display: inline-block; background: #1a56db; color: #fff; text-decoration: none; padding: .75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; }
+    .btn:hover { background: #1e429f; }
+    .messages { margin-bottom: 1rem; }
+    .messages li { list-style: none; background: #fee2e2; color: #991b1b; padding: .6rem 1rem; border-radius: 4px; margin-bottom: .5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ace-web</h1>
+    <p>Sign in with your Dimagi CommCare Connect account to continue.</p>
+    {% if messages %}
+    <ul class="messages">
+      {% for message in messages %}<li>{{ message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    <a class="btn" href="{% url 'auth:initiate' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Sign in with CommCare Connect</a>
+  </div>
+</body>
+</html>
