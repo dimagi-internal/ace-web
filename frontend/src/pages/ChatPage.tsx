@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import { getSession, updateSession } from "../api/sessions";
 import { sendMessage } from "../api/messages";
+import { CliAuthBanner } from "../components/CliAuthBanner";
 import { InlineTitleEdit } from "../components/InlineTitleEdit";
 import { MessageList } from "../components/MessageList";
 import { RecentSessionsSidebar } from "../components/RecentSessionsSidebar";
@@ -54,6 +55,7 @@ export function ChatPage() {
     <div className="flex h-screen">
       <RecentSessionsSidebar currentSlug={slug} />
       <div className="flex flex-1 flex-col">
+        <CliAuthBanner />
         <header className="border-b border-zinc-200 px-4 py-2">
           <InlineTitleEdit value={session.title} onSave={handleTitleSave} />
         </header>
