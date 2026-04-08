@@ -8,10 +8,12 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError("Email is required")
         email = self.normalize_email(email)
+        # Coerce empty string to None — an empty `google_sub` would violate
+        # the UNIQUE constraint on the second user created without a sub.
         user = self.model(
             email=email,
             display_name=display_name or email.split("@")[0],
-            google_sub=google_sub or None,  # never store empty string — would violate UNIQUE on 2nd insert
+            google_sub=google_sub or None,
         )
         user.set_unusable_password()
         user.save(using=self._db)

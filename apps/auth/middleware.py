@@ -7,7 +7,7 @@ In dev (when IAP_REQUIRED is False), accepts a fake header injected from
 settings to enable local development without IAP.
 """
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from django.conf import settings
 from django.db import IntegrityError
@@ -40,7 +40,13 @@ class IAPHeaderAuthMiddleware:
         if not email:
             if settings.IAP_REQUIRED:
                 return JsonResponse(
-                    {"data": None, "error": {"code": "unauthenticated", "message": "IAP headers missing"}},
+                    {
+                        "data": None,
+                        "error": {
+                            "code": "unauthenticated",
+                            "message": "IAP headers missing",
+                        },
+                    },
                     status=401,
                 )
             email = settings.IAP_DEV_FAKE_EMAIL
