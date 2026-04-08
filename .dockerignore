@@ -1,0 +1,48 @@
+# Python
+__pycache__
+*.py[cod]
+*.so
+.Python
+.venv
+venv
+env
+*.egg-info
+.pytest_cache
+.mypy_cache
+.coverage
+htmlcov
+dist
+build
+
+# Django
+db.sqlite3
+db.sqlite3-journal
+media
+staticfiles
+
+# Node
+node_modules
+frontend/dist
+frontend/tsconfig.tsbuildinfo
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+.DS_Store
+
+# Local env
+.env
+.env.local
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Docs
+*.md
+docs/

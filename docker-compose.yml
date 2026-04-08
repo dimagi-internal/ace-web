@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ace
+      POSTGRES_PASSWORD: ace
+      POSTGRES_DB: ace_web
+    ports:
+      - "5434:5432"
+    volumes:
+      - ace-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ace"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    command: >
+      bash -c "python manage.py migrate &&
+               uvicorn config.asgi:application --host 0.0.0.0 --port 8080 --reload"
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.development
+      DJANGO_DEBUG: "True"
+      DJANGO_SECRET_KEY: dev-insecure
+      DATABASE_URL: postgres://ace:ace@db:5432/ace_web
+      ACE_IAP_REQUIRED: "False"
+    ports:
+      - "8000:8080"
+    volumes:
+      - ./apps:/app/apps
+      - ./config:/app/config
+      - ./manage.py:/app/manage.py
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  ace-pg-data:
