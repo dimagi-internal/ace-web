@@ -16,6 +16,7 @@ consumer breaks out of the `async for` (Python calls `aclose()`).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -123,19 +124,34 @@ class CLIBackend:
     # ────────────────────────────── helpers ──────────────────────────────
 
     async def _spawn(self, *, args: list[str], prompt: str):
-        """Spawn the CLI subprocess, write the prompt to stdin, close it."""
+        """Spawn the CLI subprocess, write the prompt to stdin, close it.
+
+        Raises CLIBackendError if the subprocess dies before accepting the prompt
+        (e.g., binary missing, permission denied, instant crash).
+        """
         full_args = [self._binary, "-p", "--output-format", "stream-json", *args]
         env = self._build_env()
+        # stderr=DEVNULL avoids a deadlock where a chatty CLI fills the stderr pipe
+        # buffer (~64KB) and blocks before we can drain it. A future task should
+        # capture stderr in a concurrent background task so error logs are available
+        # without risking the deadlock.
         proc = await asyncio.create_subprocess_exec(
             *full_args,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
             env=env,
         )
-        proc.stdin.write(prompt.encode("utf-8"))
-        await proc.stdin.drain()
-        proc.stdin.close()
+        try:
+            proc.stdin.write(prompt.encode("utf-8"))
+            await proc.stdin.drain()
+            proc.stdin.close()
+        except (ConnectionResetError, BrokenPipeError) as exc:
+            await self._cleanup(proc)
+            self._breaker.record_failure()
+            raise CLIBackendError(
+                f"claude CLI stdin closed before prompt delivered: {exc}"
+            ) from exc
         return proc
 
     def _build_env(self) -> dict[str, str]:
@@ -156,10 +172,18 @@ class CLIBackend:
                 yield event
 
     async def _build_seeded_prompt(self, session: Session, new_user_message: str) -> str:
+        """Format the full message history as a fallback prompt.
+
+        WARNING: this is a lossy, injection-prone representation used only when
+        CLI --resume fails and we need to re-seed a fresh CLI session from
+        Django's durable history. It drops tool_use / tool_result blocks and
+        escapes any user text that looks like a turn boundary. Not a
+        substitute for native conversation replay.
+        """
         @sync_to_async
         def _load_history():
             return list(
-                Message.objects.filter(session=session)
+                Message.objects.filter(session=session, role__in=("user", "assistant"))
                 .order_by("turn_index")
                 .values("role", "plaintext")
             )
@@ -167,8 +191,9 @@ class CLIBackend:
         history = await _load_history()
         lines = []
         for row in history:
-            role = row["role"].capitalize()
-            lines.append(f"{role}: {row['plaintext']}")
+            role_label = "User" if row["role"] == "user" else "Assistant"
+            safe_text = _escape_turn_boundaries(row["plaintext"] or "")
+            lines.append(f"{role_label}: {safe_text}")
         lines.append(f"User: {new_user_message}")
         return "\n\n".join(lines)
 
@@ -181,15 +206,44 @@ class CLIBackend:
         await _save()
 
     async def _cleanup(self, proc) -> None:
-        """Terminate the subprocess if it's still running. SIGTERM → SIGKILL."""
+        """Terminate the subprocess if it's still running.
+
+        Runs the SIGTERM → SIGKILL escalation under asyncio.shield so that a
+        client-disconnect-triggered cancellation of the enclosing view cannot
+        interrupt the cleanup mid-flight and leak the subprocess.
+        """
         if proc.returncode is not None:
             return
         try:
             proc.terminate()
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=self._terminate_grace)
-            except TimeoutError:
-                proc.kill()
-                await proc.wait()
         except ProcessLookupError:
-            pass
+            return
+
+        try:
+            await asyncio.shield(
+                asyncio.wait_for(proc.wait(), timeout=self._terminate_grace)
+            )
+        except (TimeoutError, asyncio.CancelledError):
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                return
+            with contextlib.suppress(asyncio.CancelledError, ProcessLookupError):
+                await asyncio.shield(proc.wait())
+
+
+def _escape_turn_boundaries(text: str) -> str:
+    """Prevent user text from forging `User:` / `Assistant:` turn markers.
+
+    Any line in the user's plaintext that begins with one of those tokens
+    gets a zero-width space prefix so the CLI won't parse it as a turn.
+    """
+    lines = text.splitlines()
+    escaped = []
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith(("User:", "Assistant:")):
+            escaped.append("\u200b" + line)
+        else:
+            escaped.append(line)
+    return "\n".join(escaped)
