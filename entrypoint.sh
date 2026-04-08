@@ -1,6 +1,17 @@
 #!/bin/bash
 set -e
 
+# Ensure the persistent CLI state directory exists
+ACE_CLAUDE_DIR="${ACE_CLAUDE_HOME:-/var/lib/ace-claude}"
+mkdir -p "$ACE_CLAUDE_DIR/.claude"
+
+# Symlink ~/.claude into the persistent directory so the CLI's session store
+# survives container restarts.
+if [ ! -L "$HOME/.claude" ]; then
+  rm -rf "$HOME/.claude" 2>/dev/null || true
+  ln -s "$ACE_CLAUDE_DIR/.claude" "$HOME/.claude"
+fi
+
 # Bootstrap Claude CLI auth from Secret Manager if available.
 # In Plan 1A this is a no-op; the actual token loading lands in Plan 1B
 # when the CLIBackend is implemented.

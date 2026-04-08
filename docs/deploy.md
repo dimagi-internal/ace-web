@@ -98,3 +98,48 @@ Then open `${URL}/` in a browser; you should see Google SSO and then the React s
   `channels-redis` and provision a Memorystore Redis instance.
 - The `CLAUDE_CODE_OAUTH_TOKEN` from Claude Code CLI subscription auth will
   land in Plan 1B; this plan has no dependency on it.
+
+## Filestore (persistent CLI state)
+
+ace-web mounts a Filestore (NFS) volume at `/var/lib/ace-claude` on Cloud Run
+to persist the OAuth token and the Claude CLI's `~/.claude` session store
+across instance restarts. Without it, every cold start would require the
+CLIBackend to fall back to its Django-replay path.
+
+### One-time provisioning
+
+```bash
+# Create a VPC network if you don't have one
+gcloud compute networks create ace-web --subnet-mode=auto
+
+# Allocate a Filestore instance (~$25/mo minimum)
+gcloud filestore instances create ace-web-claude \
+  --region=us-central1 \
+  --tier=BASIC_HDD \
+  --file-share=name=ace_claude,capacity=1024 \
+  --network=name=ace-web
+
+# Note the IP address — you need it in cloudbuild.yaml
+gcloud filestore instances describe ace-web-claude --region=us-central1 \
+  --format='value(networks.ipAddresses[0])'
+
+# Create the VPC connector that Cloud Run uses to reach Filestore
+gcloud compute networks vpc-access connectors create ace-web-connector \
+  --region=us-central1 \
+  --network=ace-web \
+  --range=10.8.0.0/28
+```
+
+Then update `cloudbuild.yaml` substitutions `_FILESTORE_IP`, `_FILESTORE_SHARE`,
+and `_VPC_CONNECTOR` to match.
+
+### Why Filestore (and not GCS Fuse)
+
+Filestore gives the CLI POSIX semantics that the Claude CLI's session store
+relies on. GCS Fuse is cheaper but its sync and locking semantics are not
+guaranteed to match a real POSIX filesystem, and the CLI was not designed
+against it.
+
+If Filestore cost is a problem, the CLIBackend's hybrid resume strategy is
+the safety net — drop the Filestore mount, accept that every cold start
+rehydrates from Django history, and document the trade-off.
