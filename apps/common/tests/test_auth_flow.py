@@ -68,3 +68,14 @@ def test_start_then_cancel_cleans_up():
                     auth_flow.start()
             finally:
                 auth_flow.cancel()
+
+
+def test_token_loader_loads_at_boot(tmp_path, monkeypatch):
+    from apps.common import token_loader
+    token_file = tmp_path / "oauth-token"
+    token_file.write_text("sk-ant-oat01-boot")
+    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    token_loader.load_at_boot()
+    assert os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") == "sk-ant-oat01-boot"
