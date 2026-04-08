@@ -28,7 +28,7 @@ not user-shippable milestones (the team only uses ace-web after Phase 5).
 | Phase | Name                       | Scope                                                                           | Status                                    |
 |-------|----------------------------|---------------------------------------------------------------------------------|-------------------------------------------|
 | 1     | Foundation                 | Django + Channels + React skeleton, data model, IAP, GCP                        | **Done** — merged in jjackson/ace-web#1   |
-| 2     | Conversation engine        | ChatBackend, CLIBackend, CLI auth (PTY), SSE streaming, REST + chat UI, recents | **Next**                                  |
+| 2     | Conversation engine        | ChatBackend, CLIBackend, CLI auth (PTY), SSE streaming, REST + chat UI, recents | **Done**                                  |
 | 3     | Multi-player collaboration | WebSocket consumer, channels-redis, ASGI auth, drafts, presence                 | Pending                                   |
 | 4     | Library and ingest         | Session list, search/filter, share tokens, `ace upload` CLI                     | Pending                                   |
 | 5     | Polish                     | Observability, evals, accessibility, security review, demo prep, full docs     | Pending                                   |
@@ -99,6 +99,10 @@ Auth & identity:
 API conventions:
 - [api-envelope-convention](docs/learnings/api-envelope-convention.md) — every JSON response wraps in `{data, error}`; no bare payloads, no DRF default errors.
 
+Conversation engine (Phase 2):
+- [cli-stream-json-format](docs/learnings/cli-stream-json-format.md) — Claude CLI stream-json event shapes captured as fixtures; recapture if the CLI is upgraded.
+- [sse-django-async](docs/learnings/sse-django-async.md) — `Cache-Control`/`X-Accel-Buffering` headers, `sync_to_async` ORM access, async cleanup with `asyncio.shield`, and concurrent-write serialization with `select_for_update` are mandatory for SSE views.
+
 For the full Phase 1 post-execution fix list (25 items including settings hardening,
 Dockerfile slimming, SPA catch-all, slug retries, setuptools layout), see the
 `## Post-execution corrections` section of `docs/plans/2026-04-07-1a-foundation.md`.
@@ -116,8 +120,6 @@ Dockerfile slimming, SPA catch-all, slug retries, setuptools layout), see the
 
 ## What does NOT ship yet
 
-- No `ChatBackend` interface, no Claude CLI integration, no chat REST API or UI — Phase 2.
-- No `CLAUDE_CODE_OAUTH_TOKEN` handling, no in-app PTY auth flow — Phase 2.
 - No WebSocket consumer, no drafts, no presence, no channels-redis — Phase 3.
 - No session list, share tokens, or `ace upload` CLI — Phase 4.
 - No observability, no eval harness, no security review — Phase 5.
