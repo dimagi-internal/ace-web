@@ -141,6 +141,7 @@ async def _generate(message: Message) -> AsyncIterator[bytes]:
 
             elif event.type is StreamEventType.DONE:
                 await sync_to_async(_mark_complete)(message, "".join(accumulated))
+                asyncio.create_task(_maybe_auto_title(message.session))
                 return
 
             elif event.type is StreamEventType.ERROR:
@@ -149,6 +150,7 @@ async def _generate(message: Message) -> AsyncIterator[bytes]:
 
         # Fix I2: loop exited cleanly without DONE/ERROR — mark complete with what we have
         await sync_to_async(_mark_complete)(message, "".join(accumulated))
+        asyncio.create_task(_maybe_auto_title(message.session))
 
     except CLIBackendError as exc:
         logger.exception("CLIBackend failed during stream")
@@ -166,6 +168,16 @@ async def _generate(message: Message) -> AsyncIterator[bytes]:
                 )
             )
         raise
+
+
+async def _maybe_auto_title(session: Session) -> None:
+    """Fire-and-forget auto-title call. Wraps generate_title_for_session in
+    a task-safe shell so any exception is swallowed."""
+    from .auto_title import generate_title_for_session
+    try:
+        await generate_title_for_session(session)
+    except Exception:
+        logger.exception("Auto-title task failed for session %s", session.slug)
 
 
 # ────────────────────────────── helpers ──────────────────────────────

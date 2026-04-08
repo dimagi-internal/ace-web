@@ -59,20 +59,25 @@ class CLIBackend:
         *,
         session: Session,
         new_user_message: str,
+        force_fresh_session: bool = False,
     ) -> AsyncIterator[StreamEvent]:
         """Stream one assistant turn.
 
         Yields events as they arrive. On consumer cancellation (break out of
         the async for), Python calls aclose() which triggers the finally
         blocks below, terminating the subprocess cleanly.
+
+        When force_fresh_session=True, the resume path is skipped entirely and
+        the returned CLI session id is NOT persisted on Session.cli_session_id.
+        This is used by the auto-titler to avoid polluting conversation history.
         """
         try:
             self._breaker.check()
         except CircuitOpenError as exc:
             raise CLIBackendError(str(exc)) from exc
 
-        # ── attempt 1: resume if we have a CLI session id ──
-        if session.cli_session_id:
+        # ── attempt 1: resume if we have a CLI session id AND resume is allowed ──
+        if session.cli_session_id and not force_fresh_session:
             proc = await self._spawn(
                 args=["--resume", session.cli_session_id],
                 prompt=new_user_message,
@@ -108,7 +113,7 @@ class CLIBackend:
             async for event in self._drain(proc):
                 had_events = True
                 yield event
-                if event.type is StreamEventType.SESSION_ID and event.session_id:
+                if event.type is StreamEventType.SESSION_ID and event.session_id and not force_fresh_session:
                     await self._persist_session_id(session, event.session_id)
             await proc.wait()
         finally:
