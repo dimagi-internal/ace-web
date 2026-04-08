@@ -1,12 +1,5 @@
 """Pytest settings: in-memory SQLite + fast hashers."""
-import os
-
 from .base import *  # noqa: F401, F403
-
-# Allow synchronous ORM calls from async test functions (pytest-asyncio tests
-# use sync ORM helpers like session.save() / session.refresh_from_db() in the
-# test body; the async safety guard would otherwise reject those calls).
-os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "1")
 
 DEBUG = False
 DATABASES = {
