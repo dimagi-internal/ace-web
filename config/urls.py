@@ -5,6 +5,7 @@ from django.views.generic import TemplateView
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("apps.common.urls")),
+    path("api/", include("apps.sessions.urls")),
     # SPA catch-all: any non-api/non-admin/non-static/non-assets path serves
     # the React index.html. React Router handles client-side routing from
     # there. `/assets/` is excluded explicitly so that a misconfigured Vite
