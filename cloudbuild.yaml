@@ -4,14 +4,17 @@ steps:
     args:
       - build
       - -t
-      - ${_IMAGE_URI}
+      - us-central1-docker.pkg.dev/$PROJECT_ID/ace-web/app:$BUILD_ID
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/ace-web/app:latest
       - .
 
   # Push to Artifact Registry
   - name: gcr.io/cloud-builders/docker
     args:
       - push
-      - ${_IMAGE_URI}
+      - --all-tags
+      - us-central1-docker.pkg.dev/$PROJECT_ID/ace-web/app
 
   # Deploy to Cloud Run
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -20,13 +23,13 @@ steps:
       - run
       - deploy
       - ${_SERVICE_NAME}
-      - --image=${_IMAGE_URI}
+      - --image=us-central1-docker.pkg.dev/$PROJECT_ID/ace-web/app:$BUILD_ID
       - --region=${_REGION}
       - --platform=managed
-      - --add-cloudsql-instances=${_CLOUD_SQL_CONNECTION_NAME}
+      - --add-cloudsql-instances=$PROJECT_ID:us-central1:ace-web-db
       - --set-env-vars=DJANGO_SETTINGS_MODULE=config.settings.production
       - --set-env-vars=DJANGO_ALLOWED_HOSTS=${_ALLOWED_HOSTS}
-      - --set-env-vars=CLOUD_SQL_CONNECTION_NAME=${_CLOUD_SQL_CONNECTION_NAME}
+      - --set-env-vars=CLOUD_SQL_CONNECTION_NAME=$PROJECT_ID:us-central1:ace-web-db
       - --set-env-vars=ACE_IAP_REQUIRED=True
       - --set-secrets=DJANGO_SECRET_KEY=ace-web-django-secret:latest
       - --set-secrets=DATABASE_URL=ace-web-database-url:latest
@@ -39,9 +42,7 @@ steps:
 substitutions:
   _SERVICE_NAME: ace-web
   _REGION: us-central1
-  _IMAGE_URI: us-central1-docker.pkg.dev/${PROJECT_ID}/ace-web/app:${SHORT_SHA}
-  _CLOUD_SQL_CONNECTION_NAME: ${PROJECT_ID}:us-central1:ace-web-db
-  _ALLOWED_HOSTS: ace-web-xxxxx-uc.a.run.app
+  _ALLOWED_HOSTS: ace-web-hhhi4yut3q-uc.a.run.app
 
 options:
   logging: CLOUD_LOGGING_ONLY
