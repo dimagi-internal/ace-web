@@ -97,6 +97,8 @@ def send_message(request: Request, slug: str) -> Response:
         )
 
     with transaction.atomic():
+        # Lock the session row to serialize concurrent sends on the same session
+        session = Session.objects.select_for_update().get(pk=session.pk)
         last_turn = (
             Message.objects.filter(session=session)
             .order_by("-turn_index")

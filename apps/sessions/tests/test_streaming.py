@@ -117,3 +117,57 @@ def test_tool_use_event_creates_message_row(client_authenticated_for, session, a
         session=session, role__in=["tool_use", "tool_result"]
     )
     assert tool_messages.count() == 2
+
+
+def test_load_last_user_text_picks_correct_turn(client_authenticated_for, session):
+    """C1 regression: _load_last_user_text must pick the user message that
+    immediately precedes the assistant placeholder, not the most recent one
+    in the whole session."""
+    # Turn 1: user
+    Message.objects.create(
+        session=session, turn_index=1, role="user",
+        content={"text": "first question"}, plaintext="first question",
+        status="complete",
+    )
+    # Turn 2: assistant placeholder (this is what we're streaming)
+    asst = Message.objects.create(
+        session=session, turn_index=2, role="assistant",
+        content={"text": ""}, plaintext="", status="pending",
+    )
+    # Turn 3: a newer user message (from a race / double-send)
+    Message.objects.create(
+        session=session, turn_index=3, role="user",
+        content={"text": "second question"}, plaintext="second question",
+        status="complete",
+    )
+
+    # _load_last_user_text should return "first question", not "second question"
+    from apps.sessions.streaming import _load_last_user_text
+    assert _load_last_user_text(asst) == "first question"
+
+
+def test_reconnect_to_streaming_does_not_drive_backend_again(
+    client_authenticated_for, session, assistant_message,
+):
+    """C3 regression: hitting /stream on a message that is already in
+    status=streaming must replay + close, NOT start a second backend drive.
+    """
+    assistant_message.status = "streaming"
+    assistant_message.plaintext = "partial response"
+    assistant_message.save()
+
+    from unittest.mock import MagicMock
+    fake_backend = MagicMock()
+    fake_backend.stream_completion = MagicMock(
+        side_effect=AssertionError("backend must not be called on reconnect-to-streaming")
+    )
+
+    client = client_authenticated_for(session.owner)
+    with patch("apps.sessions.streaming._get_backend", return_value=fake_backend):
+        resp = client.get(f"/api/messages/{assistant_message.id}/stream")
+        body = _consume(resp.streaming_content)
+
+    assert "event: delta" in body
+    assert "partial response" in body
+    assert "event: done" in body
+    fake_backend.stream_completion.assert_not_called()
