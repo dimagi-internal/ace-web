@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"sess_abc123","cwd":"/tmp","tools":["Read","Edit","Bash"]}
+{"type":"assistant","message":{"id":"msg_01","content":[{"type":"text","text":"Hello"}]}}
+{"type":"assistant","message":{"id":"msg_01","content":[{"type":"text","text":" there"}]}}
+{"type":"result","subtype":"success","duration_ms":1234,"num_turns":1}
