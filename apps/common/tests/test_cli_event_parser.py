@@ -77,3 +77,41 @@ def test_unknown_event_type_is_skipped():
     events = list(parse_stream_json_lines(lines))
     assert len(events) == 1
     assert events[0].type is StreamEventType.DONE
+
+
+def test_assistant_with_empty_content_is_skipped():
+    events = list(parse_stream_json_lines(['{"type":"assistant","message":{"content":[]}}']))
+    assert events == []
+
+
+def test_assistant_with_missing_message_key_is_skipped():
+    events = list(parse_stream_json_lines(['{"type":"assistant"}']))
+    assert events == []
+
+
+def test_assistant_with_multiple_blocks_yields_each():
+    """A real Claude CLI assistant frame can contain multiple blocks in one
+    content array (e.g., text followed by tool_use). The parser must yield
+    one StreamEvent per block, not just the first."""
+    lines = [
+        '{"type":"assistant","message":{"content":['
+        '{"type":"text","text":"Let me check"},'
+        '{"type":"tool_use","id":"toolu_99","name":"Bash","input":{"command":"ls"}}'
+        ']}}'
+    ]
+    events = list(parse_stream_json_lines(lines))
+    assert len(events) == 2
+    assert events[0].type is StreamEventType.DELTA
+    assert events[0].text == "Let me check"
+    assert events[1].type is StreamEventType.TOOL_USE
+    assert events[1].tool_block["name"] == "Bash"
+
+
+def test_unknown_result_subtype_is_treated_as_success_with_warning(caplog):
+    import logging
+    caplog.set_level(logging.WARNING)
+    lines = ['{"type":"result","subtype":"canceled_by_user","duration_ms":100}']
+    events = list(parse_stream_json_lines(lines))
+    assert len(events) == 1
+    assert events[0].type is StreamEventType.DONE
+    assert any("unknown result subtype" in r.message.lower() for r in caplog.records)

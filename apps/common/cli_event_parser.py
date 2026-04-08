@@ -34,59 +34,55 @@ def parse_stream_json_lines(lines: Iterable[str]) -> Iterator[StreamEvent]:
             logger.warning("Invalid JSON line in stream-json output: %r", line[:200])
             continue
 
-        event = _convert(payload)
-        if event is not None:
-            yield event
+        yield from _convert(payload)
 
 
-def _convert(payload: dict[str, Any]) -> StreamEvent | None:
-    """Convert a single parsed JSON payload to a StreamEvent, or None to skip."""
+def _convert(payload: dict[str, Any]) -> Iterator[StreamEvent]:
+    """Convert a single parsed JSON payload to zero or more StreamEvents."""
     kind = payload.get("type")
 
     if kind == "system" and payload.get("subtype") == "init":
         session_id = payload.get("session_id")
         if session_id:
-            return StreamEvent.for_session_id(session_id=session_id)
-        return None
+            yield StreamEvent.for_session_id(session_id=session_id)
+        return
 
     if kind == "assistant":
-        return _convert_assistant(payload)
+        yield from _convert_assistant(payload)
+        return
 
     if kind == "user":
         # `user` messages in stream-json carry tool_result blocks
-        return _convert_tool_result(payload)
+        yield from _convert_tool_result(payload)
+        return
 
     if kind == "result":
         subtype = payload.get("subtype", "")
-        if subtype == "success":
-            return StreamEvent.done()
         if subtype.startswith("error"):
-            return StreamEvent.for_error(message=subtype)
-        return StreamEvent.for_error(message=f"unknown result subtype: {subtype}")
+            yield StreamEvent.for_error(message=subtype)
+            return
+        if subtype != "success":
+            logger.warning("Unknown result subtype, treating as success: %r", subtype)
+        yield StreamEvent.done()
+        return
 
-    # Unknown event types — log once but don't crash
+    # Unknown event types — log once but don't yield
     logger.debug("Skipping unknown stream-json event type: %r", kind)
-    return None
 
 
-def _convert_assistant(payload: dict[str, Any]) -> StreamEvent | None:
+def _convert_assistant(payload: dict[str, Any]) -> Iterator[StreamEvent]:
     blocks = payload.get("message", {}).get("content", [])
-    if not blocks:
-        return None
-    block = blocks[0]
-    block_type = block.get("type")
-    if block_type == "text":
-        return StreamEvent.delta(text=block.get("text", ""))
-    if block_type == "tool_use":
-        return StreamEvent.tool_use(block=block)
-    return None
+    for block in blocks:
+        block_type = block.get("type")
+        if block_type == "text":
+            yield StreamEvent.delta(text=block.get("text", ""))
+        elif block_type == "tool_use":
+            yield StreamEvent.tool_use(block=block)
+        # Unknown block types are skipped silently
 
 
-def _convert_tool_result(payload: dict[str, Any]) -> StreamEvent | None:
+def _convert_tool_result(payload: dict[str, Any]) -> Iterator[StreamEvent]:
     blocks = payload.get("message", {}).get("content", [])
-    if not blocks:
-        return None
-    block = blocks[0]
-    if block.get("type") == "tool_result":
-        return StreamEvent.tool_result(block=block)
-    return None
+    for block in blocks:
+        if block.get("type") == "tool_result":
+            yield StreamEvent.tool_result(block=block)
