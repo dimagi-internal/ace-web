@@ -209,13 +209,13 @@ fine for ASGI workers.
 """
 from __future__ import annotations
 
-import redis.asyncio as redis
+import redis.asyncio
 from django.conf import settings
 
-_client: redis.Redis | None = None
+_client: redis.asyncio.Redis | None = None
 
 
-async def get_redis() -> redis.Redis:
+async def get_redis() -> redis.asyncio.Redis:
     global _client
     if _client is None:
         _client = redis.asyncio.from_url(
