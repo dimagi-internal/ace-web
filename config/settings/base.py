@@ -164,6 +164,14 @@ ACE_DRIVE_ROOT_FOLDER_ID = env(
     default="1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz",
 )
 
+# --- Google Drive service account ---
+# SA JSON key for the shared ACE Drive (read/write on the Shared Drive
+# the SA has been granted access to). The whole JSON blob lives as a
+# single string — parsed by apps.opps.drive_client.get_drive_client at
+# first use. Sourced from AWS Secrets Manager in prod, .env in dev.
+# Empty default: opps views return a 500 with code="drive-not-configured".
+ACE_DRIVE_SA_KEY_JSON = env("ACE_DRIVE_SA_KEY_JSON", default="")
+
 # --- Logging ---
 LOGGING = {
     "version": 1,

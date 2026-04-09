@@ -13,8 +13,13 @@ are not ported because the ace-web Workbench never writes to Drive.
 from __future__ import annotations
 
 import base64
+import functools
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+
+from django.conf import settings
+from google.oauth2 import service_account
 
 
 @dataclass
@@ -150,3 +155,42 @@ class GoogleDriveClient(DriveClient):
                     encoding="base64",
                 )
         return FileContent(content=content, content_type=mime_type)
+
+
+class DriveServiceAccountNotConfigured(RuntimeError):
+    """Raised when ACE_DRIVE_SA_KEY_JSON is empty or unparseable.
+
+    Bubbles up to the view layer, which converts it to a 500 response with
+    error code "drive-not-configured". This is a deploy-config failure, not
+    a user-recoverable state — there is no reconnect URL.
+    """
+
+
+@functools.cache
+def get_drive_client() -> GoogleDriveClient:
+    """Return the shared service-account-backed Drive client.
+
+    Reads the SA key JSON from settings.ACE_DRIVE_SA_KEY_JSON at first
+    call, constructs credentials scoped to the full 'drive' scope, and
+    caches the resulting client for the lifetime of the worker process.
+    Service account credentials do not mutate per-request (unlike OAuth
+    access tokens), so a module-level cache is safe.
+
+    Tests that patch ACE_DRIVE_SA_KEY_JSON must call
+    get_drive_client.cache_clear() to force a rebuild.
+    """
+    raw = settings.ACE_DRIVE_SA_KEY_JSON
+    if not raw:
+        raise DriveServiceAccountNotConfigured(
+            "ACE_DRIVE_SA_KEY_JSON is not set"
+        )
+    try:
+        info = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise DriveServiceAccountNotConfigured(
+            f"ACE_DRIVE_SA_KEY_JSON is not valid JSON: {exc}"
+        ) from exc
+    credentials = service_account.Credentials.from_service_account_info(
+        info, scopes=["https://www.googleapis.com/auth/drive"],
+    )
+    return GoogleDriveClient(credentials)
