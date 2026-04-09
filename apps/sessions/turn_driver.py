@@ -137,6 +137,19 @@ async def drive_assistant_turn(
                 if stop_event.is_set():
                     break
 
+                # BEFORE yielding, persist tool rows so any consumer that
+                # reads the DB (e.g. consumer._broadcast_stream_event for a
+                # broadcast that needs the new row's id) sees the row
+                # already in place.
+                if event.type is StreamEventType.TOOL_USE:
+                    await sync_to_async(_create_tool_message)(
+                        message.session, event.tool_block, role="tool_use"
+                    )
+                elif event.type is StreamEventType.TOOL_RESULT:
+                    await sync_to_async(_create_tool_message)(
+                        message.session, event.tool_block, role="tool_result"
+                    )
+
                 yield event
 
                 if event.type is StreamEventType.DELTA and event.text:
@@ -147,16 +160,6 @@ async def drive_assistant_turn(
                             message, "".join(accumulated)
                         )
                         last_db_write = now
-
-                elif event.type is StreamEventType.TOOL_USE:
-                    await sync_to_async(_create_tool_message)(
-                        message.session, event.tool_block, role="tool_use"
-                    )
-
-                elif event.type is StreamEventType.TOOL_RESULT:
-                    await sync_to_async(_create_tool_message)(
-                        message.session, event.tool_block, role="tool_result"
-                    )
 
                 elif event.type is StreamEventType.DONE:
                     await sync_to_async(_mark_complete)(

@@ -26,8 +26,8 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.db.models import Prefetch
 
+from apps.common import redis_client
 from apps.common.chat_backend import StreamEvent, StreamEventType
-from apps.common.redis_client import get_redis
 
 from . import drafts, presence, turn_driver
 from .models import Draft, Message, Session, SessionParticipant
@@ -381,7 +381,7 @@ async def _handle_chat_stop(consumer: SessionConsumer, data: dict):
     if not isinstance(message_id, int):
         await consumer._error("bad_request", "chat.stop requires message_id")
         return
-    r = await get_redis()
+    r = await redis_client.get_redis()
     await r.set(f"turn.stop:{message_id}", "1", ex=60)
 
 
@@ -395,7 +395,7 @@ async def _run_turn_driver(consumer: SessionConsumer, assistant_message_id: int)
     stop_event = asyncio.Event()
 
     async def watch_stop():
-        r = await get_redis()
+        r = await redis_client.get_redis()
         while not stop_event.is_set():
             value = await r.get(f"turn.stop:{assistant_message_id}")
             if value is not None:
@@ -452,7 +452,7 @@ async def _run_turn_driver(consumer: SessionConsumer, assistant_message_id: int)
     finally:
         stop_event.set()
         watcher.cancel()
-        r = await get_redis()
+        r = await redis_client.get_redis()
         await r.delete(f"turn.stop:{assistant_message_id}")
 
 
@@ -522,10 +522,10 @@ def _load_session(slug: str) -> Session | None:
 
 def _sync_build_state(slug: str, user) -> dict:
     session = Session.objects.prefetch_related(
-        Prefetch("messages"),
+        Prefetch("messages", queryset=Message.objects.order_by("turn_index")),
         Prefetch("participants__user"),
     ).get(slug=slug)
-    messages = list(session.messages.all().order_by("turn_index"))
+    messages = list(session.messages.all())
     participants = list(session.participants.all())
     # Eagerly create the active draft on connect so the client never has
     # to handle a null active_draft and the first keystroke does not race
