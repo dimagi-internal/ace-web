@@ -1,4 +1,5 @@
 """REST API views for the ACE opportunity Workbench."""
+from django.conf import settings
 from django.db import transaction
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
@@ -30,23 +31,20 @@ def health(request):
 
 
 def _resolve_ace_root_folder_id(client: DriveClient) -> str | None:
-    """Find the ACE root folder by name.
+    """Return the Drive folder id of the shared ACE root folder.
 
-    We search for a folder named `settings.ACE_DRIVE_ROOT_FOLDER_NAME` that
-    the user has access to. If multiple matches exist, return the first one
-    — this rarely happens in practice and can be overridden via a pinned
-    folder id in settings later.
+    Reads from `settings.ACE_DRIVE_ROOT_FOLDER_ID`, which is pinned in
+    environment config (defaulted to the shared ACE folder the team already
+    uses). The `client` argument is currently unused but retained so a
+    future name-based fallback can live alongside this id-pinned path
+    (e.g. walking top-level folders via `client.list_files` when the
+    pinned id is empty).
 
-    Returns None if no such folder exists.
+    Returns None when the setting is empty — callers treat that as
+    "no ACE root configured" and return an empty list / 404 as appropriate.
     """
-    # The DriveClient ABC does not expose a search, only list_files / get_file.
-    # GoogleDriveClient could add a search helper later; for now we walk from
-    # the Drive root by listing top-level files. Tests patch this whole
-    # function to return a known folder id.
-    raise NotImplementedError(
-        "real implementation: add a Drive files.list(q='name=...') helper; "
-        "tests patch this function to return a known folder id"
-    )
+    folder_id = getattr(settings, "ACE_DRIVE_ROOT_FOLDER_ID", "") or ""
+    return folder_id or None
 
 
 def _require_drive(request):

@@ -154,6 +154,15 @@ ACE_DRIVE_OAUTH_SCOPES = [
 # Top-level Drive folder that holds ACE opportunities. Default matches the
 # ACE plugin convention.
 ACE_DRIVE_ROOT_FOLDER_NAME = env("ACE_DRIVE_ROOT_FOLDER_NAME", default="ACE")
+# Pinned folder id for the ACE root. When set, apps.opps.views resolves the
+# root folder directly from this id instead of doing a name-based lookup.
+# This is the primary mechanism in production; the name-based fallback is
+# reserved for future hypothetical multi-tenant scenarios. Sourced from the
+# shared "ACE" Google Drive folder the team already uses.
+ACE_DRIVE_ROOT_FOLDER_ID = env(
+    "ACE_DRIVE_ROOT_FOLDER_ID",
+    default="1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz",
+)
 
 # --- Logging ---
 LOGGING = {
