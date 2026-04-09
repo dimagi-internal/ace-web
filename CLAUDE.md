@@ -53,7 +53,7 @@ settings, Dockerfile, or the auth/sessions models.
 - **DB**: PostgreSQL (shared AWS RDS `labs-*` instance, database `ace_web`; local Postgres via `docker compose`).
 - **Infra**: AWS ECS Fargate (cluster `labs-jj-cluster`, us-east-1) behind the shared connect-labs ALB (path prefix `/ace/*`). GitHub Actions with OIDC for deploys. AWS Secrets Manager for secrets. ECR for images.
 - **Tests**: pytest + pytest-django + pytest-asyncio, in-memory SQLite for unit tests.
-- **Pattern sources**: `../connect-labs/` (CommCare Connect OAuth pattern), `../scout-jjackson/` (two-container ECS deploy pattern), `../canopy-web/` (CLI backend + PTY auth flow).
+- **Pattern sources**: `../connect-labs/` (CommCare Connect OAuth pattern), `../scout-jjackson/` (two-container ECS deploy pattern), `../canopy-web/` (CLI backend + PTY auth flow), `../connect-search/` (Google Drive OAuth + DriveClient for `apps/opps/`).
 
 ## Project structure
 
@@ -112,6 +112,7 @@ Conversation engine (Phase 2):
 - [sse-django-async](docs/learnings/sse-django-async.md) — `Cache-Control`/`X-Accel-Buffering` headers, `sync_to_async` ORM access, async cleanup with `asyncio.shield`, and concurrent-write serialization with `select_for_update` are mandatory for SSE views.
 
 Deploy & infrastructure:
+- [alb-nginx-django-https](docs/learnings/alb-nginx-django-https.md) — `SECURE_PROXY_SSL_HEADER` + nginx `$real_scheme` map preserve the ALB's `https`, and every `proxy_pass` must rewrite `Host` so ALB health checks don't trip `ALLOWED_HOSTS`. Silent until triggered in real infra.
 - [aws-migration](docs/plans/2026-04-08-aws-migration.md) — completed migration from standalone GCP Cloud Run to AWS ECS Fargate as a connect-labs shared-infrastructure tenant. IAP auth swapped for CommCare Connect OAuth. Filestore dropped in favor of the CLIBackend hybrid-resume Django-replay path. Two-container ECS task (Django + nginx sidecar). Shared RDS, ALB, and (Phase 3) ElastiCache reduce incremental cost to ~$5-15/month.
 
 For the full Phase 1 post-execution fix list (25 items including settings hardening,
@@ -140,8 +141,14 @@ single implicit run, so both formats work during the transition.
 
 **Two OAuth flows:** identity via a hand-rolled CommCare Connect OAuth
 flow with PKCE (`apps/auth/oauth_views.py`, pattern from connect-labs);
-Drive access via a separate Google OAuth grant per-user. See
-`docs/learnings/drive-oauth-two-flow.md`.
+Drive access via a separate Google OAuth grant per-user (pattern from
+`../connect-search/`). See `docs/learnings/drive-oauth-two-flow.md`.
+
+**Root folder config:** `ACE_DRIVE_ROOT_FOLDER_ID` (in `config/settings/base.py`,
+env-overridable) pins the shared ACE Google Drive folder the Workbench reads
+from. Default is the team's shared folder; override in dev/sandbox as needed.
+Without it, `_resolve_ace_root_folder_id` returns `None` and the opp list is
+empty. Set via AWS Secrets Manager in prod.
 
 **Key files:**
 - `apps/opps/sync.py` — Drive-to-payload reader (structured + flat layouts)
