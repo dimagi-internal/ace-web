@@ -119,33 +119,51 @@ def test_get_drive_client_raises_when_setting_is_empty():
             get_drive_client()
 
 
+def test_get_drive_client_raises_on_malformed_json():
+    with override_settings(ACE_DRIVE_SA_KEY_JSON="{not json"):
+        with pytest.raises(DriveServiceAccountNotConfigured, match="not valid JSON"):
+            get_drive_client()
+
+
 def test_get_drive_client_constructs_credentials_and_client():
     fake_creds = MagicMock(name="fake-creds")
-    with override_settings(ACE_DRIVE_SA_KEY_JSON=_fake_sa_key_json()), \
-         patch(
-             "apps.opps.drive_client.service_account.Credentials.from_service_account_info",
-             return_value=fake_creds,
-         ) as mk_from_info, \
-         patch.object(GoogleDriveClient, "__init__", return_value=None) as mk_init:
+    fake_service = MagicMock(name="fake-service")
+    with (
+        override_settings(ACE_DRIVE_SA_KEY_JSON=_fake_sa_key_json()),
+        patch(
+            "apps.opps.drive_client.service_account.Credentials.from_service_account_info",
+            return_value=fake_creds,
+        ) as mk_from_info,
+        patch("googleapiclient.discovery.build", return_value=fake_service) as mk_build,
+    ):
         client = get_drive_client()
 
     assert isinstance(client, GoogleDriveClient)
+    assert client._service is fake_service
+
+    # Credentials constructor got the parsed JSON + the full drive scope.
     mk_from_info.assert_called_once()
     args, kwargs = mk_from_info.call_args
     assert args[0]["type"] == "service_account"
     assert args[0]["client_email"] == "ace-web@example.iam.gserviceaccount.com"
     assert kwargs["scopes"] == ["https://www.googleapis.com/auth/drive"]
-    mk_init.assert_called_once_with(fake_creds)
+
+    # The Google Drive discovery build got the right API name, version, and flags.
+    mk_build.assert_called_once_with(
+        "drive", "v3", credentials=fake_creds, cache_discovery=False,
+    )
 
 
 def test_get_drive_client_caches_client():
     fake_creds = MagicMock(name="fake-creds")
-    with override_settings(ACE_DRIVE_SA_KEY_JSON=_fake_sa_key_json()), \
-         patch(
-             "apps.opps.drive_client.service_account.Credentials.from_service_account_info",
-             return_value=fake_creds,
-         ) as mk_from_info, \
-         patch.object(GoogleDriveClient, "__init__", return_value=None):
+    with (
+        override_settings(ACE_DRIVE_SA_KEY_JSON=_fake_sa_key_json()),
+        patch(
+            "apps.opps.drive_client.service_account.Credentials.from_service_account_info",
+            return_value=fake_creds,
+        ) as mk_from_info,
+        patch("googleapiclient.discovery.build", return_value=MagicMock()),
+    ):
         first = get_drive_client()
         second = get_drive_client()
 
