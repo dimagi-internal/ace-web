@@ -130,3 +130,128 @@ class FakeDriveClient(DriveClient):
         if node.body is None:
             raise ValueError(f"{node.name} is a folder, not a file")
         return FileContent(content=node.body, content_type=node.mime_type)
+
+
+# --- Realistic fixture builders ---
+
+MALARIA_PILOT_IDD = """# Malaria Pilot IDD
+
+Reduce malaria infant mortality in northern Mozambique via monthly
+FLW-administered RDT screening and referral.
+"""
+
+
+def _step_yaml(skill: str, phase: str, ordinal: int, status: str = "complete") -> str:
+    return f"""skill_name: {skill}
+phase: {phase}
+ordinal: {ordinal}
+status: {status}
+started_at: 2026-04-06T10:00:00Z
+completed_at: 2026-04-06T10:05:00Z
+"""
+
+
+def _judge_yaml(score: float, rationale: str = "solid") -> str:
+    return f"""score: {score}
+passed: true
+evaluated_at: 2026-04-06T10:05:00Z
+criteria:
+  completeness: {score}
+  specificity: {score}
+rationale: |
+  {rationale}
+"""
+
+
+def malaria_pilot_structured_tree() -> dict:
+    """Two-run structured fixture for malaria-pilot.
+
+    Run 2026-04-01-001: older run, idd-to-learn-app judge 7.1
+    Run 2026-04-06-002: newer run, idd-to-learn-app judge 8.5 (improved)
+    """
+    return {
+        "ACE": {
+            "malaria-pilot": {
+                "opp.yaml": """slug: malaria-pilot
+display_name: Malaria Pilot — Northern Mozambique
+created_at: 2026-03-15T09:00:00Z
+created_by: neal@dimagi.com
+labels:
+  - malaria
+  - mozambique
+current_run_id: 2026-04-06-002
+""",
+                "idd.md": MALARIA_PILOT_IDD,
+                "runs": {
+                    "2026-04-01-001": {
+                        "run.yaml": """run_id: 2026-04-01-001
+mode: review
+status: complete
+started_at: 2026-04-01T10:00:00Z
+completed_at: 2026-04-01T12:00:00Z
+current_phase: closeout
+current_step: cycle-grade
+skill_versions:
+  idea-to-idd: 4f2b8c1
+  idd-to-learn-app: 4f2b8c1
+""",
+                        "events.jsonl": '{"ts":"2026-04-01T10:00:00Z","kind":"run.started"}\n',
+                        "steps": {
+                            "01-idea-to-idd": {
+                                "step.yaml": _step_yaml("idea-to-idd", "app-building", 1),
+                                "judge.yaml": _judge_yaml(7.8, "acceptable"),
+                                "output": {"idd.md": MALARIA_PILOT_IDD},
+                            },
+                            "02-idd-to-learn-app": {
+                                "step.yaml": _step_yaml("idd-to-learn-app", "app-building", 2),
+                                "judge.yaml": _judge_yaml(7.1, "missing some forms"),
+                                "output": {"learn-app-brief.md": "# Learn App Brief\n\n8 forms"},
+                            },
+                        },
+                    },
+                    "2026-04-06-002": {
+                        "run.yaml": """run_id: 2026-04-06-002
+mode: review
+status: running
+started_at: 2026-04-06T10:00:00Z
+current_phase: app-building
+current_step: app-deploy
+skill_versions:
+  idea-to-idd: 4f2b8c1
+  idd-to-learn-app: 4f2b8c1
+  app-deploy: 8a91f22
+""",
+                        "events.jsonl": '{"ts":"2026-04-06T10:00:00Z","kind":"run.started"}\n',
+                        "steps": {
+                            "01-idea-to-idd": {
+                                "step.yaml": _step_yaml("idea-to-idd", "app-building", 1),
+                                "judge.yaml": _judge_yaml(9.2, "comprehensive"),
+                                "output": {"idd.md": MALARIA_PILOT_IDD},
+                            },
+                            "02-idd-to-learn-app": {
+                                "step.yaml": _step_yaml("idd-to-learn-app", "app-building", 2),
+                                "judge.yaml": _judge_yaml(8.5, "better now"),
+                                "output": {"learn-app-brief.md": "# Learn App Brief\n\n12 forms"},
+                            },
+                            "03-idd-to-deliver-app": {
+                                "step.yaml": _step_yaml("idd-to-deliver-app", "app-building", 3),
+                                "judge.yaml": _judge_yaml(8.1),
+                                "output": {"deliver-app-brief.md": "# Deliver App\n\n4 workflows"},
+                            },
+                            "04-app-deploy": {
+                                "step.yaml": _step_yaml(
+                                    "app-deploy", "app-building", 4, status="gate-pending"
+                                ),
+                                "gates.jsonl": (
+                                    '{"ts":"2026-04-06T10:34:00Z","decision":"pending"}\n'
+                                ),
+                                "output": {
+                                    "deploy-summary.md": "2 apps packaged\nawaiting publish"
+                                },
+                            },
+                        },
+                    },
+                },
+            }
+        }
+    }
