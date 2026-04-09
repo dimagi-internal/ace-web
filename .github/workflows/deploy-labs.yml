@@ -1,17 +1,20 @@
 name: Deploy to Labs (AWS)
 
+# Manual deployment workflow. Assumes the backend and frontend images
+# are already built and pushed to ECR by the auto-triggered
+# build-backend.yml / build-frontend.yml workflows. This workflow just
+# waits for any in-progress builds, runs migrations if requested,
+# registers a new task definition revision from the committed
+# deploy/aws/task-definition.json patched with the current git SHA,
+# and updates the ECS service.
+#
+# If a build is still running when this is triggered, it waits.
+# If no build has ever run, it can still deploy — the images in ECR may
+# be stale (built from an earlier commit), but the deploy itself succeeds.
+
 on:
   workflow_dispatch:
     inputs:
-      deploy_target:
-        description: 'What to deploy (auto detects changes from last deploy)'
-        type: choice
-        options:
-          - auto
-          - all
-          - frontend-only
-          - backend-only
-        default: auto
       run_migrations:
         description: 'Run database migrations before deployment'
         type: boolean
@@ -30,190 +33,93 @@ env:
   ECR_REPO_BACKEND: labs-jj-ace-web
   ECR_REPO_FRONTEND: labs-jj-ace-web-frontend
   TASK_FAMILY: labs-jj-ace-web
-  VITE_BASE_PATH: /ace/
 
 permissions:
   id-token: write
   contents: read
+  actions: read  # needed so `gh run list/watch` can see build workflows
 
 jobs:
-  # ── Detect what changed since the last deploy ──
-  detect:
-    name: Detect changes
+  deploy:
+    name: Deploy to Fargate
     runs-on: ubuntu-latest
-    outputs:
-      backend: ${{ steps.changes.outputs.backend }}
-      frontend: ${{ steps.changes.outputs.frontend }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Configure AWS credentials
-        if: inputs.deploy_target == 'auto'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Determine changed components
-        id: changes
+      - name: Wait for in-progress image builds
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          TARGET="${{ inputs.deploy_target }}"
+          # Wait for any currently-running or queued build workflows to finish
+          # before deploying. This prevents deploying a stale :latest tag while
+          # the next one is still in flight.
+          for WF in "Build Backend Image" "Build Frontend Image"; do
+            RUNNING=$(gh run list \
+              --workflow="$WF" \
+              --status=in_progress \
+              --json databaseId \
+              --jq '.[0].databaseId' 2>/dev/null || true)
+            if [ -n "$RUNNING" ]; then
+              echo "$WF in progress (run $RUNNING), waiting..."
+              gh run watch "$RUNNING" --exit-status
+            fi
+            QUEUED=$(gh run list \
+              --workflow="$WF" \
+              --status=queued \
+              --json databaseId \
+              --jq '.[0].databaseId' 2>/dev/null || true)
+            if [ -n "$QUEUED" ]; then
+              echo "$WF queued (run $QUEUED), waiting..."
+              gh run watch "$QUEUED" --exit-status
+            fi
+          done
 
-          if [ "$TARGET" = "all" ]; then
-            echo "backend=true" >> "$GITHUB_OUTPUT"
-            echo "frontend=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Deploy target: all (forced)"
-            exit 0
-          fi
-
-          if [ "$TARGET" = "frontend-only" ]; then
-            echo "backend=false" >> "$GITHUB_OUTPUT"
-            echo "frontend=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Deploy target: frontend-only (forced)"
-            exit 0
-          fi
-
-          if [ "$TARGET" = "backend-only" ]; then
-            echo "backend=true" >> "$GITHUB_OUTPUT"
-            echo "frontend=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Deploy target: backend-only (forced)"
-            exit 0
-          fi
-
-          # Auto-detect: get last deployed SHA from ECR backend image tag
-          LAST_SHA=$(aws ecr describe-images \
-            --repository-name "${{ env.ECR_REPO_BACKEND }}" \
-            --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags' \
-            --output json 2>/dev/null \
-            | jq -r '.[] | select(. != "latest")' 2>/dev/null || echo "")
-
-          if [ -z "$LAST_SHA" ] || ! git cat-file -e "$LAST_SHA" 2>/dev/null; then
-            echo "::warning::Could not find last deployed SHA, deploying all"
-            echo "backend=true" >> "$GITHUB_OUTPUT"
-            echo "frontend=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "::notice::Comparing $LAST_SHA..HEAD"
-          CHANGED=$(git diff --name-only "$LAST_SHA" HEAD)
-          echo "Changed files:"
-          echo "$CHANGED"
-
-          # Categorize changes
-          BACKEND=false
-          FRONTEND=false
-
-          while IFS= read -r file; do
-            [ -z "$file" ] && continue
-            case "$file" in
-              frontend/*) FRONTEND=true ;;
-              Dockerfile.frontend) FRONTEND=true ;;
-              Dockerfile) BACKEND=true ;;
-              *) BACKEND=true ;;
-            esac
-          done <<< "$CHANGED"
-
-          # If migrations requested, backend must be built
-          if [ "${{ inputs.run_migrations }}" = "true" ]; then
-            BACKEND=true
-          fi
-
-          echo "backend=$BACKEND" >> "$GITHUB_OUTPUT"
-          echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
-          echo "::notice::Auto-detected — backend=$BACKEND frontend=$FRONTEND"
-
-  # ── Build backend image (parallel) ──
-  build-backend:
-    name: Build backend
-    needs: detect
-    if: needs.detect.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push backend image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:latest
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:${{ github.sha }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
-
-  # ── Build frontend image (parallel) ──
-  build-frontend:
-    name: Build frontend
-    needs: detect
-    if: needs.detect.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.frontend
-          push: true
-          build-args: |
-            VITE_BASE_PATH=${{ env.VITE_BASE_PATH }}
-          tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:latest
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:${{ github.sha }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
-
-  # ── Run migrations in a one-off Fargate task ──
-  migrate:
-    name: Run migrations
-    needs: build-backend
-    if: inputs.run_migrations == true
-    runs-on: ubuntu-latest
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Run migrations as one-off FARGATE task
+      - name: Verify both :latest image tags exist in ECR
         run: |
-          TASK_DEF_ARN=$(aws ecs describe-task-definition \
-            --task-definition ${{ env.TASK_FAMILY }} \
+          for REPO in "${{ env.ECR_REPO_BACKEND }}" "${{ env.ECR_REPO_FRONTEND }}"; do
+            EXISTS=$(aws ecr list-images \
+              --repository-name "$REPO" \
+              --query "imageIds[?imageTag=='latest'].imageTag" \
+              --output text 2>&1) || true
+            if [ -z "$EXISTS" ] || [ "$EXISTS" = "None" ]; then
+              echo "::error::$REPO has no :latest tag. Trigger Build Backend/Frontend Image workflow manually first."
+              exit 1
+            fi
+            echo "✓ $REPO:latest found"
+          done
+
+      - name: Register new task definition revision
+        id: register-task
+        run: |
+          # Patch the committed task-definition.json with :latest image URIs.
+          # Using :latest (not :sha) because the build workflows push :latest
+          # on every change — deploy just points the task def at whatever
+          # :latest currently is.
+          jq --arg backend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:latest" \
+             --arg frontend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:latest" \
+             '(.containerDefinitions[] | select(.name=="api") | .image) = $backend |
+              (.containerDefinitions[] | select(.name=="web") | .image) = $frontend' \
+             deploy/aws/task-definition.json > /tmp/task-def.json
+
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/task-def.json \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
+
+          echo "task-def-arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+          echo "::notice::Registered task definition: $NEW_TASK_DEF_ARN"
+
+      - name: Run database migrations
+        if: ${{ inputs.run_migrations == true }}
+        run: |
+          TASK_DEF_ARN="${{ steps.register-task.outputs.task-def-arn }}"
 
           TASK_ARN=$(aws ecs run-task \
             --cluster ${{ env.ECS_CLUSTER }} \
@@ -228,54 +134,25 @@ jobs:
 
           aws ecs wait tasks-stopped \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --tasks $TASK_ARN
+            --tasks "$TASK_ARN"
 
           EXIT_CODE=$(aws ecs describe-tasks \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --tasks $TASK_ARN \
-            --query 'tasks[0].containers[0].exitCode' \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[?name==`api`].exitCode | [0]' \
             --output text)
 
-          if [ "$EXIT_CODE" == "0" ]; then
+          if [ "$EXIT_CODE" = "0" ]; then
             echo "Migrations completed successfully"
           else
-            echo "Migrations failed with exit code: $EXIT_CODE"
+            STOPPED_REASON=$(aws ecs describe-tasks \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --tasks "$TASK_ARN" \
+              --query 'tasks[0].stoppedReason' \
+              --output text)
+            echo "::error::Migrations failed (exit=$EXIT_CODE). Stopped reason: $STOPPED_REASON"
             exit 1
           fi
-
-  # ── Deploy: register new task def revision then update service ──
-  deploy:
-    name: Deploy service
-    needs: [build-backend, build-frontend]
-    if: always() && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Register new task definition revision
-        id: register-task
-        run: |
-          # Patch the committed task-definition.json with the new image SHA tags.
-          jq --arg backend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:${{ github.sha }}" \
-             --arg frontend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:${{ github.sha }}" \
-             '(.containerDefinitions[] | select(.name=="api") | .image) = $backend |
-              (.containerDefinitions[] | select(.name=="web") | .image) = $frontend' \
-             deploy/aws/task-definition.json > /tmp/task-def.json
-
-          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file:///tmp/task-def.json \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-
-          echo "task-def-arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
-          echo "::notice::Registered task definition: $NEW_TASK_DEF_ARN"
 
       - name: Update ECS service
         run: |
@@ -283,7 +160,7 @@ jobs:
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE }} \
             --task-definition ${{ steps.register-task.outputs.task-def-arn }} \
-            --output text
+            --output text > /dev/null
 
       - name: Wait for service to stabilize
         run: |
@@ -295,9 +172,8 @@ jobs:
         run: |
           echo "## Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Component | Result |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|-----------|--------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Backend   | ${{ needs.build-backend.result }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Frontend  | ${{ needs.build-frontend.result }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Migrations| ${{ inputs.run_migrations }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Task def  | ${{ steps.register-task.outputs.task-def-arn }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Task definition | \`${{ steps.register-task.outputs.task-def-arn }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Migrations run   | \`${{ inputs.run_migrations }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Service          | \`${{ env.ECS_SERVICE }}\` |" >> "$GITHUB_STEP_SUMMARY"
