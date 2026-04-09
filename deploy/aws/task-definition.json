@@ -4,8 +4,8 @@
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "512",
   "memory": "1024",
-  "executionRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ace-web-exec",
-  "taskRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ace-web-task",
+  "executionRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ecs-task-execution-role",
+  "taskRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ecs-task-role",
   "containerDefinitions": [
     {
       "name": "api",
@@ -17,15 +17,17 @@
       "environment": [
         {"name": "DJANGO_SETTINGS_MODULE", "value": "config.settings.connectlabs"},
         {"name": "DJANGO_DEBUG", "value": "False"},
-        {"name": "DJANGO_ALLOWED_HOSTS", "value": "labs.connect.dimagi.com"},
+        {"name": "DJANGO_ALLOWED_HOSTS", "value": "labs.connect.dimagi.com,localhost"},
         {"name": "CONNECT_PRODUCTION_URL", "value": "https://connect.dimagi.com"},
-        {"name": "FORCE_SCRIPT_NAME", "value": "/ace"}
+        {"name": "FORCE_SCRIPT_NAME", "value": "/ace"},
+        {"name": "SECURE_SSL_REDIRECT", "value": "False"},
+        {"name": "CSRF_TRUSTED_ORIGINS", "value": "https://labs.connect.dimagi.com"}
       ],
       "secrets": [
-        {"name": "DJANGO_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/django-secret-key"},
-        {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/database-url"},
-        {"name": "CONNECT_OAUTH_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/connect-oauth-client-id"},
-        {"name": "CONNECT_OAUTH_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/connect-oauth-client-secret"}
+        {"name": "DJANGO_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-django-secret-key"},
+        {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-database-url"},
+        {"name": "CONNECT_OAUTH_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-id"},
+        {"name": "CONNECT_OAUTH_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-secret"}
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
