@@ -1,100 +1,161 @@
-# Deploying ace-web to GCP Cloud Run
+# Deploying ace-web to AWS (connect-labs tenant)
 
-This document covers the one-time GCP project setup required before
-`cloudbuild.yaml` will work. After this setup, every push to `main`
-(once a Cloud Build trigger is configured) auto-deploys.
+ace-web is deployed as a tenant service behind the `labs.connect.dimagi.com`
+ALB on AWS ECS Fargate, reusing the shared connect-labs infrastructure
+(RDS, ElastiCache, ALB, VPC). The deployment pattern mirrors
+[scout-jjackson](/Users/jjackson/emdash-projects/scout-jjackson)'s.
 
-## Prerequisites
+## Architecture
 
-- A GCP project with billing enabled
-- `gcloud` CLI installed and authenticated
-- `PROJECT_ID` exported in your shell
+- **Cloud:** AWS account `858923557655`, region `us-east-1`
+- **Compute:** ECS Fargate task in cluster `labs-jj-cluster`
+- **Task layout:** two containers in one task — `api` (Django + uvicorn on
+  port 8000) and `web` (nginx serving the Vite bundle on port 3000,
+  reverse-proxying `/ace/api/*`, `/ace/auth/*`, `/ace/admin/*`,
+  `/ace/static/*` to localhost:8000)
+- **Load balancer:** shared labs ALB with a listener rule routing `/ace/*`
+  to the ace-web target group
+- **Database:** shared RDS Postgres instance, database `ace_web`
+- **Cache/Redis:** shared ElastiCache (used in Phase 3 for channels-redis;
+  idle in Phase 2)
+- **Secrets:** AWS Secrets Manager under the `ace-web/` prefix
+- **Logs:** CloudWatch Logs group `/ecs/labs-jj-ace-web`, 30-day retention
+- **Auth:** CommCare Connect OAuth with PKCE, `@dimagi.com` email filter
+- **Deploy:** GitHub Actions `.github/workflows/deploy-labs.yml` (manual
+  `workflow_dispatch` trigger)
 
-## One-time setup
+## First-time setup
 
-### 1. Enable required APIs
+Run `deploy/aws/one-time-setup.sh` from an AWS-authenticated shell in
+account `858923557655`. It creates:
 
-```bash
-gcloud services enable \
-  run.googleapis.com \
-  cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com \
-  sqladmin.googleapis.com \
-  secretmanager.googleapis.com \
-  iap.googleapis.com
-```
+- ECR repos (`labs-jj-ace-web`, `labs-jj-ace-web-frontend`)
+- CloudWatch log group with 30-day retention
+- Secrets Manager entries (prompts for values)
+- IAM execution and task roles
+- Initial ECS task definition revision (from `deploy/aws/task-definition.json`)
+- ALB target group (health check `/ace/api/health`)
+- ALB listener rule routing `/ace/*`
+- ECS service (desired count 1, rolling deploy)
 
-### 2. Create the Artifact Registry repo
+You will be prompted for:
 
-```bash
-gcloud artifacts repositories create ace-web \
-  --repository-format=docker \
-  --location=us-central1
-```
+| Input | How to get it |
+|---|---|
+| Django secret key | `python -c 'import secrets; print(secrets.token_urlsafe(50))'` |
+| `DATABASE_URL` | Shared RDS endpoint + the new `ace_web` database name |
+| Connect OAuth client id + secret | Register at https://connect.dimagi.com/admin/oauth2_provider/application/ with callback `https://labs.connect.dimagi.com/ace/auth/callback/` |
+| VPC ID | `aws ec2 describe-vpcs --region us-east-1` |
+| ALB listener ARN | `aws elbv2 describe-listeners --load-balancer-arn <labs-alb-arn>` |
+| Subnet IDs | Same subnets scout uses (in `LABS_SUBNET` GitHub secret) |
+| Security group ID | Same SG scout uses (in `LABS_SECURITY_GROUP` GitHub secret) |
 
-### 3. Create the Cloud SQL instance
-
-```bash
-gcloud sql instances create ace-web-db \
-  --database-version=POSTGRES_16 \
-  --tier=db-f1-micro \
-  --region=us-central1
-
-gcloud sql databases create ace_web --instance=ace-web-db
-
-gcloud sql users create ace --instance=ace-web-db --password='REPLACE_ME'
-```
-
-### 4. Store secrets
-
-```bash
-echo -n 'long-random-django-key' | \
-  gcloud secrets create ace-web-django-secret --data-file=-
-
-echo -n 'postgres://ace:REPLACE_ME@/ace_web?host=/cloudsql/PROJECT_ID:us-central1:ace-web-db' | \
-  gcloud secrets create ace-web-database-url --data-file=-
-```
-
-### 5. Initial deploy
+After setup, create the `ace_web` database on the shared RDS instance:
 
 ```bash
-gcloud builds submit --config=cloudbuild.yaml \
-  --substitutions=_ALLOWED_HOSTS=placeholder
+psql "postgresql://<admin>:<pass>@<host>:5432/postgres" -c "CREATE DATABASE ace_web;"
 ```
 
-After the first deploy, note the actual Cloud Run URL and update
-`_ALLOWED_HOSTS` in `cloudbuild.yaml`.
+## Deploy workflow
 
-### 6. Configure IAP
+Triggered manually from GitHub Actions:
 
-1. In the Cloud Console, navigate to **Security → Identity-Aware Proxy**
-2. Find the `ace-web` Cloud Run service
-3. Toggle IAP **on**
-4. Add the team's Google accounts as **IAP-secured Web App User** principals
+1. Go to **Actions → "Deploy to Labs (AWS)" → "Run workflow"**
+2. Select options:
+   - `deploy_target`: `auto` (let change detection decide), `all`,
+     `backend-only`, or `frontend-only`
+   - `run_migrations`: `true` on the first deploy and any schema-changing
+     deploy; `false` otherwise
+3. The workflow:
+   - Authenticates via OIDC using `AWS_ROLE_ARN`
+   - Builds and pushes backend + frontend images to ECR in parallel
+   - Runs `manage.py migrate --noinput` as a one-off FARGATE task (if
+     `run_migrations=true`)
+   - Patches `deploy/aws/task-definition.json` with the new image SHA tags
+     via `jq`, registers a new task definition revision
+   - Calls `ecs update-service --task-definition <new-arn>` to trigger a
+     rolling deploy
+   - Waits for `services-stable`
 
-After IAP is configured, navigating to the service URL prompts a Google login.
-Once logged in as an authorized user, requests reach the app with the
-`X-Goog-Authenticated-User-Email` and `X-Goog-Authenticated-User-ID` headers
-that the `IAPHeaderAuthMiddleware` reads.
-
-## Smoke test
+## Local development
 
 ```bash
-URL=$(gcloud run services describe ace-web --region=us-central1 --format='value(status.url)')
-# All external requests pass through IAP first — need an identity token even
-# for /api/health. The health endpoint is middleware-exempt inside Django,
-# not IAP-exempt at the GCP layer.
-curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" ${URL}/api/health
+docker compose up
 ```
 
-Expected: `{"data": {"status": "ok"}, "error": null}`
+Backend at `http://localhost:8000`. No path prefix locally — `FORCE_SCRIPT_NAME`
+is only set in `config/settings/connectlabs.py`, not in `development.py`.
+The Vite dev server runs separately:
 
-Then open `${URL}/` in a browser; you should see Google SSO and then the React shell.
+```bash
+cd frontend && npm run dev
+```
 
-## Notes
+For prod-parity testing with the full two-container layout (backend + nginx
+sidecar):
 
-- `--min-instances=1, --max-instances=1` — Module 1 runs on a single instance
-  because Channels uses `InMemoryChannelLayer`. Before scaling up, switch to
-  `channels-redis` and provision a Memorystore Redis instance.
-- The `CLAUDE_CODE_OAUTH_TOKEN` from Claude Code CLI subscription auth will
-  land in Plan 1B; this plan has no dependency on it.
+```bash
+docker compose --profile prod-parity up
+```
+
+Then visit `http://localhost:3000/ace/`. This builds and runs the nginx
+container with the real Vite bundle and exercises the same routing as
+production.
+
+## Observability
+
+- **Logs:** CloudWatch `/ecs/labs-jj-ace-web` — separate streams for `api`
+  and `web` containers
+- **Metrics:** ECS service metrics in the AWS console
+- **Alarms:** none yet (Phase 5 adds SLO alarms)
+
+## Rollback
+
+ECS keeps all prior task definition revisions. To roll back:
+
+```bash
+# List revisions
+aws ecs list-task-definitions --family-prefix labs-jj-ace-web --region us-east-1
+
+# Update the service to a previous revision
+aws ecs update-service \
+  --cluster labs-jj-cluster \
+  --service labs-jj-ace-web \
+  --task-definition labs-jj-ace-web:<previous-revision-number> \
+  --region us-east-1
+```
+
+## Cost
+
+Estimated incremental cost: **~$5-15/month** (shared ALB, RDS, ElastiCache,
+VPC amortized across all labs tenants — only the ECS task CPU/memory and
+ECR storage are ace-web-specific).
+
+## Troubleshooting
+
+**503 from the ALB** — target group has no healthy targets. Check
+CloudWatch logs for the `api` container. Usually a `DJANGO_SECRET_KEY` or
+`DATABASE_URL` misconfiguration, or a failed migration.
+
+**Health check failing** — the ALB health check hits `/ace/api/health` via
+the nginx container on port 3000. Verify nginx is proxying correctly
+(reproduce locally with `docker compose --profile prod-parity up`) and
+that the Django `/api/health` endpoint is still reachable without auth.
+
+**OAuth callback loop** — verify the CommCare Connect OAuth application's
+callback URL is exactly `https://labs.connect.dimagi.com/ace/auth/callback/`
+and the `CONNECT_OAUTH_CLIENT_ID` / `CONNECT_OAUTH_CLIENT_SECRET` secrets
+in AWS Secrets Manager match what's in the Connect admin.
+
+**CSRF failures after login** — verify `SESSION_COOKIE_NAME=sessionid_ace`
+and `CSRF_COOKIE_NAME=csrftoken_ace` are active (from
+`config/settings/connectlabs.py`). Collisions with scout's cookies on the
+shared `labs.connect.dimagi.com` domain cause surprising failures.
+
+**Admin POST returns 403** — `CSRF_TRUSTED_ORIGINS` in `connectlabs.py`
+must include `https://labs.connect.dimagi.com`. Without this, any POST
+from the ALB-fronted origin is rejected regardless of the CSRF token.
+
+**Migrations not applied** — the `run_migrations` workflow input must be
+set to `true`. Migrations run as a one-off FARGATE task BEFORE the
+rolling deploy, against the `:latest` image tag (which CI has just pushed).

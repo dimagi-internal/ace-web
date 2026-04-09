@@ -43,7 +43,6 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "apps.auth.middleware.IAPHeaderAuthMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -85,22 +84,38 @@ CHANNEL_LAYERS = {
 # --- Static files (WhiteNoise) ---
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / "frontend" / "dist"]
+STATICFILES_DIRS = []
+_frontend_dist = BASE_DIR / "frontend" / "dist"
+if _frontend_dist.exists():
+    STATICFILES_DIRS.append(_frontend_dist)
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-
-# --- Auth / IAP ---
-IAP_HEADER_EMAIL = "HTTP_X_GOOG_AUTHENTICATED_USER_EMAIL"
-IAP_HEADER_USER_ID = "HTTP_X_GOOG_AUTHENTICATED_USER_ID"
-IAP_REQUIRED = env.bool("ACE_IAP_REQUIRED", default=False)
-# When IAP_REQUIRED is False (dev), middleware accepts a fake header for local dev.
-IAP_DEV_FAKE_EMAIL = env("ACE_IAP_DEV_FAKE_EMAIL", default="dev@example.com")
-IAP_DEV_FAKE_USER_ID = env("ACE_IAP_DEV_FAKE_USER_ID", default="dev-user-1")
 
 # --- I18N ---
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
+
+# --- CommCare Connect OAuth (labs / AWS deployment) ---
+CONNECT_PRODUCTION_URL = env("CONNECT_PRODUCTION_URL", default="https://connect.dimagi.com")
+CONNECT_OAUTH_CLIENT_ID = env("CONNECT_OAUTH_CLIENT_ID", default="")
+CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
+CONNECT_OAUTH_SCOPES = ["read"]
+
+# Django auth wiring
+LOGIN_URL = "/auth/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/auth/login/"
+
+# --- Claude CLI integration (Phase 2) ---
+ACE_CLAUDE_HOME = env(
+    "ACE_CLAUDE_HOME",
+    default=str(BASE_DIR / ".ace-claude-home"),
+)
+ACE_CLAUDE_TOKEN_FILE = env(
+    "ACE_CLAUDE_TOKEN_FILE",
+    default=str(BASE_DIR / ".ace-claude-home" / "oauth-token"),
+)
 
 # --- Logging ---
 LOGGING = {

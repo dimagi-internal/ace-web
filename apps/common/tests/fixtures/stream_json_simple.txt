@@ -1,0 +1,3 @@
+{"type":"assistant","message":{"id":"msg_02","content":[{"type":"text","text":"The answer "}]}}
+{"type":"assistant","message":{"id":"msg_02","content":[{"type":"text","text":"is 42."}]}}
+{"type":"result","subtype":"success","duration_ms":500,"num_turns":1}

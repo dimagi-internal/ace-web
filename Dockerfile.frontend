@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+
+# --- Build stage ---
+FROM oven/bun:1 AS build
+
+WORKDIR /app
+
+# Install frontend deps.
+COPY frontend/package.json frontend/bun.lockb* frontend/package-lock.json* ./
+RUN if [ -f bun.lockb ]; then bun install --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then bun install --no-save; \
+    else bun install; fi
+
+# Copy source and build.
+COPY frontend/ .
+
+# Vite picks up the base path from vite.config.ts (/ace/).
+RUN bun run build
+
+# --- Production stage ---
+FROM nginx:alpine
+
+# Copy built assets.
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy nginx reverse-proxy config.
+COPY frontend/nginx.prod.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 3000
+
+CMD ["nginx", "-g", "daemon off;"]

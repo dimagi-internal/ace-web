@@ -17,16 +17,15 @@ services:
 
   app:
     build: .
-    # The entrypoint handles migrations + uvicorn start. DJANGO_DEBUG=True
-    # makes entrypoint.sh pass --reload to uvicorn for hot-reload on save.
+    # CMD from Dockerfile runs uvicorn directly on port 8000.
+    # Run migrations separately: docker compose exec app python manage.py migrate
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.development
       DJANGO_DEBUG: "True"
       DJANGO_SECRET_KEY: dev-insecure
       DATABASE_URL: postgres://ace:ace@db:5432/ace_web
-      ACE_IAP_REQUIRED: "False"
     ports:
-      - "8000:8080"
+      - "8000:8000"
     volumes:
       - ./apps:/app/apps
       - ./config:/app/config
@@ -34,6 +33,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - app
+    profiles: ["prod-parity"]
 
 volumes:
   ace-pg-data:

@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"id":"msg_04","content":[{"type":"text","text":"Working on it"}]}}
+{"type":"result","subtype":"error_max_turns","duration_ms":300}
