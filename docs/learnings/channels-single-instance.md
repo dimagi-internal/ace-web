@@ -2,7 +2,36 @@
 
 **Date**: 2026-04-08
 **Context**: Plan 1A `config/settings/base.py`. Blocker for scaling beyond a single instance.
-**Status**: Active — deferred to Phase 3 (multi-player collaboration)
+**Status**: Resolved in Phase 3 (commit a12d5c3 flipped `CHANNEL_LAYERS` to `RedisChannelLayer`; subsequent tasks wired presence, consumer, and deploy).
+
+## Resolution
+
+Phase 3 completed all three steps listed in the Fix section below:
+
+1. `channels-redis` added to `pyproject.toml` (Task 1).
+2. `CHANNEL_LAYERS` now points at `channels_redis.core.RedisChannelLayer` in
+   `config/settings/connectlabs.py`, reading `REDIS_URL` from env (Task 2,
+   commit `a12d5c3`). Local dev uses the same key against the Docker Compose
+   Redis service. See `docs/learnings/redis-presence-hash.md` for the
+   presence-specific usage of the same Redis instance.
+3. Shared ElastiCache wired into the ECS task via `REDIS_URL` in Secrets
+   Manager (Task 13); ingress from the ECS security group is open on 6379.
+
+Raising the ECS desired-count past 1 is now a separate operational step —
+no code or config changes required. Before doing so, the operator should
+still verify:
+
+- the ElastiCache cluster has headroom for the expected fan-out;
+- the shared `labs-*` Redis instance is not in "degraded" mode (there is
+  no cross-tenant quota, but a single tenant misbehaving will hurt the
+  whole cluster);
+- the nginx `location /ace/ws/` block is in place (see
+  `docs/learnings/channels-ws-proxy-path.md`), otherwise only HTTP
+  requests will scale cleanly and WebSocket handshakes will 404 behind
+  the ALB.
+
+The original Problem / Root Cause / Fix sections below are kept as
+historical context so the resolution story is traceable.
 
 ## Problem
 

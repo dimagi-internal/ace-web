@@ -162,8 +162,8 @@ All frames are JSON text. Clients send `{"action": "<namespace.verb>", "data": {
 | `chat.tool_use` | `{parent_message_id, tool_message_id, block}` | A new `Message` row was created with role `tool_use`; clients render it nested under the parent. |
 | `chat.tool_result` | `{parent_message_id, tool_message_id, block}` | Same as above with role `tool_result`. |
 | `chat.stream_complete` | `{message_id, plaintext}` | Final plaintext for the assistant message. |
-| `chat.stream_error` | `{message_id, detail}` | Backend failure or CLI circuit breaker open. |
-| `chat.stream_cancelled` | `{message_id, partial_len}` | `chat.stop` completed. |
+| `chat.stream_error` | `{message_id, detail}` | Backend failure or CLI circuit breaker open. The backend also uses this event to surface stop-driven cancellation by setting `detail='cancelled'`. The `chat.stream_cancelled` event listed below is a defensive branch that is not currently reachable. |
+| `chat.stream_cancelled` | `{message_id, partial_len}` | **Not emitted in practice** under the current `turn_driver` contract — stop-driven cancellation surfaces as `chat.stream_error` with `detail='cancelled'`. The server and client both retain handlers for this event as a defensive branch in case the turn_driver is refactored to distinguish cancellation from error. |
 | `draft.updated` | `{draft_id, version, body, last_editor_id, last_edit_at}` | Broadcast after every accepted `draft.update`, `draft.discard`, or `draft.committed` (for the new empty next draft). |
 | `draft.lock_changed` | `{draft_id, holder_user_id \| null, expires_at}` | Broadcast on `draft.take_over` and implicitly when the holder goes idle (the client computes idle-ness from `last_edit_at` — the server does not push idle-expiry ticks). |
 | `draft.committed` | `{draft_id, message_id}` | Sent with the draft that just became a user `Message`. |
