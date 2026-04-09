@@ -1,0 +1,77 @@
+name: Build Backend Image
+
+# Auto-builds and pushes the ace-web backend Docker image to ECR whenever
+# any backend-relevant file changes on main. The manual deploy workflow
+# (deploy-labs.yml) then assembles the final task definition using the
+# already-built :latest image, so deploys are fast.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'config/**'
+      - 'tests/**'
+      - 'manage.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'Dockerfile'
+      - '.github/workflows/build-backend.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: build-backend-ace-web
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 858923557655.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY: labs-jj-ace-web
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-backend:
+    name: Build & Push Backend Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache,mode=max
+
+      - name: Build summary
+        run: |
+          echo "## Backend Image Built" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tag | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-----|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| \`:latest\` | \`${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| \`:<sha>\`  | \`${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Trigger a manual **Deploy to Labs (AWS)** workflow run to ship this image." >> "$GITHUB_STEP_SUMMARY"
