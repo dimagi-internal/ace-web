@@ -10,12 +10,29 @@ import { PresenceChips } from "../components/PresenceChips";
 import { RecentSessionsSidebar } from "../components/RecentSessionsSidebar";
 import { SendBox } from "../components/SendBox";
 import { useSessionSocket } from "../hooks/useSessionSocket";
+import { isDraftIdle, msUntilDraftIdle } from "../lib/drafts";
 import type { Session } from "../api/types";
 
 export function ChatPage() {
   const { slug = "" } = useParams();
   const [meta, setMeta] = useState<Session | null>(null);
   const socket = useSessionSocket(slug);
+
+  // Force a re-render when the draft lock transitions from live to
+  // idle so PresenceChips' amber-highlight updates at T+2s without
+  // waiting for some unrelated event to arrive.
+  const [, forceIdleTick] = useState(0);
+  useEffect(() => {
+    const draft = socket.state.active_draft;
+    if (!draft) return;
+    const remaining = msUntilDraftIdle(draft);
+    if (remaining === 0) return;
+    const t = window.setTimeout(
+      () => forceIdleTick((n) => n + 1),
+      remaining + 10,
+    );
+    return () => window.clearTimeout(t);
+  }, [socket.state.active_draft?.last_edit_at, socket.state.active_draft]);
 
   useEffect(() => {
     if (!slug) return;
@@ -56,7 +73,7 @@ export function ChatPage() {
               participants={socket.state.participants}
               presenceUserIds={socket.state.presence_user_ids}
               draftHolderId={holderId}
-              draftHolderIdle={isIdle(socket.state.active_draft?.last_edit_at)}
+              draftHolderIdle={isDraftIdle(socket.state.active_draft)}
             />
             <AddTeammateButton slug={slug} />
           </div>
@@ -78,9 +95,4 @@ export function ChatPage() {
       </div>
     </div>
   );
-}
-
-function isIdle(lastEditAt: string | undefined): boolean {
-  if (!lastEditAt) return true;
-  return Date.now() - new Date(lastEditAt).getTime() > 2_000;
 }

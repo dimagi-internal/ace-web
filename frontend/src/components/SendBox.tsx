@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import type { Draft } from "../api/types";
+import { IDLE_THRESHOLD_MS, isDraftIdle, msUntilDraftIdle } from "../lib/drafts";
 
 interface Props {
   draft: Draft | null;
@@ -14,8 +15,6 @@ interface Props {
   onTakeOver: () => void;
 }
 
-const IDLE_THRESHOLD_MS = 2_000;
-
 export function SendBox({
   draft,
   currentUserId,
@@ -28,13 +27,32 @@ export function SendBox({
   onTakeOver,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Force a re-render when the lock transitions from live to idle.
+  // Without this, nothing would trigger a re-render exactly at T+2s
+  // after the last edit, and another user's UI would stay locked
+  // indefinitely until some unrelated event happens to arrive.
+  const [, forceTick] = useState(0);
+
+  useEffect(() => {
+    if (!draft) return;
+    const remaining = msUntilDraftIdle(draft);
+    if (remaining === 0) return;
+    const t = window.setTimeout(
+      () => forceTick((n) => n + 1),
+      remaining + 10,
+    );
+    return () => window.clearTimeout(t);
+  }, [draft?.last_edit_at, draft]);
 
   const holderId = draft?.last_editor ?? null;
-  const isHolder = holderId === currentUserId;
-  const lastEditAt = draft ? new Date(draft.last_edit_at).getTime() : 0;
-  const holderIsIdle = draft ? Date.now() - lastEditAt > IDLE_THRESHOLD_MS : true;
-  // Textarea editable if: you are the holder OR the lock is idle OR the holder is absent.
-  const canEdit = isHolder || holderIsIdle || !holderIsPresent;
+  const isHolder = holderId != null && holderId === currentUserId;
+  const holderIsIdle = isDraftIdle(draft);
+
+  // Gate on draft existence: during the pre-session.state window the
+  // textarea would otherwise accept keystrokes that silently drop
+  // because the hook's updateDraft no-ops when active_draft is null.
+  const canEdit =
+    draft != null && (isHolder || holderIsIdle || !holderIsPresent);
 
   useEffect(() => {
     if (canEdit && !isHolder && textareaRef.current) {
@@ -45,8 +63,12 @@ export function SendBox({
   const body = draft?.body ?? "";
   const canSend = canEdit && body.trim().length > 0 && !isStreaming;
 
-  const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+  const handleKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // `isComposing` is true during IME input (CJK, etc.). Pressing
+    // Enter to commit a composition must not send the message.
+    const isComposing = (e.nativeEvent as unknown as { isComposing?: boolean })
+      .isComposing;
+    if (e.key === "Enter" && !e.shiftKey && !isComposing) {
       e.preventDefault();
       if (canSend) onSend();
     }
@@ -56,20 +78,21 @@ export function SendBox({
     if (streamingMessageId != null) onStop(streamingMessageId);
   };
 
+  const placeholder = draft
+    ? canEdit
+      ? "Type a message… (Enter to send, Shift+Enter for newline)"
+      : "Another teammate is editing…"
+    : "Connecting…";
+
   return (
     <div className="border-t border-zinc-200 p-2">
       <textarea
         ref={textareaRef}
         value={body}
-        readOnly={!canEdit}
         disabled={!canEdit}
         onChange={(e) => onUpdate(e.target.value)}
         onKeyDown={handleKey}
-        placeholder={
-          canEdit
-            ? "Type a message… (Enter to send, Shift+Enter for newline)"
-            : "Another teammate is editing…"
-        }
+        placeholder={placeholder}
         rows={3}
         className="w-full resize-none rounded border border-zinc-300 p-2 text-sm disabled:bg-zinc-50 disabled:text-zinc-500"
       />
@@ -86,9 +109,8 @@ export function SendBox({
         {!canEdit && holderIsPresent && !holderIsIdle ? (
           <button
             type="button"
-            disabled
             onClick={onTakeOver}
-            className="rounded border border-zinc-300 px-3 py-1 text-sm text-zinc-400"
+            className="rounded border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-100"
           >
             take over
           </button>
@@ -105,3 +127,7 @@ export function SendBox({
     </div>
   );
 }
+
+// Re-export for any consumer that still imports the threshold from
+// SendBox (none should, but keeps the symbol stable).
+export { IDLE_THRESHOLD_MS };
