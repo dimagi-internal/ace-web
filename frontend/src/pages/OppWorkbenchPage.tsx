@@ -6,6 +6,7 @@ import type { OppSnapshot, Run, Step } from "../api/types";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { OppSidebar } from "../components/opps/OppSidebar";
 import { SkillList } from "../components/opps/SkillList";
+import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
 
 type LoadState =
@@ -81,12 +82,13 @@ export default function OppWorkbenchPage() {
             onSelect={setSelectedSkill}
           />
         </main>
-        {/* Right pane — implemented in Task 27 */}
         <section className="w-[320px] border-l border-zinc-800 bg-zinc-950">
           {selectedStep ? (
-            <div className="p-4 text-zinc-500">
-              Step detail pane for {selectedStep.skill_name} — implemented in Task 27
-            </div>
+            <StepDetailPane
+              slug={slug}
+              runId={snapshot.current_run.run_id}
+              skill={selectedStep.skill_name}
+            />
           ) : (
             <EmptyState title="Select a step" description="Click a row to see its details." />
           )}
