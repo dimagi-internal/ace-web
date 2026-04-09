@@ -50,29 +50,9 @@ export const api = {
 
 /**
  * Lower-level fetch helper used by the opps API client.
- * Same envelope handling as apiFetch, but prefixes the path with /api.
+ * Thin wrapper around apiFetch that prefixes the path with /api so
+ * opps.ts call sites can use "/opps/..." instead of "/api/opps/...".
  */
-export async function request<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const url = buildUrl(`/api${path}`);
-  const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-  const resp = await fetch(url, { ...init, headers });
-  let envelope: ApiEnvelope<T>;
-  try {
-    envelope = await resp.json();
-  } catch {
-    throw new ApiError("invalid_response", `${resp.status} ${resp.statusText}`);
-  }
-  if (envelope.error) {
-    throw new ApiError(envelope.error.code, envelope.error.message);
-  }
-  if (envelope.data === null) {
-    throw new ApiError("empty_response", "no data in envelope");
-  }
-  return envelope.data;
+export function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return apiFetch<T>(`/api${path}`, init);
 }
