@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 # Module-level singleton CLIBackend. Keep as a function so tests can patch it.
 _backend: CLIBackend | None = None
 
+_bg_tasks: set[asyncio.Task] = set()
+
 
 def _get_backend() -> CLIBackend:
     global _backend
@@ -51,7 +53,16 @@ async def _iter_until_stop(
     if the backend's yield is slow, even if ``stop_event`` has been set in
     the meantime. This helper races the next event against the stop_event
     so cancellation is responsive within one backend yield.
+
+    Both ``next_task`` and ``stop_task`` are hoisted out of the loop body so
+    that if this generator is cancelled while suspended inside ``asyncio.wait``
+    (e.g. the consumer closes the WebSocket and the outer turn task is
+    cancelled), the ``finally`` clause can drain BOTH tasks. If ``next_task``
+    were leaked, it would still be holding the backend generator and the
+    outer ``agen.aclose()`` would raise
+    ``RuntimeError: aclose(): asynchronous generator is already running``.
     """
+    next_task: asyncio.Task | None = None
     stop_task: asyncio.Task | None = None
     try:
         while True:
@@ -71,19 +82,20 @@ async def _iter_until_stop(
                 try:
                     event = next_task.result()
                 except StopAsyncIteration:
+                    next_task = None
                     return
+                next_task = None
                 yield event
             else:
-                # stop_event fired before the backend produced another event
-                next_task.cancel()
-                with contextlib.suppress(BaseException):
-                    await next_task
+                # stop_event fired before the backend produced another event.
+                # The finally block will cancel next_task.
                 return
     finally:
-        if stop_task is not None and not stop_task.done():
-            stop_task.cancel()
-            with contextlib.suppress(BaseException):
-                await stop_task
+        for t in (next_task, stop_task):
+            if t is not None and not t.done():
+                t.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await t
 
 
 async def drive_assistant_turn(
@@ -189,6 +201,15 @@ async def drive_assistant_turn(
 
 
 def _schedule_auto_title(session: Session) -> None:
+    """Fire-and-forget auto-title task.
+
+    The task is pinned in module-level _bg_tasks to keep a strong reference
+    (Python 3.11+ only holds a weak ref to create_task() results, so without
+    this a GC pass could cancel the task mid-execution). The task self-
+    removes via add_done_callback so the set does not grow unboundedly.
+
+    Same behavior as Phase 2; lifted from streaming.py with the GC-safe pinning.
+    """
     from .auto_title import generate_title_for_session
 
     async def _runner():
@@ -197,7 +218,9 @@ def _schedule_auto_title(session: Session) -> None:
         except Exception:
             logger.exception("Auto-title task failed for session %s", session.slug)
 
-    asyncio.create_task(_runner())
+    task = asyncio.create_task(_runner())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
 
 
 def _load_message(message_id: int) -> Message | None:

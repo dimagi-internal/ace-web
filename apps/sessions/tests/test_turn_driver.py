@@ -164,3 +164,46 @@ async def test_stop_event_cancels_mid_stream(
     refreshed = await sync_to_async(Message.objects.get)(pk=asst.id)
     assert refreshed.status == "error"
     assert "cancelled" in refreshed.error_detail
+
+
+async def test_stop_event_cancels_while_backend_blocks(
+    session, user_and_assistant_messages
+):
+    """Exercises the _iter_until_stop race path: the backend never yields
+    once, so the only way for cancellation to fire is via asyncio.wait
+    picking stop_event.wait() over agen.__anext__().
+    """
+    _user, asst = user_and_assistant_messages
+
+    class BlockingBackend:
+        def __init__(self):
+            self.entered = asyncio.Event()
+
+        async def stream_completion(self, **kwargs):
+            self.entered.set()
+            await asyncio.sleep(3600)
+            yield StreamEvent.done()  # unreachable
+
+    backend = BlockingBackend()
+    stop_event = asyncio.Event()
+
+    async def driver():
+        out = []
+        agen = turn_driver.drive_assistant_turn(
+            assistant_message_id=asst.id, stop_event=stop_event
+        )
+        async for event in agen:
+            out.append(event)
+        return out
+
+    with patch("apps.sessions.turn_driver._get_backend", return_value=backend):
+        task = asyncio.create_task(driver())
+        await backend.entered.wait()
+        await asyncio.sleep(0.05)  # ensure driver is inside asyncio.wait
+        stop_event.set()
+        await asyncio.wait_for(task, timeout=2)
+
+    from asgiref.sync import sync_to_async
+    refreshed = await sync_to_async(Message.objects.get)(pk=asst.id)
+    assert refreshed.status == "error"
+    assert "cancelled" in refreshed.error_detail
