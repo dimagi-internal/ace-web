@@ -83,9 +83,18 @@ DATABASES = {
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Channels ---
+# channels-redis is the cross-process channel layer for WebSocket broadcasts.
+# Local dev and AWS prod both point at a real Redis; tests override this
+# back to InMemoryChannelLayer in config/settings/test.py for speed and
+# isolation. See docs/learnings/channels-single-instance.md.
+REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+ACE_REDIS_URL = REDIS_URL
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [REDIS_URL],
+        },
     },
 }
 
