@@ -113,7 +113,11 @@ class CLIBackend:
             async for event in self._drain(proc):
                 had_events = True
                 yield event
-                if event.type is StreamEventType.SESSION_ID and event.session_id and not force_fresh_session:
+                if (
+                    event.type is StreamEventType.SESSION_ID
+                    and event.session_id
+                    and not force_fresh_session
+                ):
                     await self._persist_session_id(session, event.session_id)
             await proc.wait()
         finally:

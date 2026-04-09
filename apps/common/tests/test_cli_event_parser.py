@@ -2,8 +2,6 @@
 the StreamEvent sequence the parser produces."""
 from pathlib import Path
 
-import pytest
-
 from apps.common.chat_backend import StreamEventType
 from apps.common.cli_event_parser import parse_stream_json_lines
 
