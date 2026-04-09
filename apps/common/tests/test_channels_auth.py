@@ -72,6 +72,17 @@ def _build_session_for(user) -> str:
     return store.session_key
 
 
+def _build_session_with_stale_hash(user):
+    store = SessionStore()
+    store[SESSION_KEY] = str(user.pk)
+    store["_auth_user_backend"] = "django.contrib.auth.backends.ModelBackend"
+    # Deliberately wrong hash — simulates a password change after the
+    # session was minted. get_user() should reject this.
+    store["_auth_user_hash"] = "not-the-real-hash"
+    store.save()
+    return store
+
+
 async def test_valid_session_key_attaches_user(user):
     session_key = await sync_to_async(_build_session_for)(user)
 
@@ -79,3 +90,13 @@ async def test_valid_session_key_attaches_user(user):
     out = await _run_middleware(scope)
     assert out["user"].pk == user.pk
     assert out["user"].is_authenticated
+
+
+async def test_stale_auth_hash_yields_anonymous_user(user):
+    """If the user's password (or session-auth hash) changes after the
+    session cookie was issued, django.contrib.auth.get_user must reject
+    the session. Verify the middleware honors that rejection."""
+    store = await sync_to_async(_build_session_with_stale_hash)(user)
+    scope = _scope_with_cookies({settings.SESSION_COOKIE_NAME: store.session_key})
+    out = await _run_middleware(scope)
+    assert isinstance(out["user"], AnonymousUser)
