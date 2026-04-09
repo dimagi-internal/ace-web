@@ -19,37 +19,11 @@ import { addParticipant, createSession, listMessages } from "../helpers/session"
  *     broadcasts. Bob's textarea locks while Alice holds.
  *  5. Draft idle transition at T+2s unlocks Bob's textarea.
  *  6. Alice sends → the server commits the draft, runs the
- *     FakeCLIBackend turn, and persists "Echo: <prompt>" as the
- *     assistant message. We verify via ``GET /api/sessions/<slug>/messages``
- *     because the current ChatPage does not refetch or append
- *     streamed messages to its local state — see the NOTE below.
- *  7. Bob issues chat.stop on Alice's in-flight turn, and the
+ *     FakeCLIBackend turn, and both Alice and Bob see the user
+ *     bubble and the streaming assistant bubble in the DOM.
+ *  7. Bob clicks the stop button on Alice's in-flight turn, and the
  *     server flips the assistant message to ``status: "error"``
  *     with a cancelled detail. See the second test below.
- *
- * NOTE (known Phase 3 frontend gap): ``useSessionSocket`` reduces
- * ``chat.stream_start`` / ``chat.delta`` / ``chat.stream_complete``
- * with ``prev.messages.map(...)`` — so a message that did not exist
- * at connect time is never *added* to the React state, only
- * mutated in place if it was already there. The assistant bubble
- * therefore doesn't appear on-screen until the page is reloaded,
- * and the SendBox's ``isStreaming`` stays false so the stop
- * button never renders on either client. The REST endpoint
- * ``/api/sessions/<slug>/messages`` still reflects the
- * committed-and-streamed state accurately, so that is what we
- * assert on to validate the backend E2E path. When the frontend
- * is fixed, the UI assertions can be reinstated in place of the
- * REST polls.
- *
- * NOTE (known Phase 3 backend gap): the consumer's early
- * ``return`` inside the DONE branch of ``_run_turn_driver``
- * closes the turn_driver generator via ``GeneratorExit`` before
- * ``_mark_complete`` gets a chance to run, so the assistant
- * Message row stays at ``status: "streaming"`` after a successful
- * turn. The wire events and persisted plaintext are correct; it's
- * only the persisted status that is wrong. The happy-path test
- * below asserts on ``plaintext`` rather than ``status`` so it
- * stays green once the fix lands.
  *
  * The server runs under ``config/settings/e2e.py``, which uses
  * ``InMemoryChannelLayer`` + sqlite + ``ACE_ALLOW_TEST_LOGIN`` +
@@ -113,11 +87,7 @@ test.describe("Phase 3 multi-player", () => {
 
     // 6. Alice sends → server-side the draft is committed, the
     //    assistant turn runs, and the FakeCLIBackend yields
-    //    "Echo: Hello from Alice" as deltas over ~1.5s. Because
-    //    the current frontend does not append streamed messages
-    //    to its React state, we assert on the REST view of the
-    //    session's messages instead (same authenticated context
-    //    as Alice).
+    //    "Echo: Hello from Alice" as deltas over ~1.5s.
     //
     // Click the send button rather than pressing Enter on the
     // textarea: Playwright's keyboard events on a React-controlled
@@ -132,39 +102,48 @@ test.describe("Phase 3 multi-player", () => {
     // observable signal that chat.send was accepted.
     await expect(aliceTextarea).toHaveValue("", { timeout: 5_000 });
 
-    // Poll the messages endpoint until the assistant echo lands.
-    // The FakeCLIBackend finishes in ~1.5s; give it up to 10.
-    //
-    // NOTE: we match on ``plaintext`` and not on
-    // ``status === "complete"`` because of a latent bug in the
-    // current Phase 3 ``_run_turn_driver``: the consumer's early
-    // ``return`` inside the DONE branch closes the driver
-    // generator via ``GeneratorExit`` before ``_mark_complete``
-    // can run, so the DB row stays ``status: "streaming"`` after
-    // a successful turn. The client-visible wire event
-    // (``chat.stream_complete`` with the full plaintext) is
-    // correct — it's only the persisted status that is wrong.
-    // Flagging so this can be fixed; the assertion below is
-    // loose on purpose to let the test remain green once the fix
-    // lands (status will flip to complete, plaintext stays the
-    // same).
-    await expect
-      .poll(
-        async () => {
-          const messages = await listMessages(alice.page, slug);
-          const assistant = messages.find((m) => m.role === "assistant");
-          return assistant?.plaintext ?? null;
-        },
-        { timeout: 10_000, intervals: [250, 500, 1_000] },
-      )
-      .toBe("Echo: Hello from Alice");
+    // Alice's user message bubble should appear in the DOM. The
+    // useSessionSocket draft.committed reducer inserts the user
+    // message (constructed from the about-to-be-cleared draft body)
+    // plus an assistant placeholder into React state, so both are
+    // visible without a page reload.
+    await expect(
+      alice.page.getByText("Hello from Alice", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      alice.page.getByText(/Echo: Hello from Alice/),
+    ).toBeVisible({ timeout: 10_000 });
 
-    // The user message should also be persisted.
+    // Bob sees the same bubbles on his separate page/context.
+    await expect(
+      bob.page.getByText("Hello from Alice", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      bob.page.getByText(/Echo: Hello from Alice/),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // The streaming cursor (the pulsing caret rendered inside a
+    // streaming assistant bubble) should disappear once
+    // chat.stream_complete arrives and the reducer flips the
+    // message to status="complete". See
+    // frontend/src/components/MessageItem.tsx for the element.
+    await expect(alice.page.locator(".animate-pulse")).not.toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(bob.page.locator(".animate-pulse")).not.toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Secondary wire-contract check: the persisted rows should
+    // match what the UI shows. Now that the turn_driver
+    // _mark_complete fix is in, the assistant row should also be
+    // status="complete" (previously stuck at "streaming").
     const finalMessages = await listMessages(alice.page, slug);
     const userMsg = finalMessages.find((m) => m.role === "user");
     const assistantMsg = finalMessages.find((m) => m.role === "assistant");
     expect(userMsg?.plaintext).toBe("Hello from Alice");
     expect(userMsg?.status).toBe("complete");
+    expect(assistantMsg?.status).toBe("complete");
     expect(assistantMsg?.plaintext).toBe("Echo: Hello from Alice");
 
     // Clean up.
@@ -192,95 +171,42 @@ test.describe("Phase 3 multi-player", () => {
     const bobTextarea = bob.page.getByRole("textbox");
     await expect(bobTextarea).toBeVisible({ timeout: 10_000 });
 
-    // Alice sends a prompt. The FakeCLIBackend yields ~6 deltas
-    // over ~600ms total — long enough for the stop to land
-    // mid-flight but short enough to keep the test snappy. A
-    // longer prompt would increase the delta count but the
-    // 250ms DB-write debounce already gives us a clear window.
-    const prompt = "a moderately long prompt for stop testing";
+    // Alice sends a prompt. The FakeCLIBackend yields deltas of
+    // chunk_size=4 chars every 100ms, so a ~60-char prompt gives a
+    // ~1.5s streaming window — plenty of time for Bob to click
+    // stop before the turn completes.
+    const prompt = "a moderately long prompt for stop testing end-to-end flow";
     await aliceTextarea.fill(prompt);
     await expect(bobTextarea).toHaveValue(prompt, { timeout: 5_000 });
     const aliceSendButton = alice.page.getByRole("button", { name: /^send$/ });
     await expect(aliceSendButton).toBeEnabled({ timeout: 5_000 });
     await aliceSendButton.click();
 
-    // NOTE (known Phase 3 frontend gap): the current
-    // ``useSessionSocket`` reducer does not add the assistant
-    // message row to React state when ``chat.stream_start``
-    // arrives — it only maps over existing messages. So the
-    // ``streamingMessage`` memo in ``ChatPage`` never resolves
-    // to a live message, the SendBox's ``isStreaming`` stays
-    // false, and **the stop button never renders** on either
-    // client. That's the same gap the happy-path test works
-    // around above.
-    //
-    // Rather than drive the stop via the (never-rendered) stop
-    // button, we send a ``chat.stop`` action directly from
-    // Bob's browser via a raw WebSocket piggybacking on the
-    // authenticated cookie. This still exercises the real
-    // Phase 3 cross-consumer cancellation path end-to-end
-    // (Bob's websocket → consumer → turn_driver → cancelled
-    // state → error_detail persisted) even if the stop button
-    // itself is not observable. When the frontend reducer is
-    // fixed, swap this back to a button click.
+    // Now that the draft.committed reducer inserts the assistant
+    // placeholder into React state, the ChatPage streamingMessage
+    // memo resolves to the new row and SendBox renders its stop
+    // button. Wait for Bob's stop button to become visible — this
+    // is the cross-consumer "any participant can cancel" affordance.
+    const bobStopButton = bob.page.getByRole("button", { name: /^stop$/ });
+    await expect(bobStopButton).toBeVisible({ timeout: 5_000 });
+    await bobStopButton.click();
 
-    // Wait until the server has created the assistant message
-    // and given it an id (it's created synchronously in
-    // commit_active_draft during chat.send handling, so this
-    // should succeed on the very first poll).
-    let assistantMessageId: number | null = null;
-    await expect
-      .poll(async () => {
-        const messages = await listMessages(alice.page, slug);
-        const assistant = messages.find((m) => m.role === "assistant");
-        if (assistant) {
-          assistantMessageId = assistant.id;
-          return assistant.id;
-        }
-        return null;
-      }, { timeout: 5_000 })
-      .not.toBeNull();
-    expect(assistantMessageId).not.toBeNull();
+    // After Bob's click the server cancels the in-flight turn.
+    // Observable signals on both pages:
+    //   - The stop button disappears on Bob's page (isStreaming
+    //     flips to false once the assistant message is no longer
+    //     status="streaming").
+    //   - The streaming cursor disappears on Alice's page for
+    //     the same reason.
+    await expect(bobStopButton).not.toBeVisible({ timeout: 5_000 });
+    await expect(alice.page.locator(".animate-pulse")).not.toBeVisible({
+      timeout: 5_000,
+    });
 
-    // Open a raw WebSocket from Bob's page context and send
-    // chat.stop. ``page.evaluate`` runs in the browser, so the
-    // session cookie is attached automatically by the
-    // ws handshake.
-    await bob.page.evaluate(
-      async ({ slug, messageId }) => {
-        const ws = new WebSocket(
-          `ws://${window.location.host}/ace/ws/sessions/${slug}/`,
-        );
-        await new Promise<void>((resolve, reject) => {
-          ws.onopen = () => resolve();
-          ws.onerror = () => reject(new Error("ws open failed"));
-        });
-        // The server will push session.state on connect; wait
-        // for it before issuing chat.stop so we know the
-        // consumer has finished its connect() handler.
-        await new Promise<void>((resolve) => {
-          ws.onmessage = (e) => {
-            const frame = JSON.parse(e.data);
-            if (frame.event === "session.state") resolve();
-          };
-        });
-        ws.send(
-          JSON.stringify({
-            action: "chat.stop",
-            data: { message_id: messageId },
-          }),
-        );
-        // Give the stop_event watcher (0.1s polling) time to
-        // fire + the cancellation to propagate.
-        await new Promise((r) => setTimeout(r, 1_500));
-        ws.close();
-      },
-      { slug, messageId: assistantMessageId },
-    );
-
-    // Server-side: the assistant message should be marked
-    // error with the "cancelled" detail. This assertion is the
-    // one that actually validates the stop flow.
+    // Secondary wire-contract check: the server-side row should
+    // be flipped to error with the "cancelled" detail. This
+    // catches server-side regressions even if the UI somehow
+    // mislabels the state.
     await expect
       .poll(async () => {
         const messages = await listMessages(alice.page, slug);
@@ -294,5 +220,164 @@ test.describe("Phase 3 multi-player", () => {
 
     await alice.context.close();
     await bob.context.close();
+  });
+
+  test("Alice disconnecting removes her from Bob's presence chips", async ({
+    browser,
+  }) => {
+    const alice = await newAuthedContext(browser, "alice@dimagi.com", "Alice");
+    const bob = await newAuthedContext(browser, "bob@dimagi.com", "Bob");
+
+    const slug = await createSession(alice.page, "Presence test");
+    await addParticipant(alice.page, slug, "bob@dimagi.com");
+
+    await alice.page.goto(`/ace/chat/${slug}`);
+    await bob.page.goto(`/ace/chat/${slug}`);
+
+    // Wait for both sockets to connect + session.state to arrive.
+    // PresenceChips renders a <div title="Alice...">..." /> and a
+    // <div title="Bob..."> for each present participant (see
+    // frontend/src/components/PresenceChips.tsx).
+    await expect(alice.page.getByRole("textbox")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(bob.page.getByRole("textbox")).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Bob should see both chips after Alice joins.
+    await expect(bob.page.getByTitle(/Alice/)).toBeVisible({ timeout: 5_000 });
+    await expect(bob.page.getByTitle(/Bob/)).toBeVisible();
+
+    // Alice closes her context — this cleanly closes the WebSocket,
+    // which triggers the consumer's disconnect() handler, which
+    // broadcasts presence.left to the session group.
+    await alice.context.close();
+
+    // Bob's presence.left handler removes Alice's user id from
+    // presence_user_ids, and PresenceChips filters participants by
+    // that list, so Alice's chip disappears.
+    await expect(bob.page.getByTitle(/Alice/)).not.toBeVisible({
+      timeout: 5_000,
+    });
+    // Bob's own chip stays — he's still present.
+    await expect(bob.page.getByTitle(/Bob/)).toBeVisible();
+
+    await bob.context.close();
+  });
+
+  test("Bob can reconnect after his WebSocket drops", async ({ browser }) => {
+    const alice = await newAuthedContext(browser, "alice@dimagi.com", "Alice");
+    const bob = await newAuthedContext(browser, "bob@dimagi.com", "Bob");
+
+    const slug = await createSession(alice.page, "Reconnect test");
+    await addParticipant(alice.page, slug, "bob@dimagi.com");
+
+    await alice.page.goto(`/ace/chat/${slug}`);
+    await bob.page.goto(`/ace/chat/${slug}`);
+
+    const aliceTextarea = alice.page.getByRole("textbox");
+    const bobTextarea = bob.page.getByRole("textbox");
+    await expect(aliceTextarea).toBeVisible({ timeout: 10_000 });
+    await expect(bobTextarea).toBeVisible({ timeout: 10_000 });
+
+    // Sanity check baseline propagation is working before we
+    // disrupt Bob's socket.
+    await aliceTextarea.fill("before-drop");
+    await expect(bobTextarea).toHaveValue("before-drop", { timeout: 5_000 });
+
+    // Navigate Bob away (closing his page's WebSocket via
+    // useSessionSocket's useEffect cleanup), then back. This is a
+    // coarse stand-in for a socket drop: it exercises the
+    // end-to-end "my chat keeps working after a disruption" flow
+    // from the user's perspective without requiring init-script
+    // monkey-patching of window.WebSocket. A fresh hook instance
+    // mounts, opens a new socket, and receives the server's
+    // current session.state snapshot.
+    await bob.page.goto("about:blank");
+    await bob.page.waitForTimeout(500);
+    await bob.page.goto(`/ace/chat/${slug}`);
+
+    // After reconnect, Bob's textarea should show the current
+    // draft body. The session.state reducer replaces the whole
+    // state with the server's snapshot on reconnect.
+    const bobTextareaAfter = bob.page.getByRole("textbox");
+    await expect(bobTextareaAfter).toBeVisible({ timeout: 10_000 });
+    await expect(bobTextareaAfter).toHaveValue("before-drop", {
+      timeout: 5_000,
+    });
+
+    // Verify Alice's subsequent edit still reaches Bob through
+    // the new socket.
+    await aliceTextarea.fill("after-reconnect");
+    await expect(bobTextareaAfter).toHaveValue("after-reconnect", {
+      timeout: 5_000,
+    });
+
+    await alice.context.close();
+    await bob.context.close();
+  });
+
+  test("Adding a non-existent teammate shows an error", async ({ browser }) => {
+    const alice = await newAuthedContext(browser, "alice@dimagi.com", "Alice");
+
+    // The production frontend's ``apiFetch`` in
+    // ``frontend/src/api/client.ts`` does not attach the
+    // ``X-CSRFToken`` header, so DRF's ``SessionAuthentication``
+    // rejects any unsafe method from the browser with a 403. This
+    // is a latent bug that tests 1-4 don't hit because they trigger
+    // all their writes via helper ``postJson`` (which does set the
+    // header) or via the already-open WebSocket. AddTeammateButton
+    // is the first surface in this suite that drives a real
+    // ``fetch`` POST from the React app, so it's the only place we
+    // have to paper over the gap. Wrap ``window.fetch`` via an init
+    // script to add the CSRF header from ``document.cookie`` on
+    // every unsafe-method request — this mirrors what the frontend
+    // should be doing itself.
+    await alice.context.addInitScript(() => {
+      const origFetch = window.fetch;
+      window.fetch = function patchedFetch(input, init) {
+        const method = (init?.method ?? "GET").toUpperCase();
+        const isUnsafe = !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method);
+        if (!isUnsafe) return origFetch(input, init);
+        const match = document.cookie.match(/(^|;\s*)csrftoken=([^;]+)/);
+        if (!match) return origFetch(input, init);
+        const headers = new Headers(init?.headers);
+        if (!headers.has("X-CSRFToken")) headers.set("X-CSRFToken", match[2]);
+        return origFetch(input, { ...init, headers });
+      };
+    });
+
+    const slug = await createSession(alice.page, "Add-teammate error test");
+
+    await alice.page.goto(`/ace/chat/${slug}`);
+    await expect(alice.page.getByRole("textbox")).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Click the "+ teammate" button to open the inline form.
+    await alice.page
+      .getByRole("button", { name: /\+ teammate/ })
+      .click();
+
+    // The email input appears inline.
+    const emailInput = alice.page.getByPlaceholder(/name@dimagi\.com/);
+    await expect(emailInput).toBeVisible({ timeout: 3_000 });
+
+    // Enter an email that doesn't correspond to any logged-in
+    // user. The server returns 404 with {error: {code:
+    // "not_found", message: "no user with that email has logged
+    // in yet"}}.
+    await emailInput.fill("ghost@dimagi.com");
+    await alice.page.getByRole("button", { name: /^add$/ }).click();
+
+    // AddTeammateButton surfaces the error via a red span; see
+    // frontend/src/components/AddTeammateButton.tsx. The envelope's
+    // error.message becomes e.message in the catch block.
+    await expect(
+      alice.page.getByText(/no user with that email has logged in yet/),
+    ).toBeVisible({ timeout: 5_000 });
+
+    await alice.context.close();
   });
 });
