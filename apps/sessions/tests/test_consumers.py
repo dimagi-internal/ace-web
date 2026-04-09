@@ -25,6 +25,9 @@ if "daphne" not in sys.modules:
     sys.modules["daphne"] = _daphne
     sys.modules["daphne.testing"] = _daphne_testing
 
+import asyncio  # noqa: E402
+from unittest.mock import patch  # noqa: E402
+
 import fakeredis.aioredis  # noqa: E402
 import pytest  # noqa: E402
 from channels.routing import URLRouter  # noqa: E402
@@ -33,6 +36,7 @@ from django.contrib.auth import SESSION_KEY  # noqa: E402
 from django.contrib.sessions.backends.db import SessionStore  # noqa: E402
 
 from apps.common.channels_auth import AceSessionAuthMiddleware  # noqa: E402
+from apps.common.chat_backend import StreamEvent  # noqa: E402
 from apps.sessions.models import Session, SessionParticipant  # noqa: E402
 from apps.sessions.routing import websocket_urlpatterns  # noqa: E402
 
@@ -187,6 +191,167 @@ async def test_alice_draft_update_reaches_bob(fake_redis, session, alice, bob):
     assert bc_frame is not None
     assert bc_frame["data"]["body"] == "Hello Bob"
     assert bc_frame["data"]["version"] == 1
+
+    await ac.disconnect()
+    await bc.disconnect()
+
+
+# ────────────────────── Task 10 integration tests ──────────────────────
+
+
+class _FakeBackend:
+    """Scripted ChatBackend: yields a fixed sequence of events, then exhausts."""
+
+    def __init__(self, events):
+        self._events = events
+
+    async def stream_completion(self, **kwargs):
+        for e in self._events:
+            yield e
+
+
+async def _drain_until(communicator, event_name, timeout=2.0):
+    """Receive frames until the named event arrives or ``timeout`` elapses.
+
+    Unlike ``_collect_until_draft`` above (which is bounded by a max frame
+    count so a short per-frame timeout can't nuke the consumer), this helper
+    wraps a pure receive loop in ``asyncio.wait_for`` so we block until the
+    expected frame shows up. Callers must be confident that the frame WILL
+    arrive within ``timeout`` seconds — otherwise the TimeoutError fires and
+    the test fails cleanly with a clear "expected event never arrived"
+    signal. This is the right shape for tests that drive the turn driver:
+    the expected frames arrive promptly when the happy path works, and the
+    test should fail fast if it hangs.
+    """
+
+    async def _loop():
+        while True:
+            frame = await communicator.receive_json_from()
+            if frame["event"] == event_name:
+                return frame
+
+    return await asyncio.wait_for(_loop(), timeout=timeout)
+
+
+async def test_chat_send_broadcasts_stream_to_both_users(
+    fake_redis, session, alice, bob
+):
+    events = [
+        StreamEvent.delta(text="Hel"),
+        StreamEvent.delta(text="lo"),
+        StreamEvent.done(),
+    ]
+
+    ac, ac_ok = await _connect(alice, session.slug)
+    bc, bc_ok = await _connect(bob, session.slug)
+    assert ac_ok and bc_ok
+    await ac.receive_json_from()  # drain session.state
+    await bc.receive_json_from()  # drain session.state
+
+    # Alice writes the draft, then sends.
+    await ac.send_json_to({
+        "action": "draft.update",
+        "data": {"version": 0, "body": "hi"},
+    })
+    await _drain_until(ac, "draft.updated")
+    await _drain_until(bc, "draft.updated")
+
+    with patch(
+        "apps.sessions.turn_driver._get_backend",
+        return_value=_FakeBackend(events),
+    ):
+        await ac.send_json_to({"action": "chat.send", "data": {}})
+
+        # Both users should see chat.stream_start → chat.delta × 2 → chat.stream_complete.
+        # (draft.committed + the new empty draft.updated frames also go by first,
+        # but _drain_until skips non-matching events.)
+        for comm in (ac, bc):
+            await _drain_until(comm, "chat.stream_start")
+            delta1 = await _drain_until(comm, "chat.delta")
+            assert delta1["data"]["text"] == "Hel"
+            delta2 = await _drain_until(comm, "chat.delta")
+            assert delta2["data"]["text"] == "lo"
+            await _drain_until(comm, "chat.stream_complete")
+
+    await ac.disconnect()
+    await bc.disconnect()
+
+
+async def test_chat_stop_from_bob_cancels_alice_stream(
+    fake_redis, session, alice, bob
+):
+    class SlowBackend:
+        async def stream_completion(self, **kwargs):
+            yield StreamEvent.delta(text="partial ")
+            await asyncio.sleep(60)
+            yield StreamEvent.done()
+
+    ac, ac_ok = await _connect(alice, session.slug)
+    bc, bc_ok = await _connect(bob, session.slug)
+    assert ac_ok and bc_ok
+    await ac.receive_json_from()
+    await bc.receive_json_from()
+
+    await ac.send_json_to({
+        "action": "draft.update",
+        "data": {"version": 0, "body": "stop me"},
+    })
+    await _drain_until(ac, "draft.updated")
+    await _drain_until(bc, "draft.updated")
+
+    with patch(
+        "apps.sessions.turn_driver._get_backend",
+        return_value=SlowBackend(),
+    ):
+        await ac.send_json_to({"action": "chat.send", "data": {}})
+
+        start_frame = await _drain_until(bc, "chat.stream_start")
+        message_id = start_frame["data"]["message_id"]
+
+        # Wait for Bob to see at least one delta before issuing stop.
+        await _drain_until(bc, "chat.delta")
+
+        await bc.send_json_to({
+            "action": "chat.stop",
+            "data": {"message_id": message_id},
+        })
+
+        # The stop path in drive_assistant_turn yields a single
+        # StreamEvent.for_error(message="cancelled") after stop_event fires.
+        # _run_turn_driver sees event.type == ERROR and broadcasts
+        # chat.stream_error (NOT chat.stream_cancelled) — and RETURNS before
+        # the stop_event.is_set() branch at the bottom of _run_turn_driver
+        # is reached. So the observed event is chat.stream_error with
+        # detail="cancelled". Both consumers in the session group receive it.
+        err_ac = await _drain_until(ac, "chat.stream_error")
+        err_bc = await _drain_until(bc, "chat.stream_error")
+        assert err_ac["data"]["message_id"] == message_id
+        assert err_ac["data"]["detail"] == "cancelled"
+        assert err_bc["data"]["message_id"] == message_id
+        assert err_bc["data"]["detail"] == "cancelled"
+
+    await ac.disconnect()
+    await bc.disconnect()
+
+
+async def test_draft_take_over_fails_on_live_lock(fake_redis, session, alice, bob):
+    ac, _ = await _connect(alice, session.slug)
+    bc, _ = await _connect(bob, session.slug)
+    await ac.receive_json_from()
+    await bc.receive_json_from()
+
+    await ac.send_json_to({
+        "action": "draft.update",
+        "data": {"version": 0, "body": "mine"},
+    })
+    await _drain_until(ac, "draft.updated")
+    # Let Bob observe Alice's draft update too, so the take_over attempt
+    # happens against a well-defined post-update state.
+    await _drain_until(bc, "draft.updated")
+
+    await bc.send_json_to({"action": "draft.take_over", "data": {}})
+    frame = await _drain_until(bc, "session.error")
+    assert frame["data"]["code"] == "draft_lock_held"
 
     await ac.disconnect()
     await bc.disconnect()
