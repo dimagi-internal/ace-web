@@ -7,16 +7,19 @@ import { ChatPage } from "./pages/ChatPage";
 import { ChatRedirectPage } from "./pages/ChatRedirectPage";
 import { AuthCliPage } from "./pages/AuthCliPage";
 
-export const router = createBrowserRouter([
-  {
-    path: "/",
-    element: <App />,
-    children: [
-      { index: true, element: <HomePage /> },
-      { path: "health", element: <HealthPage /> },
-      { path: "chat", element: <ChatRedirectPage /> },
-      { path: "chat/:slug", element: <ChatPage /> },
-      { path: "auth/cli", element: <AuthCliPage /> },
-    ],
-  },
-]);
+export const router = createBrowserRouter(
+  [
+    {
+      path: "/",
+      element: <App />,
+      children: [
+        { index: true, element: <HomePage /> },
+        { path: "health", element: <HealthPage /> },
+        { path: "chat", element: <ChatRedirectPage /> },
+        { path: "chat/:slug", element: <ChatPage /> },
+        { path: "auth/cli", element: <AuthCliPage /> },
+      ],
+    },
+  ],
+  { basename: "/ace" },
+);

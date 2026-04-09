@@ -1,49 +1,50 @@
 # syntax=docker/dockerfile:1
+FROM python:3.12-slim
 
-# --- Stage 1: build the React frontend ---
-FROM node:20-slim AS frontend-builder
-WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
-COPY frontend/ ./
-RUN npm run build
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DJANGO_SETTINGS_MODULE=config.settings.connectlabs
 
-# --- Stage 2: Python runtime ---
-FROM python:3.11-slim AS runtime
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    DJANGO_SETTINGS_MODULE=config.settings.production
-
-# System deps
+# System dependencies: postgres client libs for psycopg, curl for healthchecks.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
     curl \
-    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast, reproducible dep installs.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Python deps
-COPY pyproject.toml ./
-RUN pip install -e .
+# Copy dep manifests first so Docker layer caching works.
+COPY pyproject.toml uv.lock* ./
 
-# Source
-COPY manage.py ./
-COPY config/ ./config/
-COPY apps/ ./apps/
+# Install deps from the lock file only (no source yet, no dev extras).
+RUN uv export --frozen --no-dev --no-emit-project 2>/dev/null > /tmp/requirements.txt || \
+    uv pip compile pyproject.toml -o /tmp/requirements.txt && \
+    uv pip install --system -r /tmp/requirements.txt
 
-# Copy built frontend from stage 1
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+# Copy the rest of the project.
+COPY . .
 
-# Collect static assets (dummy values; only used at build time for collectstatic)
+# Install the project itself (fast — deps already installed).
+RUN uv pip install --system --no-deps -e .
+
+# Run collectstatic at build time so the image ships with the static
+# manifest. Use placeholders for env vars that settings.base would otherwise
+# require — the values don't affect collectstatic output.
 RUN DJANGO_SECRET_KEY=build-time-placeholder \
     DJANGO_ALLOWED_HOSTS=build-time-placeholder \
-    python manage.py collectstatic --noinput
+    DATABASE_URL=sqlite:///tmp/build.db \
+    DJANGO_SETTINGS_MODULE=config.settings.base \
+    python manage.py collectstatic --noinput --clear
 
-# Entrypoint
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Non-root user.
+RUN useradd -m -u 1000 app && chown -R app:app /app
+USER app
 
-EXPOSE 8080
-ENTRYPOINT ["/entrypoint.sh"]
+EXPOSE 8000
+
+# Production command — uvicorn ASGI server.
+CMD ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8000"]

@@ -7,15 +7,27 @@ export class ApiError extends Error {
   }
 }
 
+// Vite exposes the base path at import.meta.env.BASE_URL.
+// It's '/ace/' in prod and '/' in local dev.
+const API_PREFIX = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+function buildUrl(path: string): string {
+  // `path` is always something like "/api/sessions" or "/api/auth/cli/start"
+  // (starts with a slash). Prefix with BASE_URL so it becomes
+  // "/ace/api/sessions" in prod or "/api/sessions" in dev.
+  return API_PREFIX + path;
+}
+
 export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+  const url = buildUrl(path);
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const resp = await fetch(path, { ...init, headers });
+  const resp = await fetch(url, { ...init, headers });
   let envelope: ApiEnvelope<T>;
   try {
     envelope = await resp.json();
@@ -31,8 +43,7 @@ export async function apiFetch<T>(
   return envelope.data;
 }
 
-// Backwards-compatible legacy API: kept so existing consumers (HomePage etc.)
-// continue to work. Prefer `apiFetch` for new code.
+// Legacy compatibility for HomePage.tsx
 export const api = {
   health: () => apiFetch<{ status: string }>("/api/health"),
 };

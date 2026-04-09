@@ -11,5 +11,7 @@ export const sendMessage = (slug: string, text: string) =>
     body: JSON.stringify({ text }),
   });
 
+const API_PREFIX = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
 export const streamUrl = (assistantMessageId: number) =>
-  `/api/messages/${assistantMessageId}/stream`;
+  `${API_PREFIX}/api/messages/${assistantMessageId}/stream`;
