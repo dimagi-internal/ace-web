@@ -25,7 +25,7 @@ from apps.sessions.models import Message, Session
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])  # Scaffold-only; later views in this file use RequireDriveToken.
+@permission_classes([AllowAny])  # Scaffold-only; later views gate Drive access via _require_drive.
 def health(request):
     """Scaffold sanity check. Used by tests in Task 1."""
     return Response(success_response({"status": "ok", "module": "opps"}))
@@ -65,7 +65,7 @@ def _require_drive(request):
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])  # RequireDriveToken is enforced inside
+@permission_classes([AllowAny])  # Drive availability enforced inside _require_drive
 def opp_list(request):
     client, err = _require_drive(request)
     if err is not None:
@@ -104,7 +104,7 @@ def opp_list(request):
 
 
 @api_view(["GET"])
-@permission_classes([AllowAny])  # RequireDriveToken enforced via _require_drive
+@permission_classes([AllowAny])  # Drive availability enforced via _require_drive
 def workbench(request, slug: str):
     client, err = _require_drive(request)
     if err is not None:
