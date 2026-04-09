@@ -11,12 +11,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
-    # Legacy per-user Drive token cache — columns kept in schema until Task 4
-    # migration drops them. No longer read or written; the Workbench now uses a
-    # shared service-account credential (apps/opps/drive_client.py).
-    drive_token_cache = models.TextField(blank=True, default="")
-    drive_token_refreshed_at = models.DateTimeField(null=True, blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -30,6 +24,3 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
-
-    def has_drive_token(self) -> bool:
-        return bool(self.drive_token_cache)
