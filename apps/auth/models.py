@@ -11,10 +11,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
-    # Per-user Google Drive OAuth token cache for the ACE opp Workbench
-    # (apps/opps). Encrypted via apps.opps.encryption.encrypt_token; decrypted
-    # on demand in drive_credentials.ensure_fresh. TextField because the
-    # ciphertext is an opaque string, not JSON.
+    # Legacy per-user Drive token cache — columns kept in schema until Task 4
+    # migration drops them. No longer read or written; the Workbench now uses a
+    # shared service-account credential (apps/opps/drive_client.py).
     drive_token_cache = models.TextField(blank=True, default="")
     drive_token_refreshed_at = models.DateTimeField(null=True, blank=True)
 
