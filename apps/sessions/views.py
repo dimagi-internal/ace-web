@@ -1,18 +1,28 @@
-"""REST endpoints for Session CRUD and listing."""
+"""REST endpoints for Session CRUD, message read-only listing, and
+participant management.
+
+Send is over WebSocket (see apps.sessions.consumers) in Phase 3; the
+Phase 2 `send_message` view is deleted.
+"""
 from __future__ import annotations
 
-from django.db import transaction
-from django.utils import timezone
+from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.auth.models import User
 from apps.common.envelope import error_response, success_response
 
-from .models import Message, Session, SessionParticipant
-from .serializers import SessionDetailSerializer, SessionSerializer
+from .models import Session, SessionParticipant
+from .serializers import (
+    MessageSerializer,
+    ParticipantSerializer,
+    SessionDetailSerializer,
+    SessionSerializer,
+)
 
 
 @api_view(["POST", "GET"])
@@ -52,18 +62,19 @@ def _list_sessions(request: Request) -> Response:
 @api_view(["GET", "PATCH"])
 @permission_classes([IsAuthenticated])
 def session_detail(request: Request, slug: str) -> Response:
-    try:
-        session = Session.objects.get(slug=slug, owner=request.user)
-    except Session.DoesNotExist:
-        return Response(
-            error_response(message="session not found", code="not_found"),
-            status=status.HTTP_404_NOT_FOUND,
-        )
+    session = _load_session_for_participant(slug, request.user)
+    if session is None:
+        return _not_found()
 
     if request.method == "GET":
         return Response(success_response(SessionDetailSerializer(session).data))
 
-    # PATCH
+    # PATCH — only the owner may edit the session row.
+    if session.owner_id != request.user.id:
+        return Response(
+            error_response(message="only the owner can edit the session", code="forbidden"),
+            status=status.HTTP_403_FORBIDDEN,
+        )
     allowed = {"title", "status"}
     updates = {k: v for k, v in (request.data or {}).items() if k in allowed}
     if "status" in updates and updates["status"] not in {"active", "archived"}:
@@ -78,57 +89,101 @@ def session_detail(request: Request, slug: str) -> Response:
     return Response(success_response(SessionSerializer(session).data))
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def messages_list(request: Request, slug: str) -> Response:
+    """Read-only ordered list of messages in a session.
+
+    This is the observation endpoint — the WebSocket consumer is the
+    only writer in Phase 3. Tests, curl, and the initial-hydration
+    fallback path in the frontend all use this.
+    """
+    session = _load_session_for_participant(slug, request.user)
+    if session is None:
+        return _not_found()
+    rows = session.messages.all().order_by("turn_index")
+    return Response(success_response(MessageSerializer(rows, many=True).data))
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def send_message(request: Request, slug: str) -> Response:
+def participant_collection(request: Request, slug: str) -> Response:
+    """Add a participant by @dimagi.com email. Owner only."""
+    session = _load_session_for_participant(slug, request.user)
+    if session is None:
+        return _not_found()
+
+    if session.owner_id != request.user.id:
+        return Response(
+            error_response(
+                message="only the session owner can add participants",
+                code="forbidden",
+            ),
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    email = (request.data or {}).get("email", "").strip().lower()
+    if not email.endswith("@dimagi.com"):
+        return Response(
+            error_response(
+                message="only @dimagi.com emails may be added",
+                code="validation_error",
+            ),
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     try:
-        session = Session.objects.get(slug=slug, owner=request.user)
-    except Session.DoesNotExist:
+        user = User.objects.get(email__iexact=email)
+    except User.DoesNotExist:
         return Response(
-            error_response(message="session not found", code="not_found"),
-            status=404,
+            error_response(
+                message="no user with that email has logged in yet",
+                code="not_found",
+            ),
+            status=status.HTTP_404_NOT_FOUND,
         )
 
-    text = (request.data or {}).get("text", "").strip()
-    if not text:
+    try:
+        participant = SessionParticipant.objects.create(
+            session=session, user=user, role="editor"
+        )
+    except IntegrityError:
         return Response(
-            error_response(message="text is required", code="validation_error"),
-            status=400,
-        )
-
-    with transaction.atomic():
-        # Lock the session row to serialize concurrent sends on the same session
-        session = Session.objects.select_for_update().get(pk=session.pk)
-        last_turn = (
-            Message.objects.filter(session=session)
-            .order_by("-turn_index")
-            .values_list("turn_index", flat=True)
-            .first()
-        )
-        next_turn = (last_turn or 0) + 1
-        user_msg = Message.objects.create(
-            session=session,
-            turn_index=next_turn,
-            role="user",
-            sender_user=request.user,
-            content={"text": text},
-            plaintext=text,
-            status="complete",
-            completed_at=timezone.now(),
-        )
-        assistant_msg = Message.objects.create(
-            session=session,
-            turn_index=next_turn + 1,
-            role="assistant",
-            content={"text": ""},
-            plaintext="",
-            status="pending",
+            error_response(
+                message="user is already a participant",
+                code="conflict",
+            ),
+            status=status.HTTP_409_CONFLICT,
         )
 
     return Response(
-        success_response({
-            "user_message_id": user_msg.id,
-            "assistant_message_id": assistant_msg.id,
-        }),
-        status=201,
+        success_response(ParticipantSerializer(participant).data),
+        status=status.HTTP_201_CREATED,
+    )
+
+
+# ────────────────────────────── helpers ──────────────────────────────
+
+def _load_session_for_participant(slug: str, user) -> Session | None:
+    """Return the session if `user` is a participant, else None.
+
+    Replaces the Phase 2 `owner=request.user` check so editor/viewer
+    participants can read the session too.
+    """
+    try:
+        session = Session.objects.get(slug=slug)
+    except Session.DoesNotExist:
+        return None
+    is_participant = SessionParticipant.objects.filter(
+        session=session, user=user
+    ).exists()
+    if not is_participant:
+        return None
+    return session
+
+
+def _not_found() -> Response:
+    return Response(
+        error_response(message="session not found", code="not_found"),
+        status=status.HTTP_404_NOT_FOUND,
     )
