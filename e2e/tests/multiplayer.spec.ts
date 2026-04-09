@@ -321,33 +321,6 @@ test.describe("Phase 3 multi-player", () => {
   test("Adding a non-existent teammate shows an error", async ({ browser }) => {
     const alice = await newAuthedContext(browser, "alice@dimagi.com", "Alice");
 
-    // The production frontend's ``apiFetch`` in
-    // ``frontend/src/api/client.ts`` does not attach the
-    // ``X-CSRFToken`` header, so DRF's ``SessionAuthentication``
-    // rejects any unsafe method from the browser with a 403. This
-    // is a latent bug that tests 1-4 don't hit because they trigger
-    // all their writes via helper ``postJson`` (which does set the
-    // header) or via the already-open WebSocket. AddTeammateButton
-    // is the first surface in this suite that drives a real
-    // ``fetch`` POST from the React app, so it's the only place we
-    // have to paper over the gap. Wrap ``window.fetch`` via an init
-    // script to add the CSRF header from ``document.cookie`` on
-    // every unsafe-method request — this mirrors what the frontend
-    // should be doing itself.
-    await alice.context.addInitScript(() => {
-      const origFetch = window.fetch;
-      window.fetch = function patchedFetch(input, init) {
-        const method = (init?.method ?? "GET").toUpperCase();
-        const isUnsafe = !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method);
-        if (!isUnsafe) return origFetch(input, init);
-        const match = document.cookie.match(/(^|;\s*)csrftoken=([^;]+)/);
-        if (!match) return origFetch(input, init);
-        const headers = new Headers(init?.headers);
-        if (!headers.has("X-CSRFToken")) headers.set("X-CSRFToken", match[2]);
-        return origFetch(input, { ...init, headers });
-      };
-    });
-
     const slug = await createSession(alice.page, "Add-teammate error test");
 
     await alice.page.goto(`/ace/chat/${slug}`);
