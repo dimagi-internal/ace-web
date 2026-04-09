@@ -155,7 +155,7 @@ All frames are JSON text. Clients send `{"action": "<namespace.verb>", "data": {
 
 | Event | `data` shape | Notes |
 |---|---|---|
-| `session.state` | `{messages, active_draft, participants, presence_user_ids}` | Sent once immediately after `connect()`. `messages` is the full ordered list (consistent with Phase 2 GET); any in-flight streaming message is included with its current accumulated `plaintext` and `status='streaming'`, so a late joiner starts from the right cursor and then receives subsequent `chat.delta` events from the group. `active_draft` is the open `slot='next'` draft or a freshly created empty one. |
+| `session.state` | `{messages, active_draft, participants, presence_user_ids, current_user_id}` | Sent once immediately after `connect()`. `messages` is the full ordered list (consistent with Phase 2 GET); any in-flight streaming message is included with its current accumulated `plaintext` and `status='streaming'`, so a late joiner starts from the right cursor and then receives subsequent `chat.delta` events from the group. `active_draft` is the open `slot='next'` draft or a freshly created empty one. `current_user_id` is the id of the authenticated user on this socket (the client needs it to identify itself among `participants` and determine whether it is the current draft holder). |
 | `session.error` | `{code, message, detail?}` | Non-fatal errors. Codes: `bad_request`, `forbidden`, `draft_version_mismatch`, `draft_lock_held`, `not_found`, `internal`. |
 | `chat.stream_start` | `{message_id, turn_index}` | Emitted once when the turn driver marks the message `streaming`. |
 | `chat.delta` | `{message_id, text}` | Append-only delta text (same shape as Phase 2 SSE `delta`). |
