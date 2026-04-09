@@ -1,4 +1,4 @@
-import { DriveReconnectRequired, type ApiEnvelope } from "./types";
+import { type ApiEnvelope } from "./types";
 
 export class ApiError extends Error {
   constructor(public code: string, message: string) {
@@ -50,9 +50,7 @@ export const api = {
 
 /**
  * Lower-level fetch helper used by the opps API client.
- * Identical to apiFetch but surfaces drive-token-missing 401 responses as
- * DriveReconnectRequired so the DriveReconnectGuard error boundary can catch
- * them and redirect the user to re-authorise Google Drive access.
+ * Same envelope handling as apiFetch, but prefixes the path with /api.
  */
 export async function request<T>(
   path: string,
@@ -69,11 +67,6 @@ export async function request<T>(
     envelope = await resp.json();
   } catch {
     throw new ApiError("invalid_response", `${resp.status} ${resp.statusText}`);
-  }
-  if (resp.status === 401 && envelope.error?.code === "drive-token-missing") {
-    const data = envelope.data as { reconnect_url: string } | null;
-    const reconnectUrl = data?.reconnect_url ?? "/auth/drive/start";
-    throw new DriveReconnectRequired(reconnectUrl);
   }
   if (envelope.error) {
     throw new ApiError(envelope.error.code, envelope.error.message);

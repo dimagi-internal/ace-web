@@ -170,15 +170,3 @@ export interface CompareResult {
 export interface DiscussResponse {
   session_slug: string;
 }
-
-// Custom error class the client throws when the server returns a
-// drive-token-missing 401 with a reconnect_url in the data field.
-export class DriveReconnectRequired extends Error {
-  reconnectUrl: string;
-
-  constructor(reconnectUrl: string) {
-    super("Google Drive access is not connected");
-    this.name = "DriveReconnectRequired";
-    this.reconnectUrl = reconnectUrl;
-  }
-}
