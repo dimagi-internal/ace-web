@@ -55,12 +55,19 @@ async def touch(session_slug: str, user_id: int) -> bool:
 
     Returns True if the user was not present before this call (the field
     was newly added), False if they were already present.
+
+    Also refreshes a key-level TTL (2× per-field TTL) so that if every
+    participant hard-disconnects without a clean `leave` AND no surviving
+    caller ever runs `snapshot`, the hash doesn't linger forever as an
+    orphan key. In the normal path this TTL is irrelevant (the hash stays
+    alive as long as anyone is present).
     """
     r = await redis_client.get_redis()
     key = _hash_key(session_slug)
     expires_at = int(time.time()) + PRESENCE_TTL_SECONDS
     # HSET returns the number of fields created — 1 for new, 0 for update.
     created = await r.hset(key, str(user_id), str(expires_at))
+    await r.expire(key, PRESENCE_TTL_SECONDS * 2)
     return bool(created)
 
 
@@ -74,6 +81,13 @@ async def snapshot(session_slug: str) -> list[int]:
 
     Lazily sweeps expired fields while it is reading the hash. O(n) in
     the number of fields per session — fine for our expected size.
+
+    Note: there is a sub-millisecond race between HGETALL and HDEL — if
+    a concurrent `touch` refreshes a field after we read but before we
+    delete, we will delete the fresh value. The race is self-healing on
+    the next heartbeat (~20 s), so users rarely notice and no state is
+    lost beyond a single missed `presence.joined` broadcast. Accept it
+    at this scale rather than reaching for a Lua script.
     """
     r = await redis_client.get_redis()
     key = _hash_key(session_slug)
