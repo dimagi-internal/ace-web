@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   Draft,
+  Message,
   SessionState,
   WsEvent,
 } from "../api/types";
@@ -148,8 +149,52 @@ export function useSessionSocket(slug: string): UseSessionSocketResult {
             };
           }
           return prev;
-        case "draft.committed":
-          return prev;
+        case "draft.committed": {
+          // Insert the user message and an assistant placeholder into the
+          // message list. The user message is constructed from the draft
+          // body that's about to be cleared by the subsequent draft.updated
+          // event; the assistant placeholder is filled in by chat.delta +
+          // chat.stream_complete events.
+          //
+          // This is load-bearing: without it, chat.stream_start's map over
+          // prev.messages is a no-op (the new assistant message id isn't
+          // in the list yet), and the assistant response is invisible
+          // until the page refreshes.
+          const prevDraftBody = prev.active_draft?.body ?? "";
+          const maxTurnIndex = prev.messages.reduce(
+            (acc, msg) => Math.max(acc, msg.turn_index),
+            0,
+          );
+          const nowIso = new Date().toISOString();
+          const userMessage: Message = {
+            id: frame.data.user_message_id,
+            turn_index: maxTurnIndex + 1,
+            role: "user",
+            content: { text: prevDraftBody },
+            plaintext: prevDraftBody,
+            status: "complete",
+            error_detail: null,
+            started_at: null,
+            completed_at: nowIso,
+            created_at: nowIso,
+          };
+          const assistantPlaceholder: Message = {
+            id: frame.data.message_id,
+            turn_index: maxTurnIndex + 2,
+            role: "assistant",
+            content: {},
+            plaintext: "",
+            status: "pending",
+            error_detail: null,
+            started_at: null,
+            completed_at: null,
+            created_at: nowIso,
+          };
+          return {
+            ...prev,
+            messages: [...prev.messages, userMessage, assistantPlaceholder],
+          };
+        }
         case "draft.discarded":
           if (prev.active_draft && prev.active_draft.id === frame.data.draft_id) {
             return {

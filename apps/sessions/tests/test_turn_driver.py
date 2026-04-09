@@ -82,6 +82,45 @@ async def test_happy_path_marks_complete_and_yields_events(
     assert refreshed.plaintext == "Hello"
 
 
+async def test_mark_complete_runs_even_if_caller_early_returns_on_done(
+    session, user_and_assistant_messages
+):
+    """Regression test for the Phase 3 bug where _mark_complete was
+    called AFTER yield and was therefore never reached when the
+    consumer (_run_turn_driver) early-returned on DONE."""
+    _user, asst = user_and_assistant_messages
+    events = [
+        StreamEvent.delta(text="complete"),
+        StreamEvent.done(),
+    ]
+    stop_event = asyncio.Event()
+
+    # Simulate the consumer's early-return pattern: break out of the
+    # async for as soon as we see DONE, without waiting for the
+    # generator to finish its own cleanup.
+    async def early_return_consumer():
+        collected = []
+        with patch(
+            "apps.sessions.turn_driver._get_backend",
+            return_value=FakeBackend(events),
+        ):
+            agen = turn_driver.drive_assistant_turn(
+                assistant_message_id=asst.id, stop_event=stop_event
+            )
+            async for event in agen:
+                collected.append(event)
+                if event.type is StreamEventType.DONE:
+                    return collected  # triggers GeneratorExit on agen
+            return collected
+
+    await early_return_consumer()
+
+    from asgiref.sync import sync_to_async
+    refreshed = await sync_to_async(Message.objects.get)(pk=asst.id)
+    assert refreshed.status == "complete"
+    assert refreshed.plaintext == "complete"
+
+
 async def test_tool_use_creates_nested_message_row(
     session, user_and_assistant_messages
 ):

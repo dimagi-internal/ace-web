@@ -164,8 +164,10 @@ async def drive_assistant_turn(
                         message.session, event.tool_block, role="tool_result"
                     )
 
-                yield event
-
+                # Accumulate delta text BEFORE yielding — this used to run
+                # after the yield but was safe only by coincidence. Moving
+                # it here means the accumulator is always up to date when
+                # we hit the terminal DONE branch.
                 if event.type is StreamEventType.DELTA and event.text:
                     accumulated.append(event.text)
                     now = asyncio.get_running_loop().time()
@@ -175,18 +177,28 @@ async def drive_assistant_turn(
                         )
                         last_db_write = now
 
-                elif event.type is StreamEventType.DONE:
+                # Persist terminal state BEFORE yielding, so the consumer's
+                # early return after receiving DONE (or ERROR) doesn't cut
+                # off our DB writes. This was the Phase 3 bug: the elif
+                # branches below the yield were never reached because
+                # consumer._run_turn_driver hits `return` as soon as it
+                # broadcasts chat.stream_complete, which closes this
+                # generator via GeneratorExit at the yield line.
+                if event.type is StreamEventType.DONE:
                     await sync_to_async(_mark_complete)(
                         message, "".join(accumulated)
                     )
                     _schedule_auto_title(message.session)
+                    yield event
                     return
-
-                elif event.type is StreamEventType.ERROR:
+                if event.type is StreamEventType.ERROR:
                     await sync_to_async(_mark_error)(
                         message, event.error or "unknown"
                     )
+                    yield event
                     return
+
+                yield event
         finally:
             await agen.aclose()
 
