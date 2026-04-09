@@ -12,7 +12,7 @@
 
 **Pattern source:** Drive client + Google OAuth flow is a direct port from `../connect-search/backend/app/core/{drive.py,auth.py,encryption.py}` and `../connect-search/backend/app/api/auth.py`. Those files are short (~250 lines total) and FastAPI-flavored; the port translates FastAPI routes to Django views but the core logic is unchanged. Read them before Task 2.
 
-**Assumed dependency state:** This plan targets the post-AWS-pivot ace-web state where identity is handled by `django-allauth` + CommCare Connect OAuth, and IAP middleware has been removed. If that work has not yet landed on `main` when this plan is executed, either (a) land the AWS pivot first and rebase this branch, or (b) temporarily rely on the legacy `IAPHeaderAuthMiddleware` for identity — the drive-token flow is orthogonal. The plan assumes option (a) by default.
+**Assumed dependency state:** This plan targets the post-AWS-pivot ace-web state where identity is handled by a hand-rolled CommCare Connect OAuth flow with PKCE (`apps/auth/oauth.py` + `apps/auth/oauth_views.py`, pattern ported from `../connect-labs/`), **not** `django-allauth`. The IAP middleware and the `apps/auth/middleware.py` file have been removed. Session cookies are tenant-unique (`sessionid_ace`, `csrftoken_ace`) and path-scoped to `/ace/`. This is already the state of the branch as of this plan execution (the AWS migration was merged in before this plan started).
 
 **Key decisions to keep in mind** (from the spec and project memories):
 - Drive is the source of truth. Do NOT propose Postgres models for Opp / Run / Step / Artifact / JudgeResult / GateDecision. They do not exist in the Django ORM.
@@ -1496,7 +1496,7 @@ Two views:
 The pattern matches ../connect-search/backend/app/api/auth.py, translated from
 FastAPI to Django function views. The main semantic difference: connect-search
 uses a single Google OAuth flow for BOTH identity and Drive access; ace-web
-separates them — identity is handled by django-allauth + CommCare Connect,
+separates them — identity is handled by the hand-rolled CommCare Connect OAuth flow (pattern ported from connect-labs),
 Drive is a secondary scoped grant layered on top.
 """
 from __future__ import annotations
@@ -7475,8 +7475,9 @@ Create `docs/learnings/drive-oauth-two-flow.md`:
 
 ## Context
 
-ace-web's identity auth is django-allauth + CommCare Connect OAuth (post the
-AWS pivot — see the commit history around the scout-pattern tenant move).
+ace-web's identity auth is a hand-rolled CommCare Connect OAuth flow with
+PKCE (apps/auth/oauth.py + apps/auth/oauth_views.py, ported from connect-labs,
+post the AWS pivot — see the commit history around the scout-pattern tenant move).
 That flow tells us *who* the user is, filtered to `@dimagi.com`, but it does
 NOT give ace-web access to the user's Google Drive.
 
@@ -7569,7 +7570,8 @@ first-class multi-run support. ace-web ships with a flat-layout fallback
 that reads the current `ACE/<opp>/state.yaml` + subfolder convention as a
 single implicit run, so both formats work during the transition.
 
-**Two OAuth flows:** identity via django-allauth + CommCare Connect,
+**Two OAuth flows:** identity via a hand-rolled CommCare Connect OAuth
+flow with PKCE (`apps/auth/oauth_views.py`, pattern from connect-labs);
 Drive access via a separate Google OAuth grant per-user. See
 `docs/learnings/drive-oauth-two-flow.md`.
 
