@@ -57,7 +57,7 @@ class Session(models.Model):
     cli_session_id = models.CharField(max_length=200, null=True, blank=True)
 
     # ACE opp linkage — populated when a Session is launched from the Workbench
-    # via "Discuss in chat". See apps/opps and docs/specs/2026-04-08-ace-opp-visualization-design.md.
+    # via "Discuss in chat". See apps/opps and docs/specs/.
     # Strings, not FKs: Opps live in Google Drive, not Postgres.
     opp_slug = models.CharField(max_length=64, blank=True, default="")
     opp_run_id = models.CharField(max_length=64, blank=True, default="")

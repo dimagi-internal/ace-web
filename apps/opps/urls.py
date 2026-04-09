@@ -14,6 +14,16 @@ urlpatterns = [
         name="opps-step-detail",
     ),
     path(
+        "<slug:slug>/runs/<str:run_id>/steps/<str:skill>/discuss",
+        views.discuss,
+        name="opps-discuss",
+    ),
+    path(
+        "<slug:slug>/runs/<str:run_id>/steps/<str:skill>/chats",
+        views.step_chats,
+        name="opps-step-chats",
+    ),
+    path(
         "<slug:slug>/runs/<str:run_id>/steps/<str:skill>/artifacts/<str:artifact_name>",
         views.artifact_body,
         name="opps-artifact-body",

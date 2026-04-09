@@ -1,4 +1,5 @@
 """REST API views for the ACE opportunity Workbench."""
+from django.db import transaction
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -10,6 +11,7 @@ from apps.opps.drive_credentials import CredentialsRefreshFailed
 from apps.opps.drive_for_request import DriveTokenMissing, get_drive_client_for
 from apps.opps.middleware import RequireDriveToken
 from apps.opps.parsers import parse_opp_yaml
+from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
     serialize_opp_card,
     serialize_opp_snapshot,
@@ -17,6 +19,7 @@ from apps.opps.serializers import (
     serialize_step_snapshot,
 )
 from apps.opps.sync import load_opp
+from apps.sessions.models import Message, Session
 
 
 @api_view(["GET"])
@@ -299,3 +302,110 @@ def opp_compare(request, slug: str):
             }
         )
     )
+
+
+def _skill_md_relative_path(skill: str) -> str:
+    """Return the path of a skill's SKILL.md relative to the ace plugin repo root.
+
+    The ACE plugin lays skills out as `skills/<skill-name>/SKILL.md`.
+    """
+    return f"skills/{skill}/SKILL.md"
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def discuss(request, slug: str, run_id: str, skill: str):
+    """Create a new ace-web chat Session linked to this opp/run/step."""
+    client, err = _require_drive(request)
+    if err is not None:
+        return err
+
+    ace_folder_id = _resolve_ace_root_folder_id(client)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
+    except FileNotFoundError:
+        return Response(
+            error_response(f"no opp named {slug!r}", code="opp-not-found"),
+            status=404,
+        )
+
+    try:
+        seed_body = build_chat_seed(
+            snap,
+            skill=skill,
+            drive_client=client,
+            skill_md_path=_skill_md_relative_path(skill),
+        )
+    except ValueError as exc:
+        return Response(
+            error_response(str(exc), code="step-not-found"), status=404
+        )
+
+    # Resolve the IDD drive file id for session.idd_ref.
+    idd_drive_id = ""
+    for step_snap in snap.current_run.steps:
+        if step_snap.step.skill_name == "idea-to-idd":
+            for artifact in step_snap.artifacts:
+                if artifact.name == "idd.md":
+                    idd_drive_id = artifact.drive_file_id
+                    break
+    # Fall back to the top-level idd.md at the opp root if the idea-to-idd step
+    # didn't capture it as an artifact.
+    # (Top-level idd.md lookup happens inside sync.load_opp but we didn't
+    # surface its file id. It would be a cheap enhancement to add that.)
+
+    with transaction.atomic():
+        session = Session.objects.create(
+            owner=request.user,
+            title=f"{skill}: {slug}",
+            backend_kind="cli",
+            status="active",
+            source="web",
+            opp_slug=slug,
+            opp_run_id=run_id,
+            opp_step_skill=skill,
+            idd_ref=idd_drive_id,
+        )
+        Message.objects.create(
+            session=session,
+            turn_index=0,
+            role="system",
+            sender_user=request.user,
+            content={"type": "system", "source": "opps-discuss"},
+            plaintext=seed_body,
+            status="complete",
+        )
+
+    return Response(
+        success_response({"session_slug": session.slug}),
+        status=201,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def step_chats(request, slug: str, run_id: str, skill: str):
+    """List prior ace-web chat sessions linked to this opp/run/step."""
+    client, err = _require_drive(request)
+    if err is not None:
+        return err
+
+    chats = Session.objects.filter(
+        opp_slug=slug, opp_run_id=run_id, opp_step_skill=skill,
+    ).order_by("-updated_at")[:20]
+
+    return Response(success_response([
+        {
+            "slug": c.slug,
+            "title": c.title or "(untitled)",
+            "updated_at": c.updated_at.isoformat(),
+            "owner_email": c.owner.email,
+        }
+        for c in chats
+    ]))
