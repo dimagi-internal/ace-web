@@ -20,6 +20,15 @@ export default defineConfig({
         target: "ws://127.0.0.1:8000",
         ws: true,
       },
+      // Mirror the nginx /ace/ws/ location block so prod-parity WS URLs
+      // (wss://.../ace/ws/sessions/<slug>/) also work in local dev. The
+      // rewrite strips the /ace prefix before forwarding to Channels,
+      // whose routing registers ws/sessions/<slug>/ without the prefix.
+      "/ace/ws": {
+        target: "ws://127.0.0.1:8000",
+        ws: true,
+        rewrite: (path) => path.replace(/^\/ace/, ""),
+      },
     },
   },
 })

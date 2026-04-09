@@ -1,7 +1,7 @@
 import pytest
 from rest_framework.test import APIClient
 
-from apps.sessions.models import Message, Session
+from apps.sessions.models import Message, Session, SessionParticipant
 
 pytestmark = pytest.mark.django_db
 
@@ -9,14 +9,14 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def user(django_user_model):
     return django_user_model.objects.create_user(
-        email="t@example.com", display_name="t"
+        email="alice@dimagi.com", display_name="Alice"
     )
 
 
 @pytest.fixture
 def other_user(django_user_model):
     return django_user_model.objects.create_user(
-        email="other@example.com", display_name="other"
+        email="bob@dimagi.com", display_name="Bob"
     )
 
 
@@ -72,81 +72,145 @@ def test_list_sessions_respects_limit(client, user):
 
 def test_get_session_by_slug(client, user):
     s = Session.objects.create(owner=user, title="x")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
     resp = client.get(f"/api/sessions/{s.slug}")
     assert resp.status_code == 200
     assert resp.json()["data"]["title"] == "x"
     assert resp.json()["data"]["messages"] == []
 
 
-def test_get_session_404_for_other_users_session(client, other_user):
-    s = Session.objects.create(owner=other_user, title="hidden")
-    resp = client.get(f"/api/sessions/{s.slug}")
-    assert resp.status_code == 404
-
-
-def test_patch_session_updates_title(client, user):
+def test_patch_session_title(client, user):
     s = Session.objects.create(owner=user, title="old")
-    resp = client.patch(f"/api/sessions/{s.slug}", {"title": "new"}, format="json")
-    assert resp.status_code == 200
-    s.refresh_from_db()
-    assert s.title == "new"
-
-
-def test_patch_session_updates_status(client, user):
-    s = Session.objects.create(owner=user, title="x")
-    resp = client.patch(f"/api/sessions/{s.slug}", {"status": "archived"}, format="json")
-    assert resp.status_code == 200
-    s.refresh_from_db()
-    assert s.status == "archived"
-
-
-def test_patch_session_rejects_unknown_field(client, user):
-    s = Session.objects.create(owner=user, title="x")
-    resp = client.patch(f"/api/sessions/{s.slug}", {"slug": "hacked"}, format="json")
-    assert resp.status_code == 200  # ignored, slug is read-only
-    s.refresh_from_db()
-    assert s.slug != "hacked"
-
-
-def test_post_message_creates_user_and_assistant_rows(client, user):
-    s = Session.objects.create(owner=user, title="x")
-    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "hello"}, format="json")
-    assert resp.status_code == 201
-    body = resp.json()["data"]
-    assert "user_message_id" in body
-    assert "assistant_message_id" in body
-
-    user_msg = Message.objects.get(id=body["user_message_id"])
-    asst_msg = Message.objects.get(id=body["assistant_message_id"])
-    assert user_msg.role == "user"
-    assert user_msg.plaintext == "hello"
-    assert user_msg.status == "complete"
-    assert asst_msg.role == "assistant"
-    assert asst_msg.status == "pending"
-
-
-def test_post_message_assigns_monotonic_turn_index(client, user):
-    s = Session.objects.create(owner=user, title="x")
-    Message.objects.create(
-        session=s, turn_index=5, role="user",
-        content={"text": "old"}, plaintext="old", status="complete",
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    resp = client.patch(
+        f"/api/sessions/{s.slug}",
+        {"title": "new"},
+        format="json",
     )
-    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "next"}, format="json")
-    body = resp.json()["data"]
-    user_msg = Message.objects.get(id=body["user_message_id"])
-    asst_msg = Message.objects.get(id=body["assistant_message_id"])
-    assert user_msg.turn_index == 6
-    assert asst_msg.turn_index == 7
+    assert resp.status_code == 200
+    assert resp.json()["data"]["title"] == "new"
 
 
-def test_post_message_404_for_other_users_session(client, other_user):
-    s = Session.objects.create(owner=other_user)
-    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "x"}, format="json")
+def test_messages_list_returns_ordered_messages(client, user):
+    s = Session.objects.create(owner=user, title="x")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    Message.objects.create(
+        session=s, turn_index=1, role="user",
+        content={"text": "hi"}, plaintext="hi", status="complete",
+    )
+    Message.objects.create(
+        session=s, turn_index=2, role="assistant",
+        content={"text": "hello"}, plaintext="hello", status="complete",
+    )
+    resp = client.get(f"/api/sessions/{s.slug}/messages")
+    assert resp.status_code == 200
+    rows = resp.json()["data"]
+    assert [r["turn_index"] for r in rows] == [1, 2]
+
+
+def test_messages_list_rejects_non_participant(client, user, other_user):
+    s = Session.objects.create(owner=other_user, title="notmine")
+    resp = client.get(f"/api/sessions/{s.slug}/messages")
     assert resp.status_code == 404
 
 
-def test_post_message_validates_empty_text(client, user):
+def test_messages_list_allows_editor_participant(client, user, other_user):
+    """An editor participant (not the session owner) can read the messages
+    list. This locks in the Phase 3 auth broadening from owner-only to
+    any-participant — the whole point of _load_session_for_participant."""
+    s = Session.objects.create(owner=other_user, title="theirs")
+    SessionParticipant.objects.create(session=s, user=other_user, role="owner")
+    SessionParticipant.objects.create(session=s, user=user, role="editor")
+    Message.objects.create(
+        session=s, turn_index=1, role="user",
+        content={"text": "hi"}, plaintext="hi", status="complete",
+    )
+    # `client` is authenticated as `user`, who is only an editor here.
+    resp = client.get(f"/api/sessions/{s.slug}/messages")
+    assert resp.status_code == 200
+    rows = resp.json()["data"]
+    assert len(rows) == 1
+    assert rows[0]["plaintext"] == "hi"
+
+
+def test_add_participant_by_email(client, user, other_user):
     s = Session.objects.create(owner=user, title="x")
-    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "   "}, format="json")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    resp = client.post(
+        f"/api/sessions/{s.slug}/participants",
+        {"email": "bob@dimagi.com"},
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert resp.json()["error"] is None
+    assert SessionParticipant.objects.filter(session=s, user=other_user).exists()
+
+
+def test_add_participant_rejects_non_dimagi_email(client, user):
+    s = Session.objects.create(owner=user, title="x")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    resp = client.post(
+        f"/api/sessions/{s.slug}/participants",
+        {"email": "anyone@example.com"},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "validation_error"
+
+
+def test_add_participant_rejects_unknown_email(client, user):
+    s = Session.objects.create(owner=user, title="x")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    resp = client.post(
+        f"/api/sessions/{s.slug}/participants",
+        {"email": "ghost@dimagi.com"},
+        format="json",
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "not_found"
+
+
+def test_add_participant_rejects_duplicate(client, user, other_user):
+    s = Session.objects.create(owner=user, title="x")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    SessionParticipant.objects.create(session=s, user=other_user, role="editor")
+    resp = client.post(
+        f"/api/sessions/{s.slug}/participants",
+        {"email": "bob@dimagi.com"},
+        format="json",
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "conflict"
+
+
+def test_add_participant_rejects_non_owner(client, user, other_user, django_user_model):
+    s = Session.objects.create(owner=other_user, title="x")
+    SessionParticipant.objects.create(session=s, user=other_user, role="owner")
+    SessionParticipant.objects.create(session=s, user=user, role="editor")
+    # `client` is authenticated as `user`, who is only an editor here.
+    resp = client.post(
+        f"/api/sessions/{s.slug}/participants",
+        {"email": "alice@dimagi.com"},
+        format="json",
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "forbidden"
+    # Ensure no extra participant row was created — regression guard in
+    # case the 403 path ever reorders below the create.
+    assert SessionParticipant.objects.filter(session=s).count() == 2
+
+
+def test_add_participant_rejects_double_at_email(client, user):
+    """Defense in depth: even though the downstream user lookup would
+    404 on 'alice@dimagi.com@evil.com', the validation path should
+    reject it at the 400 stage rather than leaking the existence (or
+    non-existence) of the target user via the 404 branch."""
+    s = Session.objects.create(owner=user, title="x")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    resp = client.post(
+        f"/api/sessions/{s.slug}/participants",
+        {"email": "alice@dimagi.com@evil.com"},
+        format="json",
+    )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "validation_error"

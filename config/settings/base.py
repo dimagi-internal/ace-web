@@ -83,9 +83,18 @@ DATABASES = {
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Channels ---
+# channels-redis is the cross-process channel layer for WebSocket broadcasts.
+# Local dev and AWS prod both point at a real Redis; tests override this
+# back to InMemoryChannelLayer in config/settings/test.py for speed and
+# isolation. See docs/learnings/channels-single-instance.md.
+REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+ACE_REDIS_URL = REDIS_URL
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [REDIS_URL],
+        },
     },
 }
 
@@ -163,6 +172,21 @@ ACE_DRIVE_ROOT_FOLDER_ID = env(
     "ACE_DRIVE_ROOT_FOLDER_ID",
     default="1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz",
 )
+
+# --- Phase 3 dev-only test hooks ---
+# Both settings default to False and are only True in development.py.
+# They gate hooks that bypass real authentication and the real Claude CLI
+# subprocess for automated Playwright E2E testing. See
+# docs/learnings/playwright-test-hooks.md for the rationale.
+#
+# SECURITY: the test-login view and FakeCLIBackend must be impossible to
+# reach in production. We belt-and-suspenders this three ways:
+#   1. Defaults are False here.
+#   2. development.py is the only settings module that sets them True.
+#   3. The test-login view AND its URL registration additionally require
+#      DEBUG=True, which production.py / connectlabs.py disable.
+ACE_ALLOW_TEST_LOGIN = env.bool("ACE_ALLOW_TEST_LOGIN", default=False)
+ACE_USE_FAKE_CLI_BACKEND = env.bool("ACE_USE_FAKE_CLI_BACKEND", default=False)
 
 # --- Logging ---
 LOGGING = {

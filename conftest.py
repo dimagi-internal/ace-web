@@ -7,6 +7,13 @@ from pathlib import Path
 
 import pytest
 
+# pyproject.toml sets `python_files = "test_*.py"`, which causes pytest to
+# collect `apps/auth/test_login_views.py` as a test module. That file is the
+# dev-only test-login VIEW (named "test login" as in "login for testing"),
+# not a pytest module. Its `test_login` function is a Django view and has
+# no pytest-compatible signature. Skip collection for it explicitly.
+collect_ignore_glob = ["apps/auth/test_login_views.py"]
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_frontend_index_placeholder():
