@@ -123,7 +123,14 @@ def participant_collection(request: Request, slug: str) -> Response:
         )
 
     email = (request.data or {}).get("email", "").strip().lower()
-    if not email.endswith("@dimagi.com"):
+    # Stricter than endswith('@dimagi.com'): rpartition on '@' ensures
+    # there is exactly one '@' and the domain is exactly dimagi.com, so
+    # addresses like "alice@dimagi.com@evil.com" cannot slip through on
+    # the validation path (the downstream User.objects.get would still
+    # reject them, but as a not_found — the correct behavior is a
+    # validation_error at this edge).
+    local, sep, domain = email.rpartition("@")
+    if sep != "@" or domain != "dimagi.com" or "@" in local or not local:
         return Response(
             error_response(
                 message="only @dimagi.com emails may be added",

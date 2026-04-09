@@ -21,13 +21,6 @@ def other_user(django_user_model):
 
 
 @pytest.fixture
-def non_dimagi_user(django_user_model):
-    return django_user_model.objects.create_user(
-        email="evil@example.com", display_name="Evil"
-    )
-
-
-@pytest.fixture
 def client(user):
     c = APIClient()
     c.force_authenticate(user=user)
@@ -121,6 +114,25 @@ def test_messages_list_rejects_non_participant(client, user, other_user):
     assert resp.status_code == 404
 
 
+def test_messages_list_allows_editor_participant(client, user, other_user):
+    """An editor participant (not the session owner) can read the messages
+    list. This locks in the Phase 3 auth broadening from owner-only to
+    any-participant — the whole point of _load_session_for_participant."""
+    s = Session.objects.create(owner=other_user, title="theirs")
+    SessionParticipant.objects.create(session=s, user=other_user, role="owner")
+    SessionParticipant.objects.create(session=s, user=user, role="editor")
+    Message.objects.create(
+        session=s, turn_index=1, role="user",
+        content={"text": "hi"}, plaintext="hi", status="complete",
+    )
+    # `client` is authenticated as `user`, who is only an editor here.
+    resp = client.get(f"/api/sessions/{s.slug}/messages")
+    assert resp.status_code == 200
+    rows = resp.json()["data"]
+    assert len(rows) == 1
+    assert rows[0]["plaintext"] == "hi"
+
+
 def test_add_participant_by_email(client, user, other_user):
     s = Session.objects.create(owner=user, title="x")
     SessionParticipant.objects.create(session=s, user=user, role="owner")
@@ -183,3 +195,22 @@ def test_add_participant_rejects_non_owner(client, user, other_user, django_user
     )
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "forbidden"
+    # Ensure no extra participant row was created — regression guard in
+    # case the 403 path ever reorders below the create.
+    assert SessionParticipant.objects.filter(session=s).count() == 2
+
+
+def test_add_participant_rejects_double_at_email(client, user):
+    """Defense in depth: even though the downstream user lookup would
+    404 on 'alice@dimagi.com@evil.com', the validation path should
+    reject it at the 400 stage rather than leaking the existence (or
+    non-existence) of the target user via the 404 branch."""
+    s = Session.objects.create(owner=user, title="x")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    resp = client.post(
+        f"/api/sessions/{s.slug}/participants",
+        {"email": "alice@dimagi.com@evil.com"},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "validation_error"
