@@ -8,7 +8,17 @@ Inherits production security settings but configures for:
 """
 from .production import *  # noqa: F401, F403
 
-# ALB terminates TLS, so don't redirect HTTP -> HTTPS at Django level.
+# ALB terminates TLS at the edge; the internal ALB -> nginx -> Django hop
+# is plain HTTP. Tell Django to trust the X-Forwarded-Proto header (set
+# by the ALB and preserved by nginx) so that `request.scheme` returns
+# "https" for real client traffic and `request.build_absolute_uri()`
+# produces https:// URLs. Critical for OAuth: without this, the callback
+# URL is built as `http://labs.connect.dimagi.com/...` and the Connect
+# OAuth app rejects it with redirect_uri_mismatch because the registered
+# URL is https://.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Don't redirect HTTP -> HTTPS at Django level — ALB handles it.
 SECURE_SSL_REDIRECT = False
 
 # ace-web is served under /ace/ path prefix on the ALB.
