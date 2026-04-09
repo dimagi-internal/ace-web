@@ -16,8 +16,6 @@ from apps.sessions.models import Session
 @pytest.fixture
 def authed_client(db):
     u = User.objects.create(email="jon@dimagi.com", display_name="Jon")
-    u.drive_token_cache = "ciphertext"
-    u.save()
     c = Client()
     c.force_login(u)
     return c
@@ -26,7 +24,7 @@ def authed_client(db):
 def _with_fake(authed_client, fake):
     return patch.multiple(
         "apps.opps.views",
-        get_drive_client_for=lambda user: fake,
+        get_drive_client=lambda: fake,
         _resolve_ace_root_folder_id=lambda client: fake.folder_id("ACE"),
     )
 
