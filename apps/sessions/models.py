@@ -56,6 +56,13 @@ class Session(models.Model):
     idd_ref = models.CharField(max_length=500, null=True, blank=True)
     cli_session_id = models.CharField(max_length=200, null=True, blank=True)
 
+    # ACE opp linkage — populated when a Session is launched from the Workbench
+    # via "Discuss in chat". See apps/opps and docs/specs/.
+    # Strings, not FKs: Opps live in Google Drive, not Postgres.
+    opp_slug = models.CharField(max_length=64, blank=True, default="")
+    opp_run_id = models.CharField(max_length=64, blank=True, default="")
+    opp_step_skill = models.CharField(max_length=64, blank=True, default="")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -64,6 +71,10 @@ class Session(models.Model):
         indexes = [
             models.Index(fields=["status", "-created_at"]),
             models.Index(fields=["owner", "-created_at"]),
+            models.Index(
+                fields=["opp_slug", "opp_run_id", "opp_step_skill"],
+                name="idx_session_opp_step",
+            ),
         ]
 
     def __str__(self):

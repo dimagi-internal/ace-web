@@ -23,7 +23,9 @@ class CircuitBreaker:
                              auto-transitions back to closed on the next
                              check, giving the next call a chance.
 
-    After a half-open probe, the caller is responsible for recording `record_success()` or `record_failure()` to reflect the probe's outcome; otherwise the breaker stays in the reset state as if nothing happened.
+    After a half-open probe, the caller is responsible for recording
+    `record_success()` or `record_failure()` to reflect the probe's outcome;
+    otherwise the breaker stays in the reset state as if nothing happened.
     """
 
     def __init__(self, *, threshold: int, cooldown_seconds: float):

@@ -36,7 +36,11 @@ def test_status_returns_unauthenticated_when_no_token(client, monkeypatch):
 def test_start_returns_auth_url(client):
     with patch(
         "apps.common.auth_flow.start",
-        return_value={"auth_url": "https://claude.com/cai/oauth/authorize?x=1", "token": None, "status": "awaiting_code"},
+        return_value={
+            "auth_url": "https://claude.com/cai/oauth/authorize?x=1",
+            "token": None,
+            "status": "awaiting_code",
+        },
     ):
         resp = client.post("/api/auth/cli/start")
     assert resp.status_code == 200

@@ -53,8 +53,13 @@ def oauth_initiate(request: HttpRequest) -> HttpResponse:
     Connect /o/authorize/ with appropriate query params.
     """
     if not settings.CONNECT_OAUTH_CLIENT_ID or not settings.CONNECT_OAUTH_CLIENT_SECRET:
-        logger.error("OAuth not configured — missing CONNECT_OAUTH_CLIENT_ID or CONNECT_OAUTH_CLIENT_SECRET")
-        messages.error(request, "OAuth authentication is not configured. Please contact your administrator.")
+        logger.error(
+            "OAuth not configured — missing CONNECT_OAUTH_CLIENT_ID or "
+            "CONNECT_OAUTH_CLIENT_SECRET"
+        )
+        messages.error(
+            request, "OAuth authentication is not configured. Please contact your administrator."
+        )
         return render(request, "auth/login.html", status=500)
 
     # Generate CSRF state token
@@ -110,7 +115,9 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
     saved_state = request.session.get("oauth_state")
 
     if not state or state != saved_state:
-        logger.warning("OAuth callback with invalid state parameter", extra={"received_state": state})
+        logger.warning(
+            "OAuth callback with invalid state parameter", extra={"received_state": state}
+        )
         messages.error(request, "Invalid authentication state. Please try logging in again.")
         return redirect("auth:login")
 
@@ -148,7 +155,10 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
         response.raise_for_status()
         token_json = response.json()
     except httpx.HTTPStatusError as e:
-        logger.error(f"OAuth token exchange failed with status {e.response.status_code}", exc_info=True)
+        logger.error(
+            f"OAuth token exchange failed with status {e.response.status_code}",
+            exc_info=True,
+        )
         messages.error(request, "Failed to authenticate with Connect. Please try again.")
         return redirect("auth:login")
     except Exception as e:
@@ -171,7 +181,9 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
         return redirect("auth:login")
 
     # Fetch OIDC userinfo for a reliable email address
-    userinfo = fetch_userinfo(access_token=access_token, production_url=settings.CONNECT_PRODUCTION_URL)
+    userinfo = fetch_userinfo(
+        access_token=access_token, production_url=settings.CONNECT_PRODUCTION_URL
+    )
     if userinfo and userinfo.get("email"):
         profile_data["email"] = userinfo["email"]
         logger.info(f"Got email from OIDC userinfo for {profile_data.get('username')}")
@@ -186,7 +198,11 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
     # Build display name
     first_name = profile_data.get("first_name", "")
     last_name = profile_data.get("last_name", "")
-    display_name = f"{first_name} {last_name}".strip() or profile_data.get("username") or email.split("@")[0]
+    display_name = (
+        f"{first_name} {last_name}".strip()
+        or profile_data.get("username")
+        or email.split("@")[0]
+    )
 
     # Create or update the User row (keyed by email)
     user, created = User.objects.update_or_create(

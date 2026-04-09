@@ -11,7 +11,9 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-def introspect_token(access_token: str, client_id: str, client_secret: str, production_url: str) -> dict | None:
+def introspect_token(
+    access_token: str, client_id: str, client_secret: str, production_url: str
+) -> dict | None:
     """
     Introspect OAuth token to get user profile information.
 
@@ -37,7 +39,9 @@ def introspect_token(access_token: str, client_id: str, client_secret: str, prod
         )
 
         if introspect_response.status_code != 200:
-            logger.warning(f"Token introspection failed with status {introspect_response.status_code}")
+            logger.warning(
+                f"Token introspection failed with status {introspect_response.status_code}"
+            )
             return None
 
         introspect_data = introspect_response.json()

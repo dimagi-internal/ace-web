@@ -55,6 +55,7 @@ ace-web/
 ├── apps/
 │   ├── auth/        # Custom User model                     (10 files)
 │   ├── common/      # Envelope, health check                (4 files)
+│   ├── opps/        # ACE opp Workbench (Drive-backed)     (new)
 │   └── sessions/    # 7-table data model                    (4 files)
 ├── config/          # Split settings, ASGI, urls, routing
 ├── frontend/        # React 19 + Vite shell                 (6 src files)
@@ -106,6 +107,39 @@ Deploy & infrastructure:
 For the full Phase 1 post-execution fix list (25 items including settings hardening,
 Dockerfile slimming, SPA catch-all, slug retries, setuptools layout), see the
 `## Post-execution corrections` section of `docs/plans/2026-04-07-1a-foundation.md`.
+
+## ACE opportunity visualization (apps/opps)
+
+The `apps/opps/` module is the ACE opportunity Workbench — a read-through UI
+on top of Google Drive that shows all 19 skills of an ACE run, per-step
+artifact previews, judge verdicts, gate history, and a "Discuss in chat"
+CTA that seeds a new ace-web `Session` from a step's context.
+
+Google Drive is the source of truth. There are no Django ORM models for
+opps / runs / steps / artifacts — the data lives as `opp.yaml` / `run.yaml` /
+`step.yaml` / `judge.yaml` / `gates.jsonl` / `events.jsonl` files under
+`ACE/<opp-slug>/` in Drive. See
+`docs/specs/2026-04-08-ace-opp-visualization-design.md` § 6 for the full
+folder format.
+
+**Coordination with the ACE plugin:** The Drive folder format in the spec
+above is a proposal that the ACE plugin (`../ace`) needs to adopt for
+first-class multi-run support. ace-web ships with a flat-layout fallback
+that reads the current `ACE/<opp>/state.yaml` + subfolder convention as a
+single implicit run, so both formats work during the transition.
+
+**Two OAuth flows:** identity via a hand-rolled CommCare Connect OAuth
+flow with PKCE (`apps/auth/oauth_views.py`, pattern from connect-labs);
+Drive access via a separate Google OAuth grant per-user. See
+`docs/learnings/drive-oauth-two-flow.md`.
+
+**Key files:**
+- `apps/opps/sync.py` — Drive-to-payload reader (structured + flat layouts)
+- `apps/opps/previews.py` — 19 per-skill preview extractors
+- `apps/opps/seed.py` — chat-seed builder for "Discuss in chat"
+- `apps/opps/drive_client.py` — DriveClient ABC + GoogleDriveClient
+- `apps/opps/skills.py` — canonical 19-skill metadata (phase/judge/gate/ordinal)
+- `frontend/src/pages/OppWorkbenchPage.tsx` — the three-pane UI shell
 
 ## Workflow
 

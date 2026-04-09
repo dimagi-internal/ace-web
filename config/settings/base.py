@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "apps.common",
     "apps.auth.apps.AuthConfig",
     "apps.sessions.apps.SessionsConfig",
+    "apps.opps.apps.OppsConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -123,6 +124,36 @@ ACE_CLAUDE_TOKEN_FILE = env(
     "ACE_CLAUDE_TOKEN_FILE",
     default=str(BASE_DIR / ".ace-claude-home" / "oauth-token"),
 )
+
+# --- Google Drive OAuth (secondary flow for the Workbench) ---
+# Encryption key for the per-user Drive token cache. Rotated via AWS Secrets
+# Manager / SSM Parameter Store in prod. In dev, a static key is fine.
+ACE_DRIVE_TOKEN_ENCRYPTION_KEY = env(
+    "ACE_DRIVE_TOKEN_ENCRYPTION_KEY",
+    default="dev-insecure-drive-token-key-change-me",
+)
+# Google OAuth client credentials (registered in the dimagi GCP console with
+# redirect URIs for both dev and prod). Same OAuth project connect-search uses
+# unless there is a reason to mint a new one.
+ACE_GOOGLE_OAUTH_CLIENT_ID = env("ACE_GOOGLE_OAUTH_CLIENT_ID", default="")
+ACE_GOOGLE_OAUTH_CLIENT_SECRET = env("ACE_GOOGLE_OAUTH_CLIENT_SECRET", default="")
+# Redirect URI the callback view builds. Relative to SITE_URL — dev default
+# is local Django, prod is the AWS tenant under /ace/.
+ACE_DRIVE_OAUTH_REDIRECT_URI = env(
+    "ACE_DRIVE_OAUTH_REDIRECT_URI",
+    default="http://localhost:8000/auth/drive/callback",
+)
+# Scopes requested for Drive access. Read-only — the Workbench never writes.
+ACE_DRIVE_OAUTH_SCOPES = [
+    "openid",
+    "email",
+    "profile",
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+]
+# Top-level Drive folder that holds ACE opportunities. Default matches the
+# ACE plugin convention.
+ACE_DRIVE_ROOT_FOLDER_NAME = env("ACE_DRIVE_ROOT_FOLDER_NAME", default="ACE")
 
 # --- Logging ---
 LOGGING = {
