@@ -170,9 +170,37 @@ export function useSessionSocket(slug: string): UseSessionSocketResult {
               (id) => id !== frame.data.user_id,
             ),
           };
-        case "session.error":
+        case "session.error": {
           setLastError(frame.data.message);
+          if (
+            frame.data.code === "draft_version_mismatch" &&
+            frame.data.detail &&
+            typeof frame.data.detail === "object"
+          ) {
+            const detail = frame.data.detail as {
+              current_version: number;
+              current_body: string;
+            };
+            // Clear any pending optimistic body so the user's stale
+            // local text doesn't auto-re-send with the new version.
+            pendingDraftBodyRef.current = null;
+            if (draftDebounceRef.current != null) {
+              window.clearTimeout(draftDebounceRef.current);
+              draftDebounceRef.current = null;
+            }
+            return prev.active_draft
+              ? {
+                  ...prev,
+                  active_draft: {
+                    ...prev.active_draft,
+                    version: detail.current_version,
+                    body: detail.current_body,
+                  },
+                }
+              : prev;
+          }
           return prev;
+        }
         default:
           return prev;
       }
