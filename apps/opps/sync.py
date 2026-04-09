@@ -135,9 +135,8 @@ def load_opp(
     opp_children = client.list_files(opp_folder.id)
     opp_yaml_file = _find_child(opp_children, "opp.yaml")
     if opp_yaml_file is None:
-        raise FileNotFoundError(
-            f"opp {slug!r} has no opp.yaml — may be a legacy flat layout"
-        )
+        # Flat legacy layout — no opp.yaml, state.yaml at the top level.
+        return _load_flat_opp(client, slug=slug, opp_folder=opp_folder, opp_children=opp_children)
 
     opp_manifest = parse_opp_yaml(_read_text(client, opp_yaml_file))
 
@@ -267,4 +266,140 @@ def _load_step_snapshot(client: DriveClient, step_folder_id: str) -> StepSnapsho
         gates=gates,
         artifacts=artifacts,
         folder_id=step_folder_id,
+    )
+
+
+# --- Flat legacy layout support ---
+
+# Map from flat-layout subfolder name to the set of skills whose artifacts
+# are expected to live inside it. Derived from the ACE plugin's current
+# conventions (see ../ace/docs/generated/playbook.md).
+_FLAT_SUBFOLDER_SKILLS: dict[str, set[str]] = {
+    "app-summaries": {"idd-to-learn-app", "idd-to-deliver-app"},
+    "test-results": {"app-test"},
+    "training-materials": {"training-materials"},
+    "comms-log": {"llo-onboarding", "llo-invite", "llo-feedback"},
+    "closeout": {"opp-closeout", "learnings-summary", "cycle-grade"},
+}
+
+
+def _load_flat_opp(
+    client: DriveClient,
+    *,
+    slug: str,
+    opp_folder: DriveFile,
+    opp_children: list[DriveFile],
+) -> OppSnapshot:
+    """Read a legacy flat-layout opp as an implicit single run."""
+    import yaml
+
+    from apps.opps.skills import SKILL_REGISTRY
+
+    # Parse state.yaml if present for current_step / mode hints.
+    state_file = _find_child(opp_children, "state.yaml")
+    state_data: dict = {}
+    if state_file is not None:
+        raw = _read_text(client, state_file)
+        state_data = yaml.safe_load(raw) or {}
+
+    idd_file = _find_child(opp_children, "idd.md")
+    idd_body = _read_text(client, idd_file) if idd_file else ""
+
+    # Build a map of subfolder name -> list of DriveFile (recursively) so we
+    # can look up which skills have produced output.
+    subfolder_files: dict[str, list[DriveFile]] = {}
+    for child in opp_children:
+        if child.mime_type == "application/vnd.google-apps.folder":
+            subfolder_files[child.name] = client.list_files(child.id, recursive=True)
+
+    # Build a skill_name -> [ArtifactRef] map from the subfolder mapping.
+    artifacts_by_skill: dict[str, list[ArtifactRef]] = {}
+    for subfolder_name, skills in _FLAT_SUBFOLDER_SKILLS.items():
+        files = subfolder_files.get(subfolder_name, [])
+        artifact_refs = [
+            ArtifactRef(
+                name=f.name,
+                drive_file_id=f.id,
+                drive_web_link=f.web_view_link,
+                size_bytes=f.size_bytes,
+                mime_type=f.mime_type,
+                path=f.path,
+            )
+            for f in files
+            if f.mime_type != "application/vnd.google-apps.folder"
+        ]
+        for skill in skills:
+            artifacts_by_skill.setdefault(skill, []).extend(artifact_refs)
+
+    # Also treat idd.md as the artifact for idea-to-idd.
+    if idd_file is not None:
+        artifacts_by_skill.setdefault("idea-to-idd", []).append(
+            ArtifactRef(
+                name="idd.md",
+                drive_file_id=idd_file.id,
+                drive_web_link=idd_file.web_view_link,
+                size_bytes=idd_file.size_bytes,
+                mime_type=idd_file.mime_type,
+                path="idd.md",
+            )
+        )
+
+    # Synthesize step rows from the canonical skill registry.
+    steps: list[StepSnapshot] = []
+    for skill_meta in SKILL_REGISTRY:
+        artifacts = artifacts_by_skill.get(skill_meta.name, [])
+        status = "complete" if artifacts else "pending"
+        step_manifest = StepManifest(
+            skill_name=skill_meta.name,
+            phase=skill_meta.phase,
+            ordinal=skill_meta.ordinal,
+            status=status,
+        )
+        steps.append(
+            StepSnapshot(
+                step=step_manifest,
+                judge=None,
+                gates=[],
+                artifacts=artifacts,
+                folder_id=opp_folder.id,
+            )
+        )
+
+    run_detail = RunDetail(
+        run_id="r1",
+        mode=state_data.get("mode", "review"),
+        status="running",
+        started_at=state_data.get("started_at"),
+        completed_at=None,
+        current_phase=state_data.get("current_phase"),
+        current_step=state_data.get("current_step"),
+        skill_versions={},
+        notes="Legacy flat-layout opp — synthesized as implicit single run 'r1'.",
+        steps=steps,
+        folder_id=opp_folder.id,
+    )
+
+    opp_manifest = OppManifest(
+        slug=slug,
+        display_name=state_data.get("display_name", slug),
+        created_at=state_data.get("started_at"),
+        created_by=state_data.get("created_by"),
+        labels=[],
+        current_run_id="r1",
+    )
+
+    return OppSnapshot(
+        opp=opp_manifest,
+        idd_body=idd_body,
+        opp_folder_id=opp_folder.id,
+        all_runs=[
+            RunSummary(
+                run_id="r1",
+                status="running",
+                started_at=state_data.get("started_at"),
+                completed_at=None,
+                folder_id=opp_folder.id,
+            )
+        ],
+        current_run=run_detail,
     )

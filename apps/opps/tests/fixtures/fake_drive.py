@@ -255,3 +255,28 @@ skill_versions:
             }
         }
     }
+
+
+def nutrition_legacy_flat_tree() -> dict:
+    """Legacy flat-layout fixture. No runs/ subfolder — all artifacts live
+    as siblings of state.yaml."""
+    return {
+        "ACE": {
+            "nutrition-legacy": {
+                "state.yaml": """current_phase: app-building
+current_step: app-test
+mode: review
+started_at: 2026-03-20T09:00:00Z
+""",
+                "idd.md": "# Nutrition IDD\n\nInfant nutrition monitoring in rural India.",
+                "app-summaries": {
+                    "learn-app-summary.md": "8 forms · 3 case types",
+                    "deliver-app-summary.md": "3 service workflows",
+                },
+                "test-results": {
+                    "test-plan.md": "40 test cases",
+                    "bug-list.md": "2 bugs found",
+                },
+            }
+        }
+    }
