@@ -19,11 +19,19 @@ services:
     build: .
     # CMD from Dockerfile runs uvicorn directly on port 8000.
     # Run migrations separately: docker compose exec app python manage.py migrate
+    #
+    # docker-compose automatically loads .env from the repo root for variable
+    # substitution. Create a .env file (see .env.example) with the CONNECT_OAUTH_*
+    # credentials if you want to exercise the OAuth login flow locally.
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.development
       DJANGO_DEBUG: "True"
       DJANGO_SECRET_KEY: dev-insecure
       DATABASE_URL: postgres://ace:ace@db:5432/ace_web
+      CONNECT_PRODUCTION_URL: ${CONNECT_PRODUCTION_URL:-https://connect.dimagi.com}
+      CONNECT_OAUTH_CLIENT_ID: ${CONNECT_OAUTH_CLIENT_ID:-}
+      CONNECT_OAUTH_CLIENT_SECRET: ${CONNECT_OAUTH_CLIENT_SECRET:-}
+      FORCE_SCRIPT_NAME: ${FORCE_SCRIPT_NAME:-}
     ports:
       - "8000:8000"
     volumes:
