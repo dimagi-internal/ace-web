@@ -3,11 +3,14 @@ from django.contrib.auth.decorators import login_required
 from django.urls import include, path, re_path
 from django.views.generic import TemplateView
 
+from apps.opps.urls import auth_urlpatterns as drive_auth_urlpatterns
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("apps.common.urls")),
     path("api/", include("apps.sessions.urls")),
     path("api/opps/", include("apps.opps.urls")),
+    *drive_auth_urlpatterns,
     path("auth/", include("apps.auth.urls")),
     # SPA catch-all: any non-api/non-admin/non-auth/non-static/non-assets path serves
     # the React index.html. React Router handles client-side routing from there.
