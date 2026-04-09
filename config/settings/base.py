@@ -173,6 +173,21 @@ ACE_DRIVE_ROOT_FOLDER_ID = env(
     default="1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz",
 )
 
+# --- Phase 3 dev-only test hooks ---
+# Both settings default to False and are only True in development.py.
+# They gate hooks that bypass real authentication and the real Claude CLI
+# subprocess for automated Playwright E2E testing. See
+# docs/learnings/playwright-test-hooks.md for the rationale.
+#
+# SECURITY: the test-login view and FakeCLIBackend must be impossible to
+# reach in production. We belt-and-suspenders this three ways:
+#   1. Defaults are False here.
+#   2. development.py is the only settings module that sets them True.
+#   3. The test-login view AND its URL registration additionally require
+#      DEBUG=True, which production.py / connectlabs.py disable.
+ACE_ALLOW_TEST_LOGIN = env.bool("ACE_ALLOW_TEST_LOGIN", default=False)
+ACE_USE_FAKE_CLI_BACKEND = env.bool("ACE_USE_FAKE_CLI_BACKEND", default=False)
+
 # --- Logging ---
 LOGGING = {
     "version": 1,

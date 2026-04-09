@@ -1,0 +1,47 @@
+"""Scripted replacement for CLIBackend used by Playwright E2E tests.
+
+Gated by `settings.ACE_USE_FAKE_CLI_BACKEND` (default False). When the
+real CLIBackend is replaced, `stream_completion()` yields a deterministic
+sequence of StreamEvents based on the input prompt so the Playwright
+test can assert on the response body.
+
+The timing is tuned so that:
+- a full response finishes in ~1.5-2 seconds (long enough for the stop
+  button to be clicked mid-stream, short enough that happy-path tests
+  don't time out)
+- each delta is small enough that a test can assert on partial text
+
+This file is NEVER imported in production. The guard in
+`apps.sessions.turn_driver._get_backend()` ensures the real CLIBackend
+is used when ACE_USE_FAKE_CLI_BACKEND is False.
+"""
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncIterator
+
+from apps.common.chat_backend import StreamEvent
+
+# Timing tuned for Playwright - slow enough to allow mid-stream stop,
+# fast enough not to hold up happy-path tests.
+DELTA_DELAY_SECONDS = 0.1
+CHUNK_SIZE = 4
+
+
+class FakeCLIBackend:
+    """Scripted backend that echoes the user message as deltas."""
+
+    async def stream_completion(
+        self,
+        *,
+        session,
+        new_user_message: str,
+        force_fresh_session: bool = False,
+    ) -> AsyncIterator[StreamEvent]:
+        response = f"Echo: {new_user_message}"
+        # Break the response into small chunks so each yield is a
+        # deterministic delta that the Playwright assertion can wait on.
+        for i in range(0, len(response), CHUNK_SIZE):
+            await asyncio.sleep(DELTA_DELAY_SECONDS)
+            yield StreamEvent.delta(text=response[i : i + CHUNK_SIZE])
+        yield StreamEvent.done()

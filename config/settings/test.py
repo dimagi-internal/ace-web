@@ -32,3 +32,9 @@ CHANNEL_LAYERS = {
 # with a fakeredis instance. ACE_REDIS_URL is unused in that path but kept
 # valid so redis_client.get_redis() without the patch still constructs.
 ACE_REDIS_URL = "redis://localhost:6379/15"
+
+# Unit tests must NOT hit the dev-only test hooks; they patch directly
+# at the function level. Explicit False here overrides any accidental
+# inheritance if development.py ever becomes a parent.
+ACE_ALLOW_TEST_LOGIN = False
+ACE_USE_FAKE_CLI_BACKEND = False

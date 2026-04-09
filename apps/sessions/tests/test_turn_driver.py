@@ -207,3 +207,27 @@ async def test_stop_event_cancels_while_backend_blocks(
     refreshed = await sync_to_async(Message.objects.get)(pk=asst.id)
     assert refreshed.status == "error"
     assert "cancelled" in refreshed.error_detail
+
+
+def test_get_backend_returns_fake_when_setting_enabled(settings):
+    """When ACE_USE_FAKE_CLI_BACKEND is True, _get_backend() must
+    return a FakeCLIBackend instance instead of the real CLIBackend."""
+    from apps.common.fake_cli_backend import FakeCLIBackend
+    from apps.sessions import turn_driver
+
+    settings.ACE_USE_FAKE_CLI_BACKEND = True
+    backend = turn_driver._get_backend()
+    assert isinstance(backend, FakeCLIBackend)
+
+
+def test_get_backend_returns_real_when_setting_disabled(settings):
+    """Default (setting False) must return the real CLIBackend."""
+    from apps.common.cli_backend import CLIBackend
+    from apps.sessions import turn_driver
+
+    settings.ACE_USE_FAKE_CLI_BACKEND = False
+    # Reset the module-level singleton so the cached fake from the
+    # prior test doesn't leak.
+    turn_driver._backend = None
+    backend = turn_driver._get_backend()
+    assert isinstance(backend, CLIBackend)

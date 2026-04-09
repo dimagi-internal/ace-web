@@ -38,6 +38,20 @@ _bg_tasks: set[asyncio.Task] = set()
 
 
 def _get_backend() -> CLIBackend:
+    """Return the chat backend singleton.
+
+    Normally returns a cached CLIBackend() instance. When
+    settings.ACE_USE_FAKE_CLI_BACKEND is True (dev-only, gated in
+    base.py), returns a FakeCLIBackend instead so Playwright E2E
+    tests don't need a real Claude CLI subprocess. Existing unit
+    tests patch this function directly and are unaffected.
+    """
+    from django.conf import settings
+
+    if getattr(settings, "ACE_USE_FAKE_CLI_BACKEND", False):
+        from apps.common.fake_cli_backend import FakeCLIBackend
+        return FakeCLIBackend()
+
     global _backend
     if _backend is None:
         _backend = CLIBackend()
