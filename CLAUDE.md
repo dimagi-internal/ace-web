@@ -34,6 +34,13 @@ not user-shippable milestones (the team only uses ace-web after Phase 5).
 | 4     | Library and ingest         | Session list, search/filter, share tokens, `ace upload` CLI                     | Pending                                   |
 | 5     | Polish                     | Observability, evals, accessibility, security review, demo prep, full docs     | Pending                                   |
 
+**Parallel track — ACE Opportunity Workbench** (`apps/opps/` + `/opps` UI, spec
+`docs/specs/2026-04-08-ace-opp-visualization-design.md`, plan
+`docs/plans/2026-04-08-ace-opp-workbench.md`): **Done** — shipped in PR #17.
+Drive-backed, no ORM, three-pane workbench with Discuss-in-chat seeding.
+Not yet smoke-tested against a real Drive folder — see "ACE opportunity
+visualization" section below.
+
 Phase 1's 25 post-execution corrections (security, races, Docker, deploy) are
 documented inline at `docs/plans/2026-04-07-1a-foundation.md` under
 **Post-execution corrections**. Read that section before touching config,
@@ -53,28 +60,31 @@ settings, Dockerfile, or the auth/sessions models.
 ```
 ace-web/
 ├── apps/
-│   ├── auth/        # Custom User model                     (10 files)
-│   ├── common/      # Envelope, health check                (4 files)
-│   ├── opps/        # ACE opp Workbench (Drive-backed)     (new)
-│   └── sessions/    # 7-table data model                    (4 files)
+│   ├── auth/        # Custom User model + CommCare Connect OAuth  (7 files)
+│   ├── common/      # Envelope, CLI backend, SSE, health          (11 files)
+│   ├── opps/        # ACE opp Workbench (Drive-backed)            (17 files)
+│   └── sessions/    # 7-table data model + streaming endpoints    (9 files)
 ├── config/          # Split settings, ASGI, urls, routing
-├── frontend/        # React 19 + Vite shell                 (6 src files)
+├── frontend/
+│   └── src/         # api, components, hooks, pages, router       (41 TS/TSX files)
 ├── tests/           # Project-level tests (asgi smoke)
 ├── docs/
 │   ├── deploy.md
-│   ├── learnings/
-│   └── plans/2026-04-07-1a-foundation.md
+│   ├── learnings/   # 6 load-bearing gotchas (see below)
+│   ├── specs/       # Design specs (ace-web + opp visualization)
+│   └── plans/       # 1a-foundation, 2-conversation-engine, aws-migration, ace-opp-workbench
 ├── Dockerfile, Dockerfile.frontend, docker-compose.yml
 ├── frontend/nginx.prod.conf   # nginx sidecar config for the prod container
 ├── deploy/aws/                # task-definition.json + one-time-setup.sh
-├── .github/workflows/deploy-labs.yml   # AWS ECS deploy pipeline
+├── .github/workflows/         # build-backend, build-frontend, deploy-labs, ci
 └── pyproject.toml
 ```
 
-10 source Python files under `apps/`, 5 `test_*.py` files, 6 frontend TS/TSX files.
+44 source Python files under `apps/`, 37 `test_*.py` files, 41 frontend TS/TSX files.
 
 The sessions data model has 7 tables: `users`, `sessions`, `session_participants`,
 `messages`, `drafts`, `share_tokens`, `ingest_uploads`. All migrated in Plan 1A.
+The `opps` module adds **no ORM tables** — it reads through to Google Drive.
 
 ## Key architectural decisions
 
@@ -89,7 +99,7 @@ The sessions data model has 7 tables: `users`, `sessions`, `session_participants
 ## Learnings (read before touching the relevant area)
 
 Infra & scaling:
-- [channels-single-instance](docs/learnings/channels-single-instance.md) — `InMemoryChannelLayer` pins to a single ECS task; Plan 1C must add `channels-redis` (shared ElastiCache) before scaling.
+- [channels-single-instance](docs/learnings/channels-single-instance.md) — `InMemoryChannelLayer` pins to a single ECS task; Phase 3 must add `channels-redis` (shared ElastiCache) before scaling.
 
 Auth & identity:
 - [user-google-sub-nullable](docs/learnings/user-google-sub-nullable.md) — `google_sub` must be NULL (not `""`) and first-login races must be handled at the DB layer.
