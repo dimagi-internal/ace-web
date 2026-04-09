@@ -21,7 +21,8 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # Don't redirect HTTP -> HTTPS at Django level — ALB handles it.
 SECURE_SSL_REDIRECT = False
 
-# ace-web is served under /ace/ path prefix on the ALB.
+# ace-web is served under /ace/ path prefix on the ALB. The FORCE_SCRIPT_NAME
+# setting itself is defined in base.py; we just override the default here.
 FORCE_SCRIPT_NAME = env("FORCE_SCRIPT_NAME", default="/ace")  # noqa: F405
 
 # Tenant-unique session cookie to avoid collisions with scout / connect-labs

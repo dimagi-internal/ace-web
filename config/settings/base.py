@@ -18,6 +18,13 @@ DEBUG = env.bool("DJANGO_DEBUG", default=False)
 # this to ["*"] for local convenience.
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
+# URL path prefix — set to "/ace" in the labs deployment (and the prod-parity
+# local docker-compose profile) so Django serves under /ace/*. None by default
+# so a bare `./manage.py runserver` serves at root. Empty string is coerced to
+# None because Django treats "" as a truthy path and generates URLs like
+# "//api/health" (double slash).
+FORCE_SCRIPT_NAME = env("FORCE_SCRIPT_NAME", default="") or None
+
 # --- Apps ---
 INSTALLED_APPS = [
     "django.contrib.admin",
