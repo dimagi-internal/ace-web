@@ -118,6 +118,14 @@ ACE_CLAUDE_TOKEN_FILE = env(
     default=str(BASE_DIR / ".ace-claude-home" / "oauth-token"),
 )
 
+# --- Google Drive OAuth (secondary flow for the Workbench) ---
+# Encryption key for the per-user Drive token cache. Rotated via AWS Secrets
+# Manager / SSM Parameter Store in prod. In dev, a static key is fine.
+ACE_DRIVE_TOKEN_ENCRYPTION_KEY = env(
+    "ACE_DRIVE_TOKEN_ENCRYPTION_KEY",
+    default="dev-insecure-drive-token-key-change-me",
+)
+
 # --- Logging ---
 LOGGING = {
     "version": 1,
