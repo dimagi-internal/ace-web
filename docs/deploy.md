@@ -104,6 +104,29 @@ Then visit `http://localhost:3000/ace/`. This builds and runs the nginx
 container with the real Vite bundle and exercises the same routing as
 production.
 
+## E2E tests
+
+Phase 3's multi-player WebSocket flow has a Playwright smoke test at
+`e2e/tests/multiplayer.spec.ts`. It uses two dev-only hooks gated by
+`ACE_ALLOW_TEST_LOGIN` and `ACE_USE_FAKE_CLI_BACKEND` (both True only
+in `config/settings/development.py` + `config/settings/e2e.py`):
+
+- `POST /auth/test-login/` creates or logs in a `@dimagi.com` user
+  without going through OAuth.
+- `FakeCLIBackend` replaces the real `CLIBackend` with a scripted
+  echo response so the test asserts on deterministic content without
+  a real Claude CLI subprocess.
+
+The suite runs the whole stack (Django + Channels + React) against a
+file-backed sqlite, `InMemoryChannelLayer`, and fakeredis via
+`config/asgi_e2e.py` — no Docker, Postgres, or Redis required. See
+`e2e/README.md` for run instructions.
+
+These hooks are **impossible to enable in production** — the URL
+registration itself requires both `ACE_ALLOW_TEST_LOGIN` and `DEBUG`
+to be True, and `production.py` / `connectlabs.py` both inherit
+`DEBUG=False` from base.
+
 ## Phase 3 Redis setup (`REDIS_URL`)
 
 Phase 3 introduces `channels-redis` and WebSocket presence storage, both
