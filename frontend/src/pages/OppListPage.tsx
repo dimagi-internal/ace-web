@@ -1,3 +1,134 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+
+import { listOpps } from "../api/opps";
+import type { OppCard } from "../api/types";
+import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
+
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "error"; message: string }
+  | { kind: "loaded"; opps: OppCard[] };
+
 export default function OppListPage() {
-  return <div className="p-6 text-zinc-500">Opp list — implemented in Task 24.</div>;
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [filter, setFilter] = useState("");
+
+  const load = () => {
+    setState({ kind: "loading" });
+    listOpps()
+      .then((opps) => setState({ kind: "loaded", opps }))
+      .catch((err) => setState({ kind: "error", message: String(err?.message ?? err) }));
+  };
+
+  useEffect(load, []);
+
+  const filtered = useMemo(() => {
+    if (state.kind !== "loaded") return [];
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return state.opps;
+    return state.opps.filter(
+      (o) =>
+        o.slug.toLowerCase().includes(needle) ||
+        o.display_name.toLowerCase().includes(needle) ||
+        o.labels.some((l) => l.toLowerCase().includes(needle)),
+    );
+  }, [state, filter]);
+
+  if (state.kind === "loading") return <LoadingSpinner label="Loading opportunities…" />;
+  if (state.kind === "error") return <ErrorState message={state.message} onRetry={load} />;
+
+  return (
+    <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
+      <header className="flex items-center gap-4 border-b border-zinc-800 px-6 py-4">
+        <h1 className="text-xl font-semibold">ACE Opportunities</h1>
+        <span className="text-sm text-zinc-500">{state.opps.length} total</span>
+        <input
+          type="text"
+          placeholder="Filter by slug, name, or label…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="ml-auto w-64 rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none"
+        />
+      </header>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          title={filter ? "No opps match your filter" : "No opportunities yet"}
+          description={
+            filter
+              ? "Try a different search term."
+              : "Run ACE against an opportunity and it will show up here."
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 p-6 md:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((opp) => (
+            <Link
+              key={opp.slug}
+              to={`/opps/${opp.slug}`}
+              className="group rounded border border-zinc-800 bg-zinc-900 p-4 transition hover:border-blue-600"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="font-semibold text-zinc-100 group-hover:text-blue-400">
+                    {opp.display_name || opp.slug}
+                  </h2>
+                  <div className="text-xs text-zinc-500">{opp.slug}</div>
+                </div>
+                <StatusBadge status={opp.status} />
+              </div>
+              {opp.current_step && (
+                <div className="mt-3 text-sm text-zinc-400">
+                  <span className="text-zinc-500">current:</span>{" "}
+                  <span className="font-mono text-zinc-300">{opp.current_step}</span>
+                  {opp.current_phase && (
+                    <span className="ml-2 text-xs text-zinc-500">
+                      ({opp.current_phase})
+                    </span>
+                  )}
+                </div>
+              )}
+              {opp.labels.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {opp.labels.map((label) => (
+                    <span
+                      key={label}
+                      className="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const tone = statusColor(status);
+  return (
+    <span className={`rounded px-2 py-0.5 text-xs ${tone}`}>
+      {status}
+    </span>
+  );
+}
+
+function statusColor(status: string): string {
+  switch (status) {
+    case "running":
+      return "bg-blue-900 text-blue-300";
+    case "complete":
+      return "bg-green-900 text-green-300";
+    case "blocked":
+      return "bg-amber-900 text-amber-300";
+    case "failed":
+      return "bg-red-900 text-red-300";
+    default:
+      return "bg-zinc-800 text-zinc-400";
+  }
 }
