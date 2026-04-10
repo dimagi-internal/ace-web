@@ -10,6 +10,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("apps.common.urls")),
     path("api/", include("apps.sessions.urls")),
+    path("api/ingest/", include("apps.ingest.urls")),
     path("api/opps/", include("apps.opps.urls")),
     path("api/auth/", include((token_urlpatterns, "auth_tokens"))),
     *drive_auth_urlpatterns,
