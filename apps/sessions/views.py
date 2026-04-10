@@ -2,12 +2,8 @@
 participant management.
 
 Send is over WebSocket (see apps.sessions.consumers) in Phase 3; the
-Phase 2 `send_message` view is deleted.
-
-TODO: imported-session auto-activation (status "imported" -> "active" on
-first message) needs to be added to the WebSocket consumer's chat.send
-handler. Previously this was in the REST send_message view which Phase 3
-removed.
+Phase 2 `send_message` view is deleted. Imported-session auto-activation
+lives in the consumer's _handle_chat_send → _activate_imported_session.
 """
 from __future__ import annotations
 

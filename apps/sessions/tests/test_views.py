@@ -306,16 +306,23 @@ def test_delete_session_404_for_missing(client):
     assert resp.status_code == 404
 
 
-@pytest.mark.skip(
-    reason="Phase 3 removed the REST send_message endpoint in favor of WebSocket. "
-    "Imported-session auto-activation needs to move to the WebSocket consumer's "
-    "chat.send handler — see TODO in apps/sessions/views.py."
-)
-def test_send_message_activates_imported_session(client, user):
+def test_activate_imported_session_helper(user):
+    """Unit test for the consumer helper that auto-activates imported sessions."""
+    from apps.sessions.consumers import _activate_imported_session
+
     s = Session.objects.create(
         owner=user, title="imported", source="upload", status="imported"
     )
-    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "continue"}, format="json")
-    assert resp.status_code == 201
+    _activate_imported_session(s)
+    s.refresh_from_db()
+    assert s.status == "active"
+
+
+def test_activate_imported_session_noop_for_active(user):
+    """Active sessions are not affected by the activation helper."""
+    from apps.sessions.consumers import _activate_imported_session
+
+    s = Session.objects.create(owner=user, title="active", status="active")
+    _activate_imported_session(s)
     s.refresh_from_db()
     assert s.status == "active"
