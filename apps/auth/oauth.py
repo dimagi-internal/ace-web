@@ -137,7 +137,15 @@ def fetch_user_email(access_token: str, production_url: str) -> str | None:
                 if email:
                     logger.info(f"Got email from {endpoint}: {email}")
                     return email
-                logger.info(f"{endpoint} returned 200 but no email: {list(data.keys())}")
+                # Some Connect APIs return 'name' which may be the HQ username
+                # (which is the email for HQ-linked accounts)
+                name = data.get("name", "")
+                if "@" in str(name):
+                    logger.info(f"Got email from {endpoint} name field: {name}")
+                    return name
+                logger.info(
+                    f"{endpoint} returned 200 but no email: {data}"
+                )
         except Exception as e:
             logger.debug(f"Failed to fetch {endpoint}: {e}")
             continue
