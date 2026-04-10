@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Archive, ArchiveRestore, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, MoreHorizontal, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import {
   type ListSessionsParams,
 } from "@/api/sessions";
 import type { Session, SessionListPage } from "@/api/types";
+import { uploadSession } from "@/api/ingest";
 
 type StatusFilter = "active" | "archived" | "imported" | "";
 
@@ -49,6 +50,7 @@ export default function LibraryPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<Session | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -69,6 +71,19 @@ export default function LibraryPage() {
   const handleNewChat = async () => {
     const s = await createSession();
     navigate(`/chat/${s.slug}`);
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const result = await uploadSession(file);
+      toast.success(`Uploaded: ${result.message_count} messages`);
+      load();
+    } catch (err) {
+      toast.error(String(err instanceof Error ? err.message : err));
+    }
+    e.target.value = "";
   };
 
   const handleArchiveToggle = async (s: Session) => {
@@ -102,6 +117,23 @@ export default function LibraryPage() {
             onChange={(e) => { setQuery(e.target.value); setPage(1); }}
             className="w-56"
           />
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".jsonl"
+              className="hidden"
+              onChange={handleUpload}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="mr-1.5 h-3.5 w-3.5" />
+              Upload .jsonl
+            </Button>
+          </>
           <Button size="sm" onClick={handleNewChat}>
             <Plus className="mr-1.5 h-3.5 w-3.5" />
             New chat
