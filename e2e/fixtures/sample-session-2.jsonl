@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"e2e-test-session-002"}
+{"type":"assistant","message":{"id":"msg_e2e_2_01","content":[{"type":"text","text":"Hello! How can I help you today?"}]}}
+{"type":"result","result":{"type":"text","text":"Hello! How can I help you today?"},"session_id":"e2e-test-session-002"}
+{"type":"assistant","message":{"id":"msg_e2e_2_02","content":[{"type":"text","text":"I can help with coding, writing, and analysis."}]}}
+{"type":"result","result":{"type":"text","text":"I can help with coding, writing, and analysis."},"session_id":"e2e-test-session-002"}
