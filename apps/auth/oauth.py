@@ -143,6 +143,25 @@ def fetch_user_email(access_token: str, production_url: str) -> str | None:
                 if "@" in str(name):
                     logger.info(f"Got email from {endpoint} name field: {name}")
                     return name
+                # Try following the 'url' field to get the full user resource
+                user_url = data.get("url", "")
+                if user_url:
+                    try:
+                        detail_resp = httpx.get(
+                            user_url,
+                            headers={"Authorization": f"Bearer {access_token}"},
+                            timeout=10,
+                            follow_redirects=True,
+                        )
+                        if detail_resp.status_code == 200:
+                            detail = detail_resp.json()
+                            detail_email = detail.get("email", "")
+                            if detail_email:
+                                logger.info(f"Got email from user detail URL: {detail_email}")
+                                return detail_email
+                            logger.info(f"User detail URL returned: {detail}")
+                    except Exception as e:
+                        logger.debug(f"Failed to fetch user detail URL: {e}")
                 logger.info(
                     f"{endpoint} returned 200 but no email: {data}"
                 )
