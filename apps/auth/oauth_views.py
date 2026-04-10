@@ -156,8 +156,8 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
         token_json = response.json()
     except httpx.HTTPStatusError as e:
         logger.error(
-            f"OAuth token exchange failed with status {e.response.status_code}",
-            exc_info=True,
+            f"OAuth token exchange failed: status={e.response.status_code} "
+            f"body={e.response.text[:500]}",
         )
         messages.error(request, "Failed to authenticate with Connect. Please try again.")
         return redirect("auth:login")
