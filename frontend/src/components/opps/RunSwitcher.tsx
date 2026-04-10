@@ -23,13 +23,13 @@ export function RunSwitcher({ slug, currentRunId, runs }: Props) {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="text-xs text-zinc-500">run</span>
+      <span className="text-xs text-muted-foreground">run</span>
       <select
         value={currentRunId}
         onChange={(e) => {
           navigate(`/opps/${slug}/runs/${e.target.value}`);
         }}
-        className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100 focus:border-blue-500 focus:outline-none"
+        className="rounded border border-border bg-card px-2 py-1 text-xs text-foreground focus:border-ring focus:outline-none"
       >
         {labeled.map((r) => (
           <option key={r.run_id} value={r.run_id}>
@@ -41,7 +41,7 @@ export function RunSwitcher({ slug, currentRunId, runs }: Props) {
       {priorRun && (
         <Link
           to={`/opps/${slug}/compare?from=${priorRun.run_id}&to=${currentRunId}`}
-          className="text-xs text-blue-400 underline hover:text-blue-300"
+          className="text-xs text-primary underline hover:text-primary/80"
         >
           compare to {priorRun.label}
         </Link>

@@ -55,7 +55,7 @@ export function AuthCliPage() {
   return (
     <div className="mx-auto max-w-2xl p-6">
       <h1 className="mb-4 text-2xl font-semibold">Connect Claude CLI</h1>
-      <p className="mb-4 text-zinc-600">
+      <p className="mb-4 text-muted-foreground">
         ace-web uses your team's Claude subscription via the local CLI. To
         authorize this server, generate an OAuth token using the flow below.
       </p>
@@ -64,7 +64,7 @@ export function AuthCliPage() {
         <button
           type="button"
           onClick={start}
-          className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+          className="rounded bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
         >
           Begin authorization
         </button>
@@ -72,28 +72,28 @@ export function AuthCliPage() {
 
       {phase === "awaiting_code" && authUrl && (
         <div className="space-y-4">
-          <div className="rounded border border-zinc-200 bg-zinc-50 p-4">
-            <p className="mb-2 text-sm text-zinc-700">
+          <div className="rounded border border-border bg-muted p-4">
+            <p className="mb-2 text-sm text-muted-foreground">
               1. Open this URL in a browser logged into your Claude account:
             </p>
             <a
               href={authUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="break-all font-mono text-sm text-blue-600 underline"
+              className="break-all font-mono text-sm text-primary underline"
             >
               {authUrl}
             </a>
           </div>
           <div>
-            <p className="mb-2 text-sm text-zinc-700">
+            <p className="mb-2 text-sm text-muted-foreground">
               2. Paste the resulting code here:
             </p>
             <input
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              className="w-full rounded border border-zinc-300 px-3 py-2 font-mono"
+              className="w-full rounded border border-border bg-background px-3 py-2 font-mono text-foreground"
               placeholder="paste-code-here"
             />
           </div>
@@ -102,14 +102,14 @@ export function AuthCliPage() {
               type="button"
               onClick={submit}
               disabled={!code.trim()}
-              className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50 hover:bg-blue-700"
+              className="rounded bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50 hover:bg-primary/90"
             >
               Submit code
             </button>
             <button
               type="button"
               onClick={cancel}
-              className="rounded border border-zinc-300 px-4 py-2 text-zinc-700 hover:bg-zinc-100"
+              className="rounded border border-border px-4 py-2 text-muted-foreground hover:bg-accent"
             >
               Cancel
             </button>
@@ -118,7 +118,7 @@ export function AuthCliPage() {
       )}
 
       {phase === "submitting" && (
-        <div className="text-zinc-500">Submitting code…</div>
+        <div className="text-muted-foreground">Submitting code…</div>
       )}
 
       {phase === "complete" && (

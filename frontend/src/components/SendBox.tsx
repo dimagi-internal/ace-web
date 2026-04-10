@@ -25,9 +25,9 @@ export function SendBox({ disabled, isStreaming, onSend, onStop }: Props) {
   };
 
   return (
-    <div className="flex items-end gap-2 border-t border-zinc-200 p-3">
+    <div className="flex items-end gap-2 border-t border-border p-3">
       <textarea
-        className="flex-1 resize-none rounded border border-zinc-300 px-3 py-2 outline-none focus:border-blue-500"
+        className="flex-1 resize-none rounded border border-border bg-background px-3 py-2 text-foreground outline-none focus:border-ring"
         rows={2}
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -48,7 +48,7 @@ export function SendBox({ disabled, isStreaming, onSend, onStop }: Props) {
           type="button"
           onClick={submit}
           disabled={disabled || !text.trim()}
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50 hover:bg-blue-700"
+          className="rounded bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50 hover:bg-primary/90"
         >
           Send
         </button>

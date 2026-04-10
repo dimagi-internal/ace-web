@@ -11,11 +11,11 @@ export function MessageItem({ message, liveText, isLive }: Props) {
 
   if (message.role === "tool_use") {
     return (
-      <details className="my-2 rounded border border-zinc-200 bg-zinc-50 p-2 text-sm">
-        <summary className="cursor-pointer text-zinc-600">
+      <details className="my-2 rounded border border-border bg-muted p-2 text-sm">
+        <summary className="cursor-pointer text-muted-foreground">
           tool_use: {String(message.content?.name ?? "unknown")}
         </summary>
-        <pre className="mt-2 whitespace-pre-wrap text-xs text-zinc-700">
+        <pre className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">
           {JSON.stringify(message.content, null, 2)}
         </pre>
       </details>
@@ -23,9 +23,9 @@ export function MessageItem({ message, liveText, isLive }: Props) {
   }
   if (message.role === "tool_result") {
     return (
-      <details className="my-2 rounded border border-zinc-200 bg-zinc-50 p-2 text-sm">
-        <summary className="cursor-pointer text-zinc-600">tool_result</summary>
-        <pre className="mt-2 whitespace-pre-wrap text-xs text-zinc-700">
+      <details className="my-2 rounded border border-border bg-muted p-2 text-sm">
+        <summary className="cursor-pointer text-muted-foreground">tool_result</summary>
+        <pre className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">
           {message.plaintext}
         </pre>
       </details>
@@ -34,8 +34,8 @@ export function MessageItem({ message, liveText, isLive }: Props) {
 
   const bubbleClass =
     message.role === "user"
-      ? "ml-auto bg-blue-600 text-white"
-      : "mr-auto bg-zinc-100 text-zinc-900";
+      ? "ml-auto bg-primary text-primary-foreground"
+      : "mr-auto bg-muted text-foreground";
   return (
     <div
       className={`my-2 max-w-[80%] rounded-2xl px-4 py-2 ${bubbleClass}`}

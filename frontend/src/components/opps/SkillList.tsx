@@ -20,7 +20,7 @@ export function SkillList({ steps, priorRunSteps, selectedSkill, onSelect }: Pro
 
   return (
     <div className="flex flex-col gap-3 p-4">
-      <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
         Lifecycle · {steps.length} skills
       </div>
       {PHASE_ORDER.map(({ key, label }) => {
@@ -31,11 +31,11 @@ export function SkillList({ steps, priorRunSteps, selectedSkill, onSelect }: Pro
         return (
           <section key={key} className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <span className="h-0.5 w-2 bg-zinc-600" />
-              <h3 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              <span className="h-0.5 w-2 bg-muted-foreground" />
+              <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {label} · {phaseSteps.length} {phaseSteps.length === 1 ? "step" : "steps"}
               </h3>
-              <span className="h-px flex-1 bg-zinc-800" />
+              <span className="h-px flex-1 bg-border" />
             </div>
             <div className="flex flex-col gap-0.5">
               {phaseSteps.map((step) => (

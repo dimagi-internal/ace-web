@@ -12,5 +12,5 @@ export function ChatRedirectPage() {
     });
   }, [navigate]);
 
-  return <div className="p-4 text-zinc-500">Starting a new chat…</div>;
+  return <div className="p-4 text-muted-foreground">Starting a new chat…</div>;
 }

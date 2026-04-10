@@ -21,12 +21,12 @@ export function SkillRow({ step, isSelected, priorRunStep, onClick }: Props) {
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded px-2 py-2 text-left text-xs ${
         isSelected
-          ? "border border-amber-600 bg-amber-950/40"
-          : "border border-transparent bg-zinc-900 hover:bg-zinc-800"
+          ? "border border-primary bg-primary/10"
+          : "border border-transparent bg-card hover:bg-accent"
       }`}
     >
       <StatusDot status={step.status} />
-      <span className="w-[140px] shrink-0 font-semibold text-zinc-100">
+      <span className="w-[140px] shrink-0 font-semibold text-foreground">
         {step.skill_name}
       </span>
       {step.has_judge ? (
@@ -41,13 +41,13 @@ export function SkillRow({ step, isSelected, priorRunStep, onClick }: Props) {
         </>
       ) : (
         <>
-          <span className="w-[54px] shrink-0 text-[10px] text-zinc-600">no judge</span>
+          <span className="w-[54px] shrink-0 text-[10px] text-muted-foreground">no judge</span>
           <span className="w-[32px] shrink-0" />
           <span className="w-[48px] shrink-0" />
         </>
       )}
       {step.is_gate && <GateBadge status={step.status} />}
-      <span className="flex-1 truncate text-[11px] text-zinc-400">
+      <span className="flex-1 truncate text-[11px] text-muted-foreground">
         {step.preview_text}
       </span>
     </button>
@@ -74,18 +74,18 @@ function statusColor(status: string): string {
   if (status === "running") return "text-blue-400";
   if (status === "judge-fail" || status === "error") return "text-red-500";
   if (status === "gate-pending" || status === "gate-rejected") return "text-amber-500";
-  return "text-zinc-600";
+  return "text-muted-foreground";
 }
 
 function JudgeBar({ score }: { score: number | null }) {
   const pct = score !== null ? Math.min(100, Math.max(0, score * 10)) : 0;
   const tone =
-    score === null ? "bg-zinc-800"
+    score === null ? "bg-muted"
     : score >= 8 ? "bg-green-500"
     : score >= 6 ? "bg-amber-500"
     : "bg-red-500";
   return (
-    <span className="relative block h-1.5 w-[54px] shrink-0 overflow-hidden rounded bg-zinc-900">
+    <span className="relative block h-1.5 w-[54px] shrink-0 overflow-hidden rounded bg-card">
       <span className={`absolute inset-y-0 left-0 ${tone}`} style={{ width: `${pct}%` }} />
     </span>
   );
@@ -101,10 +101,10 @@ function formatDelta(delta: number | null): string {
 }
 
 function deltaTone(delta: number | null): string {
-  if (delta === null) return "text-zinc-600";
+  if (delta === null) return "text-muted-foreground";
   if (delta > 0.05) return "text-green-400";
   if (delta < -0.05) return "text-red-400";
-  return "text-zinc-500";
+  return "text-muted-foreground";
 }
 
 function GateBadge({ status }: { status: string }) {

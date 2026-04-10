@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 
 export function LoadingSpinner({ label = "Loading…" }: { label?: string }) {
   return (
-    <div className="flex items-center gap-3 p-6 text-zinc-500">
-      <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600" />
+    <div className="flex items-center gap-3 p-6 text-muted-foreground">
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
       <span>{label}</span>
     </div>
   );
@@ -20,8 +20,8 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
-      <h3 className="text-lg font-semibold text-zinc-700">{title}</h3>
-      {description && <p className="text-sm text-zinc-500">{description}</p>}
+      <h3 className="text-lg font-semibold text-muted-foreground">{title}</h3>
+      {description && <p className="text-sm text-muted-foreground">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );

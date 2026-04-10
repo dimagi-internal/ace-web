@@ -45,7 +45,7 @@ export class DriveReconnectGuard extends Component<Props, State> {
   render() {
     if (this.state.reconnectUrl) {
       return (
-        <div className="p-6 text-zinc-500">
+        <div className="p-6 text-muted-foreground">
           Redirecting to Google to connect Drive access…
         </div>
       );

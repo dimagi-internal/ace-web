@@ -46,7 +46,7 @@ export function ChatPage() {
   };
 
   if (!session) {
-    return <div className="p-4 text-zinc-500">Loading…</div>;
+    return <div className="p-4 text-muted-foreground">Loading…</div>;
   }
 
   const isStreaming = stream.phase === "streaming";
@@ -56,7 +56,7 @@ export function ChatPage() {
       <RecentSessionsSidebar currentSlug={slug} />
       <div className="flex flex-1 flex-col">
         <CliAuthBanner />
-        <header className="border-b border-zinc-200 px-4 py-2">
+        <header className="border-b border-border px-4 py-2">
           <InlineTitleEdit value={session.title} onSave={handleTitleSave} />
         </header>
         <main className="flex-1 overflow-y-auto">

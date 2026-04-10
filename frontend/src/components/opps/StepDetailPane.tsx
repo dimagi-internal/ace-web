@@ -30,7 +30,7 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
   if (loading) return <LoadingSpinner label={`Loading ${skill}…`} />;
   if (!detail)
     return (
-      <div className="p-4 text-xs text-zinc-500">
+      <div className="p-4 text-xs text-muted-foreground">
         Failed to load {skill}.
       </div>
     );
@@ -40,12 +40,12 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
   return (
     <div className="flex h-full flex-col gap-2 overflow-y-auto p-4">
       <div>
-        <div className="text-[9px] uppercase tracking-wider text-zinc-500">
+        <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
           Selected step
         </div>
-        <div className="text-sm font-semibold text-zinc-100">{detail.skill_name}</div>
-        <div className="text-[10px] text-zinc-500">
-          {detail.phase_display} · status <span className="text-zinc-300">{detail.status}</span>
+        <div className="text-sm font-semibold text-foreground">{detail.skill_name}</div>
+        <div className="text-[10px] text-muted-foreground">
+          {detail.phase_display} · status <span className="text-foreground">{detail.status}</span>
         </div>
       </div>
 
