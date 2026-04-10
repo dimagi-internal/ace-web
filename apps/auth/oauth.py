@@ -109,3 +109,35 @@ def fetch_userinfo(access_token: str, production_url: str) -> dict | None:
     except Exception as e:
         logger.warning(f"Failed to fetch userinfo: {str(e)}")
         return None
+
+
+def fetch_user_email(access_token: str, production_url: str) -> str | None:
+    """Fetch the user's email from Connect's user API.
+
+    Tries multiple Connect API endpoints to find the user's email.
+    This is a fallback for when introspection and OIDC userinfo don't
+    return an email (common for HQ-linked accounts without the openid scope).
+    """
+    endpoints = [
+        "/api/users/me",
+        "/api/user/",
+        "/users/api/me/",
+    ]
+    for endpoint in endpoints:
+        try:
+            response = httpx.get(
+                f"{production_url}{endpoint}",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                email = data.get("email") or data.get("user", {}).get("email", "")
+                if email:
+                    logger.info(f"Got email from {endpoint}: {email}")
+                    return email
+                logger.info(f"{endpoint} returned 200 but no email: {list(data.keys())}")
+        except Exception as e:
+            logger.debug(f"Failed to fetch {endpoint}: {e}")
+            continue
+    return None

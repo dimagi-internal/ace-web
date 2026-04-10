@@ -119,7 +119,7 @@ USE_TZ = True
 CONNECT_PRODUCTION_URL = env("CONNECT_PRODUCTION_URL", default="https://connect.dimagi.com")
 CONNECT_OAUTH_CLIENT_ID = env("CONNECT_OAUTH_CLIENT_ID", default="")
 CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
-CONNECT_OAUTH_SCOPES = ["read", "openid"]
+CONNECT_OAUTH_SCOPES = ["read"]
 
 # Django auth wiring
 LOGIN_URL = "/auth/login/"
