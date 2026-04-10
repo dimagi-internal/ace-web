@@ -27,7 +27,8 @@
         {"name": "DJANGO_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-django-secret-key-2XSt10"},
         {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-database-url-5KLKYs"},
         {"name": "CONNECT_OAUTH_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-id-jzsNCM"},
-        {"name": "CONNECT_OAUTH_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-secret-kXQI9s"}
+        {"name": "CONNECT_OAUTH_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-secret-kXQI9s"},
+        {"name": "ACE_DRIVE_SA_KEY_JSON", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-drive-sa-key-json"}
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
