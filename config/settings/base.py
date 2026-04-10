@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "apps.sessions.apps.SessionsConfig",
     "apps.opps.apps.OppsConfig",
     "apps.ingest.apps.IngestConfig",
+    "apps.service_accounts.apps.ServiceAccountsConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -178,6 +179,21 @@ ACE_DRIVE_SA_KEY_JSON = env("ACE_DRIVE_SA_KEY_JSON", default="")
 #      DEBUG=True, which production.py / connectlabs.py disable.
 ACE_ALLOW_TEST_LOGIN = env.bool("ACE_ALLOW_TEST_LOGIN", default=False)
 ACE_USE_FAKE_CLI_BACKEND = env.bool("ACE_USE_FAKE_CLI_BACKEND", default=False)
+
+# --- Service Accounts ---
+SERVICE_ACCOUNTS = {
+    "PROVIDERS": {
+        "google_sa": "apps.service_accounts.providers.GoogleSAProvider",
+        "api_key": "apps.service_accounts.providers.ApiKeyProvider",
+    },
+    "BOOTSTRAP_FROM_ENV": {
+        "ace-drive": {
+            "credential_type": "google_sa",
+            "env_var": "ACE_DRIVE_SA_KEY_JSON",
+            "default_scopes": ["https://www.googleapis.com/auth/drive"],
+        },
+    },
+}
 
 # --- Logging ---
 LOGGING = {
