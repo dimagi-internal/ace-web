@@ -180,16 +180,20 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
         messages.error(request, "Could not retrieve your profile from Connect. Please try again.")
         return redirect("auth:login")
 
+    logger.info(f"Introspection profile_data: {profile_data}")
+
     # Fetch OIDC userinfo for a reliable email address
     userinfo = fetch_userinfo(
         access_token=access_token, production_url=settings.CONNECT_PRODUCTION_URL
     )
+    logger.info(f"OIDC userinfo response: {userinfo}")
     if userinfo and userinfo.get("email"):
         profile_data["email"] = userinfo["email"]
         logger.info(f"Got email from OIDC userinfo for {profile_data.get('username')}")
 
     # Enforce allowed email domains
     email = (profile_data.get("email") or "").strip().lower()
+    logger.info(f"Final email for domain check: {email!r}")
     allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", ["dimagi.com"])
     _, _, email_domain = email.rpartition("@")
     if email_domain not in allowed_domains:
