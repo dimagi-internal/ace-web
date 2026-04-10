@@ -27,3 +27,13 @@ if getattr(settings, "ACE_ALLOW_TEST_LOGIN", False) and settings.DEBUG:
     urlpatterns.append(
         path("test-login/", test_login_views.test_login, name="test_login")
     )
+
+# Token-gated e2e-login for automated tools (walkthroughs, CI).
+# Only registered when ACE_E2E_AUTH_TOKEN is set (non-empty).
+# See apps/auth/e2e_login_views.py for the security model.
+if getattr(settings, "ACE_E2E_AUTH_TOKEN", ""):
+    from . import e2e_login_views
+
+    urlpatterns.append(
+        path("e2e-login/", e2e_login_views.e2e_login, name="e2e_login")
+    )

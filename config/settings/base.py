@@ -180,6 +180,16 @@ ACE_DRIVE_SA_KEY_JSON = env("ACE_DRIVE_SA_KEY_JSON", default="")
 ACE_ALLOW_TEST_LOGIN = env.bool("ACE_ALLOW_TEST_LOGIN", default=False)
 ACE_USE_FAKE_CLI_BACKEND = env.bool("ACE_USE_FAKE_CLI_BACKEND", default=False)
 
+# --- E2E auth token (labs environments) ---
+# A pre-shared secret that allows automated tools (walkthroughs, CI) to
+# authenticate without going through OAuth. Empty = disabled. The endpoint
+# at /auth/e2e-login/ only registers when this is non-empty. Stored in
+# AWS Secrets Manager alongside other labs secrets.
+ACE_E2E_AUTH_TOKEN = env("ACE_E2E_AUTH_TOKEN", default="")
+
+# --- Allowed email domains ---
+ACE_ALLOWED_EMAIL_DOMAINS = ["dimagi.com", "dimagi-ai.com"]
+
 # --- Service Accounts ---
 SERVICE_ACCOUNTS = {
     "PROVIDERS": {
