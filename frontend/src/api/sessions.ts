@@ -32,11 +32,22 @@ export const updateSession = (slug: string, updates: Partial<Session>) =>
   });
 
 export const deleteSession = async (slug: string): Promise<void> => {
-  // DELETE returns 204 with no body — can't use apiFetch which expects JSON
+  // DELETE returns 204 with no body — can't use apiFetch which expects JSON.
+  // Still needs the CSRF token for Django's CsrfViewMiddleware.
   const API_PREFIX = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const cookies = document.cookie.split(";");
+  let csrfToken = "";
+  for (const raw of cookies) {
+    const [name, ...value] = raw.trim().split("=");
+    if (name === "csrftoken_ace" || name === "csrftoken") {
+      csrfToken = decodeURIComponent(value.join("="));
+      break;
+    }
+  }
   const resp = await fetch(`${API_PREFIX}/api/sessions/${slug}`, {
     method: "DELETE",
     credentials: "same-origin",
+    headers: csrfToken ? { "X-CSRFToken": csrfToken } : undefined,
   });
   if (!resp.ok) {
     throw new Error(`Delete failed: ${resp.status}`);
