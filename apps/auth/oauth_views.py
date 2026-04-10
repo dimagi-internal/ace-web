@@ -23,7 +23,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.auth.models import User
-from apps.auth.oauth import fetch_userinfo, introspect_token
+from apps.auth.oauth import fetch_user_email, fetch_userinfo, introspect_token
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +190,16 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
     if userinfo and userinfo.get("email"):
         profile_data["email"] = userinfo["email"]
         logger.info(f"Got email from OIDC userinfo for {profile_data.get('username')}")
+
+    # Fallback: if introspection and userinfo didn't return an email,
+    # try Connect's user API endpoints directly.
+    if not profile_data.get("email"):
+        api_email = fetch_user_email(
+            access_token=access_token,
+            production_url=settings.CONNECT_PRODUCTION_URL,
+        )
+        if api_email:
+            profile_data["email"] = api_email
 
     # Enforce allowed email domains
     email = (profile_data.get("email") or "").strip().lower()
