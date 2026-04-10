@@ -69,6 +69,8 @@ export function ChatPage() {
         <SendBox
           disabled={false}
           isStreaming={isStreaming}
+          sessionSource={session.source}
+          sessionStatus={session.status}
           onSend={handleSend}
           onStop={stream.cancel}
         />

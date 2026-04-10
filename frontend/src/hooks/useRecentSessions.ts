@@ -9,8 +9,8 @@ export function useRecentSessions(limit = 10) {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const data = await listSessions(limit, "active");
-    setSessions(data);
+    const data = await listSessions({ pageSize: limit, status: "active" });
+    setSessions(data.items);
     setLoading(false);
   }, [limit]);
 

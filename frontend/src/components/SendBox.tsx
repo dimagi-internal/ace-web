@@ -3,11 +3,13 @@ import { useState, type KeyboardEvent } from "react";
 interface Props {
   disabled: boolean;
   isStreaming: boolean;
+  sessionSource?: string;
+  sessionStatus?: string;
   onSend: (text: string) => void;
   onStop: () => void;
 }
 
-export function SendBox({ disabled, isStreaming, onSend, onStop }: Props) {
+export function SendBox({ disabled, isStreaming, sessionSource, sessionStatus, onSend, onStop }: Props) {
   const [text, setText] = useState("");
 
   const submit = () => {
@@ -25,7 +27,13 @@ export function SendBox({ disabled, isStreaming, onSend, onStop }: Props) {
   };
 
   return (
-    <div className="flex items-end gap-2 border-t border-border p-3">
+    <div className="border-t border-border">
+      {sessionSource === "upload" && sessionStatus === "imported" && (
+        <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-border bg-muted/50">
+          Imported session — send a message to continue it with Claude.
+        </div>
+      )}
+      <div className="flex items-end gap-2 p-3">
       <textarea
         className="flex-1 resize-none rounded border border-border bg-background px-3 py-2 text-foreground outline-none focus:border-ring"
         rows={2}
@@ -53,6 +61,7 @@ export function SendBox({ disabled, isStreaming, onSend, onStop }: Props) {
           Send
         </button>
       )}
+      </div>
     </div>
   );
 }

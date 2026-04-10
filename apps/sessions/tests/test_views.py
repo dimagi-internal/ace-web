@@ -236,3 +236,13 @@ def test_delete_session_403_for_non_owner(client, user, other_user):
 def test_delete_session_404_for_missing(client):
     resp = client.delete("/api/sessions/no-such-slug")
     assert resp.status_code == 404
+
+
+def test_send_message_activates_imported_session(client, user):
+    s = Session.objects.create(
+        owner=user, title="imported", source="upload", status="imported"
+    )
+    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "continue"}, format="json")
+    assert resp.status_code == 201
+    s.refresh_from_db()
+    assert s.status == "active"

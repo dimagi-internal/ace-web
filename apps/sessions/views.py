@@ -121,6 +121,10 @@ def send_message(request: Request, slug: str) -> Response:
     with transaction.atomic():
         # Lock the session row to serialize concurrent sends on the same session
         session = Session.objects.select_for_update().get(pk=session.pk)
+        # Auto-activate imported sessions on first message send
+        if session.status == "imported":
+            session.status = "active"
+            session.save(update_fields=["status", "updated_at"])
         last_turn = (
             Message.objects.filter(session=session)
             .order_by("-turn_index")
