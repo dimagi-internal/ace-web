@@ -2,7 +2,7 @@
 
 **Date**: 2026-04-08
 **Context**: Plan 1A `config/settings/base.py`. Blocker for scaling beyond a single instance.
-**Status**: Resolved in Phase 3 (commit a12d5c3 flipped `CHANNEL_LAYERS` to `RedisChannelLayer`; subsequent tasks wired presence, consumer, and deploy).
+**Status**: Resolved and scaled past single-instance (2026-04-09). ECS desired-count raised to 2; cross-task `channels-redis` broadcast verified via ECS exec on both tasks.
 
 ## Resolution
 
@@ -17,18 +17,12 @@ Phase 3 completed all three steps listed in the Fix section below:
 3. Shared ElastiCache wired into the ECS task via `REDIS_URL` in Secrets
    Manager (Task 13); ingress from the ECS security group is open on 6379.
 
-Raising the ECS desired-count past 1 is now a separate operational step —
-no code or config changes required. Before doing so, the operator should
-still verify:
-
-- the ElastiCache cluster has headroom for the expected fan-out;
-- the shared `labs-*` Redis instance is not in "degraded" mode (there is
-  no cross-tenant quota, but a single tenant misbehaving will hurt the
-  whole cluster);
-- the nginx `location /ace/ws/` block is in place (see
-  `docs/learnings/channels-ws-proxy-path.md`), otherwise only HTTP
-  requests will scale cleanly and WebSocket handshakes will 404 behind
-  the ALB.
+ECS desired-count was raised to 2 on 2026-04-09. Cross-task broadcast
+verified via ECS exec: both tasks (`ip-10-0-1-247` in us-east-1b,
+`ip-10-0-2-181` in us-east-1a) successfully PING Redis, complete a
+`RedisChannelLayer` group_send/receive round-trip, and see each other's
+probe keys. ECS exec is now enabled on all services in `labs-jj-cluster`
+(IAM policy `ecs-exec-ssm` on `labs-jj-ecs-task-role`).
 
 The original Problem / Root Cause / Fix sections below are kept as
 historical context so the resolution story is traceable.
