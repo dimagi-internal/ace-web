@@ -45,13 +45,59 @@ export interface Message {
   created_at: string;
 }
 
-export type StreamEvent =
-  | { type: "delta"; text: string }
-  | { type: "tool_use"; block: Record<string, unknown> }
-  | { type: "tool_result"; block: Record<string, unknown> }
-  | { type: "session_id"; session_id: string }
-  | { type: "done" }
-  | { type: "error"; message: string };
+export interface Draft {
+  id: number;
+  slot: "next" | "queued";
+  status: "open" | "sent" | "discarded";
+  body: string;
+  version: number;
+  last_editor: number;
+  last_edit_at: string;
+}
+
+export interface Participant {
+  user_id: number;
+  email: string;
+  display_name: string;
+  role: "owner" | "editor" | "viewer";
+  joined_at: string;
+  last_seen_at: string | null;
+}
+
+export interface SessionState {
+  messages: Message[];
+  active_draft: Draft | null;
+  participants: Participant[];
+  presence_user_ids: number[];
+  current_user_id: number;
+}
+
+// WebSocket protocol ------------------------------------------------------
+
+export type WsAction =
+  | { action: "chat.send"; data: Record<string, never> }
+  | { action: "chat.stop"; data: { message_id: number } }
+  | { action: "draft.update"; data: { version: number; body: string } }
+  | { action: "draft.take_over"; data: Record<string, never> }
+  | { action: "draft.discard"; data: Record<string, never> }
+  | { action: "presence.heartbeat"; data: Record<string, never> };
+
+export type WsEvent =
+  | { event: "session.state"; data: SessionState }
+  | { event: "session.error"; data: { code: string; message: string; detail?: unknown } }
+  | { event: "chat.stream_start"; data: { message_id: number; turn_index: number } }
+  | { event: "chat.delta"; data: { message_id: number; text: string } }
+  | { event: "chat.tool_use"; data: { parent_message_id: number; tool_message_id: number; block: Record<string, unknown> } }
+  | { event: "chat.tool_result"; data: { parent_message_id: number; tool_message_id: number; block: Record<string, unknown> } }
+  | { event: "chat.stream_complete"; data: { message_id: number; plaintext: string } }
+  | { event: "chat.stream_error"; data: { message_id: number; detail: string } }
+  | { event: "chat.stream_cancelled"; data: { message_id: number; partial_len: number } }
+  | { event: "draft.updated"; data: Draft }
+  | { event: "draft.lock_changed"; data: { draft_id: number; holder_user_id: number | null; expires_at: number | null } }
+  | { event: "draft.committed"; data: { draft_id: number; message_id: number; user_message_id: number } }
+  | { event: "draft.discarded"; data: { draft_id: number } }
+  | { event: "presence.joined"; data: { user_id: number; email: string; display_name: string } }
+  | { event: "presence.left"; data: { user_id: number } };
 
 export interface ApiEnvelope<T> {
   data: T | null;
@@ -187,16 +233,4 @@ export interface PersonalToken {
 
 export interface PersonalTokenCreated extends PersonalToken {
   raw_token: string;
-}
-
-// Custom error class the client throws when the server returns a
-// drive-token-missing 401 with a reconnect_url in the data field.
-export class DriveReconnectRequired extends Error {
-  reconnectUrl: string;
-
-  constructor(reconnectUrl: string) {
-    super("Google Drive access is not connected");
-    this.name = "DriveReconnectRequired";
-    this.reconnectUrl = reconnectUrl;
-  }
 }

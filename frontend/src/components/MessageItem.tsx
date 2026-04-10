@@ -2,12 +2,11 @@ import type { Message } from "../api/types";
 
 interface Props {
   message: Message;
-  liveText?: string;
-  isLive?: boolean;
 }
 
-export function MessageItem({ message, liveText, isLive }: Props) {
-  const text = isLive ? liveText ?? message.plaintext : message.plaintext;
+export function MessageItem({ message }: Props) {
+  const text = message.plaintext;
+  const isStreaming = message.status === "streaming";
 
   if (message.role === "tool_use") {
     return (
@@ -39,10 +38,10 @@ export function MessageItem({ message, liveText, isLive }: Props) {
   return (
     <div
       className={`my-2 max-w-[80%] rounded-2xl px-4 py-2 ${bubbleClass}`}
-      aria-live={isLive ? "polite" : undefined}
+      aria-live={isStreaming ? "polite" : undefined}
     >
       <div className="whitespace-pre-wrap">{text}</div>
-      {isLive && message.status === "streaming" && (
+      {isStreaming && (
         <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-current align-middle" />
       )}
     </div>

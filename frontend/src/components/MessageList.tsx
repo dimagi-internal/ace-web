@@ -1,22 +1,16 @@
 import type { Message } from "../api/types";
+
 import { MessageItem } from "./MessageItem";
 
 interface Props {
   messages: Message[];
-  liveAssistantId: number | null;
-  liveText: string;
 }
 
-export function MessageList({ messages, liveAssistantId, liveText }: Props) {
+export function MessageList({ messages }: Props) {
   return (
-    <div className="flex flex-col px-4 py-2">
+    <div className="flex flex-col gap-4 p-4">
       {messages.map((m) => (
-        <MessageItem
-          key={m.id}
-          message={m}
-          isLive={m.id === liveAssistantId}
-          liveText={m.id === liveAssistantId ? liveText : undefined}
-        />
+        <MessageItem key={m.id} message={m} />
       ))}
     </div>
   );

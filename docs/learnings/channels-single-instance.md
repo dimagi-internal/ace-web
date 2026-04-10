@@ -2,7 +2,30 @@
 
 **Date**: 2026-04-08
 **Context**: Plan 1A `config/settings/base.py`. Blocker for scaling beyond a single instance.
-**Status**: Active — deferred to Phase 3 (multi-player collaboration)
+**Status**: Resolved and scaled past single-instance (2026-04-09). ECS desired-count raised to 2; cross-task `channels-redis` broadcast verified via ECS exec on both tasks.
+
+## Resolution
+
+Phase 3 completed all three steps listed in the Fix section below:
+
+1. `channels-redis` added to `pyproject.toml` (Task 1).
+2. `CHANNEL_LAYERS` now points at `channels_redis.core.RedisChannelLayer` in
+   `config/settings/connectlabs.py`, reading `REDIS_URL` from env (Task 2,
+   commit `a12d5c3`). Local dev uses the same key against the Docker Compose
+   Redis service. See `docs/learnings/redis-presence-hash.md` for the
+   presence-specific usage of the same Redis instance.
+3. Shared ElastiCache wired into the ECS task via `REDIS_URL` in Secrets
+   Manager (Task 13); ingress from the ECS security group is open on 6379.
+
+ECS desired-count was raised to 2 on 2026-04-09. Cross-task broadcast
+verified via ECS exec: both tasks (`ip-10-0-1-247` in us-east-1b,
+`ip-10-0-2-181` in us-east-1a) successfully PING Redis, complete a
+`RedisChannelLayer` group_send/receive round-trip, and see each other's
+probe keys. ECS exec is now enabled on all services in `labs-jj-cluster`
+(IAM policy `ecs-exec-ssm` on `labs-jj-ecs-task-role`).
+
+The original Problem / Root Cause / Fix sections below are kept as
+historical context so the resolution story is traceable.
 
 ## Problem
 

@@ -1,7 +1,6 @@
 import { createBrowserRouter } from "react-router-dom";
 
 import { App } from "./App";
-import { DriveReconnectGuard } from "./components/opps/DriveReconnectGuard";
 import HealthPage from "./pages/HealthPage";
 import HomePage from "./pages/HomePage";
 import { ChatPage } from "./pages/ChatPage";
@@ -26,46 +25,14 @@ export const router = createBrowserRouter(
         { path: "auth/cli", element: <AuthCliPage /> },
         { path: "library", element: <LibraryPage /> },
         { path: "settings", element: <SettingsPage /> },
-        {
-          path: "opps",
-          element: (
-            <DriveReconnectGuard>
-              <OppListPage />
-            </DriveReconnectGuard>
-          ),
-        },
-        {
-          path: "opps/:slug",
-          element: (
-            <DriveReconnectGuard>
-              <OppWorkbenchPage />
-            </DriveReconnectGuard>
-          ),
-        },
-        {
-          path: "opps/:slug/runs/:runId",
-          element: (
-            <DriveReconnectGuard>
-              <OppWorkbenchPage />
-            </DriveReconnectGuard>
-          ),
-        },
+        { path: "opps", element: <OppListPage /> },
+        { path: "opps/:slug", element: <OppWorkbenchPage /> },
+        { path: "opps/:slug/runs/:runId", element: <OppWorkbenchPage /> },
         {
           path: "opps/:slug/runs/:runId/steps/:skill",
-          element: (
-            <DriveReconnectGuard>
-              <OppWorkbenchPage />
-            </DriveReconnectGuard>
-          ),
+          element: <OppWorkbenchPage />,
         },
-        {
-          path: "opps/:slug/compare",
-          element: (
-            <DriveReconnectGuard>
-              <OppComparePage />
-            </DriveReconnectGuard>
-          ),
-        },
+        { path: "opps/:slug/compare", element: <OppComparePage /> },
       ],
     },
   ],

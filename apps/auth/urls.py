@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.urls import path
 
 from . import oauth_views, token_views
@@ -15,3 +16,14 @@ token_urlpatterns = [
     path("tokens", token_views.token_collection, name="token_collection"),
     path("tokens/<int:pk>", token_views.token_detail, name="token_detail"),
 ]
+
+# Dev-only test-login endpoint. The URL is only registered when BOTH
+# ACE_ALLOW_TEST_LOGIN and DEBUG are True. In production.py / connectlabs.py
+# DEBUG is False, so this append never runs and the route does not exist.
+# See apps/auth/test_login_views.py for the rationale.
+if getattr(settings, "ACE_ALLOW_TEST_LOGIN", False) and settings.DEBUG:
+    from . import test_login_views
+
+    urlpatterns.append(
+        path("test-login/", test_login_views.test_login, name="test_login")
+    )

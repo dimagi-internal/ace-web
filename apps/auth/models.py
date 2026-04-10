@@ -14,13 +14,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
-    # Per-user Google Drive OAuth token cache for the ACE opp Workbench
-    # (apps/opps). Encrypted via apps.opps.encryption.encrypt_token; decrypted
-    # on demand in drive_credentials.ensure_fresh. TextField because the
-    # ciphertext is an opaque string, not JSON.
-    drive_token_cache = models.TextField(blank=True, default="")
-    drive_token_refreshed_at = models.DateTimeField(null=True, blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -34,9 +27,6 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
-
-    def has_drive_token(self) -> bool:
-        return bool(self.drive_token_cache)
 
 
 class PersonalToken(models.Model):

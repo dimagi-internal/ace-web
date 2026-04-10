@@ -30,7 +30,7 @@ not user-shippable milestones (the team only uses ace-web after Phase 5).
 | 1     | Foundation                 | Django + Channels + React skeleton, data model, IAP, GCP                        | **Done** — merged in jjackson/ace-web#1   |
 | 2     | Conversation engine        | ChatBackend, CLIBackend, CLI auth (PTY), SSE streaming, REST + chat UI, recents | **Done**                                  |
 | 2.5   | AWS migration              | GCP → AWS ECS Fargate tenant, CommCare Connect OAuth, nginx sidecar, /ace/* prefix | **Done** — per `docs/plans/2026-04-08-aws-migration.md` |
-| 3     | Multi-player collaboration | WebSocket consumer, channels-redis, ASGI auth, drafts, presence                 | Pending                                   |
+| 3     | Multi-player collaboration | WebSocket consumer, channels-redis, ASGI auth, drafts, presence                 | **Done** — per `docs/plans/2026-04-09-3-multi-player.md` |
 | 4     | Library and ingest         | Session list, search/filter, share tokens, `ace upload` CLI                     | Pending                                   |
 | 5     | Polish                     | Observability, evals, accessibility, security review, demo prep, full docs     | Pending                                   |
 
@@ -53,7 +53,7 @@ settings, Dockerfile, or the auth/sessions models.
 - **DB**: PostgreSQL (shared AWS RDS `labs-*` instance, database `ace_web`; local Postgres via `docker compose`).
 - **Infra**: AWS ECS Fargate (cluster `labs-jj-cluster`, us-east-1) behind the shared connect-labs ALB (path prefix `/ace/*`). GitHub Actions with OIDC for deploys. AWS Secrets Manager for secrets. ECR for images.
 - **Tests**: pytest + pytest-django + pytest-asyncio, in-memory SQLite for unit tests.
-- **Pattern sources**: `../connect-labs/` (CommCare Connect OAuth pattern), `../scout-jjackson/` (two-container ECS deploy pattern), `../canopy-web/` (CLI backend + PTY auth flow), `../connect-search/` (Google Drive OAuth + DriveClient for `apps/opps/`).
+- **Pattern sources**: `../connect-labs/` (CommCare Connect OAuth pattern), `../scout-jjackson/` (two-container ECS deploy pattern), `../canopy-web/` (CLI backend + PTY auth flow), `../connect-search/` (DriveClient ABC pattern for `apps/opps/`).
 
 ## Project structure
 
@@ -70,7 +70,7 @@ ace-web/
 ├── tests/           # Project-level tests (asgi smoke)
 ├── docs/
 │   ├── deploy.md
-│   ├── learnings/   # 6 load-bearing gotchas (see below)
+│   ├── learnings/   # 7 load-bearing gotchas (see below)
 │   ├── specs/       # Design specs (ace-web + opp visualization)
 │   └── plans/       # 1a-foundation, 2-conversation-engine, aws-migration, ace-opp-workbench
 ├── Dockerfile, Dockerfile.frontend, docker-compose.yml
@@ -93,23 +93,35 @@ The `opps` module adds **no ORM tables** — it reads through to Google Drive.
   `apps.common.envelope.success_response` / `error_response`. See
   `docs/learnings/api-envelope-convention.md`.
 - **Health check**: `/api/health` is public. See `docs/deploy.md`.
-- **Single ECS task**: Run only one ECS Fargate task until Channels switches off
-  `InMemoryChannelLayer`. See `docs/learnings/channels-single-instance.md`.
+- **Chat transport is WebSocket-only (Phase 3)**: All realtime chat traffic
+  (send, stream deltas, drafts, presence, stop) flows through the
+  `SessionConsumer` WebSocket. The Phase 2 `POST /api/sessions/<slug>/messages`
+  + SSE replay endpoints were deleted. See
+  `docs/learnings/channels-ws-proxy-path.md` for the `/ace/ws/` proxy
+  detail and `docs/learnings/channels-websocket-auth.md` for the handshake
+  auth pattern.
 
 ## Learnings (read before touching the relevant area)
 
 Infra & scaling:
-- [channels-single-instance](docs/learnings/channels-single-instance.md) — `InMemoryChannelLayer` pins to a single ECS task; Phase 3 must add `channels-redis` (shared ElastiCache) before scaling.
+- [channels-single-instance](docs/learnings/channels-single-instance.md) — resolved in Phase 3; `CHANNEL_LAYERS` now uses channels-redis against shared ElastiCache. Raising ECS desired count past 1 is a separate operational step.
+- [channels-websocket-auth](docs/learnings/channels-websocket-auth.md) — ASGI session-cookie middleware for WebSocket handshakes; tenant-specific cookie name.
+- [redis-presence-hash](docs/learnings/redis-presence-hash.md) — HASH-per-session presence with debounced Postgres writes.
+- [channels-ws-proxy-path](docs/learnings/channels-ws-proxy-path.md) — `/ace/ws/` nginx proxy strips the prefix because `FORCE_SCRIPT_NAME` doesn't cover Channels routing.
 
 Auth & identity:
 - [user-google-sub-nullable](docs/learnings/user-google-sub-nullable.md) — `google_sub` must be NULL (not `""`) and first-login races must be handled at the DB layer.
+- [drive-service-account](docs/learnings/drive-service-account.md) — the opps Workbench talks to Drive via a shared Google service account (not per-user OAuth); the SA key JSON lives in AWS Secrets Manager as `ACE_DRIVE_SA_KEY_JSON`.
 
 API conventions:
 - [api-envelope-convention](docs/learnings/api-envelope-convention.md) — every JSON response wraps in `{data, error}`; no bare payloads, no DRF default errors.
 
 Conversation engine (Phase 2):
 - [cli-stream-json-format](docs/learnings/cli-stream-json-format.md) — Claude CLI stream-json event shapes captured as fixtures; recapture if the CLI is upgraded.
-- [sse-django-async](docs/learnings/sse-django-async.md) — `Cache-Control`/`X-Accel-Buffering` headers, `sync_to_async` ORM access, async cleanup with `asyncio.shield`, and concurrent-write serialization with `select_for_update` are mandatory for SSE views.
+- [sse-django-async](docs/learnings/sse-django-async.md) — `Cache-Control`/`X-Accel-Buffering` headers, `sync_to_async` ORM access, async cleanup with `asyncio.shield`, and concurrent-write serialization with `select_for_update` are mandatory for SSE views. **Superseded by the Phase 3 WebSocket transport** — kept as historical context for the patterns.
+
+Frontend:
+- [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs that show wall-clock-driven transitions need explicit setTimeout-driven re-renders.
 
 Deploy & infrastructure:
 - [alb-nginx-django-https](docs/learnings/alb-nginx-django-https.md) — `SECURE_PROXY_SSL_HEADER` + nginx `$real_scheme` map preserve the ALB's `https`, and every `proxy_pass` must rewrite `Host` so ALB health checks don't trip `ALLOWED_HOSTS`. Silent until triggered in real infra.
@@ -139,10 +151,12 @@ first-class multi-run support. ace-web ships with a flat-layout fallback
 that reads the current `ACE/<opp>/state.yaml` + subfolder convention as a
 single implicit run, so both formats work during the transition.
 
-**Two OAuth flows:** identity via a hand-rolled CommCare Connect OAuth
-flow with PKCE (`apps/auth/oauth_views.py`, pattern from connect-labs);
-Drive access via a separate Google OAuth grant per-user (pattern from
-`../connect-search/`). See `docs/learnings/drive-oauth-two-flow.md`.
+**Identity + Drive access:** identity via a hand-rolled CommCare Connect
+OAuth flow with PKCE (`apps/auth/oauth_views.py`, pattern from
+connect-labs). Drive access is via a single shared Google service
+account (the same one the `ace` CLI uses), delivered through
+`ACE_DRIVE_SA_KEY_JSON` in AWS Secrets Manager. No per-user Drive
+consent. See `docs/learnings/drive-service-account.md`.
 
 **Root folder config:** `ACE_DRIVE_ROOT_FOLDER_ID` (in `config/settings/base.py`,
 env-overridable) pins the shared ACE Google Drive folder the Workbench reads
@@ -171,7 +185,6 @@ empty. Set via AWS Secrets Manager in prod.
 
 ## What does NOT ship yet
 
-- No WebSocket consumer, no drafts, no presence, no channels-redis — Phase 3.
 - No session list, share tokens, or `ace upload` CLI — Phase 4.
 - No observability, no eval harness, no security review — Phase 5.
 

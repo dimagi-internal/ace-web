@@ -5,6 +5,7 @@ description = "Web harness for the ACE initiative"
 requires-python = ">=3.11"
 dependencies = [
     "channels>=4.1",
+    "channels-redis>=4.2",
     "cryptography>=42",
     "django-environ>=0.11",
     "django>=5.0,<6.0",
@@ -20,6 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "fakeredis[aiohttp]>=2.23",
     "pytest>=8.0",
     "pytest-django>=4.8",
     "pytest-asyncio>=0.23",

@@ -35,11 +35,9 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 
-# WARNING: CHANNEL_LAYERS in base.py uses InMemoryChannelLayer which only
-# works in single-process mode. Before scaling past a single AWS ECS Fargate
-# task, replace this with channels-redis pointing at the shared connect-labs
-# ElastiCache instance. Do not raise the ECS desired-count above 1 until that
-# is done.
+# Channel layer is configured in base.py to use channels-redis pointing at
+# REDIS_URL. connectlabs.py sources REDIS_URL from AWS Secrets Manager.
+# See docs/learnings/channels-single-instance.md for the history.
 
 # Security headers — production only
 SECURE_HSTS_SECONDS = 31536000  # 1 year

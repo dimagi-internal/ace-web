@@ -84,9 +84,18 @@ DATABASES = {
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Channels ---
+# channels-redis is the cross-process channel layer for WebSocket broadcasts.
+# Local dev and AWS prod both point at a real Redis; tests override this
+# back to InMemoryChannelLayer in config/settings/test.py for speed and
+# isolation. See docs/learnings/channels-single-instance.md.
+REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+ACE_REDIS_URL = REDIS_URL
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [REDIS_URL],
+        },
     },
 }
 
@@ -126,32 +135,6 @@ ACE_CLAUDE_TOKEN_FILE = env(
     default=str(BASE_DIR / ".ace-claude-home" / "oauth-token"),
 )
 
-# --- Google Drive OAuth (secondary flow for the Workbench) ---
-# Encryption key for the per-user Drive token cache. Rotated via AWS Secrets
-# Manager / SSM Parameter Store in prod. In dev, a static key is fine.
-ACE_DRIVE_TOKEN_ENCRYPTION_KEY = env(
-    "ACE_DRIVE_TOKEN_ENCRYPTION_KEY",
-    default="dev-insecure-drive-token-key-change-me",
-)
-# Google OAuth client credentials (registered in the dimagi GCP console with
-# redirect URIs for both dev and prod). Same OAuth project connect-search uses
-# unless there is a reason to mint a new one.
-ACE_GOOGLE_OAUTH_CLIENT_ID = env("ACE_GOOGLE_OAUTH_CLIENT_ID", default="")
-ACE_GOOGLE_OAUTH_CLIENT_SECRET = env("ACE_GOOGLE_OAUTH_CLIENT_SECRET", default="")
-# Redirect URI the callback view builds. Relative to SITE_URL — dev default
-# is local Django, prod is the AWS tenant under /ace/.
-ACE_DRIVE_OAUTH_REDIRECT_URI = env(
-    "ACE_DRIVE_OAUTH_REDIRECT_URI",
-    default="http://localhost:8000/auth/drive/callback",
-)
-# Scopes requested for Drive access. Read-only — the Workbench never writes.
-ACE_DRIVE_OAUTH_SCOPES = [
-    "openid",
-    "email",
-    "profile",
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
-]
 # Top-level Drive folder that holds ACE opportunities. Default matches the
 # ACE plugin convention.
 ACE_DRIVE_ROOT_FOLDER_NAME = env("ACE_DRIVE_ROOT_FOLDER_NAME", default="ACE")
@@ -172,6 +155,29 @@ REST_FRAMEWORK = {
         "apps.auth.token_backend.BearerTokenAuthentication",
     ],
 }
+
+# --- Google Drive service account ---
+# SA JSON key for the shared ACE Drive (read/write on the Shared Drive
+# the SA has been granted access to). The whole JSON blob lives as a
+# single string — parsed by apps.opps.drive_client.get_drive_client at
+# first use. Sourced from AWS Secrets Manager in prod, .env in dev.
+# Empty default: opps views return a 500 with code="drive-not-configured".
+ACE_DRIVE_SA_KEY_JSON = env("ACE_DRIVE_SA_KEY_JSON", default="")
+
+# --- Phase 3 dev-only test hooks ---
+# Both settings default to False and are only True in development.py.
+# They gate hooks that bypass real authentication and the real Claude CLI
+# subprocess for automated Playwright E2E testing. See
+# docs/learnings/playwright-test-hooks.md for the rationale.
+#
+# SECURITY: the test-login view and FakeCLIBackend must be impossible to
+# reach in production. We belt-and-suspenders this three ways:
+#   1. Defaults are False here.
+#   2. development.py is the only settings module that sets them True.
+#   3. The test-login view AND its URL registration additionally require
+#      DEBUG=True, which production.py / connectlabs.py disable.
+ACE_ALLOW_TEST_LOGIN = env.bool("ACE_ALLOW_TEST_LOGIN", default=False)
+ACE_USE_FAKE_CLI_BACKEND = env.bool("ACE_USE_FAKE_CLI_BACKEND", default=False)
 
 # --- Logging ---
 LOGGING = {
