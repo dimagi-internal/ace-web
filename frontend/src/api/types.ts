@@ -234,3 +234,29 @@ export interface PersonalToken {
 export interface PersonalTokenCreated extends PersonalToken {
   raw_token: string;
 }
+
+export interface ShareTokenInfo {
+  token: string;
+  url: string;
+  created_at: string;
+}
+
+export interface ShareTokenListItem {
+  token: string;
+  created_at: string;
+  revoked_at: string | null;
+}
+
+export interface SharedSession {
+  title: string;
+  messages: SharedMessage[];
+}
+
+export interface SharedMessage {
+  turn_index: number;
+  role: MessageRole;
+  content: Record<string, unknown>;
+  plaintext: string;
+  status: MessageStatus;
+  created_at: string;
+}

@@ -5,21 +5,19 @@ Drive API. Its behavior is validated indirectly by sync/view fixture tests
 that use FakeDriveClient as a drop-in. This test suite just locks in the
 ABC contract and the fake's round-trip behavior.
 """
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.test import override_settings
 
 from apps.opps.drive_client import (
     DriveClient,
     DriveFile,
-    DriveServiceAccountNotConfigured,
     FileContent,
     GoogleDriveClient,
     get_drive_client,
 )
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
+from apps.service_accounts.exceptions import ServiceAccountNotFound
 
 
 def test_drive_file_dataclass_fields():
@@ -93,80 +91,38 @@ def test_fake_drive_get_content_on_folder_raises():
 # --- get_drive_client() factory tests ---
 
 
-@pytest.fixture(autouse=True)
-def _clear_drive_client_cache():
-    """Every test starts with an empty cache so settings patches apply."""
-    get_drive_client.cache_clear()
-    yield
-    get_drive_client.cache_clear()
-
-
-def _fake_sa_key_json() -> str:
-    return json.dumps(
-        {
-            "type": "service_account",
-            "client_email": "ace-web@example.iam.gserviceaccount.com",
-            "private_key": "FAKE",
-            "project_id": "fake-project",
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }
-    )
-
-
-def test_get_drive_client_raises_when_setting_is_empty():
-    with override_settings(ACE_DRIVE_SA_KEY_JSON=""):
-        with pytest.raises(DriveServiceAccountNotConfigured):
-            get_drive_client()
-
-
-def test_get_drive_client_raises_on_malformed_json():
-    with override_settings(ACE_DRIVE_SA_KEY_JSON="{not json"):
-        with pytest.raises(DriveServiceAccountNotConfigured, match="not valid JSON"):
-            get_drive_client()
-
-
-def test_get_drive_client_constructs_credentials_and_client():
-    fake_creds = MagicMock(name="fake-creds")
-    fake_service = MagicMock(name="fake-service")
-    with (
-        override_settings(ACE_DRIVE_SA_KEY_JSON=_fake_sa_key_json()),
-        patch(
-            "apps.opps.drive_client.service_account.Credentials.from_service_account_info",
-            return_value=fake_creds,
-        ) as mk_from_info,
-        patch("googleapiclient.discovery.build", return_value=fake_service) as mk_build,
-    ):
-        client = get_drive_client()
-
+@pytest.mark.django_db
+def test_get_drive_client_uses_registry():
+    with patch("apps.opps.drive_client.registry") as mock_registry:
+        mock_creds = MagicMock()
+        mock_registry.get_credentials.return_value = mock_creds
+        with patch("googleapiclient.discovery.build", return_value=MagicMock()):
+            client = get_drive_client()
+        mock_registry.get_credentials.assert_called_once_with(
+            "ace-drive",
+            on_behalf_of=None,
+            context={"caller": "opps.drive_client"},
+        )
     assert isinstance(client, GoogleDriveClient)
-    assert client._service is fake_service
-
-    # Credentials constructor got the parsed JSON + the full drive scope.
-    mk_from_info.assert_called_once()
-    args, kwargs = mk_from_info.call_args
-    assert args[0]["type"] == "service_account"
-    assert args[0]["client_email"] == "ace-web@example.iam.gserviceaccount.com"
-    assert kwargs["scopes"] == ["https://www.googleapis.com/auth/drive"]
-
-    # The Google Drive discovery build got the right API name, version, and flags.
-    mk_build.assert_called_once_with(
-        "drive", "v3", credentials=fake_creds, cache_discovery=False,
-    )
 
 
-def test_get_drive_client_caches_client():
-    fake_creds = MagicMock(name="fake-creds")
-    with (
-        override_settings(ACE_DRIVE_SA_KEY_JSON=_fake_sa_key_json()),
-        patch(
-            "apps.opps.drive_client.service_account.Credentials.from_service_account_info",
-            return_value=fake_creds,
-        ) as mk_from_info,
-        patch("googleapiclient.discovery.build", return_value=MagicMock()),
-    ):
-        first = get_drive_client()
-        second = get_drive_client()
+@pytest.mark.django_db
+def test_get_drive_client_passes_on_behalf_of():
+    with patch("apps.opps.drive_client.registry") as mock_registry:
+        mock_creds = MagicMock()
+        mock_registry.get_credentials.return_value = mock_creds
+        with patch("googleapiclient.discovery.build", return_value=MagicMock()):
+            get_drive_client(on_behalf_of="alice@dimagi.com")
+        mock_registry.get_credentials.assert_called_once_with(
+            "ace-drive",
+            on_behalf_of="alice@dimagi.com",
+            context={"caller": "opps.drive_client"},
+        )
 
-    assert first is second
-    # Second call should hit the cache; the SA constructor ran exactly once.
-    assert mk_from_info.call_count == 1
+
+@pytest.mark.django_db
+def test_get_drive_client_raises_on_missing_sa():
+    with patch("apps.opps.drive_client.registry") as mock_registry:
+        mock_registry.get_credentials.side_effect = ServiceAccountNotFound("not found")
+        with pytest.raises(ServiceAccountNotFound):
+            get_drive_client()

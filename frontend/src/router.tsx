@@ -11,6 +11,7 @@ import OppListPage from "./pages/OppListPage";
 import OppWorkbenchPage from "./pages/OppWorkbenchPage";
 import OppComparePage from "./pages/OppComparePage";
 import SettingsPage from "./pages/SettingsPage";
+import ShareViewPage from "./pages/ShareViewPage";
 
 export const router = createBrowserRouter(
   [
@@ -33,6 +34,7 @@ export const router = createBrowserRouter(
           element: <OppWorkbenchPage />,
         },
         { path: "opps/:slug/compare", element: <OppComparePage /> },
+        { path: "share/:token", element: <ShareViewPage /> },
       ],
     },
   ],

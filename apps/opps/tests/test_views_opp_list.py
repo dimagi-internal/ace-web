@@ -2,7 +2,7 @@
 from unittest.mock import patch
 
 import pytest
-from django.test import Client, override_settings
+from django.test import Client
 
 from apps.auth.models import User
 from apps.opps.tests.fixtures.fake_drive import (
@@ -63,9 +63,11 @@ def test_opp_list_malaria_card_fields(authed_client):
 
 
 def test_opp_list_drive_not_configured_returns_500(authed_client):
-    from apps.opps.drive_client import get_drive_client
-    with override_settings(ACE_DRIVE_SA_KEY_JSON=""):
-        get_drive_client.cache_clear()
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+    with patch(
+        "apps.opps.drive_client.registry.get_credentials",
+        side_effect=ServiceAccountNotFound("ace-drive not found"),
+    ):
         response = authed_client.get("/api/opps/")
     assert response.status_code == 500
     body = response.json()

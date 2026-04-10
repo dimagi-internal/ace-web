@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import { getSession, updateSession } from "../api/sessions";
 import { AddTeammateButton } from "../components/AddTeammateButton";
+import { SharePopover } from "../components/SharePopover";
 import { CliAuthBanner } from "../components/CliAuthBanner";
 import { InlineTitleEdit } from "../components/InlineTitleEdit";
 import { MessageList } from "../components/MessageList";
@@ -68,7 +69,7 @@ export function ChatPage() {
         <CliAuthBanner />
         <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-2">
           <InlineTitleEdit value={meta.title} onSave={handleTitleSave} />
-          <div className="flex items-center gap-3">
+          <div className="relative flex items-center gap-3">
             <PresenceChips
               participants={socket.state.participants}
               presenceUserIds={socket.state.presence_user_ids}
@@ -76,6 +77,7 @@ export function ChatPage() {
               draftHolderIdle={isDraftIdle(socket.state.active_draft)}
             />
             <AddTeammateButton slug={slug} />
+            <SharePopover slug={slug} />
           </div>
         </header>
         <main className="flex-1 overflow-y-auto">

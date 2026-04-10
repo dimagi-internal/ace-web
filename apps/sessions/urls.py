@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import share_views, views
 
 urlpatterns = [
     path("sessions", views.session_collection, name="session_collection"),
@@ -14,5 +14,15 @@ urlpatterns = [
         "sessions/<slug:slug>/participants",
         views.participant_collection,
         name="participant_collection",
+    ),
+    path(
+        "sessions/<slug:slug>/share",
+        share_views.share_token_collection,
+        name="share_token_collection",
+    ),
+    path(
+        "sessions/<slug:slug>/share/<str:token>",
+        share_views.share_token_revoke,
+        name="share_token_revoke",
     ),
 ]
