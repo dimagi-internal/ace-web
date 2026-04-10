@@ -67,11 +67,13 @@ def test_login(request: HttpRequest) -> HttpResponse:
     if not email:
         return JsonResponse({"error": "email is required"}, status=400)
 
-    # Enforce @dimagi.com even in test - the real flow enforces it at
-    # the OAuth callback, and tests should exercise the same invariant.
-    if not email.endswith("@dimagi.com"):
+    # Enforce allowed email domains — same domains as the real OAuth flow.
+    allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", ["dimagi.com"])
+    _, _, email_domain = email.rpartition("@")
+    if email_domain not in allowed_domains:
+        allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
         return JsonResponse(
-            {"error": "email must end in @dimagi.com"},
+            {"error": f"email must be from: {allowed_str}"},
             status=400,
         )
 

@@ -157,11 +157,15 @@ def participant_collection(request: Request, slug: str) -> Response:
     # the validation path (the downstream User.objects.get would still
     # reject them, but as a not_found — the correct behavior is a
     # validation_error at this edge).
+    from django.conf import settings as django_settings
+
+    allowed_domains = getattr(django_settings, "ACE_ALLOWED_EMAIL_DOMAINS", ["dimagi.com"])
     local, sep, domain = email.rpartition("@")
-    if sep != "@" or domain != "dimagi.com" or "@" in local or not local:
+    if sep != "@" or domain not in allowed_domains or "@" in local or not local:
+        allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
         return Response(
             error_response(
-                message="only @dimagi.com emails may be added",
+                message=f"only {allowed_str} emails may be added",
                 code="validation_error",
             ),
             status=status.HTTP_400_BAD_REQUEST,

@@ -188,11 +188,14 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
         profile_data["email"] = userinfo["email"]
         logger.info(f"Got email from OIDC userinfo for {profile_data.get('username')}")
 
-    # Enforce @dimagi.com domain
+    # Enforce allowed email domains
     email = (profile_data.get("email") or "").strip().lower()
-    if not email.endswith("@dimagi.com"):
-        logger.warning(f"Rejected login for non-Dimagi email: {email!r}")
-        messages.error(request, "Access is restricted to Dimagi (@dimagi.com) accounts.")
+    allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", ["dimagi.com"])
+    _, _, email_domain = email.rpartition("@")
+    if email_domain not in allowed_domains:
+        logger.warning(f"Rejected login for non-allowed email: {email!r}")
+        allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
+        messages.error(request, f"Access is restricted to {allowed_str} accounts.")
         return redirect("auth:login")
 
     # Build display name
