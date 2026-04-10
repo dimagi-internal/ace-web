@@ -42,3 +42,10 @@ claude-data/
 
 # Brainstorming / superpowers scratch
 .superpowers/
+
+# Playwright E2E sqlite (regenerated on every run by e2e/global-setup.ts)
+e2e-test.sqlite3
+
+# Bun lockfile — frontend uses bun but the repo conventionally doesn't
+# track lockfiles (package.json is the source of truth for pinned versions)
+frontend/bun.lock
