@@ -33,16 +33,16 @@ export default function OppComparePage() {
   if (state.kind === "error") return <ErrorState message={state.message} />;
 
   return (
-    <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex items-center gap-4 border-b border-zinc-800 px-4 py-2 text-sm">
-        <Link to={`/opps/${slug}`} className="text-zinc-500 hover:text-zinc-300">
+    <div className="flex h-full flex-col bg-background text-foreground">
+      <header className="flex items-center gap-4 border-b border-border px-4 py-2 text-sm">
+        <Link to={`/opps/${slug}`} className="text-muted-foreground hover:text-foreground">
           ← back
         </Link>
         <span className="font-semibold">{state.result.opp.display_name}</span>
-        <span className="text-zinc-500">
-          comparing <span className="font-mono text-zinc-300">{fromId}</span>
+        <span className="text-muted-foreground">
+          comparing <span className="font-mono text-foreground">{fromId}</span>
           <span className="mx-2">→</span>
-          <span className="font-mono text-zinc-300">{toId}</span>
+          <span className="font-mono text-foreground">{toId}</span>
         </span>
       </header>
       <main className="flex-1 overflow-y-auto">

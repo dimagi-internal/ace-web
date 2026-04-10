@@ -6,9 +6,11 @@ import HomePage from "./pages/HomePage";
 import { ChatPage } from "./pages/ChatPage";
 import { ChatRedirectPage } from "./pages/ChatRedirectPage";
 import { AuthCliPage } from "./pages/AuthCliPage";
+import LibraryPage from "./pages/LibraryPage";
 import OppListPage from "./pages/OppListPage";
 import OppWorkbenchPage from "./pages/OppWorkbenchPage";
 import OppComparePage from "./pages/OppComparePage";
+import SettingsPage from "./pages/SettingsPage";
 
 export const router = createBrowserRouter(
   [
@@ -21,6 +23,8 @@ export const router = createBrowserRouter(
         { path: "chat", element: <ChatRedirectPage /> },
         { path: "chat/:slug", element: <ChatPage /> },
         { path: "auth/cli", element: <AuthCliPage /> },
+        { path: "library", element: <LibraryPage /> },
+        { path: "settings", element: <SettingsPage /> },
         { path: "opps", element: <OppListPage /> },
         { path: "opps/:slug", element: <OppWorkbenchPage /> },
         { path: "opps/:slug/runs/:runId", element: <OppWorkbenchPage /> },

@@ -63,7 +63,7 @@ export default function OppWorkbenchPage() {
     : null;
 
   return (
-    <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
+    <div className="flex h-full flex-col bg-background text-foreground">
       <WorkbenchHeader
         opp={snapshot.opp}
         run={snapshot.current_run}
@@ -71,7 +71,7 @@ export default function OppWorkbenchPage() {
         onRefresh={load}
       />
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-[180px] border-r border-zinc-800 bg-zinc-950">
+        <aside className="w-[180px] border-r border-border bg-background">
           <OppSidebar />
         </aside>
         <main className="flex-1 overflow-y-auto">
@@ -82,7 +82,7 @@ export default function OppWorkbenchPage() {
             onSelect={setSelectedSkill}
           />
         </main>
-        <section className="w-[320px] border-l border-zinc-800 bg-zinc-950">
+        <section className="w-[320px] border-l border-border bg-background">
           {selectedStep ? (
             <StepDetailPane
               slug={slug}

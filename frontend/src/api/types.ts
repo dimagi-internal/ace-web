@@ -25,6 +25,13 @@ export interface SessionDetail extends Session {
   messages: Message[];
 }
 
+export interface SessionListPage {
+  items: Session[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface Message {
   id: number;
   turn_index: number;
@@ -215,4 +222,15 @@ export interface CompareResult {
 
 export interface DiscussResponse {
   session_slug: string;
+}
+
+export interface PersonalToken {
+  id: number;
+  label: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface PersonalTokenCreated extends PersonalToken {
+  raw_token: string;
 }

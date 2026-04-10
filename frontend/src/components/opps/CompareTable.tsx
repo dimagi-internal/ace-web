@@ -18,11 +18,11 @@ export function CompareTable({ fromRun, toRun }: Props) {
 
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] gap-3 p-4">
-      <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
         Run {fromRun.run_id}
       </div>
       <div className="w-20" />
-      <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
         Run {toRun.run_id}
       </div>
 
@@ -55,17 +55,17 @@ function SideBySideRow({
   const skillName = toStep?.skill_name ?? fromStep?.skill_name ?? "—";
   return (
     <>
-      <div className="rounded bg-zinc-900 p-2 text-xs">
-        {fromStep ? <StepCell step={fromStep} /> : <span className="text-zinc-600">— not in run</span>}
+      <div className="rounded bg-card p-2 text-xs">
+        {fromStep ? <StepCell step={fromStep} /> : <span className="text-muted-foreground">— not in run</span>}
       </div>
       <div className="flex w-20 items-center justify-center text-[10px]">
         <div className="text-center">
-          <div className="font-mono text-zinc-100">{skillName}</div>
+          <div className="font-mono text-foreground">{skillName}</div>
           <div className={deltaTone(delta)}>{formatDelta(delta)}</div>
         </div>
       </div>
-      <div className="rounded bg-zinc-900 p-2 text-xs">
-        {toStep ? <StepCell step={toStep} /> : <span className="text-zinc-600">— not in run</span>}
+      <div className="rounded bg-card p-2 text-xs">
+        {toStep ? <StepCell step={toStep} /> : <span className="text-muted-foreground">— not in run</span>}
       </div>
     </>
   );
@@ -75,14 +75,14 @@ function StepCell({ step }: { step: Step }) {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-zinc-400">{step.status}</span>
+        <span className="text-[11px] text-muted-foreground">{step.status}</span>
         {step.judge?.score !== undefined && step.judge?.score !== null && (
           <span className="text-[11px] font-semibold text-green-400">
             {step.judge.score.toFixed(1)}
           </span>
         )}
       </div>
-      <div className="mt-1 truncate text-[10px] text-zinc-500">{step.preview_text}</div>
+      <div className="mt-1 truncate text-[10px] text-muted-foreground">{step.preview_text}</div>
     </div>
   );
 }
@@ -94,8 +94,8 @@ function formatDelta(d: number | null): string {
 }
 
 function deltaTone(d: number | null): string {
-  if (d === null) return "text-zinc-600";
+  if (d === null) return "text-muted-foreground";
   if (d > 0.05) return "text-green-400";
   if (d < -0.05) return "text-red-400";
-  return "text-zinc-500";
+  return "text-muted-foreground";
 }

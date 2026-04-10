@@ -8,19 +8,19 @@ interface Props {
 export function ArtifactPreview({ primaryArtifact, primaryBody }: Props) {
   if (!primaryArtifact) {
     return (
-      <div className="rounded bg-zinc-900 p-2.5">
-        <div className="text-[9px] uppercase tracking-wider text-zinc-500">Artifact</div>
-        <div className="text-[10px] text-zinc-600">— no artifacts</div>
+      <div className="rounded bg-card p-2.5">
+        <div className="text-[9px] uppercase tracking-wider text-muted-foreground">Artifact</div>
+        <div className="text-[10px] text-muted-foreground">— no artifacts</div>
       </div>
     );
   }
   const lines = primaryBody.split("\n").slice(0, 10).join("\n");
   return (
-    <div className="rounded bg-zinc-900 p-2.5">
-      <div className="text-[9px] uppercase tracking-wider text-zinc-500">
+    <div className="rounded bg-card p-2.5">
+      <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
         Artifact · {primaryArtifact.name}
       </div>
-      <pre className="mt-1.5 max-h-40 overflow-hidden rounded bg-zinc-950 p-2 text-[9px] text-zinc-400">
+      <pre className="mt-1.5 max-h-40 overflow-hidden rounded bg-background p-2 text-[9px] text-muted-foreground">
         {lines || "(empty)"}
       </pre>
       {primaryArtifact.drive_web_link && (
@@ -28,7 +28,7 @@ export function ArtifactPreview({ primaryArtifact, primaryBody }: Props) {
           href={primaryArtifact.drive_web_link}
           target="_blank"
           rel="noreferrer"
-          className="mt-1.5 block text-[9px] text-blue-400 underline"
+          className="mt-1.5 block text-[9px] text-primary underline"
         >
           open in Drive →
         </a>

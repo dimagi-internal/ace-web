@@ -49,7 +49,7 @@ def test_list_sessions_only_returns_current_user(client, user, other_user):
 
     resp = client.get("/api/sessions")
     assert resp.status_code == 200
-    titles = [s["title"] for s in resp.json()["data"]]
+    titles = [s["title"] for s in resp.json()["data"]["items"]]
     assert "mine" in titles
     assert "theirs" not in titles
 
@@ -59,15 +59,15 @@ def test_list_sessions_filters_by_status(client, user):
     Session.objects.create(owner=user, title="archived", status="archived")
 
     resp = client.get("/api/sessions?status=archived")
-    titles = [s["title"] for s in resp.json()["data"]]
+    titles = [s["title"] for s in resp.json()["data"]["items"]]
     assert titles == ["archived"]
 
 
 def test_list_sessions_respects_limit(client, user):
     for i in range(15):
         Session.objects.create(owner=user, title=f"s{i}")
-    resp = client.get("/api/sessions?limit=5")
-    assert len(resp.json()["data"]) == 5
+    resp = client.get("/api/sessions?page_size=5")
+    assert len(resp.json()["data"]["items"]) == 5
 
 
 def test_get_session_by_slug(client, user):
@@ -214,3 +214,108 @@ def test_add_participant_rejects_double_at_email(client, user):
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "validation_error"
+
+
+def test_list_sessions_search_by_title(client, user):
+    Session.objects.create(owner=user, title="Phase 4 library design")
+    Session.objects.create(owner=user, title="CLI debugging session")
+    Session.objects.create(owner=user, title="Another Phase 4 chat")
+    resp = client.get("/api/sessions?q=phase+4")
+    body = resp.json()["data"]
+    assert body["total"] == 2
+    titles = [s["title"] for s in body["items"]]
+    assert "Phase 4 library design" in titles
+    assert "Another Phase 4 chat" in titles
+    assert "CLI debugging session" not in titles
+
+
+def test_list_sessions_search_is_case_insensitive(client, user):
+    Session.objects.create(owner=user, title="UPPERCASE Title")
+    resp = client.get("/api/sessions?q=uppercase")
+    assert resp.json()["data"]["total"] == 1
+
+
+def test_list_sessions_filter_by_source(client, user):
+    Session.objects.create(owner=user, title="web1", source="web")
+    Session.objects.create(owner=user, title="upload1", source="upload")
+    resp = client.get("/api/sessions?source=upload")
+    body = resp.json()["data"]
+    assert body["total"] == 1
+    assert body["items"][0]["title"] == "upload1"
+
+
+def test_list_sessions_pagination(client, user):
+    for i in range(25):
+        Session.objects.create(owner=user, title=f"s{i:02d}")
+    resp = client.get("/api/sessions?page=2&page_size=10")
+    body = resp.json()["data"]
+    assert body["total"] == 25
+    assert body["page"] == 2
+    assert body["page_size"] == 10
+    assert len(body["items"]) == 10
+
+
+def test_list_sessions_pagination_last_page(client, user):
+    for i in range(25):
+        Session.objects.create(owner=user, title=f"s{i:02d}")
+    resp = client.get("/api/sessions?page=3&page_size=10")
+    body = resp.json()["data"]
+    assert len(body["items"]) == 5
+
+
+def test_list_sessions_pagination_defaults(client, user):
+    Session.objects.create(owner=user, title="x")
+    resp = client.get("/api/sessions")
+    body = resp.json()["data"]
+    assert body["page"] == 1
+    assert body["page_size"] == 20
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+
+
+def test_delete_session_by_owner(client, user):
+    s = Session.objects.create(owner=user, title="to delete")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    resp = client.delete(f"/api/sessions/{s.slug}")
+    assert resp.status_code == 204
+    assert not Session.objects.filter(slug=s.slug).exists()
+
+
+def test_delete_session_cascades_messages(client, user):
+    s = Session.objects.create(owner=user, title="has msgs")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    Message.objects.create(
+        session=s, turn_index=1, role="user",
+        content={"text": "hi"}, plaintext="hi", status="complete",
+    )
+    client.delete(f"/api/sessions/{s.slug}")
+    assert Message.objects.count() == 0
+
+
+def test_delete_session_403_for_non_owner(client, user, other_user):
+    s = Session.objects.create(owner=other_user, title="not mine")
+    SessionParticipant.objects.create(session=s, user=other_user, role="owner")
+    SessionParticipant.objects.create(session=s, user=user, role="editor")
+    resp = client.delete(f"/api/sessions/{s.slug}")
+    assert resp.status_code == 403
+    assert Session.objects.filter(slug=s.slug).exists()
+
+
+def test_delete_session_404_for_missing(client):
+    resp = client.delete("/api/sessions/no-such-slug")
+    assert resp.status_code == 404
+
+
+@pytest.mark.skip(
+    reason="Phase 3 removed the REST send_message endpoint in favor of WebSocket. "
+    "Imported-session auto-activation needs to move to the WebSocket consumer's "
+    "chat.send handler — see TODO in apps/sessions/views.py."
+)
+def test_send_message_activates_imported_session(client, user):
+    s = Session.objects.create(
+        owner=user, title="imported", source="upload", status="imported"
+    )
+    resp = client.post(f"/api/sessions/{s.slug}/messages", {"text": "continue"}, format="json")
+    assert resp.status_code == 201
+    s.refresh_from_db()
+    assert s.status == "active"

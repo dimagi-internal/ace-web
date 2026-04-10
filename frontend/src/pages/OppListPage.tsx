@@ -39,16 +39,16 @@ export default function OppListPage() {
   if (state.kind === "error") return <ErrorState message={state.message} onRetry={load} />;
 
   return (
-    <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex items-center gap-4 border-b border-zinc-800 px-6 py-4">
-        <h1 className="text-xl font-semibold">ACE Opportunities</h1>
-        <span className="text-sm text-zinc-500">{state.opps.length} total</span>
+    <div className="flex h-full flex-col">
+      <header className="flex items-center gap-4 border-b border-border bg-card px-6 py-4">
+        <h1 className="text-xl font-semibold text-foreground">Opportunities</h1>
+        <span className="text-sm text-muted-foreground">{state.opps.length} total</span>
         <input
           type="text"
           placeholder="Filter by slug, name, or label…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="ml-auto w-64 rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none"
+          className="ml-auto w-64 rounded border border-input bg-card px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
         />
       </header>
 
@@ -67,23 +67,23 @@ export default function OppListPage() {
             <Link
               key={opp.slug}
               to={`/opps/${opp.slug}`}
-              className="group rounded border border-zinc-800 bg-zinc-900 p-4 transition hover:border-blue-600"
+              className="group rounded border border-border bg-card p-4 transition hover:border-primary"
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <h2 className="font-semibold text-zinc-100 group-hover:text-blue-400">
+                  <h2 className="font-semibold text-foreground group-hover:text-primary">
                     {opp.display_name || opp.slug}
                   </h2>
-                  <div className="text-xs text-zinc-500">{opp.slug}</div>
+                  <div className="text-xs text-muted-foreground">{opp.slug}</div>
                 </div>
                 <StatusBadge status={opp.status} />
               </div>
               {opp.current_step && (
-                <div className="mt-3 text-sm text-zinc-400">
-                  <span className="text-zinc-500">current:</span>{" "}
-                  <span className="font-mono text-zinc-300">{opp.current_step}</span>
+                <div className="mt-3 text-sm text-muted-foreground">
+                  <span className="text-muted-foreground">current:</span>{" "}
+                  <span className="font-mono text-foreground">{opp.current_step}</span>
                   {opp.current_phase && (
-                    <span className="ml-2 text-xs text-zinc-500">
+                    <span className="ml-2 text-xs text-muted-foreground">
                       ({opp.current_phase})
                     </span>
                   )}
@@ -94,7 +94,7 @@ export default function OppListPage() {
                   {opp.labels.map((label) => (
                     <span
                       key={label}
-                      className="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
+                      className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
                     >
                       {label}
                     </span>
@@ -129,6 +129,6 @@ function statusColor(status: string): string {
     case "failed":
       return "bg-red-900 text-red-300";
     default:
-      return "bg-zinc-800 text-zinc-400";
+      return "bg-muted text-muted-foreground";
   }
 }

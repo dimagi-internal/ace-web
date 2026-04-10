@@ -35,7 +35,7 @@ export function InlineTitleEdit({ value, onSave }: Props) {
     return (
       <input
         autoFocus
-        className="rounded border border-blue-500 px-2 py-1 text-lg font-semibold outline-none"
+        className="rounded border border-ring bg-background px-2 py-1 text-lg font-semibold text-foreground outline-none"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
@@ -47,7 +47,7 @@ export function InlineTitleEdit({ value, onSave }: Props) {
     <button
       type="button"
       onClick={start}
-      className="rounded px-1 text-lg font-semibold hover:bg-zinc-100"
+      className="rounded px-1 text-lg font-semibold text-foreground hover:bg-accent"
     >
       {value || "Untitled"}
     </button>

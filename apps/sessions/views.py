@@ -3,6 +3,11 @@ participant management.
 
 Send is over WebSocket (see apps.sessions.consumers) in Phase 3; the
 Phase 2 `send_message` view is deleted.
+
+TODO: imported-session auto-activation (status "imported" -> "active" on
+first message) needs to be added to the WebSocket consumer's chat.send
+handler. Previously this was in the REST send_message view which Phase 3
+removed.
 """
 from __future__ import annotations
 
@@ -50,16 +55,34 @@ def _list_sessions(request: Request) -> Response:
     status_filter = request.query_params.get("status")
     if status_filter:
         qs = qs.filter(status=status_filter)
+    source_filter = request.query_params.get("source")
+    if source_filter:
+        qs = qs.filter(source=source_filter)
+    q = request.query_params.get("q", "").strip()
+    if q:
+        qs = qs.filter(title__icontains=q)
+    total = qs.count()
     try:
-        limit = int(request.query_params.get("limit", "20"))
+        page = max(1, int(request.query_params.get("page", "1")))
     except ValueError:
-        limit = 20
-    limit = max(1, min(limit, 100))
-    qs = qs.order_by("-updated_at")[:limit]
-    return Response(success_response(SessionSerializer(qs, many=True).data))
+        page = 1
+    try:
+        page_size = max(1, min(100, int(request.query_params.get("page_size", "20"))))
+    except ValueError:
+        page_size = 20
+    offset = (page - 1) * page_size
+    qs = qs.order_by("-updated_at")[offset : offset + page_size]
+    return Response(
+        success_response({
+            "items": SessionSerializer(qs, many=True).data,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        })
+    )
 
 
-@api_view(["GET", "PATCH"])
+@api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def session_detail(request: Request, slug: str) -> Response:
     session = _load_session_for_participant(slug, request.user)
@@ -68,6 +91,15 @@ def session_detail(request: Request, slug: str) -> Response:
 
     if request.method == "GET":
         return Response(success_response(SessionDetailSerializer(session).data))
+
+    if request.method == "DELETE":
+        if session.owner_id != request.user.id:
+            return Response(
+                error_response(message="only the owner can delete the session", code="forbidden"),
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        session.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     # PATCH — only the owner may edit the session row.
     if session.owner_id != request.user.id:

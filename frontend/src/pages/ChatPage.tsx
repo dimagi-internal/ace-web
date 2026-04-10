@@ -62,7 +62,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-full">
       <RecentSessionsSidebar currentSlug={slug} />
       <div className="flex flex-1 flex-col">
         <CliAuthBanner />
@@ -87,6 +87,8 @@ export function ChatPage() {
           holderIsPresent={holderIsPresent}
           isStreaming={streamingMessage != null}
           streamingMessageId={streamingMessage?.id ?? null}
+          sessionSource={meta.source}
+          sessionStatus={meta.status}
           onUpdate={socket.updateDraft}
           onSend={socket.sendChat}
           onStop={socket.stopChat}

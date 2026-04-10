@@ -41,6 +41,9 @@ DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = "test_*.py"
 asyncio_mode = "auto"
 
+[project.scripts]
+ace-upload = "apps.ingest.cli:main"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

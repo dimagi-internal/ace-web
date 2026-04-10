@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "apps.auth.apps.AuthConfig",
     "apps.sessions.apps.SessionsConfig",
     "apps.opps.apps.OppsConfig",
+    "apps.ingest.apps.IngestConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -146,6 +147,14 @@ ACE_DRIVE_ROOT_FOLDER_ID = env(
     "ACE_DRIVE_ROOT_FOLDER_ID",
     default="1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz",
 )
+
+# --- Django REST Framework ---
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "apps.auth.token_backend.BearerTokenAuthentication",
+    ],
+}
 
 # --- Google Drive service account ---
 # SA JSON key for the shared ACE Drive (read/write on the Shared Drive
