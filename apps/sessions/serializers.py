@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Draft, Message, Session, SessionParticipant
+from .models import Draft, Message, Session, SessionParticipant, ShareToken
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -89,5 +89,28 @@ class ParticipantSerializer(serializers.ModelSerializer):
             "role",
             "joined_at",
             "last_seen_at",
+        ]
+        read_only_fields = fields
+
+
+class ShareTokenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShareToken
+        fields = ["token", "created_at", "revoked_at"]
+        read_only_fields = fields
+
+
+class ShareMessageSerializer(serializers.ModelSerializer):
+    """Message serializer for public share views — no sender identity."""
+
+    class Meta:
+        model = Message
+        fields = [
+            "turn_index",
+            "role",
+            "content",
+            "plaintext",
+            "status",
+            "created_at",
         ]
         read_only_fields = fields
