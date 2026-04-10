@@ -21,8 +21,8 @@ class Command(BaseCommand):
     def handle(self, **options):
         try:
             sa = ServiceAccount.objects.get(name=options["sa"])
-        except ServiceAccount.DoesNotExist:
-            raise CommandError(f"Service account {options['sa']!r} not found.")
+        except ServiceAccount.DoesNotExist as exc:
+            raise CommandError(f"Service account {options['sa']!r} not found.") from exc
 
         grant = ImpersonationGrant.objects.create(
             service_account=sa,

@@ -7,7 +7,6 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
-from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.opps.drive_client import (
     DriveClient,
     get_drive_client,
@@ -21,6 +20,7 @@ from apps.opps.serializers import (
     serialize_step_snapshot,
 )
 from apps.opps.sync import load_opp
+from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
 
 

@@ -1,4 +1,5 @@
 import pytest
+from cryptography.fernet import InvalidToken
 
 from apps.service_accounts.encryption import decrypt, encrypt
 
@@ -19,7 +20,7 @@ def test_different_plaintexts_produce_different_ciphertexts():
 def test_tampered_ciphertext_raises():
     ciphertext = encrypt("valid")
     tampered = ciphertext[:-4] + "XXXX"
-    with pytest.raises(Exception):
+    with pytest.raises(InvalidToken):
         decrypt(tampered)
 
 

@@ -35,8 +35,8 @@ class Command(BaseCommand):
         try:
             with open(options["credential_file"]) as f:
                 raw = f.read().strip()
-        except FileNotFoundError:
-            raise CommandError(f"Credential file not found: {options['credential_file']}")
+        except FileNotFoundError as exc:
+            raise CommandError(f"Credential file not found: {options['credential_file']}") from exc
 
         sa = ServiceAccount.objects.create(
             name=name,

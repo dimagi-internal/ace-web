@@ -89,10 +89,12 @@ def get_credentials(
     """
     try:
         sa = ServiceAccount.objects.get(name=name, is_active=True)
-    except ServiceAccount.DoesNotExist:
+    except ServiceAccount.DoesNotExist as exc:
         sa = _bootstrap_if_needed(name)
         if sa is None:
-            raise ServiceAccountNotFound(f"Service account {name!r} not found or inactive")
+            raise ServiceAccountNotFound(
+                f"Service account {name!r} not found or inactive"
+            ) from exc
 
     effective_scopes = scopes if scopes is not None else list(sa.default_scopes)
 

@@ -13,7 +13,8 @@ class TestGoogleSAProvider:
             "type": "service_account",
             "project_id": "test",
             "private_key_id": "key-id",
-            "private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----\n",
+            "private_key": "-----BEGIN RSA PRIVATE KEY-----\n"
+            "MIIE...\n-----END RSA PRIVATE KEY-----\n",
             "client_email": "test@test.iam.gserviceaccount.com",
             "client_id": "123",
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
