@@ -329,6 +329,10 @@ async def _handle_chat_send(consumer: SessionConsumer, data: dict):
         await consumer._error("not_found", "session not found")
         return
 
+    # Auto-activate imported sessions on first message send (Phase 4 ingest)
+    if session.status == "imported":
+        await sync_to_async(_activate_imported_session)(session)
+
     result = await sync_to_async(drafts.commit_active_draft)(
         session=session, user=consumer.user
     )
@@ -518,6 +522,12 @@ def _load_session(slug: str) -> Session | None:
         return Session.objects.get(slug=slug)
     except Session.DoesNotExist:
         return None
+
+
+def _activate_imported_session(session: Session) -> None:
+    """Transition an imported session to active on first send."""
+    Session.objects.filter(pk=session.pk, status="imported").update(status="active")
+    session.status = "active"
 
 
 def _sync_build_state(slug: str, user) -> dict:
