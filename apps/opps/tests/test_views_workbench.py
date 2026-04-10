@@ -12,22 +12,20 @@ from apps.opps.tests.fixtures.fake_drive import (
 
 
 @pytest.fixture
-def user_with_token(db):
+def authed_user(db):
     u = User.objects.create(email="jon@dimagi.com", display_name="Jon")
-    u.drive_token_cache = "ciphertext"
-    u.save()
     return u
 
 
 @pytest.fixture
-def authed_client(user_with_token):
+def authed_client(authed_user):
     c = Client()
-    c.force_login(user_with_token)
+    c.force_login(authed_user)
     return c
 
 
 def _with_fake_drive(authed_client, fake, url, **query):
-    with patch("apps.opps.views.get_drive_client_for", return_value=fake), \
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         return authed_client.get(url, query)

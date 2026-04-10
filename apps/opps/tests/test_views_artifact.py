@@ -14,15 +14,13 @@ from apps.opps.tests.fixtures.fake_drive import (
 @pytest.fixture
 def authed_client(db):
     u = User.objects.create(email="jon@dimagi.com", display_name="Jon")
-    u.drive_token_cache = "ciphertext"
-    u.save()
     c = Client()
     c.force_login(u)
     return c
 
 
 def _with_fake(authed_client, fake, url):
-    with patch("apps.opps.views.get_drive_client_for", return_value=fake), \
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         return authed_client.get(url)

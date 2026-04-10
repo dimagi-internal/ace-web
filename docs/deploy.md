@@ -58,6 +58,41 @@ After setup, create the `ace_web` database on the shared RDS instance:
 psql "postgresql://<admin>:<pass>@<host>:5432/postgres" -c "CREATE DATABASE ace_web;"
 ```
 
+### Google Drive service account secret
+
+The opportunity Workbench reads Google Drive via a shared service
+account. The SA JSON key is stored in AWS Secrets Manager as a
+SecretString and delivered to ECS as env var `ACE_DRIVE_SA_KEY_JSON`.
+
+**One-time setup:**
+
+1. Download the SA key JSON from the GCP console for the
+   `ace-<project>@<project>.iam.gserviceaccount.com` service account
+   (the same SA used by the `ace` CLI plugin).
+2. Create the secret:
+   ```bash
+   aws secretsmanager create-secret \
+     --name labs-jj-ace-web-drive-sa-key-json \
+     --description "Google service account key JSON for the ACE Drive access" \
+     --secret-string file:///path/to/sa-key.json \
+     --region us-east-1
+   ```
+3. Update `deploy/aws/task-definition.json` — the `valueFrom` ARN for
+   `ACE_DRIVE_SA_KEY_JSON` needs the 6-character suffix that Secrets
+   Manager generates on create (e.g.
+   `...-drive-sa-key-json-AbCdEf`). Grab it with:
+   ```bash
+   aws secretsmanager describe-secret \
+     --secret-id labs-jj-ace-web-drive-sa-key-json \
+     --query ARN --output text
+   ```
+4. Confirm the task execution role's resource policy covers the new
+   secret ARN. The existing policy uses a `labs-jj-ace-web-*` wildcard
+   which should match.
+5. Delete the downloaded JSON file from local disk.
+
+**Rotation:** see `docs/learnings/drive-service-account.md`.
+
 ## Deploy workflow
 
 Triggered manually from GitHub Actions:

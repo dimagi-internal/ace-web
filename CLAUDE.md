@@ -53,7 +53,7 @@ settings, Dockerfile, or the auth/sessions models.
 - **DB**: PostgreSQL (shared AWS RDS `labs-*` instance, database `ace_web`; local Postgres via `docker compose`).
 - **Infra**: AWS ECS Fargate (cluster `labs-jj-cluster`, us-east-1) behind the shared connect-labs ALB (path prefix `/ace/*`). GitHub Actions with OIDC for deploys. AWS Secrets Manager for secrets. ECR for images.
 - **Tests**: pytest + pytest-django + pytest-asyncio, in-memory SQLite for unit tests.
-- **Pattern sources**: `../connect-labs/` (CommCare Connect OAuth pattern), `../scout-jjackson/` (two-container ECS deploy pattern), `../canopy-web/` (CLI backend + PTY auth flow), `../connect-search/` (Google Drive OAuth + DriveClient for `apps/opps/`).
+- **Pattern sources**: `../connect-labs/` (CommCare Connect OAuth pattern), `../scout-jjackson/` (two-container ECS deploy pattern), `../canopy-web/` (CLI backend + PTY auth flow), `../connect-search/` (DriveClient ABC pattern for `apps/opps/`).
 
 ## Project structure
 
@@ -70,7 +70,7 @@ ace-web/
 ├── tests/           # Project-level tests (asgi smoke)
 ├── docs/
 │   ├── deploy.md
-│   ├── learnings/   # 6 load-bearing gotchas (see below)
+│   ├── learnings/   # 7 load-bearing gotchas (see below)
 │   ├── specs/       # Design specs (ace-web + opp visualization)
 │   └── plans/       # 1a-foundation, 2-conversation-engine, aws-migration, ace-opp-workbench
 ├── Dockerfile, Dockerfile.frontend, docker-compose.yml
@@ -111,6 +111,7 @@ Infra & scaling:
 
 Auth & identity:
 - [user-google-sub-nullable](docs/learnings/user-google-sub-nullable.md) — `google_sub` must be NULL (not `""`) and first-login races must be handled at the DB layer.
+- [drive-service-account](docs/learnings/drive-service-account.md) — the opps Workbench talks to Drive via a shared Google service account (not per-user OAuth); the SA key JSON lives in AWS Secrets Manager as `ACE_DRIVE_SA_KEY_JSON`.
 
 API conventions:
 - [api-envelope-convention](docs/learnings/api-envelope-convention.md) — every JSON response wraps in `{data, error}`; no bare payloads, no DRF default errors.
@@ -150,10 +151,12 @@ first-class multi-run support. ace-web ships with a flat-layout fallback
 that reads the current `ACE/<opp>/state.yaml` + subfolder convention as a
 single implicit run, so both formats work during the transition.
 
-**Two OAuth flows:** identity via a hand-rolled CommCare Connect OAuth
-flow with PKCE (`apps/auth/oauth_views.py`, pattern from connect-labs);
-Drive access via a separate Google OAuth grant per-user (pattern from
-`../connect-search/`). See `docs/learnings/drive-oauth-two-flow.md`.
+**Identity + Drive access:** identity via a hand-rolled CommCare Connect
+OAuth flow with PKCE (`apps/auth/oauth_views.py`, pattern from
+connect-labs). Drive access is via a single shared Google service
+account (the same one the `ace` CLI uses), delivered through
+`ACE_DRIVE_SA_KEY_JSON` in AWS Secrets Manager. No per-user Drive
+consent. See `docs/learnings/drive-service-account.md`.
 
 **Root folder config:** `ACE_DRIVE_ROOT_FOLDER_ID` (in `config/settings/base.py`,
 env-overridable) pins the shared ACE Google Drive folder the Workbench reads

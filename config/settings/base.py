@@ -134,32 +134,6 @@ ACE_CLAUDE_TOKEN_FILE = env(
     default=str(BASE_DIR / ".ace-claude-home" / "oauth-token"),
 )
 
-# --- Google Drive OAuth (secondary flow for the Workbench) ---
-# Encryption key for the per-user Drive token cache. Rotated via AWS Secrets
-# Manager / SSM Parameter Store in prod. In dev, a static key is fine.
-ACE_DRIVE_TOKEN_ENCRYPTION_KEY = env(
-    "ACE_DRIVE_TOKEN_ENCRYPTION_KEY",
-    default="dev-insecure-drive-token-key-change-me",
-)
-# Google OAuth client credentials (registered in the dimagi GCP console with
-# redirect URIs for both dev and prod). Same OAuth project connect-search uses
-# unless there is a reason to mint a new one.
-ACE_GOOGLE_OAUTH_CLIENT_ID = env("ACE_GOOGLE_OAUTH_CLIENT_ID", default="")
-ACE_GOOGLE_OAUTH_CLIENT_SECRET = env("ACE_GOOGLE_OAUTH_CLIENT_SECRET", default="")
-# Redirect URI the callback view builds. Relative to SITE_URL — dev default
-# is local Django, prod is the AWS tenant under /ace/.
-ACE_DRIVE_OAUTH_REDIRECT_URI = env(
-    "ACE_DRIVE_OAUTH_REDIRECT_URI",
-    default="http://localhost:8000/auth/drive/callback",
-)
-# Scopes requested for Drive access. Read-only — the Workbench never writes.
-ACE_DRIVE_OAUTH_SCOPES = [
-    "openid",
-    "email",
-    "profile",
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
-]
 # Top-level Drive folder that holds ACE opportunities. Default matches the
 # ACE plugin convention.
 ACE_DRIVE_ROOT_FOLDER_NAME = env("ACE_DRIVE_ROOT_FOLDER_NAME", default="ACE")
@@ -172,6 +146,14 @@ ACE_DRIVE_ROOT_FOLDER_ID = env(
     "ACE_DRIVE_ROOT_FOLDER_ID",
     default="1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz",
 )
+
+# --- Google Drive service account ---
+# SA JSON key for the shared ACE Drive (read/write on the Shared Drive
+# the SA has been granted access to). The whole JSON blob lives as a
+# single string — parsed by apps.opps.drive_client.get_drive_client at
+# first use. Sourced from AWS Secrets Manager in prod, .env in dev.
+# Empty default: opps views return a 500 with code="drive-not-configured".
+ACE_DRIVE_SA_KEY_JSON = env("ACE_DRIVE_SA_KEY_JSON", default="")
 
 # --- Phase 3 dev-only test hooks ---
 # Both settings default to False and are only True in development.py.

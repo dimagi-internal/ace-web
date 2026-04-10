@@ -2,7 +2,7 @@
 from unittest.mock import patch
 
 import pytest
-from django.test import Client
+from django.test import Client, override_settings
 
 from apps.auth.models import User
 from apps.opps.tests.fixtures.fake_drive import (
@@ -13,17 +13,15 @@ from apps.opps.tests.fixtures.fake_drive import (
 
 
 @pytest.fixture
-def user_with_token(db):
+def authed_user(db):
     u = User.objects.create(email="jon@dimagi.com", display_name="Jon")
-    u.drive_token_cache = "ciphertext"
-    u.save()
     return u
 
 
 @pytest.fixture
-def authed_client(user_with_token):
+def authed_client(authed_user):
     c = Client()
-    c.force_login(user_with_token)
+    c.force_login(authed_user)
     return c
 
 
@@ -39,7 +37,7 @@ def _combined_tree() -> dict:
 
 def test_opp_list_returns_both_structured_and_flat(authed_client):
     fake = FakeDriveClient.from_tree(_combined_tree())
-    with patch("apps.opps.views.get_drive_client_for", return_value=fake), \
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
@@ -53,7 +51,7 @@ def test_opp_list_returns_both_structured_and_flat(authed_client):
 
 def test_opp_list_malaria_card_fields(authed_client):
     fake = FakeDriveClient.from_tree(_combined_tree())
-    with patch("apps.opps.views.get_drive_client_for", return_value=fake), \
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
@@ -64,15 +62,14 @@ def test_opp_list_malaria_card_fields(authed_client):
     assert "malaria" in malaria["labels"]
 
 
-def test_opp_list_requires_drive_token(db):
-    user = User.objects.create(email="no-token@dimagi.com", display_name="Nobody")
-    c = Client()
-    c.force_login(user)
-    response = c.get("/api/opps/")
-    assert response.status_code == 401
+def test_opp_list_drive_not_configured_returns_500(authed_client):
+    from apps.opps.drive_client import get_drive_client
+    with override_settings(ACE_DRIVE_SA_KEY_JSON=""):
+        get_drive_client.cache_clear()
+        response = authed_client.get("/api/opps/")
+    assert response.status_code == 500
     body = response.json()
-    assert body["error"]["message"]
-    assert body["data"] == {"reconnect_url": "/auth/drive/start"}
+    assert body["error"]["code"] == "drive-not-configured"
 
 
 def test_opp_list_unauthenticated_returns_401():
