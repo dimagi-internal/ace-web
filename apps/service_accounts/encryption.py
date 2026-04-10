@@ -1,8 +1,8 @@
 """Fernet encryption for service account credentials.
 
 Derives a stable Fernet key from Django's SECRET_KEY so encrypted values
-survive process restarts. If SECRET_KEY rotates, use the
-`re_encrypt_credentials` management command to re-encrypt all rows.
+survive process restarts. If SECRET_KEY rotates, all stored credentials
+must be re-encrypted with the new key.
 """
 import base64
 import hashlib

@@ -51,14 +51,17 @@ def _bootstrap_if_needed(name: str) -> ServiceAccount | None:
 
     from .encryption import encrypt
 
-    sa = ServiceAccount.objects.create(
+    sa, created = ServiceAccount.objects.get_or_create(
         name=name,
-        credential_type=config["credential_type"],
-        credential_encrypted=encrypt(raw),
-        default_scopes=config.get("default_scopes", []),
-        description=f"Auto-bootstrapped from env var {env_var}",
+        defaults={
+            "credential_type": config["credential_type"],
+            "credential_encrypted": encrypt(raw),
+            "default_scopes": config.get("default_scopes", []),
+            "description": f"Auto-bootstrapped from env var {env_var}",
+        },
     )
-    logger.info("Bootstrapped service account %r from env var %s", name, env_var)
+    if created:
+        logger.info("Bootstrapped service account %r from env var %s", name, env_var)
     return sa
 
 
