@@ -165,6 +165,14 @@ ACE_DRIVE_ROOT_FOLDER_ID = env(
     default="1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz",
 )
 
+# --- Django REST Framework ---
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "apps.auth.token_backend.BearerTokenAuthentication",
+    ],
+}
+
 # --- Logging ---
 LOGGING = {
     "version": 1,
