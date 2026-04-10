@@ -21,7 +21,8 @@
         {"name": "CONNECT_PRODUCTION_URL", "value": "https://connect.dimagi.com"},
         {"name": "FORCE_SCRIPT_NAME", "value": "/ace"},
         {"name": "SECURE_SSL_REDIRECT", "value": "False"},
-        {"name": "CSRF_TRUSTED_ORIGINS", "value": "https://labs.connect.dimagi.com"}
+        {"name": "CSRF_TRUSTED_ORIGINS", "value": "https://labs.connect.dimagi.com"},
+        {"name": "ACE_E2E_AUTH_TOKEN", "value": "GKE9bz1V04B_cWNOpkYBA1n3ILuXrNrfKputjEQ0gRI"}
       ],
       "secrets": [
         {"name": "DJANGO_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-django-secret-key-2XSt10"},
