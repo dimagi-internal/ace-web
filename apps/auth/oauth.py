@@ -119,7 +119,7 @@ def fetch_user_email(access_token: str, production_url: str) -> str | None:
     return an email (common for HQ-linked accounts without the openid scope).
     """
     endpoints = [
-        "/api/users/me",
+        "/api/users/me/",
         "/api/user/",
         "/users/api/me/",
     ]
@@ -129,6 +129,7 @@ def fetch_user_email(access_token: str, production_url: str) -> str | None:
                 f"{production_url}{endpoint}",
                 headers={"Authorization": f"Bearer {access_token}"},
                 timeout=10,
+                follow_redirects=True,
             )
             if response.status_code == 200:
                 data = response.json()
