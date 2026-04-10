@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"sess_simple_001","cwd":"/tmp","tools":[]}
+{"type":"assistant","message":{"id":"msg_01","content":[{"type":"text","text":"Hello, "}]}}
+{"type":"assistant","message":{"id":"msg_01","content":[{"type":"text","text":"world!"}]}}
+{"type":"result","subtype":"success","duration_ms":500,"num_turns":1}

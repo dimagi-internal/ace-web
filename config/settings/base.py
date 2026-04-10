@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "apps.auth.apps.AuthConfig",
     "apps.sessions.apps.SessionsConfig",
     "apps.opps.apps.OppsConfig",
+    "apps.ingest.apps.IngestConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"

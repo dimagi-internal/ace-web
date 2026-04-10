@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"sess_multi_001","cwd":"/tmp","tools":[]}
+{"type":"assistant","message":{"id":"msg_01","content":[{"type":"text","text":"Hi there!"}]}}
+{"type":"result","subtype":"success","duration_ms":300,"num_turns":1}
+{"type":"assistant","message":{"id":"msg_02","content":[{"type":"text","text":"Sure, I can help."}]}}
+{"type":"result","subtype":"success","duration_ms":400,"num_turns":2}
