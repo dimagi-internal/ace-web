@@ -14,6 +14,14 @@ urlpatterns = [
     path("api/opps/", include("apps.opps.urls")),
     path("api/auth/", include((token_urlpatterns, "auth_tokens"))),
     path("api/share/<str:token>", public_share_view, name="public_share"),
+    # React pages under /auth/ that must be served by the SPA, not by
+    # Django's auth views. These are listed explicitly because the SPA
+    # catch-all excludes the auth/ prefix entirely.
+    path(
+        "auth/cli",
+        login_required(TemplateView.as_view(template_name="index.html")),
+        name="spa_auth_cli",
+    ),
     path("auth/", include("apps.auth.urls")),
     # SPA catch-all: any non-api/non-admin/non-auth/non-static/non-assets path serves
     # the React index.html. React Router handles client-side routing from there.
