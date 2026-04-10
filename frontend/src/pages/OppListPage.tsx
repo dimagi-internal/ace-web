@@ -39,16 +39,16 @@ export default function OppListPage() {
   if (state.kind === "error") return <ErrorState message={state.message} onRetry={load} />;
 
   return (
-    <div className="flex h-full flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex items-center gap-4 border-b border-zinc-800 px-6 py-4">
-        <h1 className="text-xl font-semibold">ACE Opportunities</h1>
-        <span className="text-sm text-zinc-500">{state.opps.length} total</span>
+    <div className="flex h-full flex-col">
+      <header className="flex items-center gap-4 border-b border-border bg-card px-6 py-4">
+        <h1 className="text-xl font-semibold text-foreground">Opportunities</h1>
+        <span className="text-sm text-muted-foreground">{state.opps.length} total</span>
         <input
           type="text"
           placeholder="Filter by slug, name, or label…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="ml-auto w-64 rounded border border-zinc-700 bg-zinc-900 px-3 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none"
+          className="ml-auto w-64 rounded border border-input bg-card px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
         />
       </header>
 
