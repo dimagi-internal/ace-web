@@ -7,9 +7,9 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
+from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.opps.drive_client import (
     DriveClient,
-    DriveServiceAccountNotConfigured,
     get_drive_client,
 )
 from apps.opps.parsers import parse_opp_yaml
@@ -57,7 +57,7 @@ def _require_drive(request):
         )
     try:
         return get_drive_client(), None
-    except DriveServiceAccountNotConfigured as exc:
+    except ServiceAccountNotFound as exc:
         return None, Response(
             error_response(str(exc), code="drive-not-configured"),
             status=500,
