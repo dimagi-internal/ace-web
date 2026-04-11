@@ -11,6 +11,7 @@ interface Props {
   streamingMessageId: number | null;
   sessionSource?: SessionSource;
   sessionStatus?: SessionStatus;
+  cliConnected?: boolean | null;
   onUpdate: (body: string) => void;
   onSend: () => void;
   onStop: (messageId: number) => void;
@@ -25,6 +26,7 @@ export function SendBox({
   streamingMessageId,
   sessionSource,
   sessionStatus,
+  cliConnected,
   onUpdate,
   onSend,
   onStop,
@@ -65,7 +67,10 @@ export function SendBox({
   }, [canEdit, isHolder]);
 
   const body = draft?.body ?? "";
-  const canSend = canEdit && body.trim().length > 0 && !isStreaming;
+  // Block sends when the Claude CLI is explicitly known to be disconnected.
+  // null means "still loading" — don't block in that window.
+  const cliBlocked = cliConnected === false;
+  const canSend = canEdit && body.trim().length > 0 && !isStreaming && !cliBlocked;
 
   const handleKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // `isComposing` is true during IME input (CJK, etc.). Pressing
@@ -82,11 +87,13 @@ export function SendBox({
     if (streamingMessageId != null) onStop(streamingMessageId);
   };
 
-  const placeholder = draft
-    ? canEdit
-      ? "Type a message… (Enter to send, Shift+Enter for newline)"
-      : "Another teammate is editing…"
-    : "Connecting…";
+  const placeholder = !draft
+    ? "Connecting…"
+    : cliBlocked
+      ? "Claude CLI not connected — visit /auth/cli to enable chat"
+      : canEdit
+        ? "Type a message… (Enter to send, Shift+Enter for newline)"
+        : "Another teammate is editing…";
 
   return (
     <div className="border-t border-zinc-200">

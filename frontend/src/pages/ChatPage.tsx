@@ -10,6 +10,7 @@ import { MessageList } from "../components/MessageList";
 import { PresenceChips } from "../components/PresenceChips";
 import { RecentSessionsSidebar } from "../components/RecentSessionsSidebar";
 import { SendBox } from "../components/SendBox";
+import { useCliAuthStatus } from "../hooks/useCliAuthStatus";
 import { useSessionSocket } from "../hooks/useSessionSocket";
 import { isDraftIdle, msUntilDraftIdle } from "../lib/drafts";
 import type { Session } from "../api/types";
@@ -18,6 +19,7 @@ export function ChatPage() {
   const { slug = "" } = useParams();
   const [meta, setMeta] = useState<Session | null>(null);
   const socket = useSessionSocket(slug);
+  const cliConnected = useCliAuthStatus();
 
   // Force a re-render when the draft lock transitions from live to
   // idle so PresenceChips' amber-highlight updates at T+2s without
@@ -91,6 +93,7 @@ export function ChatPage() {
           streamingMessageId={streamingMessage?.id ?? null}
           sessionSource={meta.source}
           sessionStatus={meta.status}
+          cliConnected={cliConnected}
           onUpdate={socket.updateDraft}
           onSend={socket.sendChat}
           onStop={socket.stopChat}
