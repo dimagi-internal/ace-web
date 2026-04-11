@@ -66,10 +66,26 @@ export async function apiFetch<T>(
   } catch {
     throw new ApiError("invalid_response", `${resp.status} ${resp.statusText}`);
   }
-  if (envelope.error) {
+  // Handle non-envelope responses (e.g. DRF auth errors like {"detail": "..."})
+  // before probing envelope.error/envelope.data.
+  if (!resp.ok && (!envelope || typeof envelope !== "object")) {
+    throw new ApiError(
+      `http_${resp.status}`,
+      `${resp.status} ${resp.statusText}`,
+    );
+  }
+  if (envelope && envelope.error) {
     throw new ApiError(envelope.error.code, envelope.error.message);
   }
-  if (envelope.data === null) {
+  // Detect non-envelope responses: a DRF auth error is
+  // {"detail": "..."} with no `data` key at all.
+  if (!envelope || !("data" in envelope)) {
+    const detail =
+      (envelope as unknown as { detail?: string })?.detail ??
+      `${resp.status} ${resp.statusText}`;
+    throw new ApiError(`http_${resp.status}`, detail);
+  }
+  if (envelope.data === null || envelope.data === undefined) {
     throw new ApiError("empty_response", "no data in envelope");
   }
   return envelope.data;
