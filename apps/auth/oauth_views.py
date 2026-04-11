@@ -34,13 +34,14 @@ def login_page(request: HttpRequest) -> HttpResponse:
 
     If already authenticated, redirect to the `next` query param (default /).
     """
+    default_next = settings.FORCE_SCRIPT_NAME or "/"
     if request.user.is_authenticated:
-        next_url = request.GET.get("next", "/")
+        next_url = request.GET.get("next", default_next)
         if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
-            next_url = "/"
+            next_url = default_next
         return redirect(next_url)
 
-    next_url = request.GET.get("next", "/")
+    next_url = request.GET.get("next", default_next)
     context = {"next": next_url}
     return render(request, "auth/login.html", context)
 
