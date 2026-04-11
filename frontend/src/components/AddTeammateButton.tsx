@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { addParticipant } from "../api/participants";
 
 interface Props {
@@ -30,44 +32,51 @@ export function AddTeammateButton({ slug, onAdded }: Props) {
 
   if (!open) {
     return (
-      <button
+      <Button
         type="button"
-        className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100"
+        variant="outline"
+        size="sm"
+        className="h-7 text-xs"
         onClick={() => setOpen(true)}
       >
         + teammate
-      </button>
+      </Button>
     );
   }
 
   return (
     <div className="flex items-center gap-2">
-      <input
+      <Input
         type="email"
         placeholder="name@dimagi.com"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="rounded border border-zinc-300 px-2 py-1 text-xs"
+        className="h-7 w-48 text-xs"
       />
-      <button
+      <Button
         type="button"
+        size="sm"
+        className="h-7 text-xs"
         disabled={submitting || !email.includes("@")}
-        className="rounded bg-blue-600 px-2 py-1 text-xs text-white disabled:opacity-40"
         onClick={submit}
       >
         add
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
-        className="text-xs text-zinc-500"
+        variant="ghost"
+        size="sm"
+        className="h-7 text-xs"
         onClick={() => {
           setOpen(false);
           setError(null);
         }}
       >
         cancel
-      </button>
-      {error ? <span className="text-xs text-rose-600">{error}</span> : null}
+      </Button>
+      {error ? (
+        <span className="text-xs text-destructive">{error}</span>
+      ) : null}
     </div>
   );
 }

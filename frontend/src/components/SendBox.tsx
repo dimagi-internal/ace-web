@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
+import { Button } from "@/components/ui/button";
 import type { Draft, SessionSource, SessionStatus } from "../api/types";
 import { IDLE_THRESHOLD_MS, isDraftIdle, msUntilDraftIdle } from "../lib/drafts";
 
@@ -96,9 +97,9 @@ export function SendBox({
         : "Another teammate is editing…";
 
   return (
-    <div className="border-t border-zinc-200">
+    <div className="border-t border-border bg-background">
       {sessionSource === "upload" && sessionStatus === "imported" && (
-        <div className="px-3 py-1.5 text-xs text-zinc-500 border-b border-zinc-200 bg-zinc-50">
+        <div className="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
           Imported session — send a message to continue it with Claude.
         </div>
       )}
@@ -111,35 +112,37 @@ export function SendBox({
           onKeyDown={handleKey}
           placeholder={placeholder}
           rows={3}
-          className="w-full resize-none rounded border border-zinc-300 p-2 text-sm disabled:bg-zinc-50 disabled:text-zinc-500"
+          className="w-full resize-none rounded-md border border-input bg-transparent p-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
         />
         <div className="mt-1 flex justify-end gap-2">
           {isStreaming ? (
-            <button
+            <Button
               type="button"
+              variant="destructive"
+              size="sm"
               onClick={handleStopClick}
-              className="rounded bg-rose-600 px-3 py-1 text-sm text-white"
             >
               stop
-            </button>
+            </Button>
           ) : null}
           {!canEdit && holderIsPresent && !holderIsIdle ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={onTakeOver}
-              className="rounded border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-100"
             >
               take over
-            </button>
+            </Button>
           ) : null}
-          <button
+          <Button
             type="button"
+            size="sm"
             disabled={!canSend}
             onClick={onSend}
-            className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-40"
           >
             send
-          </button>
+          </Button>
         </div>
       </div>
     </div>
