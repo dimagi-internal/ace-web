@@ -218,6 +218,25 @@ async def drive_assistant_turn(
         await sync_to_async(_mark_error)(message, str(exc))
         yield StreamEvent.for_error(message=str(exc))
 
+    except FileNotFoundError as exc:
+        # The `claude` binary is not installed on this server. The CLI
+        # banner already tells users to connect, but if they send a
+        # message anyway we need to flip the assistant message to error
+        # state instead of leaving it stuck in 'streaming'.
+        logger.exception("Claude CLI binary not found")
+        detail = "Claude CLI is not installed on this server. Visit /auth/cli to connect."
+        await sync_to_async(_mark_error)(message, detail)
+        yield StreamEvent.for_error(message=detail)
+
+    except Exception as exc:
+        # Catch-all so any unexpected error in the backend or downstream
+        # processing leaves the assistant message in a terminal 'error'
+        # state instead of zombie 'streaming'.
+        logger.exception("Unexpected error during assistant turn")
+        detail = f"{type(exc).__name__}: {exc}"
+        await sync_to_async(_mark_error)(message, detail)
+        yield StreamEvent.for_error(message=detail)
+
     except asyncio.CancelledError:
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.shield(

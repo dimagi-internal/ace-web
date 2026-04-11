@@ -5,12 +5,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DJANGO_SETTINGS_MODULE=config.settings.connectlabs
 
-# System dependencies: postgres client libs for psycopg, curl for healthchecks.
+# System dependencies: postgres client libs for psycopg, curl for healthchecks,
+# Node.js + the Claude CLI (the chat backend spawns `claude -p` as a subprocess).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
+    && rm -rf /var/lib/apt/lists/* \
+    && claude --version
 
 # Install uv for fast, reproducible dep installs.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -40,8 +47,11 @@ RUN DJANGO_SECRET_KEY=build-time-placeholder \
     DJANGO_SETTINGS_MODULE=config.settings.base \
     python manage.py collectstatic --noinput --clear
 
-# Non-root user.
-RUN useradd -m -u 1000 app && chown -R app:app /app
+# Non-root user. Create the Claude CLI home dir so the token loader can
+# write the OAuth token to it without permission errors.
+RUN useradd -m -u 1000 app \
+    && mkdir -p /app/.ace-claude-home \
+    && chown -R app:app /app
 USER app
 
 EXPOSE 8000
