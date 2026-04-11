@@ -34,7 +34,8 @@ def login_page(request: HttpRequest) -> HttpResponse:
 
     If already authenticated, redirect to the `next` query param (default /).
     """
-    default_next = settings.FORCE_SCRIPT_NAME or "/"
+    _prefix = settings.FORCE_SCRIPT_NAME or ""
+    default_next = f"{_prefix}/" if _prefix else "/"
     if request.user.is_authenticated:
         next_url = request.GET.get("next", default_next)
         if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
@@ -254,7 +255,8 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
     request.session.pop("oauth_code_verifier", None)
     # Default to FORCE_SCRIPT_NAME so the redirect lands on ace-web,
     # not the ALB root (which routes to a different app on shared infra).
-    default_next = settings.FORCE_SCRIPT_NAME or "/"
+    _prefix = settings.FORCE_SCRIPT_NAME or ""
+    default_next = f"{_prefix}/" if _prefix else "/"
     next_url = request.session.pop("oauth_next", default_next)
 
     logger.info(f"Successfully authenticated user {email} via CommCare Connect OAuth")
