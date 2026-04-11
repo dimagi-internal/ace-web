@@ -61,15 +61,15 @@ export function ChatPage() {
   };
 
   if (!meta) {
-    return <div className="p-4 text-zinc-500">Loading…</div>;
+    return <div className="p-4 text-muted-foreground">Loading…</div>;
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-background text-foreground">
       <RecentSessionsSidebar currentSlug={slug} />
       <div className="flex flex-1 flex-col">
         <CliAuthBanner />
-        <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-2">
+        <header className="flex items-center justify-between border-b border-border bg-background px-4 py-2">
           <InlineTitleEdit value={meta.title} onSave={handleTitleSave} />
           <div className="relative flex items-center gap-3">
             <PresenceChips

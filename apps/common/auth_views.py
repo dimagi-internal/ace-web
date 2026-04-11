@@ -21,6 +21,13 @@ logger = logging.getLogger(__name__)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def cli_auth_status(request: Request) -> Response:
+    from django.conf import settings
+
+    # When the FakeCLIBackend is enabled (E2E tests, dev mode), the chat
+    # backend doesn't need a real Claude token — report as authenticated
+    # so the SendBox doesn't disable itself.
+    if getattr(settings, "ACE_USE_FAKE_CLI_BACKEND", False):
+        return Response(success_response({"authenticated": True}))
     token = auth_flow.get_stored_token()
     return Response(success_response({"authenticated": bool(token)}))
 

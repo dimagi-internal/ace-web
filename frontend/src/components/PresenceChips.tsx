@@ -17,7 +17,7 @@ export function PresenceChips({
     presenceUserIds.includes(p.user_id),
   );
   if (present.length === 0) {
-    return <div className="text-sm text-zinc-400">nobody else here</div>;
+    return <div className="text-sm text-muted-foreground">nobody else here</div>;
   }
   return (
     <div className="flex gap-2">
@@ -27,10 +27,10 @@ export function PresenceChips({
           <div
             key={p.user_id}
             title={p.display_name + (isHolder ? " — editing…" : "")}
-            className={`rounded-full px-2 py-1 text-xs ${
+            className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium ${
               isHolder
-                ? "bg-amber-200 text-amber-900"
-                : "bg-zinc-200 text-zinc-700"
+                ? "bg-primary text-primary-foreground ring-2 ring-primary/30"
+                : "bg-muted text-muted-foreground"
             }`}
           >
             {initials(p.display_name)}
