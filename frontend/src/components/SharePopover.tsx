@@ -36,10 +36,19 @@ export function SharePopover({ slug }: Props) {
   const handleCreate = async () => {
     setLoading(true);
     setError(null);
+    setCopyUrl(null);
     try {
       const result = await createShareToken(slug);
-      setCopyUrl(result.url);
-      await navigator.clipboard.writeText(result.url);
+      // Try to copy to clipboard, but don't fail the whole flow if the
+      // browser denies clipboard access (headless, restricted contexts).
+      let copied = false;
+      try {
+        await navigator.clipboard.writeText(result.url);
+        copied = true;
+      } catch {
+        // Clipboard write denied — show the URL in the popover instead.
+      }
+      setCopyUrl(copied ? result.url : `__SHOW__${result.url}`);
       await loadTokens();
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed to create share link");
@@ -87,9 +96,18 @@ export function SharePopover({ slug }: Props) {
         </button>
       </div>
 
-      {copyUrl && (
+      {copyUrl && !copyUrl.startsWith("__SHOW__") && (
         <div className="mb-2 rounded bg-emerald-50 px-2 py-1.5 text-xs text-emerald-700">
           Link copied to clipboard
+        </div>
+      )}
+
+      {copyUrl && copyUrl.startsWith("__SHOW__") && (
+        <div className="mb-2 rounded bg-blue-50 px-2 py-1.5 text-xs text-blue-700">
+          <div className="mb-1 font-medium">Share link created (copy manually):</div>
+          <div className="break-all font-mono text-[10px]">
+            {copyUrl.replace("__SHOW__", "")}
+          </div>
         </div>
       )}
 
