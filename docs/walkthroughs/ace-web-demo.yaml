@@ -1,0 +1,46 @@
+name: "ACE Web — Team Chat Harness"
+narrative: "ace-web gives the ACE team a persistent, multi-player chat interface on top of Claude with streaming responses, session library, and share links."
+base_url: "https://labs.connect.dimagi.com"
+
+auth:
+  type: command
+  check: "curl -s -o /dev/null -w '%{http_code}' -b /tmp/ace-cookies.txt https://labs.connect.dimagi.com/ace/api/health"
+  login: "echo 'Log into https://labs.connect.dimagi.com/ace/ in your browser, then export cookies with the browser extension'"
+  inject_url: "/ace/"
+
+personas:
+  jj:
+    name: "Jonathan Jackson"
+    role: "ACE Lead, Dimagi"
+    color: "#2563eb"
+    intro: "Jonathan leads the ACE initiative and uses ace-web daily for Claude conversations about CRISPR-Connect opportunities."
+
+scenes:
+  - persona: jj
+    title: "Library — session overview"
+    show: "The session library page at /ace/library with active sessions listed"
+    impressive_because: "Clean session management with search, filter by status, and one-click archive — not just a chat box, a real workspace"
+
+  - persona: jj
+    title: "New chat — create and send"
+    show: "Start a new chat session, type a message, and watch Claude stream a response token-by-token"
+    impressive_because: "Real-time token-by-token streaming via WebSocket — the response builds word by word, not spinner-then-dump"
+
+  - persona: jj
+    title: "Chat — tool use rendering"
+    show: "A chat session showing Claude's tool use blocks (code, file reads, etc.) rendered cleanly inline"
+    impressive_because: "Tool use and tool results are first-class — each block is its own visual element, not raw JSON"
+
+  - persona: jj
+    title: "Share — read-only link"
+    show: "Create a share link for a session and open the public read-only view"
+    impressive_because: "One-click share link with clipboard copy — the shared view strips participant identities and disables the send box"
+
+  - persona: jj
+    title: "Settings — API tokens"
+    show: "The settings page showing personal upload tokens for the ace-upload CLI"
+    impressive_because: "Self-service token management — create, copy, revoke — no admin intervention needed"
+
+# Opp Workbench scene removed — ace@dimagi-ai.com doesn't have access to
+# the shared ACE Drive folder. To demo the Opps Workbench, log in as a
+# @dimagi.com account that has Drive access.
