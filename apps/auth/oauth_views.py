@@ -65,7 +65,7 @@ def oauth_initiate(request: HttpRequest) -> HttpResponse:
     # Generate CSRF state token
     state = secrets.token_urlsafe(32)
     request.session["oauth_state"] = state
-    request.session["oauth_next"] = request.GET.get("next", "/")
+    request.session["oauth_next"] = request.GET.get("next", settings.FORCE_SCRIPT_NAME or "/")
 
     # Generate PKCE code verifier and challenge (S256)
     code_verifier = secrets.token_urlsafe(64)
@@ -251,7 +251,10 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
     # Clean up temporary session keys
     request.session.pop("oauth_state", None)
     request.session.pop("oauth_code_verifier", None)
-    next_url = request.session.pop("oauth_next", "/")
+    # Default to FORCE_SCRIPT_NAME so the redirect lands on ace-web,
+    # not the ALB root (which routes to a different app on shared infra).
+    default_next = settings.FORCE_SCRIPT_NAME or "/"
+    next_url = request.session.pop("oauth_next", default_next)
 
     logger.info(f"Successfully authenticated user {email} via CommCare Connect OAuth")
 
