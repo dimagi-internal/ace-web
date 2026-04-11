@@ -148,6 +148,10 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
         "client_id": settings.CONNECT_OAUTH_CLIENT_ID,
         "client_secret": settings.CONNECT_OAUTH_CLIENT_SECRET,
         "code_verifier": code_verifier,
+        # response_type=token tells Connect to return an opaque access token
+        # instead of trying to generate a signed JWT ID token (which crashes
+        # with 500 when the OAuth app doesn't have OIDC signing keys configured).
+        "response_type": "token",
     }
 
     try:
