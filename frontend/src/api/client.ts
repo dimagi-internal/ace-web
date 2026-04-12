@@ -60,14 +60,31 @@ export async function apiFetch<T>(
     }
   }
   const resp = await fetch(url, { ...init, headers });
+
+  // Expired/invalid session → redirect to login instead of showing
+  // a cryptic error. The SPA catch-all has login_required, but API
+  // calls bypass that and return 401/403 with a DRF detail message.
+  if (resp.status === 401 || resp.status === 403) {
+    const body = await resp.json().catch(() => ({})) as { detail?: string };
+    const isAuthError =
+      body.detail?.includes("credentials were not provided") ||
+      body.detail?.includes("CSRF") ||
+      body.detail?.includes("not authenticated");
+    if (isAuthError) {
+      const loginUrl = `${API_PREFIX}/auth/login/?next=${encodeURIComponent(window.location.pathname)}`;
+      window.location.href = loginUrl;
+      // Never resolves — the redirect takes us away
+      return new Promise<T>(() => {});
+    }
+  }
+
   let envelope: ApiEnvelope<T>;
   try {
     envelope = await resp.json();
   } catch {
     throw new ApiError("invalid_response", `${resp.status} ${resp.statusText}`);
   }
-  // Handle non-envelope responses (e.g. DRF auth errors like {"detail": "..."})
-  // before probing envelope.error/envelope.data.
+  // Handle non-envelope responses (e.g. DRF permission errors)
   if (!resp.ok && (!envelope || typeof envelope !== "object")) {
     throw new ApiError(
       `http_${resp.status}`,
@@ -77,8 +94,6 @@ export async function apiFetch<T>(
   if (envelope && envelope.error) {
     throw new ApiError(envelope.error.code, envelope.error.message);
   }
-  // Detect non-envelope responses: a DRF auth error is
-  // {"detail": "..."} with no `data` key at all.
   if (!envelope || !("data" in envelope)) {
     const detail =
       (envelope as unknown as { detail?: string })?.detail ??
