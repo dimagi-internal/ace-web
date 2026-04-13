@@ -126,7 +126,8 @@ LOGIN_URL = "/auth/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/auth/login/"
 
-# --- Claude CLI integration (Phase 2) ---
+# --- Claude integration ---
+# CLI backend (Phase 2): spawns `claude -p` as a subprocess.
 ACE_CLAUDE_HOME = env(
     "ACE_CLAUDE_HOME",
     default=str(BASE_DIR / ".ace-claude-home"),
@@ -135,6 +136,9 @@ ACE_CLAUDE_TOKEN_FILE = env(
     "ACE_CLAUDE_TOKEN_FILE",
     default=str(BASE_DIR / ".ace-claude-home" / "oauth-token"),
 )
+# API backend (fallback): direct Anthropic API access when CLI is not connected.
+# Set via ANTHROPIC_API_KEY env var or AWS Secrets Manager.
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 
 # Top-level Drive folder that holds ACE opportunities. Default matches the
 # ACE plugin convention.

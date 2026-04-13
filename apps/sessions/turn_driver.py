@@ -37,14 +37,14 @@ _backend: CLIBackend | None = None
 _bg_tasks: set[asyncio.Task] = set()
 
 
-def _get_backend() -> CLIBackend:
+def _get_backend():
     """Return the chat backend singleton.
 
-    Normally returns a cached CLIBackend() instance. When
-    settings.ACE_USE_FAKE_CLI_BACKEND is True (dev-only, gated in
-    base.py), returns a FakeCLIBackend instead so Playwright E2E
-    tests don't need a real Claude CLI subprocess. Existing unit
-    tests patch this function directly and are unaffected.
+    Priority:
+    1. FakeCLIBackend if ACE_USE_FAKE_CLI_BACKEND is True (E2E tests)
+    2. CLIBackend if the CLI OAuth token is available
+    3. ApiBackend if ANTHROPIC_API_KEY is set (direct API fallback)
+    4. CLIBackend anyway (will fail with a clear error)
     """
     from django.conf import settings
 
@@ -53,8 +53,25 @@ def _get_backend() -> CLIBackend:
         return FakeCLIBackend()
 
     global _backend
-    if _backend is None:
+    if _backend is not None:
+        return _backend
+
+    # Prefer CLI if we have a token
+    from apps.common.auth_flow import get_stored_token
+    if get_stored_token():
         _backend = CLIBackend()
+        return _backend
+
+    # Fall back to API if we have a key
+    api_key = getattr(settings, "ANTHROPIC_API_KEY", "") or ""
+    if api_key:
+        from apps.common.api_backend import ApiBackend
+        _backend = ApiBackend()
+        return _backend
+
+    # No token, no API key — return CLIBackend which will fail with a
+    # clear error message when used.
+    _backend = CLIBackend()
     return _backend
 
 
@@ -218,7 +235,7 @@ async def drive_assistant_turn(
         await sync_to_async(_mark_error)(message, str(exc))
         yield StreamEvent.for_error(message=str(exc))
 
-    except FileNotFoundError as exc:
+    except FileNotFoundError:
         # The `claude` binary is not installed on this server. The CLI
         # banner already tells users to connect, but if they send a
         # message anyway we need to flip the assistant message to error
