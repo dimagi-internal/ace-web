@@ -94,8 +94,9 @@ def parse_artifact_manifest(ts_source: str) -> list[dict]:
 
 
 def _parse_artifact_manifest_inner(ts_source: str) -> list[dict]:
-    # 1. Extract the array body
-    m = re.search(r"ARTIFACT_MANIFEST\s*=\s*\[", ts_source)
+    # 1. Extract the array body. Allow an optional TS type annotation between
+    # the identifier and ``=``, e.g. ``ARTIFACT_MANIFEST: readonly Entry[] = [``.
+    m = re.search(r"ARTIFACT_MANIFEST\b[^=]*=\s*\[", ts_source)
     if not m:
         return []
     start = m.end()
