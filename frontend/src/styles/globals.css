@@ -1,9 +1,12 @@
+@import "@fontsource-variable/geist";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
+    --font-sans: "Geist Variable", sans-serif;
     --background: 0 0% 98%;
     --foreground: 240 10% 3.9%;
     --card: 0 0% 100%;
