@@ -42,7 +42,16 @@ export function AuthCliPage() {
       setPhase("complete");
       await cliAuthStatus();
     } catch (e) {
-      setError(String(e));
+      const msg = String(e);
+      // Server-side PTY died (deploy restart, timeout). Auto-restart
+      // instead of making the user click "Try again" + "Begin authorization".
+      if (msg.includes("No active auth flow") || msg.includes("start() first")) {
+        setPhase("idle");
+        setAuthUrl(null);
+        setCode("");
+        return;
+      }
+      setError(msg);
       setPhase("error");
     }
   };
