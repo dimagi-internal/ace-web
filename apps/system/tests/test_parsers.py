@@ -158,3 +158,37 @@ class TestParseArtifactManifest:
         entries = parse_artifact_manifest(ts)
         assert len(entries) == 1
         assert entries[0]["skill_slug"] == "a"
+
+    def test_colon_inside_string_value(self):
+        """Keys inside string values must not be confused with object keys."""
+        sample = """
+        export const ARTIFACT_MANIFEST: readonly ArtifactEntry[] = [
+          {
+            path: 'x.md',
+            producedBy: 'skill-a',
+            consumedBy: [],
+            phase: 'build',
+            required: true,
+            description: 'Thing with colon: in the middle',
+          },
+        ] as const;
+        """
+        result = parse_artifact_manifest(sample)
+        assert len(result) == 1
+        assert result[0]["description"] == "Thing with colon: in the middle"
+
+    def test_real_ace_plugin_manifest_parses(self):
+        """Regression: the real artifact-manifest.ts from the ACE plugin must parse."""
+        import os
+        real_path = "/Users/jjackson/emdash-projects/ace/lib/artifact-manifest.ts"
+        if not os.path.exists(real_path):
+            import pytest
+            pytest.skip("ACE plugin not available in this environment")
+        text = open(real_path).read()
+        result = parse_artifact_manifest(text)
+        # Should parse many entries (30+ in current manifest)
+        assert len(result) > 20
+        # The entry that previously broke parsing: state.yaml with "state:" in description
+        state_yaml = next((e for e in result if e["path"] == "state.yaml"), None)
+        assert state_yaml is not None
+        assert "state:" in state_yaml["description"]

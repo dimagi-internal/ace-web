@@ -129,7 +129,9 @@ def _ts_to_json_array(text: str) -> str:
     text = text.replace("'", '"')
 
     # Add quotes to bare keys: `  skillSlug:` → `  "skillSlug":`
-    text = re.sub(r"(\s)(\w+)\s*:", r'\1"\2":', text)
+    # Only match keys right after `{` or `,` (object-property syntax) so that
+    # words followed by `:` inside string values don't get mangled.
+    text = re.sub(r"([\{,]\s*)(\w+)\s*:", r'\1"\2":', text)
 
     # Remove trailing commas before } or ]
     text = re.sub(r",(\s*[}\]])", r"\1", text)
