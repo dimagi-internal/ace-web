@@ -191,14 +191,12 @@ export default function LibraryPage() {
                   {new Date(s.updated_at).toLocaleDateString()}
                 </span>
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
+                  <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100" />}>
+                    <MoreHorizontal className="h-4 w-4" />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem asChild>
-                      <Link to={`/chat/${s.slug}`}>Open</Link>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem render={<Link to={`/chat/${s.slug}`} />}>
+                      Open
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleArchiveToggle(s)}>
                       {s.status === "archived" ? (
