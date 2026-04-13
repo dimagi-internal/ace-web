@@ -6,6 +6,7 @@ import {
   cliAuthStart,
   cliAuthStatus,
 } from "../api/auth";
+import { useCliAuthStatus } from "../hooks/useCliAuthStatus";
 
 type Phase = "idle" | "awaiting_code" | "submitting" | "complete" | "error";
 
@@ -14,6 +15,7 @@ export function AuthCliPage() {
   const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const cliConnected = useCliAuthStatus(5000);
 
   const start = async () => {
     setError(null);
@@ -60,14 +62,45 @@ export function AuthCliPage() {
         authorize this server, generate an OAuth token using the flow below.
       </p>
 
-      {phase === "idle" && (
-        <button
-          type="button"
-          onClick={start}
-          className="rounded bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
-        >
-          Begin authorization
-        </button>
+      {cliConnected === true && phase === "idle" && (
+        <div className="rounded border border-green-300 bg-green-50 p-4 text-green-900">
+          <div className="font-semibold">Claude CLI is connected</div>
+          <p className="mt-1 text-sm">
+            The server has a valid OAuth token. You can{" "}
+            <a href="/chat" className="font-semibold underline">
+              start chatting
+            </a>
+            , or re-authorize below if the token needs refreshing.
+          </p>
+          <button
+            type="button"
+            onClick={start}
+            className="mt-3 rounded border border-green-300 px-4 py-2 text-sm text-green-900 hover:bg-green-100"
+          >
+            Re-authorize
+          </button>
+        </div>
+      )}
+
+      {cliConnected === false && phase === "idle" && (
+        <div className="space-y-4">
+          <div className="rounded border border-border bg-muted p-4">
+            <div className="text-sm text-muted-foreground">
+              Logged in. CLI token is not set on this server.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={start}
+            className="rounded bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
+          >
+            Begin authorization
+          </button>
+        </div>
+      )}
+
+      {cliConnected === null && phase === "idle" && (
+        <div className="text-sm text-muted-foreground">Checking CLI status...</div>
       )}
 
       {phase === "awaiting_code" && authUrl && (
