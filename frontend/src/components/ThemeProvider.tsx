@@ -16,7 +16,7 @@ const STORAGE_KEY = "ace-ui-theme";
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(STORAGE_KEY) as Theme) || "system",
+    () => (localStorage.getItem(STORAGE_KEY) as Theme) || "dark",
   );
 
   useEffect(() => {
