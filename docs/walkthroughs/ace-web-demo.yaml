@@ -1,11 +1,11 @@
-name: "ACE Web — Team Chat Harness"
-narrative: "ace-web gives the ACE team a persistent, multi-player chat interface on top of Claude with streaming responses, session library, and share links."
+name: "ACE Web — CRISPR-Connect Lifecycle"
+narrative: "Follow a CRISPR-Connect opportunity from IDD through the 19-skill pipeline, inspect results in the workbench, and discuss findings in chat."
 base_url: "https://labs.connect.dimagi.com"
 
 auth:
   type: command
-  check: "curl -s -o /dev/null -w '%{http_code}' -b /tmp/ace-cookies.txt https://labs.connect.dimagi.com/ace/api/health"
-  login: "echo 'Log into https://labs.connect.dimagi.com/ace/ in your browser, then export cookies with the browser extension'"
+  check: "curl -s -o /dev/null -w '%{http_code}' https://labs.connect.dimagi.com/ace/api/health"
+  login: "echo 'Auth via e2e-login endpoint'"
   inject_url: "/ace/"
 
 personas:
@@ -13,34 +13,35 @@ personas:
     name: "Jonathan Jackson"
     role: "ACE Lead, Dimagi"
     color: "#2563eb"
-    intro: "Jonathan leads the ACE initiative and uses ace-web daily for Claude conversations about CRISPR-Connect opportunities."
+    intro: "Jonathan leads the ACE initiative. He uses ace-web to monitor CRISPR-Connect opportunities, review pipeline progress, and discuss findings with the team."
 
 scenes:
   - persona: jj
-    title: "Library — session overview"
-    show: "The session library page at /ace/library with active sessions listed"
-    impressive_because: "Clean session management with search, filter by status, and one-click archive — not just a chat box, a real workspace"
+    title: "Opportunity dashboard"
+    show: "The opps list page at /ace/opps showing active CRISPR-Connect opportunities"
+    impressive_because: "One-glance view of every opportunity's pipeline status — which phase, which step, running or blocked"
 
   - persona: jj
-    title: "New chat — create and send"
-    show: "Start a new chat session, type a message, and watch Claude stream a response token-by-token"
-    impressive_because: "Real-time token-by-token streaming via WebSocket — the response builds word by word, not spinner-then-dump"
+    title: "Workbench — pipeline overview"
+    show: "Open CRISPR-Test-001 in the workbench: the 19-skill pipeline with status indicators, completed steps highlighted, pending steps greyed"
+    impressive_because: "The full 19-skill CRISPR-Connect pipeline rendered as an interactive grid — click any step to see artifacts, judge scores, and gate history"
 
   - persona: jj
-    title: "Chat — tool use rendering"
-    show: "A chat session showing Claude's tool use blocks (code, file reads, etc.) rendered cleanly inline"
-    impressive_because: "Tool use and tool results are first-class — each block is its own visual element, not raw JSON"
+    title: "IDD review"
+    show: "The IDD body rendered in the workbench detail pane for the idea-to-idd step — the intervention design for Community Health Worker Training Pilot"
+    impressive_because: "The IDD is the foundation of the entire opportunity — it's rendered inline so you can review it without leaving the workbench"
 
   - persona: jj
-    title: "Share — read-only link"
-    show: "Create a share link for a session and open the public read-only view"
-    impressive_because: "One-click share link with clipboard copy — the shared view strips participant identities and disables the send box"
+    title: "Step detail — training materials"
+    show: "Drill into the training-materials step to see its 4 artifacts, judge score, and preview content"
+    impressive_because: "Each step has its own artifact list, judge verdict, and gate history — real observability into what the pipeline produced"
 
   - persona: jj
-    title: "Settings — API tokens"
-    show: "The settings page showing personal upload tokens for the ace-upload CLI"
-    impressive_because: "Self-service token management — create, copy, revoke — no admin intervention needed"
+    title: "Session library"
+    show: "The session library at /ace/library with active conversations"
+    impressive_because: "Every conversation is persistent and searchable — filter by status, search by title, archive old sessions"
 
-# Opp Workbench scene removed — ace@dimagi-ai.com doesn't have access to
-# the shared ACE Drive folder. To demo the Opps Workbench, log in as a
-# @dimagi.com account that has Drive access.
+  - persona: jj
+    title: "Chat — discuss findings"
+    show: "Open a chat session from the library, showing the sidebar with recent sessions and the send box"
+    impressive_because: "Multi-player chat with real-time streaming, draft collaboration, and share links — the team's shared interface to Claude"
