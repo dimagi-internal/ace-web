@@ -9,26 +9,57 @@ export function ArtifactList({ produced, consumed }: Props) {
   if (produced.length === 0 && consumed.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      {produced.map((a) => (
-        <ArtifactItem key={a.path} artifact={a} role="produces" />
-      ))}
-      {consumed.map((a) => (
-        <ArtifactItem key={a.path} artifact={a} role="consumes" />
-      ))}
+    <div className="flex flex-col gap-3">
+      {produced.length > 0 && (
+        <ArtifactGroup
+          title={`Produces (${produced.length})`}
+          color="var(--status-ok)"
+          artifacts={produced}
+        />
+      )}
+      {consumed.length > 0 && (
+        <ArtifactGroup
+          title={`Consumes (${consumed.length})`}
+          color="var(--status-info)"
+          artifacts={consumed}
+        />
+      )}
     </div>
   );
 }
 
-function ArtifactItem({ artifact, role }: { artifact: ArtifactRef; role: "produces" | "consumes" }) {
+function ArtifactGroup({
+  title,
+  color,
+  artifacts,
+}: {
+  title: string;
+  color: string;
+  artifacts: ArtifactRef[];
+}) {
   return (
-    <div className="flex items-center gap-2 rounded border border-border bg-card px-2.5 py-1.5 text-xs">
-      <span className="font-mono text-foreground">{artifact.path}</span>
-      <span className="ml-auto flex-shrink-0 text-[10px] font-semibold uppercase" style={{
-        color: role === "produces" ? "var(--status-ok)" : "var(--status-info)",
-      }}>
-        {role}
-      </span>
+    <div>
+      <div
+        className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider"
+        style={{ color }}
+      >
+        {title}
+      </div>
+      <div className="flex flex-col gap-1">
+        {artifacts.map((a) => (
+          <div
+            key={a.path}
+            className="rounded border border-border bg-card px-2.5 py-1.5"
+          >
+            <div className="font-mono text-xs text-foreground">{a.path}</div>
+            {a.description && (
+              <div className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                {a.description}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

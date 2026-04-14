@@ -168,6 +168,14 @@ def _build_skill_summary(
             "required": bool(a.get("required", False)),
         }
 
+    # Primary output: prefer the frontmatter-declared value (optional
+    # override) but fall back to the first produced artifact in the
+    # manifest. This keeps the manifest as the source of truth for
+    # what files a skill actually writes.
+    primary_output = (phase_entry or {}).get("primary_output")
+    if not primary_output and produced:
+        primary_output = produced[0].get("path")
+
     return {
         "name": name,
         "display_name": display_name,
@@ -176,7 +184,7 @@ def _build_skill_summary(
         "phase": (phase_entry or {}).get("phase"),
         "has_judge": bool((phase_entry or {}).get("has_judge")),
         "is_recurring": bool((phase_entry or {}).get("is_recurring")),
-        "primary_output": (phase_entry or {}).get("primary_output"),
+        "primary_output": primary_output,
         "artifacts_produced": [_artifact_row(a) for a in produced],
         "artifacts_consumed": [_artifact_row(a) for a in consumed],
     }

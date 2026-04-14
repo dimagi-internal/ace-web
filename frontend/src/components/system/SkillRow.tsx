@@ -8,6 +8,9 @@ interface Props {
 }
 
 export function SkillRow({ skill, isSelected, onClick }: Props) {
+  const producedCount = skill.artifacts_produced.length;
+  const extraCount = Math.max(0, producedCount - 1);
+
   return (
     <button
       type="button"
@@ -28,7 +31,16 @@ export function SkillRow({ skill, isSelected, onClick }: Props) {
       <div className="min-w-0 flex-1">
         <div className="font-medium text-foreground">{skill.display_name}</div>
         {skill.primary_output && (
-          <div className="font-mono text-[10px] text-muted-foreground">{skill.primary_output}</div>
+          <div className="flex items-center gap-1.5 truncate">
+            <span className="font-mono text-[10px] text-muted-foreground truncate">
+              {skill.primary_output}
+            </span>
+            {extraCount > 0 && (
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+                +{extraCount} more
+              </span>
+            )}
+          </div>
         )}
       </div>
       <div className="flex shrink-0 gap-1">
