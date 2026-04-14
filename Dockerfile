@@ -28,11 +28,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #      `claude -p` subprocess sessions have ACE skills, commands, and MCP
 #      servers available.
 #
-# Pinned to main HEAD at image build time. The "update available" banner in
-# the System tab tells you when this snapshot has drifted; rebuild + redeploy
-# to pick up new ACE plugin versions.
-RUN git clone --depth 1 https://github.com/jjackson/ace.git /app/vendor/ace \
+# Pinned to the ref passed in ACE_REF (build-backend.yml resolves this to the
+# current HEAD SHA of jjackson/ace, so Docker's layer cache busts whenever the
+# remote branch moves — otherwise the cached clone would snapshot-freeze the
+# plugin at whatever main was the first time this image was built).
+ARG ACE_REF=main
+RUN git clone https://github.com/jjackson/ace.git /app/vendor/ace \
     && cd /app/vendor/ace \
+    && git checkout ${ACE_REF} \
     && npm install --no-audit --no-fund \
     && rm -rf .git
 
