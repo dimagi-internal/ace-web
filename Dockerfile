@@ -6,18 +6,35 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DJANGO_SETTINGS_MODULE=config.settings.connectlabs
 
 # System dependencies: postgres client libs for psycopg, curl for healthchecks,
-# Node.js + the Claude CLI (the chat backend spawns `claude -p` as a subprocess).
+# git for cloning vendored plugins, Node.js + the Claude CLI (the chat backend
+# spawns `claude -p` as a subprocess).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     curl \
     ca-certificates \
     gnupg \
+    git \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @anthropic-ai/claude-code \
     && rm -rf /var/lib/apt/lists/* \
     && claude --version
+
+# Vendor the ACE plugin repo. Serves two purposes:
+#   1. The System Overview tab reads skill/agent/artifact metadata from here
+#      via ACE_PLUGIN_PATH (see apps/system/reader.py).
+#   2. Installed into the container user's ~/.claude/plugins/ below so
+#      `claude -p` subprocess sessions have ACE skills, commands, and MCP
+#      servers available.
+#
+# Pinned to main HEAD at image build time. The "update available" banner in
+# the System tab tells you when this snapshot has drifted; rebuild + redeploy
+# to pick up new ACE plugin versions.
+RUN git clone --depth 1 https://github.com/jjackson/ace.git /app/vendor/ace \
+    && cd /app/vendor/ace \
+    && npm install --no-audit --no-fund \
+    && rm -rf .git
 
 # Install uv for fast, reproducible dep installs.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -48,13 +65,34 @@ RUN DJANGO_SECRET_KEY=build-time-placeholder \
     python manage.py collectstatic --noinput --clear
 
 # Non-root user. Create the Claude CLI home dir so the token loader can
-# write the OAuth token to it without permission errors.
+# write the OAuth token to it without permission errors. Also install the
+# vendored ACE plugin into the user's ~/.claude/plugins/ so `claude -p`
+# subprocess sessions can invoke ACE skills, slash commands, and MCP
+# servers. The plugin files live under /app/vendor/ace (writable layer),
+# with installed_plugins.json pointing Claude CLI at that path.
 RUN useradd -m -u 1000 app \
     && mkdir -p /app/.ace-claude-home \
-    && chown -R app:app /app
+    && ACE_VERSION=$(cat /app/vendor/ace/VERSION 2>/dev/null || echo "vendored") \
+    && mkdir -p /home/app/.claude/plugins/cache/ace/ace \
+    && ln -s /app/vendor/ace "/home/app/.claude/plugins/cache/ace/ace/${ACE_VERSION}" \
+    && printf '%s\n' "{\"ace@ace\":{\"version\":\"${ACE_VERSION}\",\"installPath\":\"/home/app/.claude/plugins/cache/ace/ace/${ACE_VERSION}\",\"installedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}" > /home/app/.claude/plugins/installed_plugins.json \
+    && mkdir -p /home/app/.claude/plugin-data/ace \
+    && chown -R app:app /app /home/app/.claude
+
+# Entrypoint writes the Drive SA key from ACE_DRIVE_SA_KEY_JSON (Secrets
+# Manager) to $CLAUDE_PLUGIN_DATA/gws-sa-key.json at container start, so
+# the ACE plugin's MCP servers can authenticate to Drive.
+COPY --chown=app:app docker-entrypoint.sh /app/docker-entrypoint.sh
+
 USER app
 
+# Claude plugin discovery + MCP config paths for this container.
+ENV ACE_PLUGIN_PATH=/app/vendor/ace \
+    CLAUDE_PLUGIN_DATA=/home/app/.claude/plugin-data/ace
+
 EXPOSE 8000
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # Production command — uvicorn ASGI server.
 CMD ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8000"]

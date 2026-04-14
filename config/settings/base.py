@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "apps.opps.apps.OppsConfig",
     "apps.ingest.apps.IngestConfig",
     "apps.service_accounts.apps.ServiceAccountsConfig",
+    "apps.system.apps.SystemConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -152,6 +153,10 @@ ACE_DRIVE_ROOT_FOLDER_ID = env(
     "ACE_DRIVE_ROOT_FOLDER_ID",
     default="1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz",
 )
+
+# ACE plugin repo path — the System Overview tab reads skill definitions,
+# agent definitions, and the artifact manifest from this directory.
+ACE_PLUGIN_PATH = env.str("ACE_PLUGIN_PATH", default=str(BASE_DIR.parent / "ace"))
 
 # --- Django REST Framework ---
 REST_FRAMEWORK = {

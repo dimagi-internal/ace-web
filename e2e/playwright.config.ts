@@ -62,6 +62,10 @@ export default defineConfig({
     env: {
       DJANGO_SETTINGS_MODULE: "config.settings.e2e",
       DJANGO_SECRET_KEY: "e2e-not-a-secret",
+      // Point the System tab at the real ACE plugin repo sibling to
+      // emdash-projects/ (not the worktrees/ parent, where the default
+      // BASE_DIR.parent / "ace" would resolve).
+      ACE_PLUGIN_PATH: path.resolve(repoRoot, "../../ace"),
     },
     stdout: "pipe",
     stderr: "pipe",

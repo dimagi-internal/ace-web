@@ -46,6 +46,33 @@ documented inline at `docs/plans/2026-04-07-1a-foundation.md` under
 **Post-execution corrections**. Read that section before touching config,
 settings, Dockerfile, or the auth/sessions models.
 
+## Vendored Claude plugins
+
+The Docker image bundles the ACE plugin repo at `/app/vendor/ace` at build
+time (via `git clone --depth 1` in the Dockerfile). It serves two purposes:
+
+1. The **System Overview tab** (`apps/system/`) reads skill metadata, agent
+   definitions, and the artifact manifest from `ACE_PLUGIN_PATH` (defaults
+   to `/app/vendor/ace` in the container).
+2. The plugin is installed at `~/.claude/plugins/cache/ace/ace/<version>/`
+   so `claude -p` subprocess sessions have ACE skills, slash commands, and
+   MCP servers available. The directory is a symlink into `/app/vendor/ace`
+   — one source of truth, two access paths.
+
+The SA key at `$CLAUDE_PLUGIN_DATA/gws-sa-key.json` is written at container
+start by `docker-entrypoint.sh` from the `ACE_DRIVE_SA_KEY_JSON` env var
+(same secret as the opps Drive client). Never baked into the image.
+
+**To pick up a new ACE plugin release:** rebuild the ace-web image (any
+push to main triggers `build-backend.yml`), then run `deploy-labs.yml`.
+The System tab's update banner compares local `VERSION` against GitHub's
+remote `VERSION` and will tell you when the snapshot has drifted.
+
+**Adding more plugins** (e.g. `superpowers`, `canopy`): follow the same
+pattern in `Dockerfile` — `git clone` into `/app/vendor/<name>`, add a
+symlink under `~/.claude/plugins/cache/<name>/`, append to
+`installed_plugins.json`.
+
 ## Stack
 
 - **Backend**: Django 5 + Channels 4 + DRF, ASGI via uvicorn, `psycopg[binary]`, `httpx[http2]` for Connect OAuth, `django-environ`.
