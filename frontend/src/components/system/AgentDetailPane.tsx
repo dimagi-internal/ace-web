@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
+import { FileText } from "lucide-react";
+
 import { getAgentDetail } from "../../api/system";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { AgentDetail, AgentSummary, SkillSummary } from "./types";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 
@@ -17,9 +27,11 @@ interface Props {
 
 export function AgentDetailPane({ agent, skills }: Props) {
   const [detail, setDetail] = useState<AgentDetail | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
     setDetail(null);
+    setDialogOpen(false);
     getAgentDetail(agent.name)
       .then(setDetail)
       .catch(() => setDetail(null));
@@ -31,11 +43,38 @@ export function AgentDetailPane({ agent, skills }: Props) {
   const gateCount = ownedSkills.filter((s) => s.is_gate).length;
 
   return (
-    <div className="flex flex-col gap-5 overflow-y-auto p-4">
+    <div className="flex flex-col gap-5 p-4">
       <div>
         <h2 className="text-lg font-semibold text-foreground">{agent.name}</h2>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{agent.description}</p>
       </div>
+
+      {detail?.body_markdown && (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start"
+            onClick={() => setDialogOpen(true)}
+          >
+            <FileText className="mr-2 h-3.5 w-3.5" />
+            View agent definition
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{agent.name}</DialogTitle>
+                <DialogDescription className="font-mono text-xs">
+                  agents/{agent.name}.md
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-2">
+                <MarkdownRenderer content={detail.body_markdown} />
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
 
       <Section title="Agent Metadata">
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
@@ -46,12 +85,6 @@ export function AgentDetailPane({ agent, skills }: Props) {
           <MetaItem label="Model" value={agent.model || "—"} />
         </div>
       </Section>
-
-      {detail?.body_markdown && (
-        <Section title="Agent Definition">
-          <MarkdownRenderer content={detail.body_markdown} />
-        </Section>
-      )}
     </div>
   );
 }
