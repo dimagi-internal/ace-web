@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -89,9 +90,11 @@ class TestCheckVersion:
     def test_cache_miss_after_expiry(self, tmp_path: Path):
         (tmp_path / "VERSION").write_text("1.0.0\n")
 
-        # Prime the cache with an entry timestamped in the distant past so it
-        # is considered expired.
-        version_module._cache["remote_version"] = ("0.9.0", 0.0)
+        # Prime the cache with a timestamp guaranteed to be past the TTL.
+        # Using 0.0 is flaky on CI where time.monotonic() is < TTL early in
+        # the process lifetime — compute an explicitly-expired timestamp.
+        expired_ts = time.monotonic() - (version_module._CACHE_TTL_SECONDS + 1)
+        version_module._cache["remote_version"] = ("0.9.0", expired_ts)
 
         with patch(
             "apps.system.version._fetch_remote_version", return_value="1.2.0"
