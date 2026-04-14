@@ -34,7 +34,7 @@ export function PipelineView({ snapshot }: Props) {
       <main className="flex-1 overflow-y-auto">
         <SkillList skills={filtered} selectedSkill={selectedSkill} onSelectSkill={setSelectedSkill} />
       </main>
-      <section className="w-[420px] shrink-0 border-l border-border">
+      <section className="w-[420px] shrink-0 overflow-y-auto border-l border-border">
         {selected ? (
           <SkillDetailPane skill={selected} />
         ) : (
