@@ -1,42 +1,32 @@
 import { cn } from "@/lib/utils";
-import type { AgentSummary, SkillSummary } from "./types";
-
-const AGENT_COLORS: Record<string, string> = {
-  "ace-orchestrator": "text-red-400",
-  "app-builder": "text-blue-400",
-  "connect-setup": "text-green-400",
-  "llo-manager": "text-amber-400",
-  "closeout": "text-purple-400",
-  "ocs-tester": "text-cyan-400",
-};
-
-const AGENT_BADGE_COLORS: Record<string, string> = {
-  "ace-orchestrator": "bg-red-500/15 text-red-400",
-  "app-builder": "bg-blue-500/15 text-blue-400",
-  "connect-setup": "bg-green-500/15 text-green-400",
-  "llo-manager": "bg-amber-500/15 text-amber-400",
-  "closeout": "bg-purple-500/15 text-purple-400",
-  "ocs-tester": "bg-cyan-500/15 text-cyan-400",
-};
-
-// Map agents to the skills they own (derived from phase)
-const AGENT_PHASES: Record<string, string> = {
-  "app-builder": "app-building",
-  "connect-setup": "connect-setup",
-  "llo-manager": "llo-management",
-  "closeout": "closeout",
-};
+import type { AgentSummary, PhaseInfo, SkillSummary } from "./types";
+import { phaseColor } from "./PipelineSidebar";
 
 interface Props {
   agent: AgentSummary;
   skills: SkillSummary[];
+  phases: PhaseInfo[];
   isSelected: boolean;
   onClick: () => void;
 }
 
-export function AgentCard({ agent, skills, isSelected, onClick }: Props) {
-  const phase = AGENT_PHASES[agent.name];
-  const ownedSkills = phase ? skills.filter((s) => s.phase === phase) : [];
+// Convert `bg-blue-500` → `text-blue-400` for agent name color.
+function bgToText(bg: string): string {
+  return bg.replace("bg-", "text-").replace("-500", "-400");
+}
+
+// Convert `bg-blue-500` → `bg-blue-500/15 text-blue-400` for phase badge.
+function bgToBadge(bg: string): string {
+  const text = bgToText(bg);
+  return `${bg}/15 ${text}`;
+}
+
+export function AgentCard({ agent, skills, phases, isSelected, onClick }: Props) {
+  const ownedPhase = phases.find((p) => p.agent === agent.name);
+  const ownedSkills = ownedPhase ? skills.filter((s) => s.phase === ownedPhase.name) : [];
+  const phaseBg = ownedPhase ? phaseColor(ownedPhase.ordinal) : "bg-muted-foreground";
+  const nameColor = bgToText(phaseBg);
+  const badgeClass = bgToBadge(phaseBg);
 
   return (
     <div className={cn("mx-4 my-3 overflow-hidden rounded-lg border border-border bg-card", isSelected && "ring-1 ring-primary")}>
@@ -46,14 +36,14 @@ export function AgentCard({ agent, skills, isSelected, onClick }: Props) {
         className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-accent"
       >
         <div>
-          <div className={cn("text-sm font-semibold", AGENT_COLORS[agent.name] ?? "text-foreground")}>
+          <div className={cn("text-sm font-semibold", ownedPhase ? nameColor : "text-foreground")}>
             {agent.name}
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">{agent.description}</div>
         </div>
-        {phase && (
-          <span className={cn("shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase", AGENT_BADGE_COLORS[agent.name] ?? "")}>
-            {phase.replace("-", " ")}
+        {ownedPhase && (
+          <span className={cn("shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase", badgeClass)}>
+            {ownedPhase.display_name}
           </span>
         )}
       </button>
@@ -67,7 +57,11 @@ export function AgentCard({ agent, skills, isSelected, onClick }: Props) {
               <span
                 className={cn(
                   "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold",
-                  skill.is_gate ? "border-amber-500 text-amber-400" : skill.has_judge ? "border-purple-500 text-purple-400" : "border-border text-muted-foreground",
+                  skill.has_judge
+                    ? "border-purple-500 text-purple-400"
+                    : skill.is_recurring
+                      ? "border-cyan-500 text-cyan-400"
+                      : "border-border text-muted-foreground",
                 )}
               >
                 {skill.ordinal}
@@ -76,7 +70,6 @@ export function AgentCard({ agent, skills, isSelected, onClick }: Props) {
                 <div className="text-xs font-medium text-foreground">{skill.display_name}</div>
                 <div className="text-[10px] text-muted-foreground">
                   {[
-                    skill.is_gate && "Gate",
                     skill.has_judge && "Judge",
                     skill.is_recurring && "Recurring",
                   ].filter(Boolean).join(" · ") || ""}

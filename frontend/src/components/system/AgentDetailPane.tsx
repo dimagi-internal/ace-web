@@ -10,22 +10,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { AgentDetail, AgentSummary, SkillSummary } from "./types";
+import type { AgentDetail, AgentSummary, PhaseInfo, SkillSummary } from "./types";
 import { MarkdownRenderer } from "../MarkdownRenderer";
-
-const AGENT_PHASES: Record<string, string> = {
-  "app-builder": "app-building",
-  "connect-setup": "connect-setup",
-  "llo-manager": "llo-management",
-  "closeout": "closeout",
-};
 
 interface Props {
   agent: AgentSummary;
   skills: SkillSummary[];
+  phases: PhaseInfo[];
 }
 
-export function AgentDetailPane({ agent, skills }: Props) {
+export function AgentDetailPane({ agent, skills, phases }: Props) {
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -37,10 +31,11 @@ export function AgentDetailPane({ agent, skills }: Props) {
       .catch(() => setDetail(null));
   }, [agent.name]);
 
-  const phase = AGENT_PHASES[agent.name];
-  const ownedSkills = phase ? skills.filter((s) => s.phase === phase) : [];
+  // Find the phase this agent owns (from the backend's phase metadata).
+  const ownedPhase = phases.find((p) => p.agent === agent.name);
+  const ownedSkills = ownedPhase ? skills.filter((s) => s.phase === ownedPhase.name) : [];
   const judgeCount = ownedSkills.filter((s) => s.has_judge).length;
-  const gateCount = ownedSkills.filter((s) => s.is_gate).length;
+  const recurringCount = ownedSkills.filter((s) => s.is_recurring).length;
 
   return (
     <div className="flex flex-col gap-5 p-4">
@@ -78,10 +73,10 @@ export function AgentDetailPane({ agent, skills }: Props) {
 
       <Section title="Agent Metadata">
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-          <MetaItem label="Phase" value={phase ?? "Lifecycle"} />
+          <MetaItem label="Phase" value={ownedPhase?.display_name ?? "Lifecycle"} />
           <MetaItem label="Skills" value={String(ownedSkills.length)} />
-          <MetaItem label="Gates" value={String(gateCount)} />
           <MetaItem label="Judges" value={String(judgeCount)} />
+          <MetaItem label="Recurring" value={String(recurringCount)} />
           <MetaItem label="Model" value={agent.model || "—"} />
         </div>
       </Section>

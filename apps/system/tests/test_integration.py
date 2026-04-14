@@ -31,18 +31,20 @@ def test_overview_endpoint_with_real_plugin(authed_client):
     body = resp.json()
     assert body["error"] is None
     data = body["data"]
-    # Real plugin has 19 registered + 2 utility skills
+    # Real plugin has at least ~19 phase skills + 1-2 utility
     assert len(data["skills"]) >= 19
-    # Real plugin has 6 agents
-    assert len(data["agents"]) == 6
-    # Real manifest has 30+ artifacts
+    # Real plugin has at least 6 agents (phase agents + orchestrator +
+    # specialties). Exact count varies as agents are added.
+    assert len(data["agents"]) >= 6
+    # Real manifest has 20+ artifacts
     assert len(data["artifacts"]) >= 20
-    # idea-to-idd is the first skill
+    # Phases come as structured objects (name, display_name, ordinal, agent)
+    assert len(data["phases"]) >= 4
+    assert all("display_name" in p and "ordinal" in p for p in data["phases"])
+    # idea-to-idd is the first skill in the lifecycle (Phase 1, ordinal 1)
     idd = next(s for s in data["skills"] if s["name"] == "idea-to-idd")
     assert idd["ordinal"] == 1
-    assert idd["phase"] == "app-building"
     assert idd["has_judge"] is True
-    assert idd["is_gate"] is True
     assert idd["display_name"] == "Idea to IDD"
     # Artifact relationships populated
     assert any(a["path"] == "idd.md" for a in idd["artifacts_produced"])
@@ -72,10 +74,12 @@ def test_skill_detail_with_real_plugin(authed_client):
 )
 @override_settings(ACE_PLUGIN_PATH=ACE_PLUGIN_PATH)
 def test_agent_detail_with_real_plugin(authed_client):
-    resp = authed_client.get("/api/system/agents/app-builder")
+    # The orchestrator is the one agent guaranteed to exist regardless of
+    # how the phase agents get reshuffled.
+    resp = authed_client.get("/api/system/agents/ace-orchestrator")
     assert resp.status_code == 200
     data = resp.json()["data"]
-    assert data["name"] == "app-builder"
+    assert data["name"] == "ace-orchestrator"
     assert len(data["body_markdown"]) > 200
 
 

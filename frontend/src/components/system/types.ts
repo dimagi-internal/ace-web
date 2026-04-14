@@ -20,7 +20,6 @@ export interface SkillSummary {
   ordinal: number | null;
   phase: string | null;
   has_judge: boolean;
-  is_gate: boolean;
   is_recurring: boolean;
   primary_output: string | null;
   artifacts_produced: ArtifactRef[];
@@ -41,6 +40,13 @@ export interface AgentDetail extends AgentSummary {
   body_markdown: string;
 }
 
+export interface PhaseInfo {
+  name: string;
+  display_name: string;
+  ordinal: number;
+  agent: string;
+}
+
 export interface SystemSnapshot {
   plugin_version: string | null;
   remote_version: string | null;
@@ -48,6 +54,6 @@ export interface SystemSnapshot {
   skills: SkillSummary[];
   agents: AgentSummary[];
   artifacts: ArtifactEntry[];
-  phases: string[];
+  phases: PhaseInfo[];
   warning: string | null;
 }

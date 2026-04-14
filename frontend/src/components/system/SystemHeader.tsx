@@ -13,7 +13,7 @@ interface Props {
 
 export function SystemHeader({ snapshot, view, onViewChange, updateDismissed, onDismissUpdate }: Props) {
   const judgeCount = snapshot.skills.filter((s) => s.has_judge).length;
-  const gateCount = snapshot.skills.filter((s) => s.is_gate).length;
+  const recurringCount = snapshot.skills.filter((s) => s.is_recurring).length;
 
   return (
     <div className="flex flex-col border-b border-border">
@@ -47,10 +47,10 @@ export function SystemHeader({ snapshot, view, onViewChange, updateDismissed, on
               <strong className="text-foreground">{snapshot.phases.length}</strong> phases
             </span>
             <span>
-              <strong className="text-foreground">{gateCount}</strong> gates
+              <strong className="text-foreground">{judgeCount}</strong> judges
             </span>
             <span>
-              <strong className="text-foreground">{judgeCount}</strong> judges
+              <strong className="text-foreground">{recurringCount}</strong> recurring
             </span>
           </div>
         </div>

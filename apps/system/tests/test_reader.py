@@ -40,7 +40,8 @@ def plugin_dir(tmp_path):
         "# Email Communicator\n"
     )
 
-    # agents/app-builder.md
+    # agents/app-builder.md — declares its phase + ordered skills in the
+    # frontmatter (the source of truth for ordinal/phase/gate/judge metadata).
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir()
     (agents_dir / "app-builder.md").write_text(
@@ -48,6 +49,11 @@ def plugin_dir(tmp_path):
         "name: app-builder\n"
         "description: Orchestrates the app building phase.\n"
         "model: inherit\n"
+        "phase: app-building\n"
+        "phase_display: App Building\n"
+        "phase_ordinal: 1\n"
+        "skills:\n"
+        "  - { name: idea-to-idd, has_judge: true, primary_output: idd.md }\n"
         "---\n"
         "\n"
         "# App Builder Agent\n"
@@ -86,7 +92,6 @@ class TestLoadSystemOverview:
         assert idd["ordinal"] == 1
         assert idd["phase"] == "app-building"
         assert idd["has_judge"] is True
-        assert idd["is_gate"] is True
 
     def test_display_name_from_h1(self, plugin_dir):
         overview = load_system_overview(str(plugin_dir))
