@@ -31,7 +31,7 @@ export function PipelineView({ snapshot }: Props) {
       <aside className="w-[200px] shrink-0 overflow-y-auto border-r border-border">
         <PipelineSidebar skills={snapshot.skills} phases={snapshot.phases} filter={filter} onFilterChange={setFilter} />
       </aside>
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-y-auto">
         <SkillList skills={filtered} selectedSkill={selectedSkill} onSelectSkill={setSelectedSkill} />
       </main>
       <section className="w-[420px] shrink-0 border-l border-border">
