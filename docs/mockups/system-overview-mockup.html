@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACE System Overview — Design Mockup</title>
+<style>
+  /* ── Reset & Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #09090b;
+    --bg-card: #18181b;
+    --bg-hover: #27272a;
+    --bg-selected: #1e3a5f;
+    --border: #27272a;
+    --border-accent: #3b82f6;
+    --text: #fafafa;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --blue: #3b82f6;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --purple: #a855f7;
+    --red: #ef4444;
+    --cyan: #06b6d4;
+    --font: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'Geist Mono', 'SF Mono', 'Fira Code', monospace;
+    --radius: 8px;
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── Top Nav (matches ace-web) ── */
+  .topnav {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 0 20px;
+    height: 48px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg);
+  }
+  .topnav .logo {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+  .topnav .nav-items { display: flex; gap: 4px; }
+  .topnav .nav-item {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .topnav .nav-item:hover { background: var(--bg-hover); color: var(--text); }
+  .topnav .nav-item.active { background: var(--bg-hover); color: var(--text); }
+
+  /* ── Page Shell ── */
+  .page { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+  /* ── Subheader with view toggle ── */
+  .subheader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .subheader-left { display: flex; align-items: center; gap: 16px; }
+  .subheader h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+  .subheader .stats {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .subheader .stat-value { color: var(--text); font-weight: 600; }
+
+  .view-toggle {
+    display: flex;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .view-toggle button {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--font);
+  }
+  .view-toggle button:hover { color: var(--text); }
+  .view-toggle button.active {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  /* ── Three-Pane Layout ── */
+  .three-pane {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Left Sidebar ── */
+  .sidebar {
+    width: 200px;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    flex-shrink: 0;
+    padding: 8px;
+  }
+  .sidebar-section {
+    margin-bottom: 4px;
+  }
+  .sidebar-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    padding: 8px 8px 4px;
+  }
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-muted);
+    transition: all 0.15s;
+  }
+  .sidebar-item:hover { background: var(--bg-hover); color: var(--text); }
+  .sidebar-item.active { background: var(--bg-selected); color: var(--text); border: 1px solid rgba(59, 130, 246, 0.3); }
+  .sidebar-item .count {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--bg);
+    padding: 1px 6px;
+    border-radius: 10px;
+  }
+  .sidebar-item .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Center Panel (Skill List) ── */
+  .center-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+    min-width: 0;
+  }
+
+  /* Phase header in center panel */
+  .phase-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 1;
+    border-bottom: 1px solid var(--border);
+  }
+  .phase-header .phase-line { flex: 1; height: 1px; background: var(--border); }
+
+  /* Skill row */
+  .skill-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.1s;
+  }
+  .skill-row:hover { background: var(--bg-hover); }
+  .skill-row.selected { background: var(--bg-selected); border-left: 2px solid var(--blue); }
+
+  .skill-ordinal {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .skill-row.selected .skill-ordinal { border-color: var(--blue); color: var(--blue); }
+
+  .skill-info { flex: 1; min-width: 0; }
+  .skill-name { font-size: 13px; font-weight: 500; color: var(--text); }
+  .skill-output { font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); margin-top: 1px; }
+
+  .skill-badges { display: flex; gap: 4px; flex-shrink: 0; }
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .badge-judge { background: rgba(168, 85, 247, 0.15); color: var(--purple); }
+  .badge-gate { background: rgba(245, 158, 11, 0.15); color: var(--amber); }
+  .badge-recurring { background: rgba(6, 182, 212, 0.15); color: var(--cyan); }
+
+  /* ── Right Detail Pane ── */
+  .detail-pane {
+    width: 420px;
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    flex-shrink: 0;
+    padding: 20px;
+  }
+  .detail-pane .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-dim);
+    text-align: center;
+    gap: 8px;
+  }
+  .detail-pane .empty-state .icon { font-size: 32px; opacity: 0.3; }
+
+  .detail-header { margin-bottom: 20px; }
+  .detail-header h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4px; }
+  .detail-header .detail-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+  .detail-section { margin-bottom: 20px; }
+  .detail-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .detail-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .meta-item { }
+  .meta-label { font-size: 11px; color: var(--text-dim); }
+  .meta-value { font-size: 13px; color: var(--text); font-weight: 500; }
+
+  /* Artifact list in detail */
+  .artifact-list { display: flex; flex-direction: column; gap: 6px; }
+  .artifact-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .artifact-item .artifact-icon { font-size: 14px; }
+  .artifact-item .artifact-name { font-family: var(--font-mono); color: var(--text); flex: 1; }
+  .artifact-item .artifact-role { font-size: 10px; color: var(--text-dim); text-transform: uppercase; }
+  .artifact-item.produces .artifact-role { color: var(--green); }
+  .artifact-item.consumes .artifact-role { color: var(--blue); }
+
+  /* Process steps in detail */
+  .process-steps { display: flex; flex-direction: column; gap: 2px; }
+  .process-step {
+    display: flex;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .process-step .step-num {
+    font-weight: 600;
+    color: var(--text-dim);
+    font-size: 11px;
+    min-width: 18px;
+    padding-top: 2px;
+  }
+
+  /* Judge rubric */
+  .rubric-list { display: flex; flex-direction: column; gap: 4px; }
+  .rubric-item {
+    padding: 8px 10px;
+    background: rgba(168, 85, 247, 0.06);
+    border: 1px solid rgba(168, 85, 247, 0.15);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .rubric-item strong { color: var(--purple); font-weight: 600; }
+
+  /* MCP tools list */
+  .tool-list { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tool-tag {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    padding: 3px 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+  }
+
+  /* Markdown preview area */
+  .markdown-preview {
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.7;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .markdown-preview h3 { color: var(--text); font-size: 14px; margin: 12px 0 6px; }
+  .markdown-preview h3:first-child { margin-top: 0; }
+  .markdown-preview p { margin-bottom: 8px; }
+  .markdown-preview code {
+    font-family: var(--font-mono);
+    background: var(--bg);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .markdown-preview ol { padding-left: 20px; margin-bottom: 8px; }
+  .markdown-preview li { margin-bottom: 4px; }
+
+  /* ── Agent View ── */
+  .agent-card {
+    margin: 12px 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .agent-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .agent-card-header:hover { background: var(--bg-hover); }
+  .agent-name { font-size: 14px; font-weight: 600; }
+  .agent-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .agent-phase-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .agent-workflow {
+    padding: 16px;
+  }
+  .workflow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    position: relative;
+    padding-bottom: 16px;
+  }
+  .workflow-step:last-child { padding-bottom: 0; }
+  .workflow-step::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 28px;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+  }
+  .workflow-step:last-child::before { display: none; }
+
+  .workflow-step-num {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    z-index: 1;
+  }
+  .workflow-step-num.gate { border-color: var(--amber); color: var(--amber); }
+  .workflow-step-num.judge { border-color: var(--purple); color: var(--purple); }
+  .workflow-step-num.parallel { border-color: var(--cyan); color: var(--cyan); }
+
+  .workflow-step-content { flex: 1; padding-top: 4px; }
+  .workflow-step-name { font-size: 13px; font-weight: 500; }
+  .workflow-step-detail { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .workflow-step-artifacts {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .workflow-artifact {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(34, 197, 94, 0.1);
+    color: var(--green);
+  }
+
+  .parallel-group {
+    margin: 8px 0 8px 42px;
+    padding: 10px 14px;
+    border: 1px dashed var(--cyan);
+    border-radius: 8px;
+    background: rgba(6, 182, 212, 0.04);
+  }
+  .parallel-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+  }
+  .parallel-group .workflow-step { padding-bottom: 8px; }
+  .parallel-group .workflow-step::before { display: none; }
+
+  /* View containers */
+  .view-container { display: none; flex: 1; overflow: hidden; }
+  .view-container.active { display: flex; flex-direction: column; }
+
+  /* Annotation callouts */
+  .annotation {
+    position: fixed;
+    background: var(--amber);
+    color: #000;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 4px;
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  /* ── Mockup banner ── */
+  .mockup-banner {
+    background: linear-gradient(90deg, var(--blue), var(--purple));
+    color: white;
+    text-align: center;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+  }
+  .mockup-banner span { opacity: 0.7; font-weight: 400; margin-left: 8px; }
+
+  /* Tab indicator for selected view */
+  .view-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 8px 20px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+  }
+  .view-indicator .arrow { color: var(--blue); }
+</style>
+</head>
+<body>
+
+<div class="mockup-banner">
+  DESIGN MOCKUP — System Overview Tab
+  <span>Click "Pipeline" / "Agents" toggle to switch views. Click skills to see detail pane.</span>
+</div>
+
+<!-- Top Nav -->
+<nav class="topnav">
+  <div class="logo">ACE</div>
+  <div class="nav-items">
+    <div class="nav-item">Library</div>
+    <div class="nav-item">Chat</div>
+    <div class="nav-item">Opps</div>
+    <div class="nav-item active">System</div>
+  </div>
+</nav>
+
+<!-- Page Shell -->
+<div class="page">
+
+  <!-- Subheader -->
+  <div class="subheader">
+    <div class="subheader-left">
+      <h1>System Blueprint</h1>
+      <div class="stats">
+        <span><span class="stat-value">19</span> skills</span>
+        <span><span class="stat-value">5</span> agents</span>
+        <span><span class="stat-value">4</span> phases</span>
+        <span><span class="stat-value">4</span> gates</span>
+        <span><span class="stat-value">10</span> judges</span>
+      </div>
+    </div>
+    <div class="view-toggle" id="viewToggle">
+      <button class="active" data-view="pipeline">Pipeline</button>
+      <button data-view="agents">Agents</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- VIEW 1: Pipeline (By Phase)                 -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="view-container active" id="view-pipeline">
+    <div class="three-pane">
+
+      <!-- Left Sidebar: Phases -->
+      <div class="sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Phases</div>
+          <div class="sidebar-item active" data-phase="all">
+            <div class="dot" style="background: var(--text-muted)"></div>
+            All Skills
+            <span class="count">19</span>
+          </div>
+          <div class="sidebar-item" data-phase="app-building">
+            <div class="dot" style="background: var(--blue)"></div>
+            App Building
+            <span class="count">6</span>
+          </div>
+          <div class="sidebar-item" data-phase="connect-setup">
+            <div class="dot" style="background: var(--green)"></div>
+            Connect Setup
+            <span class="count">3</span>
+          </div>
+          <div class="sidebar-item" data-phase="llo-management">
+            <div class="dot" style="background: var(--amber)"></div>
+            LLO Management
+            <span class="count">6</span>
+          </div>
+          <div class="sidebar-item" data-phase="closeout">
+            <div class="dot" style="background: var(--purple)"></div>
+            Closeout
+            <span class="count">4</span>
+          </div>
+        </div>
+
+        <div class="sidebar-section" style="margin-top: 16px;">
+          <div class="sidebar-section-title">Filters</div>
+          <div class="sidebar-item" data-filter="judges">
+            <div class="dot" style="background: var(--purple)"></div>
+            Has Judge
+            <span class="count">10</span>
+          </div>
+          <div class="sidebar-item" data-filter="gates">
+            <div class="dot" style="background: var(--amber)"></div>
+            Has Gate
+            <span class="count">4</span>
+          </div>
+          <div class="sidebar-item" data-filter="recurring">
+            <div class="dot" style="background: var(--cyan)"></div>
+            Recurring
+            <span class="count">2</span>
+          </div>
+        </div>
+
+        <div class="sidebar-section" style="margin-top: 16px;">
+          <div class="sidebar-section-title">Archetypes</div>
+          <div class="sidebar-item">
+            <div class="dot" style="background: var(--text-dim)"></div>
+            Atomic Visit
+          </div>
+          <div class="sidebar-item">
+            <div class="dot" style="background: var(--text-dim)"></div>
+            Focus Group
+          </div>
+          <div class="sidebar-item">
+            <div class="dot" style="background: var(--text-dim)"></div>
+            Multi-Stage
+          </div>
+        </div>
+      </div>
+
+      <!-- Center: Skill List -->
+      <div class="center-panel">
+        <!-- Phase 1: App Building -->
+        <div class="phase-header">
+          <div class="dot" style="background: var(--blue); width: 8px; height: 8px; border-radius: 50%;"></div>
+          Phase 1 — App Building
+          <div class="phase-line"></div>
+        </div>
+
+        <div class="skill-row selected" data-skill="idea-to-idd">
+          <div class="skill-ordinal">1</div>
+          <div class="skill-info">
+            <div class="skill-name">Idea to IDD</div>
+            <div class="skill-output">idd.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-judge">Judge</span>
+            <span class="badge badge-gate">Gate</span>
+          </div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">2</div>
+          <div class="skill-info">
+            <div class="skill-name">IDD to Learn App</div>
+            <div class="skill-output">learn-app-brief.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-judge">Judge</span>
+          </div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">3</div>
+          <div class="skill-info">
+            <div class="skill-name">IDD to Deliver App</div>
+            <div class="skill-output">deliver-app-brief.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-judge">Judge</span>
+          </div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">4</div>
+          <div class="skill-info">
+            <div class="skill-name">App Deploy</div>
+            <div class="skill-output">deploy-summary.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-gate">Gate</span>
+          </div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">5</div>
+          <div class="skill-info">
+            <div class="skill-name">App Test</div>
+            <div class="skill-output">test-results.yaml</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-judge">Judge</span>
+          </div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">6</div>
+          <div class="skill-info">
+            <div class="skill-name">Training Materials</div>
+            <div class="skill-output">llo-manager-guide.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-judge">Judge</span>
+          </div>
+        </div>
+
+        <!-- Phase 2: Connect Setup -->
+        <div class="phase-header">
+          <div class="dot" style="background: var(--green); width: 8px; height: 8px; border-radius: 50%;"></div>
+          Phase 2 — Connect Setup
+          <div class="phase-line"></div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">7</div>
+          <div class="skill-info">
+            <div class="skill-name">Connect Program Setup</div>
+            <div class="skill-output">program-config.md</div>
+          </div>
+          <div class="skill-badges"></div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">8</div>
+          <div class="skill-info">
+            <div class="skill-name">Connect Opp Setup</div>
+            <div class="skill-output">opp-config.md</div>
+          </div>
+          <div class="skill-badges"></div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">9</div>
+          <div class="skill-info">
+            <div class="skill-name">LLO Invite</div>
+            <div class="skill-output">invite-list.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-gate">Gate</span>
+          </div>
+        </div>
+
+        <!-- Phase 3: LLO Management -->
+        <div class="phase-header">
+          <div class="dot" style="background: var(--amber); width: 8px; height: 8px; border-radius: 50%;"></div>
+          Phase 3 — LLO Management
+          <div class="phase-line"></div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">10</div>
+          <div class="skill-info">
+            <div class="skill-name">LLO Onboarding</div>
+            <div class="skill-output">onboarding-emails.md</div>
+          </div>
+          <div class="skill-badges"></div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">11</div>
+          <div class="skill-info">
+            <div class="skill-name">LLO UAT</div>
+            <div class="skill-output">uat-protocol.md</div>
+          </div>
+          <div class="skill-badges"></div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">12</div>
+          <div class="skill-info">
+            <div class="skill-name">LLO Launch</div>
+            <div class="skill-output">launch-checklist.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-gate">Gate</span>
+          </div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">13</div>
+          <div class="skill-info">
+            <div class="skill-name">OCS Agent Setup</div>
+            <div class="skill-output">ocs-context.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-judge">Judge</span>
+          </div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">14</div>
+          <div class="skill-info">
+            <div class="skill-name">Timeline Monitor</div>
+            <div class="skill-output">timeline-report.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-judge">Judge</span>
+            <span class="badge badge-recurring">Recurring</span>
+          </div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">15</div>
+          <div class="skill-info">
+            <div class="skill-name">FLW Data Review</div>
+            <div class="skill-output">flw-review.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-judge">Judge</span>
+            <span class="badge badge-recurring">Recurring</span>
+          </div>
+        </div>
+
+        <!-- Phase 4: Closeout -->
+        <div class="phase-header">
+          <div class="dot" style="background: var(--purple); width: 8px; height: 8px; border-radius: 50%;"></div>
+          Phase 4 — Closeout
+          <div class="phase-line"></div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">16</div>
+          <div class="skill-info">
+            <div class="skill-name">Opp Closeout</div>
+            <div class="skill-output">invoice-summary.md</div>
+          </div>
+          <div class="skill-badges"></div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">17</div>
+          <div class="skill-info">
+            <div class="skill-name">LLO Feedback</div>
+            <div class="skill-output">feedback-report.md</div>
+          </div>
+          <div class="skill-badges"></div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">18</div>
+          <div class="skill-info">
+            <div class="skill-name">Learnings Summary</div>
+            <div class="skill-output">learnings.md</div>
+          </div>
+          <div class="skill-badges"></div>
+        </div>
+
+        <div class="skill-row">
+          <div class="skill-ordinal">19</div>
+          <div class="skill-info">
+            <div class="skill-name">Cycle Grade</div>
+            <div class="skill-output">grade-report.md</div>
+          </div>
+          <div class="skill-badges">
+            <span class="badge badge-judge">Judge</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Detail Pane -->
+      <div class="detail-pane" id="pipeline-detail">
+        <div class="detail-header">
+          <h2>Idea to IDD</h2>
+          <div class="detail-desc">
+            Iterate on an idea to produce a well-specified Intervention Design Doc (IDD) for a Connect application. Defines the intervention, target FLWs, visit structure, and preferred LLOs.
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Metadata</div>
+          <div class="detail-meta">
+            <div class="meta-item">
+              <div class="meta-label">Phase</div>
+              <div class="meta-value" style="color: var(--blue)">App Building</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Ordinal</div>
+              <div class="meta-value">1 of 19</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Judge</div>
+              <div class="meta-value" style="color: var(--purple)">Yes — stress test</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Gate</div>
+              <div class="meta-value" style="color: var(--amber)">Yes — human review</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Agent</div>
+              <div class="meta-value">app-builder</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Recurring</div>
+              <div class="meta-value">No</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Artifacts</div>
+          <div class="artifact-list">
+            <div class="artifact-item produces">
+              <span class="artifact-icon">&#9998;</span>
+              <span class="artifact-name">idd.md</span>
+              <span class="artifact-role">Produces</span>
+            </div>
+            <div class="artifact-item consumes">
+              <span class="artifact-icon">&#8594;</span>
+              <span class="artifact-name">idd-to-learn-app</span>
+              <span class="artifact-role">Consumed by</span>
+            </div>
+            <div class="artifact-item consumes">
+              <span class="artifact-icon">&#8594;</span>
+              <span class="artifact-name">idd-to-deliver-app</span>
+              <span class="artifact-role">Consumed by</span>
+            </div>
+            <div class="artifact-item consumes">
+              <span class="artifact-icon">&#8594;</span>
+              <span class="artifact-name">+ 9 more consumers</span>
+              <span class="artifact-role">Consumed by</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Judge Rubric</div>
+          <div class="rubric-list">
+            <div class="rubric-item"><strong>Executability:</strong> Can a non-expert FLW follow the visit structure?</div>
+            <div class="rubric-item"><strong>Verifiability:</strong> Can each delivery be verified with the Evidence Model?</div>
+            <div class="rubric-item"><strong>Measurability:</strong> Are success metrics defined and collectible?</div>
+            <div class="rubric-item"><strong>Stage-gate clarity:</strong> Are go/no-go criteria explicit?</div>
+            <div class="rubric-item"><strong>Resource realism:</strong> Are time, budget, and FLW counts feasible?</div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Process (from SKILL.md)</div>
+          <div class="markdown-preview">
+            <ol>
+              <li>Receive the raw idea from the user or a prior cycle's <code>learnings-summary</code>.</li>
+              <li>Determine archetype: <code>atomic-visit</code>, <code>focus-group</code>, or <code>multi-stage</code>.</li>
+              <li>Draft the IDD using the appropriate template from <code>templates/idd-*.md</code>.</li>
+              <li>Iterate with the user in <strong>review</strong> mode (auto-approve in auto mode).</li>
+              <li>Self-evaluate with the stress-test rubric (5 questions above).</li>
+              <li>Write the final IDD to <code>idd.md</code> and update <code>state.yaml</code>.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">MCP Tools</div>
+          <div class="tool-list">
+            <span class="tool-tag">ace-gdrive:drive_read_file</span>
+            <span class="tool-tag">ace-gdrive:drive_create_file</span>
+            <span class="tool-tag">ace-gdrive:drive_update_file</span>
+            <span class="tool-tag">ace-gdrive:docs_copy_template</span>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Mode Behavior</div>
+          <div class="detail-meta">
+            <div class="meta-item">
+              <div class="meta-label">Auto</div>
+              <div class="meta-value" style="font-size: 12px; font-weight: 400; color: var(--text-muted)">Auto-approve IDD after judge passes</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Review</div>
+              <div class="meta-value" style="font-size: 12px; font-weight: 400; color: var(--text-muted)">Pause for human review at gate</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- VIEW 2: Agents (Orchestration)              -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="view-container" id="view-agents">
+    <div class="three-pane">
+
+      <!-- Left Sidebar: Agent list -->
+      <div class="sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Agents</div>
+          <div class="sidebar-item active">
+            <div class="dot" style="background: var(--text-muted)"></div>
+            All Agents
+            <span class="count">5</span>
+          </div>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">By Phase</div>
+          <div class="sidebar-item" data-agent="orchestrator">
+            <div class="dot" style="background: var(--red)"></div>
+            Orchestrator
+          </div>
+          <div class="sidebar-item" data-agent="app-builder">
+            <div class="dot" style="background: var(--blue)"></div>
+            App Builder
+          </div>
+          <div class="sidebar-item" data-agent="connect-setup">
+            <div class="dot" style="background: var(--green)"></div>
+            Connect Setup
+          </div>
+          <div class="sidebar-item" data-agent="llo-manager">
+            <div class="dot" style="background: var(--amber)"></div>
+            LLO Manager
+          </div>
+          <div class="sidebar-item" data-agent="closeout">
+            <div class="dot" style="background: var(--purple)"></div>
+            Closeout
+          </div>
+          <div class="sidebar-item" data-agent="ocs-tester">
+            <div class="dot" style="background: var(--cyan)"></div>
+            OCS Tester
+          </div>
+        </div>
+      </div>
+
+      <!-- Center: Agent Workflow Cards -->
+      <div class="center-panel">
+
+        <!-- Orchestrator -->
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <div>
+              <div class="agent-name" style="color: var(--red);">&#9881; ace-orchestrator</div>
+              <div class="agent-desc">Top-level lifecycle orchestrator — dispatches to phase agents</div>
+            </div>
+            <span class="agent-phase-badge" style="background: rgba(239, 68, 68, 0.15); color: var(--red);">Lifecycle</span>
+          </div>
+          <div class="agent-workflow">
+            <div class="workflow-step">
+              <div class="workflow-step-num">1</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">Dispatch <strong>app-builder</strong></div>
+                <div class="workflow-step-detail">Run all 6 build-phase skills in sequence</div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num">2</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">Dispatch <strong>connect-setup</strong></div>
+                <div class="workflow-step-detail">Configure program, opportunity, invite LLOs</div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num">3</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">Dispatch <strong>llo-manager</strong></div>
+                <div class="workflow-step-detail">Onboard, test, launch, monitor</div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num">4</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">Dispatch <strong>closeout</strong></div>
+                <div class="workflow-step-detail">Invoice, feedback, learnings, grade</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- App Builder -->
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <div>
+              <div class="agent-name" style="color: var(--blue);">&#9881; app-builder</div>
+              <div class="agent-desc">Orchestrates app building: idea &rarr; IDD &rarr; apps &rarr; deploy &rarr; test &rarr; training</div>
+            </div>
+            <span class="agent-phase-badge" style="background: rgba(59, 130, 246, 0.15); color: var(--blue);">App Building</span>
+          </div>
+          <div class="agent-workflow">
+            <div class="workflow-step">
+              <div class="workflow-step-num gate">1</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">Idea to IDD</div>
+                <div class="workflow-step-detail">Gate: human review required &middot; Judge: stress-test rubric</div>
+                <div class="workflow-step-artifacts">
+                  <span class="workflow-artifact">idd.md</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="parallel-group">
+              <div class="parallel-label">&#9889; Steps 2-3 run in parallel</div>
+              <div class="workflow-step">
+                <div class="workflow-step-num parallel">2</div>
+                <div class="workflow-step-content">
+                  <div class="workflow-step-name">IDD to Learn App</div>
+                  <div class="workflow-step-detail">Judge: app completeness rubric</div>
+                  <div class="workflow-step-artifacts">
+                    <span class="workflow-artifact">learn-app-brief.md</span>
+                    <span class="workflow-artifact">learn-app.json</span>
+                  </div>
+                </div>
+              </div>
+              <div class="workflow-step">
+                <div class="workflow-step-num parallel">3</div>
+                <div class="workflow-step-content">
+                  <div class="workflow-step-name">IDD to Deliver App</div>
+                  <div class="workflow-step-detail">Judge: app completeness rubric</div>
+                  <div class="workflow-step-artifacts">
+                    <span class="workflow-artifact">deliver-app-brief.md</span>
+                    <span class="workflow-artifact">deliver-app.json</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="workflow-step">
+              <div class="workflow-step-num gate">4</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">App Deploy</div>
+                <div class="workflow-step-detail">Gate: deployment verification</div>
+                <div class="workflow-step-artifacts">
+                  <span class="workflow-artifact">deploy-summary.md</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="parallel-group">
+              <div class="parallel-label">&#9889; Steps 5-6 run in parallel</div>
+              <div class="workflow-step">
+                <div class="workflow-step-num judge">5</div>
+                <div class="workflow-step-content">
+                  <div class="workflow-step-name">App Test</div>
+                  <div class="workflow-step-detail">Judge: test coverage rubric</div>
+                  <div class="workflow-step-artifacts">
+                    <span class="workflow-artifact">test-results.yaml</span>
+                  </div>
+                </div>
+              </div>
+              <div class="workflow-step">
+                <div class="workflow-step-num judge">6</div>
+                <div class="workflow-step-content">
+                  <div class="workflow-step-name">Training Materials</div>
+                  <div class="workflow-step-detail">Judge: materials quality rubric</div>
+                  <div class="workflow-step-artifacts">
+                    <span class="workflow-artifact">llo-manager-guide.md</span>
+                    <span class="workflow-artifact">flw-quick-ref.md</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Connect Setup -->
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <div>
+              <div class="agent-name" style="color: var(--green);">&#9881; connect-setup</div>
+              <div class="agent-desc">Program &rarr; opportunity &rarr; LLO invitations</div>
+            </div>
+            <span class="agent-phase-badge" style="background: rgba(34, 197, 94, 0.15); color: var(--green);">Connect Setup</span>
+          </div>
+          <div class="agent-workflow">
+            <div class="workflow-step">
+              <div class="workflow-step-num">7</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">Connect Program Setup</div>
+                <div class="workflow-step-detail">Create or reuse a Connect program</div>
+                <div class="workflow-step-artifacts">
+                  <span class="workflow-artifact">program-config.md</span>
+                </div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num">8</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">Connect Opp Setup</div>
+                <div class="workflow-step-detail">Configure opportunity, verification rules, payment</div>
+                <div class="workflow-step-artifacts">
+                  <span class="workflow-artifact">opp-config.md</span>
+                </div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num gate">9</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">LLO Invite</div>
+                <div class="workflow-step-detail">Gate: invitation confirmation</div>
+                <div class="workflow-step-artifacts">
+                  <span class="workflow-artifact">invite-list.md</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LLO Manager -->
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <div>
+              <div class="agent-name" style="color: var(--amber);">&#9881; llo-manager</div>
+              <div class="agent-desc">Onboarding &rarr; UAT &rarr; launch &rarr; OCS agent &rarr; ongoing monitoring</div>
+            </div>
+            <span class="agent-phase-badge" style="background: rgba(245, 158, 11, 0.15); color: var(--amber);">LLO Management</span>
+          </div>
+          <div class="agent-workflow">
+            <div class="workflow-step">
+              <div class="workflow-step-num">10</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">LLO Onboarding</div>
+                <div class="workflow-step-detail">Send training materials and app instructions</div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num">11</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">LLO UAT</div>
+                <div class="workflow-step-detail">Coordinate user acceptance testing</div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num gate">12</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">LLO Launch</div>
+                <div class="workflow-step-detail">Gate: UAT sign-off, activate opportunity</div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num judge">13</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">OCS Agent Setup</div>
+                <div class="workflow-step-detail">Clone template, configure RAG, publish chatbot</div>
+              </div>
+            </div>
+
+            <div class="parallel-group">
+              <div class="parallel-label">&#128260; Steps 14-15 run recurring (weekly)</div>
+              <div class="workflow-step">
+                <div class="workflow-step-num" style="border-color: var(--cyan); color: var(--cyan);">14</div>
+                <div class="workflow-step-content">
+                  <div class="workflow-step-name">Timeline Monitor</div>
+                  <div class="workflow-step-detail">Track milestone adherence, send prompting emails</div>
+                </div>
+              </div>
+              <div class="workflow-step">
+                <div class="workflow-step-num" style="border-color: var(--cyan); color: var(--cyan);">15</div>
+                <div class="workflow-step-content">
+                  <div class="workflow-step-name">FLW Data Review</div>
+                  <div class="workflow-step-detail">Analyze submission quality, identify trends</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Closeout -->
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <div>
+              <div class="agent-name" style="color: var(--purple);">&#9881; closeout</div>
+              <div class="agent-desc">Invoice &rarr; feedback &rarr; learnings &rarr; cycle grade</div>
+            </div>
+            <span class="agent-phase-badge" style="background: rgba(168, 85, 247, 0.15); color: var(--purple);">Closeout</span>
+          </div>
+          <div class="agent-workflow">
+            <div class="workflow-step">
+              <div class="workflow-step-num">16</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">Opp Closeout</div>
+                <div class="workflow-step-detail">Process invoices, create payment Jira ticket</div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num">17</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">LLO Feedback</div>
+                <div class="workflow-step-detail">Collect LLO feedback and suggestions</div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num">18</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">Learnings Summary</div>
+                <div class="workflow-step-detail">Summarize learnings, create new IDD if warranted</div>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="workflow-step-num judge">19</div>
+              <div class="workflow-step-content">
+                <div class="workflow-step-name">Cycle Grade</div>
+                <div class="workflow-step-detail">Judge: overall cycle quality assessment</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right: Agent detail pane -->
+      <div class="detail-pane" id="agent-detail">
+        <div class="detail-header">
+          <h2>app-builder</h2>
+          <div class="detail-desc">
+            Orchestrates the app building phase of CRISPR-Connect: idea iteration into an IDD,
+            passing the IDD to Nova for Learn and Deliver apps, deploying to CCHQ, testing, and
+            creating training materials.
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Agent Metadata</div>
+          <div class="detail-meta">
+            <div class="meta-item">
+              <div class="meta-label">Phase</div>
+              <div class="meta-value" style="color: var(--blue)">App Building</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Skills</div>
+              <div class="meta-value">6</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Gates</div>
+              <div class="meta-value" style="color: var(--amber)">2</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Judges</div>
+              <div class="meta-value" style="color: var(--purple)">5</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Execution Pattern</div>
+          <div class="markdown-preview">
+            <h3>Sequential with Parallel Windows</h3>
+            <p>The app-builder runs skills mostly in sequence, with two parallel windows where independent skills execute concurrently:</p>
+            <ol>
+              <li><strong>idea-to-idd</strong> — sequential (gate)</li>
+              <li><strong>idd-to-learn-app</strong> + <strong>idd-to-deliver-app</strong> — parallel</li>
+              <li><strong>app-deploy</strong> — sequential (gate)</li>
+              <li><strong>app-test</strong> + <strong>training-materials</strong> — parallel</li>
+            </ol>
+            <p>In <code>review</code> mode, gates pause for human approval. In <code>auto</code> mode, gates auto-approve after judge passes.</p>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Produced Artifacts (6)</div>
+          <div class="artifact-list">
+            <div class="artifact-item produces">
+              <span class="artifact-icon">&#9998;</span>
+              <span class="artifact-name">idd.md</span>
+              <span class="artifact-role">Required</span>
+            </div>
+            <div class="artifact-item produces">
+              <span class="artifact-icon">&#9998;</span>
+              <span class="artifact-name">learn-app-brief.md</span>
+              <span class="artifact-role">Required</span>
+            </div>
+            <div class="artifact-item produces">
+              <span class="artifact-icon">&#9998;</span>
+              <span class="artifact-name">deliver-app-brief.md</span>
+              <span class="artifact-role">Required</span>
+            </div>
+            <div class="artifact-item produces">
+              <span class="artifact-icon">&#9998;</span>
+              <span class="artifact-name">deploy-summary.md</span>
+              <span class="artifact-role">Required</span>
+            </div>
+            <div class="artifact-item produces">
+              <span class="artifact-icon">&#9998;</span>
+              <span class="artifact-name">test-results.yaml</span>
+              <span class="artifact-role">Required</span>
+            </div>
+            <div class="artifact-item produces">
+              <span class="artifact-icon">&#9998;</span>
+              <span class="artifact-name">llo-manager-guide.md</span>
+              <span class="artifact-role">Required</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Full Agent Definition</div>
+          <div class="markdown-preview" style="max-height: 200px;">
+            <p style="color: var(--text-dim); font-style: italic;">
+              The full agent markdown from <code>agents/app-builder.md</code> would render here with proper markdown formatting — headers, code blocks, tables, etc.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // View toggle
+  const toggle = document.getElementById('viewToggle');
+  const buttons = toggle.querySelectorAll('button');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-' + btn.dataset.view).classList.add('active');
+    });
+  });
+
+  // Skill row selection
+  document.querySelectorAll('.skill-row').forEach(row => {
+    row.addEventListener('click', () => {
+      document.querySelectorAll('.skill-row').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+    });
+  });
+
+  // Sidebar item selection
+  document.querySelectorAll('.sidebar-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const section = item.closest('.sidebar-section');
+      section.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>
