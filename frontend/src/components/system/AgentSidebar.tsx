@@ -1,22 +1,23 @@
 import { cn } from "@/lib/utils";
-import type { AgentSummary } from "./types";
-
-const AGENT_COLORS: Record<string, string> = {
-  "ace-orchestrator": "bg-red-500",
-  "app-builder": "bg-blue-500",
-  "connect-setup": "bg-green-500",
-  "llo-manager": "bg-amber-500",
-  "closeout": "bg-purple-500",
-  "ocs-tester": "bg-cyan-500",
-};
+import type { AgentSummary, PhaseInfo } from "./types";
+import { phaseColor } from "./PipelineSidebar";
 
 interface Props {
   agents: AgentSummary[];
+  phases: PhaseInfo[];
   selectedAgent: string | null;
   onSelectAgent: (name: string | null) => void;
 }
 
-export function AgentSidebar({ agents, selectedAgent, onSelectAgent }: Props) {
+export function AgentSidebar({ agents, phases, selectedAgent, onSelectAgent }: Props) {
+  // Color an agent by the phase it owns (matches phase-dot colors in the
+  // Pipeline view). Agents without a phase (orchestrator, utility) get a
+  // muted dot.
+  const colorFor = (agentName: string) => {
+    const phase = phases.find((p) => p.agent === agentName);
+    return phase ? phaseColor(phase.ordinal) : "bg-muted-foreground";
+  };
+
   return (
     <div className="flex flex-col gap-1 p-2">
       <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -47,7 +48,7 @@ export function AgentSidebar({ agents, selectedAgent, onSelectAgent }: Props) {
               : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
-          <span className={cn("h-2 w-2 shrink-0 rounded-full", AGENT_COLORS[agent.name] ?? "bg-muted-foreground")} />
+          <span className={cn("h-2 w-2 shrink-0 rounded-full", colorFor(agent.name))} />
           <span className="flex-1 truncate">{agent.name}</span>
         </button>
       ))}

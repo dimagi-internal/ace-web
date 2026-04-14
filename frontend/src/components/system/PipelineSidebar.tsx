@@ -1,34 +1,35 @@
 import { cn } from "@/lib/utils";
-import type { SkillSummary } from "./types";
+import type { PhaseInfo, SkillSummary } from "./types";
 
-const PHASE_COLORS: Record<string, string> = {
-  "app-building": "bg-blue-500",
-  "connect-setup": "bg-green-500",
-  "llo-management": "bg-amber-500",
-  "closeout": "bg-purple-500",
-};
+// Color palette for phase dots. Assigned by phase ordinal so new phases
+// pick up a color automatically without a code change.
+const PHASE_COLORS = [
+  "bg-blue-500",
+  "bg-emerald-500",
+  "bg-green-500",
+  "bg-cyan-500",
+  "bg-amber-500",
+  "bg-purple-500",
+  "bg-pink-500",
+  "bg-indigo-500",
+];
 
-const PHASE_LABELS: Record<string, string> = {
-  "app-building": "App Building",
-  "connect-setup": "Connect Setup",
-  "llo-management": "LLO Management",
-  "closeout": "Closeout",
-};
+export function phaseColor(ordinal: number): string {
+  return PHASE_COLORS[(ordinal - 1) % PHASE_COLORS.length];
+}
 
-type FilterKind = "all" | "app-building" | "connect-setup" | "llo-management" | "closeout" | "judge" | "gate" | "recurring";
+// Filter kind: "all", any phase name, or one of the boolean filters.
+export type FilterKind = string;
 
 interface Props {
   skills: SkillSummary[];
-  phases: string[];
+  phases: PhaseInfo[];
   filter: FilterKind;
   onFilterChange: (f: FilterKind) => void;
 }
 
-export type { FilterKind };
-
 export function PipelineSidebar({ skills, phases, filter, onFilterChange }: Props) {
   const judgeCount = skills.filter((s) => s.has_judge).length;
-  const gateCount = skills.filter((s) => s.is_gate).length;
   const recurringCount = skills.filter((s) => s.is_recurring).length;
 
   return (
@@ -36,24 +37,40 @@ export function PipelineSidebar({ skills, phases, filter, onFilterChange }: Prop
       <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         Phases
       </div>
-      <SidebarItem active={filter === "all"} onClick={() => onFilterChange("all")} label="All Skills" count={skills.length} />
+      <SidebarItem
+        active={filter === "all"}
+        onClick={() => onFilterChange("all")}
+        label="All Skills"
+        count={skills.length}
+      />
       {phases.map((phase) => (
         <SidebarItem
-          key={phase}
-          active={filter === phase}
-          onClick={() => onFilterChange(phase as FilterKind)}
-          label={PHASE_LABELS[phase] ?? phase}
-          count={skills.filter((s) => s.phase === phase).length}
-          dotColor={PHASE_COLORS[phase]}
+          key={phase.name}
+          active={filter === phase.name}
+          onClick={() => onFilterChange(phase.name)}
+          label={phase.display_name}
+          count={skills.filter((s) => s.phase === phase.name).length}
+          dotColor={phaseColor(phase.ordinal)}
         />
       ))}
 
       <div className="mt-3 px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         Filters
       </div>
-      <SidebarItem active={filter === "judge"} onClick={() => onFilterChange("judge")} label="Has Judge" count={judgeCount} dotColor="bg-purple-500" />
-      <SidebarItem active={filter === "gate"} onClick={() => onFilterChange("gate")} label="Has Gate" count={gateCount} dotColor="bg-amber-500" />
-      <SidebarItem active={filter === "recurring"} onClick={() => onFilterChange("recurring")} label="Recurring" count={recurringCount} dotColor="bg-cyan-500" />
+      <SidebarItem
+        active={filter === "judge"}
+        onClick={() => onFilterChange("judge")}
+        label="Has Judge"
+        count={judgeCount}
+        dotColor="bg-purple-500"
+      />
+      <SidebarItem
+        active={filter === "recurring"}
+        onClick={() => onFilterChange("recurring")}
+        label="Recurring"
+        count={recurringCount}
+        dotColor="bg-cyan-500"
+      />
     </div>
   );
 }

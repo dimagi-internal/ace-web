@@ -13,7 +13,6 @@ interface Props {
 function applyFilter(skills: SkillSummary[], filter: FilterKind): SkillSummary[] {
   if (filter === "all") return skills;
   if (filter === "judge") return skills.filter((s) => s.has_judge);
-  if (filter === "gate") return skills.filter((s) => s.is_gate);
   if (filter === "recurring") return skills.filter((s) => s.is_recurring);
   // Phase filter
   return skills.filter((s) => s.phase === filter);
@@ -32,7 +31,12 @@ export function PipelineView({ snapshot }: Props) {
         <PipelineSidebar skills={snapshot.skills} phases={snapshot.phases} filter={filter} onFilterChange={setFilter} />
       </aside>
       <main className="flex-1 overflow-y-auto">
-        <SkillList skills={filtered} selectedSkill={selectedSkill} onSelectSkill={setSelectedSkill} />
+        <SkillList
+          skills={filtered}
+          phases={snapshot.phases}
+          selectedSkill={selectedSkill}
+          onSelectSkill={setSelectedSkill}
+        />
       </main>
       <section className="w-[420px] shrink-0 overflow-y-auto border-l border-border">
         {selected ? (

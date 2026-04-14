@@ -33,7 +33,6 @@ export function SkillRow({ skill, isSelected, onClick }: Props) {
       </div>
       <div className="flex shrink-0 gap-1">
         {skill.has_judge && <Badge label="Judge" className="bg-purple-500/15 text-purple-400" />}
-        {skill.is_gate && <Badge label="Gate" className="bg-amber-500/15 text-amber-400" />}
         {skill.is_recurring && <Badge label="Recurring" className="bg-cyan-500/15 text-cyan-400" />}
       </div>
     </button>
