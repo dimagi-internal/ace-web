@@ -35,7 +35,7 @@ export function AgentsView({ snapshot }: Props) {
           />
         ))}
       </main>
-      <section className="w-[420px] shrink-0 border-l border-border">
+      <section className="w-[420px] shrink-0 overflow-y-auto border-l border-border">
         {selected ? (
           <AgentDetailPane agent={selected} skills={snapshot.skills} />
         ) : (
