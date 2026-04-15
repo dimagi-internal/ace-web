@@ -43,4 +43,8 @@ urlpatterns = [
         "<slug:slug>/runs/<str:run_id>/actions/<str:action>",
         views.opp_action, name="opps-action",
     ),
+    path(
+        "<slug:slug>/runs/<str:run_id>/fork",
+        views.opp_fork, name="opps-fork",
+    ),
 ]
