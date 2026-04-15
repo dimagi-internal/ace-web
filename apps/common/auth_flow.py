@@ -300,3 +300,22 @@ def load_stored_token():
 def get_stored_token():
     """Return current token from env or disk."""
     return os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or load_stored_token()
+
+
+def token_looks_real(token):
+    """Cheap format check that rejects placeholders and obvious paste errors.
+
+    Real Claude OAuth tokens look like "sk-ant-oatNN-<long opaque string>".
+    We don't validate against Anthropic — just enough to reject the
+    placeholder written when provisioning Secrets Manager and any mangled
+    input. Kept next to the storage code so every caller picks up updates.
+    """
+    if not token:
+        return False
+    if not token.startswith("sk-ant-oat"):
+        return False
+    if len(token) < 40:
+        return False
+    if "placeholder" in token.lower():
+        return False
+    return True
