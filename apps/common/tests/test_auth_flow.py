@@ -1,36 +1,19 @@
-"""Tests for the PTY auth flow driver. The PTY itself is mocked — these tests
-exercise the public API and the regex helpers, not the actual claude binary.
-"""
+"""Tests for token persistence. The PTY `claude setup-token` flow was
+removed — users now paste a pre-generated token into the UI."""
 import os
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from apps.common import auth_flow
 
 
-def test_extract_url_strips_ansi_and_finds_oauth_url():
-    raw = "\x1b[2mPaste code\x1b[0m: https://claude.com/cai/oauth/authorize?client_id=abc&state=xyzPasteCode"
-    url = auth_flow._extract_url(raw)
-    assert url == "https://claude.com/cai/oauth/authorize?client_id=abc&state=xyz"
-
-
-def test_extract_token_finds_sk_ant_oat_token():
-    raw = "Token created: sk-ant-oat01-AbCdEfGhIjKlMnOp123456 (saved)"
-    token = auth_flow._extract_token(raw)
-    assert token == "sk-ant-oat01-AbCdEfGhIjKlMnOp123456"
-
-
-def test_extract_returns_none_when_absent():
-    assert auth_flow._extract_url("nothing here") is None
-    assert auth_flow._extract_token("nothing here") is None
-
-
 def test_store_and_load_token(tmp_path, monkeypatch):
     token_file = tmp_path / "oauth-token"
     monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
+    monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", None)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
 
     auth_flow.store_token("sk-ant-oat01-test")
@@ -44,38 +27,29 @@ def test_store_and_load_token(tmp_path, monkeypatch):
     assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-test"
 
 
+def test_store_token_strips_whitespace(tmp_path, monkeypatch):
+    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(tmp_path / "tok"))
+    monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", None)
+
+    auth_flow.store_token("  sk-ant-oat01-padded  \n")
+    assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-padded"
+
+
+def test_store_token_rejects_bad_prefix(tmp_path, monkeypatch):
+    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(tmp_path / "tok"))
+    with pytest.raises(auth_flow.InvalidTokenError):
+        auth_flow.store_token("not-a-token")
+    with pytest.raises(auth_flow.InvalidTokenError):
+        auth_flow.store_token("")
+
+
 def test_get_stored_token_prefers_env(monkeypatch):
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-fromenv")
     assert auth_flow.get_stored_token() == "sk-ant-oat01-fromenv"
 
 
-def test_poll_when_no_session_active():
-    auth_flow.cancel()  # ensure no session
-    result = auth_flow.poll()
-    assert result["active"] is False
-
-
-def test_start_then_cancel_cleans_up(monkeypatch):
-    """Smoke test the lifecycle without actually invoking claude."""
-    monkeypatch.setattr(auth_flow, "START_TIMEOUT_SECONDS", 1)
-    with patch("subprocess.Popen") as mock_popen:
-        mock_popen.return_value.poll.return_value = None
-        with patch("pty.openpty", return_value=(0, 1)), \
-             patch("os.close"), \
-             patch("os.read", side_effect=[b"", OSError("EOF")]), \
-             patch("threading.Thread"):
-            try:
-                # start() will time out (no URL appears) — that's fine,
-                # we just want cancel() to clean up cleanly
-                with pytest.raises(RuntimeError):
-                    auth_flow.start()
-            finally:
-                auth_flow.cancel()
-
-
 def test_store_token_pushes_to_secrets_manager_when_configured(tmp_path, monkeypatch):
-    token_file = tmp_path / "oauth-token"
-    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
+    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(tmp_path / "tok"))
     monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", "my-secret")
     monkeypatch.setattr(auth_flow, "TOKEN_SECRET_REGION", "us-east-1")
 
@@ -93,11 +67,9 @@ def test_store_token_pushes_to_secrets_manager_when_configured(tmp_path, monkeyp
 
 
 def test_store_token_skips_secrets_manager_when_not_configured(tmp_path, monkeypatch):
-    token_file = tmp_path / "oauth-token"
-    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
+    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(tmp_path / "tok"))
     monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", None)
 
-    # If the code tried to import boto3 we'd want to notice — so fail-loud.
     fake_boto3 = types.ModuleType("boto3")
     fake_boto3.client = MagicMock(side_effect=AssertionError("should not be called"))
     monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
@@ -107,14 +79,14 @@ def test_store_token_skips_secrets_manager_when_not_configured(tmp_path, monkeyp
 
 
 def test_store_token_swallows_secrets_manager_errors(tmp_path, monkeypatch, caplog):
-    token_file = tmp_path / "oauth-token"
-    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
+    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(tmp_path / "tok"))
     monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", "my-secret")
 
     fake_boto3 = types.ModuleType("boto3")
     fake_boto3.client = MagicMock(side_effect=RuntimeError("no creds"))
     monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
 
+    token_file = tmp_path / "tok"
     auth_flow.store_token("sk-ant-oat01-raises")
     assert token_file.read_text() == "sk-ant-oat01-raises"
     assert "Failed to push token to Secrets Manager" in caplog.text

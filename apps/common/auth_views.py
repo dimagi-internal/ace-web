@@ -1,7 +1,9 @@
-"""REST endpoints for the in-app PTY-based Claude CLI auth flow.
+"""REST endpoints for the Claude CLI token.
 
-All endpoints return the standard {data, error} envelope. The actual PTY
-work happens in apps.common.auth_flow.
+The user runs `claude setup-token` on their laptop and pastes the resulting
+`sk-ant-oat…` token into the ace-web UI. This module takes that token and
+hands it off to apps.common.auth_flow for persistence (disk + env + Secrets
+Manager). All endpoints return the standard {data, error} envelope.
 """
 from __future__ import annotations
 
@@ -36,39 +38,13 @@ def cli_auth_status(request: Request) -> Response:
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def cli_auth_start(request: Request) -> Response:
+def cli_auth_set_token(request: Request) -> Response:
+    token = request.data.get("token") or ""
     try:
-        result = auth_flow.start()
-    except RuntimeError as exc:
+        auth_flow.store_token(token)
+    except auth_flow.InvalidTokenError as exc:
         return Response(
-            error_response(message=str(exc), code="auth_flow_error"),
+            error_response(message=str(exc), code="invalid_token"),
             status=400,
         )
-    return Response(success_response(result))
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def cli_auth_complete(request: Request) -> Response:
-    code = request.data.get("code") or ""
-    try:
-        token = auth_flow.complete(code=code or None)
-    except RuntimeError as exc:
-        return Response(
-            error_response(message=str(exc), code="auth_flow_error"),
-            status=400,
-        )
-    return Response(success_response({"status": "complete", "token_set": bool(token)}))
-
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def cli_auth_poll(request: Request) -> Response:
-    return Response(success_response(auth_flow.poll()))
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def cli_auth_cancel(request: Request) -> Response:
-    auth_flow.cancel()
-    return Response(success_response({"cancelled": True}))
+    return Response(success_response({"authenticated": True}))

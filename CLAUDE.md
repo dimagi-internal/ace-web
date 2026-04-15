@@ -28,7 +28,7 @@ not user-shippable milestones (the team only uses ace-web after Phase 5).
 | Phase | Name                       | Scope                                                                           | Status                                    |
 |-------|----------------------------|---------------------------------------------------------------------------------|-------------------------------------------|
 | 1     | Foundation                 | Django + Channels + React skeleton, data model, IAP, GCP                        | **Done** — merged in jjackson/ace-web#1   |
-| 2     | Conversation engine        | ChatBackend, CLIBackend, CLI auth (PTY), SSE streaming, REST + chat UI, recents | **Done**                                  |
+| 2     | Conversation engine        | ChatBackend, CLIBackend, CLI token paste, SSE streaming, REST + chat UI, recents | **Done**                                  |
 | 2.5   | AWS migration              | GCP → AWS ECS Fargate tenant, CommCare Connect OAuth, nginx sidecar, /ace/* prefix | **Done** — per `docs/plans/2026-04-08-aws-migration.md` |
 | 3     | Multi-player collaboration | WebSocket consumer, channels-redis, ASGI auth, drafts, presence                 | **Done** — per `docs/plans/2026-04-09-3-multi-player.md` |
 | 4     | Library and ingest         | Session list, search/filter, share tokens, `ace upload` CLI                     | Pending                                   |
