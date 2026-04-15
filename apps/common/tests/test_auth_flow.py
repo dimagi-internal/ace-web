@@ -2,7 +2,9 @@
 exercise the public API and the regex helpers, not the actual claude binary.
 """
 import os
-from unittest.mock import patch
+import sys
+import types
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -68,6 +70,53 @@ def test_start_then_cancel_cleans_up():
                     auth_flow.start()
             finally:
                 auth_flow.cancel()
+
+
+def test_store_token_pushes_to_secrets_manager_when_configured(tmp_path, monkeypatch):
+    token_file = tmp_path / "oauth-token"
+    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
+    monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", "my-secret")
+    monkeypatch.setattr(auth_flow, "TOKEN_SECRET_REGION", "us-east-1")
+
+    fake_client = MagicMock()
+    fake_boto3 = types.ModuleType("boto3")
+    fake_boto3.client = MagicMock(return_value=fake_client)
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+
+    auth_flow.store_token("sk-ant-oat01-new")
+
+    fake_boto3.client.assert_called_once_with("secretsmanager", region_name="us-east-1")
+    fake_client.put_secret_value.assert_called_once_with(
+        SecretId="my-secret", SecretString="sk-ant-oat01-new"
+    )
+
+
+def test_store_token_skips_secrets_manager_when_not_configured(tmp_path, monkeypatch):
+    token_file = tmp_path / "oauth-token"
+    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
+    monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", None)
+
+    # If the code tried to import boto3 we'd want to notice — so fail-loud.
+    fake_boto3 = types.ModuleType("boto3")
+    fake_boto3.client = MagicMock(side_effect=AssertionError("should not be called"))
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+
+    auth_flow.store_token("sk-ant-oat01-local")
+    fake_boto3.client.assert_not_called()
+
+
+def test_store_token_swallows_secrets_manager_errors(tmp_path, monkeypatch, caplog):
+    token_file = tmp_path / "oauth-token"
+    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
+    monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", "my-secret")
+
+    fake_boto3 = types.ModuleType("boto3")
+    fake_boto3.client = MagicMock(side_effect=RuntimeError("no creds"))
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+
+    auth_flow.store_token("sk-ant-oat01-raises")
+    assert token_file.read_text() == "sk-ant-oat01-raises"
+    assert "Failed to push token to Secrets Manager" in caplog.text
 
 
 def test_token_loader_loads_at_boot(tmp_path, monkeypatch):
