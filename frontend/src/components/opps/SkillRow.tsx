@@ -46,7 +46,6 @@ export function SkillRow({ step, isSelected, priorRunStep, onClick }: Props) {
           <span className="w-[48px] shrink-0" />
         </>
       )}
-      {step.is_gate && <GateBadge status={step.status} />}
       <span className="flex-1 truncate text-[11px] text-muted-foreground">
         {step.preview_text}
       </span>
@@ -107,17 +106,3 @@ function deltaTone(delta: number | null): string {
   return "text-muted-foreground";
 }
 
-function GateBadge({ status }: { status: string }) {
-  const pending = status === "gate-pending";
-  const rejected = status === "gate-rejected";
-  const label = pending ? "GATE ⚠" : rejected ? "GATE ✗" : "GATE ✓";
-  const tone =
-    pending ? "bg-amber-950 text-amber-400"
-    : rejected ? "bg-red-950 text-red-400"
-    : "bg-green-950 text-green-400";
-  return (
-    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold ${tone}`}>
-      {label}
-    </span>
-  );
-}

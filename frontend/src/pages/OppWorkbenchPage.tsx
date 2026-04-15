@@ -93,6 +93,7 @@ export default function OppWorkbenchPage() {
           <SkillList
             steps={snapshot.current_run.steps}
             priorRunSteps={priorRun?.steps ?? []}
+            phases={snapshot.phases}
             selectedSkill={selectedSkill}
             onSelect={setSelectedSkill}
           />

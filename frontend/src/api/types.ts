@@ -168,12 +168,18 @@ export interface Step {
   completed_at: string | null;
   error: string | null;
   has_judge: boolean;
-  is_gate: boolean;
   is_recurring: boolean;
   preview_text: string;
   judge: Judge | null;
   gates: Gate[];
   artifacts: Artifact[];
+}
+
+export interface PhaseInfo {
+  name: string;
+  display_name: string;
+  ordinal: number;
+  agent: string;
 }
 
 export interface Run {
@@ -201,6 +207,7 @@ export interface OppSnapshot {
   idd_body: string;
   runs: RunSummary[];
   current_run: Run;
+  phases: PhaseInfo[];
 }
 
 export interface StepDetail extends Step {
