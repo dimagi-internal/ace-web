@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 TOKEN_FILE = os.environ.get(
     "ACE_CLAUDE_TOKEN_FILE", "/var/lib/ace-claude/oauth-token"
 )
+# If set, store_token() also pushes the token to AWS Secrets Manager so it
+# survives ECS task replacement. Value is a secret ARN or name.
+TOKEN_SECRET_ID = os.environ.get("ACE_CLAUDE_TOKEN_SECRET_ID")
+TOKEN_SECRET_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 _lock = threading.Lock()
 _session = None  # type: _AuthSession | None
@@ -218,7 +222,7 @@ def _cleanup_locked():
 # ── Token persistence ───────────────────────────────────────────────
 
 def store_token(token):
-    """Persist token to disk and set env var."""
+    """Persist token to disk, secrets manager (if configured), and env."""
     try:
         os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
         with open(TOKEN_FILE, "w") as f:
@@ -227,6 +231,26 @@ def store_token(token):
     except OSError:
         logger.debug("Could not persist token to %s", TOKEN_FILE)
     os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
+    _push_token_to_secrets_manager(token)
+
+
+def _push_token_to_secrets_manager(token):
+    """Write token back to AWS Secrets Manager so it survives ECS task replacement.
+
+    No-op unless ACE_CLAUDE_TOKEN_SECRET_ID is set. Failures are logged but
+    never raise — disk+env persistence is the primary path; this is the
+    cross-deploy backup.
+    """
+    if not TOKEN_SECRET_ID:
+        return
+    try:
+        import boto3  # local import: only needed on AWS
+
+        client = boto3.client("secretsmanager", region_name=TOKEN_SECRET_REGION)
+        client.put_secret_value(SecretId=TOKEN_SECRET_ID, SecretString=token)
+        logger.info("Pushed Claude OAuth token to Secrets Manager (%s)", TOKEN_SECRET_ID)
+    except Exception as exc:
+        logger.warning("Failed to push token to Secrets Manager: %s", exc)
 
 
 def load_stored_token():
