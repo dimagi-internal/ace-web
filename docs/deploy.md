@@ -149,6 +149,35 @@ which the CLI picks up automatically.
 revoked or expires, re-auth through `/ace/auth/cli` — the write-back keeps
 the secret fresh.
 
+### ALB target-group stickiness
+
+The `/ace/auth/cli/*` endpoints spawn a long-lived `claude setup-token`
+PTY subprocess that must outlive one HTTP call (URL fetch) and pick up
+again on the next (code submit). The subprocess is module-global state
+on one ECS task, so both requests have to land on the same task or the
+second call returns "No active auth flow" instantly.
+
+To keep the service at `desiredCount > 1`, enable `lb_cookie`
+stickiness on the target group:
+
+```bash
+aws elbv2 modify-target-group-attributes \
+  --region us-east-1 \
+  --target-group-arn $(aws elbv2 describe-target-groups \
+    --region us-east-1 --names labs-jj-ace-web-tg \
+    --query 'TargetGroups[0].TargetGroupArn' --output text) \
+  --attributes \
+    Key=stickiness.enabled,Value=true \
+    Key=stickiness.type,Value=lb_cookie \
+    Key=stickiness.lb_cookie.duration_seconds,Value=3600
+```
+
+Each browser gets an `AWSALB` cookie that pins it to one task for an
+hour. Chat traffic is multi-task safe (Redis channel layer), so if the
+pinned task dies the user's next request fails over cleanly. The only
+surface affected is the auth flow, and a 1-hour window comfortably
+covers a `claude setup-token` round-trip.
+
 ## Deploy workflow
 
 Triggered manually from GitHub Actions:
