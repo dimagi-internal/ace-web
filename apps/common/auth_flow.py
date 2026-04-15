@@ -141,6 +141,7 @@ class _AuthSession:
 def start():
     """Spawn setup-token, return auth URL (or token if auth is instant)."""
     global _session
+    logger.info("auth_flow.start() called (pid=%s)", os.getpid())
     cancel()
 
     session = _AuthSession()
@@ -154,12 +155,22 @@ def start():
         time.sleep(0.5)
         with _lock:
             if session.token:
+                logger.info("auth_flow.start: instant token captured, session cleared")
                 store_token(session.token)
                 _cleanup_locked()
                 return {"auth_url": None, "token": session.token, "status": "complete"}
             if session.url:
+                logger.info(
+                    "auth_flow.start: URL captured, session still alive "
+                    "(buffer_len=%d)", len(session.buffer)
+                )
                 return {"auth_url": session.url, "token": None, "status": "awaiting_code"}
 
+    logger.warning(
+        "auth_flow.start: timed out after %s s (buffer=%r)",
+        START_TIMEOUT_SECONDS,
+        session.buffer[:500],
+    )
     cancel()
     raise RuntimeError("Timed out waiting for auth URL from setup-token")
 
@@ -168,11 +179,16 @@ def complete(code=None):
     """Send the pasted code (or just check if polling completed). Returns token."""
     global _session
 
+    logger.info(
+        "auth_flow.complete() called (pid=%s, code_len=%s, session_present=%s)",
+        os.getpid(), len(code) if code else 0, _session is not None,
+    )
     with _lock:
         if _session is None:
             raise RuntimeError("No active auth flow. Call start() first.")
         session = _session
         if session.token:
+            logger.info("auth_flow.complete: token already captured before code sent")
             token = session.token
             store_token(token)
             _cleanup_locked()
@@ -186,11 +202,18 @@ def complete(code=None):
         time.sleep(0.5)
         with _lock:
             if session.token:
+                logger.info("auth_flow.complete: token captured after %.1fs",
+                            time.time() - (deadline - COMPLETE_TIMEOUT_SECONDS))
                 token = session.token
                 store_token(token)
                 _cleanup_locked()
                 return token
 
+    logger.warning(
+        "auth_flow.complete: timed out after %s s (buffer_tail=%r)",
+        COMPLETE_TIMEOUT_SECONDS,
+        session.buffer[-1000:] if session.buffer else "",
+    )
     raise RuntimeError("Timed out waiting for token. Code may be invalid.")
 
 
@@ -214,6 +237,8 @@ def poll():
 def cancel():
     """Kill any running auth session."""
     with _lock:
+        if _session is not None:
+            logger.info("auth_flow.cancel(): wiping session (pid=%s)", os.getpid())
         _cleanup_locked()
 
 
