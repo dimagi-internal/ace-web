@@ -1,5 +1,4 @@
-"""Tests for /api/auth/cli/* endpoints. auth_flow is mocked at the function
-level so the tests do not actually spawn a PTY."""
+"""Tests for /api/auth/cli/* endpoints."""
 from unittest.mock import patch
 
 import pytest
@@ -33,51 +32,25 @@ def test_status_returns_unauthenticated_when_no_token(client, monkeypatch):
     assert resp.json()["data"] == {"authenticated": False}
 
 
-def test_start_returns_auth_url(client):
-    with patch(
-        "apps.common.auth_flow.start",
-        return_value={
-            "auth_url": "https://claude.com/cai/oauth/authorize?x=1",
-            "token": None,
-            "status": "awaiting_code",
-        },
-    ):
-        resp = client.post("/api/auth/cli/start")
+def test_set_token_stores_valid_token(client):
+    with patch("apps.common.auth_flow.store_token") as store:
+        resp = client.post(
+            "/api/auth/cli/token",
+            {"token": "sk-ant-oat01-new"},
+            format="json",
+        )
     assert resp.status_code == 200
-    body = resp.json()["data"]
-    assert body["auth_url"].startswith("https://")
-    assert body["status"] == "awaiting_code"
+    assert resp.json()["data"] == {"authenticated": True}
+    store.assert_called_once_with("sk-ant-oat01-new")
 
 
-def test_complete_with_code_returns_token(client):
-    with patch("apps.common.auth_flow.complete", return_value="sk-ant-oat01-fresh"):
-        resp = client.post("/api/auth/cli/complete", {"code": "abc"}, format="json")
-    assert resp.status_code == 200
-    assert resp.json()["data"]["status"] == "complete"
-
-
-def test_complete_without_active_session_returns_error(client):
-    with patch(
-        "apps.common.auth_flow.complete",
-        side_effect=RuntimeError("No active auth flow."),
-    ):
-        resp = client.post("/api/auth/cli/complete", {"code": "abc"}, format="json")
+def test_set_token_rejects_invalid_token(client):
+    resp = client.post("/api/auth/cli/token", {"token": "nope"}, format="json")
     assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "auth_flow_error"
+    assert resp.json()["error"]["code"] == "invalid_token"
 
 
-def test_poll_returns_status(client):
-    with patch(
-        "apps.common.auth_flow.poll",
-        return_value={"active": True, "authenticated": False, "elapsed_seconds": 5},
-    ):
-        resp = client.get("/api/auth/cli/poll")
-    assert resp.status_code == 200
-    assert resp.json()["data"]["active"] is True
-
-
-def test_cancel_invokes_auth_flow_cancel(client):
-    with patch("apps.common.auth_flow.cancel") as cancel:
-        resp = client.post("/api/auth/cli/cancel")
-    assert resp.status_code == 200
-    cancel.assert_called_once()
+def test_set_token_rejects_missing_token(client):
+    resp = client.post("/api/auth/cli/token", {}, format="json")
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "invalid_token"
