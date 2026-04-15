@@ -1,6 +1,8 @@
 import { request } from "./client";
 import type {
   CompareResult,
+  CreateOppPayload,
+  CreateOppResponse,
   DiscussResponse,
   LinkedChat,
   OppCard,
@@ -10,6 +12,13 @@ import type {
 
 export function listOpps(): Promise<OppCard[]> {
   return request<OppCard[]>("/opps/");
+}
+
+export function createOpp(payload: CreateOppPayload): Promise<CreateOppResponse> {
+  return request<CreateOppResponse>("/opps/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getOpp(slug: string, runId?: string): Promise<OppSnapshot> {
