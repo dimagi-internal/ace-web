@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Pencil } from "lucide-react";
 
 import { getStepDetail } from "../../api/opps";
 import type { Artifact, StepDetail } from "../../api/types";
@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { ActionButtons } from "./ActionButtons";
 import { ArtifactBody } from "./ArtifactBody";
 import { DiscussInChatButton } from "./DiscussInChatButton";
+import { EditArtifactDialog } from "./EditArtifactDialog";
 import { GateHistory } from "./GateHistory";
 import { JudgeVerdict } from "./JudgeVerdict";
 import { LinkedChats } from "./LinkedChats";
@@ -22,6 +23,7 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
   const [detail, setDetail] = useState<StepDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null);
+  const [editing, setEditing] = useState<Artifact | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -86,6 +88,17 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
                 >
                   {a.name}
                 </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditing(a);
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Edit"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
                 {a.drive_web_link && (
                   <a
                     href={a.drive_web_link}
@@ -122,6 +135,17 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
       <JudgeVerdict judge={detail.judge} />
       {detail.gates.length > 0 && <GateHistory gates={detail.gates} />}
       <LinkedChats slug={slug} runId={runId} skill={skill} />
+
+      {editing && (
+        <EditArtifactDialog
+          open={editing !== null}
+          onOpenChange={(v) => !v && setEditing(null)}
+          slug={slug}
+          runId={runId}
+          skill={skill}
+          artifactName={editing.name}
+        />
+      )}
     </div>
   );
 }

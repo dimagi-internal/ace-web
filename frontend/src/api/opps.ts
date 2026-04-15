@@ -87,6 +87,16 @@ export function artifactBodyUrl(
   );
 }
 
+export function writeArtifact(
+  slug: string, runId: string, skill: string, artifactName: string, content: string,
+): Promise<{ ok: true }> {
+  return request(
+    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}` +
+    `/steps/${encodeURIComponent(skill)}/artifacts/${encodeURIComponent(artifactName)}/write`,
+    { method: "PUT", body: JSON.stringify({ content }) },
+  );
+}
+
 export interface ActionPayload {
   skill: string;
   reason?: string;
