@@ -55,8 +55,9 @@ def test_poll_when_no_session_active():
     assert result["active"] is False
 
 
-def test_start_then_cancel_cleans_up():
+def test_start_then_cancel_cleans_up(monkeypatch):
     """Smoke test the lifecycle without actually invoking claude."""
+    monkeypatch.setattr(auth_flow, "START_TIMEOUT_SECONDS", 1)
     with patch("subprocess.Popen") as mock_popen:
         mock_popen.return_value.poll.return_value = None
         with patch("pty.openpty", return_value=(0, 1)), \
