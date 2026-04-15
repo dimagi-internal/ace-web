@@ -28,6 +28,12 @@ TOKEN_FILE = os.environ.get(
 TOKEN_SECRET_ID = os.environ.get("ACE_CLAUDE_TOKEN_SECRET_ID")
 TOKEN_SECRET_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
+# Deadlines for PTY interactions. The claude CLI makes network calls to
+# Anthropic before printing the URL and after the code is submitted; on
+# slow paths (ECS → internet) 15 s was too tight. Override via env for ops.
+START_TIMEOUT_SECONDS = int(os.environ.get("ACE_CLAUDE_AUTH_START_TIMEOUT", "60"))
+COMPLETE_TIMEOUT_SECONDS = int(os.environ.get("ACE_CLAUDE_AUTH_COMPLETE_TIMEOUT", "90"))
+
 _lock = threading.Lock()
 _session = None  # type: _AuthSession | None
 
@@ -143,8 +149,7 @@ def start():
     with _lock:
         _session = session
 
-    # Wait for URL (or instant token) up to 15 s
-    deadline = time.time() + 15
+    deadline = time.time() + START_TIMEOUT_SECONDS
     while time.time() < deadline:
         time.sleep(0.5)
         with _lock:
@@ -176,7 +181,7 @@ def complete(code=None):
     if code:
         session.send(code + "\r")
 
-    deadline = time.time() + 15
+    deadline = time.time() + COMPLETE_TIMEOUT_SECONDS
     while time.time() < deadline:
         time.sleep(0.5)
         with _lock:
