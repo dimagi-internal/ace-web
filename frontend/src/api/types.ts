@@ -108,6 +108,18 @@ export interface CliAuthStatus {
   authenticated: boolean;
 }
 
+export interface CliAuthStartResult {
+  auth_url: string | null;
+  token: string | null;
+  status: "complete" | "awaiting_code";
+}
+
+export interface CliAuthPollResult {
+  active: boolean;
+  authenticated: boolean;
+  elapsed_seconds?: number;
+}
+
 // --- ACE Opportunity Workbench types (apps/opps) ---
 
 export interface OppCard {
