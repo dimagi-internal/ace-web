@@ -1,3 +1,6 @@
+import type { PhaseInfo } from "../../api/types";
+export type { PhaseInfo } from "../../api/types";
+
 export interface ArtifactRef {
   path: string;
   description: string;
@@ -38,13 +41,6 @@ export interface AgentSummary {
 
 export interface AgentDetail extends AgentSummary {
   body_markdown: string;
-}
-
-export interface PhaseInfo {
-  name: string;
-  display_name: string;
-  ordinal: number;
-  agent: string;
 }
 
 export interface SystemSnapshot {

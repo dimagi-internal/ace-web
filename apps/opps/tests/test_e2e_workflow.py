@@ -59,7 +59,7 @@ def test_full_workflow_list_to_discuss(authed_client, fake_drive):
         )
         assert step_response.status_code == 200
         step = step_response.json()["data"]
-        assert step["is_gate"] is True
+        assert "is_gate" not in step  # gate badge is dropped to match the System tab
         assert len(step["gates"]) == 1
         assert step["gates"][0]["decision"] == "pending"
 
