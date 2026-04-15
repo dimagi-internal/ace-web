@@ -86,3 +86,17 @@ export function artifactBodyUrl(
     `/steps/${encodeURIComponent(skill)}/artifacts/${encodeURIComponent(artifactName)}`
   );
 }
+
+export interface ActionPayload {
+  skill: string;
+  reason?: string;
+}
+
+export function runAction(
+  slug: string, runId: string, action: string, payload: ActionPayload,
+): Promise<{ message_id: number; turn_index: number }> {
+  return request(
+    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/actions/${action}`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}

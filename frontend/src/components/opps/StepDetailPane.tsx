@@ -4,6 +4,7 @@ import { ExternalLink } from "lucide-react";
 import { getStepDetail } from "../../api/opps";
 import type { Artifact, StepDetail } from "../../api/types";
 import { cn } from "@/lib/utils";
+import { ActionButtons } from "./ActionButtons";
 import { ArtifactBody } from "./ArtifactBody";
 import { DiscussInChatButton } from "./DiscussInChatButton";
 import { GateHistory } from "./GateHistory";
@@ -52,6 +53,13 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
           {detail.phase_display} · status <span className="text-foreground">{detail.status}</span>
         </div>
       </div>
+
+      <ActionButtons
+        slug={slug}
+        runId={runId}
+        skillName={detail.skill_name}
+        status={detail.status}
+      />
 
       <DiscussInChatButton slug={slug} runId={runId} skill={skill} />
 
