@@ -18,11 +18,31 @@ def client(django_user_model):
     return c
 
 
-def test_status_returns_authenticated_when_token_present(client, monkeypatch):
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-yes")
+def test_status_returns_authenticated_when_real_token_present(client, monkeypatch):
+    monkeypatch.setenv(
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "sk-ant-oat01-" + "a" * 50,
+    )
     resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
     assert resp.json() == {"data": {"authenticated": True}, "error": None}
+
+
+def test_status_rejects_placeholder_token(client, monkeypatch):
+    monkeypatch.setenv(
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "sk-ant-oat01-placeholder-reauth-via-ace-auth-cli",
+    )
+    resp = client.get("/api/auth/cli/status")
+    assert resp.status_code == 200
+    assert resp.json()["data"] == {"authenticated": False}
+
+
+def test_status_rejects_obviously_short_token(client, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-short")
+    resp = client.get("/api/auth/cli/status")
+    assert resp.status_code == 200
+    assert resp.json()["data"] == {"authenticated": False}
 
 
 def test_status_returns_unauthenticated_when_no_token(client, monkeypatch):

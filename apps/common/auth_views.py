@@ -18,6 +18,25 @@ from .envelope import error_response, success_response
 logger = logging.getLogger(__name__)
 
 
+def _token_looks_real(token: str | None) -> bool:
+    """Cheap format check that rejects placeholders and obvious noise.
+
+    Real Claude OAuth tokens look like "sk-ant-oatNN-<long opaque string>"
+    where the opaque part is roughly base64url. We don't validate against
+    Anthropic here — just enough to reject the placeholder we write when
+    provisioning the Secrets Manager entry, and any mangled paste.
+    """
+    if not token:
+        return False
+    if not token.startswith("sk-ant-oat"):
+        return False
+    if len(token) < 40:
+        return False
+    if "placeholder" in token.lower():
+        return False
+    return True
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def cli_auth_status(request: Request) -> Response:
@@ -30,8 +49,9 @@ def cli_auth_status(request: Request) -> Response:
         return Response(success_response({"authenticated": True}))
     token = auth_flow.get_stored_token()
     api_key = getattr(settings, "ANTHROPIC_API_KEY", "")
-    # Chat works if either the CLI token OR the API key is available
-    return Response(success_response({"authenticated": bool(token or api_key)}))
+    # Chat works if either a real-looking CLI token OR the API key is available.
+    authenticated = _token_looks_real(token) or bool(api_key)
+    return Response(success_response({"authenticated": authenticated}))
 
 
 @api_view(["POST"])
