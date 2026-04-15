@@ -9,6 +9,7 @@ import { OppSidebar } from "../components/opps/OppSidebar";
 import { SkillList } from "../components/opps/SkillList";
 import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
+import { useOppSocket } from "../hooks/useOppSocket";
 
 type LoadState =
   | { kind: "loading" }
@@ -59,6 +60,10 @@ export default function OppWorkbenchPage() {
   }, [slug, runId]);
 
   useEffect(load, [load]);
+
+  // Subscribe to per-opp WebSocket so the workbench auto-refetches when
+  // the chat produces Drive side-effects (see apps/sessions/opp_broadcast).
+  useOppSocket({ slug, runId, onOppUpdated: load });
 
   useEffect(() => {
     if (skill) setSelectedSkill(skill);
