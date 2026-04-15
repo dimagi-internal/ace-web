@@ -91,6 +91,13 @@ class FakeDriveClient(DriveClient):
             node = node.children[part]
         return node.id
 
+    def file_id(self, path: str) -> str:
+        """Test helper: resolve a slash-separated path to a file id."""
+        node = self._root
+        for part in path.strip("/").split("/"):
+            node = node.children[part]
+        return node.id
+
     # --- DriveClient interface ---
 
     def list_files(
@@ -130,6 +137,60 @@ class FakeDriveClient(DriveClient):
         if node.body is None:
             raise ValueError(f"{node.name} is a folder, not a file")
         return FileContent(content=node.body, content_type=node.mime_type)
+
+    # --- Write surface ---
+
+    def create_folder(self, parent_id: str, name: str) -> str:
+        parent = self._nodes_by_id[parent_id]
+        if parent.mime_type != self.FOLDER_MIME:
+            raise ValueError(f"{parent.name} is not a folder")
+        nid = f"fake-{next(self._counter)}"
+        node = _Node(
+            id=nid, name=name, parent_id=parent.id, mime_type=self.FOLDER_MIME
+        )
+        parent.children[name] = node
+        self._nodes_by_id[nid] = node
+        return nid
+
+    def upload_file(
+        self, parent_id: str, name: str, content: str, mime_type: str
+    ) -> str:
+        parent = self._nodes_by_id[parent_id]
+        if parent.mime_type != self.FOLDER_MIME:
+            raise ValueError(f"{parent.name} is not a folder")
+        nid = f"fake-{next(self._counter)}"
+        node = _Node(
+            id=nid, name=name, parent_id=parent.id, mime_type=mime_type, body=content
+        )
+        parent.children[name] = node
+        self._nodes_by_id[nid] = node
+        return nid
+
+    def update_file(self, file_id: str, content: str, mime_type: str) -> None:
+        node = self._nodes_by_id[file_id]
+        if node.mime_type == self.FOLDER_MIME:
+            raise ValueError(f"{node.name} is a folder, not a file")
+        node.body = content
+        node.mime_type = mime_type
+
+    def copy_file(
+        self, file_id: str, new_parent_id: str, new_name: str | None = None
+    ) -> str:
+        src = self._nodes_by_id[file_id]
+        if src.mime_type == self.FOLDER_MIME:
+            raise ValueError(f"{src.name} is a folder; copy_file copies files only")
+        parent = self._nodes_by_id[new_parent_id]
+        if parent.mime_type != self.FOLDER_MIME:
+            raise ValueError(f"{parent.name} is not a folder")
+        nid = f"fake-{next(self._counter)}"
+        name = new_name or src.name
+        node = _Node(
+            id=nid, name=name, parent_id=parent.id,
+            mime_type=src.mime_type, body=src.body,
+        )
+        parent.children[name] = node
+        self._nodes_by_id[nid] = node
+        return nid
 
 
 # --- Realistic fixture builders ---
