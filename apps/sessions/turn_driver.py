@@ -57,9 +57,11 @@ def _get_backend():
     if _backend is not None:
         return _backend
 
-    # Prefer CLI if we have a token
-    from apps.common.auth_flow import get_stored_token
-    if get_stored_token():
+    # Prefer CLI if we have a real-looking token. token_looks_real rejects
+    # the Secrets Manager bootstrap placeholder so we fall through to the
+    # API-key backend instead of invoking claude -p with a bogus token.
+    from apps.common.auth_flow import get_stored_token, token_looks_real
+    if token_looks_real(get_stored_token()):
         _backend = CLIBackend()
         return _backend
 
