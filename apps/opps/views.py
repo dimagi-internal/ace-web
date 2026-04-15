@@ -9,6 +9,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
+from apps.opps.actions import ActionError, ActionPayload, inject_action
 from apps.opps.drive_client import (
     DriveClient,
     get_drive_client,
@@ -481,4 +482,38 @@ def opp_working_session(request, slug: str):
 
     return Response(success_response({
         "working_session_slug": workspace.working_session.slug,
+    }))
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def opp_action(request, slug: str, run_id: str, action: str):
+    if not request.user.is_authenticated:
+        return Response(error_response("auth required", code="auth-required"), status=401)
+    try:
+        workspace = OppWorkspace.objects.get(slug=slug)
+    except OppWorkspace.DoesNotExist:
+        return Response(error_response("opp not found", code="opp-not-found"), status=404)
+    session = workspace.working_session
+    if session is None or session.status != "active":
+        return Response(
+            error_response("no active working session", code="no-session"), status=409,
+        )
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return Response(error_response("invalid JSON", code="bad-json"), status=400)
+
+    payload = ActionPayload(skill=body.get("skill", ""), reason=body.get("reason"))
+    try:
+        message = inject_action(
+            session=session, action=action, slug=slug, payload=payload,
+            user=request.user,
+        )
+    except ActionError as exc:
+        return Response(error_response(str(exc), code=exc.code), status=400)
+
+    return Response(success_response({
+        "message_id": message.id,
+        "turn_index": message.turn_index,
     }))
