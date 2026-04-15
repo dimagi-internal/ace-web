@@ -1,5 +1,5 @@
 import type { OppCard, Run, RunSummary } from "../../api/types";
-import { RunSwitcher } from "./RunSwitcher";
+import { RunSelector } from "./RunSelector";
 
 interface Props {
   opp: OppCard;
@@ -19,7 +19,7 @@ export function WorkbenchHeader({ opp, run, runs, onRefresh }: Props) {
         {run.mode} mode
       </span>
       <span className="ml-auto flex items-center gap-3">
-        <RunSwitcher slug={opp.slug} currentRunId={run.run_id} runs={runs} />
+        <RunSelector slug={opp.slug} currentRunId={run.run_id} runs={runs} />
         <button
           type="button"
           onClick={onRefresh}
