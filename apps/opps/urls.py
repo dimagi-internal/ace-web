@@ -6,6 +6,11 @@ from . import views
 urlpatterns = [
     path("health", views.health, name="opps-health"),
     path("", views.opp_collection, name="opps-collection"),
+    path(
+        "<slug:slug>/working-session",
+        views.opp_working_session,
+        name="opps-working-session",
+    ),
     path("<slug:slug>", views.workbench, name="opps-workbench"),
     path("<slug:slug>/compare", views.opp_compare, name="opps-compare"),
     path(

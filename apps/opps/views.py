@@ -13,6 +13,7 @@ from apps.opps.drive_client import (
     DriveClient,
     get_drive_client,
 )
+from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
 from apps.opps.parsers import parse_opp_yaml
 from apps.opps.seed import build_chat_seed
@@ -442,3 +443,42 @@ def step_chats(request, slug: str, run_id: str, skill: str):
         }
         for c in chats
     ]))
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def opp_working_session(request, slug: str):
+    """Return (or create) the working session for an opp.
+
+    - If the OppWorkspace has a working_session and it is active, return its slug.
+    - Otherwise, create a new session linked to the opp, attach it, return slug.
+    - If the OppWorkspace doesn't exist (Drive-only opp created pre-migration),
+      create one lazily.
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            error_response("auth required", code="auth-required"), status=401
+        )
+
+    try:
+        workspace = OppWorkspace.objects.get(slug=slug)
+    except OppWorkspace.DoesNotExist:
+        workspace = OppWorkspace.objects.create(
+            slug=slug, display_name=slug, created_by=request.user,
+        )
+
+    if workspace.working_session is None or workspace.working_session.status != "active":
+        session = Session.objects.create(
+            owner=request.user,
+            title=f"{workspace.display_name} — working session",
+            backend_kind="cli",
+            status="active",
+            source="web",
+            opp_slug=slug,
+        )
+        workspace.working_session = session
+        workspace.save(update_fields=["working_session", "updated_at"])
+
+    return Response(success_response({
+        "working_session_slug": workspace.working_session.slug,
+    }))

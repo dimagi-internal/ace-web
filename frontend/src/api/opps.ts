@@ -8,6 +8,7 @@ import type {
   OppCard,
   OppSnapshot,
   StepDetail,
+  WorkingSessionResponse,
 } from "./types";
 
 export function listOpps(): Promise<OppCard[]> {
@@ -65,6 +66,12 @@ export function compareRuns(
   const qs = new URLSearchParams({ from: fromRunId, to: toRunId });
   return request<CompareResult>(
     `/opps/${encodeURIComponent(slug)}/compare?${qs.toString()}`,
+  );
+}
+
+export function getWorkingSession(slug: string): Promise<WorkingSessionResponse> {
+  return request<WorkingSessionResponse>(
+    `/opps/${encodeURIComponent(slug)}/working-session`,
   );
 }
 

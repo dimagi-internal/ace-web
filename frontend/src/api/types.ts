@@ -236,6 +236,10 @@ export interface CreateOppResponse {
   working_session_slug: string;
 }
 
+export interface WorkingSessionResponse {
+  working_session_slug: string;
+}
+
 export interface PersonalToken {
   id: number;
   label: string;
