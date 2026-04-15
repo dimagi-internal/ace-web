@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Plus } from "lucide-react";
 
 import { listOpps } from "../api/opps";
 import type { OppCard } from "../api/types";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
+import { NewOppDialog } from "../components/opps/NewOppDialog";
+import { Button } from "@/components/ui/button";
 
 type LoadState =
   | { kind: "loading" }
@@ -13,6 +16,7 @@ type LoadState =
 export default function OppListPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [filter, setFilter] = useState("");
+  const [newDialogOpen, setNewDialogOpen] = useState(false);
 
   const load = () => {
     setState({ kind: "loading" });
@@ -50,7 +54,12 @@ export default function OppListPage() {
           onChange={(e) => setFilter(e.target.value)}
           className="ml-auto w-64 rounded border border-input bg-card px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
         />
+        <Button size="sm" onClick={() => setNewDialogOpen(true)}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          New Opp
+        </Button>
       </header>
+      <NewOppDialog open={newDialogOpen} onOpenChange={setNewDialogOpen} />
 
       {filtered.length === 0 ? (
         <EmptyState

@@ -224,6 +224,22 @@ export interface DiscussResponse {
   session_slug: string;
 }
 
+export interface CreateOppPayload {
+  slug: string;
+  display_name: string;
+  idea: string;
+  mode: "auto" | "review";
+}
+
+export interface CreateOppResponse {
+  slug: string;
+  working_session_slug: string;
+}
+
+export interface WorkingSessionResponse {
+  working_session_slug: string;
+}
+
 export interface PersonalToken {
   id: number;
   label: string;

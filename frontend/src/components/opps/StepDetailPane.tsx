@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
+import { ExternalLink, GitBranch, Pencil } from "lucide-react";
 
 import { getStepDetail } from "../../api/opps";
-import type { StepDetail } from "../../api/types";
-import { ArtifactPreview } from "./ArtifactPreview";
+import type { Artifact, StepDetail } from "../../api/types";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { ActionButtons } from "./ActionButtons";
+import { ArtifactBody } from "./ArtifactBody";
 import { DiscussInChatButton } from "./DiscussInChatButton";
+import { EditArtifactDialog } from "./EditArtifactDialog";
+import { ForkDialog } from "./ForkDialog";
 import { GateHistory } from "./GateHistory";
 import { JudgeVerdict } from "./JudgeVerdict";
 import { LinkedChats } from "./LinkedChats";
@@ -18,11 +24,17 @@ interface Props {
 export function StepDetailPane({ slug, runId, skill }: Props) {
   const [detail, setDetail] = useState<StepDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null);
+  const [editing, setEditing] = useState<Artifact | null>(null);
+  const [forkOpen, setForkOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
     getStepDetail(slug, runId, skill)
-      .then(setDetail)
+      .then((d) => {
+        setDetail(d);
+        setActiveArtifact(d.artifacts[0] ?? null);
+      })
       .catch(() => setDetail(null))
       .finally(() => setLoading(false));
   }, [slug, runId, skill]);
@@ -35,10 +47,8 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
       </div>
     );
 
-  const primaryArtifact = detail.artifacts[0] ?? null;
-
   return (
-    <div className="flex h-full flex-col gap-2 overflow-y-auto p-4">
+    <div className="flex h-full flex-col gap-3 overflow-y-auto p-4">
       <div>
         <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
           Selected step
@@ -49,11 +59,110 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
         </div>
       </div>
 
+      <ActionButtons
+        slug={slug}
+        runId={runId}
+        skillName={detail.skill_name}
+        status={detail.status}
+      />
+
+      <div>
+        <Button size="sm" variant="outline" onClick={() => setForkOpen(true)}>
+          <GitBranch className="mr-1.5 h-3.5 w-3.5" />
+          Fork from here
+        </Button>
+      </div>
+      <ForkDialog
+        open={forkOpen}
+        onOpenChange={setForkOpen}
+        slug={slug}
+        runId={runId}
+        skill={skill}
+      />
+
       <DiscussInChatButton slug={slug} runId={runId} skill={skill} />
-      <ArtifactPreview primaryArtifact={primaryArtifact} primaryBody={detail.primary_body} />
+
+      {detail.artifacts.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-[9px] uppercase tracking-wider text-muted-foreground">
+            Artifacts
+          </div>
+          <div className="flex flex-col gap-1">
+            {detail.artifacts.map((a) => (
+              <div
+                key={a.name}
+                className={cn(
+                  "flex items-center gap-2 rounded border px-2 py-1 text-[11px]",
+                  activeArtifact?.name === a.name
+                    ? "border-primary bg-primary/5"
+                    : "border-border bg-card hover:bg-accent",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => setActiveArtifact(a)}
+                  className="flex-1 truncate text-left font-mono"
+                >
+                  {a.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditing(a);
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Edit"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+                {a.drive_web_link && (
+                  <a
+                    href={a.drive_web_link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-muted-foreground hover:text-foreground"
+                    title="Open in Drive"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeArtifact && (
+        <div className="rounded border border-border">
+          <div className="border-b border-border bg-card px-3 py-1.5 font-mono text-[10px] text-muted-foreground">
+            {activeArtifact.name}
+          </div>
+          <ArtifactBody
+            slug={slug}
+            runId={runId}
+            skill={skill}
+            artifactName={activeArtifact.name}
+            mimeType={activeArtifact.mime_type ?? ""}
+            webViewLink={activeArtifact.drive_web_link}
+          />
+        </div>
+      )}
+
       <JudgeVerdict judge={detail.judge} />
       {detail.gates.length > 0 && <GateHistory gates={detail.gates} />}
       <LinkedChats slug={slug} runId={runId} skill={skill} />
+
+      {editing && (
+        <EditArtifactDialog
+          open={editing !== null}
+          onOpenChange={(v) => !v && setEditing(null)}
+          slug={slug}
+          runId={runId}
+          skill={skill}
+          artifactName={editing.name}
+        />
+      )}
     </div>
   );
 }

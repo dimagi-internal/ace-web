@@ -28,6 +28,7 @@ from apps.common.chat_backend import StreamEvent, StreamEventType
 from apps.common.cli_backend import CLIBackend, CLIBackendError
 
 from .models import Message, Session
+from .opp_broadcast import maybe_emit_opp_updated
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +154,10 @@ async def drive_assistant_turn(
         return
 
     user_text = await sync_to_async(_load_last_user_text)(message)
+    # Snapshot the turn_index of the assistant message so we can later
+    # harvest any tool_use rows that belong to THIS turn (rows created by
+    # _create_tool_message have turn_index > this value).
+    turn_start_index = message.turn_index
     backend = _get_backend()
     await sync_to_async(_mark_streaming)(message)
 
@@ -206,6 +211,9 @@ async def drive_assistant_turn(
                         message, "".join(accumulated)
                     )
                     _schedule_auto_title(message.session)
+                    await _broadcast_opp_updated_if_needed(
+                        message.session, turn_start_index
+                    )
                     yield event
                     return
                 if event.type is StreamEventType.ERROR:
@@ -229,6 +237,7 @@ async def drive_assistant_turn(
 
         await sync_to_async(_mark_complete)(message, "".join(accumulated))
         _schedule_auto_title(message.session)
+        await _broadcast_opp_updated_if_needed(message.session, turn_start_index)
 
     except CLIBackendError as exc:
         logger.exception("CLIBackend failed during assistant turn")
@@ -350,6 +359,44 @@ def _summarize_tool_block(block: dict) -> str:
                 parts.append(item)
         return "".join(parts)
     return ""
+
+
+def _collect_tool_uses_for_turn(session: Session, turn_start_index: int) -> list[dict]:
+    """Return tool_use blocks created during the current turn.
+
+    Rows are created by ``_create_tool_message`` with ``turn_index`` strictly
+    greater than the assistant message's ``turn_index`` (which is
+    ``turn_start_index`` here). Filter accordingly so we only see tool_use
+    rows from THIS turn, not earlier turns.
+    """
+    rows = Message.objects.filter(
+        session=session, role="tool_use", turn_index__gt=turn_start_index
+    ).values_list("content", flat=True)
+    out: list[dict] = []
+    for content in rows:
+        if isinstance(content, dict):
+            out.append(content)
+    return out
+
+
+async def _broadcast_opp_updated_if_needed(
+    session: Session, turn_start_index: int
+) -> None:
+    """Harvest tool_use rows from this turn and emit opp.updated if warranted.
+
+    Safe to call unconditionally: maybe_emit_opp_updated is a no-op for
+    non-opp sessions or turns that didn't touch Drive.
+    """
+    tool_uses = await sync_to_async(_collect_tool_uses_for_turn)(
+        session, turn_start_index
+    )
+    try:
+        await maybe_emit_opp_updated(session, tool_uses)
+    except Exception:
+        # Broadcast failure must never abort a completed turn — the message
+        # is already persisted; the worst case is the workbench misses an
+        # auto-refetch and the user has to reload.
+        logger.exception("opp.updated broadcast failed for session %s", session.slug)
 
 
 def _create_tool_message(session: Session, block: dict, *, role: str) -> None:

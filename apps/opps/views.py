@@ -1,4 +1,6 @@
 """REST API views for the ACE opportunity Workbench."""
+import json
+
 from django.conf import settings
 from django.db import transaction
 from django.http import HttpResponse
@@ -7,10 +9,14 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
+from apps.opps.actions import ActionError, ActionPayload, inject_action
 from apps.opps.drive_client import (
     DriveClient,
     get_drive_client,
 )
+from apps.opps.fork import ForkError, fork_run
+from apps.opps.models import OppWorkspace
+from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
 from apps.opps.parsers import parse_opp_yaml
 from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
@@ -64,9 +70,9 @@ def _require_drive(request):
         )
 
 
-@api_view(["GET"])
-@permission_classes([AllowAny])  # Drive availability enforced inside _require_drive
-def opp_list(request):
+def _opp_list_impl(request):
+    """Plain function form of the opp-list handler. Called directly by
+    opp_collection (GET) to avoid double-wrapping with @api_view."""
     client, err = _require_drive(request)
     if err is not None:
         return err
@@ -101,6 +107,70 @@ def opp_list(request):
                 continue
 
     return Response(success_response(cards))
+
+
+def opp_create(request):
+    """POST /api/opps/ — create a new opp. Called via opp_collection;
+    not a standalone @api_view (the wrapping lives on opp_collection)."""
+    # Authentication check (cheap) before any JSON parsing or Drive I/O.
+    if not request.user.is_authenticated:
+        return Response(
+            error_response("authentication required", code="auth-required"),
+            status=401,
+        )
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return Response(error_response("invalid JSON", code="bad-json"), status=400)
+
+    # Fast-fail on slug format before hitting Drive.
+    slug = payload.get("slug", "")
+    if not SLUG_RE.match(slug):
+        return Response(
+            error_response(f"invalid slug {slug!r}", code="invalid-slug"),
+            status=400,
+        )
+
+    client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(client)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        result = create_opp(
+            drive=client,
+            ace_root_folder_id=ace_folder_id,
+            owner=request.user,
+            slug=slug,
+            display_name=payload.get("display_name", ""),
+            idea=payload.get("idea", ""),
+            mode=payload.get("mode", "review"),
+        )
+    except CreateOppError as exc:
+        status = 409 if exc.code == "slug-taken" else 400
+        return Response(error_response(str(exc), code=exc.code), status=status)
+
+    return Response(
+        success_response({
+            "slug": result.slug,
+            "working_session_slug": result.working_session.slug,
+        }),
+        status=201,
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([AllowAny])
+def opp_collection(request):
+    """Dispatches GET to the list reader and POST to the create handler."""
+    if request.method == "POST":
+        return opp_create(request)
+    return _opp_list_impl(request)
 
 
 @api_view(["GET"])
@@ -375,3 +445,173 @@ def step_chats(request, slug: str, run_id: str, skill: str):
         }
         for c in chats
     ]))
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def opp_working_session(request, slug: str):
+    """Return (or create) the working session for an opp.
+
+    - If the OppWorkspace has a working_session and it is active, return its slug.
+    - Otherwise, create a new session linked to the opp, attach it, return slug.
+    - If the OppWorkspace doesn't exist (Drive-only opp created pre-migration),
+      create one lazily.
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            error_response("auth required", code="auth-required"), status=401
+        )
+
+    try:
+        workspace = OppWorkspace.objects.get(slug=slug)
+    except OppWorkspace.DoesNotExist:
+        workspace = OppWorkspace.objects.create(
+            slug=slug, display_name=slug, created_by=request.user,
+        )
+
+    if workspace.working_session is None or workspace.working_session.status != "active":
+        session = Session.objects.create(
+            owner=request.user,
+            title=f"{workspace.display_name} — working session",
+            backend_kind="cli",
+            status="active",
+            source="web",
+            opp_slug=slug,
+        )
+        workspace.working_session = session
+        workspace.save(update_fields=["working_session", "updated_at"])
+
+    return Response(success_response({
+        "working_session_slug": workspace.working_session.slug,
+    }))
+
+
+@api_view(["PUT"])
+@permission_classes([AllowAny])
+def opp_artifact_write(request, slug: str, run_id: str, skill: str, artifact_name: str):
+    """PUT the body of an existing artifact back to Drive."""
+    client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(client)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return Response(error_response("invalid JSON", code="bad-json"), status=400)
+    content = body.get("content")
+    if content is None:
+        return Response(
+            error_response("content required", code="missing-content"), status=400
+        )
+
+    try:
+        snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
+    except FileNotFoundError:
+        return Response(
+            error_response(f"no opp named {slug!r}", code="opp-not-found"), status=404
+        )
+    step_snap = next(
+        (s for s in snap.current_run.steps if s.step.skill_name == skill), None
+    )
+    if step_snap is None:
+        return Response(
+            error_response(f"no step {skill!r}", code="step-not-found"), status=404
+        )
+    artifact = next(
+        (a for a in step_snap.artifacts if a.name == artifact_name), None
+    )
+    if artifact is None:
+        return Response(
+            error_response(f"no artifact {artifact_name!r}", code="artifact-not-found"),
+            status=404,
+        )
+
+    client.update_file(
+        artifact.drive_file_id,
+        content=content,
+        mime_type=artifact.mime_type or "text/plain",
+    )
+    return Response(success_response({"ok": True}))
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def opp_action(request, slug: str, run_id: str, action: str):
+    if not request.user.is_authenticated:
+        return Response(error_response("auth required", code="auth-required"), status=401)
+    try:
+        workspace = OppWorkspace.objects.get(slug=slug)
+    except OppWorkspace.DoesNotExist:
+        return Response(error_response("opp not found", code="opp-not-found"), status=404)
+    session = workspace.working_session
+    if session is None or session.status != "active":
+        return Response(
+            error_response("no active working session", code="no-session"), status=409,
+        )
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return Response(error_response("invalid JSON", code="bad-json"), status=400)
+
+    payload = ActionPayload(skill=body.get("skill", ""), reason=body.get("reason"))
+    try:
+        message = inject_action(
+            session=session, action=action, slug=slug, payload=payload,
+            user=request.user,
+        )
+    except ActionError as exc:
+        return Response(error_response(str(exc), code=exc.code), status=400)
+
+    return Response(success_response({
+        "message_id": message.id,
+        "turn_index": message.turn_index,
+    }))
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def opp_fork(request, slug: str, run_id: str):
+    """POST /api/opps/<slug>/runs/<run_id>/fork — create a new run."""
+    client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(client)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return Response(error_response("invalid JSON", code="bad-json"), status=400)
+
+    try:
+        result = fork_run(
+            drive=client,
+            ace_root_folder_id=ace_folder_id,
+            slug=slug,
+            from_run_id=run_id,
+            from_skill=body.get("from_skill", ""),
+            mode=body.get("mode", ""),
+            feedback=body.get("feedback"),
+            owner=request.user,
+        )
+    except ForkError as exc:
+        status = 404 if exc.code in ("opp-not-found", "step-not-found") else 400
+        return Response(error_response(str(exc), code=exc.code), status=status)
+
+    return Response(
+        success_response({
+            "new_run_id": result.new_run_id,
+            "working_session_slug": result.working_session.slug,
+        }),
+        status=201,
+    )

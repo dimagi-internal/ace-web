@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { getOpp } from "../api/opps";
+import { getOpp, getWorkingSession } from "../api/opps";
 import type { OppSnapshot, Run, Step } from "../api/types";
+import { ChatPanel } from "../components/opps/ChatPanel";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { OppSidebar } from "../components/opps/OppSidebar";
 import { SkillList } from "../components/opps/SkillList";
 import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
+import { useOppSocket } from "../hooks/useOppSocket";
 
 type LoadState =
   | { kind: "loading" }
@@ -18,6 +20,15 @@ export default function OppWorkbenchPage() {
   const { slug = "", runId, skill } = useParams();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
+  const [workingSessionSlug, setWorkingSessionSlug] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!slug) return;
+    setWorkingSessionSlug(null);
+    getWorkingSession(slug)
+      .then((r) => setWorkingSessionSlug(r.working_session_slug))
+      .catch(() => setWorkingSessionSlug(null));
+  }, [slug]);
 
   const load = useCallback(() => {
     setState({ kind: "loading" });
@@ -49,6 +60,10 @@ export default function OppWorkbenchPage() {
   }, [slug, runId]);
 
   useEffect(load, [load]);
+
+  // Subscribe to per-opp WebSocket so the workbench auto-refetches when
+  // the chat produces Drive side-effects (see apps/sessions/opp_broadcast).
+  useOppSocket({ slug, runId, onOppUpdated: load });
 
   useEffect(() => {
     if (skill) setSelectedSkill(skill);
@@ -91,6 +106,15 @@ export default function OppWorkbenchPage() {
             />
           ) : (
             <EmptyState title="Select a step" description="Click a row to see its details." />
+          )}
+        </section>
+        <section className="w-[400px] shrink-0 border-l border-border bg-background">
+          {workingSessionSlug ? (
+            <ChatPanel slug={workingSessionSlug} />
+          ) : (
+            <div className="flex h-full items-center justify-center p-4 text-xs text-muted-foreground">
+              Loading chat…
+            </div>
           )}
         </section>
       </div>

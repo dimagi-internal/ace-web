@@ -5,10 +5,12 @@ methods the sync layer uses; GoogleDriveClient is the real implementation
 that wraps googleapiclient.discovery.build("drive", "v3", ...). Tests use
 FakeDriveClient (apps/opps/tests/fixtures/fake_drive.py) as a drop-in.
 
-Surface kept intentionally small: the Workbench only ever reads — listing
-folders recursively, fetching file content, getting file metadata. Writes
-(create_folder, create_shortcut, share_file) from the connect-search version
-are not ported because the ace-web Workbench never writes to Drive.
+The read surface (list_files / get_file / get_content) drives the Workbench.
+The write surface (create_folder / upload_file / update_file / copy_file)
+supports the web-native opp lifecycle: creating opps, editing artifacts,
+and forking runs. Only the four write methods the ace-web app needs are
+exposed — unrelated connect-search helpers (create_shortcut, share_file)
+are intentionally not ported.
 """
 from __future__ import annotations
 
@@ -54,6 +56,27 @@ class DriveClient(ABC):
     def get_content(self, file_id: str, mime_type: str) -> FileContent:
         """Fetch the body of a file. Google Docs types are exported to text/plain
         or text/csv; binary types are returned base64-encoded."""
+
+    @abstractmethod
+    def create_folder(self, parent_id: str, name: str) -> str:
+        """Create a folder under parent_id. Returns new folder ID."""
+
+    @abstractmethod
+    def upload_file(
+        self, parent_id: str, name: str, content: str, mime_type: str
+    ) -> str:
+        """Create a new file under parent_id with the given content.
+        Returns new file ID."""
+
+    @abstractmethod
+    def update_file(self, file_id: str, content: str, mime_type: str) -> None:
+        """Replace the content of an existing file."""
+
+    @abstractmethod
+    def copy_file(
+        self, file_id: str, new_parent_id: str, new_name: str | None = None
+    ) -> str:
+        """Copy a file to a new parent. Returns new file ID."""
 
 
 class GoogleDriveClient(DriveClient):
@@ -152,6 +175,46 @@ class GoogleDriveClient(DriveClient):
                     encoding="base64",
                 )
         return FileContent(content=content, content_type=mime_type)
+
+    def create_folder(self, parent_id: str, name: str) -> str:
+        body = {
+            "name": name,
+            "mimeType": self.FOLDER_MIME,
+            "parents": [parent_id],
+        }
+        resp = self._service.files().create(
+            body=body, fields="id", supportsAllDrives=True
+        ).execute()
+        return resp["id"]
+
+    def upload_file(
+        self, parent_id: str, name: str, content: str, mime_type: str
+    ) -> str:
+        from googleapiclient.http import MediaInMemoryUpload
+        body = {"name": name, "parents": [parent_id]}
+        media = MediaInMemoryUpload(content.encode("utf-8"), mimetype=mime_type)
+        resp = self._service.files().create(
+            body=body, media_body=media, fields="id", supportsAllDrives=True
+        ).execute()
+        return resp["id"]
+
+    def update_file(self, file_id: str, content: str, mime_type: str) -> None:
+        from googleapiclient.http import MediaInMemoryUpload
+        media = MediaInMemoryUpload(content.encode("utf-8"), mimetype=mime_type)
+        self._service.files().update(
+            fileId=file_id, media_body=media, supportsAllDrives=True
+        ).execute()
+
+    def copy_file(
+        self, file_id: str, new_parent_id: str, new_name: str | None = None
+    ) -> str:
+        body: dict = {"parents": [new_parent_id]}
+        if new_name:
+            body["name"] = new_name
+        resp = self._service.files().copy(
+            fileId=file_id, body=body, fields="id", supportsAllDrives=True
+        ).execute()
+        return resp["id"]
 
 
 class DriveServiceAccountNotConfigured(RuntimeError):
