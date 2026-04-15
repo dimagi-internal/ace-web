@@ -1,4 +1,6 @@
 """REST API views for the ACE opportunity Workbench."""
+import json
+
 from django.conf import settings
 from django.db import transaction
 from django.http import HttpResponse
@@ -11,6 +13,7 @@ from apps.opps.drive_client import (
     DriveClient,
     get_drive_client,
 )
+from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
 from apps.opps.parsers import parse_opp_yaml
 from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
@@ -64,9 +67,9 @@ def _require_drive(request):
         )
 
 
-@api_view(["GET"])
-@permission_classes([AllowAny])  # Drive availability enforced inside _require_drive
-def opp_list(request):
+def _opp_list_impl(request):
+    """Plain function form of the opp-list handler. Called directly by
+    opp_collection (GET) to avoid double-wrapping with @api_view."""
     client, err = _require_drive(request)
     if err is not None:
         return err
@@ -101,6 +104,70 @@ def opp_list(request):
                 continue
 
     return Response(success_response(cards))
+
+
+def opp_create(request):
+    """POST /api/opps/ — create a new opp. Called via opp_collection;
+    not a standalone @api_view (the wrapping lives on opp_collection)."""
+    # Authentication check (cheap) before any JSON parsing or Drive I/O.
+    if not request.user.is_authenticated:
+        return Response(
+            error_response("authentication required", code="auth-required"),
+            status=401,
+        )
+    try:
+        payload = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return Response(error_response("invalid JSON", code="bad-json"), status=400)
+
+    # Fast-fail on slug format before hitting Drive.
+    slug = payload.get("slug", "")
+    if not SLUG_RE.match(slug):
+        return Response(
+            error_response(f"invalid slug {slug!r}", code="invalid-slug"),
+            status=400,
+        )
+
+    client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(client)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        result = create_opp(
+            drive=client,
+            ace_root_folder_id=ace_folder_id,
+            owner=request.user,
+            slug=slug,
+            display_name=payload.get("display_name", ""),
+            idea=payload.get("idea", ""),
+            mode=payload.get("mode", "review"),
+        )
+    except CreateOppError as exc:
+        status = 409 if exc.code == "slug-taken" else 400
+        return Response(error_response(str(exc), code=exc.code), status=status)
+
+    return Response(
+        success_response({
+            "slug": result.slug,
+            "working_session_slug": result.working_session.slug,
+        }),
+        status=201,
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([AllowAny])
+def opp_collection(request):
+    """Dispatches GET to the list reader and POST to the create handler."""
+    if request.method == "POST":
+        return opp_create(request)
+    return _opp_list_impl(request)
 
 
 @api_view(["GET"])

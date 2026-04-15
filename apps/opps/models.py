@@ -15,7 +15,7 @@ class OppWorkspace(models.Model):
     slug = models.CharField(max_length=64, primary_key=True)
     display_name = models.CharField(max_length=200)
     working_session = models.ForeignKey(
-        "sessions.Session",
+        "ace_sessions.Session",
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name="opp_working_for",
