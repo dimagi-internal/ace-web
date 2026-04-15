@@ -78,3 +78,18 @@ def test_opp_list_unauthenticated_returns_401():
     c = Client()
     response = c.get("/api/opps/")
     assert response.status_code == 401
+
+
+def test_opp_list_returns_empty_when_no_ace_root_configured(authed_client):
+    """No ACE_DRIVE_ROOT_FOLDER_ID set → empty list, not a 500.
+
+    Local-dev / e2e envs without Drive still need the page to load.
+    """
+    fake = FakeDriveClient.from_tree({})
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=None):
+        response = authed_client.get("/api/opps/")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    assert body["data"] == []

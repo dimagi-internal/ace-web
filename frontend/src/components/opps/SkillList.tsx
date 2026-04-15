@@ -53,6 +53,51 @@ export function SkillList({
           </section>
         );
       })}
+      {(() => {
+        // Steps whose phase is not in the live plugin phase list render here,
+        // grouped by raw phase name, so older Drive data still appears in the
+        // workbench instead of silently disappearing.
+        const knownPhaseNames = new Set(phases.map((p) => p.name));
+        const legacySteps = steps.filter((s) => !knownPhaseNames.has(s.phase));
+        if (legacySteps.length === 0) return null;
+
+        const grouped = new Map<string, Step[]>();
+        for (const s of legacySteps) {
+          const existing = grouped.get(s.phase);
+          if (existing) {
+            existing.push(s);
+          } else {
+            grouped.set(s.phase, [s]);
+          }
+        }
+
+        return Array.from(grouped.entries()).map(([phaseName, phaseSteps]) => {
+          phaseSteps.sort((a, b) => a.ordinal - b.ordinal);
+          return (
+            <section key={`legacy-${phaseName}`} className="flex flex-col gap-1 opacity-75">
+              <div className="flex items-center gap-2">
+                <span className="h-0.5 w-2 bg-amber-500/60" />
+                <h3 className="text-[10px] font-semibold uppercase tracking-wider text-amber-500/80">
+                  Legacy · {phaseName} · {phaseSteps.length}{" "}
+                  {phaseSteps.length === 1 ? "step" : "steps"}
+                </h3>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {phaseSteps.map((step) => (
+                  <SkillRow
+                    key={step.skill_name}
+                    step={step}
+                    priorRunStep={priorBySkill.get(step.skill_name) ?? null}
+                    isSelected={step.skill_name === selectedSkill}
+                    onClick={() => onSelect(step.skill_name)}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        });
+      })()}
     </div>
   );
 }

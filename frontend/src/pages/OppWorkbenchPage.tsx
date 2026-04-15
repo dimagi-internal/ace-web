@@ -30,47 +30,59 @@ export default function OppWorkbenchPage() {
       .catch(() => setWorkingSessionSlug(null));
   }, [slug]);
 
-  const load = useCallback(() => {
-    setState({ kind: "loading" });
-    getOpp(slug, runId)
-      .then(async (snapshot) => {
-        // Fetch the prior run (if any) to compute per-row deltas. The runs
-        // list is newest-first; skip the current run, take the next one.
-        const currentIdx = snapshot.runs.findIndex(
-          (r) => r.run_id === snapshot.current_run.run_id,
-        );
-        const priorSummary =
-          currentIdx >= 0 && currentIdx + 1 < snapshot.runs.length
-            ? snapshot.runs[currentIdx + 1]
-            : null;
-        let priorRun: Run | null = null;
-        if (priorSummary) {
-          try {
-            const priorSnap = await getOpp(slug, priorSummary.run_id);
-            priorRun = priorSnap.current_run;
-          } catch {
-            priorRun = null;
+  const load = useCallback(
+    (opts: { silent?: boolean } = {}) => {
+      if (!opts.silent) {
+        setState({ kind: "loading" });
+      }
+      getOpp(slug, runId)
+        .then(async (snapshot) => {
+          // Fetch the prior run (if any) to compute per-row deltas. The runs
+          // list is newest-first; skip the current run, take the next one.
+          const currentIdx = snapshot.runs.findIndex(
+            (r) => r.run_id === snapshot.current_run.run_id,
+          );
+          const priorSummary =
+            currentIdx >= 0 && currentIdx + 1 < snapshot.runs.length
+              ? snapshot.runs[currentIdx + 1]
+              : null;
+          let priorRun: Run | null = null;
+          if (priorSummary) {
+            try {
+              const priorSnap = await getOpp(slug, priorSummary.run_id);
+              priorRun = priorSnap.current_run;
+            } catch {
+              priorRun = null;
+            }
           }
-        }
-        setState({ kind: "loaded", snapshot, priorRun });
-      })
-      .catch((err) =>
-        setState({ kind: "error", message: String(err?.message ?? err) }),
-      );
-  }, [slug, runId]);
+          setState({ kind: "loaded", snapshot, priorRun });
+        })
+        .catch((err) => {
+          // On silent refresh failure, keep the current state so the UI
+          // doesn't flip from "loaded" to "error" on a transient network blip.
+          if (!opts.silent) {
+            setState({ kind: "error", message: String(err?.message ?? err) });
+          }
+        });
+    },
+    [slug, runId],
+  );
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // Subscribe to per-opp WebSocket so the workbench auto-refetches when
   // the chat produces Drive side-effects (see apps/sessions/opp_broadcast).
-  useOppSocket({ slug, runId, onOppUpdated: load });
+  // Silent refresh: don't flash the loading spinner on incremental updates.
+  useOppSocket({ slug, runId, onOppUpdated: () => load({ silent: true }) });
 
   useEffect(() => {
     if (skill) setSelectedSkill(skill);
   }, [skill]);
 
   if (state.kind === "loading") return <LoadingSpinner label={`Loading ${slug}…`} />;
-  if (state.kind === "error") return <ErrorState message={state.message} onRetry={load} />;
+  if (state.kind === "error") return <ErrorState message={state.message} onRetry={() => load()} />;
 
   const { snapshot, priorRun } = state;
   const selectedStep: Step | null = selectedSkill
@@ -83,7 +95,7 @@ export default function OppWorkbenchPage() {
         opp={snapshot.opp}
         run={snapshot.current_run}
         runs={snapshot.runs}
-        onRefresh={load}
+        onRefresh={() => load()}
       />
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-[180px] border-r border-border bg-background">
