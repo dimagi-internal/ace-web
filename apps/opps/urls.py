@@ -34,6 +34,12 @@ urlpatterns = [
         name="opps-artifact-body",
     ),
     path(
+        "<slug:slug>/runs/<str:run_id>/steps/<str:skill>"
+        "/artifacts/<str:artifact_name>/write",
+        views.opp_artifact_write,
+        name="opps-artifact-write",
+    ),
+    path(
         "<slug:slug>/runs/<str:run_id>/actions/<str:action>",
         views.opp_action, name="opps-action",
     ),

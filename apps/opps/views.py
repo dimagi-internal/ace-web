@@ -485,6 +485,60 @@ def opp_working_session(request, slug: str):
     }))
 
 
+@api_view(["PUT"])
+@permission_classes([AllowAny])
+def opp_artifact_write(request, slug: str, run_id: str, skill: str, artifact_name: str):
+    """PUT the body of an existing artifact back to Drive."""
+    client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(client)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return Response(error_response("invalid JSON", code="bad-json"), status=400)
+    content = body.get("content")
+    if content is None:
+        return Response(
+            error_response("content required", code="missing-content"), status=400
+        )
+
+    try:
+        snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
+    except FileNotFoundError:
+        return Response(
+            error_response(f"no opp named {slug!r}", code="opp-not-found"), status=404
+        )
+    step_snap = next(
+        (s for s in snap.current_run.steps if s.step.skill_name == skill), None
+    )
+    if step_snap is None:
+        return Response(
+            error_response(f"no step {skill!r}", code="step-not-found"), status=404
+        )
+    artifact = next(
+        (a for a in step_snap.artifacts if a.name == artifact_name), None
+    )
+    if artifact is None:
+        return Response(
+            error_response(f"no artifact {artifact_name!r}", code="artifact-not-found"),
+            status=404,
+        )
+
+    client.update_file(
+        artifact.drive_file_id,
+        content=content,
+        mime_type=artifact.mime_type or "text/plain",
+    )
+    return Response(success_response({"ok": True}))
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def opp_action(request, slug: str, run_id: str, action: str):
