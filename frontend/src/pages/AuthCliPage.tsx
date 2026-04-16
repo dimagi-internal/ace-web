@@ -8,7 +8,7 @@ import {
 } from "../api/auth";
 import { useCliAuthStatus } from "../hooks/useCliAuthStatus";
 
-type Phase = "idle" | "awaiting_code" | "submitting" | "complete" | "error";
+type Phase = "idle" | "starting" | "awaiting_code" | "submitting" | "complete" | "error";
 
 export function AuthCliPage() {
   const [phase, setPhase] = useState<Phase>("idle");
@@ -19,7 +19,7 @@ export function AuthCliPage() {
 
   const start = async () => {
     setError(null);
-    setPhase("idle");
+    setPhase("starting");
     try {
       const r = await cliAuthStart();
       if (r.status === "complete") {
@@ -43,8 +43,6 @@ export function AuthCliPage() {
       await cliAuthStatus();
     } catch (e) {
       const msg = String(e);
-      // Server-side PTY died (deploy restart, timeout). Auto-restart
-      // instead of making the user click "Try again" + "Begin authorization".
       if (msg.includes("No active auth flow") || msg.includes("start() first")) {
         setPhase("idle");
         setAuthUrl(null);
@@ -75,27 +73,22 @@ export function AuthCliPage() {
         <div className="rounded border border-green-300 bg-green-50 p-4 text-green-900">
           <div className="font-semibold">Claude CLI is connected</div>
           <p className="mt-1 text-sm">
-            The server has a valid OAuth token. You can{" "}
+            The server has a valid CLI OAuth token. You can{" "}
             <a href="/chat" className="font-semibold underline">
               start chatting
             </a>
-            , or re-authorize below if the token needs refreshing.
+            .
           </p>
-          <button
-            type="button"
-            onClick={start}
-            className="mt-3 rounded border border-green-300 px-4 py-2 text-sm text-green-900 hover:bg-green-100"
-          >
-            Re-authorize
-          </button>
         </div>
       )}
 
       {cliConnected === false && phase === "idle" && (
         <div className="space-y-4">
-          <div className="rounded border border-border bg-muted p-4">
-            <div className="text-sm text-muted-foreground">
-              Logged in. CLI token is not set on this server.
+          <div className="rounded border border-amber-300 bg-amber-50 p-4 text-amber-900">
+            <div className="font-semibold">CLI token not set</div>
+            <div className="mt-1 text-sm">
+              The server needs a Claude CLI OAuth token to use your team's
+              subscription. Click below to authorize.
             </div>
           </div>
           <button
@@ -109,7 +102,17 @@ export function AuthCliPage() {
       )}
 
       {cliConnected === null && phase === "idle" && (
-        <div className="text-sm text-muted-foreground">Checking CLI status...</div>
+        <div className="text-sm text-muted-foreground">Checking CLI status…</div>
+      )}
+
+      {phase === "starting" && (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Starting authorization…
+        </div>
       )}
 
       {phase === "awaiting_code" && authUrl && (
@@ -160,7 +163,13 @@ export function AuthCliPage() {
       )}
 
       {phase === "submitting" && (
-        <div className="text-muted-foreground">Submitting code…</div>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Exchanging code for token (up to 90 s)…
+        </div>
       )}
 
       {phase === "complete" && (
@@ -179,7 +188,7 @@ export function AuthCliPage() {
           <div className="text-sm">{error}</div>
           <button
             type="button"
-            onClick={() => setPhase("idle")}
+            onClick={start}
             className="mt-2 rounded border border-red-300 px-3 py-1 text-sm hover:bg-red-100"
           >
             Try again

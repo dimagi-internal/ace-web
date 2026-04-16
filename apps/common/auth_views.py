@@ -29,10 +29,7 @@ def cli_auth_status(request: Request) -> Response:
     if getattr(settings, "ACE_USE_FAKE_CLI_BACKEND", False):
         return Response(success_response({"authenticated": True}))
     token = auth_flow.get_stored_token()
-    api_key = getattr(settings, "ANTHROPIC_API_KEY", "")
-    # Chat works if either a real-looking CLI token OR the API key is available.
-    authenticated = auth_flow.token_looks_real(token) or bool(api_key)
-    return Response(success_response({"authenticated": authenticated}))
+    return Response(success_response({"authenticated": auth_flow.token_looks_real(token)}))
 
 
 @api_view(["POST"])

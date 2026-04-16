@@ -195,24 +195,37 @@ def complete(code=None):
             return token
 
     if code:
+        logger.info("auth_flow.complete: sending code (%d chars) + CR to PTY", len(code))
         session.send(code + "\r")
 
     deadline = time.time() + COMPLETE_TIMEOUT_SECONDS
+    logged_30s = False
     while time.time() < deadline:
         time.sleep(0.5)
+        elapsed = time.time() - (deadline - COMPLETE_TIMEOUT_SECONDS)
+        if not logged_30s and elapsed > 30:
+            logged_30s = True
+            clean = _strip_ansi(session.buffer)
+            logger.info(
+                "auth_flow.complete: 30s mark, proc_alive=%s, buffer_clean=%r",
+                session.process and session.process.poll() is None,
+                clean[-2000:],
+            )
         with _lock:
             if session.token:
-                logger.info("auth_flow.complete: token captured after %.1fs",
-                            time.time() - (deadline - COMPLETE_TIMEOUT_SECONDS))
+                logger.info("auth_flow.complete: token captured after %.1fs", elapsed)
                 token = session.token
                 store_token(token)
                 _cleanup_locked()
                 return token
 
+    clean = _strip_ansi(session.buffer)
     logger.warning(
-        "auth_flow.complete: timed out after %s s (buffer_tail=%r)",
+        "auth_flow.complete: timed out after %s s, proc_alive=%s, "
+        "buffer_clean=%r",
         COMPLETE_TIMEOUT_SECONDS,
-        session.buffer[-1000:] if session.buffer else "",
+        session.process and session.process.poll() is None,
+        clean[-3000:],
     )
     raise RuntimeError("Timed out waiting for token. Code may be invalid.")
 
