@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const NAV_ITEMS = [
-  { label: "Library", path: "/library" },
+  { label: "Sessions", path: "/sessions" },
   { label: "Chat", path: "/chat" },
   { label: "Opps", path: "/opps" },
   { label: "System", path: "/system" },

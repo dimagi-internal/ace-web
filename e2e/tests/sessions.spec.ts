@@ -4,9 +4,9 @@ import { newAuthedContext, getCsrfToken } from "../helpers/auth";
 import { createSession } from "../helpers/session";
 
 /**
- * Library page E2E tests.
+ * Sessions page E2E tests.
  *
- * Exercises the full CRUD surface of the /ace/library route:
+ * Exercises the full CRUD surface of the /ace/sessions route:
  *   1. Empty state message when a fresh user has no sessions.
  *   2. Sessions created via API appear in the list.
  *   3. Search box (debounced 300ms) filters by title.
@@ -23,7 +23,7 @@ import { createSession } from "../helpers/session";
  * tests (users persist for the lifetime of the SQLite e2e DB, which is
  * reset between runs by global-setup.ts).
  */
-test.describe("Library page", () => {
+test.describe("Sessions page", () => {
   test("empty state when no sessions", async ({ browser }) => {
     const { page, context } = await newAuthedContext(
       browser,
@@ -31,7 +31,7 @@ test.describe("Library page", () => {
       "Lib Empty",
     );
 
-    await page.goto("/ace/library");
+    await page.goto("/ace/sessions");
 
     // The "All" filter shows every session regardless of status.
     // For a fresh user there are none, so we click "All" to bypass the
@@ -59,9 +59,9 @@ test.describe("Library page", () => {
       await createSession(page, title);
     }
 
-    await page.goto("/ace/library");
+    await page.goto("/ace/sessions");
 
-    // The library defaults to the "Active" filter; all 3 were just created
+    // The sessions page defaults to the "Active" filter; all 3 were just created
     // so they are active.
     for (const title of titles) {
       await expect(page.getByText(title)).toBeVisible({ timeout: 10_000 });
@@ -81,7 +81,7 @@ test.describe("Library page", () => {
     await createSession(page, "Beta review");
     await createSession(page, "Alpha followup");
 
-    await page.goto("/ace/library");
+    await page.goto("/ace/sessions");
 
     // Wait for the initial load to complete before typing.
     await expect(page.getByText("Alpha design")).toBeVisible({
@@ -127,7 +127,7 @@ test.describe("Library page", () => {
     });
     expect(patchResp.ok()).toBeTruthy();
 
-    await page.goto("/ace/library");
+    await page.goto("/ace/sessions");
 
     // Default filter is "Active" — only slug1 shows.
     await expect(page.getByText("Active session")).toBeVisible({
@@ -163,7 +163,7 @@ test.describe("Library page", () => {
 
     await createSession(page, "Archivable session");
 
-    await page.goto("/ace/library");
+    await page.goto("/ace/sessions");
 
     // Wait for the session row to appear.
     const rowLocator = page.locator("div.group", {
@@ -186,7 +186,7 @@ test.describe("Library page", () => {
       timeout: 5_000,
     });
 
-    // After archiving, the library is still on "Active" filter so the row
+    // After archiving, the page is still on "Active" filter so the row
     // should be gone.
     await expect(rowLocator).not.toBeVisible({ timeout: 5_000 });
 
@@ -230,7 +230,7 @@ test.describe("Library page", () => {
 
     await createSession(page, "Deletable session");
 
-    await page.goto("/ace/library");
+    await page.goto("/ace/sessions");
 
     const rowLocator = page.locator("div.group", {
       hasText: "Deletable session",
@@ -281,7 +281,7 @@ test.describe("Library page", () => {
       await createSession(page, `Paginated session ${String(i).padStart(2, "0")}`);
     }
 
-    await page.goto("/ace/library");
+    await page.goto("/ace/sessions");
 
     // "All" filter to see all 25 regardless of status.
     await page.getByRole("button", { name: "All" }).click();

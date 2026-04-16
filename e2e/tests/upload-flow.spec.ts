@@ -6,9 +6,9 @@ import { uploadJsonlFixture } from "../helpers/upload";
 /**
  * Upload-flow E2E tests.
  *
- * Exercises the JSONL ingest path from the library page:
+ * Exercises the JSONL ingest path from the sessions page:
  *   1. Uploading a JSONL file shows a toast with the message count and the
- *      session appears in the library list with an "upload" source badge.
+ *      session appears in the sessions list with an "upload" source badge.
  *   2. Navigating to the imported session renders the messages from the JSONL.
  *   3. The send box shows the "Imported session" banner (sessionSource +
  *      sessionStatus gate in SendBox.tsx).
@@ -18,14 +18,14 @@ import { uploadJsonlFixture } from "../helpers/upload";
  * between runs by global-setup.ts).
  */
 test.describe("Upload flow", () => {
-  test("upload JSONL file from library", async ({ browser }) => {
+  test("upload JSONL file from sessions page", async ({ browser }) => {
     const { page, context } = await newAuthedContext(
       browser,
       "upload-badge@dimagi.com",
       "Upload Badge",
     );
 
-    await page.goto("/ace/library");
+    await page.goto("/ace/sessions");
 
     // Switch to "All" so the uploaded (imported) session is visible even
     // though the default filter is "active".
@@ -57,10 +57,10 @@ test.describe("Upload flow", () => {
       "Upload Messages",
     );
 
-    await page.goto("/ace/library");
+    await page.goto("/ace/sessions");
 
     // The imported filter shows only uploaded sessions; switch to All first
-    // so the upload itself can be triggered on the library page.
+    // so the upload itself can be triggered on the sessions page.
     await page.getByRole("button", { name: "All" }).click();
 
     // Use a distinct fixture (unique session_id) to avoid 409 conflicts
@@ -106,7 +106,7 @@ test.describe("Upload flow", () => {
       "Upload Readonly",
     );
 
-    await page.goto("/ace/library");
+    await page.goto("/ace/sessions");
 
     // Switch to "All" so the uploaded session will be visible after upload.
     await page.getByRole("button", { name: "All" }).click();
