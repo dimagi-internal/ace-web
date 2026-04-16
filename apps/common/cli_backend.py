@@ -148,7 +148,7 @@ class CLIBackend:
         Raises CLIBackendError if the subprocess dies before accepting the prompt
         (e.g., binary missing, permission denied, instant crash).
         """
-        full_args = [self._binary, "-p", "--output-format", "stream-json", *args]
+        full_args = [self._binary, "-p", "--verbose", "--output-format", "stream-json", *args]
         env = self._build_env()
         # stderr=DEVNULL avoids a deadlock where a chatty CLI fills the stderr pipe
         # buffer (~64KB) and blocks before we can drain it. A future task should
