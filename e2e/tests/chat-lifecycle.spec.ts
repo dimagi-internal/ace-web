@@ -14,7 +14,7 @@ import { createSession, listMessages } from "../helpers/session";
  *   3. Clicking stop during a long in-flight stream cancels the turn
  *      and flips the assistant message to status="error".
  *   4. InlineTitleEdit lets the user rename the session in the header;
- *      the updated title shows in the library.
+ *      the updated title shows on the sessions page.
  *   5. RecentSessionsSidebar shows the current session by title.
  *
  * Each test uses a distinct email address so user state never leaks
@@ -163,7 +163,7 @@ test.describe("Chat lifecycle", () => {
     await context.close();
   });
 
-  test("inline title edit updates header and library", async ({ browser }) => {
+  test("inline title edit updates header and sessions page", async ({ browser }) => {
     const { page, context } = await newAuthedContext(
       browser,
       "lifecycle-title@dimagi.com",
@@ -202,9 +202,9 @@ test.describe("Chat lifecycle", () => {
       timeout: 5_000,
     });
 
-    // Navigate to the library and verify the session shows the updated title.
-    await page.goto("/ace/library");
-    // Library filters to "active" by default, which includes our session.
+    // Navigate to the sessions page and verify the session shows the updated title.
+    await page.goto("/ace/sessions");
+    // Sessions page filters to "active" by default, which includes our session.
     await expect(page.getByText(newTitle)).toBeVisible({ timeout: 10_000 });
 
     await context.close();

@@ -7,8 +7,8 @@ const __dirname = path.dirname(__filename);
 const FIXTURES_DIR = path.resolve(__dirname, "..", "fixtures");
 
 /**
- * Upload a JSONL fixture file via the library page's hidden file input.
- * The page must be on /ace/library and authenticated.
+ * Upload a JSONL fixture file via the sessions page's hidden file input.
+ * The page must be on /ace/sessions and authenticated.
  */
 export async function uploadJsonlFixture(
   page: Page,

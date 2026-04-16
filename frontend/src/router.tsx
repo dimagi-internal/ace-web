@@ -6,7 +6,7 @@ import HomePage from "./pages/HomePage";
 import { ChatPage } from "./pages/ChatPage";
 import { ChatRedirectPage } from "./pages/ChatRedirectPage";
 import { AuthCliPage } from "./pages/AuthCliPage";
-import LibraryPage from "./pages/LibraryPage";
+import SessionsPage from "./pages/SessionsPage";
 import OppListPage from "./pages/OppListPage";
 import OppWorkbenchPage from "./pages/OppWorkbenchPage";
 import OppComparePage from "./pages/OppComparePage";
@@ -25,7 +25,7 @@ export const router = createBrowserRouter(
         { path: "chat", element: <ChatRedirectPage /> },
         { path: "chat/:slug", element: <ChatPage /> },
         { path: "auth/cli", element: <AuthCliPage /> },
-        { path: "library", element: <LibraryPage /> },
+        { path: "sessions", element: <SessionsPage /> },
         { path: "settings", element: <SettingsPage /> },
         { path: "opps", element: <OppListPage /> },
         { path: "opps/:slug", element: <OppWorkbenchPage /> },

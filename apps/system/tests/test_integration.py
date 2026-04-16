@@ -41,13 +41,13 @@ def test_overview_endpoint_with_real_plugin(authed_client):
     # Phases come as structured objects (name, display_name, ordinal, agent)
     assert len(data["phases"]) >= 4
     assert all("display_name" in p and "ordinal" in p for p in data["phases"])
-    # idea-to-idd is the first skill in the lifecycle (Phase 1, ordinal 1)
-    idd = next(s for s in data["skills"] if s["name"] == "idea-to-idd")
-    assert idd["ordinal"] == 1
-    assert idd["has_judge"] is True
-    assert idd["display_name"] == "Idea to IDD"
+    # idea-to-pdd is the first skill in the lifecycle (Phase 1, ordinal 1)
+    pdd = next(s for s in data["skills"] if s["name"] == "idea-to-pdd")
+    assert pdd["ordinal"] == 1
+    assert pdd["has_judge"] is True
+    assert pdd["display_name"] == "Idea to PDD"
     # Artifact relationships populated
-    assert any(a["path"] == "idd.md" for a in idd["artifacts_produced"])
+    assert any(a["path"] == "pdd.md" for a in pdd["artifacts_produced"])
     # Version info present
     assert data["plugin_version"] is not None
 
@@ -58,10 +58,10 @@ def test_overview_endpoint_with_real_plugin(authed_client):
 )
 @override_settings(ACE_PLUGIN_PATH=ACE_PLUGIN_PATH)
 def test_skill_detail_with_real_plugin(authed_client):
-    resp = authed_client.get("/api/system/skills/idea-to-idd")
+    resp = authed_client.get("/api/system/skills/idea-to-pdd")
     assert resp.status_code == 200
     data = resp.json()["data"]
-    assert data["name"] == "idea-to-idd"
+    assert data["name"] == "idea-to-pdd"
     # Full markdown body should be substantial
     assert len(data["body_markdown"]) > 500
     # Body should contain the Process section

@@ -41,7 +41,7 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: "All", value: "" },
 ];
 
-export default function LibraryPage() {
+export default function SessionsPage() {
   const navigate = useNavigate();
   const [data, setData] = useState<SessionListPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,7 +106,7 @@ export default function LibraryPage() {
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       <header className="flex items-center gap-4 border-b border-border px-6 py-3">
-        <h1 className="text-lg font-semibold">Library</h1>
+        <h1 className="text-lg font-semibold">Sessions</h1>
         {data && (
           <span className="text-sm text-muted-foreground">· {data.total} sessions</span>
         )}

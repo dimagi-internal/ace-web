@@ -59,7 +59,7 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
         })}
       </nav>
       <Link
-        to="/library"
+        to="/sessions"
         className="border-t border-border px-3 py-2 text-center text-xs text-muted-foreground hover:text-foreground"
       >
         View all sessions &rarr;
