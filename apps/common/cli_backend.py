@@ -124,9 +124,19 @@ class CLIBackend:
             await self._cleanup(proc)
 
         if proc.returncode != 0 or not had_events:
+            stderr_text = ""
+            if proc.stderr:
+                try:
+                    stderr_bytes = await asyncio.wait_for(proc.stderr.read(), timeout=2)
+                    stderr_text = stderr_bytes.decode("utf-8", errors="replace")[:2000]
+                except Exception:
+                    pass
+            if stderr_text:
+                logger.error("claude CLI stderr: %s", stderr_text)
             self._breaker.record_failure()
             raise CLIBackendError(
                 f"claude CLI failed (rc={proc.returncode}, events={had_events})"
+                + (f" stderr: {stderr_text[:500]}" if stderr_text else "")
             )
         self._breaker.record_success()
 
@@ -148,7 +158,7 @@ class CLIBackend:
             *full_args,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
             env=env,
         )
         try:
