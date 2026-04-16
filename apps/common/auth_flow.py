@@ -117,6 +117,23 @@ class _AuthSession:
         if self.master_fd is not None:
             os.write(self.master_fd, text.encode())
 
+    def send_code(self, code):
+        """Send an OAuth code to the PTY and press Enter.
+
+        The claude CLI runs a full-screen TUI in raw mode. Pasting all
+        chars + Enter in a single os.write works locally but on Linux
+        Docker the TUI sometimes swallows the trailing CR. Sending the
+        code first, pausing to let the TUI process the paste, then
+        sending Enter separately is more reliable.
+        """
+        if self.master_fd is None:
+            return
+        os.write(self.master_fd, code.encode())
+        time.sleep(0.3)
+        os.write(self.master_fd, b"\r")
+        time.sleep(0.3)
+        os.write(self.master_fd, b"\n")
+
     def cleanup(self):
         if self.process:
             try:
@@ -195,8 +212,8 @@ def complete(code=None):
             return token
 
     if code:
-        logger.info("auth_flow.complete: sending code (%d chars) + CR to PTY", len(code))
-        session.send(code + "\r")
+        logger.info("auth_flow.complete: sending code (%d chars) to PTY", len(code))
+        session.send_code(code)
 
     deadline = time.time() + COMPLETE_TIMEOUT_SECONDS
     logged_30s = False
