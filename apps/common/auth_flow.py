@@ -375,22 +375,33 @@ def validate_stored_token() -> bool:
     immediately.
     """
     token = get_stored_token()
+    logger.info(
+        "validate_stored_token: token_present=%s, looks_real=%s, prefix=%s",
+        bool(token), token_looks_real(token),
+        token[:15] + "..." if token else "None",
+    )
     if not token_looks_real(token):
         return False
 
     now = time.time()
+    cache_age = now - _validation_cache["checked_at"]
     if (
         _validation_cache["token"] == token
-        and now - _validation_cache["checked_at"] < _VALIDATION_CACHE_TTL
+        and cache_age < _VALIDATION_CACHE_TTL
     ):
+        logger.info(
+            "validate_stored_token: returning cached result=%s (age=%.0fs)",
+            _validation_cache["valid"], cache_age,
+        )
         return _validation_cache["valid"]
 
+    logger.info("validate_stored_token: cache miss, running CLI check")
     valid = _check_token_via_cli()
     _validation_cache.update(valid=valid, checked_at=now, token=token)
     if not valid:
-        logger.warning("validate_stored_token: token failed CLI check")
+        logger.warning("validate_stored_token: token FAILED CLI check")
     else:
-        logger.info("validate_stored_token: token passed CLI check")
+        logger.info("validate_stored_token: token PASSED CLI check")
     return valid
 
 
@@ -406,6 +417,12 @@ def _check_token_via_cli() -> bool:
     if claude_home:
         env["HOME"] = claude_home
 
+    has_oauth = "CLAUDE_CODE_OAUTH_TOKEN" in env
+    logger.info(
+        "CLI token check: CLAUDE_CODE_OAUTH_TOKEN in env=%s, HOME=%s",
+        has_oauth, env.get("HOME", "unset"),
+    )
+
     try:
         proc = subprocess.run(
             ["claude", "-p", "--verbose", "--output-format", "stream-json"],
@@ -415,11 +432,15 @@ def _check_token_via_cli() -> bool:
             timeout=30,
             env=env,
         )
+        logger.info(
+            "CLI token check: rc=%s, stdout_len=%d, stderr_len=%d",
+            proc.returncode, len(proc.stdout), len(proc.stderr),
+        )
         if proc.returncode == 0:
             return True
         logger.warning(
-            "CLI token check failed (rc=%s): stderr=%s",
-            proc.returncode, proc.stderr[:500],
+            "CLI token check failed (rc=%s): stderr=%s stdout=%s",
+            proc.returncode, proc.stderr[:500], proc.stdout[:500],
         )
         return False
     except subprocess.TimeoutExpired:
