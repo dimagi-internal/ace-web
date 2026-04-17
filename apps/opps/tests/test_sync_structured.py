@@ -78,3 +78,30 @@ def test_load_opp_unknown_slug_raises(client):
     ace_id = client.folder_id("ACE")
     with pytest.raises(FileNotFoundError, match="malaria-banana"):
         load_opp(client, ace_folder_id=ace_id, slug="malaria-banana")
+
+
+def test_delete_opp_folder_trashes_slug_folder(db):
+    tree = {
+        "ACE": {
+            "doomed": {"opp.yaml": "slug: doomed\ndisplay_name: Doomed\n"},
+            "alive": {"opp.yaml": "slug: alive\ndisplay_name: Alive\n"},
+        }
+    }
+    fake = FakeDriveClient.from_tree(tree)
+    ace_id = fake.folder_id("ACE")
+
+    from apps.opps.sync import delete_opp_folder
+    delete_opp_folder(fake, ace_folder_id=ace_id, slug="doomed")
+
+    remaining = {f.name for f in fake.list_files(ace_id)}
+    assert remaining == {"alive"}
+
+
+def test_delete_opp_folder_raises_on_missing(db):
+    tree = {"ACE": {"alive": {"opp.yaml": "slug: alive\n"}}}
+    fake = FakeDriveClient.from_tree(tree)
+    ace_id = fake.folder_id("ACE")
+
+    from apps.opps.sync import delete_opp_folder
+    with pytest.raises(FileNotFoundError):
+        delete_opp_folder(fake, ace_folder_id=ace_id, slug="ghost")
