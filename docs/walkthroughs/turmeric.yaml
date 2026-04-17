@@ -1,0 +1,58 @@
+name: "Turmeric Smoke Walkthrough"
+narrative: "Verify the ACE → Drive → ace-web flow against prod end-to-end"
+base_url: "https://labs.connect.dimagi.com/ace"
+
+# OAuth state is expected to be in the browse persistent profile.
+# If the first scene lands on OAuth login, the runner needs to re-auth.
+# No auth: block — we assume valid session cookies.
+
+personas:
+  runner:
+    name: "Smoke-Test Runner"
+    role: "Dimagi engineer validating a pre-release"
+    color: "#2563eb"
+    intro: "The runner has just executed turmeric_web_setup.py or turmeric_cli_setup.sh. The slug is in /tmp/turmeric-smoketest-slug.txt. Their job is to verify the opp renders correctly in ace-web. Cleanup is manual — the runner deletes the opp afterwards from the UI or from Google Drive directly."
+
+scenes:
+  - persona: runner
+    title: "Opp list shows Turmeric"
+    show: "Opp list at /opps shows a turmeric-smoketest-<timestamp> row at the top with a recent timestamp"
+    impressive_because: "The opp created by setup is visible to the current user right away — no stale cache."
+
+  - persona: runner
+    title: "Workbench loads"
+    show: "Navigate to /opps/<slug> (read slug from /tmp/turmeric-smoketest-slug.txt). Three-pane workbench renders: skills sidebar on the left, artifact main pane in the middle, chat panel on the right."
+    impressive_because: "Drive read-through works — the app is reading the Turmeric folder live from Drive."
+
+  - persona: runner
+    title: "Phase 1 — idea-to-pdd"
+    show: "Click idea-to-pdd in the skills sidebar. The main pane shows the step preview with non-empty artifact body."
+    impressive_because: "The seeded PDD flowed through: ace-web pulls it from Drive and previews it inline."
+    ai_quality: "Preview body should contain the Turmeric PDD text that was seeded at setup — not a generic placeholder."
+
+  - persona: runner
+    title: "Phase 1 — pdd artifact"
+    show: "Click the pdd artifact. Preview body contains the Turmeric PDD body verbatim."
+    impressive_because: "Idempotent round-trip: what went in via the setup script comes out in the workbench."
+    ai_quality: "Body must match the source PDD that turmeric_pdd_finder pulled from Drive."
+
+  - persona: runner
+    title: "Phase 2 — Learn app summary"
+    show: "Click pdd-to-learn-app in the sidebar. Preview renders with a non-empty body OR a clear placeholder indicating the step hasn't run yet."
+    impressive_because: "Graceful degradation — if the CLI path ran in --dry-run, some phases may be stubs and the UI shows that honestly."
+
+  - persona: runner
+    title: "Phase 4 — OCS agent config"
+    show: "Click ocs-agent-setup in the sidebar. Preview renders the OCS agent config artifact."
+    impressive_because: "Phases beyond 1 still render as artifacts when present."
+
+  - persona: runner
+    title: "Phase 6 — cycle grade"
+    show: "Click cycle-grade in the sidebar. Preview renders the closeout cycle-grade."
+    impressive_because: "End-of-lifecycle artifacts are visible."
+
+  - persona: runner
+    title: "Discuss in chat from pdd step"
+    show: "Click 'Discuss in chat' on the pdd step. A new chat tab opens with a seeded system message referencing pdd and the current slug."
+    impressive_because: "The opps → chat bridge works: step context is pulled from Drive and used to seed a fresh ace-web session."
+    ai_quality: "Seed message contains the skill name 'pdd' and the opp slug."

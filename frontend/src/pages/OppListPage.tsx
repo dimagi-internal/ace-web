@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 
 import { listOpps } from "../api/opps";
 import type { OppCard } from "../api/types";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
+import { DeleteOppDialog } from "../components/opps/DeleteOppDialog";
 import { NewOppDialog } from "../components/opps/NewOppDialog";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +18,7 @@ export default function OppListPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [filter, setFilter] = useState("");
   const [newDialogOpen, setNewDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<OppCard | null>(null);
 
   const load = () => {
     setState({ kind: "loading" });
@@ -60,6 +62,18 @@ export default function OppListPage() {
         </Button>
       </header>
       <NewOppDialog open={newDialogOpen} onOpenChange={setNewDialogOpen} />
+      {deleteTarget && (
+        <DeleteOppDialog
+          open={true}
+          onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}
+          slug={deleteTarget.slug}
+          displayName={deleteTarget.display_name}
+          onDeleted={() => {
+            setDeleteTarget(null);
+            load();
+          }}
+        />
+      )}
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -85,7 +99,21 @@ export default function OppListPage() {
                   </h2>
                   <div className="text-xs text-muted-foreground">{opp.slug}</div>
                 </div>
-                <StatusBadge status={opp.status} />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label={`Delete ${opp.slug}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDeleteTarget(opp);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                  <StatusBadge status={opp.status} />
+                </div>
               </div>
               {opp.current_step && (
                 <div className="mt-3 text-sm text-muted-foreground">

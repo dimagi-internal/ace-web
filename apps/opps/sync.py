@@ -403,3 +403,12 @@ def _load_flat_opp(
         ],
         current_run=run_detail,
     )
+
+
+def delete_opp_folder(client: DriveClient, *, ace_folder_id: str, slug: str) -> None:
+    """Trash the `ACE/<slug>/` folder. Raises FileNotFoundError if missing."""
+    for child in client.list_files(ace_folder_id):
+        if child.name == slug and child.mime_type == "application/vnd.google-apps.folder":
+            client.trash_folder(child.id)
+            return
+    raise FileNotFoundError(f"no opp folder named {slug!r} under ACE root")

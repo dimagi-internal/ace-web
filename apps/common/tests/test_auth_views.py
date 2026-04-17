@@ -23,7 +23,11 @@ def test_status_returns_authenticated_when_real_token_present(client, monkeypatc
         "CLAUDE_CODE_OAUTH_TOKEN",
         "sk-ant-oat01-" + "a" * 50,
     )
-    resp = client.get("/api/auth/cli/status")
+    # Mock the CLI subprocess check — in CI the `claude` binary isn't on
+    # PATH (and locally it would make a real API call with the fake token).
+    # This test covers the status endpoint's happy path, not the CLI shell-out.
+    with patch("apps.common.auth_flow._check_token_via_cli", return_value=True):
+        resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
     assert resp.json() == {"data": {"authenticated": True}, "error": None}
 

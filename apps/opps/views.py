@@ -25,7 +25,7 @@ from apps.opps.serializers import (
     serialize_run_detail,
     serialize_step_snapshot,
 )
-from apps.opps.sync import load_opp
+from apps.opps.sync import delete_opp_folder, load_opp
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
 
@@ -173,9 +173,40 @@ def opp_collection(request):
     return _opp_list_impl(request)
 
 
-@api_view(["GET"])
+def delete_opp(request, slug: str):
+    """Handle DELETE. Called from workbench() when request.method == 'DELETE'.
+    Not decorated with @api_view — workbench() carries the decorator."""
+    client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(client)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        delete_opp_folder(client, ace_folder_id=ace_folder_id, slug=slug)
+    except FileNotFoundError:
+        return Response(
+            error_response(f"no opp named {slug!r}", code="opp-not-found"),
+            status=404,
+        )
+
+    with transaction.atomic():
+        Session.objects.filter(opp_slug=slug).delete()
+        OppWorkspace.objects.filter(slug=slug).delete()
+
+    return Response(status=204)
+
+
+@api_view(["GET", "DELETE"])
 @permission_classes([AllowAny])  # Drive availability enforced via _require_drive
 def workbench(request, slug: str):
+    if request.method == "DELETE":
+        return delete_opp(request, slug)
+
     client, err = _require_drive(request)
     if err is not None:
         return err
