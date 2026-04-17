@@ -292,13 +292,27 @@ def store_token(token):
 
 
 def load_stored_token():
-    """Load persisted token from DB into env. Called at container boot."""
+    """Load persisted token from DB into env. Called at container boot.
+
+    The DB is the canonical store. If CLAUDE_CODE_OAUTH_TOKEN is set in the
+    environment (e.g. injected by a dev shell or one-off task) but the DB is
+    empty, backfill it so subsequent callers see a single source of truth.
+    """
     try:
         from .models import SystemConfig
         row = SystemConfig.objects.filter(key=_TOKEN_DB_KEY).first()
         if row and row.value:
             os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = row.value
             return row.value
+
+        env_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+        if env_token and token_looks_real(env_token):
+            logger.info("load_stored_token: backfilling injected env token into DB")
+            SystemConfig.objects.update_or_create(
+                key=_TOKEN_DB_KEY,
+                defaults={"value": env_token},
+            )
+            return env_token
     except Exception:
         logger.debug("Could not load token from DB (migrations may not have run)")
     return None
@@ -427,3 +441,8 @@ def _check_token_via_cli() -> bool:
     except FileNotFoundError:
         logger.warning("claude binary not found for token check")
         return False
+
+
+# Public canonical name. Both /api/auth/cli/status and the chat backend
+# selector call this so they never disagree on "is the CLI usable?".
+cli_is_ready = validate_stored_token
