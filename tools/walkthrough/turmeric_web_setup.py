@@ -50,13 +50,7 @@ def _ensure_profile_dir() -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--force-cleanup",
-        action="store_true",
-        help="Delete leftover turmeric-smoketest-* opps before creating a new one.",
-    )
-    args = parser.parse_args()
+    argparse.ArgumentParser().parse_args()  # accept --help; no flags today
 
     ace_root = getattr(settings, "ACE_DRIVE_ROOT_FOLDER_ID", "") or ""
     if not ace_root:
@@ -86,9 +80,6 @@ def main() -> int:
         )
         try:
             page = context.pages[0] if context.pages else context.new_page()
-
-            if args.force_cleanup:
-                _cleanup_leftovers(page)
 
             _log(f"navigating to {BASE_URL}/opps")
             page.goto(f"{BASE_URL}/opps", wait_until="networkidle")
@@ -120,19 +111,6 @@ def main() -> int:
             return 4
         finally:
             context.close()
-
-
-def _cleanup_leftovers(page) -> None:
-    _log("force-cleanup: deleting leftover turmeric-smoketest-* opps")
-    resp = page.request.get(f"{BASE_URL}/api/opps/")
-    if resp.status != 200:
-        _log(f"can't list opps for cleanup (status {resp.status}); skipping")
-        return
-    data = resp.json().get("data", [])
-    for card in data:
-        if card.get("slug", "").startswith("turmeric-smoketest-"):
-            _log(f"deleting leftover {card['slug']}")
-            page.request.delete(f"{BASE_URL}/api/opps/{card['slug']}")
 
 
 if __name__ == "__main__":

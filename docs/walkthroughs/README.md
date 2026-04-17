@@ -13,7 +13,11 @@ Plan: `docs/plans/2026-04-17-turmeric-smoke-walkthrough.md`.
 - Workbench renders three-pane layout.
 - Artifacts round-trip through Drive (PDD in, PDD out).
 - "Discuss in chat" seeds a new chat session.
-- Delete-opp teardown leaves Drive + DB clean.
+
+Cleanup is manual for now. After a run, delete the
+`turmeric-smoketest-<stamp>` opp from ace-web's `/opps` UI (trash icon on
+row hover). This also trashes the Drive folder. Opps accumulate otherwise
+— each run generates a new timestamped slug.
 
 ## Prerequisites
 
@@ -36,11 +40,9 @@ python tools/walkthrough/turmeric_web_setup.py
 
 `turmeric_web_setup.py` creates a `turmeric-smoketest-<YYYYMMDD-HHMM>` opp
 via the ace-web wizard, writes the slug to `/tmp/turmeric-smoketest-slug.txt`,
-and exits 0 on success.
-
-Flags:
-- `--force-cleanup` — delete any leftover `turmeric-smoketest-*` opps before
-  creating a new one. Use this when prior runs aborted mid-deck.
+and exits 0 on success. Each run uses a fresh timestamped slug, so re-runs
+don't collide — but leftover opps from prior runs accumulate in `/opps`
+until you delete them manually.
 
 ## CLI path
 
@@ -66,9 +68,9 @@ Inside a Claude Code session in the repo root:
 ```
 
 The skill reads `docs/walkthroughs/turmeric.yaml`, navigates through the
-nine scenes, scores each one, and writes the HTML deck to
-`screenshots/walkthroughs/turmeric.html`. The final scene tears down the
-opp via the new DELETE endpoint.
+eight verification scenes, scores each one, and writes the HTML deck to
+`screenshots/walkthroughs/turmeric.html`. The walkthrough does not delete
+the opp — clean up manually after reviewing the deck.
 
 ## Troubleshooting
 
@@ -79,10 +81,9 @@ opp via the new DELETE endpoint.
   `claude login` (or the Claude Code auth flow) and retry.
 - **`ace-upload: Config not found`:** run `ace-upload --configure` and paste
   a personal token from ace-web's Settings page.
-- **Leftover `turmeric-smoketest-*` opps:** either rerun setup with
-  `--force-cleanup` (web) or delete manually from the UI.
-- **Walkthrough scene 9 fails (delete button not found):** confirm the
-  delete-opp UI shipped in this plan's Tasks 7–8.
+- **Leftover `turmeric-smoketest-*` opps:** delete from `/opps` via the
+  trash icon on row hover, or delete the folder from Google Drive. Both
+  paths are recoverable via Drive trash for 30 days.
 
 ## When to run this
 

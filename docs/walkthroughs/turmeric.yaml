@@ -11,7 +11,7 @@ personas:
     name: "Smoke-Test Runner"
     role: "Dimagi engineer validating a pre-release"
     color: "#2563eb"
-    intro: "The runner has just executed turmeric_web_setup.py or turmeric_cli_setup.sh. The slug is in /tmp/turmeric-smoketest-slug.txt. Their job now is to verify the opp renders correctly in ace-web and then tear it down."
+    intro: "The runner has just executed turmeric_web_setup.py or turmeric_cli_setup.sh. The slug is in /tmp/turmeric-smoketest-slug.txt. Their job is to verify the opp renders correctly in ace-web. Cleanup is manual — the runner deletes the opp afterwards from the UI or from Google Drive directly."
 
 scenes:
   - persona: runner
@@ -56,8 +56,3 @@ scenes:
     show: "Click 'Discuss in chat' on the pdd step. A new chat tab opens with a seeded system message referencing pdd and the current slug."
     impressive_because: "The opps → chat bridge works: step context is pulled from Drive and used to seed a fresh ace-web session."
     ai_quality: "Seed message contains the skill name 'pdd' and the opp slug."
-
-  - persona: runner
-    title: "Teardown — delete the opp"
-    show: "Return to /opps. Hover the turmeric-smoketest row, click the trash icon, confirm the destructive dialog. The row disappears from the list; redirected (or stays) cleanly."
-    impressive_because: "The walkthrough cleans up after itself — the next smoke run starts from zero."
