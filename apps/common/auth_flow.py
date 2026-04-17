@@ -6,8 +6,9 @@ Flow:
   2. complete(code) — sends code to PTY, captures OAuth token, persists it
   3. poll() — check if auth completed via browser polling (no code needed)
 
-The resulting token is stored at TOKEN_FILE and exported as
-CLAUDE_CODE_OAUTH_TOKEN so the CLI backend picks it up automatically.
+The resulting token is stored in the database (SystemConfig) and exported
+as CLAUDE_CODE_OAUTH_TOKEN so the CLI backend picks it up automatically.
+DB storage survives container restarts and deploys without Secrets Manager.
 """
 import logging
 import os
@@ -20,19 +21,13 @@ import time
 
 logger = logging.getLogger(__name__)
 
-TOKEN_FILE = os.environ.get(
-    "ACE_CLAUDE_TOKEN_FILE", "/var/lib/ace-claude/oauth-token"
-)
-# If set, store_token() also pushes the token to AWS Secrets Manager so it
-# survives ECS task replacement. Value is a secret ARN or name.
-TOKEN_SECRET_ID = os.environ.get("ACE_CLAUDE_TOKEN_SECRET_ID")
-TOKEN_SECRET_REGION = os.environ.get("AWS_REGION", "us-east-1")
-
 # Deadlines for PTY interactions. The claude CLI makes network calls to
 # Anthropic before printing the URL and after the code is submitted; on
 # slow paths (ECS → internet) 15 s was too tight. Override via env for ops.
 START_TIMEOUT_SECONDS = int(os.environ.get("ACE_CLAUDE_AUTH_START_TIMEOUT", "60"))
 COMPLETE_TIMEOUT_SECONDS = int(os.environ.get("ACE_CLAUDE_AUTH_COMPLETE_TIMEOUT", "90"))
+
+_TOKEN_DB_KEY = "claude_oauth_token"
 
 _lock = threading.Lock()
 _session = None  # type: _AuthSession | None
@@ -279,57 +274,38 @@ def _cleanup_locked():
         _session = None
 
 
-# ── Token persistence ───────────────────────────────────────────────
+# ── Token persistence (DB-backed) ──────────────────────────────────
 
 def store_token(token):
-    """Persist token to disk, secrets manager (if configured), and env."""
+    """Persist token to DB and env. Survives deploys via Postgres."""
     _invalidate_validation_cache()
     try:
-        os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
-        with open(TOKEN_FILE, "w") as f:
-            f.write(token)
-        os.chmod(TOKEN_FILE, 0o600)
-    except OSError:
-        logger.debug("Could not persist token to %s", TOKEN_FILE)
+        from .models import SystemConfig
+        SystemConfig.objects.update_or_create(
+            key=_TOKEN_DB_KEY,
+            defaults={"value": token},
+        )
+    except Exception:
+        logger.exception("Failed to persist token to DB")
     os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
-    _push_token_to_secrets_manager(token)
-
-
-def _push_token_to_secrets_manager(token):
-    """Write token back to AWS Secrets Manager so it survives ECS task replacement.
-
-    No-op unless ACE_CLAUDE_TOKEN_SECRET_ID is set. Failures are logged but
-    never raise — disk+env persistence is the primary path; this is the
-    cross-deploy backup.
-    """
-    if not TOKEN_SECRET_ID:
-        return
-    try:
-        import boto3  # local import: only needed on AWS
-
-        client = boto3.client("secretsmanager", region_name=TOKEN_SECRET_REGION)
-        client.put_secret_value(SecretId=TOKEN_SECRET_ID, SecretString=token)
-        logger.info("Pushed Claude OAuth token to Secrets Manager (%s)", TOKEN_SECRET_ID)
-    except Exception as exc:
-        logger.warning("Failed to push token to Secrets Manager: %s", exc)
+    logger.info("store_token: saved to DB + env (prefix=%s)", token[:15])
 
 
 def load_stored_token():
-    """Load persisted token into env. Called at container boot."""
+    """Load persisted token from DB into env. Called at container boot."""
     try:
-        if os.path.exists(TOKEN_FILE):
-            with open(TOKEN_FILE) as f:
-                token = f.read().strip()
-            if token:
-                os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
-                return token
-    except OSError:
-        pass
+        from .models import SystemConfig
+        row = SystemConfig.objects.filter(key=_TOKEN_DB_KEY).first()
+        if row and row.value:
+            os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = row.value
+            return row.value
+    except Exception:
+        logger.debug("Could not load token from DB (migrations may not have run)")
     return None
 
 
 def get_stored_token():
-    """Return current token from env or disk."""
+    """Return current token from env or DB."""
     return os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or load_stored_token()
 
 

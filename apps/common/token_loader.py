@@ -15,9 +15,6 @@ logger = logging.getLogger(__name__)
 def load_at_boot() -> None:
     token = auth_flow.load_stored_token()
     if token:
-        logger.info("Loaded stored Claude OAuth token from %s", auth_flow.TOKEN_FILE)
+        logger.info("Loaded stored Claude OAuth token from DB")
     else:
-        logger.info(
-            "No stored Claude OAuth token at %s — visit /auth/cli to connect",
-            auth_flow.TOKEN_FILE,
-        )
+        logger.info("No stored Claude OAuth token in DB — visit /auth/cli to connect")
