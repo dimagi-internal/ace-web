@@ -32,50 +32,18 @@ from .opp_broadcast import maybe_emit_opp_updated
 
 logger = logging.getLogger(__name__)
 
-# Module-level singleton CLIBackend. Keep as a function so tests can patch it.
-_backend: CLIBackend | None = None
-
 _bg_tasks: set[asyncio.Task] = set()
 
 
 def _get_backend():
-    """Return the chat backend singleton.
+    """Select the chat backend via the shared selector.
 
-    Priority:
-    1. FakeCLIBackend if ACE_USE_FAKE_CLI_BACKEND is True (E2E tests)
-    2. CLIBackend if the CLI OAuth token is available
-    3. ApiBackend if ANTHROPIC_API_KEY is set (direct API fallback)
-    4. CLIBackend anyway (will fail with a clear error)
+    Thin wrapper so existing test suites that ``patch(...turn_driver._get_backend)``
+    keep working. See apps.common.backend_selector for the routing rules.
     """
-    from django.conf import settings
+    from apps.common.backend_selector import get_chat_backend
 
-    if getattr(settings, "ACE_USE_FAKE_CLI_BACKEND", False):
-        from apps.common.fake_cli_backend import FakeCLIBackend
-        return FakeCLIBackend()
-
-    global _backend
-    if _backend is not None:
-        return _backend
-
-    # Prefer CLI if we have a real-looking token. token_looks_real rejects
-    # the Secrets Manager bootstrap placeholder so we fall through to the
-    # API-key backend instead of invoking claude -p with a bogus token.
-    from apps.common.auth_flow import get_stored_token, token_looks_real
-    if token_looks_real(get_stored_token()):
-        _backend = CLIBackend()
-        return _backend
-
-    # Fall back to API if we have a key
-    api_key = getattr(settings, "ANTHROPIC_API_KEY", "") or ""
-    if api_key:
-        from apps.common.api_backend import ApiBackend
-        _backend = ApiBackend()
-        return _backend
-
-    # No token, no API key — return CLIBackend which will fail with a
-    # clear error message when used.
-    _backend = CLIBackend()
-    return _backend
+    return get_chat_backend()
 
 
 async def _iter_until_stop(

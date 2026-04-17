@@ -265,8 +265,8 @@ def test_get_backend_returns_real_when_setting_disabled(settings):
     from apps.sessions import turn_driver
 
     settings.ACE_USE_FAKE_CLI_BACKEND = False
-    # Reset the module-level singleton so the cached fake from the
-    # prior test doesn't leak.
-    turn_driver._backend = None
+    # With no CLI token and no API key, the selector picks CLIBackend as
+    # the dead-end fallback so the user sees a clear CLI error.
+    settings.ANTHROPIC_API_KEY = ""
     backend = turn_driver._get_backend()
     assert isinstance(backend, CLIBackend)

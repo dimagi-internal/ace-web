@@ -11,7 +11,7 @@ import logging
 from asgiref.sync import sync_to_async
 
 from apps.common.chat_backend import StreamEventType
-from apps.common.cli_backend import CLIBackend, CLIBackendError
+from apps.common.cli_backend import CLIBackendError
 
 from .models import Session
 
@@ -24,14 +24,11 @@ _TITLE_PROMPT = (
 )
 
 
-_backend: CLIBackend | None = None
+def _get_backend():
+    """Select backend via the shared selector so auto-title and chat agree."""
+    from apps.common.backend_selector import get_chat_backend
 
-
-def _get_backend() -> CLIBackend:
-    global _backend
-    if _backend is None:
-        _backend = CLIBackend()
-    return _backend
+    return get_chat_backend()
 
 
 async def generate_title_for_session(session: Session) -> None:

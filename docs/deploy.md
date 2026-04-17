@@ -93,61 +93,32 @@ SecretString and delivered to ECS as env var `ACE_DRIVE_SA_KEY_JSON`.
 
 **Rotation:** see `docs/learnings/drive-service-account.md`.
 
-### Claude CLI OAuth token secret
+### Claude CLI OAuth token
 
-`apps/common/auth_flow.py` writes the OAuth token produced by `claude setup-token`
-to disk at `/var/lib/ace-claude/oauth-token`. Because Fargate tasks have no
-persistent volume, every deploy (or task restart) wipes that file and forces a
-re-login at `/ace/auth/cli`. To make the token survive deploys we stash it in
-AWS Secrets Manager and inject it as the `CLAUDE_CODE_OAUTH_TOKEN` env var,
-which the CLI picks up automatically.
+`apps/common/auth_flow.py` persists the OAuth token from `claude setup-token`
+in Postgres (the shared RDS `ace_web` database) via the
+`ace_common_systemconfig` table — key `claude_oauth_token`. RDS is durable
+across ECS task replacements and deploys, so the token is captured once via
+`/ace/auth/cli` and survives indefinitely (~1-year OAuth token lifetime).
 
-**One-time setup:**
+There is **no** Secrets Manager entry and **no** on-disk token file. Nothing
+to create in AWS.
 
-1. Complete the OAuth flow once via `/ace/auth/cli` so you have a valid token
-   on disk in the running container (or capture one locally by running
-   `claude setup-token`).
-2. Create the secret (empty placeholder is fine — `auth_flow.store_token`
-   will overwrite it on the next successful re-auth):
-   ```bash
-   aws secretsmanager create-secret \
-     --region us-east-1 \
-     --name labs-jj-ace-web-claude-oauth-token \
-     --description "Claude CLI OAuth token for ace-web (sk-ant-oat…)" \
-     --secret-string "sk-ant-oat01-REPLACE-WITH-REAL-TOKEN"
-   ```
-3. Update `deploy/aws/task-definition.json` — the `CLAUDE_CODE_OAUTH_TOKEN`
-   entry in the `secrets` array uses a placeholder ARN ending in
-   `-claude-oauth-token-REPLACE`. Swap it for the real ARN:
-   ```bash
-   aws secretsmanager describe-secret \
-     --secret-id labs-jj-ace-web-claude-oauth-token \
-     --query ARN --output text
-   ```
-4. Grant the **task role** (not the execution role) permission to overwrite
-   the secret so re-auths via `/ace/auth/cli` persist:
-   ```bash
-   aws iam put-role-policy \
-     --role-name labs-jj-ecs-task-role \
-     --policy-name ace-web-claude-token-write \
-     --policy-document '{
-       "Version": "2012-10-17",
-       "Statement": [{
-         "Effect": "Allow",
-         "Action": ["secretsmanager:PutSecretValue"],
-         "Resource": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-claude-oauth-token-*"
-       }]
-     }'
-   ```
-   The execution role's existing `labs-jj-ace-web-*` wildcard already covers
-   `GetSecretValue` for task startup.
-5. Deploy. At container start the real token is injected into the env; on any
-   future re-auth through `/ace/auth/cli`, `store_token()` calls
-   `PutSecretValue` so the new token is what the *next* deploy picks up.
+**First-time setup:** log in at `https://labs.connect.dimagi.com/ace/auth/cli`
+and complete the CLI auth flow. The token lands in `SystemConfig` and is
+eager-loaded into `CLAUDE_CODE_OAUTH_TOKEN` the first time any chat code
+path runs.
 
-**Token lifetime:** Claude OAuth tokens last ~1 year. If the token gets
-revoked or expires, re-auth through `/ace/auth/cli` — the write-back keeps
-the secret fresh.
+**Bootstrapping from an existing token:** if you already have a token (e.g.
+from a local `claude setup-token` run) and want to seed the DB without going
+through the browser flow, set `CLAUDE_CODE_OAUTH_TOKEN` in the task
+environment once and restart the service — `load_stored_token()` detects the
+env-injected token and backfills it into the DB on first use. Afterwards you
+can remove the env var; the DB row is the source of truth.
+
+**Rotation:** re-auth through `/ace/auth/cli`. `store_token()` overwrites the
+DB row and invalidates the live-check cache so the new token is used
+immediately.
 
 ### ALB target-group stickiness
 
