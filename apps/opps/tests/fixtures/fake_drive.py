@@ -192,6 +192,19 @@ class FakeDriveClient(DriveClient):
         self._nodes_by_id[nid] = node
         return nid
 
+    def trash_folder(self, folder_id: str) -> None:
+        node = self._nodes_by_id.get(folder_id)
+        if node is None or node.parent_id is None:
+            return
+        parent = self._nodes_by_id[node.parent_id]
+        parent.children.pop(node.name, None)
+        # Recursively drop descendants from the id index so get_file 404s.
+        def _drop(n):
+            for child in list(n.children.values()):
+                _drop(child)
+            self._nodes_by_id.pop(n.id, None)
+        _drop(node)
+
 
 # --- Realistic fixture builders ---
 

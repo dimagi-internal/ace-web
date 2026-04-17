@@ -126,3 +126,17 @@ def test_get_drive_client_raises_on_missing_sa():
         mock_registry.get_credentials.side_effect = ServiceAccountNotFound("not found")
         with pytest.raises(ServiceAccountNotFound):
             get_drive_client()
+
+
+def test_fake_drive_trash_folder_removes_from_listings():
+    tree = {
+        "ACE": {
+            "doomed": {"opp.yaml": "slug: doomed"},
+            "alive": {"opp.yaml": "slug: alive"},
+        }
+    }
+    fake = FakeDriveClient.from_tree(tree)
+    doomed_id = fake.folder_id("ACE/doomed")
+    fake.trash_folder(doomed_id)
+    names = {f.name for f in fake.list_files(fake.folder_id("ACE"))}
+    assert names == {"alive"}

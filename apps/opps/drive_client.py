@@ -78,6 +78,13 @@ class DriveClient(ABC):
     ) -> str:
         """Copy a file to a new parent. Returns new file ID."""
 
+    @abstractmethod
+    def trash_folder(self, folder_id: str) -> None:
+        """Move a folder (and all descendants) to Drive trash.
+
+        Drive's native trash is 30-day recoverable. We do NOT permanently
+        delete — that would defeat accidental-deletion recovery."""
+
 
 class GoogleDriveClient(DriveClient):
     """Real Google Drive implementation. Requires authenticated credentials."""
@@ -215,6 +222,13 @@ class GoogleDriveClient(DriveClient):
             fileId=file_id, body=body, fields="id", supportsAllDrives=True
         ).execute()
         return resp["id"]
+
+    def trash_folder(self, folder_id: str) -> None:
+        self._service.files().update(
+            fileId=folder_id,
+            body={"trashed": True},
+            supportsAllDrives=True,
+        ).execute()
 
 
 class DriveServiceAccountNotConfigured(RuntimeError):
