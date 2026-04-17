@@ -78,6 +78,12 @@ export async function apiFetch<T>(
     }
   }
 
+  // 204 No Content — success with empty body. Callers that expect no data
+  // (e.g. DELETE endpoints) type T as void/undefined.
+  if (resp.status === 204) {
+    return undefined as T;
+  }
+
   let envelope: ApiEnvelope<T>;
   try {
     envelope = await resp.json();

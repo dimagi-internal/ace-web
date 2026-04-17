@@ -22,6 +22,12 @@ export function createOpp(payload: CreateOppPayload): Promise<CreateOppResponse>
   });
 }
 
+export function deleteOpp(slug: string): Promise<void> {
+  return request<void>(`/opps/${encodeURIComponent(slug)}`, {
+    method: "DELETE",
+  });
+}
+
 export function getOpp(slug: string, runId?: string): Promise<OppSnapshot> {
   const q = runId ? `?run_id=${encodeURIComponent(runId)}` : "";
   return request<OppSnapshot>(`/opps/${encodeURIComponent(slug)}${q}`);
