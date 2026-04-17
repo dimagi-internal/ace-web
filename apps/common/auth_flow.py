@@ -58,15 +58,51 @@ def _extract_url(raw):
     return m.group(1) if m else None
 
 
+def _read_token_from_credentials_file():
+    """Read the token the claude CLI wrote to its own credentials file.
+
+    After ``claude setup-token`` completes on Linux, the CLI persists the
+    token as JSON at ``$HOME/.claude/.credentials.json``::
+
+        {"claudeAiOauth": {"accessToken": "sk-ant-oat01-...", ...}}
+
+    Reading from that file is *the* canonical path: it avoids PTY encoding,
+    line-wrap, and over-capture issues entirely. Returns the token string
+    or None if the file is missing/unreadable.
+    """
+    import json
+    from django.conf import settings
+
+    claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
+    if not claude_home:
+        claude_home = os.environ.get("HOME", "")
+    path = os.path.join(claude_home, ".claude", ".credentials.json")
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError) as exc:
+        logger.info("credentials file read failed (%s): %s", path, exc)
+        return None
+    token = (data.get("claudeAiOauth") or {}).get("accessToken")
+    if token:
+        logger.info(
+            "credentials file: token found (path=%s, len=%d, prefix=%s)",
+            path, len(token), token[:15],
+        )
+    return token
+
+
 def _extract_token(raw):
-    # PTY lines wrap at the terminal width. ``\S`` in the capture doesn't
-    # match newlines, so a wrapped token would be silently truncated to
-    # ~terminal-width chars — still matches ``token_looks_real`` but fails
-    # auth with a 401 from Anthropic. Strip newlines/carriage-returns first
-    # (same fix ``_extract_url`` already applies) so the full token is
-    # captured regardless of how the CLI rendered it.
+    # Real Claude OAuth tokens are base64url after the ``sk-ant-oat`` prefix
+    # — ``[A-Za-z0-9_-]``. Match exactly that character class so the capture
+    # stops at the real token boundary regardless of what the CLI prints
+    # next (which is what the old ``\S+`` got wrong — after we stripped
+    # newlines to handle PTY wrap, ``\S+`` happily swallowed the "Add this
+    # to your shell..." text that followed the token on the next line,
+    # producing a 158-char blob that passed ``token_looks_real`` but
+    # Anthropic rejected with ``Invalid bearer token``).
     clean = _strip_ansi(raw).replace("\n", "").replace("\r", "")
-    m = re.search(r"(sk-ant-oat\S+)", clean)
+    m = re.search(r"(sk-ant-oat[A-Za-z0-9_-]+)", clean)
     return m.group(1) if m else None
 
 
@@ -86,6 +122,16 @@ class _AuthSession:
     def spawn(self):
         master, slave = pty.openpty()
         env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+        # CRITICAL: override HOME to match what CLIBackend uses. Without
+        # this, setup-token writes its credentials file to the process's
+        # default HOME (e.g. /home/app) while the later ``claude -p`` call
+        # looks in ACE_CLAUDE_HOME — so the file-based token handoff
+        # silently fails and we fall back to env-var tokens parsed from
+        # PTY output.
+        from django.conf import settings
+        claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
+        if claude_home:
+            env["HOME"] = claude_home
         self.process = subprocess.Popen(
             ["claude", "setup-token"],
             stdin=slave, stdout=slave, stderr=slave,
@@ -109,8 +155,23 @@ class _AuthSession:
                         self.buffer += text
                         if not self.url:
                             self.url = _extract_url(self.buffer)
+                        prev_token = self.token
                         if not self.token:
                             self.token = _extract_token(self.buffer)
+                            if self.token and not prev_token:
+                                # Log the 100 chars on either side of the
+                                # match so a bad extraction can be diagnosed
+                                # from prod logs without leaking more than
+                                # the already-present captured token.
+                                clean = _strip_ansi(self.buffer).replace(
+                                    "\n", "\\n"
+                                ).replace("\r", "\\r")
+                                idx = clean.find("sk-ant-oat")
+                                ctx = clean[max(0, idx - 100): idx + 400]
+                                logger.info(
+                                    "token extracted: len=%d buffer_ctx=%r",
+                                    len(self.token), ctx,
+                                )
             except OSError:
                 break
 
@@ -174,9 +235,10 @@ def start():
         with _lock:
             if session.token:
                 logger.info("auth_flow.start: instant token captured, session cleared")
-                store_token(session.token)
+                token = _read_token_from_credentials_file() or session.token
+                store_token(token)
                 _cleanup_locked()
-                return {"auth_url": None, "token": session.token, "status": "complete"}
+                return {"auth_url": None, "token": token, "status": "complete"}
             if session.url:
                 logger.info(
                     "auth_flow.start: URL captured, session still alive "
@@ -207,7 +269,7 @@ def complete(code=None):
         session = _session
         if session.token:
             logger.info("auth_flow.complete: token already captured before code sent")
-            token = session.token
+            token = _read_token_from_credentials_file() or session.token
             store_token(token)
             _cleanup_locked()
             return token
@@ -232,7 +294,7 @@ def complete(code=None):
         with _lock:
             if session.token:
                 logger.info("auth_flow.complete: token captured after %.1fs", elapsed)
-                token = session.token
+                token = _read_token_from_credentials_file() or session.token
                 store_token(token)
                 _cleanup_locked()
                 return token
@@ -257,7 +319,7 @@ def poll():
                 "authenticated": bool(get_stored_token()),
             }
         if _session.token:
-            token = _session.token
+            token = _read_token_from_credentials_file() or _session.token
             store_token(token)
             _cleanup_locked()
             return {"active": False, "authenticated": True}
