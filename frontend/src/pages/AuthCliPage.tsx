@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   cliAuthCancel,
@@ -74,9 +75,9 @@ export function AuthCliPage() {
           <div className="font-semibold">Claude CLI is connected</div>
           <p className="mt-1 text-sm">
             The server has a valid CLI OAuth token. You can{" "}
-            <a href="/chat" className="font-semibold underline">
+            <Link to="/chat" className="font-semibold underline">
               start chatting
-            </a>
+            </Link>
             .
           </p>
         </div>
@@ -175,9 +176,9 @@ export function AuthCliPage() {
       {phase === "complete" && (
         <div className="rounded border border-green-300 bg-green-50 p-4 text-green-900">
           Claude CLI is now connected. You can return to{" "}
-          <a href="/chat" className="font-semibold underline">
+          <Link to="/chat" className="font-semibold underline">
             the chat page
-          </a>
+          </Link>
           .
         </div>
       )}

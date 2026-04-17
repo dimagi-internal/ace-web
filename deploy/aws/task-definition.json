@@ -23,7 +23,6 @@
         {"name": "SECURE_SSL_REDIRECT", "value": "False"},
         {"name": "CSRF_TRUSTED_ORIGINS", "value": "https://labs.connect.dimagi.com"},
         {"name": "ACE_E2E_AUTH_TOKEN", "value": "GKE9bz1V04B_cWNOpkYBA1n3ILuXrNrfKputjEQ0gRI"},
-        {"name": "ACE_CLAUDE_TOKEN_SECRET_ID", "value": "labs-jj-ace-web-claude-oauth-token"},
         {"name": "AWS_REGION", "value": "us-east-1"}
       ],
       "secrets": [
@@ -33,8 +32,7 @@
         {"name": "CONNECT_OAUTH_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-id-jzsNCM"},
         {"name": "CONNECT_OAUTH_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-secret-kXQI9s"},
         {"name": "ACE_DRIVE_SA_KEY_JSON", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-drive-sa-key-json-lIHSY8"},
-        {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-anthropic-api-key-x6p0ij"},
-        {"name": "CLAUDE_CODE_OAUTH_TOKEN", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-claude-oauth-token-qvaVMq"}
+        {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-anthropic-api-key-x6p0ij"}
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

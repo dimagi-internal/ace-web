@@ -2,9 +2,7 @@
 exercise the public API and the regex helpers, not the actual claude binary.
 """
 import os
-import sys
-import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -23,25 +21,58 @@ def test_extract_token_finds_sk_ant_oat_token():
     assert token == "sk-ant-oat01-AbCdEfGhIjKlMnOp123456"
 
 
+def test_extract_token_joins_pty_wrapped_token():
+    """PTY output wraps at terminal width. The regex must re-join lines
+    before matching, otherwise a wrapped token is silently truncated and
+    Anthropic rejects it with 401 even though the prefix + length look OK.
+    """
+    wrapped = (
+        "sk-ant-oat01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+        "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\r\nCCC"
+    )
+    token = auth_flow._extract_token(wrapped)
+    assert token == (
+        "sk-ant-oat01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCC"
+    )
+
+
 def test_extract_returns_none_when_absent():
     assert auth_flow._extract_url("nothing here") is None
     assert auth_flow._extract_token("nothing here") is None
 
 
-def test_store_and_load_token(tmp_path, monkeypatch):
-    token_file = tmp_path / "oauth-token"
-    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
+@pytest.mark.django_db
+def test_store_and_load_token(monkeypatch):
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
 
     auth_flow.store_token("sk-ant-oat01-test")
-    assert token_file.read_text() == "sk-ant-oat01-test"
     assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-test"
-    assert oct(token_file.stat().st_mode)[-3:] == "600"
+
+    from apps.common.models import SystemConfig
+    row = SystemConfig.objects.get(key="claude_oauth_token")
+    assert row.value == "sk-ant-oat01-test"
 
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     loaded = auth_flow.load_stored_token()
     assert loaded == "sk-ant-oat01-test"
     assert os.environ["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-test"
+
+
+@pytest.mark.django_db
+def test_load_stored_token_backfills_env_to_db(monkeypatch):
+    """If CLAUDE_CODE_OAUTH_TOKEN is injected via env but DB is empty, load persists it."""
+    # token_looks_real requires ≥40 chars; use a realistic-length fake token.
+    injected = "sk-ant-oat01-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", injected)
+
+    from apps.common.models import SystemConfig
+    SystemConfig.objects.filter(key="claude_oauth_token").delete()
+
+    loaded = auth_flow.load_stored_token()
+    assert loaded == injected
+    row = SystemConfig.objects.get(key="claude_oauth_token")
+    assert row.value == injected
 
 
 def test_get_stored_token_prefers_env(monkeypatch):
@@ -73,59 +104,3 @@ def test_start_then_cancel_cleans_up(monkeypatch):
                 auth_flow.cancel()
 
 
-def test_store_token_pushes_to_secrets_manager_when_configured(tmp_path, monkeypatch):
-    token_file = tmp_path / "oauth-token"
-    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
-    monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", "my-secret")
-    monkeypatch.setattr(auth_flow, "TOKEN_SECRET_REGION", "us-east-1")
-
-    fake_client = MagicMock()
-    fake_boto3 = types.ModuleType("boto3")
-    fake_boto3.client = MagicMock(return_value=fake_client)
-    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
-
-    auth_flow.store_token("sk-ant-oat01-new")
-
-    fake_boto3.client.assert_called_once_with("secretsmanager", region_name="us-east-1")
-    fake_client.put_secret_value.assert_called_once_with(
-        SecretId="my-secret", SecretString="sk-ant-oat01-new"
-    )
-
-
-def test_store_token_skips_secrets_manager_when_not_configured(tmp_path, monkeypatch):
-    token_file = tmp_path / "oauth-token"
-    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
-    monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", None)
-
-    # If the code tried to import boto3 we'd want to notice — so fail-loud.
-    fake_boto3 = types.ModuleType("boto3")
-    fake_boto3.client = MagicMock(side_effect=AssertionError("should not be called"))
-    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
-
-    auth_flow.store_token("sk-ant-oat01-local")
-    fake_boto3.client.assert_not_called()
-
-
-def test_store_token_swallows_secrets_manager_errors(tmp_path, monkeypatch, caplog):
-    token_file = tmp_path / "oauth-token"
-    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
-    monkeypatch.setattr(auth_flow, "TOKEN_SECRET_ID", "my-secret")
-
-    fake_boto3 = types.ModuleType("boto3")
-    fake_boto3.client = MagicMock(side_effect=RuntimeError("no creds"))
-    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
-
-    auth_flow.store_token("sk-ant-oat01-raises")
-    assert token_file.read_text() == "sk-ant-oat01-raises"
-    assert "Failed to push token to Secrets Manager" in caplog.text
-
-
-def test_token_loader_loads_at_boot(tmp_path, monkeypatch):
-    from apps.common import token_loader
-    token_file = tmp_path / "oauth-token"
-    token_file.write_text("sk-ant-oat01-boot")
-    monkeypatch.setattr(auth_flow, "TOKEN_FILE", str(token_file))
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-
-    token_loader.load_at_boot()
-    assert os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") == "sk-ant-oat01-boot"
