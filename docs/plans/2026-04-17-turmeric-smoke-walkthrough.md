@@ -278,7 +278,7 @@ def test_delete_opp_success_returns_204(authed_client, authed_user):
     )
     with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
-        response = authed_client.delete("/api/opps/malaria-pilot/")
+        response = authed_client.delete("/api/opps/malaria-pilot")
 
     assert response.status_code == 204
     # Folder is gone from Drive.
@@ -292,14 +292,14 @@ def test_delete_opp_missing_returns_404(authed_client):
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
-        response = authed_client.delete("/api/opps/ghost/")
+        response = authed_client.delete("/api/opps/ghost")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "opp-not-found"
 
 
 def test_delete_opp_unauthenticated_returns_401():
     c = Client()
-    response = c.delete("/api/opps/malaria-pilot/")
+    response = c.delete("/api/opps/malaria-pilot")
     assert response.status_code == 401
 ```
 
@@ -311,17 +311,24 @@ pytest apps/opps/tests/test_delete.py -v
 
 Expected: all three FAIL (the DELETE route doesn't exist — returns 405 or similar).
 
-- [ ] **Step 3: Add the view**
+- [ ] **Step 3: Add the `delete_opp` helper and wire it into `workbench`**
 
-In `apps/opps/views.py`, add:
+URL convention: the existing `workbench` view is registered at `<slug:slug>` (no trailing slash) — see `apps/opps/urls.py` and how other tests hit `/api/opps/<slug>` without a trailing slash. The clean pattern is: extend the existing `workbench` view to accept both GET and DELETE, not add a separate URL.
+
+In `apps/opps/views.py`:
+
+1. Extend the imports from `apps.opps.sync`:
 
 ```python
 from apps.opps.sync import delete_opp_folder, load_opp
+```
 
+2. Add a plain (non-decorated) `delete_opp` function:
 
-@api_view(["DELETE"])
-@permission_classes([AllowAny])  # auth enforced inline via _require_drive
+```python
 def delete_opp(request, slug: str):
+    """Handle DELETE. Called from workbench() when request.method == 'DELETE'.
+    Not decorated with @api_view — workbench() carries the decorator."""
     client, err = _require_drive(request)
     if err is not None:
         return err
@@ -346,60 +353,25 @@ def delete_opp(request, slug: str):
     return Response(status=204)
 ```
 
-- [ ] **Step 4: Wire the route**
-
-In `apps/opps/urls.py`, add to `urlpatterns`:
-
-```python
-    path("<slug:slug>/", views.delete_opp, name="opps-delete"),
-```
-
-Place it **before** the existing `<slug:slug>` route that resolves to `workbench` — Django matches the first matching pattern, and the trailing slash distinguishes the DELETE path.
-
-Wait — look at existing routes. Both `workbench` (`<slug:slug>`) and the new `delete_opp` (`<slug:slug>/`) differ only by trailing slash. Django will treat them as distinct patterns. To avoid relying on the trailing slash, simply use the same path and let DRF dispatch on HTTP verb:
-
-Replace the existing `path("<slug:slug>", views.workbench, name="opps-workbench"),` line with:
+3. Modify the existing `workbench` view:
+   - Change the decorator from `@api_view(["GET"])` to `@api_view(["GET", "DELETE"])`.
+   - At the top of the function body (before the existing code), add the method branch:
 
 ```python
-    path("<slug:slug>", views.opp_resource, name="opps-resource"),
-```
-
-Then in `views.py`, add a thin dispatcher:
-
-```python
-@api_view(["GET", "DELETE"])
-@permission_classes([AllowAny])
-def opp_resource(request, slug: str):
     if request.method == "DELETE":
         return delete_opp(request, slug)
-    return workbench(request, slug)
 ```
 
-And remove the `@api_view` decorator from `delete_opp` (it's now called via `opp_resource`). Same for `workbench` — remove its `@api_view` so the decorator doesn't double-wrap.
+The rest of `workbench`'s body stays exactly as-is.
 
-Actually a cleaner approach: keep the existing `workbench` decorator, and make the new route separate. Django Router ordering matters: the MORE SPECIFIC route must come first. The current `<slug:slug>` route is too greedy. The clean fix:
+- [ ] **Step 4: No URL changes needed**
 
-1. Leave `workbench` as-is (still `@api_view(["GET"])`).
-2. Change its decorator to `@api_view(["GET", "DELETE"])`.
-3. Inside `workbench`, branch on method:
-
-```python
-@api_view(["GET", "DELETE"])
-@permission_classes([AllowAny])
-def workbench(request, slug: str):
-    if request.method == "DELETE":
-        return delete_opp(request, slug)
-    # ... existing GET body unchanged ...
-```
-
-And `delete_opp` becomes a plain function (no `@api_view`) because `workbench` already carries the decorator.
-
-Use this approach. Update Task 3 step 3 accordingly — `delete_opp` is a plain function, not `@api_view`-decorated.
+`apps/opps/urls.py` already routes `<slug:slug>` to `workbench`. The same URL now serves GET (workbench view) and DELETE (delete opp), dispatched inside the view.
 
 - [ ] **Step 5: Run tests — verify they pass**
 
 ```bash
-pytest apps/opps/tests/test_delete.py -v
+uv run pytest apps/opps/tests/test_delete.py -v
 ```
 
 Expected: all three PASS.
@@ -407,17 +379,19 @@ Expected: all three PASS.
 - [ ] **Step 6: Confirm other opps tests still pass**
 
 ```bash
-pytest apps/opps/ -v
+uv run pytest apps/opps/ -q
 ```
 
-Expected: no regressions.
+Expected: 131 passed (128 previous + 3 new). No regressions in `test_views_workbench.py` since we only added a method branch.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/opps/views.py apps/opps/urls.py apps/opps/tests/test_delete.py
-git commit -m "feat(opps): DELETE /api/opps/<slug>/ endpoint"
+git add apps/opps/views.py apps/opps/tests/test_delete.py
+git commit -m "feat(opps): DELETE /api/opps/<slug> endpoint"
 ```
+
+Note: no urls.py changes — the workbench view now serves both methods.
 
 ---
 
