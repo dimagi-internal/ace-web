@@ -23,8 +23,9 @@ def _tree_with_two_pdd_folders() -> dict:
 
 def test_finds_most_recently_modified_turmeric_pdd():
     fake = FakeDriveClient.from_tree(_tree_with_two_pdd_folders())
-    fake.set_modified_time("ACE/Program Design Docs (PDDs)/turmeric-v1.md", "2026-01-01T00:00:00Z")
-    fake.set_modified_time("ACE/Program Design Docs (PDDs)/turmeric-v2-updated.md", "2026-04-10T00:00:00Z")
+    pdd_dir = "ACE/Program Design Docs (PDDs)"
+    fake.set_modified_time(f"{pdd_dir}/turmeric-v1.md", "2026-01-01T00:00:00Z")
+    fake.set_modified_time(f"{pdd_dir}/turmeric-v2-updated.md", "2026-04-10T00:00:00Z")
 
     title, body = find_latest_turmeric_pdd(fake, ace_folder_id=fake.folder_id("ACE"))
     assert title == "turmeric-v2-updated.md"

@@ -73,6 +73,7 @@ if __name__ == "__main__":
     django.setup()
 
     from django.conf import settings
+
     from apps.opps.drive_client import get_drive_client
 
     parser = argparse.ArgumentParser()

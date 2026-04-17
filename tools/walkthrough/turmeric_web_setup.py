@@ -21,6 +21,7 @@ from pathlib import Path
 # Django bootstrap so we can use the Drive client via the PDD finder.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
 import django  # noqa: E402
+
 django.setup()
 
 from django.conf import settings  # noqa: E402

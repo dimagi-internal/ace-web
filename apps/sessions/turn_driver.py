@@ -25,7 +25,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.common.chat_backend import StreamEvent, StreamEventType
-from apps.common.cli_backend import CLIBackend, CLIBackendError
+from apps.common.cli_backend import CLIBackend, CLIBackendError  # noqa: F401
 
 from .models import Message, Session
 from .opp_broadcast import maybe_emit_opp_updated
