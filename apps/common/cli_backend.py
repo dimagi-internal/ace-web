@@ -93,7 +93,12 @@ class CLIBackend:
             finally:
                 await self._cleanup(proc)
 
-            if had_events and proc.returncode == 0:
+            if had_events:
+                if proc.returncode != 0:
+                    logger.warning(
+                        "claude CLI --resume exited %s but produced events — treating as success",
+                        proc.returncode,
+                    )
                 self._breaker.record_success()
                 return
 
@@ -123,7 +128,7 @@ class CLIBackend:
         finally:
             await self._cleanup(proc)
 
-        if proc.returncode != 0 or not had_events:
+        if not had_events:
             stderr_text = ""
             if proc.stderr:
                 try:
@@ -137,6 +142,11 @@ class CLIBackend:
             raise CLIBackendError(
                 f"claude CLI failed (rc={proc.returncode}, events={had_events})"
                 + (f" stderr: {stderr_text[:500]}" if stderr_text else "")
+            )
+        if proc.returncode != 0:
+            logger.warning(
+                "claude CLI exited %s but produced events — treating as success",
+                proc.returncode,
             )
         self._breaker.record_success()
 

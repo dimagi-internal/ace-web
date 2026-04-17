@@ -1,16 +1,8 @@
 name: Deploy to Labs (AWS)
 
-# Manual deployment workflow. Assumes the backend and frontend images
-# are already built and pushed to ECR by the auto-triggered
-# build-backend.yml / build-frontend.yml workflows. This workflow just
-# waits for any in-progress builds, runs migrations if requested,
-# registers a new task definition revision from the committed
-# deploy/aws/task-definition.json patched with the current git SHA,
-# and updates the ECS service.
-#
-# If a build is still running when this is triggered, it waits.
-# If no build has ever run, it can still deploy — the images in ECR may
-# be stale (built from an earlier commit), but the deploy itself succeeds.
+# Build images inline and deploy. Any branch works — no dependency on the
+# auto-build workflows. Docker registry caching makes code-only rebuilds
+# fast (~1-2 min). Hard cutover for speed (~10s downtime, fine for labs).
 
 on:
   workflow_dispatch:
@@ -37,71 +29,89 @@ env:
 permissions:
   id-token: write
   contents: read
-  actions: read  # needed so `gh run list/watch` can see build workflows
 
 jobs:
-  deploy:
-    name: Deploy to Fargate
+  build-backend:
+    name: Build Backend
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Wait for in-progress image builds
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Wait for any currently-running or queued build workflows to finish
-          # before deploying. This prevents deploying a stale :latest tag while
-          # the next one is still in flight.
-          for WF in "Build Backend Image" "Build Frontend Image"; do
-            RUNNING=$(gh run list \
-              --workflow="$WF" \
-              --status=in_progress \
-              --json databaseId \
-              --jq '.[0].databaseId' 2>/dev/null || true)
-            if [ -n "$RUNNING" ]; then
-              echo "$WF in progress (run $RUNNING), waiting..."
-              gh run watch "$RUNNING" --exit-status
-            fi
-            QUEUED=$(gh run list \
-              --workflow="$WF" \
-              --status=queued \
-              --json databaseId \
-              --jq '.[0].databaseId' 2>/dev/null || true)
-            if [ -n "$QUEUED" ]; then
-              echo "$WF queued (run $QUEUED), waiting..."
-              gh run watch "$QUEUED" --exit-status
-            fi
-          done
+      - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Verify both :latest image tags exist in ECR
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Resolve ACE plugin HEAD SHA
+        id: ace-ref
         run: |
-          for REPO in "${{ env.ECR_REPO_BACKEND }}" "${{ env.ECR_REPO_FRONTEND }}"; do
-            EXISTS=$(aws ecr list-images \
-              --repository-name "$REPO" \
-              --query "imageIds[?imageTag=='latest'].imageTag" \
-              --output text 2>&1) || true
-            if [ -z "$EXISTS" ] || [ "$EXISTS" = "None" ]; then
-              echo "::error::$REPO has no :latest tag. Trigger Build Backend/Frontend Image workflow manually first."
-              exit 1
-            fi
-            echo "✓ $REPO:latest found"
-          done
+          SHA=$(git ls-remote https://github.com/jjackson/ace.git main | awk '{print $1}')
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          provenance: false
+          build-args: |
+            ACE_REF=${{ steps.ace-ref.outputs.sha }}
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:latest
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:buildcache
+          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:buildcache,mode=max
+
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.frontend
+          push: true
+          provenance: false
+          build-args: |
+            VITE_BASE_PATH=/ace/
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:latest
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:buildcache
+          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:buildcache,mode=max
+
+  deploy:
+    name: Deploy to Fargate
+    needs: [build-backend, build-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Register new task definition revision
         id: register-task
         run: |
-          # Patch the committed task-definition.json with :latest image URIs.
-          # Using :latest (not :sha) because the build workflows push :latest
-          # on every change — deploy just points the task def at whatever
-          # :latest currently is.
           jq --arg backend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:latest" \
              --arg frontend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:latest" \
              '(.containerDefinitions[] | select(.name=="api") | .image) = $backend |
@@ -154,19 +164,31 @@ jobs:
             exit 1
           fi
 
-      - name: Update ECS service
+      - name: Deploy (hard cutover)
         run: |
+          # Stop existing tasks for instant cutover (~10s downtime).
+          # Acceptable for internal tool; avoids 2-3 min rolling-update wait.
+          echo "Stopping old tasks..."
+          TASK_ARNS=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service-name ${{ env.ECS_SERVICE }} \
+            --query 'taskArns[]' \
+            --output text 2>/dev/null) || true
+          if [ -n "$TASK_ARNS" ] && [ "$TASK_ARNS" != "None" ]; then
+            for TASK in $TASK_ARNS; do
+              aws ecs stop-task --cluster ${{ env.ECS_CLUSTER }} --task "$TASK" --output text > /dev/null 2>&1 || true
+            done
+          fi
+
+          echo "Forcing new deployment..."
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE }} \
             --task-definition ${{ steps.register-task.outputs.task-def-arn }} \
+            --force-new-deployment \
             --output text > /dev/null
 
-      - name: Wait for service to stabilize
-        run: |
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }}
+          echo "Deploy triggered. New tasks starting (~30s to healthy)."
 
       - name: Deployment summary
         run: |
@@ -174,6 +196,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Ref | \`${{ github.ref_name }}\` @ \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Task definition | \`${{ steps.register-task.outputs.task-def-arn }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Migrations run   | \`${{ inputs.run_migrations }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Service          | \`${{ env.ECS_SERVICE }}\` |" >> "$GITHUB_STEP_SUMMARY"

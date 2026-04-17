@@ -136,8 +136,27 @@ export function useSessionSocket(slug: string): UseSessionSocketResult {
           // here. Task 12's ChatPage can re-fetch via listMessages if
           // needed for the tool render.
           return prev;
-        case "draft.updated":
-          return { ...prev, active_draft: frame.data as Draft };
+        case "draft.updated": {
+          const incoming = frame.data as Draft;
+          // If we're the current editor, keep our local body — the server
+          // echo is stale relative to keystrokes that happened since the
+          // debounced send. Only accept metadata (version, last_editor, etc).
+          if (
+            prev.active_draft &&
+            incoming.last_editor === prev.current_user_id
+          ) {
+            return {
+              ...prev,
+              active_draft: {
+                ...prev.active_draft,
+                version: incoming.version,
+                last_editor: incoming.last_editor,
+                last_edit_at: incoming.last_edit_at,
+              },
+            };
+          }
+          return { ...prev, active_draft: incoming };
+        }
         case "draft.lock_changed":
           if (prev.active_draft && prev.active_draft.id === frame.data.draft_id) {
             return {

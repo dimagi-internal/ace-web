@@ -28,8 +28,8 @@ def cli_auth_status(request: Request) -> Response:
     # so the SendBox doesn't disable itself.
     if getattr(settings, "ACE_USE_FAKE_CLI_BACKEND", False):
         return Response(success_response({"authenticated": True}))
-    token = auth_flow.get_stored_token()
-    return Response(success_response({"authenticated": auth_flow.token_looks_real(token)}))
+    authenticated = auth_flow.validate_stored_token()
+    return Response(success_response({"authenticated": authenticated}))
 
 
 @api_view(["POST"])

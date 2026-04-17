@@ -6,8 +6,9 @@ Flow:
   2. complete(code) — sends code to PTY, captures OAuth token, persists it
   3. poll() — check if auth completed via browser polling (no code needed)
 
-The resulting token is stored at TOKEN_FILE and exported as
-CLAUDE_CODE_OAUTH_TOKEN so the CLI backend picks it up automatically.
+The resulting token is stored in the database (SystemConfig) and exported
+as CLAUDE_CODE_OAUTH_TOKEN so the CLI backend picks it up automatically.
+DB storage survives container restarts and deploys without Secrets Manager.
 """
 import logging
 import os
@@ -20,19 +21,13 @@ import time
 
 logger = logging.getLogger(__name__)
 
-TOKEN_FILE = os.environ.get(
-    "ACE_CLAUDE_TOKEN_FILE", "/var/lib/ace-claude/oauth-token"
-)
-# If set, store_token() also pushes the token to AWS Secrets Manager so it
-# survives ECS task replacement. Value is a secret ARN or name.
-TOKEN_SECRET_ID = os.environ.get("ACE_CLAUDE_TOKEN_SECRET_ID")
-TOKEN_SECRET_REGION = os.environ.get("AWS_REGION", "us-east-1")
-
 # Deadlines for PTY interactions. The claude CLI makes network calls to
 # Anthropic before printing the URL and after the code is submitted; on
 # slow paths (ECS → internet) 15 s was too tight. Override via env for ops.
 START_TIMEOUT_SECONDS = int(os.environ.get("ACE_CLAUDE_AUTH_START_TIMEOUT", "60"))
 COMPLETE_TIMEOUT_SECONDS = int(os.environ.get("ACE_CLAUDE_AUTH_COMPLETE_TIMEOUT", "90"))
+
+_TOKEN_DB_KEY = "claude_oauth_token"
 
 _lock = threading.Lock()
 _session = None  # type: _AuthSession | None
@@ -279,56 +274,38 @@ def _cleanup_locked():
         _session = None
 
 
-# ── Token persistence ───────────────────────────────────────────────
+# ── Token persistence (DB-backed) ──────────────────────────────────
 
 def store_token(token):
-    """Persist token to disk, secrets manager (if configured), and env."""
+    """Persist token to DB and env. Survives deploys via Postgres."""
+    _invalidate_validation_cache()
     try:
-        os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
-        with open(TOKEN_FILE, "w") as f:
-            f.write(token)
-        os.chmod(TOKEN_FILE, 0o600)
-    except OSError:
-        logger.debug("Could not persist token to %s", TOKEN_FILE)
+        from .models import SystemConfig
+        SystemConfig.objects.update_or_create(
+            key=_TOKEN_DB_KEY,
+            defaults={"value": token},
+        )
+    except Exception:
+        logger.exception("Failed to persist token to DB")
     os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
-    _push_token_to_secrets_manager(token)
-
-
-def _push_token_to_secrets_manager(token):
-    """Write token back to AWS Secrets Manager so it survives ECS task replacement.
-
-    No-op unless ACE_CLAUDE_TOKEN_SECRET_ID is set. Failures are logged but
-    never raise — disk+env persistence is the primary path; this is the
-    cross-deploy backup.
-    """
-    if not TOKEN_SECRET_ID:
-        return
-    try:
-        import boto3  # local import: only needed on AWS
-
-        client = boto3.client("secretsmanager", region_name=TOKEN_SECRET_REGION)
-        client.put_secret_value(SecretId=TOKEN_SECRET_ID, SecretString=token)
-        logger.info("Pushed Claude OAuth token to Secrets Manager (%s)", TOKEN_SECRET_ID)
-    except Exception as exc:
-        logger.warning("Failed to push token to Secrets Manager: %s", exc)
+    logger.info("store_token: saved to DB + env (prefix=%s)", token[:15])
 
 
 def load_stored_token():
-    """Load persisted token into env. Called at container boot."""
+    """Load persisted token from DB into env. Called at container boot."""
     try:
-        if os.path.exists(TOKEN_FILE):
-            with open(TOKEN_FILE) as f:
-                token = f.read().strip()
-            if token:
-                os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
-                return token
-    except OSError:
-        pass
+        from .models import SystemConfig
+        row = SystemConfig.objects.filter(key=_TOKEN_DB_KEY).first()
+        if row and row.value:
+            os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = row.value
+            return row.value
+    except Exception:
+        logger.debug("Could not load token from DB (migrations may not have run)")
     return None
 
 
 def get_stored_token():
-    """Return current token from env or disk."""
+    """Return current token from env or DB."""
     return os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or load_stored_token()
 
 
@@ -349,3 +326,104 @@ def token_looks_real(token):
     if "placeholder" in token.lower():
         return False
     return True
+
+
+# ── Live token validation (cached) ────────────────────────────────
+
+# Cache TTL: how long a successful validation is trusted before re-checking.
+_VALIDATION_CACHE_TTL = float(os.environ.get("ACE_TOKEN_VALIDATION_TTL", "300"))
+
+_validation_cache: dict = {"valid": False, "checked_at": 0.0, "token": ""}
+
+
+def _invalidate_validation_cache():
+    """Clear the cache so the next status check re-validates."""
+    _validation_cache["checked_at"] = 0.0
+    _validation_cache["token"] = ""
+
+
+def validate_stored_token() -> bool:
+    """Return True only if the stored token passes a live CLI check.
+
+    Runs ``claude -p "ok"`` as a subprocess — same auth path as real chat.
+    Results are cached for ``_VALIDATION_CACHE_TTL`` seconds (default 5 min).
+    ``store_token()`` invalidates the cache so a fresh auth is re-validated
+    immediately.
+    """
+    token = get_stored_token()
+    logger.info(
+        "validate_stored_token: token_present=%s, looks_real=%s, prefix=%s",
+        bool(token), token_looks_real(token),
+        token[:15] + "..." if token else "None",
+    )
+    if not token_looks_real(token):
+        return False
+
+    now = time.time()
+    cache_age = now - _validation_cache["checked_at"]
+    if (
+        _validation_cache["token"] == token
+        and cache_age < _VALIDATION_CACHE_TTL
+    ):
+        logger.info(
+            "validate_stored_token: returning cached result=%s (age=%.0fs)",
+            _validation_cache["valid"], cache_age,
+        )
+        return _validation_cache["valid"]
+
+    logger.info("validate_stored_token: cache miss, running CLI check")
+    valid = _check_token_via_cli()
+    _validation_cache.update(valid=valid, checked_at=now, token=token)
+    if not valid:
+        logger.warning("validate_stored_token: token FAILED CLI check")
+    else:
+        logger.info("validate_stored_token: token PASSED CLI check")
+    return valid
+
+
+def _check_token_via_cli() -> bool:
+    """Run a minimal ``claude -p`` invocation to verify the token works.
+
+    Uses the same env and binary as CLIBackend so the result is
+    authoritative for real chat. Costs one trivial API call (~10 tokens).
+
+    Success criterion: the CLI emits a ``{"type":"system","subtype":"init"``
+    event, which proves the token authenticated and a session was created.
+    The exit code is NOT reliable — the CLI may exit 1 even after a
+    successful auth + response if, e.g., a tool call fails internally.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    from django.conf import settings
+    claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
+    if claude_home:
+        env["HOME"] = claude_home
+
+    try:
+        proc = subprocess.run(
+            ["claude", "-p", "--verbose", "--output-format", "stream-json"],
+            input="respond with ok",
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+        # The init event proves the token authenticated successfully.
+        got_init = '"subtype":"init"' in proc.stdout
+        logger.info(
+            "CLI token check: rc=%s, got_init=%s, stdout_len=%d",
+            proc.returncode, got_init, len(proc.stdout),
+        )
+        if got_init:
+            return True
+        # No init event — likely auth failure. Log the tail for debugging.
+        logger.warning(
+            "CLI token check: no init event (rc=%s): stderr=%s stdout_tail=%s",
+            proc.returncode, proc.stderr[:500], proc.stdout[-500:],
+        )
+        return False
+    except subprocess.TimeoutExpired:
+        logger.warning("CLI token check timed out after 30s")
+        return False
+    except FileNotFoundError:
+        logger.warning("claude binary not found for token check")
+        return False
