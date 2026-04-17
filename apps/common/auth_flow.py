@@ -59,7 +59,13 @@ def _extract_url(raw):
 
 
 def _extract_token(raw):
-    clean = _strip_ansi(raw)
+    # PTY lines wrap at the terminal width. ``\S`` in the capture doesn't
+    # match newlines, so a wrapped token would be silently truncated to
+    # ~terminal-width chars — still matches ``token_looks_real`` but fails
+    # auth with a 401 from Anthropic. Strip newlines/carriage-returns first
+    # (same fix ``_extract_url`` already applies) so the full token is
+    # captured regardless of how the CLI rendered it.
+    clean = _strip_ansi(raw).replace("\n", "").replace("\r", "")
     m = re.search(r"(sk-ant-oat\S+)", clean)
     return m.group(1) if m else None
 
@@ -288,7 +294,10 @@ def store_token(token):
     except Exception:
         logger.exception("Failed to persist token to DB")
     os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
-    logger.info("store_token: saved to DB + env (prefix=%s)", token[:15])
+    logger.info(
+        "store_token: saved to DB + env (prefix=%s, len=%d)",
+        token[:15], len(token),
+    )
 
 
 def load_stored_token():
@@ -401,10 +410,13 @@ def _check_token_via_cli() -> bool:
     Uses the same env and binary as CLIBackend so the result is
     authoritative for real chat. Costs one trivial API call (~10 tokens).
 
-    Success criterion: the CLI emits a ``{"type":"system","subtype":"init"``
-    event, which proves the token authenticated and a session was created.
-    The exit code is NOT reliable — the CLI may exit 1 even after a
-    successful auth + response if, e.g., a tool call fails internally.
+    Success criterion: the CLI emits a terminal ``result`` event with
+    ``subtype=="success"``. The init event alone is NOT enough — on a bad
+    token the CLI still prints init (session created locally), then calls
+    Anthropic, gets 401, emits an assistant message containing the error
+    text, and ends with ``result.subtype`` of ``error_during_execution``
+    (or similar). The exit code is also unreliable — the CLI frequently
+    exits 1 even on successful runs when internal tool calls warn.
     """
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     from django.conf import settings
@@ -421,18 +433,27 @@ def _check_token_via_cli() -> bool:
             timeout=30,
             env=env,
         )
-        # The init event proves the token authenticated successfully.
         got_init = '"subtype":"init"' in proc.stdout
-        logger.info(
-            "CLI token check: rc=%s, got_init=%s, stdout_len=%d",
-            proc.returncode, got_init, len(proc.stdout),
+        got_success = '"subtype":"success"' in proc.stdout
+        saw_auth_error = any(
+            marker in proc.stdout
+            for marker in (
+                "authentication_error",
+                "Invalid bearer token",
+                "API Error: 401",
+            )
         )
-        if got_init:
+        logger.info(
+            "CLI token check: rc=%s got_init=%s got_success=%s "
+            "auth_error=%s stdout_len=%d",
+            proc.returncode, got_init, got_success, saw_auth_error,
+            len(proc.stdout),
+        )
+        if got_success and not saw_auth_error:
             return True
-        # No init event — likely auth failure. Log the tail for debugging.
         logger.warning(
-            "CLI token check: no init event (rc=%s): stderr=%s stdout_tail=%s",
-            proc.returncode, proc.stderr[:500], proc.stdout[-500:],
+            "CLI token check FAILED: stderr=%s stdout_tail=%s",
+            proc.stderr[:500], proc.stdout[-1000:],
         )
         return False
     except subprocess.TimeoutExpired:

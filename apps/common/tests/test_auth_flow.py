@@ -21,6 +21,22 @@ def test_extract_token_finds_sk_ant_oat_token():
     assert token == "sk-ant-oat01-AbCdEfGhIjKlMnOp123456"
 
 
+def test_extract_token_joins_pty_wrapped_token():
+    """PTY output wraps at terminal width. The regex must re-join lines
+    before matching, otherwise a wrapped token is silently truncated and
+    Anthropic rejects it with 401 even though the prefix + length look OK.
+    """
+    wrapped = (
+        "sk-ant-oat01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+        "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\r\nCCC"
+    )
+    token = auth_flow._extract_token(wrapped)
+    assert token == (
+        "sk-ant-oat01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCC"
+    )
+
+
 def test_extract_returns_none_when_absent():
     assert auth_flow._extract_url("nothing here") is None
     assert auth_flow._extract_token("nothing here") is None
