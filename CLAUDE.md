@@ -116,6 +116,7 @@ The `opps` module adds **no ORM tables** — it reads through to Google Drive.
 ## Key architectural decisions
 
 - **Auth**: CommCare Connect OAuth with PKCE, `@dimagi.com` email filter enforced at the callback. Hand-rolled session-based flow ported from connect-labs (NOT django-allauth). Implementation in `apps/auth/oauth_views.py` + `apps/auth/oauth.py`. Tenant-unique session cookies (`sessionid_ace`, `csrftoken_ace`) and path-scoped (`/ace/`) to avoid collisions with scout on the shared `labs.connect.dimagi.com` host. `AUTH_USER_MODEL = "ace_auth.User"`; the `google_sub` field is a legacy no-op kept to avoid a schema migration.
+- **Automation auth on labs — `/auth/e2e-login/`**: token-gated endpoint for scripted tools (walkthroughs, smoke tests, CI harnesses). POST `{"email": "ace@dimagi-ai.com", "token": "<ACE_E2E_AUTH_TOKEN>"}` → session cookie. Bypasses OAuth; the `ace@dimagi-ai.com` bot identity is the canonical automation user. Implementation in `apps/auth/e2e_login_views.py`. The URL only registers when `ACE_E2E_AUTH_TOKEN` is non-empty; value lives in `deploy/aws/task-definition.json` (and AWS Secrets Manager for rotation). Distinct from the dev-only `ACE_ALLOW_TEST_LOGIN` / `/auth/test-login/` flow, which requires `DEBUG=True` and never registers on prod. **Use this — not personal tokens — for any scripted ace-web API access.**
 - **Response envelope**: Every JSON response uses `{data, error}` via
   `apps.common.envelope.success_response` / `error_response`. See
   `docs/learnings/api-envelope-convention.md`.

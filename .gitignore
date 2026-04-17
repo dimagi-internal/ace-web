@@ -28,6 +28,9 @@ node_modules/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
 .DS_Store
+
+# Test / automation scratch state
+.ace-claude-home/
 .env
 .env.local
 

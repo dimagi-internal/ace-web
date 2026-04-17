@@ -21,14 +21,17 @@ row hover). This also trashes the Drive folder. Opps accumulate otherwise
 
 ## Prerequisites
 
-- Logged-in Dimagi Google identity in a browser (for Drive + ace-web OAuth).
-- `~/.ace/config.toml` with the `ace-upload` personal token and server URL.
-  Generate the token from ace-web's Settings page.
+- `ACE_E2E_AUTH_TOKEN` exported in the shell (value in
+  `deploy/aws/task-definition.json`). This is the labs-prod automation
+  token — it lets the setup scripts authenticate as `ace@dimagi-ai.com`
+  via `/auth/e2e-login/` without touching OAuth or per-user personal tokens.
+  See the "Automation auth on labs" bullet in the repo's CLAUDE.md.
+- Turmeric PDD body at `/tmp/turmeric-smoketest/pdd.txt`. Easiest: ask
+  the ACE plugin's Drive MCP for the latest file in the `Program Design
+  Docs (PDDs)` folder under the ACE Drive root and redirect to that path.
 - `claude` CLI on PATH and authenticated (CLI path only).
-- `uv sync --extra walkthrough` to install Python Playwright (web path only).
-- Persistent Playwright profile at `~/.ace/playwright-profile/`. First run of
-  `turmeric_web_setup.py` opens a visible browser — complete OAuth there;
-  subsequent runs reuse the cookies.
+- `uv sync --extra walkthrough` to install Python Playwright (optional;
+  the CLI path doesn't need it).
 
 ## Web path
 
@@ -47,14 +50,23 @@ until you delete them manually.
 ## CLI path
 
 ```bash
+export ACE_E2E_AUTH_TOKEN="<value from deploy/aws/task-definition.json>"
 bash tools/walkthrough/turmeric_cli_setup.sh
 # then in Claude Code:
 /walkthrough turmeric
 ```
 
-The CLI setup script creates the opp via the API, runs
-`claude -p "/ace:run <slug> --dry-run --mode auto"`, captures the JSONL
-transcript, and uploads it with `ace-upload`.
+The CLI setup script:
+1. POSTs `/auth/e2e-login/` as `ace@dimagi-ai.com` → session cookie in
+   `/tmp/turmeric-smoketest/cookies.txt`
+2. POSTs `/api/opps/` with the PDD body to create a fresh
+   `turmeric-smoketest-<YYYYMMDD-HHMM>` opp
+3. Runs `claude -p "/ace:run <slug> --dry-run --mode auto"` and writes
+   the JSONL transcript
+4. Uploads the transcript to `/api/ingest/upload` via the same session
+   cookie (no personal token, no `ace-upload` CLI required)
+5. Polls `/api/opps/<slug>` until Drive sync completes and writes the
+   slug to `/tmp/turmeric-smoketest/slug.txt`
 
 **Cost note:** `/ace:run --dry-run` still burns LLM tokens for the
 orchestrator's planning + per-step dispatch. Budget a few dollars per run.
@@ -74,13 +86,16 @@ the opp — clean up manually after reviewing the deck.
 
 ## Troubleshooting
 
-- **First Playwright run asks for OAuth:** complete login in the visible
-  browser window and let it close. The persistent profile now has cookies
-  for subsequent runs.
+- **`ACE_E2E_AUTH_TOKEN not set`:** copy the value from
+  `deploy/aws/task-definition.json` (or pull it from AWS Secrets Manager
+  when rotated) and `export` it in your shell before invoking the script.
+- **`e2e-login returned 403`:** the token you exported doesn't match the
+  one deployed to labs — check for stale copies, spaces, or newlines.
+- **`e2e-login returned 404`:** either the URL prefix is wrong
+  (`$ACE_WEB_BASE_URL` should include `/ace`) or labs was redeployed
+  with `ACE_E2E_AUTH_TOKEN` empty, which de-registers the route.
 - **`/ace:run` hangs:** the Claude CLI session may have lost auth. Run
   `claude login` (or the Claude Code auth flow) and retry.
-- **`ace-upload: Config not found`:** run `ace-upload --configure` and paste
-  a personal token from ace-web's Settings page.
 - **Leftover `turmeric-smoketest-*` opps:** delete from `/opps` via the
   trash icon on row hover, or delete the folder from Google Drive. Both
   paths are recoverable via Drive trash for 30 days.

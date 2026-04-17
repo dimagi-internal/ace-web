@@ -2,9 +2,16 @@ name: "Turmeric Smoke Walkthrough"
 narrative: "Verify the ACE → Drive → ace-web flow against prod end-to-end"
 base_url: "https://labs.connect.dimagi.com/ace"
 
-# OAuth state is expected to be in the browse persistent profile.
-# If the first scene lands on OAuth login, the runner needs to re-auth.
-# No auth: block — we assume valid session cookies.
+# Auth via the /auth/e2e-login/ endpoint as ace@dimagi-ai.com — the
+# canonical bot identity for automation (see CLAUDE.md). The login script
+# POSTs to e2e-login with ACE_E2E_AUTH_TOKEN, captures the session cookie,
+# and stashes it in the browse-side cookie jar that the walkthrough skill
+# injects before the first scene. No OAuth round-trip, no personal tokens.
+auth:
+  type: command
+  check: "bash tools/walkthrough/turmeric_auth_check.sh"
+  login: "bash tools/walkthrough/turmeric_auth_login.sh"
+  inject_url: "/"
 
 personas:
   runner:
