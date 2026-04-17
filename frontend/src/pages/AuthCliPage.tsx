@@ -40,8 +40,20 @@ export function AuthCliPage() {
     setError(null);
     try {
       await cliAuthComplete(code);
-      setPhase("complete");
-      await cliAuthStatus();
+      // Don't trust "we captured a token" — the token may be truncated
+      // (PTY line-wrap) or otherwise invalid. Verify with a live CLI check
+      // against Anthropic via /api/auth/cli/status before showing green.
+      const status = await cliAuthStatus();
+      if (status.authenticated) {
+        setPhase("complete");
+      } else {
+        setError(
+          "The token was captured but failed a live check against Anthropic. " +
+          "Try the flow again — if this keeps happening, check the server " +
+          "logs for auth_flow store_token output.",
+        );
+        setPhase("error");
+      }
     } catch (e) {
       const msg = String(e);
       if (msg.includes("No active auth flow") || msg.includes("start() first")) {
