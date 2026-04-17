@@ -31,9 +31,21 @@ permissions:
   contents: read
 
 jobs:
+  guard:
+    name: Enforce main-only deploys
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check ref is refs/heads/main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::Deploys must run from main. Got ref=${{ github.ref }}. Merge to main first, then re-run this workflow with branch=main."
+            exit 1
+          fi
+
   build-backend:
     name: Build Backend
     runs-on: ubuntu-latest
+    needs: guard
     steps:
       - uses: actions/checkout@v4
 
@@ -70,6 +82,7 @@ jobs:
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
+    needs: guard
     steps:
       - uses: actions/checkout@v4
 
