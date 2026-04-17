@@ -410,18 +410,17 @@ def _check_token_via_cli() -> bool:
 
     Uses the same env and binary as CLIBackend so the result is
     authoritative for real chat. Costs one trivial API call (~10 tokens).
+
+    Success criterion: the CLI emits a ``{"type":"system","subtype":"init"``
+    event, which proves the token authenticated and a session was created.
+    The exit code is NOT reliable — the CLI may exit 1 even after a
+    successful auth + response if, e.g., a tool call fails internally.
     """
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     from django.conf import settings
     claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
     if claude_home:
         env["HOME"] = claude_home
-
-    has_oauth = "CLAUDE_CODE_OAUTH_TOKEN" in env
-    logger.info(
-        "CLI token check: CLAUDE_CODE_OAUTH_TOKEN in env=%s, HOME=%s",
-        has_oauth, env.get("HOME", "unset"),
-    )
 
     try:
         proc = subprocess.run(
@@ -432,15 +431,18 @@ def _check_token_via_cli() -> bool:
             timeout=30,
             env=env,
         )
+        # The init event proves the token authenticated successfully.
+        got_init = '"subtype":"init"' in proc.stdout
         logger.info(
-            "CLI token check: rc=%s, stdout_len=%d, stderr_len=%d",
-            proc.returncode, len(proc.stdout), len(proc.stderr),
+            "CLI token check: rc=%s, got_init=%s, stdout_len=%d",
+            proc.returncode, got_init, len(proc.stdout),
         )
-        if proc.returncode == 0:
+        if got_init:
             return True
+        # No init event — likely auth failure. Log the tail for debugging.
         logger.warning(
-            "CLI token check failed (rc=%s): stderr=%s stdout_tail=%s",
-            proc.returncode, proc.stderr[:500], proc.stdout[-1000:],
+            "CLI token check: no init event (rc=%s): stderr=%s stdout_tail=%s",
+            proc.returncode, proc.stderr[:500], proc.stdout[-500:],
         )
         return False
     except subprocess.TimeoutExpired:
