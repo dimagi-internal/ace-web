@@ -44,6 +44,13 @@ jobs:
     name: Deploy to Fargate
     runs-on: ubuntu-latest
     steps:
+      - name: Enforce main-only deploys
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::Deploys must run from main. Got ref=${{ github.ref }}. Merge to main first, then re-run this workflow with branch=main."
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@v4
 
