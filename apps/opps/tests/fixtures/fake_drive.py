@@ -37,6 +37,7 @@ class _Node:
     parent_id: str | None
     mime_type: str               # "application/vnd.google-apps.folder" for folders
     body: str | None = None      # None for folders
+    modified_time: str | None = None
     children: dict[str, _Node] = field(default_factory=dict)  # name -> node
 
 
@@ -98,6 +99,11 @@ class FakeDriveClient(DriveClient):
             node = node.children[part]
         return node.id
 
+    def set_modified_time(self, path: str, iso_timestamp: str) -> None:
+        """Set modified_time on a file-by-path, for test ordering setups."""
+        node = self._nodes_by_id[self.folder_id(path)]
+        node.modified_time = iso_timestamp
+
     # --- DriveClient interface ---
 
     def list_files(
@@ -118,11 +124,13 @@ class FakeDriveClient(DriveClient):
                     results.append(DriveFile(
                         id=child.id, name=name, mime_type=child.mime_type,
                         web_view_link=f"https://fake/{child.id}", path=child_path,
+                        modified_time=child.modified_time,
                     ))
             else:
                 results.append(DriveFile(
                     id=child.id, name=name, mime_type=child.mime_type,
                     web_view_link=f"https://fake/{child.id}", path=child_path,
+                    modified_time=child.modified_time,
                 ))
 
     def get_file(self, file_id: str) -> DriveFile:
@@ -130,6 +138,7 @@ class FakeDriveClient(DriveClient):
         return DriveFile(
             id=node.id, name=node.name, mime_type=node.mime_type,
             web_view_link=f"https://fake/{node.id}", path=node.name,
+            modified_time=node.modified_time,
         )
 
     def get_content(self, file_id: str, mime_type: str) -> FileContent:
