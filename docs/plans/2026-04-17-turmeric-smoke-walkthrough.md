@@ -46,92 +46,18 @@ frontend/src/components/opps/WorkbenchHeader.tsx  # Add delete menu item
 
 ---
 
-## Task 1: `trash_folder` on the DriveClient ABC + GoogleDriveClient
+## Task 1: `trash_folder` on DriveClient (ABC + Google + Fake + test)
+
+**Rationale for merge:** The original plan split this into Task 1 (ABC + Google + mock test) and Task 2 (Fake + test). The codebase convention (per `apps/opps/tests/test_drive_client.py`'s docstring) is to NOT unit-test `GoogleDriveClient` directly — it's validated indirectly via `FakeDriveClient`-backed tests and integration. Splitting the tasks also means Task 1's commit leaves `FakeDriveClient` without `trash_folder`, which breaks instantiation of the fake in every existing test. Merging avoids both problems.
 
 **Files:**
 - Modify: `apps/opps/drive_client.py`
-- Test: `apps/opps/tests/test_drive_client_writes.py` (additions)
-
-- [ ] **Step 1: Write the failing test**
-
-Add to `apps/opps/tests/test_drive_client_writes.py`:
-
-```python
-def test_trash_folder_marks_item_trashed(mock_drive_service):
-    client = GoogleDriveClient.__new__(GoogleDriveClient)
-    client._service = mock_drive_service
-    mock_drive_service.files().update.return_value.execute.return_value = {"id": "abc123"}
-
-    client.trash_folder("abc123")
-
-    mock_drive_service.files().update.assert_called_with(
-        fileId="abc123",
-        body={"trashed": True},
-        supportsAllDrives=True,
-    )
-```
-
-If there's no `mock_drive_service` fixture in the existing file, reuse whatever mock pattern the sibling tests (e.g. `test_drive_client_writes.py::test_upload_file`) use. Match it exactly.
-
-- [ ] **Step 2: Run test to verify it fails**
-
-```bash
-pytest apps/opps/tests/test_drive_client_writes.py::test_trash_folder_marks_item_trashed -v
-```
-
-Expected: FAIL with `AttributeError: 'GoogleDriveClient' object has no attribute 'trash_folder'`.
-
-- [ ] **Step 3: Add abstract method to `DriveClient`**
-
-In `apps/opps/drive_client.py`, immediately after `copy_file`'s `@abstractmethod` block:
-
-```python
-    @abstractmethod
-    def trash_folder(self, folder_id: str) -> None:
-        """Move a folder (and all descendants) to Drive trash.
-
-        Drive's native trash is 30-day recoverable. We do NOT permanently
-        delete — that would defeat accidental-deletion recovery."""
-```
-
-- [ ] **Step 4: Implement `GoogleDriveClient.trash_folder`**
-
-Add after `copy_file`:
-
-```python
-    def trash_folder(self, folder_id: str) -> None:
-        self._service.files().update(
-            fileId=folder_id,
-            body={"trashed": True},
-            supportsAllDrives=True,
-        ).execute()
-```
-
-- [ ] **Step 5: Run test to verify it passes**
-
-```bash
-pytest apps/opps/tests/test_drive_client_writes.py::test_trash_folder_marks_item_trashed -v
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add apps/opps/drive_client.py apps/opps/tests/test_drive_client_writes.py
-git commit -m "feat(opps): add trash_folder to DriveClient"
-```
-
----
-
-## Task 2: `FakeDriveClient.trash_folder`
-
-**Files:**
 - Modify: `apps/opps/tests/fixtures/fake_drive.py`
+- Test: `apps/opps/tests/test_drive_client.py` (additions)
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `apps/opps/tests/fixtures/fake_drive.py` the following test in a new `__main__`-style docstring, OR create a smoke test in `apps/opps/tests/test_drive_client.py`:
+Add to `apps/opps/tests/test_drive_client.py`:
 
 ```python
 def test_fake_drive_trash_folder_removes_from_listings():
@@ -154,9 +80,37 @@ def test_fake_drive_trash_folder_removes_from_listings():
 pytest apps/opps/tests/test_drive_client.py::test_fake_drive_trash_folder_removes_from_listings -v
 ```
 
-Expected: FAIL (`AttributeError: 'FakeDriveClient' object has no attribute 'trash_folder'`).
+Expected: FAIL. Initial failure is likely `TypeError: Can't instantiate abstract class ... with abstract method trash_folder` (once you add the ABC method in Step 3), or `AttributeError: 'FakeDriveClient' object has no attribute 'trash_folder'` before that.
 
-- [ ] **Step 3: Implement on FakeDriveClient**
+- [ ] **Step 3: Add abstract method to `DriveClient`**
+
+In `apps/opps/drive_client.py`, immediately after `copy_file`'s `@abstractmethod` block:
+
+```python
+    @abstractmethod
+    def trash_folder(self, folder_id: str) -> None:
+        """Move a folder (and all descendants) to Drive trash.
+
+        Drive's native trash is 30-day recoverable. We do NOT permanently
+        delete — that would defeat accidental-deletion recovery."""
+```
+
+- [ ] **Step 4: Implement `GoogleDriveClient.trash_folder`**
+
+Add after `GoogleDriveClient.copy_file`:
+
+```python
+    def trash_folder(self, folder_id: str) -> None:
+        self._service.files().update(
+            fileId=folder_id,
+            body={"trashed": True},
+            supportsAllDrives=True,
+        ).execute()
+```
+
+No dedicated unit test — per codebase convention.
+
+- [ ] **Step 5: Implement `FakeDriveClient.trash_folder`**
 
 In `apps/opps/tests/fixtures/fake_drive.py`, add this method to `FakeDriveClient`:
 
@@ -175,20 +129,27 @@ In `apps/opps/tests/fixtures/fake_drive.py`, add this method to `FakeDriveClient
         _drop(node)
 ```
 
-- [ ] **Step 4: Run test**
+- [ ] **Step 6: Run tests — verify the new test passes and no regressions**
 
 ```bash
 pytest apps/opps/tests/test_drive_client.py::test_fake_drive_trash_folder_removes_from_listings -v
+pytest apps/opps/ -v
 ```
 
-Expected: PASS.
+Expected: the new test PASSES. Full opps suite also passes — adding an ABC method doesn't break existing tests because FakeDriveClient now has the implementation.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add apps/opps/tests/fixtures/fake_drive.py apps/opps/tests/test_drive_client.py
-git commit -m "test(opps): add trash_folder to FakeDriveClient"
+git add apps/opps/drive_client.py apps/opps/tests/fixtures/fake_drive.py apps/opps/tests/test_drive_client.py
+git commit -m "feat(opps): add trash_folder to DriveClient"
 ```
+
+---
+
+## Task 2: (merged into Task 1 — skipped)
+
+The original plan split the ABC/Google changes from the FakeDriveClient changes. They're merged into Task 1. No action required for this task — advance to Task 3.
 
 ---
 
