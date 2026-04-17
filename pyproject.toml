@@ -30,6 +30,9 @@ dev = [
     "ruff>=0.5",
     "ipython",
 ]
+walkthrough = [
+    "playwright>=1.40",
+]
 
 # setuptools cannot auto-discover the package layout because the repo has
 # multiple top-level directories (apps/, config/, frontend/, staticfiles/).
