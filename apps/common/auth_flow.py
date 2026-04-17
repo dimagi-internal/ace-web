@@ -439,8 +439,8 @@ def _check_token_via_cli() -> bool:
         if proc.returncode == 0:
             return True
         logger.warning(
-            "CLI token check failed (rc=%s): stderr=%s stdout=%s",
-            proc.returncode, proc.stderr[:500], proc.stdout[:500],
+            "CLI token check failed (rc=%s): stderr=%s stdout_tail=%s",
+            proc.returncode, proc.stderr[:500], proc.stdout[-1000:],
         )
         return False
     except subprocess.TimeoutExpired:
