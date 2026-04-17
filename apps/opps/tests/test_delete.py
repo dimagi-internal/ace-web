@@ -5,6 +5,7 @@ import pytest
 from django.test import Client
 
 from apps.auth.models import User
+from apps.opps.models import OppWorkspace
 from apps.opps.tests.fixtures.fake_drive import (
     FakeDriveClient,
     malaria_pilot_structured_tree,
@@ -32,6 +33,12 @@ def test_delete_opp_success_returns_204(authed_client, authed_user):
         owner=authed_user, title="linked", backend_kind="cli",
         status="active", source="web", opp_slug="malaria-pilot",
     )
+    # Seed a matching OppWorkspace so we can assert cascade delete.
+    OppWorkspace.objects.create(
+        slug="malaria-pilot",
+        display_name="Malaria Pilot",
+        created_by=authed_user,
+    )
     with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
         response = authed_client.delete("/api/opps/malaria-pilot")
@@ -41,6 +48,8 @@ def test_delete_opp_success_returns_204(authed_client, authed_user):
     assert "malaria-pilot" not in {f.name for f in fake.list_files(ace_id)}
     # Linked session is deleted.
     assert Session.objects.filter(opp_slug="malaria-pilot").count() == 0
+    # OppWorkspace is deleted.
+    assert OppWorkspace.objects.filter(slug="malaria-pilot").count() == 0
 
 
 def test_delete_opp_missing_returns_404(authed_client):

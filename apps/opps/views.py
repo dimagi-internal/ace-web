@@ -196,6 +196,7 @@ def delete_opp(request, slug: str):
 
     with transaction.atomic():
         Session.objects.filter(opp_slug=slug).delete()
+        OppWorkspace.objects.filter(slug=slug).delete()
 
     return Response(status=204)
 
