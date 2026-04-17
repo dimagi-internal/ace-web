@@ -367,12 +367,12 @@ def _invalidate_validation_cache():
 
 
 def validate_stored_token() -> bool:
-    """Return True only if the stored token passes a live API check.
+    """Return True only if the stored token passes a live CLI check.
 
-    Uses the Anthropic count-tokens endpoint — no generation cost, fast
-    round-trip, same auth path the CLI uses. Results are cached for
-    ``_VALIDATION_CACHE_TTL`` seconds (default 5 min). ``store_token()``
-    invalidates the cache so a fresh auth is re-validated immediately.
+    Runs ``claude -p "ok"`` as a subprocess — same auth path as real chat.
+    Results are cached for ``_VALIDATION_CACHE_TTL`` seconds (default 5 min).
+    ``store_token()`` invalidates the cache so a fresh auth is re-validated
+    immediately.
     """
     token = get_stored_token()
     if not token_looks_real(token):
@@ -385,45 +385,46 @@ def validate_stored_token() -> bool:
     ):
         return _validation_cache["valid"]
 
-    valid = _check_token_against_api(token)
+    valid = _check_token_via_cli()
     _validation_cache.update(valid=valid, checked_at=now, token=token)
     if not valid:
-        logger.warning("validate_stored_token: token failed live API check")
+        logger.warning("validate_stored_token: token failed CLI check")
     else:
-        logger.info("validate_stored_token: token passed live API check")
+        logger.info("validate_stored_token: token passed CLI check")
     return valid
 
 
-def _check_token_against_api(token: str) -> bool:
-    """Hit the Anthropic count-tokens endpoint to verify the token is accepted.
+def _check_token_via_cli() -> bool:
+    """Run a minimal ``claude -p`` invocation to verify the token works.
 
-    Returns True on 200, False on 401/403 (invalid token), and False on
-    network errors (we can't confirm validity — safer to report not-connected
-    than to show a false green).
+    Uses the same env and binary as CLIBackend so the result is
+    authoritative for real chat. Costs one trivial API call (~10 tokens).
     """
-    import httpx
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    from django.conf import settings
+    claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
+    if claude_home:
+        env["HOME"] = claude_home
 
     try:
-        resp = httpx.post(
-            "https://api.anthropic.com/v1/messages/count_tokens",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "messages": [{"role": "user", "content": "hi"}],
-            },
-            timeout=10,
+        proc = subprocess.run(
+            ["claude", "-p", "--verbose", "--output-format", "stream-json"],
+            input="respond with ok",
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
         )
-        if resp.status_code == 200:
+        if proc.returncode == 0:
             return True
         logger.warning(
-            "Token validation returned %s: %s",
-            resp.status_code, resp.text[:300],
+            "CLI token check failed (rc=%s): stderr=%s",
+            proc.returncode, proc.stderr[:500],
         )
         return False
-    except httpx.HTTPError as exc:
-        logger.warning("Token validation network error: %s", exc)
+    except subprocess.TimeoutExpired:
+        logger.warning("CLI token check timed out after 30s")
+        return False
+    except FileNotFoundError:
+        logger.warning("claude binary not found for token check")
         return False
