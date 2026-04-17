@@ -37,6 +37,42 @@ def test_extract_token_joins_pty_wrapped_token():
     )
 
 
+def test_extract_token_stops_at_non_base64url_char():
+    """Charset restriction to [A-Za-z0-9_-] stops capture at non-token
+    punctuation/whitespace. Known limitation: when the next line also
+    begins with alphanumerics ("Add this to..." after newline-strip), the
+    regex still over-captures. That case is handled by preferring the
+    CLI's own credentials file over regex extraction — see
+    ``_read_token_from_credentials_file``.
+    """
+    raw = "sk-ant-oat01-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_ saved!"
+    token = auth_flow._extract_token(raw)
+    assert token == "sk-ant-oat01-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_"
+
+
+def test_read_token_from_credentials_file(tmp_path, monkeypatch):
+    """Canonical source: CLI writes to $HOME/.claude/.credentials.json.
+    Reading it directly avoids all PTY-parsing fragility.
+    """
+    import json
+    claude_home = tmp_path / "home"
+    (claude_home / ".claude").mkdir(parents=True)
+    (claude_home / ".claude" / ".credentials.json").write_text(
+        json.dumps({"claudeAiOauth": {"accessToken": "sk-ant-oat01-fromfile"}})
+    )
+    from django.test import override_settings
+    with override_settings(ACE_CLAUDE_HOME=str(claude_home)):
+        assert auth_flow._read_token_from_credentials_file() == (
+            "sk-ant-oat01-fromfile"
+        )
+
+
+def test_read_token_from_credentials_file_returns_none_when_absent(tmp_path):
+    from django.test import override_settings
+    with override_settings(ACE_CLAUDE_HOME=str(tmp_path)):
+        assert auth_flow._read_token_from_credentials_file() is None
+
+
 def test_extract_returns_none_when_absent():
     assert auth_flow._extract_url("nothing here") is None
     assert auth_flow._extract_token("nothing here") is None
