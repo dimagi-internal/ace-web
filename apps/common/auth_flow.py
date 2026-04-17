@@ -283,6 +283,7 @@ def _cleanup_locked():
 
 def store_token(token):
     """Persist token to disk, secrets manager (if configured), and env."""
+    _invalidate_validation_cache()
     try:
         os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
         with open(TOKEN_FILE, "w") as f:
@@ -349,3 +350,80 @@ def token_looks_real(token):
     if "placeholder" in token.lower():
         return False
     return True
+
+
+# ── Live token validation (cached) ────────────────────────────────
+
+# Cache TTL: how long a successful validation is trusted before re-checking.
+_VALIDATION_CACHE_TTL = float(os.environ.get("ACE_TOKEN_VALIDATION_TTL", "300"))
+
+_validation_cache: dict = {"valid": False, "checked_at": 0.0, "token": ""}
+
+
+def _invalidate_validation_cache():
+    """Clear the cache so the next status check re-validates."""
+    _validation_cache["checked_at"] = 0.0
+    _validation_cache["token"] = ""
+
+
+def validate_stored_token() -> bool:
+    """Return True only if the stored token passes a live API check.
+
+    Uses the Anthropic count-tokens endpoint — no generation cost, fast
+    round-trip, same auth path the CLI uses. Results are cached for
+    ``_VALIDATION_CACHE_TTL`` seconds (default 5 min). ``store_token()``
+    invalidates the cache so a fresh auth is re-validated immediately.
+    """
+    token = get_stored_token()
+    if not token_looks_real(token):
+        return False
+
+    now = time.time()
+    if (
+        _validation_cache["token"] == token
+        and now - _validation_cache["checked_at"] < _VALIDATION_CACHE_TTL
+    ):
+        return _validation_cache["valid"]
+
+    valid = _check_token_against_api(token)
+    _validation_cache.update(valid=valid, checked_at=now, token=token)
+    if not valid:
+        logger.warning("validate_stored_token: token failed live API check")
+    else:
+        logger.info("validate_stored_token: token passed live API check")
+    return valid
+
+
+def _check_token_against_api(token: str) -> bool:
+    """Hit the Anthropic count-tokens endpoint to verify the token is accepted.
+
+    Returns True on 200, False on 401/403 (invalid token), and False on
+    network errors (we can't confirm validity — safer to report not-connected
+    than to show a false green).
+    """
+    import httpx
+
+    try:
+        resp = httpx.post(
+            "https://api.anthropic.com/v1/messages/count_tokens",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return True
+        logger.warning(
+            "Token validation returned %s: %s",
+            resp.status_code, resp.text[:300],
+        )
+        return False
+    except httpx.HTTPError as exc:
+        logger.warning("Token validation network error: %s", exc)
+        return False
