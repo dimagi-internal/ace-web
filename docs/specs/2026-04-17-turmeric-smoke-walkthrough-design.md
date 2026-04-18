@@ -227,14 +227,17 @@ the web-setup path goes through the wizard only.
 
 ### 6.1. Credentials required on the runner's machine
 
-- Dimagi Google login in a browser (for Drive, ace-web OAuth).
-- `~/.ace/config.toml` with the `ace-upload` personal token. Token
-  created from ace-web's Settings page, scoped to the logged-in user.
+- `ACE_E2E_AUTH_TOKEN` exported in the shell. Value lives in
+  `deploy/aws/task-definition.json` (and AWS Secrets Manager). The setup
+  scripts POST it to `/auth/e2e-login/` as `ace@dimagi-ai.com` — the
+  canonical automation identity — and receive a session cookie.
+  **No personal tokens, no OAuth flow, no manual browser login.** See the
+  "Automation auth on labs" bullet in CLAUDE.md for why.
 - Claude Code CLI authenticated (for the CLI path's `claude -p`
   invocation).
-- Persistent Playwright profile at `~/.ace/playwright-profile/` with
-  ace-web OAuth cookies. First run: human completes login manually;
-  subsequent runs reuse.
+- Turmeric PDD body at `/tmp/turmeric-smoketest/pdd.txt` — the setup
+  scripts don't reach into Drive themselves. Use the ACE plugin's Drive
+  MCP (`drive_read_file`) to stage the body before invoking.
 
 ### 6.2. Opp-slug hygiene
 

@@ -71,6 +71,7 @@ def _read_token_from_credentials_file():
     or None if the file is missing/unreadable.
     """
     import json
+
     from django.conf import settings
 
     claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
