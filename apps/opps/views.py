@@ -161,6 +161,7 @@ def opp_create(request):
             display_name=payload.get("display_name", ""),
             idea=payload.get("idea", ""),
             mode=payload.get("mode", "review"),
+            pdd=payload.get("pdd", ""),
         )
     except CreateOppError as exc:
         status = 409 if exc.code == "slug-taken" else 400

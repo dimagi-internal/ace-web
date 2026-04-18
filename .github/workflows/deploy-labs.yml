@@ -177,6 +177,25 @@ jobs:
             exit 1
           fi
 
+      - name: Shorten ALB target-group deregistration delay
+        run: |
+          # Default 300s deregistration drain is the long pole in rolling
+          # cutover. Reduce to 30s — labs has no long-poll requests beyond
+          # SSE/WebSocket, which the app already handles via reconnect.
+          # Idempotent: setting same attribute repeatedly is a no-op.
+          TG_ARN=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].loadBalancers[0].targetGroupArn' \
+            --output text)
+          if [ -n "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
+            aws elbv2 modify-target-group-attributes \
+              --target-group-arn "$TG_ARN" \
+              --attributes Key=deregistration_delay.timeout_seconds,Value=30 \
+              --output text > /dev/null
+            echo "deregistration_delay set to 30s on $TG_ARN"
+          fi
+
       - name: Deploy (hard cutover)
         run: |
           # Stop existing tasks for instant cutover (~10s downtime).
@@ -201,7 +220,11 @@ jobs:
             --force-new-deployment \
             --output text > /dev/null
 
-          echo "Deploy triggered. New tasks starting (~30s to healthy)."
+          echo "Waiting for rollout to complete (so 'deploy done' actually means serving new code)..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+          echo "Rollout complete — new tasks running and healthy."
 
       - name: Deployment summary
         run: |
