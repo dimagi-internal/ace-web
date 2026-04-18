@@ -1,213 +1,96 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import {
-  cliAuthCancel,
-  cliAuthComplete,
-  cliAuthStart,
-  cliAuthStatus,
-} from "../api/auth";
 import { useCliAuthStatus } from "../hooks/useCliAuthStatus";
 
-type Phase = "idle" | "starting" | "awaiting_code" | "submitting" | "complete" | "error";
+/**
+ * Claude CLI connection status + instructions for connecting.
+ *
+ * The server does not run ``claude setup-token`` itself anymore — too
+ * fragile on headless Linux (PTY cursor positioning, line wrap, ANSI
+ * escapes eating token chars). Developers run ``ace_cli_login`` on
+ * their laptop to upload the local credential blob.
+ */
+function serverBaseUrl(): string {
+  if (typeof window === "undefined") return "<ace-url>";
+  const base = import.meta.env.BASE_URL || "/";
+  const trimmed = base.endsWith("/") ? base.slice(0, -1) : base;
+  return window.location.origin + trimmed;
+}
 
 export function AuthCliPage() {
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const cliConnected = useCliAuthStatus(5000);
-
-  const start = async () => {
-    setError(null);
-    setPhase("starting");
-    try {
-      const r = await cliAuthStart();
-      if (r.status === "complete") {
-        setPhase("complete");
-      } else {
-        setPhase("awaiting_code");
-        setAuthUrl(r.auth_url);
-      }
-    } catch (e) {
-      setError(String(e));
-      setPhase("error");
-    }
-  };
-
-  const submit = async () => {
-    setPhase("submitting");
-    setError(null);
-    try {
-      await cliAuthComplete(code);
-      // Don't trust "we captured a token" — the token may be truncated
-      // (PTY line-wrap) or otherwise invalid. Verify with a live CLI check
-      // against Anthropic via /api/auth/cli/status before showing green.
-      const status = await cliAuthStatus();
-      if (status.authenticated) {
-        setPhase("complete");
-      } else {
-        setError(
-          "The token was captured but failed a live check against Anthropic. " +
-          "Try the flow again — if this keeps happening, check the server " +
-          "logs for auth_flow store_token output.",
-        );
-        setPhase("error");
-      }
-    } catch (e) {
-      const msg = String(e);
-      if (msg.includes("No active auth flow") || msg.includes("start() first")) {
-        setPhase("idle");
-        setAuthUrl(null);
-        setCode("");
-        return;
-      }
-      setError(msg);
-      setPhase("error");
-    }
-  };
-
-  const cancel = async () => {
-    await cliAuthCancel();
-    setPhase("idle");
-    setAuthUrl(null);
-    setCode("");
-  };
+  const baseUrl = serverBaseUrl();
 
   return (
     <div className="mx-auto max-w-2xl p-6">
       <h1 className="mb-4 text-2xl font-semibold">Connect Claude CLI</h1>
       <p className="mb-4 text-muted-foreground">
-        ace-web uses your team's Claude subscription via the local CLI. To
-        authorize this server, generate an OAuth token using the flow below.
+        ace-web drives chat through the <code className="rounded bg-muted px-1">claude</code>{" "}
+        CLI, authenticated with your team's Claude subscription. To share your
+        local CLI credentials with this server, run the helper script from
+        your laptop.
       </p>
 
-      {cliConnected === true && phase === "idle" && (
+      {cliConnected === true ? (
         <div className="rounded border border-green-300 bg-green-50 p-4 text-green-900">
           <div className="font-semibold">Claude CLI is connected</div>
           <p className="mt-1 text-sm">
-            The server has a valid CLI OAuth token. You can{" "}
+            The server has a valid credential blob and a live check against
+            Anthropic just passed. You can{" "}
             <Link to="/chat" className="font-semibold underline">
               start chatting
             </Link>
             .
           </p>
         </div>
-      )}
-
-      {cliConnected === false && phase === "idle" && (
-        <div className="space-y-4">
-          <div className="rounded border border-amber-300 bg-amber-50 p-4 text-amber-900">
-            <div className="font-semibold">CLI token not set</div>
-            <div className="mt-1 text-sm">
-              The server needs a Claude CLI OAuth token to use your team's
-              subscription. Click below to authorize.
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={start}
-            className="rounded bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
-          >
-            Begin authorization
-          </button>
+      ) : cliConnected === false ? (
+        <div className="rounded border border-amber-300 bg-amber-50 p-4 text-amber-900">
+          <div className="font-semibold">Not connected</div>
+          <p className="mt-1 text-sm">
+            The server has no credentials, or the stored token failed a live
+            check (expired or revoked).
+          </p>
         </div>
-      )}
-
-      {cliConnected === null && phase === "idle" && (
+      ) : (
         <div className="text-sm text-muted-foreground">Checking CLI status…</div>
       )}
 
-      {phase === "starting" && (
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          Starting authorization…
-        </div>
-      )}
-
-      {phase === "awaiting_code" && authUrl && (
-        <div className="space-y-4">
-          <div className="rounded border border-border bg-muted p-4">
-            <p className="mb-2 text-sm text-muted-foreground">
-              1. Open this URL in a browser logged into your Claude account:
-            </p>
-            <a
-              href={authUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="break-all font-mono text-sm text-primary underline"
-            >
-              {authUrl}
-            </a>
-          </div>
-          <div>
-            <p className="mb-2 text-sm text-muted-foreground">
-              2. Paste the resulting code here:
-            </p>
-            <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              className="w-full rounded border border-border bg-background px-3 py-2 font-mono text-foreground"
-              placeholder="paste-code-here"
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!code.trim()}
-              className="rounded bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50 hover:bg-primary/90"
-            >
-              Submit code
-            </button>
-            <button
-              type="button"
-              onClick={cancel}
-              className="rounded border border-border px-4 py-2 text-muted-foreground hover:bg-accent"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {phase === "submitting" && (
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          Exchanging code for token (up to 90 s)…
-        </div>
-      )}
-
-      {phase === "complete" && (
-        <div className="rounded border border-green-300 bg-green-50 p-4 text-green-900">
-          Claude CLI is now connected. You can return to{" "}
-          <Link to="/chat" className="font-semibold underline">
-            the chat page
-          </Link>
-          .
-        </div>
-      )}
-
-      {phase === "error" && (
-        <div className="rounded border border-red-300 bg-red-50 p-4 text-red-900">
-          <div className="font-semibold">Authorization failed</div>
-          <div className="text-sm">{error}</div>
-          <button
-            type="button"
-            onClick={start}
-            className="mt-2 rounded border border-red-300 px-3 py-1 text-sm hover:bg-red-100"
-          >
-            Try again
-          </button>
-        </div>
-      )}
+      <div className="mt-6 space-y-3">
+        <h2 className="text-lg font-semibold">How to connect</h2>
+        <ol className="list-decimal space-y-2 pl-5 text-sm">
+          <li>
+            Authenticate the claude CLI locally (once):{" "}
+            <code className="rounded bg-muted px-1">claude setup-token</code>{" "}
+            and complete the browser flow. Skip this if you already use{" "}
+            <code className="rounded bg-muted px-1">claude -p</code> locally.
+          </li>
+          <li>
+            Mint a personal access token at{" "}
+            <Link to="/settings" className="font-semibold underline">
+              /settings
+            </Link>
+            .
+          </li>
+          <li>
+            From the ace-web checkout, run:
+            <pre className="mt-1 overflow-x-auto rounded bg-muted p-3 text-xs">
+              <code>
+                {`ACE_URL=${baseUrl} ACE_TOKEN=<token> python scripts/ace_cli_login.py`}
+              </code>
+            </pre>
+          </li>
+          <li>
+            The script reads your local credential blob (macOS Keychain or{" "}
+            <code className="rounded bg-muted px-1">~/.claude/.credentials.json</code>)
+            and POSTs it to this server. Refresh this page when done.
+          </li>
+        </ol>
+        <p className="text-xs text-muted-foreground">
+          The credential blob includes a refresh token, so the server's{" "}
+          <code className="rounded bg-muted px-1">claude</code> CLI keeps
+          working as tokens rotate — no re-upload needed unless you revoke.
+        </p>
+      </div>
     </div>
   );
 }
