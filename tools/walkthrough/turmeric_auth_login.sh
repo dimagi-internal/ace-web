@@ -50,8 +50,56 @@ fi
 curl -sS -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o /dev/null "$BASE_URL/"
 
 log "session cookie written to $COOKIE_JAR"
+
+# Also import cookies into gstack browse (Chromium) so canopy:walkthrough's
+# browser session is authenticated. The curl jar is separate from the
+# browse persistent profile.
+BROWSE_BIN="${BROWSE_BIN:-$HOME/.claude/skills/gstack/browse/dist/browse}"
+if [ -x "$BROWSE_BIN" ]; then
+  # browse requires an origin-matching page before accepting cookies (v1.1.x).
+  "$BROWSE_BIN" goto "$BASE_URL" >/dev/null 2>&1 || true
+  COOKIE_JSON="$(dirname "$COOKIE_JAR")/cookies.json"
+  COOKIE_JAR_PATH="$COOKIE_JAR" BASE_URL_ENV="$BASE_URL" python3 -c "
+import json, os, sys
+from urllib.parse import urlparse
+
+host = urlparse(os.environ['BASE_URL_ENV']).hostname
+cookies = []
+with open(os.environ['COOKIE_JAR_PATH']) as f:
+    for line in f:
+        line = line.rstrip('\n')
+        if not line.strip():
+            continue
+        # Netscape format prefixes HTTP-only cookies with '#HttpOnly_' in
+        # the domain column. Strip that before skipping comments, otherwise
+        # sessionid_ace (and any other HttpOnly cookie) gets dropped.
+        http_only = False
+        if line.startswith('#HttpOnly_'):
+            line = line[len('#HttpOnly_'):]
+            http_only = True
+        elif line.startswith('#'):
+            continue
+        parts = line.split('\t')
+        if len(parts) < 7:
+            continue
+        domain, _, path, secure, expires, name, value = parts[:7]
+        cookies.append({
+            'name': name,
+            'value': value,
+            'domain': host,
+            'path': path,
+            'secure': secure == 'TRUE',
+            'httpOnly': http_only,
+            'sameSite': 'Lax',
+        })
+json.dump(cookies, sys.stdout)
+" > "$COOKIE_JSON"
+  "$BROWSE_BIN" cookie-import "$COOKIE_JSON" >&2 || log "browse cookie-import failed (non-fatal)"
+  log "imported $(python3 -c "import json; print(len(json.load(open('$COOKIE_JSON'))))") cookies into browse"
+fi
+
 # canopy:walkthrough reads the login command's stdout as "{token}" for
 # inject_url substitution. We print a no-op token — our auth is already
-# set in the cookie jar, so the inject_url is just a sanity-check nav
-# on "/" to confirm the session works.
+# set in the cookie jar + browse profile, so the inject_url is just a
+# sanity-check nav on "/" to confirm the session works.
 echo "cookies-in-jar"

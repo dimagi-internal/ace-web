@@ -12,7 +12,6 @@ import pytest
 
 from apps.common import auth_flow
 
-
 BLOB = {
     "claudeAiOauth": {
         "accessToken": "sk-ant-oat01-" + "a" * 90,

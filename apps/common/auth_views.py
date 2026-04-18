@@ -10,7 +10,6 @@ history + docs/deploy.md for why.
 """
 from __future__ import annotations
 
-import json
 import logging
 
 from django.conf import settings
