@@ -123,7 +123,7 @@ export default function OppWorkbenchPage() {
         </section>
         <section className="w-[400px] shrink-0 border-l border-border bg-background">
           {workingSessionSlug ? (
-            <ChatPanel slug={workingSessionSlug} />
+            <ChatPanel key={workingSessionSlug} slug={workingSessionSlug} />
           ) : (
             <div className="flex h-full items-center justify-center p-4 text-xs text-muted-foreground">
               Loading chat…
