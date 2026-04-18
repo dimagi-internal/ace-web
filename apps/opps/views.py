@@ -1,6 +1,4 @@
 """REST API views for the ACE opportunity Workbench."""
-import json
-
 from django.conf import settings
 from django.db import transaction
 from django.http import HttpResponse
@@ -118,10 +116,10 @@ def opp_create(request):
             error_response("authentication required", code="auth-required"),
             status=401,
         )
-    try:
-        payload = json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
-        return Response(error_response("invalid JSON", code="bad-json"), status=400)
+    # Use DRF's pre-parsed request.data — calling json.loads(request.body)
+    # after DRF has already consumed the stream raises RawPostDataException
+    # on the ASGI path (observed on labs).
+    payload = request.data if isinstance(request.data, dict) else {}
 
     # Fast-fail on slug format before hitting Drive.
     slug = payload.get("slug", "")
@@ -531,10 +529,7 @@ def opp_artifact_write(request, slug: str, run_id: str, skill: str, artifact_nam
             status=404,
         )
 
-    try:
-        body = json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
-        return Response(error_response("invalid JSON", code="bad-json"), status=400)
+    body = request.data if isinstance(request.data, dict) else {}
     content = body.get("content")
     if content is None:
         return Response(
@@ -585,11 +580,7 @@ def opp_action(request, slug: str, run_id: str, action: str):
         return Response(
             error_response("no active working session", code="no-session"), status=409,
         )
-    try:
-        body = json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
-        return Response(error_response("invalid JSON", code="bad-json"), status=400)
-
+    body = request.data if isinstance(request.data, dict) else {}
     payload = ActionPayload(skill=body.get("skill", ""), reason=body.get("reason"))
     try:
         message = inject_action(
@@ -619,10 +610,7 @@ def opp_fork(request, slug: str, run_id: str):
             status=404,
         )
 
-    try:
-        body = json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
-        return Response(error_response("invalid JSON", code="bad-json"), status=400)
+    body = request.data if isinstance(request.data, dict) else {}
 
     try:
         result = fork_run(
