@@ -83,8 +83,9 @@ def _opp_list_impl(request):
     for child in client.list_files(ace_folder_id):
         if child.mime_type != "application/vnd.google-apps.folder":
             continue
-        # Try structured layout first: does it have opp.yaml?
         opp_children = client.list_files(child.id)
+
+        # Structured layout: ACE/<slug>/opp.yaml
         opp_yaml = next((f for f in opp_children if f.name == "opp.yaml"), None)
         if opp_yaml is not None:
             try:
@@ -94,10 +95,20 @@ def _opp_list_impl(request):
                 continue
             except Exception:
                 pass
-        # Flat layout: state.yaml + idd.md
-        has_state = any(f.name == "state.yaml" for f in opp_children)
-        has_idd = any(f.name == "idd.md" for f in opp_children)
-        if has_state and has_idd:
+
+        # Flat / web-created layouts: any of these at ACE/<slug>/ is enough
+        # to identify this folder as an opp. load_opp handles both the old
+        # (state.yaml + pdd.md) and new (idea.md + runs/) shapes.
+        names = {f.name for f in opp_children}
+        looks_like_opp = (
+            "state.yaml" in names and "pdd.md" in names
+        ) or (
+            "idea.md" in names and any(
+                f.name == "runs" and f.mime_type == "application/vnd.google-apps.folder"
+                for f in opp_children
+            )
+        )
+        if looks_like_opp:
             try:
                 snap = load_opp(client, ace_folder_id=ace_folder_id, slug=child.name)
                 cards.append(serialize_opp_card(snap.opp, snap.current_run))
@@ -412,17 +423,18 @@ def discuss(request, slug: str, run_id: str, skill: str):
             error_response(str(exc), code="step-not-found"), status=404
         )
 
-    # Resolve the IDD drive file id for session.idd_ref.
+    # Resolve the PDD drive file id for session.idd_ref (column name preserved
+    # for data-migration reasons; the content it now points at is pdd.md).
     idd_drive_id = ""
     for step_snap in snap.current_run.steps:
-        if step_snap.step.skill_name == "idea-to-idd":
+        if step_snap.step.skill_name == "idea-to-pdd":
             for artifact in step_snap.artifacts:
-                if artifact.name == "idd.md":
+                if artifact.name == "pdd.md":
                     idd_drive_id = artifact.drive_file_id
                     break
-    # Fall back to the top-level idd.md at the opp root if the idea-to-idd step
+    # Fall back to the top-level pdd.md at the opp root if the idea-to-pdd step
     # didn't capture it as an artifact.
-    # (Top-level idd.md lookup happens inside sync.load_opp but we didn't
+    # (Top-level pdd.md lookup happens inside sync.load_opp but we didn't
     # surface its file id. It would be a cheap enhancement to add that.)
 
     with transaction.atomic():

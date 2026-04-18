@@ -159,7 +159,7 @@ def serialize_opp_snapshot(snap: OppSnapshot) -> dict:
     overview = _system_overview()
     return {
         "opp": serialize_opp_card(snap.opp, snap.current_run),
-        "idd_body": snap.idd_body,
+        "pdd_body": snap.pdd_body,
         "runs": [serialize_run_summary(r) for r in snap.all_runs],
         "current_run": serialize_run_detail(snap.current_run),
         "phases": list(overview.get("phases") or []),

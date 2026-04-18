@@ -26,7 +26,7 @@ def _extract_h1(body: str) -> str | None:
 
 
 def _titlecase_kebab(name: str) -> str:
-    """Convert kebab-case to Title Case: 'idea-to-idd' -> 'Idea To Idd'."""
+    """Convert kebab-case to Title Case: 'idea-to-pdd' -> 'Idea To Idd'."""
     return " ".join(w.capitalize() for w in name.split("-"))
 
 

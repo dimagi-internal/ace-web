@@ -30,13 +30,13 @@ def _first_nonblank_line(body: str) -> str:
 
 
 def _idea_to_idd(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("idd.md", "")
+    body = bodies.get("pdd.md", "")
     # Try to skip the heading and grab the first sentence of the body.
     after_heading = body.split("\n\n", 1)[-1] if "\n\n" in body else body
     first_sentence = after_heading.strip().split(". ")[0].strip()
     if not first_sentence:
-        return "📄 idd.md"
-    return f"📄 idd.md — \"{first_sentence[:140]}\""
+        return "📄 pdd.md"
+    return f"📄 pdd.md — \"{first_sentence[:140]}\""
 
 
 def _idd_to_learn_app(step: StepSnapshot, bodies: dict[str, str]) -> str:
@@ -211,9 +211,9 @@ def _cycle_grade(step: StepSnapshot, bodies: dict[str, str]) -> str:
 # --- Registry + public entry point ---
 
 PREVIEW_EXTRACTORS: dict[str, PreviewFn] = {
-    "idea-to-idd":           _idea_to_idd,
-    "idd-to-learn-app":      _idd_to_learn_app,
-    "idd-to-deliver-app":    _idd_to_deliver_app,
+    "idea-to-pdd":           _idea_to_idd,
+    "pdd-to-learn-app":      _idd_to_learn_app,
+    "pdd-to-deliver-app":    _idd_to_deliver_app,
     "app-deploy":            _app_deploy,
     "app-test":              _app_test,
     "training-materials":    _training_materials,

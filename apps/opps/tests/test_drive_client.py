@@ -40,7 +40,7 @@ def test_drive_client_is_abstract():
 
 def test_fake_drive_list_files_top_level():
     client = FakeDriveClient.from_tree({
-        "ACE": {"malaria-pilot": {"idd.md": "# IDD"}}
+        "ACE": {"malaria-pilot": {"pdd.md": "# IDD"}}
     })
     ace_id = client.folder_id("ACE")
     files = client.list_files(ace_id)
@@ -54,7 +54,7 @@ def test_fake_drive_list_files_recursive():
     client = FakeDriveClient.from_tree({
         "ACE": {
             "malaria-pilot": {
-                "idd.md": "# IDD",
+                "pdd.md": "# IDD",
                 "runs": {
                     "r1": {"run.yaml": "run_id: r1"}
                 }
@@ -64,18 +64,18 @@ def test_fake_drive_list_files_recursive():
     ace_id = client.folder_id("ACE/malaria-pilot")
     files = client.list_files(ace_id, recursive=True)
     by_name = {f.name: f for f in files}
-    assert sorted(by_name) == ["idd.md", "run.yaml"]
+    assert sorted(by_name) == ["pdd.md", "run.yaml"]
     # Path construction matters for downstream sync code.
-    assert by_name["idd.md"].path == "idd.md"
+    assert by_name["pdd.md"].path == "pdd.md"
     assert by_name["run.yaml"].path == "runs/r1/run.yaml"
 
 
 def test_fake_drive_get_content():
     client = FakeDriveClient.from_tree({
-        "ACE": {"malaria-pilot": {"idd.md": "# Malaria IDD\nbody"}}
+        "ACE": {"malaria-pilot": {"pdd.md": "# Malaria IDD\nbody"}}
     })
     files = client.list_files(client.folder_id("ACE/malaria-pilot"))
-    idd = next(f for f in files if f.name == "idd.md")
+    idd = next(f for f in files if f.name == "pdd.md")
     content = client.get_content(idd.id, idd.mime_type)
     assert content.content == "# Malaria IDD\nbody"
     assert content.content_type == "text/markdown"

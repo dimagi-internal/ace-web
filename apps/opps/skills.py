@@ -34,7 +34,7 @@ PHASE_DISPLAY_NAMES = {
 
 @dataclass(frozen=True)
 class Skill:
-    name: str                       # e.g. "idea-to-idd"
+    name: str                       # e.g. "idea-to-pdd"
     ordinal: int                    # 1..19 across the full lifecycle
     phase: str                      # one of the PHASE_* constants above
     has_judge: bool                 # LLM-as-Judge runs on this step's output
@@ -45,10 +45,10 @@ class Skill:
 
 SKILL_REGISTRY: tuple[Skill, ...] = (
     Skill(
-        "idea-to-idd", 1, PHASE_APP_BUILDING, True, True, False, "idd.md"
+        "idea-to-pdd", 1, PHASE_APP_BUILDING, True, True, False, "pdd.md"
     ),
     Skill(
-        "idd-to-learn-app",
+        "pdd-to-learn-app",
         2,
         PHASE_APP_BUILDING,
         True,
@@ -57,7 +57,7 @@ SKILL_REGISTRY: tuple[Skill, ...] = (
         "learn-app-brief.md",
     ),
     Skill(
-        "idd-to-deliver-app",
+        "pdd-to-deliver-app",
         3,
         PHASE_APP_BUILDING,
         True,

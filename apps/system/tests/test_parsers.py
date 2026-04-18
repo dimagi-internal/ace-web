@@ -66,16 +66,16 @@ import { ArtifactManifest } from './types';
 
 export const ARTIFACT_MANIFEST = [
   {
-    skillSlug: 'idea-to-idd',
-    producedBy: 'idea-to-idd',
-    consumedBy: ['idd-to-learn-app', 'idd-to-deliver-app'],
+    skillSlug: 'idea-to-pdd',
+    producedBy: 'idea-to-pdd',
+    consumedBy: ['pdd-to-learn-app', 'pdd-to-deliver-app'],
     phase: 'setup',
-    artifactType: 'idd',
+    artifactType: 'pdd',
     label: 'Intervention Design Doc',
   },
   {
-    skillSlug: 'idd-to-learn-app',
-    producedBy: 'idd-to-learn-app',
+    skillSlug: 'pdd-to-learn-app',
+    producedBy: 'pdd-to-learn-app',
     consumedBy: ['app-deploy'],
     phase: 'build',
     artifactType: 'learn-app',
@@ -91,15 +91,15 @@ class TestParseArtifactManifest:
         assert len(entries) == 2
 
         first = entries[0]
-        assert first["skill_slug"] == "idea-to-idd"
-        assert first["produced_by"] == "idea-to-idd"
-        assert first["consumed_by"] == ["idd-to-learn-app", "idd-to-deliver-app"]
-        assert first["artifact_type"] == "idd"
+        assert first["skill_slug"] == "idea-to-pdd"
+        assert first["produced_by"] == "idea-to-pdd"
+        assert first["consumed_by"] == ["pdd-to-learn-app", "pdd-to-deliver-app"]
+        assert first["artifact_type"] == "pdd"
         assert first["label"] == "Intervention Design Doc"
 
         second = entries[1]
-        assert second["skill_slug"] == "idd-to-learn-app"
-        assert second["produced_by"] == "idd-to-learn-app"
+        assert second["skill_slug"] == "pdd-to-learn-app"
+        assert second["produced_by"] == "pdd-to-learn-app"
         assert second["consumed_by"] == ["app-deploy"]
         assert second["artifact_type"] == "learn-app"
 

@@ -33,7 +33,7 @@ def test_discuss_creates_session_with_pointer_fields(authed_client):
     fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
     with _with_fake(authed_client, fake):
         response = authed_client.post(
-            "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/idea-to-idd/discuss",
+            "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/idea-to-pdd/discuss",
             content_type="application/json",
         )
     assert response.status_code == 201
@@ -41,22 +41,22 @@ def test_discuss_creates_session_with_pointer_fields(authed_client):
     session = Session.objects.get(slug=data["session_slug"])
     assert session.opp_slug == "malaria-pilot"
     assert session.opp_run_id == "2026-04-06-002"
-    assert session.opp_step_skill == "idea-to-idd"
-    assert session.idd_ref  # populated with the idd.md drive file id
+    assert session.opp_step_skill == "idea-to-pdd"
+    assert session.idd_ref  # populated with the pdd.md drive file id
 
 
 def test_discuss_seeds_a_system_message(authed_client):
     fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
     with _with_fake(authed_client, fake):
         response = authed_client.post(
-            "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/idea-to-idd/discuss",
+            "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/idea-to-pdd/discuss",
             content_type="application/json",
         )
     session = Session.objects.get(slug=response.json()["data"]["session_slug"])
     system_message = session.messages.filter(role="system").first()
     assert system_message is not None
     assert system_message.turn_index == 0
-    assert "Discussing `idea-to-idd`" in system_message.plaintext
+    assert "Discussing `idea-to-pdd`" in system_message.plaintext
     assert "Malaria Pilot IDD" in system_message.plaintext
 
 

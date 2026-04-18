@@ -11,16 +11,16 @@ def plugin_dir(tmp_path):
     # VERSION
     (tmp_path / "VERSION").write_text("0.1.11\n")
 
-    # skills/idea-to-idd/SKILL.md
-    skill_dir = tmp_path / "skills" / "idea-to-idd"
+    # skills/idea-to-pdd/SKILL.md
+    skill_dir = tmp_path / "skills" / "idea-to-pdd"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
         "---\n"
-        "name: idea-to-idd\n"
+        "name: idea-to-pdd\n"
         "description: Iterate on an idea to produce a well-specified IDD.\n"
         "---\n"
         "\n"
-        "# Idea to IDD\n"
+        "# Idea to PDD\n"
         "\n"
         "## Process\n"
         "\n"
@@ -53,7 +53,7 @@ def plugin_dir(tmp_path):
         "phase_display: App Building\n"
         "phase_ordinal: 1\n"
         "skills:\n"
-        "  - { name: idea-to-idd, has_judge: true, primary_output: idd.md }\n"
+        "  - { name: idea-to-pdd, has_judge: true, primary_output: pdd.md }\n"
         "---\n"
         "\n"
         "# App Builder Agent\n"
@@ -67,9 +67,9 @@ def plugin_dir(tmp_path):
     (lib_dir / "artifact-manifest.ts").write_text(
         "export const ARTIFACT_MANIFEST: readonly ArtifactEntry[] = [\n"
         "  {\n"
-        "    path: 'idd.md',\n"
-        "    producedBy: 'idea-to-idd',\n"
-        "    consumedBy: ['idd-to-learn-app'],\n"
+        "    path: 'pdd.md',\n"
+        "    producedBy: 'idea-to-pdd',\n"
+        "    consumedBy: ['pdd-to-learn-app'],\n"
         "    phase: 'build',\n"
         "    required: true,\n"
         "    description: 'IDD',\n"
@@ -84,19 +84,19 @@ class TestLoadSystemOverview:
     def test_loads_registered_skill(self, plugin_dir):
         overview = load_system_overview(str(plugin_dir))
         skill_names = [s["name"] for s in overview["skills"]]
-        assert "idea-to-idd" in skill_names
+        assert "idea-to-pdd" in skill_names
 
     def test_registered_skill_has_ordinal(self, plugin_dir):
         overview = load_system_overview(str(plugin_dir))
-        idd = next(s for s in overview["skills"] if s["name"] == "idea-to-idd")
+        idd = next(s for s in overview["skills"] if s["name"] == "idea-to-pdd")
         assert idd["ordinal"] == 1
         assert idd["phase"] == "app-building"
         assert idd["has_judge"] is True
 
     def test_display_name_from_h1(self, plugin_dir):
         overview = load_system_overview(str(plugin_dir))
-        idd = next(s for s in overview["skills"] if s["name"] == "idea-to-idd")
-        assert idd["display_name"] == "Idea to IDD"
+        idd = next(s for s in overview["skills"] if s["name"] == "idea-to-pdd")
+        assert idd["display_name"] == "Idea to PDD"
 
     def test_utility_skill_included(self, plugin_dir):
         overview = load_system_overview(str(plugin_dir))
@@ -117,13 +117,13 @@ class TestLoadSystemOverview:
     def test_artifacts_loaded(self, plugin_dir):
         overview = load_system_overview(str(plugin_dir))
         assert len(overview["artifacts"]) == 1
-        assert overview["artifacts"][0]["path"] == "idd.md"
+        assert overview["artifacts"][0]["path"] == "pdd.md"
 
     def test_skill_has_artifacts(self, plugin_dir):
         overview = load_system_overview(str(plugin_dir))
-        idd = next(s for s in overview["skills"] if s["name"] == "idea-to-idd")
+        idd = next(s for s in overview["skills"] if s["name"] == "idea-to-pdd")
         assert len(idd["artifacts_produced"]) == 1
-        assert idd["artifacts_produced"][0]["path"] == "idd.md"
+        assert idd["artifacts_produced"][0]["path"] == "pdd.md"
 
     def test_missing_plugin_dir(self, tmp_path):
         overview = load_system_overview(str(tmp_path / "nonexistent"))
@@ -135,10 +135,10 @@ class TestLoadSystemOverview:
 
 class TestLoadSkillDetail:
     def test_includes_body_markdown(self, plugin_dir):
-        detail = load_skill_detail(str(plugin_dir), "idea-to-idd")
+        detail = load_skill_detail(str(plugin_dir), "idea-to-pdd")
         assert detail is not None
         assert "## Process" in detail["body_markdown"]
-        assert detail["name"] == "idea-to-idd"
+        assert detail["name"] == "idea-to-pdd"
 
     def test_unknown_skill_returns_none(self, plugin_dir):
         detail = load_skill_detail(str(plugin_dir), "nonexistent")

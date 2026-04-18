@@ -57,7 +57,7 @@ completed_at: null
 current_phase: app-building
 current_step: app-deploy
 skill_versions:
-  idea-to-idd: 4f2b8c1
+  idea-to-pdd: 4f2b8c1
   app-deploy: 8a91f22
 notes: |
   Re-run after editing app-deploy SKILL.md.
@@ -151,9 +151,9 @@ not-json
 
 def test_parse_events_jsonl():
     body = """{"ts":"2026-04-06T10:12:00Z","kind":"run.started","payload":{"mode":"review"}}
-{"ts":"2026-04-06T10:12:03Z","kind":"step.started","step":"idea-to-idd"}
+{"ts":"2026-04-06T10:12:03Z","kind":"step.started","step":"idea-to-pdd"}
 """
     events = parse_events_jsonl(body)
     assert len(events) == 2
     assert events[0].kind == "run.started"
-    assert events[1].step == "idea-to-idd"
+    assert events[1].step == "idea-to-pdd"

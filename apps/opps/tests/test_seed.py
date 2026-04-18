@@ -20,8 +20,8 @@ def snap_with_bodies():
 def test_seed_includes_idd_excerpt(snap_with_bodies):
     snap, client = snap_with_bodies
     seed = build_chat_seed(
-        snap, skill="idea-to-idd", drive_client=client,
-        skill_md_path="skills/idea-to-idd/SKILL.md",
+        snap, skill="idea-to-pdd", drive_client=client,
+        skill_md_path="skills/idea-to-pdd/SKILL.md",
     )
     assert "## IDD" in seed
     assert "Malaria Pilot IDD" in seed
@@ -30,18 +30,18 @@ def test_seed_includes_idd_excerpt(snap_with_bodies):
 def test_seed_includes_artifact_body(snap_with_bodies):
     snap, client = snap_with_bodies
     seed = build_chat_seed(
-        snap, skill="idea-to-idd", drive_client=client,
-        skill_md_path="skills/idea-to-idd/SKILL.md",
+        snap, skill="idea-to-pdd", drive_client=client,
+        skill_md_path="skills/idea-to-pdd/SKILL.md",
     )
     assert "## Artifacts" in seed
-    assert "idd.md" in seed
+    assert "pdd.md" in seed
 
 
 def test_seed_includes_judge_verdict(snap_with_bodies):
     snap, client = snap_with_bodies
     seed = build_chat_seed(
-        snap, skill="idea-to-idd", drive_client=client,
-        skill_md_path="skills/idea-to-idd/SKILL.md",
+        snap, skill="idea-to-pdd", drive_client=client,
+        skill_md_path="skills/idea-to-pdd/SKILL.md",
     )
     assert "## Judge verdict" in seed
     assert "9.2" in seed
@@ -61,17 +61,17 @@ def test_seed_includes_gate_history_for_gate_steps(snap_with_bodies):
 def test_seed_includes_skill_md_path(snap_with_bodies):
     snap, client = snap_with_bodies
     seed = build_chat_seed(
-        snap, skill="idea-to-idd", drive_client=client,
-        skill_md_path="skills/idea-to-idd/SKILL.md",
+        snap, skill="idea-to-pdd", drive_client=client,
+        skill_md_path="skills/idea-to-pdd/SKILL.md",
     )
-    assert "skills/idea-to-idd/SKILL.md" in seed
+    assert "skills/idea-to-pdd/SKILL.md" in seed
 
 
 def test_seed_includes_improvement_loop_preamble(snap_with_bodies):
     snap, client = snap_with_bodies
     seed = build_chat_seed(
-        snap, skill="idea-to-idd", drive_client=client,
-        skill_md_path="skills/idea-to-idd/SKILL.md",
+        snap, skill="idea-to-pdd", drive_client=client,
+        skill_md_path="skills/idea-to-pdd/SKILL.md",
     )
     # Preamble should explain the loop so Claude knows it can propose an edit.
     assert "improvement loop" in seed.lower() or "propose" in seed.lower()

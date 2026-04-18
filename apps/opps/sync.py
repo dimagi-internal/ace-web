@@ -5,7 +5,7 @@ returns a fully-expanded OppSnapshot suitable for JSON serialization.
 
 This file handles the STRUCTURED layout:
     ACE/<slug>/opp.yaml
-    ACE/<slug>/idd.md
+    ACE/<slug>/pdd.md
     ACE/<slug>/runs/<run-id>/run.yaml
     ACE/<slug>/runs/<run-id>/events.jsonl
     ACE/<slug>/runs/<run-id>/steps/<n>-<skill>/step.yaml
@@ -13,7 +13,7 @@ This file handles the STRUCTURED layout:
     ACE/<slug>/runs/<run-id>/steps/<n>-<skill>/gates.jsonl
     ACE/<slug>/runs/<run-id>/steps/<n>-<skill>/output/<artifact>
 
-Flat-layout fallback (for legacy ACE/<slug>/state.yaml + idd.md + subfolders)
+Flat-layout fallback (for legacy ACE/<slug>/state.yaml + pdd.md + subfolders)
 is in Task 11, as a second entry point in this module.
 """
 from __future__ import annotations
@@ -43,7 +43,7 @@ class ArtifactRef:
     drive_web_link: str
     size_bytes: int | None
     mime_type: str
-    path: str  # relative to the step's output/ folder, e.g. "idd.md"
+    path: str  # relative to the step's output/ folder, e.g. "pdd.md"
 
 
 @dataclass
@@ -82,7 +82,7 @@ class RunSummary:
 @dataclass
 class OppSnapshot:
     opp: OppManifest
-    idd_body: str
+    pdd_body: str
     opp_folder_id: str
     all_runs: list[RunSummary]  # sorted newest-first
     current_run: RunDetail
@@ -140,8 +140,8 @@ def load_opp(
 
     opp_manifest = parse_opp_yaml(_read_text(client, opp_yaml_file))
 
-    idd_file = _find_child(opp_children, "idd.md")
-    idd_body = _read_text(client, idd_file) if idd_file else ""
+    pdd_file = _find_child(opp_children, "pdd.md")
+    pdd_body = _read_text(client, pdd_file) if pdd_file else ""
 
     runs_folder = _find_child_folder(opp_children, "runs")
     if runs_folder is None:
@@ -187,7 +187,7 @@ def load_opp(
 
     return OppSnapshot(
         opp=opp_manifest,
-        idd_body=idd_body,
+        pdd_body=pdd_body,
         opp_folder_id=opp_folder.id,
         all_runs=all_runs,
         current_run=current_run,
@@ -275,7 +275,7 @@ def _load_step_snapshot(client: DriveClient, step_folder_id: str) -> StepSnapsho
 # are expected to live inside it. Derived from the ACE plugin's current
 # conventions (see ../ace/docs/generated/playbook.md).
 _FLAT_SUBFOLDER_SKILLS: dict[str, set[str]] = {
-    "app-summaries": {"idd-to-learn-app", "idd-to-deliver-app"},
+    "app-summaries": {"pdd-to-learn-app", "pdd-to-deliver-app"},
     "test-results": {"app-test"},
     "training-materials": {"training-materials"},
     "comms-log": {"llo-onboarding", "llo-invite", "llo-feedback"},
@@ -302,8 +302,8 @@ def _load_flat_opp(
         raw = _read_text(client, state_file)
         state_data = yaml.safe_load(raw) or {}
 
-    idd_file = _find_child(opp_children, "idd.md")
-    idd_body = _read_text(client, idd_file) if idd_file else ""
+    pdd_file = _find_child(opp_children, "pdd.md")
+    pdd_body = _read_text(client, pdd_file) if pdd_file else ""
 
     # Build a map of subfolder name -> list of DriveFile (recursively) so we
     # can look up which skills have produced output.
@@ -331,16 +331,16 @@ def _load_flat_opp(
         for skill in skills:
             artifacts_by_skill.setdefault(skill, []).extend(artifact_refs)
 
-    # Also treat idd.md as the artifact for idea-to-idd.
-    if idd_file is not None:
-        artifacts_by_skill.setdefault("idea-to-idd", []).append(
+    # Also treat pdd.md as the artifact for idea-to-pdd.
+    if pdd_file is not None:
+        artifacts_by_skill.setdefault("idea-to-pdd", []).append(
             ArtifactRef(
-                name="idd.md",
-                drive_file_id=idd_file.id,
-                drive_web_link=idd_file.web_view_link,
-                size_bytes=idd_file.size_bytes,
-                mime_type=idd_file.mime_type,
-                path="idd.md",
+                name="pdd.md",
+                drive_file_id=pdd_file.id,
+                drive_web_link=pdd_file.web_view_link,
+                size_bytes=pdd_file.size_bytes,
+                mime_type=pdd_file.mime_type,
+                path="pdd.md",
             )
         )
 
@@ -390,7 +390,7 @@ def _load_flat_opp(
 
     return OppSnapshot(
         opp=opp_manifest,
-        idd_body=idd_body,
+        pdd_body=pdd_body,
         opp_folder_id=opp_folder.id,
         all_runs=[
             RunSummary(

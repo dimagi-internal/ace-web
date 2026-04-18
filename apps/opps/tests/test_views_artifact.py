@@ -30,7 +30,7 @@ def test_artifact_body_returns_content(authed_client):
     fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
     response = _with_fake(
         authed_client, fake,
-        "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/idea-to-idd/artifacts/idd.md",
+        "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/idea-to-pdd/artifacts/pdd.md",
     )
     assert response.status_code == 200
     assert "Malaria Pilot IDD" in response.content.decode()
@@ -41,6 +41,6 @@ def test_artifact_body_unknown_artifact_returns_404(authed_client):
     fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
     response = _with_fake(
         authed_client, fake,
-        "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/idea-to-idd/artifacts/nope.md",
+        "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/idea-to-pdd/artifacts/nope.md",
     )
     assert response.status_code == 404

@@ -100,12 +100,12 @@ def test_full_workflow_compare_runs(authed_client, fake_drive):
         data = response.json()["data"]
         assert data["from_run"]["run_id"] == "2026-04-01-001"
         assert data["to_run"]["run_id"] == "2026-04-06-002"
-        # The fixture has idd-to-learn-app with judge 7.1 in v1 and 8.5 in v2
+        # The fixture has pdd-to-learn-app with judge 7.1 in v1 and 8.5 in v2
         from_lla = next(
-            s for s in data["from_run"]["steps"] if s["skill_name"] == "idd-to-learn-app"
+            s for s in data["from_run"]["steps"] if s["skill_name"] == "pdd-to-learn-app"
         )
         to_lla = next(
-            s for s in data["to_run"]["steps"] if s["skill_name"] == "idd-to-learn-app"
+            s for s in data["to_run"]["steps"] if s["skill_name"] == "pdd-to-learn-app"
         )
         assert from_lla["judge"]["score"] == 7.1
         assert to_lla["judge"]["score"] == 8.5

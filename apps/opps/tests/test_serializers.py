@@ -22,7 +22,7 @@ def snap():
 
 def test_serialize_opp_snapshot_top_level_keys(snap):
     data = serialize_opp_snapshot(snap)
-    assert set(data.keys()) == {"opp", "idd_body", "runs", "current_run", "phases"}
+    assert set(data.keys()) == {"opp", "pdd_body", "runs", "current_run", "phases"}
     # phases is a list (possibly empty if ACE_PLUGIN_PATH isn't a real plugin dir).
     assert isinstance(data["phases"], list)
 
@@ -47,16 +47,16 @@ def test_serialize_opp_snapshot_current_run_has_all_steps(snap):
     data = serialize_opp_snapshot(snap)
     steps = data["current_run"]["steps"]
     skills = [s["skill_name"] for s in steps]
-    assert "idea-to-idd" in skills
+    assert "idea-to-pdd" in skills
     assert "app-deploy" in skills
 
 
 def test_serialize_step_snapshot_judge_shape(snap):
     step_snap = next(
-        s for s in snap.current_run.steps if s.step.skill_name == "idea-to-idd"
+        s for s in snap.current_run.steps if s.step.skill_name == "idea-to-pdd"
     )
     data = serialize_step_snapshot(step_snap)
-    assert data["skill_name"] == "idea-to-idd"
+    assert data["skill_name"] == "idea-to-pdd"
     assert data["judge"]["score"] == 9.2
     assert data["judge"]["passed"] is True
     assert "rationale" in data["judge"]
@@ -74,9 +74,9 @@ def test_serialize_step_snapshot_no_judge(snap):
 
 def test_serialize_step_snapshot_artifacts(snap):
     step_snap = next(
-        s for s in snap.current_run.steps if s.step.skill_name == "idea-to-idd"
+        s for s in snap.current_run.steps if s.step.skill_name == "idea-to-pdd"
     )
     data = serialize_step_snapshot(step_snap)
     assert len(data["artifacts"]) == 1
-    assert data["artifacts"][0]["name"] == "idd.md"
+    assert data["artifacts"][0]["name"] == "pdd.md"
     assert "drive_web_link" in data["artifacts"][0]

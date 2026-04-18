@@ -22,15 +22,15 @@ def _step(skill: str, artifacts: list[str] | None = None) -> StepSnapshot:
 
 def test_idea_to_idd_preview():
     body = "# Malaria IDD\n\nReduce malaria mortality via monthly RDT screening."
-    step = _step("idea-to-idd", artifacts=["idd.md"])
-    preview = build_preview(step, bodies={"idd.md": body})
-    assert "idd.md" in preview
+    step = _step("idea-to-pdd", artifacts=["pdd.md"])
+    preview = build_preview(step, bodies={"pdd.md": body})
+    assert "pdd.md" in preview
     assert "Reduce malaria mortality" in preview
 
 
 def test_learn_app_preview_extracts_form_count():
     body = "# Learn App Brief\n\n12 forms\n34 questions\n6 case types"
-    step = _step("idd-to-learn-app", artifacts=["learn-app-brief.md"])
+    step = _step("pdd-to-learn-app", artifacts=["learn-app-brief.md"])
     preview = build_preview(step, bodies={"learn-app-brief.md": body})
     assert "12 forms" in preview
 
@@ -71,7 +71,7 @@ def test_unknown_skill_falls_back_to_count():
 
 
 def test_no_artifacts_falls_back_to_dash():
-    step = _step("idea-to-idd", artifacts=[])
+    step = _step("idea-to-pdd", artifacts=[])
     preview = build_preview(step, bodies={})
     assert preview == "—"
 

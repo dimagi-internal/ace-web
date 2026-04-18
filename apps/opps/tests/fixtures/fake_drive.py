@@ -249,8 +249,8 @@ rationale: |
 def malaria_pilot_structured_tree() -> dict:
     """Two-run structured fixture for malaria-pilot.
 
-    Run 2026-04-01-001: older run, idd-to-learn-app judge 7.1
-    Run 2026-04-06-002: newer run, idd-to-learn-app judge 8.5 (improved)
+    Run 2026-04-01-001: older run, pdd-to-learn-app judge 7.1
+    Run 2026-04-06-002: newer run, pdd-to-learn-app judge 8.5 (improved)
     """
     return {
         "ACE": {
@@ -264,7 +264,7 @@ labels:
   - mozambique
 current_run_id: 2026-04-06-002
 """,
-                "idd.md": MALARIA_PILOT_IDD,
+                "pdd.md": MALARIA_PILOT_IDD,
                 "runs": {
                     "2026-04-01-001": {
                         "run.yaml": """run_id: 2026-04-01-001
@@ -275,18 +275,18 @@ completed_at: 2026-04-01T12:00:00Z
 current_phase: closeout
 current_step: cycle-grade
 skill_versions:
-  idea-to-idd: 4f2b8c1
-  idd-to-learn-app: 4f2b8c1
+  idea-to-pdd: 4f2b8c1
+  pdd-to-learn-app: 4f2b8c1
 """,
                         "events.jsonl": '{"ts":"2026-04-01T10:00:00Z","kind":"run.started"}\n',
                         "steps": {
-                            "01-idea-to-idd": {
-                                "step.yaml": _step_yaml("idea-to-idd", "app-building", 1),
+                            "01-idea-to-pdd": {
+                                "step.yaml": _step_yaml("idea-to-pdd", "app-building", 1),
                                 "judge.yaml": _judge_yaml(7.8, "acceptable"),
-                                "output": {"idd.md": MALARIA_PILOT_IDD},
+                                "output": {"pdd.md": MALARIA_PILOT_IDD},
                             },
-                            "02-idd-to-learn-app": {
-                                "step.yaml": _step_yaml("idd-to-learn-app", "app-building", 2),
+                            "02-pdd-to-learn-app": {
+                                "step.yaml": _step_yaml("pdd-to-learn-app", "app-building", 2),
                                 "judge.yaml": _judge_yaml(7.1, "missing some forms"),
                                 "output": {"learn-app-brief.md": "# Learn App Brief\n\n8 forms"},
                             },
@@ -300,24 +300,24 @@ started_at: 2026-04-06T10:00:00Z
 current_phase: app-building
 current_step: app-deploy
 skill_versions:
-  idea-to-idd: 4f2b8c1
-  idd-to-learn-app: 4f2b8c1
+  idea-to-pdd: 4f2b8c1
+  pdd-to-learn-app: 4f2b8c1
   app-deploy: 8a91f22
 """,
                         "events.jsonl": '{"ts":"2026-04-06T10:00:00Z","kind":"run.started"}\n',
                         "steps": {
-                            "01-idea-to-idd": {
-                                "step.yaml": _step_yaml("idea-to-idd", "app-building", 1),
+                            "01-idea-to-pdd": {
+                                "step.yaml": _step_yaml("idea-to-pdd", "app-building", 1),
                                 "judge.yaml": _judge_yaml(9.2, "comprehensive"),
-                                "output": {"idd.md": MALARIA_PILOT_IDD},
+                                "output": {"pdd.md": MALARIA_PILOT_IDD},
                             },
-                            "02-idd-to-learn-app": {
-                                "step.yaml": _step_yaml("idd-to-learn-app", "app-building", 2),
+                            "02-pdd-to-learn-app": {
+                                "step.yaml": _step_yaml("pdd-to-learn-app", "app-building", 2),
                                 "judge.yaml": _judge_yaml(8.5, "better now"),
                                 "output": {"learn-app-brief.md": "# Learn App Brief\n\n12 forms"},
                             },
-                            "03-idd-to-deliver-app": {
-                                "step.yaml": _step_yaml("idd-to-deliver-app", "app-building", 3),
+                            "03-pdd-to-deliver-app": {
+                                "step.yaml": _step_yaml("pdd-to-deliver-app", "app-building", 3),
                                 "judge.yaml": _judge_yaml(8.1),
                                 "output": {"deliver-app-brief.md": "# Deliver App\n\n4 workflows"},
                             },
@@ -351,7 +351,7 @@ current_step: app-test
 mode: review
 started_at: 2026-03-20T09:00:00Z
 """,
-                "idd.md": "# Nutrition IDD\n\nInfant nutrition monitoring in rural India.",
+                "pdd.md": "# Nutrition IDD\n\nInfant nutrition monitoring in rural India.",
                 "app-summaries": {
                     "learn-app-summary.md": "8 forms · 3 case types",
                     "deliver-app-summary.md": "3 service workflows",
@@ -359,6 +359,28 @@ started_at: 2026-03-20T09:00:00Z
                 "test-results": {
                     "test-plan.md": "40 test cases",
                     "bug-list.md": "2 bugs found",
+                },
+            }
+        }
+    }
+
+
+def web_created_opp_tree() -> dict:
+    """Layout produced by POST /api/opps/ → apps.opps.opp_creator.create_opp.
+    Key distinguishing markers: idea.md at root, runs/ subfolder with
+    run-001/state.yaml inside. No opp.yaml, no pdd.md."""
+    return {
+        "ACE": {
+            "turmeric-smoketest-20260418-1114": {
+                "idea.md": "# Turmeric Market Survey\n\nFLWs photograph turmeric vendors.",
+                "runs": {
+                    "run-001": {
+                        "state.yaml": """opp: turmeric-smoketest-20260418-1114
+mode: auto
+current_run: run-001
+phase: design-review
+""",
+                    },
                 },
             }
         }

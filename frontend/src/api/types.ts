@@ -192,7 +192,7 @@ export interface RunSummary {
 
 export interface OppSnapshot {
   opp: OppCard;
-  idd_body: string;
+  pdd_body: string;
   runs: RunSummary[];
   current_run: Run;
   phases: PhaseInfo[];

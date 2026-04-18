@@ -28,20 +28,20 @@ scenes:
 
   - persona: runner
     title: "Workbench loads"
-    show: "Navigate to /opps/<slug> (read slug from /tmp/turmeric-smoketest-slug.txt). Three-pane workbench renders: skills sidebar on the left, artifact main pane in the middle, chat panel on the right."
+    show: "Navigate to /opps/<slug> (read slug from /tmp/turmeric-smoketest-slug.txt). Three-pane workbench renders: skills sidebar on the left, artifact main pane in the mpddle, chat panel on the right."
     impressive_because: "Drive read-through works — the app is reading the Turmeric folder live from Drive."
 
   - persona: runner
     title: "Phase 1 — idea-to-pdd"
     show: "Click idea-to-pdd in the skills sidebar. The main pane shows the step preview with non-empty artifact body."
-    impressive_because: "The seeded PDD flowed through: ace-web pulls it from Drive and previews it inline."
-    ai_quality: "Preview body should contain the Turmeric PDD text that was seeded at setup — not a generic placeholder."
+    impressive_because: "The seeded IDD flowed through: ace-web pulls it from Drive and previews it inline."
+    ai_quality: "Preview body should contain the Turmeric IDD text that was seeded at setup — not a generic placeholder."
 
   - persona: runner
     title: "Phase 1 — pdd artifact"
-    show: "Click the pdd artifact. Preview body contains the Turmeric PDD body verbatim."
+    show: "Click the pdd artifact. Preview body contains the Turmeric IDD body verbatim."
     impressive_because: "Idempotent round-trip: what went in via the setup script comes out in the workbench."
-    ai_quality: "Body must match the source PDD that turmeric_pdd_finder pulled from Drive."
+    ai_quality: "Body must match the source IDD that was seeded from Drive."
 
   - persona: runner
     title: "Phase 2 — Learn app summary"
@@ -62,4 +62,4 @@ scenes:
     title: "Discuss in chat from pdd step"
     show: "Click 'Discuss in chat' on the pdd step. A new chat tab opens with a seeded system message referencing pdd and the current slug."
     impressive_because: "The opps → chat bridge works: step context is pulled from Drive and used to seed a fresh ace-web session."
-    ai_quality: "Seed message contains the skill name 'pdd' and the opp slug."
+    ai_quality: "Seed message contains the skill name 'idea-to-pdd' and the opp slug."

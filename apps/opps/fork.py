@@ -200,7 +200,7 @@ def _copy_upstream_steps(
     for step_folder in drive.list_files(src_steps_folder.id):
         if not step_folder.mime_type.endswith("folder"):
             continue
-        # Step folder names are "<ordinal>-<skill>", e.g. "01-idea-to-idd".
+        # Step folder names are "<ordinal>-<skill>", e.g. "01-idea-to-pdd".
         m = re.match(r"^(\d+)-", step_folder.name)
         if not m:
             continue

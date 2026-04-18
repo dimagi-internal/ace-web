@@ -47,13 +47,13 @@ def test_copy_file_to_new_parent():
         "ACE": {
             "malaria-pilot": {
                 "runs": {
-                    "run-001": {"idd.md": "# IDD body"},
+                    "run-001": {"pdd.md": "# IDD body"},
                     "run-002": {},
                 }
             }
         }
     })
-    src_id = fake.file_id("ACE/malaria-pilot/runs/run-001/idd.md")
+    src_id = fake.file_id("ACE/malaria-pilot/runs/run-001/pdd.md")
     dst_folder = fake.folder_id("ACE/malaria-pilot/runs/run-002")
-    new_id = fake.copy_file(src_id, dst_folder, new_name="idd.md")
+    new_id = fake.copy_file(src_id, dst_folder, new_name="pdd.md")
     assert fake.get_content(new_id, "text/markdown").content == "# IDD body"

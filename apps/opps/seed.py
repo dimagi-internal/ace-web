@@ -60,7 +60,7 @@ def build_chat_seed(
 
     # IDD excerpt
     sections.append("## IDD")
-    sections.append(f"```markdown\n{snap.idd_body[:IDD_MAX_CHARS]}\n```")
+    sections.append(f"```markdown\n{snap.pdd_body[:IDD_MAX_CHARS]}\n```")
 
     # Artifacts
     if step_snap.artifacts:
