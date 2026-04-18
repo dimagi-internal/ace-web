@@ -30,7 +30,8 @@ def _first_nonblank_line(body: str) -> str:
 
 
 def _idea_to_idd(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("pdd.md", "")
+    # IDD→PDD rename transition: accept either primary-doc filename.
+    body = bodies.get("pdd.md") or bodies.get("idd.md", "")
     # Try to skip the heading and grab the first sentence of the body.
     after_heading = body.split("\n\n", 1)[-1] if "\n\n" in body else body
     first_sentence = after_heading.strip().split(". ")[0].strip()
