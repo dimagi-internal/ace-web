@@ -59,8 +59,8 @@ def test_workbench_unknown_opp_returns_404(authed_client):
     assert response.json()["error"]["code"] == "opp-not-found"
 
 
-def test_workbench_includes_idd_body(authed_client):
+def test_workbench_includes_pdd_body(authed_client):
     fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
     response = _with_fake_drive(authed_client, fake, "/api/opps/malaria-pilot")
     data = response.json()["data"]
-    assert "Malaria Pilot IDD" in data["idd_body"]
+    assert "Malaria Pilot IDD" in data["pdd_body"]

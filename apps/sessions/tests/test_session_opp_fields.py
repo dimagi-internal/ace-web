@@ -41,7 +41,7 @@ def test_session_filter_by_opp_pointers(user):
     )
     Session.objects.create(
         owner=user, title="b", opp_slug="malaria-pilot",
-        opp_run_id="r1", opp_step_skill="idea-to-idd",
+        opp_run_id="r1", opp_step_skill="idea-to-pdd",
     )
     Session.objects.create(
         owner=user, title="c", opp_slug="nutrition", opp_run_id="r1",

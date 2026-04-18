@@ -33,9 +33,9 @@ def test_load_opp_includes_all_steps_for_current_run(client):
     snap = load_opp(client, ace_folder_id=ace_id, slug="malaria-pilot")
     skill_names = [s.step.skill_name for s in snap.current_run.steps]
     assert skill_names == [
-        "idea-to-idd",
-        "idd-to-learn-app",
-        "idd-to-deliver-app",
+        "idea-to-pdd",
+        "pdd-to-learn-app",
+        "pdd-to-deliver-app",
         "app-deploy",
     ]
 
@@ -43,10 +43,10 @@ def test_load_opp_includes_all_steps_for_current_run(client):
 def test_load_opp_populates_judge_results(client):
     ace_id = client.folder_id("ACE")
     snap = load_opp(client, ace_folder_id=ace_id, slug="malaria-pilot")
-    step = next(s for s in snap.current_run.steps if s.step.skill_name == "idea-to-idd")
+    step = next(s for s in snap.current_run.steps if s.step.skill_name == "idea-to-pdd")
     assert step.judge is not None
     assert step.judge.score == 9.2
-    step_lla = next(s for s in snap.current_run.steps if s.step.skill_name == "idd-to-learn-app")
+    step_lla = next(s for s in snap.current_run.steps if s.step.skill_name == "pdd-to-learn-app")
     assert step_lla.judge.score == 8.5
 
 
@@ -68,10 +68,10 @@ def test_load_opp_with_explicit_run_id(client):
     assert len(snap.current_run.steps) == 2
 
 
-def test_load_opp_attaches_idd_body(client):
+def test_load_opp_attaches_pdd_body(client):
     ace_id = client.folder_id("ACE")
     snap = load_opp(client, ace_folder_id=ace_id, slug="malaria-pilot")
-    assert "Malaria Pilot IDD" in snap.idd_body
+    assert "Malaria Pilot IDD" in snap.pdd_body
 
 
 def test_load_opp_unknown_slug_raises(client):

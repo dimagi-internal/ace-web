@@ -22,14 +22,14 @@ def authed_client(authed_user):
 MOCK_OVERVIEW = {
     "skills": [
         {
-            "name": "idea-to-idd",
-            "display_name": "Idea to IDD",
+            "name": "idea-to-pdd",
+            "display_name": "Idea to PDD",
             "description": "Iterate on an idea.",
             "ordinal": 1,
             "phase": "app-building",
             "has_judge": True,
             "is_recurring": False,
-            "primary_output": "idd.md",
+            "primary_output": "pdd.md",
             "artifacts_produced": [],
             "artifacts_consumed": [],
         }
@@ -57,7 +57,7 @@ class TestOverviewView:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert len(data["skills"]) == 1
-        assert data["skills"][0]["name"] == "idea-to-idd"
+        assert data["skills"][0]["name"] == "idea-to-pdd"
         assert len(data["agents"]) == 1
         assert data["plugin_version"] == "0.1.10"
         assert data["remote_version"] == "0.1.11"
@@ -73,24 +73,24 @@ class TestSkillDetailView:
     @patch(
         "apps.system.views.load_skill_detail",
         return_value={
-            "name": "idea-to-idd",
-            "display_name": "Idea to IDD",
+            "name": "idea-to-pdd",
+            "display_name": "Idea to PDD",
             "description": "...",
             "ordinal": 1,
             "phase": "app-building",
             "has_judge": True,
             "is_recurring": False,
-            "primary_output": "idd.md",
+            "primary_output": "pdd.md",
             "artifacts_produced": [],
             "artifacts_consumed": [],
-            "body_markdown": "# Idea to IDD\n\nBody here.",
+            "body_markdown": "# Idea to PDD\n\nBody here.",
         },
     )
     def test_returns_skill_with_body(self, mock_load, authed_client):
-        resp = authed_client.get("/api/system/skills/idea-to-idd")
+        resp = authed_client.get("/api/system/skills/idea-to-pdd")
         assert resp.status_code == 200
         data = resp.json()["data"]
-        assert data["name"] == "idea-to-idd"
+        assert data["name"] == "idea-to-pdd"
         assert "Body here" in data["body_markdown"]
 
     @patch("apps.system.views.load_skill_detail", return_value=None)

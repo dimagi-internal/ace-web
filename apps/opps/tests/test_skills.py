@@ -29,7 +29,7 @@ def test_names_are_unique():
 
 
 def test_get_skill_by_name():
-    s = get_skill("idea-to-idd")
+    s = get_skill("idea-to-pdd")
     assert s.ordinal == 1
     assert s.phase == PHASE_APP_BUILDING
     assert s.has_judge is True
@@ -44,9 +44,9 @@ def test_get_skill_unknown_raises():
 def test_phase_grouping():
     building = skills_in_phase(PHASE_APP_BUILDING)
     assert [s.name for s in building] == [
-        "idea-to-idd",
-        "idd-to-learn-app",
-        "idd-to-deliver-app",
+        "idea-to-pdd",
+        "pdd-to-learn-app",
+        "pdd-to-deliver-app",
         "app-deploy",
         "app-test",
         "training-materials",
@@ -70,8 +70,8 @@ def test_phase_grouping():
 
 def test_gate_steps():
     gates = [s.name for s in SKILL_REGISTRY if s.is_gate]
-    # From the ACE design spec gate list: idea-to-idd, app-deploy, llo-invite, llo-launch
-    assert set(gates) == {"idea-to-idd", "app-deploy", "llo-invite", "llo-launch"}
+    # From the ACE design spec gate list: idea-to-pdd, app-deploy, llo-invite, llo-launch
+    assert set(gates) == {"idea-to-pdd", "app-deploy", "llo-invite", "llo-launch"}
 
 
 def test_recurring_steps():
@@ -80,6 +80,6 @@ def test_recurring_steps():
 
 
 def test_skill_is_frozen_dataclass():
-    s = get_skill("idea-to-idd")
+    s = get_skill("idea-to-pdd")
     with pytest.raises(FrozenInstanceError):
         s.ordinal = 999  # type: ignore[misc]

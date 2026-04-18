@@ -28,7 +28,7 @@ scenes:
 
   - persona: jj
     title: "IDD review"
-    show: "The IDD body rendered in the workbench detail pane for the idea-to-idd step — the intervention design for Community Health Worker Training Pilot"
+    show: "The IDD body rendered in the workbench detail pane for the idea-to-pdd step — the intervention design for Community Health Worker Training Pilot"
     impressive_because: "The IDD is the foundation of the entire opportunity — it's rendered inline so you can review it without leaving the workbench"
 
   - persona: jj

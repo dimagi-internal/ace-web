@@ -23,10 +23,10 @@ def test_flat_layout_synthesizes_implicit_run(client):
     assert snap.current_run.run_id == "r1"
 
 
-def test_flat_layout_populates_idd_body(client):
+def test_flat_layout_populates_pdd_body(client):
     ace_id = client.folder_id("ACE")
     snap = load_opp(client, ace_folder_id=ace_id, slug="nutrition-legacy")
-    assert "Nutrition IDD" in snap.idd_body
+    assert "Nutrition IDD" in snap.pdd_body
 
 
 def test_flat_layout_synthesizes_step_rows_for_all_19_skills(client):
@@ -34,7 +34,7 @@ def test_flat_layout_synthesizes_step_rows_for_all_19_skills(client):
     snap = load_opp(client, ace_folder_id=ace_id, slug="nutrition-legacy")
     skill_names = [s.step.skill_name for s in snap.current_run.steps]
     assert len(skill_names) == 19
-    assert skill_names[0] == "idea-to-idd"
+    assert skill_names[0] == "idea-to-pdd"
     assert skill_names[-1] == "cycle-grade"
 
 
@@ -42,8 +42,8 @@ def test_flat_layout_marks_known_subfolder_steps_complete(client):
     ace_id = client.folder_id("ACE")
     snap = load_opp(client, ace_folder_id=ace_id, slug="nutrition-legacy")
     # app-summaries/ subfolder is treated as evidence that
-    # idd-to-learn-app and idd-to-deliver-app produced output.
-    learn = next(s for s in snap.current_run.steps if s.step.skill_name == "idd-to-learn-app")
+    # pdd-to-learn-app and pdd-to-deliver-app produced output.
+    learn = next(s for s in snap.current_run.steps if s.step.skill_name == "pdd-to-learn-app")
     assert learn.step.status == "complete"
     assert any("learn-app-summary" in a.name for a in learn.artifacts)
     # test-results/ subfolder → app-test

@@ -30,11 +30,11 @@ def test_step_detail_returns_full_payload(authed_client):
     fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
     response = _with_fake(
         authed_client, fake,
-        "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/idea-to-idd",
+        "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/idea-to-pdd",
     )
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["skill_name"] == "idea-to-idd"
+    assert data["skill_name"] == "idea-to-pdd"
     assert data["judge"]["score"] == 9.2
     assert len(data["artifacts"]) == 1
     assert "primary_body" in data
