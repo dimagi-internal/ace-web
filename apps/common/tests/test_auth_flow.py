@@ -22,19 +22,64 @@ def test_extract_token_finds_sk_ant_oat_token():
 
 
 def test_extract_token_joins_pty_wrapped_token():
-    """PTY output wraps at terminal width. The regex must re-join lines
-    before matching, otherwise a wrapped token is silently truncated and
-    Anthropic rejects it with 401 even though the prefix + length look OK.
+    """PTY wraps the token across lines with ``\\r``. The line-based parser
+    concatenates the starting line (``sk-ant-oat...``) with consecutive
+    base64url-only continuation lines.
     """
     wrapped = (
-        "sk-ant-oat01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
-        "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\r\nCCC"
+        "sk-ant-oat01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\r"
+        "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\r"
+        "CCC"
     )
     token = auth_flow._extract_token(wrapped)
     assert token == (
         "sk-ant-oat01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCC"
     )
+
+
+def test_extract_token_stops_at_non_base64url_line():
+    """Regression case from prod: after the wrapped token the CLI prints
+    "Store this token securely..." on the next line, which after ANSI-strip
+    reads as "Storethistokensecurely..." — starts with alphanumerics but
+    contains ``.`` and ``'``. The line-based parser rejects it as a
+    continuation (not a pure base64url run) and stops.
+    """
+    raw = (
+        "\r                                                       \r"
+        "sk-ant-oat01-q45_gy9AK_keKPCYfaiM5BJspeoTm_SJwSD0TEIxWJlDN3J9j79aRXyTmwxtkpbkkq6\r"
+        "oZ8Kc8beiYX-jgtmKww-sJWB2wAA\r"
+        "Storethistokensecurely.Youwon'tbeabletoseeitagain.\r"
+        "UsethistokenbysettingexportCLAUDE_CODE_OAUTH_TOKEN=<token>\r\n"
+    )
+    token = auth_flow._extract_token(raw)
+    assert token == (
+        "sk-ant-oat01-q45_gy9AK_keKPCYfaiM5BJspeoTm_SJwSD0TEIxWJlDN3J9j79aRXyTmwxtkpbkkq6"
+        "oZ8Kc8beiYX-jgtmKww-sJWB2wAA"
+    )
+
+
+def test_read_token_from_credentials_file(tmp_path, monkeypatch):
+    """Canonical source: CLI writes to $HOME/.claude/.credentials.json.
+    Reading it directly avoids all PTY-parsing fragility.
+    """
+    import json
+    claude_home = tmp_path / "home"
+    (claude_home / ".claude").mkdir(parents=True)
+    (claude_home / ".claude" / ".credentials.json").write_text(
+        json.dumps({"claudeAiOauth": {"accessToken": "sk-ant-oat01-fromfile"}})
+    )
+    from django.test import override_settings
+    with override_settings(ACE_CLAUDE_HOME=str(claude_home)):
+        assert auth_flow._read_token_from_credentials_file() == (
+            "sk-ant-oat01-fromfile"
+        )
+
+
+def test_read_token_from_credentials_file_returns_none_when_absent(tmp_path):
+    from django.test import override_settings
+    with override_settings(ACE_CLAUDE_HOME=str(tmp_path)):
+        assert auth_flow._read_token_from_credentials_file() is None
 
 
 def test_extract_returns_none_when_absent():
