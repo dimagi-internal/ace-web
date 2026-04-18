@@ -190,18 +190,26 @@ class _AuthSession:
                         if not self.token:
                             self.token = _extract_token(self.buffer)
                             if self.token and not prev_token:
-                                # Log the 100 chars on either side of the
-                                # match so a bad extraction can be diagnosed
-                                # from prod logs without leaking more than
-                                # the already-present captured token.
+                                # Dual log: clean (ANSI-stripped) + raw
+                                # bytes. Raw reveals ANSI/control sequences
+                                # that _strip_ansi might drop — critical
+                                # for diagnosing cases where the extracted
+                                # token is shorter than the real one.
                                 clean = _strip_ansi(self.buffer).replace(
                                     "\n", "\\n"
                                 ).replace("\r", "\\r")
-                                idx = clean.find("sk-ant-oat")
-                                ctx = clean[max(0, idx - 100): idx + 400]
+                                idx_clean = clean.find("sk-ant-oat")
+                                ctx_clean = clean[
+                                    max(0, idx_clean - 50): idx_clean + 400
+                                ]
+                                idx_raw = self.buffer.find("sk-ant-oat")
+                                ctx_raw = self.buffer[
+                                    max(0, idx_raw - 50): idx_raw + 400
+                                ]
                                 logger.info(
-                                    "token extracted: len=%d buffer_ctx=%r",
-                                    len(self.token), ctx,
+                                    "token extracted: len=%d\n"
+                                    "  clean=%r\n  raw=%r",
+                                    len(self.token), ctx_clean, ctx_raw,
                                 )
             except OSError:
                 break
