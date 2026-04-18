@@ -177,24 +177,14 @@ jobs:
             exit 1
           fi
 
-      - name: Shorten ALB target-group deregistration delay
-        run: |
-          # Default 300s deregistration drain is the long pole in rolling
-          # cutover. Reduce to 30s — labs has no long-poll requests beyond
-          # SSE/WebSocket, which the app already handles via reconnect.
-          # Idempotent: setting same attribute repeatedly is a no-op.
-          TG_ARN=$(aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].loadBalancers[0].targetGroupArn' \
-            --output text)
-          if [ -n "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
-            aws elbv2 modify-target-group-attributes \
-              --target-group-arn "$TG_ARN" \
-              --attributes Key=deregistration_delay.timeout_seconds,Value=30 \
-              --output text > /dev/null
-            echo "deregistration_delay set to 30s on $TG_ARN"
-          fi
+      # NOTE: target-group `deregistration_delay.timeout_seconds` was reduced
+      # from the 300s default to 30s on 2026-04-18 via SSO from local
+      # (github-actions-labs-deploy IAM role lacks ModifyTargetGroupAttributes
+      # permission). That one-time setting is what makes rolling cutover fast;
+      # if the TG is ever recreated, rerun:
+      #   aws elbv2 modify-target-group-attributes \
+      #     --target-group-arn <arn> \
+      #     --attributes Key=deregistration_delay.timeout_seconds,Value=30
 
       - name: Deploy (hard cutover)
         run: |
