@@ -93,17 +93,47 @@ def _read_token_from_credentials_file():
 
 
 def _extract_token(raw):
-    # Real Claude OAuth tokens are base64url after the ``sk-ant-oat`` prefix
-    # — ``[A-Za-z0-9_-]``. Match exactly that character class so the capture
-    # stops at the real token boundary regardless of what the CLI prints
-    # next (which is what the old ``\S+`` got wrong — after we stripped
-    # newlines to handle PTY wrap, ``\S+`` happily swallowed the "Add this
-    # to your shell..." text that followed the token on the next line,
-    # producing a 158-char blob that passed ``token_looks_real`` but
-    # Anthropic rejected with ``Invalid bearer token``).
-    clean = _strip_ansi(raw).replace("\n", "").replace("\r", "")
-    m = re.search(r"(sk-ant-oat[A-Za-z0-9_-]+)", clean)
-    return m.group(1) if m else None
+    # ``claude setup-token`` on Linux prints the token, then PTY-wraps it
+    # at terminal width with ``\r`` (CR-only) line breaks, followed by
+    # more CLI text. Example from prod logs::
+    #
+    #   sk-ant-oat01-q45_gy9AK_...kkq6\r
+    #   oZ8Kc8beiYX-jgtmKww-sJWB2wAA\r
+    #   Storethistokensecurely...\r
+    #
+    # After ANSI-strip the line "Store this token securely..." has spaces
+    # collapsed, so a newline-stripped ``\\S+`` or ``[A-Za-z0-9_-]+`` match
+    # happily swallows "Storethistokensecurely" as more token.
+    #
+    # Parse line-by-line instead: anchor on the line starting with
+    # ``sk-ant-oat``, then concatenate consecutive lines that are nothing
+    # but base64url chars (the wrap continuation). Any line with
+    # punctuation, an ``=``, or a space ends the capture.
+    clean = _strip_ansi(raw)
+    token_chars = re.compile(r"[A-Za-z0-9_-]+")
+    parts: list[str] = []
+    for line in re.split(r"[\r\n]+", clean):
+        stripped = line.strip()
+        if not stripped:
+            if parts:
+                break
+            continue
+        if not parts:
+            m = re.search(r"(sk-ant-oat[A-Za-z0-9_-]+)", stripped)
+            if m is None:
+                continue
+            parts.append(m.group(1))
+            # If this line has anything after the base64url run that
+            # isn't whitespace (token wasn't wrapped, next text is on
+            # the same line), stop here.
+            if stripped[m.end():].strip():
+                break
+        else:
+            if token_chars.fullmatch(stripped):
+                parts.append(stripped)
+            else:
+                break
+    return "".join(parts) if parts else None
 
 
 # ── Session object ──────────────────────────────────────────────────
