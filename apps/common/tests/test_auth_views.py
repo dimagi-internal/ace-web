@@ -1,5 +1,5 @@
-"""Tests for /api/auth/cli/* endpoints. auth_flow is mocked at the function
-level so the tests do not actually spawn a PTY."""
+"""Tests for /api/auth/cli/* endpoints."""
+import json
 from unittest.mock import patch
 
 import pytest
@@ -23,9 +23,8 @@ def test_status_returns_authenticated_when_real_token_present(client, monkeypatc
         "CLAUDE_CODE_OAUTH_TOKEN",
         "sk-ant-oat01-" + "a" * 50,
     )
-    # Mock the CLI subprocess check — in CI the `claude` binary isn't on
-    # PATH (and locally it would make a real API call with the fake token).
-    # This test covers the status endpoint's happy path, not the CLI shell-out.
+    # The status endpoint runs a live ``claude -p`` subprocess. Mock the
+    # CLI check so the unit test doesn't need a real Claude binary.
     with patch("apps.common.auth_flow._check_token_via_cli", return_value=True):
         resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
@@ -57,51 +56,83 @@ def test_status_returns_unauthenticated_when_no_token(client, monkeypatch):
     assert resp.json()["data"] == {"authenticated": False}
 
 
-def test_start_returns_auth_url(client):
-    with patch(
-        "apps.common.auth_flow.start",
-        return_value={
-            "auth_url": "https://claude.com/cai/oauth/authorize?x=1",
-            "token": None,
-            "status": "awaiting_code",
-        },
-    ):
-        resp = client.post("/api/auth/cli/start")
+# ── upload endpoint ───────────────────────────────────────────────
+
+
+def _full_blob():
+    return {
+        "claudeAiOauth": {
+            "accessToken": "sk-ant-oat01-" + "a" * 90,
+            "refreshToken": "rt-" + "b" * 30,
+            "expiresAt": 1_700_000_000,
+            "scopes": ["user:inference"],
+        }
+    }
+
+
+def test_upload_rejects_unauthenticated():
+    resp = APIClient().post("/api/auth/cli/upload", _full_blob(), format="json")
+    assert resp.status_code in (401, 403)
+
+
+def test_upload_stores_blob_and_returns_live_status(client, tmp_path, settings, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    settings.ACE_CLAUDE_HOME = str(tmp_path)
+
+    blob = _full_blob()
+    with patch("apps.common.auth_flow._check_token_via_cli", return_value=True):
+        resp = client.post("/api/auth/cli/upload", blob, format="json")
     assert resp.status_code == 200
-    body = resp.json()["data"]
-    assert body["auth_url"].startswith("https://")
-    assert body["status"] == "awaiting_code"
+    data = resp.json()["data"]
+    assert data["stored"] is True
+    assert data["authenticated"] is True
+    assert data["token_prefix"].startswith("sk-ant-oat01-")
+
+    from apps.common.models import SystemConfig
+    stored = SystemConfig.objects.get(key="claude_credentials_blob")
+    assert json.loads(stored.value) == blob
+    assert (tmp_path / ".claude" / ".credentials.json").exists()
 
 
-def test_complete_with_code_returns_token(client):
-    with patch("apps.common.auth_flow.complete", return_value="sk-ant-oat01-fresh"):
-        resp = client.post("/api/auth/cli/complete", {"code": "abc"}, format="json")
+def test_upload_accepts_bare_inner_blob_and_wraps_it(client, tmp_path, settings, monkeypatch):
+    """CLI tools sometimes hand us the inner ``claudeAiOauth`` value directly."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    settings.ACE_CLAUDE_HOME = str(tmp_path)
+
+    inner = _full_blob()["claudeAiOauth"]
+    with patch("apps.common.auth_flow._check_token_via_cli", return_value=True):
+        resp = client.post("/api/auth/cli/upload", inner, format="json")
     assert resp.status_code == 200
-    assert resp.json()["data"]["status"] == "complete"
 
 
-def test_complete_without_active_session_returns_error(client):
-    with patch(
-        "apps.common.auth_flow.complete",
-        side_effect=RuntimeError("No active auth flow."),
-    ):
-        resp = client.post("/api/auth/cli/complete", {"code": "abc"}, format="json")
+def test_upload_rejects_missing_access_token(client):
+    resp = client.post(
+        "/api/auth/cli/upload",
+        {"claudeAiOauth": {"refreshToken": "nope"}},
+        format="json",
+    )
     assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "auth_flow_error"
+    assert resp.json()["error"]["code"] == "bad_blob"
 
 
-def test_poll_returns_status(client):
-    with patch(
-        "apps.common.auth_flow.poll",
-        return_value={"active": True, "authenticated": False, "elapsed_seconds": 5},
-    ):
-        resp = client.get("/api/auth/cli/poll")
+def test_upload_reports_live_check_failure(client, tmp_path, settings, monkeypatch):
+    """Server stored the blob but the live CLI check failed — return
+    authenticated=False so the CLI tool can show a warning."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    settings.ACE_CLAUDE_HOME = str(tmp_path)
+
+    with patch("apps.common.auth_flow._check_token_via_cli", return_value=False):
+        resp = client.post("/api/auth/cli/upload", _full_blob(), format="json")
     assert resp.status_code == 200
-    assert resp.json()["data"]["active"] is True
+    assert resp.json()["data"] == {
+        **resp.json()["data"],
+        "stored": True,
+        "authenticated": False,
+    }
 
 
-def test_cancel_invokes_auth_flow_cancel(client):
-    with patch("apps.common.auth_flow.cancel") as cancel:
-        resp = client.post("/api/auth/cli/cancel")
+def test_expected_shape_is_public(django_user_model):
+    """The shape endpoint is unauth'd so the CLI tool can introspect."""
+    resp = APIClient().get("/api/auth/cli/expected-shape")
     assert resp.status_code == 200
-    cancel.assert_called_once()
+    assert "claudeAiOauth" in resp.json()["data"]["shape"]
