@@ -21,7 +21,7 @@ Full architecture: `docs/architecture/cli-credentials.md`.
 ## Preconditions to verify
 
 1. **Local claude CLI is authenticated.** Run
-   `python scripts/ace_cli_login.py --dry-run` from the repo root. If
+   `python3 scripts/ace_cli_login.py --dry-run` from the repo root. If
    it prints `found credentials (accessToken prefix=sk-ant-oat01-..., len=...)`,
    we're good. If it prints `no local credentials found`, stop and
    have the user run `claude setup-token` and complete the browser
@@ -43,7 +43,7 @@ Full architecture: `docs/architecture/cli-credentials.md`.
    user to mint one at `<ACE_URL>/settings`, then resume.
 3. Run the uploader:
    ```
-   ACE_URL=<url> ACE_TOKEN=<token> python scripts/ace_cli_login.py
+   ACE_URL=<url> ACE_TOKEN=<token> python3 scripts/ace_cli_login.py
    ```
 4. Parse the output. Exit codes:
    - `0` → uploaded, server confirms `authenticated=True`. Done.
@@ -55,11 +55,15 @@ Full architecture: `docs/architecture/cli-credentials.md`.
      Check server logs via `aws logs tail /ecs/labs-jj-ace-web
      --since 3m --region us-east-1 --profile labs | grep "CLI token check"`.
    - `3` → network/HTTP error. Validate URL, token, and connectivity.
-5. On success, confirm end-to-end by fetching status:
+5. On success, confirm end-to-end by fetching status (auth required —
+   the endpoint is gated by `IsAuthenticated`):
    ```
-   curl -s <url>/api/auth/cli/status
+   curl -s -H "Authorization: Bearer $ACE_TOKEN" <url>/api/auth/cli/status
    ```
-   Expect `{"data":{"authenticated":true},"error":null}`.
+   Expect `{"data":{"authenticated":true},"error":null}`. Note: the
+   stored CLI token is currently a single global row in `SystemConfig`,
+   shared by every user of the ace-web instance — any upload overwrites
+   the previous one.
 
 ## Failure modes and recovery
 
