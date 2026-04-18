@@ -98,10 +98,12 @@ def _opp_list_impl(request):
 
         # Flat / web-created layouts: any of these at ACE/<slug>/ is enough
         # to identify this folder as an opp. load_opp handles both the old
-        # (state.yaml + pdd.md) and new (idea.md + runs/) shapes.
+        # (state.yaml + pdd.md) and new (idea.md + runs/) shapes. During the
+        # IDD→PDD rename transition we accept either primary doc name.
         names = {f.name for f in opp_children}
+        has_primary_doc = "pdd.md" in names or "idd.md" in names
         looks_like_opp = (
-            "state.yaml" in names and "pdd.md" in names
+            "state.yaml" in names and has_primary_doc
         ) or (
             "idea.md" in names and any(
                 f.name == "runs" and f.mime_type == "application/vnd.google-apps.folder"
@@ -429,7 +431,8 @@ def discuss(request, slug: str, run_id: str, skill: str):
     for step_snap in snap.current_run.steps:
         if step_snap.step.skill_name == "idea-to-pdd":
             for artifact in step_snap.artifacts:
-                if artifact.name == "pdd.md":
+                # Accept both during the IDD→PDD rename transition.
+                if artifact.name in ("pdd.md", "idd.md"):
                     idd_drive_id = artifact.drive_file_id
                     break
     # Fall back to the top-level pdd.md at the opp root if the idea-to-pdd step

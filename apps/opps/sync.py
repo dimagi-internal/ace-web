@@ -140,7 +140,8 @@ def load_opp(
 
     opp_manifest = parse_opp_yaml(_read_text(client, opp_yaml_file))
 
-    pdd_file = _find_child(opp_children, "pdd.md")
+    # IDD→PDD rename transition: accept either primary-doc filename.
+    pdd_file = _find_child(opp_children, "pdd.md") or _find_child(opp_children, "idd.md")
     pdd_body = _read_text(client, pdd_file) if pdd_file else ""
 
     runs_folder = _find_child_folder(opp_children, "runs")
@@ -302,7 +303,8 @@ def _load_flat_opp(
         raw = _read_text(client, state_file)
         state_data = yaml.safe_load(raw) or {}
 
-    pdd_file = _find_child(opp_children, "pdd.md")
+    # IDD→PDD rename transition: accept either primary-doc filename.
+    pdd_file = _find_child(opp_children, "pdd.md") or _find_child(opp_children, "idd.md")
     pdd_body = _read_text(client, pdd_file) if pdd_file else ""
 
     # Build a map of subfolder name -> list of DriveFile (recursively) so we
@@ -331,16 +333,16 @@ def _load_flat_opp(
         for skill in skills:
             artifacts_by_skill.setdefault(skill, []).extend(artifact_refs)
 
-    # Also treat pdd.md as the artifact for idea-to-pdd.
+    # Also treat pdd.md (or legacy idd.md) as the artifact for idea-to-pdd.
     if pdd_file is not None:
         artifacts_by_skill.setdefault("idea-to-pdd", []).append(
             ArtifactRef(
-                name="pdd.md",
+                name=pdd_file.name,
                 drive_file_id=pdd_file.id,
                 drive_web_link=pdd_file.web_view_link,
                 size_bytes=pdd_file.size_bytes,
                 mime_type=pdd_file.mime_type,
-                path="pdd.md",
+                path=pdd_file.name,
             )
         )
 
