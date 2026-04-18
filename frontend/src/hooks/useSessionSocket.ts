@@ -171,14 +171,19 @@ export function useSessionSocket(slug: string): UseSessionSocketResult {
         case "draft.committed": {
           // Insert the user message and an assistant placeholder into the
           // message list. The user message is constructed from the draft
-          // body that's about to be cleared by the subsequent draft.updated
-          // event; the assistant placeholder is filled in by chat.delta +
-          // chat.stream_complete events.
+          // body that's about to be cleared; the assistant placeholder is
+          // filled in by chat.delta + chat.stream_complete events.
           //
           // This is load-bearing: without it, chat.stream_start's map over
           // prev.messages is a no-op (the new assistant message id isn't
           // in the list yet), and the assistant response is invisible
           // until the page refreshes.
+          //
+          // We also clear active_draft.body here. The server creates a new
+          // empty draft with last_editor=sender, so the follow-up
+          // draft.updated hits the "keep local body" branch below and would
+          // otherwise leave the just-sent text in the textarea — which lets
+          // Enter re-send the same turn repeatedly.
           const prevDraftBody = prev.active_draft?.body ?? "";
           const maxTurnIndex = prev.messages.reduce(
             (acc, msg) => Math.max(acc, msg.turn_index),
@@ -211,6 +216,9 @@ export function useSessionSocket(slug: string): UseSessionSocketResult {
           };
           return {
             ...prev,
+            active_draft: prev.active_draft
+              ? { ...prev.active_draft, body: "" }
+              : prev.active_draft,
             messages: [...prev.messages, userMessage, assistantPlaceholder],
           };
         }
@@ -346,9 +354,9 @@ export function useSessionSocket(slug: string): UseSessionSocketResult {
             body: pendingDraftBodyRef.current,
           },
         });
-        pendingDraftBodyRef.current = null;
       }
     }
+    pendingDraftBodyRef.current = null;
     send({ action: "chat.send", data: {} });
   }, [send]);
 

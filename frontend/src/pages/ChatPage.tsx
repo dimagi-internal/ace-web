@@ -8,6 +8,10 @@ import { InlineTitleEdit } from "../components/InlineTitleEdit";
 import { RecentSessionsSidebar } from "../components/RecentSessionsSidebar";
 import { SharePopover } from "../components/SharePopover";
 import { ChatPanel } from "../components/opps/ChatPanel";
+import {
+  SESSIONS_UPDATED_EVENT,
+  notifySessionsUpdated,
+} from "../hooks/useRecentSessions";
 
 export function ChatPage() {
   const { slug = "" } = useParams();
@@ -15,15 +19,30 @@ export function ChatPage() {
 
   useEffect(() => {
     if (!slug) return;
-    getSession(slug)
-      .then((s) => setMeta(s))
-      .catch(() => setMeta(null));
+    let cancelled = false;
+    const load = () => {
+      getSession(slug)
+        .then((s) => {
+          if (!cancelled) setMeta(s);
+        })
+        .catch(() => {
+          if (!cancelled) setMeta(null);
+        });
+    };
+    load();
+    const handler = () => load();
+    window.addEventListener(SESSIONS_UPDATED_EVENT, handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SESSIONS_UPDATED_EVENT, handler);
+    };
   }, [slug]);
 
   const handleTitleSave = async (newTitle: string) => {
     if (!meta) return;
     const updated = await updateSession(slug, { title: newTitle });
     setMeta({ ...meta, title: updated.title });
+    notifySessionsUpdated();
   };
 
   if (!meta) {
