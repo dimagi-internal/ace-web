@@ -13,6 +13,8 @@ transcripts, and upload support for existing local `.jsonl` sessions.
 - **Pattern source** for new backend code: `../canopy-web/` (sibling repo).
 - **Deploy / AWS setup**: `docs/deploy.md`.
 - **Learnings**: `docs/learnings/` (load-bearing gotchas — read these before touching the relevant area).
+- **Architecture docs**: `docs/architecture/` (e.g. `cli-credentials.md` for the laptop→server credential upload flow).
+- **Project skills** (`.claude/skills/`) and **commands** (`.claude/commands/`) — repo-local Claude Code helpers. Notably `create-cli-credentials` / `/create-cli-credentials` to ship local claude CLI auth up to a deployed instance.
 
 The broader ACE plugin (CRISPR-Connect orchestration) lives in the sibling
 `ace` repo at `../ace/`. ace-web is a separate module — its design spec lives
