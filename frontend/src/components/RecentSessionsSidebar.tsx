@@ -1,9 +1,11 @@
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
+import { useState, type KeyboardEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { createSession } from "../api/sessions";
-import { useRecentSessions } from "../hooks/useRecentSessions";
+import { createSession, updateSession } from "../api/sessions";
+import { notifySessionsUpdated, useRecentSessions } from "../hooks/useRecentSessions";
+import { relativeTime } from "../lib/relativeTime";
 
 interface Props {
   currentSlug: string | null;
@@ -12,11 +14,39 @@ interface Props {
 export function RecentSessionsSidebar({ currentSlug }: Props) {
   const { sessions, refresh } = useRecentSessions(10);
   const navigate = useNavigate();
+  const [editingSlug, setEditingSlug] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
 
   const handleNew = async () => {
     const s = await createSession();
     await refresh();
     navigate(`/chat/${s.slug}`);
+  };
+
+  const startRename = (slug: string, title: string) => {
+    setEditingSlug(slug);
+    setDraftTitle(title);
+  };
+
+  const commitRename = async () => {
+    const slug = editingSlug;
+    if (!slug) return;
+    const next = draftTitle.trim();
+    const original = sessions.find((s) => s.slug === slug)?.title ?? "";
+    setEditingSlug(null);
+    if (next && next !== original) {
+      await updateSession(slug, { title: next });
+      notifySessionsUpdated();
+    }
+  };
+
+  const onRenameKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void commitRename();
+    } else if (e.key === "Escape") {
+      setEditingSlug(null);
+    }
   };
 
   return (
@@ -38,21 +68,53 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
         )}
         {sessions.map((s) => {
           const isActive = s.slug === currentSlug;
+          const isEditing = editingSlug === s.slug;
+          const rowClass = `group relative block rounded px-3 py-2 text-sm ${
+            isActive
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:bg-accent"
+          }`;
+
+          if (isEditing) {
+            return (
+              <div key={s.slug} className={rowClass}>
+                <input
+                  autoFocus
+                  value={draftTitle}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  onKeyDown={onRenameKey}
+                  onBlur={commitRename}
+                  className="w-full rounded border border-ring bg-background px-1.5 py-0.5 text-sm font-medium text-foreground outline-none"
+                />
+                <div className="mt-1 truncate text-xs text-muted-foreground">
+                  {relativeTime(s.updated_at)}
+                </div>
+              </div>
+            );
+          }
+
           return (
-            <Link
-              key={s.slug}
-              to={`/chat/${s.slug}`}
-              className={`block rounded px-3 py-2 text-sm ${
-                isActive
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent"
-              }`}
-            >
-              <div className="truncate font-medium">
-                {s.title || "Untitled"}
+            <Link key={s.slug} to={`/chat/${s.slug}`} className={rowClass}>
+              <div className="flex items-center gap-1">
+                <span className="flex-1 truncate font-medium">
+                  {s.title || "Untitled"}
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startRename(s.slug, s.title);
+                  }}
+                  title="Rename"
+                  aria-label="Rename chat"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100 focus:opacity-100"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
               </div>
               <div className="truncate text-xs text-muted-foreground">
-                {new Date(s.updated_at).toLocaleString()}
+                {relativeTime(s.updated_at)}
               </div>
             </Link>
           );

@@ -6,6 +6,7 @@ import { useCliAuthStatus } from "../../hooks/useCliAuthStatus";
 import { useSessionSocket } from "../../hooks/useSessionSocket";
 import { isDraftIdle, msUntilDraftIdle } from "../../lib/drafts";
 import { CliAuthBanner } from "../CliAuthBanner";
+import { ConnectionStatus } from "../ConnectionStatus";
 import { MessageList } from "../MessageList";
 import { PresenceChips } from "../PresenceChips";
 import { SendBox } from "../SendBox";
@@ -55,8 +56,17 @@ export function ChatPanel({ slug }: Props) {
   const holderIsPresent =
     holderId != null && socket.state.presence_user_ids.includes(holderId);
 
-  const streamingMessage = useMemo(() => {
-    return socket.state.messages.find((m) => m.status === "streaming") ?? null;
+  // A turn is "in flight" from the moment draft.committed inserts the
+  // assistant placeholder (status=pending) until chat.stream_complete
+  // flips it to complete. Treat pending AND streaming as in-flight so
+  // the send button stays locked out and the stop button is reachable
+  // during the "waiting for first token" window.
+  const inFlightMessage = useMemo(() => {
+    return (
+      socket.state.messages.find(
+        (m) => m.status === "streaming" || m.status === "pending",
+      ) ?? null
+    );
   }, [socket.state.messages]);
 
   if (!meta) {
@@ -70,8 +80,11 @@ export function ChatPanel({ slug }: Props) {
   return (
     <div className="flex h-full flex-col">
       <CliAuthBanner />
-      <div className="flex items-center gap-2 border-b border-border bg-background px-3 py-1.5 text-xs">
-        <span className="truncate text-muted-foreground">{meta.title}</span>
+      <div className="flex items-center gap-3 border-b border-border bg-background px-3 py-1.5 text-xs">
+        <ConnectionStatus
+          wsConnected={socket.connected}
+          cliAuthenticated={cliConnected}
+        />
         <div className="ml-auto">
           <PresenceChips
             participants={socket.state.participants}
@@ -88,8 +101,8 @@ export function ChatPanel({ slug }: Props) {
         draft={socket.state.active_draft}
         currentUserId={currentUserId}
         holderIsPresent={holderIsPresent}
-        isStreaming={streamingMessage != null}
-        streamingMessageId={streamingMessage?.id ?? null}
+        isStreaming={inFlightMessage != null}
+        streamingMessageId={inFlightMessage?.id ?? null}
         sessionSource={meta.source}
         sessionStatus={meta.status}
         cliConnected={cliConnected}
