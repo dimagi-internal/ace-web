@@ -1,9 +1,9 @@
 ---
-description: Upload this laptop's claude CLI credentials to a deployed ace-web so the server can use the subscription for chat. Usage: /create-cli-credentials [url]
+description: Upload this laptop's claude CLI credentials to a deployed ace-web so the server can use the subscription for chat. Usage: /ace-web:create-cli-credentials [url]
 argument-hint: [ace-web URL, default https://labs.connect.dimagi.com/ace]
 ---
 
-Invoke the `create-cli-credentials` skill to ship this laptop's local
+Invoke the `ace-web:create-cli-credentials` skill to ship this laptop's local
 claude CLI credential blob to the deployed ace-web instance at
 `$ARGUMENTS` (default `https://labs.connect.dimagi.com/ace`).
 
@@ -18,5 +18,5 @@ Follow the skill's steps exactly:
 6. On success, fetch `<URL>/api/auth/cli/status` and show the result.
 
 Full procedure + failure modes: see
-`.claude/skills/create-cli-credentials/SKILL.md` and
+`.claude/skills/ace-web/create-cli-credentials/SKILL.md` and
 `docs/architecture/cli-credentials.md`.

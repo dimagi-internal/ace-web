@@ -1,5 +1,5 @@
 ---
-name: create-cli-credentials
+name: ace-web:create-cli-credentials
 description: Connect a developer's local claude CLI credentials to a deployed ace-web instance. Reads the local credential blob (macOS Keychain or Linux ~/.claude/.credentials.json), mints a personal bearer token, and POSTs the blob to /api/auth/cli/upload. Use when the user asks to "connect my CLI", "upload credentials", "hook up claude", or when /auth/cli shows "not connected".
 ---
 
