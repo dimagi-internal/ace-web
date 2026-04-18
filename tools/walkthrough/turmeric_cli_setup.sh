@@ -100,16 +100,21 @@ log "csrftoken_ace=${CSRF_TOKEN:0:8}..."
 
 # --- 2. POST /api/opps/ → create the opp -----------------------------------
 
-log "creating opp $SLUG"
+log "creating opp $SLUG (seeding pdd.md so workbench has content)"
 CREATE_PAYLOAD="$(PDD_PATH="$PDD_PATH" SLUG="$SLUG" DISPLAY_NAME="$DISPLAY_NAME" \
   python3 -c "
 import json, os
 with open(os.environ['PDD_PATH']) as f:
     body = f.read()
+# Pass the same body as both 'idea' (short description) and 'pdd' (full
+# document). This pre-populates the idea-to-pdd artifact so the workbench
+# preview isn't empty on first load. /ace:run would normally generate
+# pdd.md from idea.md, but --dry-run doesn't execute the skill.
 print(json.dumps({
     'slug': os.environ['SLUG'],
     'display_name': os.environ['DISPLAY_NAME'],
     'idea': body,
+    'pdd': body,
     'mode': 'auto',
 }))
 ")"

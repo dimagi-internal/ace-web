@@ -38,8 +38,15 @@ def create_opp(
     display_name: str,
     idea: str,
     mode: str = "review",
+    pdd: str = "",
 ) -> CreateOppResult:
-    """Create a new opp: Drive folder + workspace row + seeded chat session."""
+    """Create a new opp: Drive folder + workspace row + seeded chat session.
+
+    If ``pdd`` is non-empty, also writes it as ``pdd.md`` in the opp root.
+    This lets callers that already have a PDD (e.g. the Turmeric smoke-test
+    setup script) pre-populate the idea-to-pdd artifact so the workbench
+    preview isn't empty on first load.
+    """
     if not SLUG_RE.match(slug):
         raise CreateOppError("invalid-slug", f"invalid slug {slug!r}")
     if mode not in ("auto", "review"):
@@ -58,6 +65,8 @@ def create_opp(
     runs_folder_id = drive.create_folder(opp_folder_id, "runs")
     run1_folder_id = drive.create_folder(runs_folder_id, "run-001")
     drive.upload_file(opp_folder_id, "idea.md", idea, "text/markdown")
+    if pdd:
+        drive.upload_file(opp_folder_id, "pdd.md", pdd, "text/markdown")
     state_yaml = (
         f"opp: {slug}\n"
         f"mode: {mode}\n"
