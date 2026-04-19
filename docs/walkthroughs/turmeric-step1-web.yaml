@@ -1,0 +1,49 @@
+name: "Turmeric Step 1 — Web Smoke Test"
+narrative: "Smoke-test the ace-web tier: opp create, workbench render, Drive artifact round-trip, and opps→chat bridge. Only Phase 1 (idea-to-pdd) is populated — everything downstream is exercised via its pending-state sidebar rendering in Scene 2."
+base_url: "https://labs.connect.dimagi.com/ace"
+
+# Auth via the /auth/e2e-login/ endpoint as ace@dimagi-ai.com — the
+# canonical bot identity for automation (see CLAUDE.md). The login script
+# POSTs to e2e-login with ACE_E2E_AUTH_TOKEN, captures the session cookie,
+# and stashes it in the browse-side cookie jar that the walkthrough skill
+# injects before the first scene. No OAuth round-trip, no personal tokens.
+auth:
+  type: command
+  check: "bash tools/walkthrough/turmeric_auth_check.sh"
+  login: "bash tools/walkthrough/turmeric_auth_login.sh"
+  inject_url: "/"
+
+personas:
+  runner:
+    name: "Smoke-Test Runner"
+    role: "Dimagi engineer validating a pre-release"
+    color: "#2563eb"
+    intro: "The runner has just executed turmeric_web_setup.py or turmeric_cli_setup.sh. The slug is in /tmp/turmeric-smoketest/slug.txt. Four scenes verify the web plumbing end-to-end; only idea-to-pdd is populated (the setup runs --dry-run), so downstream phases stay pending by design."
+
+# Four scenes. Each proves a distinct piece of the ace-web plumbing; scenes
+# that captured identical screenshots in prior runs (pdd artifact re-click,
+# multiple pending-step clicks) have been removed in favor of the one scene
+# that renders the pending sidebar (Scene 2) and the one step that actually
+# round-trips a Drive artifact (Scene 3).
+scenes:
+  - persona: runner
+    title: "Opp appears in the list"
+    show: "Opp list at /opps shows a turmeric-smoketest-<timestamp> row with a human-readable display_name distinct from the slug."
+    impressive_because: "Drive-backed list is fresh — the just-created opp is visible without a cache flush. Exercises: opp create → Drive folder → list read-through."
+
+  - persona: runner
+    title: "Workbench three-pane renders"
+    show: "Navigate to /opps/<slug>. Left: skills sidebar with 19 skills across 6 phases (only idea-to-pdd ✓, rest ○). Middle: empty-state detail pane. Right: chat pane with 'Connected' indicator and the two seeded messages."
+    impressive_because: "Exercises a lot at once: 3-pane mount, Drive sync, 19-skill phase rendering, WebSocket auth + handshake, pending-status rendering for 18 skills, and the chat session attached to the opp."
+
+  - persona: runner
+    title: "Drive artifact round-trips — idea-to-pdd"
+    show: "Click idea-to-pdd in the sidebar. Detail pane loads pdd.md and renders the Turmeric IDD body verbatim — same bytes that the setup script seeded into Drive."
+    impressive_because: "Exercises artifact-body fetch from Drive (through the ace-web API, not the Drive web link) plus markdown rendering. This is the step-1 plumbing — the reason the walkthrough is named 'step1'."
+    ai_quality: "Preview body must contain the Turmeric PDD text that was seeded at setup (Intervention Design Document header, FLW/GPS/turmeric-vendor references), not a placeholder or Drive error."
+
+  - persona: runner
+    title: "Opps → chat bridge from idea-to-pdd"
+    show: "Click 'Discuss in chat' on the idea-to-pdd step. Redirects to a new /chat/<slug> session whose first message is a seeded system prompt referencing the skill and opp."
+    impressive_because: "Proves the last bridge: Drive step context → seeded ace-web chat session. Closes the loop for the 'inspect → discuss → edit SKILL.md → rerun' workflow."
+    ai_quality: "Seed message must contain the skill name 'idea-to-pdd' and the opp slug verbatim; the IDD body should be embedded as a markdown code block."

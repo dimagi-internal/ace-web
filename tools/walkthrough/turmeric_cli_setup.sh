@@ -178,8 +178,8 @@ if [ "$HTTP_CODE" != "200" ]; then
   exit 5
 fi
 
-# --- 6. Persist the slug for /walkthrough turmeric -------------------------
+# --- 6. Persist the slug for /walkthrough turmeric-step1-web ---------------
 
 echo "$SLUG" > "$SLUG_FILE"
 log "wrote slug to $SLUG_FILE"
-log "next: run /walkthrough turmeric in Claude Code to verify the opp in the UI"
+log "next: run /walkthrough turmeric-step1-web in Claude Code to verify the opp in the UI"

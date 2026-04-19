@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Does the shared cookie jar already have a valid ace-web session?
-# Called by canopy:walkthrough via turmeric.yaml's auth.check hook.
+# Called by canopy:walkthrough via turmeric-step1-web.yaml's auth.check hook.
 #
 # Returns 0 if authenticated, non-zero otherwise. The walkthrough skill
 # interprets non-zero as "expired or missing" and invokes the login
