@@ -25,7 +25,7 @@ def admin(db):
 def stub_live_check(monkeypatch):
     """Don't invoke real claude binary in upload tests."""
     from apps.common import auth_flow
-    monkeypatch.setattr(auth_flow, "_check_token_via_cli", lambda: True)
+    monkeypatch.setattr(auth_flow, "_check_token_via_cli", lambda blob_json=None: True)
 
 
 @pytest.mark.django_db
@@ -79,4 +79,22 @@ def test_user_upload_persists_validation_state(user):
     assert resp.status_code == 200
     cred = UserCredential.objects.get(user=user)
     assert cred.last_validation_ok is True
+    assert cred.last_validated_at is not None
+
+
+@pytest.mark.django_db
+def test_user_upload_persists_validation_failure(user, monkeypatch):
+    """When the live check returns False, last_validation_ok must persist as False
+    so the resolver falls through to the global fallback."""
+    from apps.common import auth_flow
+    monkeypatch.setattr(auth_flow, "_check_token_via_cli", lambda blob_json=None: False)
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    resp = client.post("/api/auth/cli/upload", BLOB, format="json")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["authenticated"] is False
+
+    cred = UserCredential.objects.get(user=user)
+    assert cred.last_validation_ok is False
     assert cred.last_validated_at is not None

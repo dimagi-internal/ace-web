@@ -27,8 +27,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
+import tempfile
 import time
+import uuid
+
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +132,6 @@ def _write_credentials_file(blob: dict) -> None:
     sync, the CLI handles refresh using the stored refreshToken without
     any help from us.
     """
-    from django.conf import settings
-
     claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
     if not claude_home:
         claude_home = os.environ.get("HOME", "")
@@ -278,6 +281,21 @@ def _invalidate_validation_cache() -> None:
     _validation_cache["source"] = ""
 
 
+def _load_blob_for_source(user, source: str) -> str:
+    """Fetch the full blob JSON for the resolver's source. Returns "" if missing."""
+    if source == "user" and user is not None:
+        from .models import UserCredential
+
+        cred = UserCredential.objects.filter(user=user).first()
+        return cred.blob_encrypted if cred else ""
+    if source == "global":
+        from .models import SystemConfig
+
+        row = SystemConfig.objects.filter(key=_BLOB_DB_KEY).first()
+        return row.value if row else ""
+    return ""
+
+
 def validate_stored_token(user=None) -> bool:
     """Return True only if the resolved token (per-user or global) passes a live CLI check.
 
@@ -319,7 +337,14 @@ def validate_stored_token(user=None) -> bool:
         return _validation_cache["valid"]
 
     logger.info("validate_stored_token: cache miss, running CLI check")
-    valid = _check_token_via_cli()
+    # Pick the blob that matches the resolved source so the live check uses
+    # the SAME credentials we'd actually hand a chat subprocess.
+    blob_json = (
+        _load_blob_for_source(user, source)
+        if source != "env"
+        else json.dumps({"claudeAiOauth": {"accessToken": token}})
+    )
+    valid = _check_token_via_cli(blob_json=blob_json)
     _validation_cache.update(valid=valid, checked_at=now, token=token, source=source)
     logger.info("validate_stored_token: token %s CLI check", "PASSED" if valid else "FAILED")
     return valid
@@ -330,14 +355,37 @@ def validate_stored_token(user=None) -> bool:
 cli_is_ready = validate_stored_token
 
 
-def _check_token_via_cli() -> bool:
-    """Run ``claude -p "ok"`` and look for a successful terminal result."""
-    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
-    from django.conf import settings
+def _check_token_via_cli(blob_json: str | None = None) -> bool:
+    """Run ``claude -p "ok"`` and look for a successful terminal result.
 
-    claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
-    if claude_home:
-        env["HOME"] = claude_home
+    When ``blob_json`` is provided (per-user validation), stage it into a
+    fresh temp HOME for this single subprocess so we validate THIS user's
+    token, not whatever happens to be in the global ACE_CLAUDE_HOME.
+    When ``blob_json`` is None, fall back to the legacy behavior of using
+    the shared ACE_CLAUDE_HOME (covers the no-user / startup-check paths).
+    """
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    staged_home: str | None = None
+
+    if blob_json:
+        staged_root = os.path.join(
+            tempfile.gettempdir(), "ace-cli-validate", uuid.uuid4().hex[:12]
+        )
+        claude_dir = os.path.join(staged_root, ".claude")
+        os.makedirs(claude_dir, exist_ok=True)
+        creds_path = os.path.join(claude_dir, ".credentials.json")
+        with open(creds_path, "w") as f:
+            f.write(blob_json)
+        try:
+            os.chmod(creds_path, 0o600)
+        except OSError:
+            pass
+        env["HOME"] = staged_root
+        staged_home = staged_root
+    else:
+        claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
+        if claude_home:
+            env["HOME"] = claude_home
 
     try:
         proc = subprocess.run(
@@ -358,8 +406,9 @@ def _check_token_via_cli() -> bool:
             )
         )
         logger.info(
-            "CLI token check: rc=%s got_success=%s auth_error=%s stdout_len=%d",
+            "CLI token check: rc=%s got_success=%s auth_error=%s stdout_len=%d staged=%s",
             proc.returncode, got_success, saw_auth_error, len(proc.stdout),
+            bool(staged_home),
         )
         if got_success and not saw_auth_error:
             return True
@@ -374,3 +423,6 @@ def _check_token_via_cli() -> bool:
     except FileNotFoundError:
         logger.warning("claude binary not found for token check")
         return False
+    finally:
+        if staged_home:
+            shutil.rmtree(staged_home, ignore_errors=True)
