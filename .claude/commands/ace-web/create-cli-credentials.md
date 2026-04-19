@@ -14,6 +14,8 @@ Follow the skill's steps exactly:
 3. Ask the user for a personal bearer token from `<URL>/settings` — give
    them the full clickable URL. Do NOT proceed without it.
 4. Run the uploader with `ACE_URL` and `ACE_TOKEN`.
+4a. Confirm scope — default is personal (your `UserCredential`). Pass
+    `--global` only for admin-driven instance-wide fallback updates.
 5. Report the exit code and server-confirmed `authenticated` status.
 6. On success, fetch `<URL>/api/auth/cli/status` and show the result.
 

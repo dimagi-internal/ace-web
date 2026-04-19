@@ -60,10 +60,33 @@ Full architecture: `docs/architecture/cli-credentials.md`.
    ```
    curl -s -H "Authorization: Bearer $ACE_TOKEN" <url>/api/auth/cli/status
    ```
-   Expect `{"data":{"authenticated":true},"error":null}`. Note: the
-   stored CLI token is currently a single global row in `SystemConfig`,
-   shared by every user of the ace-web instance — any upload overwrites
-   the previous one.
+   Expect `{"data":{"authenticated":true, "user":{"has_blob":true,
+   "token_prefix":"sk-ant-oat01-xx"}, "global":{"has_blob":true}}, "error":null}`.
+   Note: as of 2026-04-19, credential blobs are stored per-user
+   (`UserCredential`); the global `SystemConfig` blob remains as a fallback
+   for users who haven't uploaded their own. See
+   `docs/specs/2026-04-18-per-user-cli-credentials-design.md`.
+
+## Scope: personal vs global
+
+By default the uploader writes a **personal** blob (your user's
+`UserCredential`). Your subsequent web chat sessions will use your own
+Max subscription. This is what 99% of users want.
+
+The **global** fallback blob (instance-wide `SystemConfig` row) exists
+for two reasons:
+1. Bootstrap — lets a new user send their first chat before they've
+   uploaded their own token.
+2. Shared team instances where a designated admin subscription powers
+   everyone.
+
+Only `is_staff` admins can write the global blob. To do it explicitly:
+
+```
+ACE_URL=... ACE_TOKEN=... python3 scripts/ace_cli_login.py --global
+```
+
+If a non-admin passes `--global`, the server returns 403.
 
 ## Failure modes and recovery
 
