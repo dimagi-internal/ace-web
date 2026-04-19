@@ -41,7 +41,10 @@ export function SkillRow({ step, isSelected, priorRunStep, onClick }: Props) {
         </>
       ) : (
         <>
-          <span className="w-[54px] shrink-0 text-[10px] text-muted-foreground">no judge</span>
+          {/* Preserve the judge-column widths so skill names line up across
+              rows, but drop the "no judge" label — it was internal-speak
+              leaking into the UI. */}
+          <span className="w-[54px] shrink-0" />
           <span className="w-[32px] shrink-0" />
           <span className="w-[48px] shrink-0" />
         </>

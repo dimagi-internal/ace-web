@@ -10,7 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
-from apps.sessions.models import IngestUpload, Message, Session, SessionParticipant
+from apps.sessions.models import IngestUpload, Message, Session
 
 from .parser import parse_session_file
 
@@ -47,15 +47,12 @@ def upload(request: Request) -> Response:
             status=409,
         )
 
-    session = Session.objects.create(
+    session = Session.create_with_owner(
         owner=request.user,
         source="upload",
         status="imported",
         cli_session_id=parsed.cli_session_id or "",
         title=f"Imported: {file.name}",
-    )
-    SessionParticipant.objects.create(
-        session=session, user=request.user, role="owner"
     )
 
     messages = []
