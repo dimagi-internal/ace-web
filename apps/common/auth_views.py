@@ -10,6 +10,7 @@ history + docs/deploy.md for why.
 """
 from __future__ import annotations
 
+import json
 import logging
 
 from django.conf import settings
@@ -134,6 +135,41 @@ def cli_auth_upload(request: Request) -> Response:
             "scope": scope,
         })
     )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def cli_auth_promote(request: Request) -> Response:
+    """Admin-only: copy the caller's UserCredential blob to the global SystemConfig row."""
+    if not request.user.is_staff:
+        return Response(
+            error_response(message="staff only", code="forbidden"),
+            status=403,
+        )
+    from .models import UserCredential
+
+    cred = UserCredential.objects.filter(user=request.user).first()
+    if cred is None:
+        return Response(
+            error_response(
+                message="no personal blob to promote — upload one first",
+                code="no_personal_blob",
+            ),
+            status=400,
+        )
+    try:
+        blob = json.loads(cred.blob_encrypted)
+    except ValueError:
+        return Response(
+            error_response(message="personal blob is corrupt", code="bad_blob"),
+            status=400,
+        )
+    auth_flow.store_credentials_blob(blob)
+    logger.info(
+        "cli_auth_promote: admin=%s promoted personal blob to global",
+        request.user.email,
+    )
+    return Response(success_response({"promoted": True, "token_prefix": cred.token_prefix}))
 
 
 # Stream-compatible JSON dump helper for the ace-cli-login script, so it
