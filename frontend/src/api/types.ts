@@ -106,6 +106,13 @@ export interface ApiEnvelope<T> {
 
 export interface CliAuthStatus {
   authenticated: boolean;
+  user: { has_blob: boolean; token_prefix: string | null };
+  global: { has_blob: boolean };
+}
+
+export interface CliAuthPromoteResult {
+  promoted: boolean;
+  token_prefix: string;
 }
 
 // --- ACE Opportunity Workbench types (apps/opps) ---

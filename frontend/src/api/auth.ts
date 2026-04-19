@@ -1,5 +1,10 @@
 import { apiFetch } from "./client";
-import type { CliAuthStatus } from "./types";
+import type { CliAuthPromoteResult, CliAuthStatus } from "./types";
 
 export const cliAuthStatus = () =>
   apiFetch<CliAuthStatus>("/api/auth/cli/status");
+
+export const promoteCliAuthToGlobal = () =>
+  apiFetch<CliAuthPromoteResult>("/api/auth/cli/promote", {
+    method: "POST",
+  });
