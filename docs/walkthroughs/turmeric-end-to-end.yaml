@@ -14,13 +14,19 @@ base_url: "https://labs.connect.dimagi.com/ace"
 #      or Phase 6 closeout with `llo-onboarding` and its siblings
 #      deliberately skipped.
 #   4. echo "<slug>" > /tmp/turmeric-smoketest/slug.txt
-#   5. /walkthrough turmeric-end-to-end
+#   5. bash tools/walkthrough/turmeric_data_check.sh  # verifies the slug's
+#      opp actually has the ≥6-skills-complete state this walkthrough needs.
+#      The skill should call this during pre-flight and STOP if it fails —
+#      running scenes 2–5 against an unpopulated opp produces embarrassments.
+#   6. /walkthrough turmeric-end-to-end
 #
 # Cost: a full through-phase-4 run burns significant LLM tokens (Nova
 # calls for Learn/Deliver apps, app-test evaluation loop, OCS agent
-# clone + RAG build). Budget accordingly. For most demos the right
-# answer is to reuse CRISPR-Test-001 or a previously-run Turmeric opp
-# rather than re-running from scratch.
+# clone + RAG build). Budget accordingly. Do NOT substitute a different
+# opp (e.g. CRISPR-Test-001) when the Turmeric opp is sparse — the spec's
+# ai_quality assertions are domain-specific (turmeric markets, MTN cards,
+# vendors, GPS) and synthetic fixtures from other opps will fail them.
+# If the Turmeric opp isn't populated, either populate it or stop.
 auth:
   type: command
   check: "bash tools/walkthrough/turmeric_auth_check.sh"
