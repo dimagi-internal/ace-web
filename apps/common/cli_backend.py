@@ -84,7 +84,9 @@ class CLIBackend:
         # Stage the session owner's credential blob into a fresh per-invocation
         # HOME so two concurrent chats from different users can't clobber each
         # other's ~/.claude/.credentials.json. Torn down in the outer finally.
-        staged_env, staged_home = await sync_to_async(self._stage_env_for)(session)
+        # ``source`` tells us where the blob came from so we can persist any
+        # CLI-refreshed version back to the same storage before teardown.
+        staged_env, staged_home, source = await sync_to_async(self._stage_env_for)(session)
         try:
             # ── attempt 1: resume if we have a CLI session id AND resume is allowed ──
             if session.cli_session_id and not force_fresh_session:
@@ -162,6 +164,22 @@ class CLIBackend:
                 )
             self._breaker.record_success()
         finally:
+            # Persist any CLI-refreshed blob BEFORE teardown. The claude CLI
+            # refreshes OAuth tokens in-place by overwriting the staged
+            # credentials file; if we rmtree first we throw the refresh away
+            # and the next chat tries to refresh using an already-burned
+            # refresh token. Wrapped in try/except because cleanup must
+            # never raise.
+            try:
+                await sync_to_async(self._persist_refreshed_blob)(
+                    session, source, staged_home
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to persist refreshed blob for session=%s",
+                    session.slug,
+                    exc_info=True,
+                )
             self._teardown_staged_home(staged_home)
 
     # ────────────────────────────── helpers ──────────────────────────────
@@ -196,17 +214,23 @@ class CLIBackend:
             ) from exc
         return proc
 
-    def _stage_env_for(self, session: Session) -> tuple[dict[str, str], str]:
+    def _stage_env_for(
+        self, session: Session
+    ) -> tuple[dict[str, str], str, str | None]:
         """Resolve the owner's credential blob and stage it in a fresh temp HOME.
 
-        Returns ``(env_dict, staged_home_path)``. Caller MUST call
-        ``_teardown_staged_home(home)`` in a finally block to remove the
-        directory — per-invocation UUIDs keep concurrent chats isolated.
+        Returns ``(env_dict, staged_home_path, source)`` where ``source`` is
+        one of ``"user"``, ``"global"``, ``"env"`` or ``None`` (no token
+        resolved). Caller MUST call ``_teardown_staged_home(home)`` in a
+        finally block to remove the directory. The ``source`` is used by
+        ``_persist_refreshed_blob`` to write any CLI-refreshed blob back to
+        the right storage layer before teardown.
         """
         env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
 
         resolved = get_stored_token(user=session.owner)
         token = resolved[0] if resolved else ""
+        source = resolved[1] if resolved else None
         blob_json = self._load_blob_for_token(session.owner, resolved)
 
         staged_root = (
@@ -232,7 +256,66 @@ class CLIBackend:
         env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
         if token:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-        return env, str(staged_root)
+        return env, str(staged_root), source
+
+    def _persist_refreshed_blob(
+        self, session: Session, source: str | None, staged_home: str
+    ) -> None:
+        """Write the (possibly-refreshed) staged credentials file back to the source.
+
+        The claude CLI refreshes OAuth tokens in-place by overwriting
+        ``$HOME/.claude/.credentials.json``. If we rmtree the staged HOME
+        without reading it back first, we lose the refresh — and since
+        Anthropic's refresh tokens are often single-use, the next chat
+        attempts a refresh with an already-burned refresh token and fails
+        with a 401. This method re-reads the file and writes the new blob
+        back to whichever storage layer the resolver picked.
+
+        Idempotent and defensive: if the file is missing, malformed, or the
+        access token is obviously junk, this is a no-op. ``source="env"``
+        is a dev/test fallback — no DB row exists to write back to.
+        """
+        if source is None or not staged_home:
+            return
+        creds_path = Path(staged_home) / ".claude" / ".credentials.json"
+        if not creds_path.exists():
+            return
+        try:
+            current_text = creds_path.read_text()
+            blob = json.loads(current_text)
+        except (OSError, ValueError):
+            logger.warning(
+                "Could not re-read staged credentials at %s for persist", creds_path
+            )
+            return
+
+        access_token = (blob.get("claudeAiOauth") or {}).get("accessToken") or ""
+        if not access_token.startswith("sk-ant-oat"):
+            return  # don't persist obviously-malformed state
+
+        if source == "user":
+            from .models import UserCredential
+
+            UserCredential.objects.filter(user=session.owner).update(
+                blob_encrypted=current_text,
+                token_prefix=access_token[:15],
+            )
+            logger.info(
+                "CLIBackend: persisted refreshed user blob for user=%s prefix=%s",
+                session.owner.pk, access_token[:15],
+            )
+        elif source == "global":
+            from .models import SystemConfig
+
+            SystemConfig.objects.update_or_create(
+                key="claude_credentials_blob",
+                defaults={"value": current_text},
+            )
+            logger.info(
+                "CLIBackend: persisted refreshed global blob prefix=%s",
+                access_token[:15],
+            )
+        # source="env" is a dev/test fallback — don't persist back to anywhere
 
     def _load_blob_for_token(self, owner, resolved) -> str:
         """Pick the full blob JSON matching the resolver's source."""

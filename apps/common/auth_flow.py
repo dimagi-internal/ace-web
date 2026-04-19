@@ -357,10 +357,51 @@ def validate_stored_token(user=None) -> bool:
         if source != "env"
         else json.dumps({"claudeAiOauth": {"accessToken": token}})
     )
-    valid = _check_token_via_cli(blob_json=blob_json)
+    on_refresh = (
+        _build_refresh_persister(user, source) if source in ("user", "global") else None
+    )
+    valid = _check_token_via_cli(blob_json=blob_json, on_refresh=on_refresh)
     _validation_cache.update(valid=valid, checked_at=now, token=token, source=source)
     logger.info("validate_stored_token: token %s CLI check", "PASSED" if valid else "FAILED")
     return valid
+
+
+def _build_refresh_persister(user, source: str):
+    """Return a callback that persists a refreshed blob back to the right storage.
+
+    Mirrors ``CLIBackend._persist_refreshed_blob`` for the validation probe
+    path: ``_check_token_via_cli`` stages the blob into a temp HOME, the
+    claude CLI may refresh it in-place, and we need to write the refresh
+    back to DB before the staged HOME is rmtree'd — otherwise the next
+    validate (or chat) tries to refresh with an already-burned refresh
+    token.
+    """
+
+    def _persist(blob: dict) -> None:
+        access_token = (blob.get("claudeAiOauth") or {}).get("accessToken") or ""
+        if not token_looks_real(access_token):
+            return
+        blob_json = json.dumps(blob)
+        if source == "user" and user is not None:
+            from .models import UserCredential
+
+            UserCredential.objects.filter(user=user).update(
+                blob_encrypted=blob_json,
+                token_prefix=access_token[:15],
+            )
+            logger.info(
+                "validate: persisted refreshed user blob for user=%s", user.pk
+            )
+        elif source == "global":
+            from .models import SystemConfig
+
+            SystemConfig.objects.update_or_create(
+                key=_BLOB_DB_KEY,
+                defaults={"value": blob_json},
+            )
+            logger.info("validate: persisted refreshed global blob")
+
+    return _persist
 
 
 # Public canonical name. Both /api/auth/cli/status and the chat backend
@@ -368,7 +409,10 @@ def validate_stored_token(user=None) -> bool:
 cli_is_ready = validate_stored_token
 
 
-def _check_token_via_cli(blob_json: str | None = None) -> bool:
+def _check_token_via_cli(
+    blob_json: str | None = None,
+    on_refresh=None,
+) -> bool:
     """Run ``claude -p "ok"`` and look for a successful terminal result.
 
     When ``blob_json`` is provided (per-user validation), stage it into a
@@ -376,6 +420,11 @@ def _check_token_via_cli(blob_json: str | None = None) -> bool:
     token, not whatever happens to be in the global ACE_CLAUDE_HOME.
     When ``blob_json`` is None, fall back to the legacy behavior of using
     the shared ACE_CLAUDE_HOME (covers the no-user / startup-check paths).
+
+    ``on_refresh`` is an optional ``Callable[[dict], None]`` invoked before
+    teardown with the (possibly-refreshed) blob read back from the staged
+    credentials file. Caller uses it to persist the refresh back to the
+    right storage layer — see ``_build_refresh_persister``.
     """
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     staged_home: str | None = None
@@ -439,4 +488,17 @@ def _check_token_via_cli(blob_json: str | None = None) -> bool:
         return False
     finally:
         if staged_home:
+            if on_refresh is not None:
+                try:
+                    creds_path = os.path.join(
+                        staged_home, ".claude", ".credentials.json"
+                    )
+                    if os.path.exists(creds_path):
+                        with open(creds_path) as f:
+                            refreshed = json.load(f)
+                        on_refresh(refreshed)
+                except Exception:
+                    logger.warning(
+                        "Failed to read refreshed creds for persist", exc_info=True
+                    )
             shutil.rmtree(staged_home, ignore_errors=True)

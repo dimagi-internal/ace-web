@@ -18,7 +18,9 @@ def user(db):
 def stub_live_check(monkeypatch):
     """Avoid invoking real claude binary and clear env-token leakage."""
     from apps.common import auth_flow
-    monkeypatch.setattr(auth_flow, "_check_token_via_cli", lambda blob_json=None: True)
+    monkeypatch.setattr(
+        auth_flow, "_check_token_via_cli", lambda blob_json=None, on_refresh=None: True
+    )
     # Prior tests may have set CLAUDE_CODE_OAUTH_TOKEN as a side effect of
     # calling store_*_credentials_blob; strip it so each test starts clean.
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)

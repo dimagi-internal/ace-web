@@ -13,7 +13,12 @@ REAL = "sk-ant-oat01-" + "x" * 40
 def stub_live_check(monkeypatch):
     """Avoid the real claude binary."""
     from apps.common import auth_flow
-    monkeypatch.setattr(auth_flow, "_check_token_via_cli", lambda blob_json=None: True)
+    monkeypatch.setattr(
+        auth_flow,
+        "_check_token_via_cli",
+        lambda blob_json=None, on_refresh=None: True,
+    )
+    auth_flow._invalidate_validation_cache()
 
 
 @pytest.fixture
@@ -64,3 +69,30 @@ def test_promote_fails_when_admin_has_no_personal_blob(db):
     resp = client.post("/api/auth/cli/promote")
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "no_personal_blob"
+
+
+@pytest.mark.django_db
+def test_promote_returns_authenticated_flag(admin):
+    """After promote, the response should surface whether the blob validates live."""
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    resp = client.post("/api/auth/cli/promote")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["promoted"] is True
+    assert data["authenticated"] is True  # via the autouse stub_live_check
+
+
+@pytest.mark.django_db
+def test_promote_corrupt_blob_returns_400(admin):
+    """If the admin's personal blob is structurally valid JSON but missing
+    claudeAiOauth.accessToken, store_credentials_blob raises ValueError; the
+    promote endpoint should catch it and return 400 bad_blob."""
+    UserCredential.objects.filter(user=admin).update(
+        blob_encrypted=json.dumps({"claudeAiOauth": {"accessToken": "not-real"}}),
+    )
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    resp = client.post("/api/auth/cli/promote")
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "bad_blob"

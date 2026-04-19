@@ -17,7 +17,9 @@ def test_upload_does_not_log_full_token(caplog, monkeypatch):
 
     # Stub the live probe so we don't run claude in CI.
     from apps.common import auth_flow
-    monkeypatch.setattr(auth_flow, "_check_token_via_cli", lambda blob_json=None: True)
+    monkeypatch.setattr(
+        auth_flow, "_check_token_via_cli", lambda blob_json=None, on_refresh=None: True
+    )
 
     with caplog.at_level(logging.DEBUG):
         resp = client.post(

@@ -54,12 +54,19 @@ def _fake():
     return _fake_instance
 
 
-def get_chat_backend():
+def get_chat_backend(user=None):
     """Return the chat backend to use for the current call.
+
+    ``user`` is the session owner whose credentials we should try first —
+    same user passed to ``validate_stored_token`` by ``/api/auth/cli/status``
+    so the status banner and the actual send path stay in sync. Pass
+    ``user=None`` for legacy callers that don't have session context
+    (startup checks, etc.); those only see the global fallback.
 
     Priority:
       1. ``FakeCLIBackend`` when ``ACE_USE_FAKE_CLI_BACKEND`` is True (E2E tests).
-      2. ``CLIBackend`` when ``cli_is_ready()`` passes (stored CLI token works).
+      2. ``CLIBackend`` when ``cli_is_ready(user=user)`` passes
+         (this user's personal blob OR the global fallback validates).
       3. ``ApiBackend`` when ``ANTHROPIC_API_KEY`` is set.
       4. ``CLIBackend`` as a dead-end so the user sees a clear CLI error.
     """
@@ -68,13 +75,19 @@ def get_chat_backend():
 
     from .auth_flow import cli_is_ready
 
-    if cli_is_ready():
-        logger.debug("chat backend = CLIBackend (cli_is_ready=True)")
+    if cli_is_ready(user=user):
+        logger.debug(
+            "chat backend = CLIBackend (cli_is_ready=True, user=%s)",
+            getattr(user, "pk", None),
+        )
         return _cli()
 
     api_key = getattr(settings, "ANTHROPIC_API_KEY", "") or ""
     if api_key:
-        logger.info("chat backend = ApiBackend (CLI not ready, using API key)")
+        logger.info(
+            "chat backend = ApiBackend (CLI not ready for user=%s, using API key)",
+            getattr(user, "pk", None),
+        )
         return _api()
 
     logger.warning(

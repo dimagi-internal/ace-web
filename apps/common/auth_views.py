@@ -164,12 +164,27 @@ def cli_auth_promote(request: Request) -> Response:
             error_response(message="personal blob is corrupt", code="bad_blob"),
             status=400,
         )
-    auth_flow.store_credentials_blob(blob)
+    try:
+        auth_flow.store_credentials_blob(blob)
+        authenticated = auth_flow.validate_stored_token()
+    except ValueError as exc:
+        # Structurally valid JSON but semantically malformed blob
+        # (missing claudeAiOauth.accessToken, or token_looks_real rejects it).
+        return Response(
+            error_response(message=str(exc), code="bad_blob"),
+            status=400,
+        )
     logger.info(
-        "cli_auth_promote: admin=%s promoted personal blob to global",
-        request.user.email,
+        "cli_auth_promote: admin=%s promoted personal blob to global authenticated=%s",
+        request.user.email, authenticated,
     )
-    return Response(success_response({"promoted": True, "token_prefix": cred.token_prefix}))
+    return Response(
+        success_response({
+            "promoted": True,
+            "authenticated": authenticated,
+            "token_prefix": cred.token_prefix,
+        })
+    )
 
 
 # Stream-compatible JSON dump helper for the ace-cli-login script, so it
