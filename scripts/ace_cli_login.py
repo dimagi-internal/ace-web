@@ -19,6 +19,9 @@ Flags:
     --token    bearer token (overrides $ACE_TOKEN)
     --email    for e2e-login fallback (default ace-repro@dimagi.com)
     --dry-run  show the blob that would be uploaded, don't POST
+    --scope    "user" (default) writes your personal blob; "global" writes
+               the instance-wide fallback (admin only)
+    --global   shorthand for --scope=global
     --from     source: "keychain" (macOS), "file" (Linux), or "auto"
 
 Exit codes:
@@ -76,9 +79,9 @@ def load_blob(source: str) -> dict:
     raise ValueError(f"unknown source: {source}")
 
 
-def post_upload(url: str, token: str, blob: dict) -> dict:
+def post_upload(url: str, token: str, blob: dict, scope: str = "user") -> dict:
     req = urllib.request.Request(
-        url.rstrip("/") + "/api/auth/cli/upload",
+        url.rstrip("/") + f"/api/auth/cli/upload?scope={scope}",
         data=json.dumps(blob).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
@@ -110,6 +113,19 @@ def main() -> int:
         default="auto",
     )
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument(
+        "--scope",
+        choices=("user", "global"),
+        default="user",
+        help="upload to your personal blob (default) or the instance-wide fallback (requires admin)",
+    )
+    p.add_argument(
+        "--global",
+        dest="scope",
+        action="store_const",
+        const="global",
+        help="shorthand for --scope global (admin only)",
+    )
     args = p.parse_args()
 
     if not args.dry_run:
@@ -162,7 +178,7 @@ def main() -> int:
         return 0
 
     try:
-        data = post_upload(args.url, args.token, blob)
+        data = post_upload(args.url, args.token, blob, scope=args.scope)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3
