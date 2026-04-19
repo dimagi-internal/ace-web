@@ -296,8 +296,25 @@ def _load_flat_opp(
 
     from apps.opps.skills import SKILL_REGISTRY
 
-    # Parse state.yaml if present for current_step / mode hints.
+    # Parse state.yaml if present for current_step / mode hints. Check both
+    # the legacy top-level location and the newer runs/run-001/state.yaml
+    # path used by web-created opps (apps/opps/opp_creator.py). Without the
+    # second lookup, display_name written at create time is invisible to the
+    # list/workbench — the opp card would show slug as its own secondary line.
     state_file = _find_child(opp_children, "state.yaml")
+    if state_file is None:
+        runs_folder = _find_child(opp_children, "runs")
+        if runs_folder is not None and runs_folder.mime_type == (
+            "application/vnd.google-apps.folder"
+        ):
+            run_children = client.list_files(runs_folder.id)
+            run1 = _find_child(run_children, "run-001")
+            if run1 is not None and run1.mime_type == (
+                "application/vnd.google-apps.folder"
+            ):
+                state_file = _find_child(
+                    client.list_files(run1.id), "state.yaml"
+                )
     state_data: dict = {}
     if state_file is not None:
         raw = _read_text(client, state_file)

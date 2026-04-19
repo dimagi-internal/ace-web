@@ -99,6 +99,25 @@ class Session(models.Model):
                 raise
         raise IntegrityError("Could not generate a unique slug after 5 attempts")
 
+    @classmethod
+    def create_with_owner(cls, *, owner, **kwargs) -> "Session":
+        """Create a Session AND the owner SessionParticipant row atomically.
+
+        The read paths (`/api/sessions/<slug>`, messages list, consumer auth)
+        require the user to be a SessionParticipant. Creating a session
+        without that row makes it invisible to its own owner, which caused
+        a real "Loading chat…" hang in the Workbench. Every production
+        call site must go through this helper; `Session.objects.create`
+        direct is reserved for tests that need fine-grained participant
+        control.
+        """
+        with transaction.atomic():
+            session = cls.objects.create(owner=owner, **kwargs)
+            SessionParticipant.objects.create(
+                session=session, user=owner, role="owner",
+            )
+        return session
+
 
 class SessionParticipant(models.Model):
     ROLE_CHOICES = [

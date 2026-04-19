@@ -25,6 +25,7 @@ interface Props {
  */
 export function ChatPanel({ slug }: Props) {
   const [meta, setMeta] = useState<Session | null>(null);
+  const [metaError, setMetaError] = useState<string | null>(null);
   const socket = useSessionSocket(slug);
   const cliConnected = useCliAuthStatus();
 
@@ -46,9 +47,14 @@ export function ChatPanel({ slug }: Props) {
 
   useEffect(() => {
     if (!slug) return;
+    setMeta(null);
+    setMetaError(null);
     getSession(slug)
       .then((s) => setMeta(s))
-      .catch(() => setMeta(null));
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        setMetaError(msg || "session not found");
+      });
   }, [slug]);
 
   const currentUserId = socket.state.current_user_id;
@@ -68,6 +74,15 @@ export function ChatPanel({ slug }: Props) {
       ) ?? null
     );
   }, [socket.state.messages]);
+
+  if (metaError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1 p-4 text-center text-sm text-muted-foreground">
+        <div>Chat unavailable</div>
+        <div className="text-xs opacity-70">{metaError}</div>
+      </div>
+    );
+  }
 
   if (!meta) {
     return (

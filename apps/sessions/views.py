@@ -36,10 +36,7 @@ def session_collection(request: Request) -> Response:
 
 def _create_session(request: Request) -> Response:
     title = (request.data or {}).get("title", "")
-    session = Session.objects.create(owner=request.user, title=title)
-    SessionParticipant.objects.create(
-        session=session, user=request.user, role="owner"
-    )
+    session = Session.create_with_owner(owner=request.user, title=title)
     return Response(
         success_response(SessionSerializer(session).data),
         status=status.HTTP_201_CREATED,

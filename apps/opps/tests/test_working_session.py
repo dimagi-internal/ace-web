@@ -3,7 +3,7 @@ from django.test import Client
 
 from apps.auth.models import User
 from apps.opps.models import OppWorkspace
-from apps.sessions.models import Session
+from apps.sessions.models import Session, SessionParticipant
 
 
 @pytest.fixture
@@ -59,3 +59,26 @@ def test_unauthenticated_returns_401(db):
     c = Client()
     resp = c.get("/api/opps/foo/working-session")
     assert resp.status_code in (401, 403)
+
+
+def test_working_session_is_owner_participant(authed_client, db):
+    """Regression: the working session returned by this endpoint must be
+    readable by its own owner via GET /api/sessions/<slug>. Previously the
+    session was created without a SessionParticipant row, so the owner got
+    404 on their own working session — which surfaced as the chat pane
+    spinning "Loading chat…" forever on the Workbench."""
+    resp = authed_client.get("/api/opps/malaria-pilot/working-session")
+    assert resp.status_code == 200
+    session_slug = resp.json()["data"]["working_session_slug"]
+
+    # The session row must carry an "owner" participant so downstream
+    # participant-scoped reads succeed.
+    session = Session.objects.get(slug=session_slug)
+    user = User.objects.get(email="jon@dimagi.com")
+    assert SessionParticipant.objects.filter(
+        session=session, user=user, role="owner",
+    ).exists()
+
+    # And the participant-scoped detail endpoint must return 200 for the owner.
+    detail = authed_client.get(f"/api/sessions/{session_slug}")
+    assert detail.status_code == 200

@@ -21,13 +21,18 @@ export default function OppWorkbenchPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
   const [workingSessionSlug, setWorkingSessionSlug] = useState<string | null>(null);
+  const [workingSessionError, setWorkingSessionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!slug) return;
     setWorkingSessionSlug(null);
+    setWorkingSessionError(null);
     getWorkingSession(slug)
       .then((r) => setWorkingSessionSlug(r.working_session_slug))
-      .catch(() => setWorkingSessionSlug(null));
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        setWorkingSessionError(msg || "could not open chat");
+      });
   }, [slug]);
 
   const load = useCallback(
@@ -124,9 +129,14 @@ export default function OppWorkbenchPage() {
         <section className="w-[400px] shrink-0 border-l border-border bg-background">
           {workingSessionSlug ? (
             <ChatPanel key={workingSessionSlug} slug={workingSessionSlug} />
+          ) : workingSessionError ? (
+            <div className="flex h-full flex-col items-center justify-center gap-1 p-4 text-center text-xs text-muted-foreground">
+              <div>Chat unavailable</div>
+              <div className="opacity-70">{workingSessionError}</div>
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center p-4 text-xs text-muted-foreground">
-              Loading chat…
+              Starting chat…
             </div>
           )}
         </section>
