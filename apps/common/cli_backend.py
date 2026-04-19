@@ -225,6 +225,11 @@ class CLIBackend:
                 pass
 
         env["HOME"] = str(staged_root)
+        # Unconditionally drop any inherited CLAUDE_CODE_OAUTH_TOKEN so the only path
+        # that sets it is our own resolved token. Defends against a race where another
+        # concurrent _stage_env_for call mutated os.environ via load_stored_token's
+        # side-effect write before we built our env snapshot.
+        env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
         if token:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token
         return env, str(staged_root)
