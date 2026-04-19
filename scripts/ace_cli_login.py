@@ -117,7 +117,10 @@ def main() -> int:
         "--scope",
         choices=("user", "global"),
         default="user",
-        help="upload to your personal blob (default) or the instance-wide fallback (requires admin)",
+        help=(
+            "upload to your personal blob (default) or the "
+            "instance-wide fallback (requires admin)"
+        ),
     )
     p.add_argument(
         "--global",

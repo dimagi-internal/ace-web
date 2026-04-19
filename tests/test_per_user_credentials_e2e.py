@@ -55,9 +55,14 @@ def test_two_users_get_isolated_credentials():
         assert home_a != home_c
         # And the credentials files contain the right blob per home
         from pathlib import Path
-        assert json.loads((Path(home_a) / ".claude" / ".credentials.json").read_text())["claudeAiOauth"]["accessToken"] == USER_A_TOKEN
-        assert json.loads((Path(home_b) / ".claude" / ".credentials.json").read_text())["claudeAiOauth"]["accessToken"] == USER_B_TOKEN
-        assert json.loads((Path(home_c) / ".claude" / ".credentials.json").read_text())["claudeAiOauth"]["accessToken"] == GLOBAL_TOKEN
+
+        def _read_access(home: str) -> str:
+            blob = json.loads((Path(home) / ".claude" / ".credentials.json").read_text())
+            return blob["claudeAiOauth"]["accessToken"]
+
+        assert _read_access(home_a) == USER_A_TOKEN
+        assert _read_access(home_b) == USER_B_TOKEN
+        assert _read_access(home_c) == GLOBAL_TOKEN
     finally:
         backend._teardown_staged_home(home_a)
         backend._teardown_staged_home(home_b)

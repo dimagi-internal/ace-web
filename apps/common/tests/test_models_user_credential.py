@@ -34,7 +34,9 @@ def test_user_credential_is_unique_per_user():
     UserCredential.objects.create(
         user=user, blob_encrypted="{}", token_prefix="sk-ant-oat01-aa"
     )
-    with pytest.raises(Exception):  # IntegrityError
+    from django.db import IntegrityError
+
+    with pytest.raises(IntegrityError):
         UserCredential.objects.create(
             user=user, blob_encrypted="{}", token_prefix="sk-ant-oat01-bb"
         )
