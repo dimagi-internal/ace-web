@@ -158,8 +158,62 @@ def load_stored_token() -> str | None:
     return None
 
 
-def get_stored_token() -> str | None:
-    return os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or load_stored_token()
+def get_stored_token(user=None) -> tuple[str, str] | None:
+    """Return (access_token, source) where source in {"user", "global", "env"}, or None.
+
+    Resolution order (first real token wins):
+      1. UserCredential for ``user`` (if provided, blob valid, not marked invalid).
+      2. Global SystemConfig[claude_credentials_blob].
+      3. ``CLAUDE_CODE_OAUTH_TOKEN`` env var.
+    """
+    # 1. per-user
+    if user is not None:
+        try:
+            from .models import UserCredential
+
+            cred = UserCredential.objects.filter(user=user).first()
+            # last_validation_ok=False means the last upload-time live check
+            # failed; skip to global fallback so chat still works. The user
+            # sees "Uploaded but failing" in the Settings UI and can re-upload.
+            if cred and cred.blob_encrypted and cred.last_validation_ok is not False:
+                try:
+                    blob = json.loads(cred.blob_encrypted)
+                except ValueError:
+                    logger.warning(
+                        "UserCredential blob for user=%s is not valid JSON", user.pk
+                    )
+                    blob = None
+                if blob:
+                    token = _extract_access_token(blob)
+                    if token_looks_real(token):
+                        return (token, "user")
+        except Exception:
+            logger.debug(
+                "UserCredential lookup failed for user=%s",
+                getattr(user, "pk", None),
+            )
+
+    # 2. global (load_stored_token reads the SystemConfig blob, writes the
+    #    creds file, and sets the env var as a side effect — preserve that)
+    token = load_stored_token()
+    if token_looks_real(token):
+        return (token, "global") if _global_row_exists() else (token, "env")
+
+    # 3. explicit env fallback (covers the case where load_stored_token didn't run)
+    env_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or ""
+    if token_looks_real(env_token):
+        return (env_token, "env")
+
+    return None
+
+
+def _global_row_exists() -> bool:
+    try:
+        from .models import SystemConfig
+
+        return SystemConfig.objects.filter(key=_BLOB_DB_KEY).exists()
+    except Exception:
+        return False
 
 
 def token_looks_real(token: str | None) -> bool:
@@ -178,28 +232,39 @@ def token_looks_real(token: str | None) -> bool:
 # ── Live validation (cached) ──────────────────────────────────────
 
 _VALIDATION_CACHE_TTL = float(os.environ.get("ACE_TOKEN_VALIDATION_TTL", "300"))
-_validation_cache: dict = {"valid": False, "checked_at": 0.0, "token": ""}
+_validation_cache: dict = {"valid": False, "checked_at": 0.0, "token": "", "source": ""}
 
 
 def _invalidate_validation_cache() -> None:
     _validation_cache["checked_at"] = 0.0
     _validation_cache["token"] = ""
+    _validation_cache["source"] = ""
 
 
-def validate_stored_token() -> bool:
-    """Return True only if the stored token passes a live CLI check.
+def validate_stored_token(user=None) -> bool:
+    """Return True only if the resolved token (per-user or global) passes a live CLI check.
 
     Runs ``claude -p "ok"`` as a subprocess — same auth path as real chat
     — and looks for a ``result`` event with ``subtype == "success"`` and no
     auth-error markers. Cached for ``_VALIDATION_CACHE_TTL`` seconds so the
     /api/auth/cli/status poll (every 30 s) doesn't thrash the CLI.
-    ``store_credentials_blob`` invalidates the cache on write.
+    ``store_credentials_blob`` invalidates the cache on write. The cache is
+    keyed on ``(token, source)`` so per-user results don't collide with
+    global.
     """
-    token = get_stored_token()
+    resolved = get_stored_token(user=user)
+    if resolved is None:
+        logger.info(
+            "validate_stored_token: no token found (user=%s)",
+            getattr(user, "pk", None),
+        )
+        return False
+    token, source = resolved
     logger.info(
-        "validate_stored_token: token_present=%s, looks_real=%s, prefix=%s",
-        bool(token), token_looks_real(token),
+        "validate_stored_token: token_present=True, looks_real=%s, prefix=%s, source=%s",
+        token_looks_real(token),
         token[:15] + "..." if token else "None",
+        source,
     )
     if not token_looks_real(token):
         return False
@@ -207,6 +272,7 @@ def validate_stored_token() -> bool:
     now = time.time()
     if (
         _validation_cache["token"] == token
+        and _validation_cache.get("source") == source
         and now - _validation_cache["checked_at"] < _VALIDATION_CACHE_TTL
     ):
         logger.info(
@@ -217,7 +283,7 @@ def validate_stored_token() -> bool:
 
     logger.info("validate_stored_token: cache miss, running CLI check")
     valid = _check_token_via_cli()
-    _validation_cache.update(valid=valid, checked_at=now, token=token)
+    _validation_cache.update(valid=valid, checked_at=now, token=token, source=source)
     logger.info("validate_stored_token: token %s CLI check", "PASSED" if valid else "FAILED")
     return valid
 
