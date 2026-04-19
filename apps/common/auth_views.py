@@ -31,9 +31,33 @@ def cli_auth_status(request: Request) -> Response:
     # backend doesn't need a real Claude token — report as authenticated
     # so the SendBox doesn't disable itself.
     if getattr(settings, "ACE_USE_FAKE_CLI_BACKEND", False):
-        return Response(success_response({"authenticated": True}))
+        return Response(success_response({
+            "authenticated": True,
+            "user": {"has_blob": False, "token_prefix": None},
+            "global": {"has_blob": False},
+        }))
+
+    from .models import SystemConfig, UserCredential
+
+    cred = UserCredential.objects.filter(user=request.user).first()
+    user_panel = {
+        "has_blob": cred is not None,
+        "token_prefix": cred.token_prefix if cred else None,
+    }
+
+    global_row = SystemConfig.objects.filter(key=auth_flow._BLOB_DB_KEY).first()
+    global_panel = {"has_blob": global_row is not None}
+
+    # "authenticated" reflects whatever the chat path will actually pick for
+    # this user — user blob first, else global.
+    authenticated = auth_flow.validate_stored_token(user=request.user)
+
     return Response(
-        success_response({"authenticated": auth_flow.validate_stored_token()})
+        success_response({
+            "authenticated": authenticated,
+            "user": user_panel,
+            "global": global_panel,
+        })
     )
 
 

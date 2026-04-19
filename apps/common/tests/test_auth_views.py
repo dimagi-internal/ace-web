@@ -28,7 +28,7 @@ def test_status_returns_authenticated_when_real_token_present(client, monkeypatc
     with patch("apps.common.auth_flow._check_token_via_cli", return_value=True):
         resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
-    assert resp.json() == {"data": {"authenticated": True}, "error": None}
+    assert resp.json()["data"]["authenticated"] is True
 
 
 def test_status_rejects_placeholder_token(client, monkeypatch):
@@ -38,14 +38,14 @@ def test_status_rejects_placeholder_token(client, monkeypatch):
     )
     resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
-    assert resp.json()["data"] == {"authenticated": False}
+    assert resp.json()["data"]["authenticated"] is False
 
 
 def test_status_rejects_obviously_short_token(client, monkeypatch):
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-short")
     resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
-    assert resp.json()["data"] == {"authenticated": False}
+    assert resp.json()["data"]["authenticated"] is False
 
 
 def test_status_returns_unauthenticated_when_no_token(client, monkeypatch):
@@ -53,7 +53,7 @@ def test_status_returns_unauthenticated_when_no_token(client, monkeypatch):
     with patch("apps.common.auth_flow.load_stored_token", return_value=None):
         resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
-    assert resp.json()["data"] == {"authenticated": False}
+    assert resp.json()["data"]["authenticated"] is False
 
 
 # ── upload endpoint ───────────────────────────────────────────────
