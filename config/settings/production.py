@@ -1,7 +1,14 @@
 """AWS ECS Fargate production settings."""
+import os
 import warnings
 
-from .base import *  # noqa: F401, F403
+if not os.environ.get("ACE_FIELD_ENCRYPTION_KEY"):
+    raise RuntimeError(
+        "ACE_FIELD_ENCRYPTION_KEY must be set in production. "
+        "Dev/CI may fall back to SECRET_KEY but prod must not."
+    )
+
+from .base import *  # noqa: E402, F401, F403
 
 # Filter a noisy warning that Django emits every time WhiteNoise serves a
 # static file under ASGI. WhiteNoise 6.x still uses wsgiref.util.FileWrapper
