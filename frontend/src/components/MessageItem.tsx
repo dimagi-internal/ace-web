@@ -1,4 +1,5 @@
 import type { Message } from "../api/types";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 
 interface Props {
   message: Message;
@@ -54,6 +55,8 @@ export function MessageItem({ message }: Props) {
           </span>
           <span className="text-xs italic">Thinking…</span>
         </span>
+      ) : message.role === "assistant" ? (
+        <MarkdownRenderer content={text} variant="chat" />
       ) : (
         <div className="whitespace-pre-wrap">{text}</div>
       )}
