@@ -24,11 +24,11 @@ _TITLE_PROMPT = (
 )
 
 
-def _get_backend():
+def _get_backend(user=None):
     """Select backend via the shared selector so auto-title and chat agree."""
     from apps.common.backend_selector import get_chat_backend
 
-    return get_chat_backend()
+    return get_chat_backend(user=user)
 
 
 async def generate_title_for_session(session: Session) -> None:
@@ -42,7 +42,11 @@ async def generate_title_for_session(session: Session) -> None:
         return
 
     prompt = _TITLE_PROMPT.format(text=user_text)
-    backend = _get_backend()
+    # ``session.owner`` is a ForeignKey access that triggers a sync DB query
+    # if the FK isn't already cached. ``refresh_from_db`` above doesn't
+    # populate FKs, so wrap the access in sync_to_async.
+    owner = await sync_to_async(lambda: session.owner)()
+    backend = _get_backend(user=owner)
 
     accumulated: list[str] = []
     try:

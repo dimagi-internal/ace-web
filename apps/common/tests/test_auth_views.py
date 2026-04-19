@@ -44,28 +44,28 @@ def test_status_returns_authenticated_when_real_token_present(client):
     with patch("apps.common.auth_flow._check_token_via_cli", return_value=True):
         resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
-    assert resp.json() == {"data": {"authenticated": True}, "error": None}
+    assert resp.json()["data"]["authenticated"] is True
 
 
 def test_status_rejects_placeholder_token(client):
     _seed_token("sk-ant-oat01-placeholder-reauth-via-ace-auth-cli")
     resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
-    assert resp.json()["data"] == {"authenticated": False}
+    assert resp.json()["data"]["authenticated"] is False
 
 
 def test_status_rejects_obviously_short_token(client):
     _seed_token("sk-ant-oat01-short")
     resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
-    assert resp.json()["data"] == {"authenticated": False}
+    assert resp.json()["data"]["authenticated"] is False
 
 
 def test_status_returns_unauthenticated_when_no_token(client):
     # No SystemConfig rows — get_stored_token returns None.
     resp = client.get("/api/auth/cli/status")
     assert resp.status_code == 200
-    assert resp.json()["data"] == {"authenticated": False}
+    assert resp.json()["data"]["authenticated"] is False
 
 
 # ── upload endpoint ───────────────────────────────────────────────
@@ -87,17 +87,34 @@ def test_upload_rejects_unauthenticated():
     assert resp.status_code in (401, 403)
 
 
-def test_upload_stores_blob_and_returns_live_status(client, tmp_path, settings):
+def test_upload_stores_blob_and_returns_live_status(
+    django_user_model, tmp_path, settings
+):
+    """Global-scope upload writes the SystemConfig row and credentials file.
+
+    scope=global requires is_staff, so use a dedicated staff user here
+    (the default ``client`` fixture's user is non-staff). Main's DB-only
+    seeding still holds — we just drive the endpoint with scope=global.
+    """
     settings.ACE_CLAUDE_HOME = str(tmp_path)
+
+    staff = django_user_model.objects.create_user(
+        email="staff@example.com", display_name="staff"
+    )
+    staff.is_staff = True
+    staff.save()
+    c = APIClient()
+    c.force_authenticate(user=staff)
 
     blob = _full_blob()
     with patch("apps.common.auth_flow._check_token_via_cli", return_value=True):
-        resp = client.post("/api/auth/cli/upload", blob, format="json")
+        resp = c.post("/api/auth/cli/upload?scope=global", blob, format="json")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["stored"] is True
     assert data["authenticated"] is True
     assert data["token_prefix"].startswith("sk-ant-oat01-")
+    assert data["scope"] == "global"
 
     from apps.common.models import SystemConfig
     stored = SystemConfig.objects.get(key="claude_credentials_blob")

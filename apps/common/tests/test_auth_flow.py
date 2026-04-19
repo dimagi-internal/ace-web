@@ -67,7 +67,8 @@ def test_store_credentials_blob_rejects_malformed_prefix():
 
 
 @pytest.mark.django_db
-def test_get_stored_token_reads_blob_and_writes_file(tmp_path, settings):
+def test_get_stored_token_reads_blob_and_writes_file(tmp_path, settings, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     settings.ACE_CLAUDE_HOME = str(tmp_path)
 
     from apps.common.models import SystemConfig
@@ -76,15 +77,18 @@ def test_get_stored_token_reads_blob_and_writes_file(tmp_path, settings):
     )
 
     loaded = auth_flow.get_stored_token()
-    assert loaded == BLOB["claudeAiOauth"]["accessToken"]
+    assert loaded == (BLOB["claudeAiOauth"]["accessToken"], "global")
     assert (tmp_path / ".claude" / ".credentials.json").exists()
 
 
 @pytest.mark.django_db
-def test_get_stored_token_picks_up_updated_blob_across_calls(tmp_path, settings):
+def test_get_stored_token_picks_up_updated_blob_across_calls(
+    tmp_path, settings, monkeypatch
+):
     """Simulates the multi-task case: task B sees a fresh DB blob written
     by task A and syncs the local file + returned token on the next call.
     """
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     settings.ACE_CLAUDE_HOME = str(tmp_path)
 
     from apps.common.models import SystemConfig
@@ -94,38 +98,59 @@ def test_get_stored_token_picks_up_updated_blob_across_calls(tmp_path, settings)
     SystemConfig.objects.create(
         key="claude_credentials_blob", value=json.dumps(first)
     )
-    assert auth_flow.get_stored_token() == first["claudeAiOauth"]["accessToken"]
+    assert auth_flow.get_stored_token() == (first["claudeAiOauth"]["accessToken"], "global")
 
     second = dict(BLOB)
     second["claudeAiOauth"] = dict(BLOB["claudeAiOauth"], accessToken="sk-ant-oat01-" + "d" * 80)
     SystemConfig.objects.filter(key="claude_credentials_blob").update(
         value=json.dumps(second)
     )
-    assert auth_flow.get_stored_token() == second["claudeAiOauth"]["accessToken"]
+    assert auth_flow.get_stored_token() == (second["claudeAiOauth"]["accessToken"], "global")
     on_disk = json.loads((tmp_path / ".claude" / ".credentials.json").read_text())
     assert on_disk == second
 
 
 @pytest.mark.django_db
-def test_get_stored_token_falls_back_to_legacy_token_key():
+def test_get_stored_token_falls_back_to_legacy_token_key(monkeypatch):
     """A deploy that predates blob migration still has just the token row."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     from apps.common.models import SystemConfig
     SystemConfig.objects.create(
         key="claude_oauth_token",
         value="sk-ant-oat01-legacy-longish-ish-token-longer-than-40",
     )
     assert auth_flow.get_stored_token() == (
-        "sk-ant-oat01-legacy-longish-ish-token-longer-than-40"
+        "sk-ant-oat01-legacy-longish-ish-token-longer-than-40",
+        "global",
     )
 
 
 @pytest.mark.django_db
-def test_get_stored_token_returns_none_when_no_db_rows():
+def test_get_stored_token_returns_none_when_no_db_rows(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     assert auth_flow.get_stored_token() is None
 
 
-def test_load_stored_token_is_alias_for_get_stored_token():
-    assert auth_flow.load_stored_token is auth_flow.get_stored_token
+@pytest.mark.django_db
+def test_load_stored_token_returns_bare_string(tmp_path, settings, monkeypatch):
+    """``load_stored_token`` is a thin str-only wrapper over the resolver,
+    kept so older callers that expect a bare access token continue to work.
+    """
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    settings.ACE_CLAUDE_HOME = str(tmp_path)
+
+    from apps.common.models import SystemConfig
+    SystemConfig.objects.create(
+        key="claude_credentials_blob", value=json.dumps(BLOB)
+    )
+
+    assert auth_flow.load_stored_token() == BLOB["claudeAiOauth"]["accessToken"]
+
+
+@pytest.mark.django_db
+def test_load_stored_token_returns_none_when_no_rows(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    assert auth_flow.load_stored_token() is None
 
 
 def test_token_looks_real_rejects_placeholders_and_shorts():

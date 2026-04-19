@@ -6,6 +6,7 @@ urlpatterns = [
     path("health", views.health_check, name="health"),
     path("auth/cli/status", auth_views.cli_auth_status, name="cli_auth_status"),
     path("auth/cli/upload", auth_views.cli_auth_upload, name="cli_auth_upload"),
+    path("auth/cli/promote", auth_views.cli_auth_promote, name="cli_auth_promote"),
     path(
         "auth/cli/expected-shape",
         auth_views.cli_auth_expected_shape,

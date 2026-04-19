@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Copy, Key, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,8 +13,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cliAuthStatus, promoteCliAuthToGlobal } from "@/api/auth";
 import { createToken, listTokens, revokeToken } from "@/api/tokens";
-import type { PersonalToken } from "@/api/types";
+import type { CliAuthStatus, PersonalToken } from "@/api/types";
 
 export default function SettingsPage() {
   const [tokens, setTokens] = useState<PersonalToken[]>([]);
@@ -21,6 +23,7 @@ export default function SettingsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [rawToken, setRawToken] = useState<string | null>(null);
+  const [cliStatus, setCliStatus] = useState<CliAuthStatus | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -30,7 +33,25 @@ export default function SettingsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const loadCliStatus = useCallback(() => {
+    cliAuthStatus()
+      .then(setCliStatus)
+      .catch(() => setCliStatus(null));
+  }, []);
+
   useEffect(load, [load]);
+  useEffect(loadCliStatus, [loadCliStatus]);
+
+  const handlePromote = async () => {
+    try {
+      await promoteCliAuthToGlobal();
+      toast.success("Promoted to global fallback");
+      loadCliStatus();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Promote failed";
+      toast.error(message);
+    }
+  };
 
   const handleCreate = async () => {
     if (!newLabel.trim()) return;
@@ -105,6 +126,58 @@ export default function SettingsPage() {
             </div>
           )}
         </section>
+
+        {cliStatus && (
+          <section className="mt-10 max-w-2xl">
+            <h2 className="text-base font-semibold">Claude CLI credentials</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Powers server-side <code>claude -p</code> for web chat. Upload via the{" "}
+              <code>/ace-web:create-cli-credentials</code> skill.
+            </p>
+
+            <div className="mt-4 rounded border border-border p-4">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">Your token</div>
+                <Badge variant={cliStatus.user.has_blob ? "default" : "outline"}>
+                  {cliStatus.user.has_blob
+                    ? cliStatus.authenticated
+                      ? "Active"
+                      : "Uploaded but failing"
+                    : "Not uploaded"}
+                </Badge>
+              </div>
+              {cliStatus.user.token_prefix && (
+                <code className="mt-2 block text-xs text-muted-foreground">
+                  {cliStatus.user.token_prefix}…
+                </code>
+              )}
+            </div>
+
+            <div className="mt-3 rounded border border-border p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium">Instance fallback</div>
+                  <div className="text-xs text-muted-foreground">
+                    Used when a user hasn't uploaded their own blob.
+                  </div>
+                </div>
+                <Badge variant={cliStatus.global.has_blob ? "default" : "outline"}>
+                  {cliStatus.global.has_blob ? "Configured" : "Missing"}
+                </Badge>
+              </div>
+              {cliStatus.user.has_blob && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={handlePromote}
+                >
+                  Promote my token to global (admin only)
+                </Button>
+              )}
+            </div>
+          </section>
+        )}
       </main>
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>

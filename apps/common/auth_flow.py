@@ -18,10 +18,11 @@ Blob shape — matches what the claude CLI itself stores::
         "scopes":       [...]
     }}
 
-SystemConfig keys:
-  * ``claude_credentials_blob`` — full JSON blob (canonical)
-  * ``claude_oauth_token``      — extracted access token (legacy row,
-    kept for deploys that predate the blob migration)
+Storage layers:
+  * ``UserCredential`` rows — per-user blobs (preferred for chat)
+  * ``SystemConfig[claude_credentials_blob]`` — global fallback blob (JSON)
+  * ``SystemConfig[claude_oauth_token]``      — legacy token-only row
+    (kept for deploys that predate the blob migration)
 
 The DB is the sole source of truth. There is no ``CLAUDE_CODE_OAUTH_TOKEN``
 env-var hot-cache: that path existed when only one ECS task ran per
@@ -37,13 +38,31 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import shutil
 import subprocess
+import tempfile
 import time
+import uuid
+
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
 _TOKEN_DB_KEY = "claude_oauth_token"
 _BLOB_DB_KEY = "claude_credentials_blob"
+
+_TOKEN_REDACT_PATTERN = re.compile(r"sk-ant-oat\S+")
+
+
+def _redact_token(text: str) -> str:
+    """Replace any sk-ant-oat... token in text with a placeholder.
+
+    Defense-in-depth for log lines that dump CLI subprocess stdout/stderr —
+    today's claude binary doesn't echo the bearer token, but a future version
+    that does would leak via these logs without this scrub.
+    """
+    return _TOKEN_REDACT_PATTERN.sub("sk-ant-oat[REDACTED]", text)
 
 
 # ── Blob persistence ──────────────────────────────────────────────
@@ -92,6 +111,36 @@ def store_credentials_blob(blob: dict) -> str:
     return token
 
 
+def store_user_credentials_blob(user, blob: dict) -> str:
+    """Persist ``blob`` as ``user``'s UserCredential. Returns the access token."""
+    from django.utils import timezone
+
+    from .models import UserCredential
+
+    token = _extract_access_token(blob)
+    if not token_looks_real(token):
+        raise ValueError(
+            "Credential blob missing or malformed access token "
+            "(expected claudeAiOauth.accessToken matching sk-ant-oat...)"
+        )
+    _invalidate_validation_cache()
+    cred, _ = UserCredential.objects.update_or_create(
+        user=user,
+        defaults={
+            "blob_encrypted": json.dumps(blob),
+            "token_prefix": token[:15],
+        },
+    )
+    # auto_now_add only fires on CREATE; on re-upload, explicitly bump.
+    cred.uploaded_at = timezone.now()
+    cred.save(update_fields=["uploaded_at"])
+    logger.info(
+        "store_user_credentials_blob: saved user=%s prefix=%s len=%d",
+        user.pk, token[:15], len(token),
+    )
+    return token
+
+
 def _extract_access_token(blob: dict) -> str:
     """Pull the access token string out of the stored shape."""
     try:
@@ -107,8 +156,6 @@ def _write_credentials_file(blob: dict) -> None:
     sync, the CLI handles refresh using the stored refreshToken without
     any help from us.
     """
-    from django.conf import settings
-
     claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
     if not claude_home:
         claude_home = os.environ.get("HOME", "")
@@ -126,37 +173,51 @@ def _write_credentials_file(blob: dict) -> None:
         logger.exception("Failed to write credentials file to %s", path)
 
 
-# Tracks the last blob JSON we synced to disk so repeated get_stored_token()
-# calls don't rewrite .credentials.json when nothing has changed.
+# Tracks the last global blob JSON we synced to disk so repeated
+# get_stored_token() calls don't rewrite .credentials.json when nothing has
+# changed.
 _FILE_SYNC_CACHE: dict = {"blob_json": None}
 
 
-def get_stored_token() -> str | None:
-    """Return the current access token, reading fresh from the DB on every call.
+def _sync_global_blob_to_disk(row_value: str) -> str | None:
+    """Read the global blob JSON, keep disk in sync, return the access token.
 
-    Also ensures ``.credentials.json`` on disk reflects the current DB blob
-    (required so ``claude -p`` subprocesses can authenticate and refresh
-    natively). The file is only rewritten when the blob actually changes,
-    so the hot path is a single SELECT.
+    Factored out of ``get_stored_token`` so the user-aware resolver can use
+    the same "write-through-on-change" logic for the global path.
+    """
+    if _FILE_SYNC_CACHE.get("blob_json") != row_value:
+        try:
+            blob = json.loads(row_value)
+        except ValueError:
+            logger.warning("stored credentials blob is not valid JSON")
+            return None
+        token = _extract_access_token(blob)
+        if not token:
+            return None
+        _write_credentials_file(blob)
+        _FILE_SYNC_CACHE["blob_json"] = row_value
+        return token
+    # Blob already on disk; just re-extract the token without re-parsing twice.
+    try:
+        return _extract_access_token(json.loads(row_value)) or None
+    except ValueError:
+        return None
+
+
+def _resolve_global_token() -> tuple[str, str] | None:
+    """Return ``(token, "global")`` from the DB or None.
+
+    Reads fresh from the DB on every call (no env-var fallback) and keeps
+    the on-disk ``.credentials.json`` in sync.
     """
     try:
         from .models import SystemConfig
 
         row = SystemConfig.objects.filter(key=_BLOB_DB_KEY).first()
         if row and row.value:
-            if _FILE_SYNC_CACHE.get("blob_json") != row.value:
-                try:
-                    blob = json.loads(row.value)
-                except ValueError:
-                    logger.warning("stored credentials blob is not valid JSON")
-                    return None
-                token = _extract_access_token(blob)
-                if not token:
-                    return None
-                _write_credentials_file(blob)
-                _FILE_SYNC_CACHE["blob_json"] = row.value
-                return token
-            return _extract_access_token(json.loads(row.value)) or None
+            token = _sync_global_blob_to_disk(row.value)
+            if token:
+                return (token, "global")
 
         # Legacy token-only row — for deploys that predate the blob
         # migration. No credentials file to write in this case (we don't
@@ -165,16 +226,78 @@ def get_stored_token() -> str | None:
         # to re-upload via scripts/ace_cli_login.py.
         legacy = SystemConfig.objects.filter(key=_TOKEN_DB_KEY).first()
         if legacy and legacy.value:
-            return legacy.value
+            return (legacy.value, "global")
     except Exception:
         logger.debug("Could not load credentials (migrations may not have run)")
     return None
 
 
-# Kept as an alias so older callers (and a stable import surface) continue
-# to work. The DB is the sole source of truth — this is now just
-# get_stored_token() under a legacy name.
-load_stored_token = get_stored_token
+def get_stored_token(user=None) -> tuple[str, str] | None:
+    """Return ``(access_token, source)`` where source in ``{"user", "global", "env"}``, or None.
+
+    Resolution order (first real token wins):
+      1. UserCredential for ``user`` (if provided, blob valid, not marked invalid).
+      2. Global SystemConfig[claude_credentials_blob] (or the legacy
+         ``claude_oauth_token`` row).
+      3. ``CLAUDE_CODE_OAUTH_TOKEN`` env var (dev/test fallback only — the
+         server never writes this).
+
+    Also keeps ``$ACE_CLAUDE_HOME/.claude/.credentials.json`` in sync with
+    the resolved global blob so ``claude -p`` subprocesses can authenticate
+    and refresh natively. The file is only rewritten when the blob actually
+    changes, so the hot path is a single SELECT.
+    """
+    # 1. per-user
+    if user is not None:
+        try:
+            from .models import UserCredential
+
+            cred = UserCredential.objects.filter(user=user).first()
+            # last_validation_ok=False means the last upload-time live check
+            # failed; skip to global fallback so chat still works. The user
+            # sees "Uploaded but failing" in the Settings UI and can re-upload.
+            if cred and cred.blob_encrypted and cred.last_validation_ok is not False:
+                try:
+                    blob = json.loads(cred.blob_encrypted)
+                except ValueError:
+                    logger.warning(
+                        "UserCredential blob for user=%s is not valid JSON", user.pk
+                    )
+                    blob = None
+                if blob:
+                    token = _extract_access_token(blob)
+                    if token_looks_real(token):
+                        return (token, "user")
+        except Exception:
+            logger.warning(
+                "UserCredential lookup failed for user=%s",
+                getattr(user, "pk", None),
+                exc_info=True,
+            )
+
+    # 2. global (DB-backed; also syncs .credentials.json on disk if the blob changed)
+    resolved = _resolve_global_token()
+    if resolved is not None:
+        return resolved
+
+    # 3. env fallback (dev/test only; the server never writes this)
+    env_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or ""
+    if token_looks_real(env_token):
+        return (env_token, "env")
+
+    return None
+
+
+def load_stored_token() -> str | None:
+    """Legacy helper — returns just the access token from ``get_stored_token(user=None)``.
+
+    Kept so older callers (status endpoints, docs) that want a plain string
+    continue to work. New code should prefer ``get_stored_token(user=...)``
+    and inspect the ``source`` to decide whether to stage user-scoped or
+    global credentials.
+    """
+    resolved = get_stored_token(user=None)
+    return resolved[0] if resolved else None
 
 
 def token_looks_real(token: str | None) -> bool:
@@ -198,30 +321,62 @@ def token_looks_real(token: str | None) -> bool:
 # after a fresh upload happens within seconds rather than minutes.
 _POSITIVE_CACHE_TTL = float(os.environ.get("ACE_TOKEN_VALIDATION_TTL", "300"))
 _NEGATIVE_CACHE_TTL = float(os.environ.get("ACE_TOKEN_VALIDATION_NEGATIVE_TTL", "15"))
-_validation_cache: dict = {"valid": False, "checked_at": 0.0, "token": ""}
+_validation_cache: dict = {
+    "valid": False,
+    "checked_at": 0.0,
+    "token": "",
+    "source": "",
+}
 
 
 def _invalidate_validation_cache() -> None:
     _validation_cache["checked_at"] = 0.0
     _validation_cache["token"] = ""
+    _validation_cache["source"] = ""
 
 
-def validate_stored_token() -> bool:
-    """Return True only if the stored token passes a live CLI check.
+def _load_blob_for_source(user, source: str) -> str:
+    """Fetch the full blob JSON for the resolver's source. Returns "" if missing."""
+    if source == "user" and user is not None:
+        from .models import UserCredential
+
+        cred = UserCredential.objects.filter(user=user).first()
+        return cred.blob_encrypted if cred else ""
+    if source == "global":
+        from .models import SystemConfig
+
+        row = SystemConfig.objects.filter(key=_BLOB_DB_KEY).first()
+        return row.value if row else ""
+    return ""
+
+
+def validate_stored_token(user=None) -> bool:
+    """Return True only if the resolved token (per-user or global) passes a live CLI check.
 
     Runs ``claude -p "ok"`` as a subprocess — same auth path as real chat
     — and looks for a ``result`` event with ``subtype == "success"`` and no
-    auth-error markers. ``store_credentials_blob`` invalidates the cache on
-    write, and because ``get_stored_token()`` always reads fresh from the
-    DB, other tasks pick up the new token on their next call (the cache
-    key is the token value, so a DB change naturally invalidates stale
-    cached verdicts).
+    auth-error markers. Positive results cache for ``_POSITIVE_CACHE_TTL``
+    seconds, negative for ``_NEGATIVE_CACHE_TTL`` seconds, so the
+    /api/auth/cli/status poll (every 30s) doesn't thrash the CLI but
+    recovery after a fresh upload still happens within seconds.
+    ``store_credentials_blob`` invalidates the cache on write. The cache is
+    keyed on ``(token, source)`` so per-user results don't collide with
+    global, and because ``get_stored_token()`` always reads fresh from the
+    DB, other tasks pick up the new token on their next call.
     """
-    token = get_stored_token()
+    resolved = get_stored_token(user=user)
+    if resolved is None:
+        logger.info(
+            "validate_stored_token: no token found (user=%s)",
+            getattr(user, "pk", None),
+        )
+        return False
+    token, source = resolved
     logger.info(
-        "validate_stored_token: token_present=%s, looks_real=%s, prefix=%s",
-        bool(token), token_looks_real(token),
+        "validate_stored_token: token_present=True, looks_real=%s, prefix=%s, source=%s",
+        token_looks_real(token),
         token[:15] + "..." if token else "None",
+        source,
     )
     if not token_looks_real(token):
         return False
@@ -229,7 +384,11 @@ def validate_stored_token() -> bool:
     now = time.time()
     cached_age = now - _validation_cache["checked_at"]
     cache_ttl = _POSITIVE_CACHE_TTL if _validation_cache["valid"] else _NEGATIVE_CACHE_TTL
-    if _validation_cache["token"] == token and cached_age < cache_ttl:
+    if (
+        _validation_cache["token"] == token
+        and _validation_cache.get("source") == source
+        and cached_age < cache_ttl
+    ):
         logger.info(
             "validate_stored_token: returning cached result=%s (age=%.0fs, ttl=%ds)",
             _validation_cache["valid"], cached_age, int(cache_ttl),
@@ -237,10 +396,62 @@ def validate_stored_token() -> bool:
         return _validation_cache["valid"]
 
     logger.info("validate_stored_token: cache miss, running CLI check")
-    valid = _check_token_via_cli()
-    _validation_cache.update(valid=valid, checked_at=now, token=token)
+    # Pick the blob that matches the resolved source so the live check uses
+    # the SAME credentials we'd actually hand a chat subprocess.
+    blob_json = (
+        _load_blob_for_source(user, source)
+        if source != "env"
+        else json.dumps({"claudeAiOauth": {"accessToken": token}})
+    )
+    on_refresh = (
+        _build_refresh_persister(user, source) if source in ("user", "global") else None
+    )
+    valid = _check_token_via_cli(blob_json=blob_json, on_refresh=on_refresh)
+    _validation_cache.update(valid=valid, checked_at=now, token=token, source=source)
     logger.info("validate_stored_token: token %s CLI check", "PASSED" if valid else "FAILED")
     return valid
+
+
+def _build_refresh_persister(user, source: str):
+    """Return a callback that persists a refreshed blob back to the right storage.
+
+    Mirrors ``CLIBackend._persist_refreshed_blob`` for the validation probe
+    path: ``_check_token_via_cli`` stages the blob into a temp HOME, the
+    claude CLI may refresh it in-place, and we need to write the refresh
+    back to DB before the staged HOME is rmtree'd — otherwise the next
+    validate (or chat) tries to refresh with an already-burned refresh
+    token.
+    """
+
+    def _persist(blob: dict) -> None:
+        access_token = (blob.get("claudeAiOauth") or {}).get("accessToken") or ""
+        if not token_looks_real(access_token):
+            return
+        blob_json = json.dumps(blob)
+        if source == "user" and user is not None:
+            from .models import UserCredential
+
+            UserCredential.objects.filter(user=user).update(
+                blob_encrypted=blob_json,
+                token_prefix=access_token[:15],
+            )
+            logger.info(
+                "validate: persisted refreshed user blob for user=%s", user.pk
+            )
+        elif source == "global":
+            from .models import SystemConfig
+
+            SystemConfig.objects.update_or_create(
+                key=_BLOB_DB_KEY,
+                defaults={"value": blob_json},
+            )
+            # Keep the file-sync cache aligned with what's now on disk/DB so
+            # the next get_stored_token() call doesn't rewrite the file for
+            # no reason.
+            _FILE_SYNC_CACHE["blob_json"] = blob_json
+            logger.info("validate: persisted refreshed global blob")
+
+    return _persist
 
 
 # Public canonical name. Both /api/auth/cli/status and the chat backend
@@ -248,44 +459,113 @@ def validate_stored_token() -> bool:
 cli_is_ready = validate_stored_token
 
 
-def _check_token_via_cli() -> bool:
-    """Run ``claude -p "ok"`` and look for a successful terminal result."""
-    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
-    from django.conf import settings
+def _check_token_via_cli(
+    blob_json: str | None = None,
+    on_refresh=None,
+) -> bool:
+    """Run ``claude -p "ok"`` and look for a successful terminal result.
 
-    claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
-    if claude_home:
-        env["HOME"] = claude_home
+    When ``blob_json`` is provided (per-user validation), stage it into a
+    fresh temp HOME for this single subprocess so we validate THIS user's
+    token, not whatever happens to be in the global ACE_CLAUDE_HOME.
+    When ``blob_json`` is None, fall back to the legacy behavior of using
+    the shared ACE_CLAUDE_HOME (covers the no-user / startup-check paths).
+
+    ``on_refresh`` is an optional ``Callable[[dict], None]`` invoked before
+    teardown with the (possibly-refreshed) blob read back from the staged
+    credentials file. Caller uses it to persist the refresh back to the
+    right storage layer — see ``_build_refresh_persister``.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    staged_home: str | None = None
+
+    if blob_json:
+        staged_root = os.path.join(
+            tempfile.gettempdir(), "ace-cli-validate", uuid.uuid4().hex[:12]
+        )
+        claude_dir = os.path.join(staged_root, ".claude")
+        os.makedirs(claude_dir, exist_ok=True)
+        creds_path = os.path.join(claude_dir, ".credentials.json")
+        with open(creds_path, "w") as f:
+            f.write(blob_json)
+        try:
+            os.chmod(creds_path, 0o600)
+        except OSError:
+            pass
+        env["HOME"] = staged_root
+        staged_home = staged_root
+    else:
+        claude_home = getattr(settings, "ACE_CLAUDE_HOME", None)
+        if claude_home:
+            env["HOME"] = claude_home
 
     try:
-        proc = subprocess.run(
-            ["claude", "-p", "--output-format", "stream-json", "--verbose", "ok"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
-        logger.warning("claude -p probe failed: %s", exc)
-        return False
-
-    if proc.returncode != 0:
-        logger.warning(
-            "claude -p returned %d: stdout=%r stderr=%r",
-            proc.returncode, proc.stdout[:300], proc.stderr[:300],
-        )
-        return False
-
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
         try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if event.get("type") == "result" and event.get("subtype") == "success":
-            return True
+            proc = subprocess.run(
+                ["claude", "-p", "--output-format", "stream-json", "--verbose", "ok"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("CLI token check timed out after 30s")
+            return False
+        except FileNotFoundError:
+            logger.warning("claude binary not found for token check")
+            return False
 
-    logger.warning("claude -p emitted no success result")
-    return False
+        got_success = False
+        saw_auth_error = any(
+            marker in proc.stdout
+            for marker in (
+                "authentication_error",
+                "Invalid bearer token",
+                "API Error: 401",
+            )
+        )
+        if proc.returncode == 0:
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if (
+                    event.get("type") == "result"
+                    and event.get("subtype") == "success"
+                ):
+                    got_success = True
+                    break
+        logger.info(
+            "CLI token check: rc=%s got_success=%s auth_error=%s stdout_len=%d staged=%s",
+            proc.returncode, got_success, saw_auth_error, len(proc.stdout),
+            bool(staged_home),
+        )
+        if got_success and not saw_auth_error:
+            return True
+        logger.warning(
+            "CLI token check FAILED: stderr=%s stdout_tail=%s",
+            _redact_token(proc.stderr[:500]),
+            _redact_token(proc.stdout[-1000:]),
+        )
+        return False
+    finally:
+        if staged_home:
+            if on_refresh is not None:
+                try:
+                    refreshed_path = os.path.join(
+                        staged_home, ".claude", ".credentials.json"
+                    )
+                    if os.path.exists(refreshed_path):
+                        with open(refreshed_path) as f:
+                            refreshed = json.load(f)
+                        on_refresh(refreshed)
+                except Exception:
+                    logger.warning(
+                        "Failed to read refreshed creds for persist",
+                        exc_info=True,
+                    )
+            shutil.rmtree(staged_home, ignore_errors=True)

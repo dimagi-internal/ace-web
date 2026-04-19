@@ -12,6 +12,14 @@ if (BASE_DIR / ".env").exists():
 
 # --- Core ---
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-insecure-key-change-me")
+# Field-level encryption key for UserCredential.blob_encrypted (and any
+# future EncryptedTextField columns). Prod REQUIRES a dedicated key via
+# ACE_FIELD_ENCRYPTION_KEY; dev/CI falls back to SECRET_KEY for ergonomics.
+_explicit_field_key = env("ACE_FIELD_ENCRYPTION_KEY", default="")
+if _explicit_field_key:
+    FIELD_ENCRYPTION_KEY = _explicit_field_key.encode("utf-8")
+else:
+    FIELD_ENCRYPTION_KEY = SECRET_KEY.encode("utf-8")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 # base.py default is empty so a misconfigured production deploy fails loudly
 # instead of silently disabling Host header validation. development.py overrides

@@ -35,15 +35,17 @@ logger = logging.getLogger(__name__)
 _bg_tasks: set[asyncio.Task] = set()
 
 
-def _get_backend():
+def _get_backend(user=None):
     """Select the chat backend via the shared selector.
 
     Thin wrapper so existing test suites that ``patch(...turn_driver._get_backend)``
     keep working. See apps.common.backend_selector for the routing rules.
+    ``user`` is threaded through so the selector picks the same backend that
+    ``/api/auth/cli/status`` reports as "Active" for this user.
     """
     from apps.common.backend_selector import get_chat_backend
 
-    return get_chat_backend()
+    return get_chat_backend(user=user)
 
 
 async def _iter_until_stop(
@@ -128,7 +130,7 @@ async def drive_assistant_turn(
     # harvest any tool_use rows that belong to THIS turn (rows created by
     # _create_tool_message have turn_index > this value).
     turn_start_index = message.turn_index
-    backend = _get_backend()
+    backend = _get_backend(user=message.session.owner)
     await sync_to_async(_mark_streaming)(message)
 
     accumulated: list[str] = []
@@ -269,7 +271,11 @@ def _schedule_auto_title(session: Session) -> None:
 
 def _load_message(message_id: int) -> Message | None:
     try:
-        return Message.objects.select_related("session").get(pk=message_id)
+        # Pre-fetch session.owner so the async backend selector can call
+        # ``message.session.owner`` without triggering a SynchronousOnlyOperation.
+        return (
+            Message.objects.select_related("session__owner").get(pk=message_id)
+        )
     except Message.DoesNotExist:
         return None
 
