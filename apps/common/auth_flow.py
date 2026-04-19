@@ -82,6 +82,36 @@ def store_credentials_blob(blob: dict) -> str:
     return token
 
 
+def store_user_credentials_blob(user, blob: dict) -> str:
+    """Persist ``blob`` as ``user``'s UserCredential. Returns the access token."""
+    from django.utils import timezone
+
+    from .models import UserCredential
+
+    token = _extract_access_token(blob)
+    if not token_looks_real(token):
+        raise ValueError(
+            "Credential blob missing or malformed access token "
+            "(expected claudeAiOauth.accessToken matching sk-ant-oat...)"
+        )
+    _invalidate_validation_cache()
+    cred, _ = UserCredential.objects.update_or_create(
+        user=user,
+        defaults={
+            "blob_encrypted": json.dumps(blob),
+            "token_prefix": token[:15],
+        },
+    )
+    # auto_now_add only fires on CREATE; on re-upload, explicitly bump.
+    cred.uploaded_at = timezone.now()
+    cred.save(update_fields=["uploaded_at"])
+    logger.info(
+        "store_user_credentials_blob: saved user=%s prefix=%s len=%d",
+        user.pk, token[:15], len(token),
+    )
+    return token
+
+
 def _extract_access_token(blob: dict) -> str:
     """Pull the access token string out of the stored shape."""
     try:

@@ -75,18 +75,34 @@ def test_upload_rejects_unauthenticated():
     assert resp.status_code in (401, 403)
 
 
-def test_upload_stores_blob_and_returns_live_status(client, tmp_path, settings, monkeypatch):
+def test_upload_stores_blob_and_returns_live_status(
+    django_user_model, tmp_path, settings, monkeypatch
+):
+    """Global-scope upload writes the SystemConfig row and credentials file.
+
+    scope=global requires is_staff, so use a dedicated staff user here
+    (the default ``client`` fixture's user is non-staff).
+    """
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     settings.ACE_CLAUDE_HOME = str(tmp_path)
 
+    staff = django_user_model.objects.create_user(
+        email="staff@example.com", display_name="staff"
+    )
+    staff.is_staff = True
+    staff.save()
+    c = APIClient()
+    c.force_authenticate(user=staff)
+
     blob = _full_blob()
     with patch("apps.common.auth_flow._check_token_via_cli", return_value=True):
-        resp = client.post("/api/auth/cli/upload", blob, format="json")
+        resp = c.post("/api/auth/cli/upload?scope=global", blob, format="json")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["stored"] is True
     assert data["authenticated"] is True
     assert data["token_prefix"].startswith("sk-ant-oat01-")
+    assert data["scope"] == "global"
 
     from apps.common.models import SystemConfig
     stored = SystemConfig.objects.get(key="claude_credentials_blob")

@@ -40,14 +40,30 @@ def cli_auth_status(request: Request) -> Response:
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def cli_auth_upload(request: Request) -> Response:
-    """Accept a credential blob (shape: {"claudeAiOauth": {...}}) and persist it.
+    """Accept a credential blob and persist it at user or global scope.
 
     Intended caller: ``scripts/ace_cli_login.py`` running on a developer's
     laptop, reading from the local macOS Keychain or Linux
     ``~/.claude/.credentials.json``. Authentication is via session cookie
     (from a prior Connect OAuth login) or a personal Bearer token minted
     at ``/settings``.
+
+    Default scope is ``user`` (writes the caller's ``UserCredential`` row).
+    ``?scope=global`` writes the shared ``SystemConfig`` blob but requires
+    ``is_staff``.
     """
+    scope = request.query_params.get("scope", "user")
+    if scope not in ("user", "global"):
+        return Response(
+            error_response(message="scope must be 'user' or 'global'", code="bad_scope"),
+            status=400,
+        )
+    if scope == "global" and not request.user.is_staff:
+        return Response(
+            error_response(message="global scope requires staff", code="forbidden"),
+            status=403,
+        )
+
     blob = request.data
     if not isinstance(blob, dict):
         return Response(
@@ -61,23 +77,37 @@ def cli_auth_upload(request: Request) -> Response:
         blob = {"claudeAiOauth": blob}
 
     try:
-        token = auth_flow.store_credentials_blob(blob)
+        if scope == "user":
+            token = auth_flow.store_user_credentials_blob(request.user, blob)
+            authenticated = auth_flow.validate_stored_token(user=request.user)
+            # Persist validation state so the resolver can fall back to global
+            # if this blob is stored-but-dead.
+            from django.utils import timezone
+
+            from .models import UserCredential
+            UserCredential.objects.filter(user=request.user).update(
+                last_validated_at=timezone.now(),
+                last_validation_ok=authenticated,
+            )
+        else:
+            token = auth_flow.store_credentials_blob(blob)
+            authenticated = auth_flow.validate_stored_token()
     except ValueError as exc:
         return Response(
             error_response(message=str(exc), code="bad_blob"),
             status=400,
         )
 
-    authenticated = auth_flow.validate_stored_token()
     logger.info(
-        "cli_auth_upload: user=%s stored token_len=%d authenticated=%s",
-        getattr(request.user, "email", "?"), len(token), authenticated,
+        "cli_auth_upload: user=%s scope=%s token_len=%d authenticated=%s",
+        getattr(request.user, "email", "?"), scope, len(token), authenticated,
     )
     return Response(
         success_response({
             "stored": True,
             "authenticated": authenticated,
             "token_prefix": token[:15],
+            "scope": scope,
         })
     )
 
