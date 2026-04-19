@@ -43,7 +43,10 @@ def test_create_session_creates_owner_participant(client, user):
     assert s.participants.filter(user=user, role="owner").exists()
 
 
-def test_list_sessions_only_returns_current_user(client, user, other_user):
+def test_list_sessions_returns_all_sessions(client, user, other_user):
+    """Sessions are visible to every authed Dimagi user for now — the
+    list endpoint is not filtered by owner (see apps/sessions/views.py
+    `_list_sessions` for the deferred sharing/ACL story)."""
     Session.objects.create(owner=user, title="mine")
     Session.objects.create(owner=other_user, title="theirs")
 
@@ -51,7 +54,17 @@ def test_list_sessions_only_returns_current_user(client, user, other_user):
     assert resp.status_code == 200
     titles = [s["title"] for s in resp.json()["data"]["items"]]
     assert "mine" in titles
-    assert "theirs" not in titles
+    assert "theirs" in titles
+
+
+def test_list_sessions_owner_filter(client, user, other_user):
+    Session.objects.create(owner=user, title="mine")
+    Session.objects.create(owner=other_user, title="theirs")
+
+    resp = client.get(f"/api/sessions?owner={user.id}")
+    assert resp.status_code == 200
+    titles = [s["title"] for s in resp.json()["data"]["items"]]
+    assert titles == ["mine"]
 
 
 def test_list_sessions_filters_by_status(client, user):
@@ -108,10 +121,21 @@ def test_messages_list_returns_ordered_messages(client, user):
     assert [r["turn_index"] for r in rows] == [1, 2]
 
 
-def test_messages_list_rejects_non_participant(client, user, other_user):
+def test_messages_list_allows_any_authed_user(client, user, other_user):
+    """Any authed Dimagi user can read any session's messages for now
+    (see apps/sessions/views.py `_load_session_for_participant` — the
+    helper no longer gates on participant role). Sharing/ACL is a
+    deferred layer."""
     s = Session.objects.create(owner=other_user, title="notmine")
+    Message.objects.create(
+        session=s, turn_index=1, role="user",
+        content={"text": "hi from other"}, plaintext="hi from other",
+        status="complete",
+    )
     resp = client.get(f"/api/sessions/{s.slug}/messages")
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    rows = resp.json()["data"]
+    assert rows[0]["plaintext"] == "hi from other"
 
 
 def test_messages_list_allows_editor_participant(client, user, other_user):

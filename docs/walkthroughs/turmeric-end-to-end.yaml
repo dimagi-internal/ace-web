@@ -1,0 +1,79 @@
+name: "Turmeric End-to-End — Real Lifecycle Tour"
+narrative: "Against an opp whose 19-skill lifecycle has actually executed (not --dry-run), tour the five most interesting screens — from PDD through Nova-generated apps and judge verdicts to the cycle grade at closeout."
+base_url: "https://labs.connect.dimagi.com/ace"
+
+# Setup prerequisite — this walkthrough assumes the opp's lifecycle has
+# been run for real (no --dry-run), so downstream phases carry artifacts
+# + judge verdicts. Recommended path:
+#
+#   1. export ACE_E2E_AUTH_TOKEN="<value from deploy/aws/task-definition.json>"
+#   2. bash tools/walkthrough/turmeric_cli_setup.sh  # creates the opp
+#   3. Manually (or via a driver) run /ace:run <slug> --mode auto
+#      STOP BEFORE Phase 5 (LLO management) — those skills send real emails
+#      and make real Connect invites. For a demo run, cap at Phase 4 (OCS)
+#      or Phase 6 closeout with `llo-onboarding` and its siblings
+#      deliberately skipped.
+#   4. echo "<slug>" > /tmp/turmeric-smoketest/slug.txt
+#   5. /walkthrough turmeric-end-to-end
+#
+# Cost: a full through-phase-4 run burns significant LLM tokens (Nova
+# calls for Learn/Deliver apps, app-test evaluation loop, OCS agent
+# clone + RAG build). Budget accordingly. For most demos the right
+# answer is to reuse CRISPR-Test-001 or a previously-run Turmeric opp
+# rather than re-running from scratch.
+auth:
+  type: command
+  check: "bash tools/walkthrough/turmeric_auth_check.sh"
+  login: "bash tools/walkthrough/turmeric_auth_login.sh"
+  inject_url: "/"
+
+personas:
+  reviewer:
+    name: "Lifecycle Reviewer"
+    role: "Dimagi engineer inspecting a completed ACE run"
+    color: "#7c3aed"
+    intro: "The reviewer is looking at an opp whose lifecycle has already run end-to-end on labs. Their job is to verify the web UI surfaces what ACE actually produced — Nova-generated apps, judge verdicts, OCS config, and the closeout cycle-grade — so they can sign off on the run (or flag what needs rework). Five scenes, ordered as the narrative arc of an ACE cycle: list → overview → build → evaluate → close."
+
+# Five scenes across the ACE lifecycle. Each picks a skill with a distinctive
+# artifact OR a judge verdict — the two things that differentiate a real run
+# from the dry-run smoke test (turmeric-step1-web). Skills chosen for:
+#
+# - idea-to-pdd        (Phase 1) — the entry point, shows the PDD that drove everything
+# - pdd-to-learn-app   (Phase 2) — cross-system: ACE → Nova → CommCare Learn app JSON, judge-scored
+# - app-test           (Phase 2) — evaluation loop: judge verdict + structured test results
+# - ocs-agent-setup    (Phase 4) — cross-system: ACE → OCS, with embed credentials for Connect
+# - cycle-grade        (Phase 6) — closeout: the "how did this cycle go" summary with judge verdict
+#
+# Skipped deliberately: the "no judge" skills (connect-program-setup,
+# llo-invite, llo-onboarding, etc.) — they produce artifacts but no
+# evaluation, so they're less load-bearing for this tour. The workbench
+# overview scene covers their status indicators at a glance.
+scenes:
+  - persona: reviewer
+    title: "Opp list shows lifecycle progress"
+    show: "Opp list at /opps. The Turmeric opp card shows human-readable display_name + slug + 'running' pill. Unlike the step1-web walkthrough, the pipeline behind this card is actually populated."
+    impressive_because: "Proves the list view is a live read-through of Drive state, not a cached snapshot. The same card that looked sparse after --dry-run now sits atop a run with real artifacts."
+
+  - persona: reviewer
+    title: "19-skill lifecycle — real progress, not stubs"
+    show: "Navigate to /opps/<slug>. Skills sidebar shows most phase-1-through-4 steps with ✓ (complete) markers instead of ○ (pending). Judge bars render for skills that have evaluations (idea-to-pdd, pdd-to-learn-app, pdd-to-deliver-app, app-test, training-materials). Chat pane connected."
+    impressive_because: "One screen tells the whole story of the ACE cycle to date — which phases succeeded, which have judge verdicts, which haven't run yet. This is where stakeholders get a 10-second status read."
+    ai_quality: "Sidebar should show ≥6 skills with ✓ markers and at least one skill row rendering a green/amber judge bar with a numeric score."
+
+  - persona: reviewer
+    title: "ACE calls Nova — pdd-to-learn-app artifact"
+    show: "Click pdd-to-learn-app in the sidebar. Detail pane renders the Learn app summary that Nova produced from the PDD: CCZ filename, app structure, module/form counts, and the judge verdict (score + rationale) if present."
+    impressive_because: "This is the cross-system moment — ACE read the PDD, called Nova, Nova produced a real CommCare app, and ACE's judge evaluated the output. All of that is visible in one pane without leaving the browser."
+    ai_quality: "Artifact preview should mention 'Learn app', 'CCZ' or 'module', and reference the Turmeric market-survey domain (markets, FLWs, vendors, turmeric, GPS). Judge verdict should include a numeric score 0–10."
+
+  - persona: reviewer
+    title: "Evaluation loop — app-test judge verdict"
+    show: "Click app-test in the sidebar. Detail pane shows the automated test plan, bugs/issues found, and the judge's score + rationale for the test run."
+    impressive_because: "ACE doesn't just build apps — it tests them and scores the result. The app-test judge is the closest thing to a CI gate in the ACE pipeline; seeing a real verdict here proves the feedback loop closes automatically."
+    ai_quality: "Preview should contain test-case descriptions specific to the Turmeric app (photograph vendors, capture MTN card, record GPS, single-stage visit) — not generic test-plan boilerplate. Judge rationale should reference specific passed/failed cases."
+
+  - persona: reviewer
+    title: "Cycle grade — closeout"
+    show: "Click cycle-grade in the sidebar. Detail pane shows the overall grade for this CRISPR-Connect cycle: what worked, what to improve, and recommendations for the next iteration's PDD."
+    impressive_because: "The cycle-grade artifact is what feeds learnings-summary back into the next PDD. Surfacing it in the workbench closes the outer loop: inspect → grade → refine → rerun."
+    ai_quality: "Grade summary should reference specific phases that ran (at minimum Phases 1–2) and call out both positive and negative findings. A 'recommendations' section should propose concrete PDD or skill edits."

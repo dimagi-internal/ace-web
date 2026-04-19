@@ -442,7 +442,7 @@ def discuss(request, slug: str, run_id: str, skill: str):
     # surface its file id. It would be a cheap enhancement to add that.)
 
     with transaction.atomic():
-        session = Session.objects.create(
+        session = Session.create_with_owner(
             owner=request.user,
             title=f"{skill}: {slug}",
             backend_kind="cli",
@@ -515,7 +515,7 @@ def opp_working_session(request, slug: str):
         )
 
     if workspace.working_session is None or workspace.working_session.status != "active":
-        session = Session.objects.create(
+        session = Session.create_with_owner(
             owner=request.user,
             title=f"{workspace.display_name} — working session",
             backend_kind="cli",

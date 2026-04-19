@@ -133,7 +133,7 @@ def fork_run(
 
     # Seed a new working session, repoint the workspace to it.
     with transaction.atomic():
-        session = Session.objects.create(
+        session = Session.create_with_owner(
             owner=owner,
             title=f"{slug} — {new_run_id}",
             backend_kind="cli",

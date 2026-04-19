@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Log in as ace@dimagi-ai.com via /auth/e2e-login/ and persist the
 # session cookie to the shared cookie jar. Called by canopy:walkthrough
-# via turmeric.yaml's auth.login hook.
+# via turmeric-step1-web.yaml's auth.login hook.
 #
 # Required env:
 #   ACE_E2E_AUTH_TOKEN    shared-secret from deploy/aws/task-definition.json

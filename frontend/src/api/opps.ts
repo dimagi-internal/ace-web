@@ -87,8 +87,14 @@ export function artifactBodyUrl(
   skill: string,
   artifactName: string,
 ): string {
+  // Prepend Vite's BASE_URL so this raw-fetch helper lands on the same
+  // /ace/ prefix the rest of the API uses via apiFetch. Without this,
+  // prod fetches went to labs.connect.dimagi.com/api/... instead of
+  // /ace/api/..., which nginx refuses to route and the artifact body
+  // preview showed "Error: 404".
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   return (
-    `/api/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}` +
+    `${base}/api/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}` +
     `/steps/${encodeURIComponent(skill)}/artifacts/${encodeURIComponent(artifactName)}`
   );
 }

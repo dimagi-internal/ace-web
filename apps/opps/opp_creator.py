@@ -67,17 +67,23 @@ def create_opp(
     drive.upload_file(opp_folder_id, "idea.md", idea, "text/markdown")
     if pdd:
         drive.upload_file(opp_folder_id, "pdd.md", pdd, "text/markdown")
-    state_yaml = (
-        f"opp: {slug}\n"
-        f"mode: {mode}\n"
-        f"current_run: run-001\n"
-        f"phase: design-review\n"
-    )
+    # display_name is read back through load_opp → state_data.get("display_name",
+    # slug), so persist it here; otherwise the opp card shows slug==display_name
+    # and the secondary line is redundant.
+    state_lines = [
+        f"opp: {slug}",
+        f"mode: {mode}",
+        "current_run: run-001",
+        "phase: design-review",
+    ]
+    if display_name and display_name != slug:
+        state_lines.append(f"display_name: {display_name}")
+    state_yaml = "\n".join(state_lines) + "\n"
     drive.upload_file(run1_folder_id, "state.yaml", state_yaml, "application/yaml")
 
     # Transactional: workspace + working session + seed messages
     with transaction.atomic():
-        session = Session.objects.create(
+        session = Session.create_with_owner(
             owner=owner,
             title=f"{display_name} — working session",
             backend_kind="cli",

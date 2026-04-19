@@ -36,10 +36,7 @@ def session_collection(request: Request) -> Response:
 
 def _create_session(request: Request) -> Response:
     title = (request.data or {}).get("title", "")
-    session = Session.objects.create(owner=request.user, title=title)
-    SessionParticipant.objects.create(
-        session=session, user=request.user, role="owner"
-    )
+    session = Session.create_with_owner(owner=request.user, title=title)
     return Response(
         success_response(SessionSerializer(session).data),
         status=status.HTTP_201_CREATED,
@@ -47,7 +44,14 @@ def _create_session(request: Request) -> Response:
 
 
 def _list_sessions(request: Request) -> Response:
-    qs = Session.objects.filter(owner=request.user)
+    # All authenticated Dimagi users can see every session. Ownership is
+    # still tracked (and a future sharing/ACL layer can filter here), but
+    # for the current internal-tool scope the list is shared. Filter-by-
+    # owner is available via ?owner=<id> if callers want it.
+    qs = Session.objects.all()
+    owner_filter = request.query_params.get("owner")
+    if owner_filter:
+        qs = qs.filter(owner_id=owner_filter)
     status_filter = request.query_params.get("status")
     if status_filter:
         qs = qs.filter(status=status_filter)
@@ -204,21 +208,17 @@ def participant_collection(request: Request, slug: str) -> Response:
 # ────────────────────────────── helpers ──────────────────────────────
 
 def _load_session_for_participant(slug: str, user) -> Session | None:
-    """Return the session if `user` is a participant, else None.
+    """Return the session if it exists — reads are shared across all
+    authenticated Dimagi users for now.
 
-    Replaces the Phase 2 `owner=request.user` check so editor/viewer
-    participants can read the session too.
+    A future sharing/ACL layer can reintroduce per-session gating. Owner-
+    only mutation checks (DELETE, PATCH, add-participant) still live at
+    the call sites, so this helper only gates the read path.
     """
     try:
-        session = Session.objects.get(slug=slug)
+        return Session.objects.get(slug=slug)
     except Session.DoesNotExist:
         return None
-    is_participant = SessionParticipant.objects.filter(
-        session=session, user=user
-    ).exists()
-    if not is_participant:
-        return None
-    return session
 
 
 def _not_found() -> Response:

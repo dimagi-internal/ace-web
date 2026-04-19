@@ -506,11 +506,28 @@ async def _broadcast_stream_event(
 # ────────────────────── sync DB helpers ──────────────────────
 
 def _participant_role(slug: str, user_id: int) -> str | None:
-    return (
-        SessionParticipant.objects.filter(session__slug=slug, user_id=user_id)
+    """Look up the user's role in the session, auto-joining as `editor` if
+    they aren't already a participant. Sessions are visible to every
+    authenticated Dimagi user while we don't yet have a sharing layer;
+    auto-joining on first socket connect preserves the existing presence
+    + draft + message semantics (which key off the participant row).
+    Returns None only if the session itself doesn't exist.
+    """
+    session_pk = Session.objects.filter(slug=slug).values_list("pk", flat=True).first()
+    if session_pk is None:
+        return None
+    role = (
+        SessionParticipant.objects.filter(session_id=session_pk, user_id=user_id)
         .values_list("role", flat=True)
         .first()
     )
+    if role is not None:
+        return role
+    SessionParticipant.objects.get_or_create(
+        session_id=session_pk, user_id=user_id,
+        defaults={"role": "editor"},
+    )
+    return "editor"
 
 
 def _session_pk_for(slug: str) -> int | None:
