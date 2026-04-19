@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -38,6 +39,18 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 _TOKEN_DB_KEY = "claude_oauth_token"
+
+_TOKEN_REDACT_PATTERN = re.compile(r"sk-ant-oat\S+")
+
+
+def _redact_token(text: str) -> str:
+    """Replace any sk-ant-oat... token in text with a placeholder.
+
+    Defense-in-depth for log lines that dump CLI subprocess stdout/stderr —
+    today's claude binary doesn't echo the bearer token, but a future version
+    that does would leak via these logs without this scrub.
+    """
+    return _TOKEN_REDACT_PATTERN.sub("sk-ant-oat[REDACTED]", text)
 _BLOB_DB_KEY = "claude_credentials_blob"
 
 
@@ -414,7 +427,8 @@ def _check_token_via_cli(blob_json: str | None = None) -> bool:
             return True
         logger.warning(
             "CLI token check FAILED: stderr=%s stdout_tail=%s",
-            proc.stderr[:500], proc.stdout[-1000:],
+            _redact_token(proc.stderr[:500]),
+            _redact_token(proc.stdout[-1000:]),
         )
         return False
     except subprocess.TimeoutExpired:
