@@ -72,7 +72,7 @@ test.describe("per-user CLI credentials — smoke", () => {
     }
   });
 
-  test("/settings renders the Claude CLI credentials section", async ({
+  test("/settings renders the Claude Max subscription section", async ({
     browser,
   }) => {
     const { context, page } = await newSmokeContext(browser);
@@ -83,15 +83,17 @@ test.describe("per-user CLI credentials — smoke", () => {
         page.getByRole("heading", { name: "Settings" }),
       ).toBeVisible();
 
-      // The new per-user section heading
+      // The per-user credential section heading
       await expect(
-        page.getByRole("heading", { name: "Claude CLI credentials" }),
+        page.getByRole("heading", { name: "Claude Max subscription" }),
       ).toBeVisible();
 
       // Both panels render, identified by their label text
-      await expect(page.getByText("Your token", { exact: true })).toBeVisible();
       await expect(
-        page.getByText("Instance fallback", { exact: true }),
+        page.getByText("Your subscription", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Shared fallback", { exact: true }),
       ).toBeVisible();
     } finally {
       await context.close();

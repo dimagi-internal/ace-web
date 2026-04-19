@@ -5,7 +5,7 @@ import { newAuthedContext } from "../helpers/auth";
 /**
  * Settings page E2E tests.
  *
- * Exercises the upload-token management surface at /ace/settings:
+ * Exercises the ACE API token management surface at /ace/settings:
  *   1. Creating a personal token shows the raw token in a "Token created"
  *      dialog that can be dismissed with "I've saved this".
  *   2. After creation the token's label appears in the token list.
@@ -26,7 +26,7 @@ test.describe("Settings page", () => {
 
     await page.goto("/ace/settings");
 
-    // The page heading should say "Settings"; the section heading "Upload tokens".
+    // The page heading should say "Settings"; the section heading "ACE API tokens".
     await expect(
       page.getByRole("heading", { name: "Settings" }),
     ).toBeVisible({ timeout: 10_000 });
@@ -36,7 +36,7 @@ test.describe("Settings page", () => {
 
     // The dialog should appear with the correct title and description.
     await expect(
-      page.getByRole("heading", { name: "Create upload token" }),
+      page.getByRole("heading", { name: "Create ACE API token" }),
     ).toBeVisible({ timeout: 5_000 });
     await expect(page.getByText("Give this token a label")).toBeVisible();
 
@@ -83,7 +83,7 @@ test.describe("Settings page", () => {
     // Open the create dialog.
     await page.getByRole("button", { name: /Create token/i }).click();
     await expect(
-      page.getByRole("heading", { name: "Create upload token" }),
+      page.getByRole("heading", { name: "Create ACE API token" }),
     ).toBeVisible({ timeout: 5_000 });
 
     // Label the token and create it.
@@ -114,7 +114,7 @@ test.describe("Settings page", () => {
     // Create a token labelled "revoke-me".
     await page.getByRole("button", { name: /Create token/i }).click();
     await expect(
-      page.getByRole("heading", { name: "Create upload token" }),
+      page.getByRole("heading", { name: "Create ACE API token" }),
     ).toBeVisible({ timeout: 5_000 });
 
     await page.getByPlaceholder("Token label").fill("revoke-me");
