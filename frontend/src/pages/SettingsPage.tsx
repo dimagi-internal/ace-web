@@ -45,7 +45,7 @@ export default function SettingsPage() {
   const handlePromote = async () => {
     try {
       await promoteCliAuthToGlobal();
-      toast.success("Promoted to global fallback");
+      toast.success("Promoted to shared fallback");
       loadCliStatus();
     } catch (e) {
       const message = e instanceof Error ? e.message : "Promote failed";
@@ -81,13 +81,67 @@ export default function SettingsPage() {
         <h1 className="text-lg font-semibold">Settings</h1>
       </header>
       <main className="flex-1 overflow-y-auto p-6">
-        <section className="max-w-2xl">
+        {cliStatus && (
+          <section className="max-w-2xl">
+            <h2 className="text-base font-semibold">Claude Max subscription</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Powers web chat — the server calls Anthropic with your Claude Max
+              subscription (OAuth, not an API key). Upload from your laptop via
+              the <code>/ace-web:create-cli-credentials</code> skill.
+            </p>
+
+            <div className="mt-4 rounded border border-border p-4">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">Your subscription</div>
+                <Badge variant={cliStatus.user.has_blob ? "default" : "outline"}>
+                  {cliStatus.user.has_blob
+                    ? cliStatus.authenticated
+                      ? "Active"
+                      : "Uploaded but failing"
+                    : "Not uploaded"}
+                </Badge>
+              </div>
+              {cliStatus.user.token_prefix && (
+                <code className="mt-2 block text-xs text-muted-foreground">
+                  {cliStatus.user.token_prefix}…
+                </code>
+              )}
+            </div>
+
+            <div className="mt-3 rounded border border-border p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium">Shared fallback</div>
+                  <div className="text-xs text-muted-foreground">
+                    Used when a user hasn't uploaded their own subscription.
+                  </div>
+                </div>
+                <Badge variant={cliStatus.global.has_blob ? "default" : "outline"}>
+                  {cliStatus.global.has_blob ? "Configured" : "Missing"}
+                </Badge>
+              </div>
+              {cliStatus.user.has_blob && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={handlePromote}
+                >
+                  Promote my subscription to shared fallback (admin only)
+                </Button>
+              )}
+            </div>
+          </section>
+        )}
+
+        <section className="mt-10 max-w-2xl">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold">Upload tokens</h2>
+              <h2 className="text-base font-semibold">ACE API tokens</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Personal tokens for the <code>ace-upload</code> CLI. Paste into{" "}
-                <code>~/.ace/config.toml</code>.
+                Bearer tokens that identify you to ace-web from a script. Used by{" "}
+                <code>ace-upload</code>, <code>/ace-web:create-cli-credentials</code>,
+                and any custom tooling you point at the ACE API.
               </p>
             </div>
             <Button size="sm" onClick={() => setShowCreate(true)}>
@@ -126,64 +180,12 @@ export default function SettingsPage() {
             </div>
           )}
         </section>
-
-        {cliStatus && (
-          <section className="mt-10 max-w-2xl">
-            <h2 className="text-base font-semibold">Claude CLI credentials</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Powers server-side <code>claude -p</code> for web chat. Upload via the{" "}
-              <code>/ace-web:create-cli-credentials</code> skill.
-            </p>
-
-            <div className="mt-4 rounded border border-border p-4">
-              <div className="flex items-center justify-between">
-                <div className="font-medium">Your token</div>
-                <Badge variant={cliStatus.user.has_blob ? "default" : "outline"}>
-                  {cliStatus.user.has_blob
-                    ? cliStatus.authenticated
-                      ? "Active"
-                      : "Uploaded but failing"
-                    : "Not uploaded"}
-                </Badge>
-              </div>
-              {cliStatus.user.token_prefix && (
-                <code className="mt-2 block text-xs text-muted-foreground">
-                  {cliStatus.user.token_prefix}…
-                </code>
-              )}
-            </div>
-
-            <div className="mt-3 rounded border border-border p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium">Instance fallback</div>
-                  <div className="text-xs text-muted-foreground">
-                    Used when a user hasn't uploaded their own blob.
-                  </div>
-                </div>
-                <Badge variant={cliStatus.global.has_blob ? "default" : "outline"}>
-                  {cliStatus.global.has_blob ? "Configured" : "Missing"}
-                </Badge>
-              </div>
-              {cliStatus.user.has_blob && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={handlePromote}
-                >
-                  Promote my token to global (admin only)
-                </Button>
-              )}
-            </div>
-          </section>
-        )}
       </main>
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create upload token</DialogTitle>
+            <DialogTitle>Create ACE API token</DialogTitle>
             <DialogDescription>Give this token a label (e.g., "laptop").</DialogDescription>
           </DialogHeader>
           <Input
