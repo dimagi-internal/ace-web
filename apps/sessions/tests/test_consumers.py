@@ -126,13 +126,37 @@ async def test_connect_rejects_anonymous(fake_redis, session):
     assert code == 4001
 
 
-async def test_connect_rejects_non_participant(fake_redis, session, django_user_model):
+async def test_connect_auto_joins_non_participant(fake_redis, session, django_user_model):
+    """Any authed Dimagi user can connect to any session — the consumer
+    auto-promotes them to `editor` so presence + drafts + writes keep
+    working. Sharing/ACL is a deferred layer (see
+    apps/sessions/consumers.py `_participant_role`)."""
     from asgiref.sync import sync_to_async
+
+    from apps.sessions.models import SessionParticipant
 
     stranger = await sync_to_async(django_user_model.objects.create_user)(
         email="stranger@dimagi.com", display_name="Stranger"
     )
     communicator, connected = await _connect(stranger, session.slug)
+    assert connected is True
+    role = await sync_to_async(
+        lambda: SessionParticipant.objects.filter(
+            session=session, user=stranger
+        ).values_list("role", flat=True).first()
+    )()
+    assert role == "editor"
+    await communicator.disconnect()
+
+
+async def test_connect_rejects_unknown_session(fake_redis, django_user_model):
+    """A missing session slug still closes the socket."""
+    from asgiref.sync import sync_to_async
+
+    user = await sync_to_async(django_user_model.objects.create_user)(
+        email="nobody@dimagi.com", display_name="Nobody"
+    )
+    communicator, connected = await _connect(user, "no-such-slug")
     assert connected is False
 
 
