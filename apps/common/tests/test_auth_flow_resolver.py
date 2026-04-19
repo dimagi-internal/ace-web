@@ -58,6 +58,35 @@ def test_resolver_env_is_last_resort(user, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_resolver_distinguishes_env_from_global_when_both_present(user, monkeypatch):
+    """When both env var AND a DB-persisted global blob are present, the
+    resolver must report source=='global' (the DB row wins, since
+    load_stored_token returns the DB token first)."""
+    env_token = "sk-ant-oat01-" + "e" * 40
+    global_token = "sk-ant-oat01-" + "g" * 40
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", env_token)
+    SystemConfig.objects.create(
+        key="claude_credentials_blob",
+        value=json.dumps({"claudeAiOauth": {"accessToken": global_token}}),
+    )
+    result = auth_flow.get_stored_token(user=user)
+    assert result == (global_token, "global")
+
+
+@pytest.mark.django_db
+def test_resolver_classifies_legacy_token_row_as_global(user, clear_env):
+    """A SystemConfig row with the legacy claude_oauth_token key (pre-blob
+    migration) should still classify as source='global', not 'env'."""
+    legacy_token = "sk-ant-oat01-" + "L" * 40
+    SystemConfig.objects.create(
+        key="claude_oauth_token",  # legacy key
+        value=legacy_token,
+    )
+    result = auth_flow.get_stored_token(user=user)
+    assert result == (legacy_token, "global")
+
+
+@pytest.mark.django_db
 def test_resolver_returns_none_when_empty(user, clear_env):
     assert auth_flow.get_stored_token(user=user) is None
 

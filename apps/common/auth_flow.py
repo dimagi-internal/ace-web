@@ -188,16 +188,21 @@ def get_stored_token(user=None) -> tuple[str, str] | None:
                     if token_looks_real(token):
                         return (token, "user")
         except Exception:
-            logger.debug(
+            logger.warning(
                 "UserCredential lookup failed for user=%s",
                 getattr(user, "pk", None),
+                exc_info=True,
             )
 
     # 2. global (load_stored_token reads the SystemConfig blob, writes the
-    #    creds file, and sets the env var as a side effect — preserve that)
+    #    creds file, and sets the env var as a side effect — preserve that).
+    #    Snapshot row-existence BEFORE the call, since load_stored_token
+    #    backfills an injected env token into the legacy _TOKEN_DB_KEY row
+    #    and would otherwise make an env-only path look like "global".
+    had_global_row = _global_row_exists()
     token = load_stored_token()
     if token_looks_real(token):
-        return (token, "global") if _global_row_exists() else (token, "env")
+        return (token, "global") if had_global_row else (token, "env")
 
     # 3. explicit env fallback (covers the case where load_stored_token didn't run)
     env_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or ""
@@ -211,7 +216,9 @@ def _global_row_exists() -> bool:
     try:
         from .models import SystemConfig
 
-        return SystemConfig.objects.filter(key=_BLOB_DB_KEY).exists()
+        return SystemConfig.objects.filter(
+            key__in=[_BLOB_DB_KEY, _TOKEN_DB_KEY]
+        ).exists()
     except Exception:
         return False
 
