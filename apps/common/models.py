@@ -35,10 +35,10 @@ class UserCredential(models.Model):
         related_name="cli_credential",
     )
     blob_encrypted = encrypt(models.TextField())
-    token_prefix = models.CharField(max_length=20)
-    uploaded_at = models.DateTimeField(auto_now=True)
+    token_prefix = models.CharField(max_length=32)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
     last_validated_at = models.DateTimeField(null=True, blank=True)
-    last_validation_ok = models.BooleanField(null=True)
+    last_validation_ok = models.BooleanField(null=True, blank=True)
 
     class Meta:
         db_table = "common_user_credential"

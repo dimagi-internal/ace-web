@@ -24,7 +24,7 @@ def test_user_credential_stores_blob_and_prefix():
     )
     cred.refresh_from_db()
     loaded = json.loads(cred.blob_encrypted)
-    assert loaded["claudeAiOauth"]["accessToken"].startswith("sk-ant-oat01-")
+    assert loaded == blob
     assert cred.token_prefix == "sk-ant-oat01-ab"
 
 
