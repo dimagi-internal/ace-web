@@ -112,8 +112,16 @@ def _phase_skill_entries(
 
         # Non-recurring skills first, then recurring — mirrors the visual
         # order and matches the historical ordinal convention.
+        #
+        # First-phase-wins for duplicates: a skill declared in multiple
+        # agent frontmatters (e.g. ocs-chatbot-qa appears as non-recurring
+        # in ocs-setup AND as recurring in llo-manager) keeps its first
+        # (earliest phase) placement. Later declarations are informational
+        # only — they don't create a second Workbench row.
         for entry in meta.get("skills") or []:
             if not isinstance(entry, dict) or not entry.get("name"):
+                continue
+            if entry["name"] in skill_index:
                 continue
             global_ordinal += 1
             skill_index[entry["name"]] = {
@@ -126,6 +134,8 @@ def _phase_skill_entries(
             }
         for entry in meta.get("recurring_skills") or []:
             if not isinstance(entry, dict) or not entry.get("name"):
+                continue
+            if entry["name"] in skill_index:
                 continue
             global_ordinal += 1
             skill_index[entry["name"]] = {

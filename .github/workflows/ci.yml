@@ -21,6 +21,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Clone ACE plugin
+        # apps/opps/skills.py and apps/system/reader.py load skill + phase
+        # metadata from agent frontmatter + lib/artifact-manifest.ts in the
+        # ACE plugin repo. Tests exercising the Workbench need this on disk
+        # so the dynamic skill registry is populated. Matches the
+        # Dockerfile's ``git clone --depth 1 ace.git /app/vendor/ace``.
+        # The resulting ../ace path is what config/settings/base.py's
+        # default ACE_PLUGIN_PATH resolves to.
+        run: git clone --depth 1 https://github.com/jjackson/ace.git ../ace
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:

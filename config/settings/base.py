@@ -162,7 +162,23 @@ ACE_DRIVE_ROOT_FOLDER_ID = env(
 
 # ACE plugin repo path — the System Overview tab reads skill definitions,
 # agent definitions, and the artifact manifest from this directory.
-ACE_PLUGIN_PATH = env.str("ACE_PLUGIN_PATH", default=str(BASE_DIR.parent / "ace"))
+# Also consumed by apps.opps.skills for the dynamic Workbench registry.
+#
+# In prod the Dockerfile vendors the plugin to /app/vendor/ace. In dev we
+# default to BASE_DIR.parent/ace (the sibling-repo layout), but when
+# ace-web is checked out inside a git-worktree tree (`.claude/worktrees/<x>`)
+# the sibling-repo path doesn't resolve. Walk up looking for a real
+# ace plugin dir before falling back.
+_DEFAULT_PLUGIN_PATH = BASE_DIR.parent / "ace"
+if not _DEFAULT_PLUGIN_PATH.is_dir():
+    _candidate = BASE_DIR
+    for _ in range(5):
+        _candidate = _candidate.parent
+        _maybe = _candidate / "ace"
+        if _maybe.is_dir() and (_maybe / "agents").is_dir():
+            _DEFAULT_PLUGIN_PATH = _maybe
+            break
+ACE_PLUGIN_PATH = env.str("ACE_PLUGIN_PATH", default=str(_DEFAULT_PLUGIN_PATH))
 
 # --- Django REST Framework ---
 REST_FRAMEWORK = {

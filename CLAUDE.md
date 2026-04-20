@@ -164,22 +164,35 @@ Dockerfile slimming, SPA catch-all, slug retries, setuptools layout), see the
 ## ACE opportunity visualization (apps/opps)
 
 The `apps/opps/` module is the ACE opportunity Workbench — a read-through UI
-on top of Google Drive that shows all 19 skills of an ACE run, per-step
-artifact previews, judge verdicts, gate history, and a "Discuss in chat"
-CTA that seeds a new ace-web `Session` from a step's context.
+on top of Google Drive that shows every skill of an ACE run, per-step
+artifact previews, judge verdicts, gate history, a run-level opp-eval
+scorecard + trend, pending-gates banner, and a "Discuss in chat" CTA that
+seeds a new ace-web `Session` from a step's context.
 
 Google Drive is the source of truth. There are no Django ORM models for
-opps / runs / steps / artifacts — the data lives as `opp.yaml` / `run.yaml` /
-`step.yaml` / `judge.yaml` / `gates.jsonl` / `events.jsonl` files under
-`ACE/<opp-slug>/` in Drive. See
-`docs/specs/2026-04-08-ace-opp-visualization-design.md` § 6 for the full
-folder format.
+opps / runs / steps / artifacts — the data lives as files under
+`ACE/<opp-slug>/` in Drive. The ACE plugin writes `state.yaml`, `pdd.md`,
+and skill-specific subfolders (`app-summaries/`, `test-results/`,
+`connect-setup/`, `verdicts/`, `gate-briefs/`, `scorecards/`, …); which
+skill owns which file is declared in the plugin's
+`lib/artifact-manifest.ts` — ace-web parses that manifest and uses it for
+file-to-skill attribution (see `apps/system/parsers.py`).
 
-**Coordination with the ACE plugin:** The Drive folder format in the spec
-above is a proposal that the ACE plugin (`../ace`) needs to adopt for
-first-class multi-run support. ace-web ships with a flat-layout fallback
-that reads the current `ACE/<opp>/state.yaml` + subfolder convention as a
-single implicit run, so both formats work during the transition.
+**Single-run per opp (as of 2026-04-20):** The opps Workbench reads one
+run per opp. Multi-run support (`runs/run-001/`, `runs/run-002/`, …) was
+removed in commits 289ee20–a8ef3d8 to match the ACE plugin's current
+convention, where `/ace:run` writes `state.yaml` at the opp root. The
+improvement loop is "run → inspect → upgrade plugin → rerun (overwriting)
+→ compare". If we bring back multi-run, the plan lives in
+`docs/plans/2026-04-20-drop-multi-run-simplify.md § deferred work` — don't
+re-derive from scratch.
+
+**Skill registry is dynamic, loaded from the plugin:** `apps/opps/skills.py`
+imports agent frontmatter + the artifact manifest from `ACE_PLUGIN_PATH`
+(default: auto-discovered sibling `ace/` repo, vendored into
+`/app/vendor/ace` in prod) at first access. Adding or renaming a skill in
+the plugin is a one-file edit there; ace-web picks it up on next process
+start. See also `apps/system/reader.py` which the System Overview tab uses.
 
 **Identity + Drive access:** identity via a hand-rolled CommCare Connect
 OAuth flow with PKCE (`apps/auth/oauth_views.py`, pattern from
@@ -195,12 +208,39 @@ Without it, `_resolve_ace_root_folder_id` returns `None` and the opp list is
 empty. Set via AWS Secrets Manager in prod.
 
 **Key files:**
-- `apps/opps/sync.py` — Drive-to-payload reader (structured + flat layouts)
-- `apps/opps/previews.py` — 19 per-skill preview extractors
+- `apps/opps/sync.py` — Drive-to-payload reader + `load_scorecard` helper;
+  manifest-driven file→skill attribution; reads `verdicts/*.yaml` +
+  `state.yaml`'s `gates:` map and attaches them to step snapshots
+- `apps/opps/previews.py` — per-skill preview extractors (header-row text
+  like "12 forms · 34 questions" or "⚖️ 82/100 pass"); falls back to
+  artifact count for unknown skills
 - `apps/opps/seed.py` — chat-seed builder for "Discuss in chat"
 - `apps/opps/drive_client.py` — DriveClient ABC + GoogleDriveClient
-- `apps/opps/skills.py` — canonical 19-skill metadata (phase/judge/gate/ordinal)
+- `apps/opps/skills.py` — **dynamic** skill registry loaded from plugin
+  agent frontmatter + artifact manifest (not a hardcoded list)
+- `frontend/src/components/opps/ScorecardPanel.tsx` — run-level opp-eval
+  scorecard chip + dialog in the Workbench header
+- `frontend/src/components/opps/PendingGatesBanner.tsx` — review-mode
+  "N gates awaiting review" banner at the top of the Workbench
 - `frontend/src/pages/OppWorkbenchPage.tsx` — the three-pane UI shell
+
+**Plugin-side contract** (what the plugin at `../ace` emits and ace-web
+consumes):
+- `state.yaml` at opp root — current phase/step/mode, plus `gates:` map
+  with `{decision, decided_by, decided_at, note}` per skill
+- `pdd.md` / `idea.md` at opp root
+- Per-skill subfolders (paths declared in the plugin's
+  `lib/artifact-manifest.ts`)
+- `verdicts/<skill>-eval-{quick,deep,monitor}.yaml` — LLM-as-Judge output
+- `gate-briefs/<skill>.md` — 5 review-mode gates (+ opp-eval advisory)
+- `scorecards/YYYY-MM-DD-opp-eval-*.md` + `scorecards/trend.md` —
+  umbrella `opp-eval` run-level aggregation
+
+**Transcript ingest linkage:** `POST /api/ingest/upload` accepts optional
+`opp_slug` / `opp_run_id` / `opp_step_skill` multipart fields so uploaded
+transcripts from `/ace:run --ace-web-url` (via the plugin's
+`upload-transcript` skill) surface under the originating opp in the
+Workbench's linked-chats panel. Orphan uploads (no opp fields) still work.
 
 ## Workflow
 

@@ -39,9 +39,10 @@ def test_workbench_returns_full_snapshot(authed_client):
     assert data["opp"]["slug"] == "malaria-pilot"
     # Flat layout always synthesizes a single run with id "r1".
     assert data["current_run"]["run_id"] == "r1"
-    # All 19 canonical skills emitted as rows (status depends on which
-    # subfolders carry artifacts).
-    assert len(data["current_run"]["steps"]) == 19
+    # All canonical skills emitted as rows (status depends on which
+    # subfolders carry artifacts). Count is driven by plugin agent
+    # frontmatter; at least 19 today.
+    assert len(data["current_run"]["steps"]) >= 19
 
 
 def test_workbench_unknown_opp_returns_404(authed_client):

@@ -6,6 +6,7 @@ import type {
   LinkedChat,
   OppCard,
   OppSnapshot,
+  Scorecard,
   StepDetail,
   WorkingSessionResponse,
 } from "./types";
@@ -40,6 +41,10 @@ export function updateOppTags(slug: string, tags: string[]): Promise<{ slug: str
 export function getOpp(slug: string, runId?: string): Promise<OppSnapshot> {
   const q = runId ? `?run_id=${encodeURIComponent(runId)}` : "";
   return request<OppSnapshot>(`/opps/${encodeURIComponent(slug)}${q}`);
+}
+
+export function getScorecard(slug: string): Promise<Scorecard> {
+  return request<Scorecard>(`/opps/${encodeURIComponent(slug)}/scorecard`);
 }
 
 export function getStepDetail(

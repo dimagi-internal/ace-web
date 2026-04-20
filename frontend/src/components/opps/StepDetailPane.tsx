@@ -30,7 +30,15 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
     getStepDetail(slug, runId, skill)
       .then((d) => {
         setDetail(d);
-        setActiveArtifact(d.artifacts[0] ?? null);
+        // When the step is blocked on a review-mode gate, prefer the
+        // gate-brief artifact as the initial active one so the admin
+        // sees the checklist first. The plugin writes these at
+        // ``gate-briefs/<skill>.md``.
+        const gateBrief =
+          d.status === "gate-pending" || d.status === "gate-rejected"
+            ? d.artifacts.find((a) => a.path.startsWith("gate-briefs/"))
+            : undefined;
+        setActiveArtifact(gateBrief ?? d.artifacts[0] ?? null);
       })
       .catch(() => setDetail(null))
       .finally(() => setLoading(false));

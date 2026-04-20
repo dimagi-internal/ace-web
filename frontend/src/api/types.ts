@@ -221,6 +221,15 @@ export interface DiscussResponse {
   session_slug: string;
 }
 
+export interface Scorecard {
+  latest_verdict: Judge | null;
+  latest_verdict_variant: "deep" | "monitor" | "quick" | null;
+  latest_scorecard_path: string | null;
+  latest_scorecard_body: string;
+  trend_path: string | null;
+  trend_body: string;
+}
+
 export interface CreateOppPayload {
   slug: string;
   display_name: string;

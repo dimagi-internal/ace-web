@@ -18,9 +18,10 @@ from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
     serialize_opp_card,
     serialize_opp_snapshot,
+    serialize_scorecard,
     serialize_step_snapshot,
 )
-from apps.opps.sync import delete_opp_folder, load_opp
+from apps.opps.sync import delete_opp_folder, load_opp, load_scorecard
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
 
@@ -391,6 +392,37 @@ def artifact_body(request, slug: str, run_id: str, skill: str, artifact_name: st
     # Serve as HttpResponse (not DRF Response) to avoid wrapping a file body
     # in the envelope. The envelope is for JSON; this is raw content.
     return HttpResponse(content.content, content_type=artifact.mime_type or "text/plain")
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def scorecard(request, slug: str):
+    """Run-level opp-eval scorecard + trend for the Workbench header.
+
+    Reads ``verdicts/opp-eval-*.yaml`` and ``scorecards/`` from the opp's
+    Drive folder. Returns an all-empty payload (no 404) when opp-eval
+    hasn't run yet — opp-eval is ad-hoc, not part of the default pipeline.
+    """
+    client, err = _require_drive(request)
+    if err is not None:
+        return err
+
+    ace_folder_id = _resolve_ace_root_folder_id(client)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        sc = load_scorecard(client, ace_folder_id=ace_folder_id, slug=slug)
+    except FileNotFoundError:
+        return Response(
+            error_response(f"no opp named {slug!r}", code="opp-not-found"),
+            status=404,
+        )
+
+    return Response(success_response(serialize_scorecard(sc)))
 
 
 def _skill_md_relative_path(skill: str) -> str:

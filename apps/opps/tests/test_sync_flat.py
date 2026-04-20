@@ -27,11 +27,13 @@ def test_flat_layout_populates_pdd_body(client):
     assert "Nutrition IDD" in snap.pdd_body
 
 
-def test_flat_layout_synthesizes_step_rows_for_all_19_skills(client):
+def test_flat_layout_synthesizes_step_rows_for_full_registry(client):
     ace_id = client.folder_id("ACE")
     snap = load_opp(client, ace_folder_id=ace_id, slug="nutrition-legacy")
     skill_names = [s.step.skill_name for s in snap.current_run.steps]
-    assert len(skill_names) == 19
+    # The count comes from plugin agent frontmatter; we expect at least
+    # the core 19 and at most a handful more as the plugin evolves.
+    assert len(skill_names) >= 19
     assert skill_names[0] == "idea-to-pdd"
     assert skill_names[-1] == "cycle-grade"
 

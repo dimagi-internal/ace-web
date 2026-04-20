@@ -77,14 +77,16 @@ def test_no_artifacts_falls_back_to_dash():
 
 
 def test_every_registered_skill_has_an_extractor():
-    """Every skill in the registry must have either a dedicated extractor or
-    rely on the generic fallback — we don't want silent gaps."""
+    """Every skill in the plugin registry can be previewed — either via a
+    dedicated extractor or the generic fallback. This guards against
+    silent KeyErrors when the plugin adds a new skill."""
     from apps.opps.skills import SKILL_REGISTRY
-    # Not all 19 need a dedicated function, but if the generic fallback is
-    # used we should be intentional about it. This test just asserts that
-    # the registry is importable and the fallback path works.
+    if len(SKILL_REGISTRY) == 0:
+        import pytest
+        pytest.skip("plugin not present")
     for skill in SKILL_REGISTRY:
-        step = _step(skill.name, artifacts=[skill.primary_output])
-        preview = build_preview(step, bodies={skill.primary_output: "sample"})
+        artifact_name = skill.primary_output or f"{skill.name}.md"
+        step = _step(skill.name, artifacts=[artifact_name])
+        preview = build_preview(step, bodies={artifact_name: "sample"})
         assert isinstance(preview, str)
         assert preview != ""

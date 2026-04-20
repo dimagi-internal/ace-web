@@ -306,3 +306,100 @@ def web_created_opp_tree() -> dict:
             }
         }
     }
+
+
+def opp_with_scorecard_tree() -> dict:
+    """Flat-layout fixture with an opp-eval scorecard, verdict, and trend.
+
+    Covers the umbrella-eval surfaces the plugin writes:
+      - ``verdicts/opp-eval-deep.yaml``   — machine-readable
+      - ``scorecards/2026-04-15-opp-eval-deep.md`` — human-readable
+      - ``scorecards/trend.md``           — rolling trend
+
+    Also includes a per-skill ``verdicts/ocs-chatbot-eval-deep.yaml`` so
+    judge-verdict surfacing on step rows can be exercised alongside the
+    run-level scorecard.
+    """
+    return {
+        "ACE": {
+            "cholera-smoketest": {
+                "state.yaml": """current_phase: llo-management
+current_step: llo-launch
+mode: review
+started_at: 2026-04-10T10:00:00Z
+initiated_by: neal@dimagi.com
+last_actor: ace@dimagi-ai.com
+last_actor_at: 2026-04-15T15:30:00Z
+gates:
+  idea-to-pdd:
+    decision: approved
+    decided_by: neal@dimagi.com
+    decided_at: 2026-04-10T11:00:00Z
+    note: PDD passes EM stress test
+""",
+                "idea.md": "Cholera outbreak response pilot.",
+                "pdd.md": "# Cholera Response PDD\n\nRapid detection and referral.",
+                "verdicts": {
+                    "opp-eval-deep.yaml": """skill: opp-eval
+mode: deep
+ran_at: 2026-04-15T14:00:00Z
+overall_score: 82
+verdict: pass
+dimensions:
+  design: {score: 88, strength: "clear EM", weakness: "thin appendix"}
+  build: {score: 80, strength: "both apps built", weakness: "1 bug open"}
+  content: {score: 85, strength: "good training", weakness: "FAQ sparse"}
+  ocs: {score: 75, strength: "deep gate passed", weakness: "low tagging"}
+summary: "Run is healthy; improvement path is OCS tagging and PDD appendix depth."
+""",
+                    "ocs-chatbot-eval-deep.yaml": """skill: ocs-chatbot-eval
+mode: deep
+ran_at: 2026-04-14T10:00:00Z
+overall_score: 78
+verdict: pass
+dimensions:
+  correctness: {score: 82}
+  source_usage: {score: 74}
+  tone: {score: 80}
+  tagging: {score: 70}
+""",
+                },
+                "gate-briefs": {
+                    "idea-to-pdd.md": """# Gate brief: idea-to-pdd
+
+- [x] EM specified with 3+ outcomes
+- [ ] Stress-test appendix has >= 5 entries
+- [x] Archetype mapped
+
+## Concerns
+- Appendix has only 3 entries — tighten before approval.
+""",
+                },
+                "scorecards": {
+                    "2026-04-15-opp-eval-deep.md": """# opp-eval deep — 2026-04-15
+
+Overall: **82/100** (pass)
+
+| Dimension | Score | Strength | Weakness |
+|---|---|---|---|
+| design | 88 | clear EM | thin appendix |
+| build | 80 | both apps built | 1 bug open |
+| content | 85 | good training | FAQ sparse |
+| ocs | 75 | deep gate passed | low tagging |
+
+## Recommendations
+1. Deepen PDD stress-test appendix
+2. Tune OCS tagging prompts
+""",
+                    "trend.md": """# opp-eval trend
+
+| Date | Overall | design | build | content | ocs |
+|---|---|---|---|---|---|
+| 2026-04-10 | 74 | 80 | 72 | 78 | 66 |
+| 2026-04-12 | 78 | 84 | 76 | 82 | 70 |
+| 2026-04-15 | 82 | 88 | 80 | 85 | 75 |
+""",
+                },
+            }
+        }
+    }

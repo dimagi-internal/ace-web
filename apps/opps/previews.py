@@ -195,7 +195,7 @@ def _learnings_summary(step: StepSnapshot, bodies: dict[str, str]) -> str:
 
 
 def _cycle_grade(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("grade-report.md", "")
+    body = bodies.get("grade-report.md") or bodies.get("closeout/cycle-grade.md", "")
     try:
         data = yaml.safe_load(body) or {}
     except yaml.YAMLError:
@@ -209,10 +209,67 @@ def _cycle_grade(step: StepSnapshot, bodies: dict[str, str]) -> str:
     return "🏆 grade-report.md"
 
 
+# --- New extractors for skills the plugin added post-0.3.5 ---
+
+
+def _pdd_to_test_prompts(step: StepSnapshot, bodies: dict[str, str]) -> str:
+    body = bodies.get("test-prompts.md", "")
+    # Q&A pairs are usually headings starting with "## Q" or bullets with "Q:".
+    count = len(re.findall(r"(?:^##\s+Q|^\s*-\s*\*\*Q)", body, re.MULTILINE))
+    if count:
+        return f"❓ {count} test prompt{'s' if count != 1 else ''}"
+    return "❓ test-prompts.md"
+
+
+def _ocs_chatbot_qa(step: StepSnapshot, bodies: dict[str, str]) -> str:
+    # ocs-chatbot-qa produces qa-captures/YYYY-MM-DD-ocs-chat-*.md. The
+    # sync layer feeds artifact bodies keyed by filename (basename), so
+    # look at the newest capture body if available.
+    names = sorted((a.name for a in step.artifacts), reverse=True)
+    newest = next((n for n in names if n.endswith(".md")), None)
+    if not newest:
+        return "🧪 ocs-chatbot-qa"
+    body = bodies.get(newest, "")
+    # Transcripts mark structural pass/fail per prompt. Count them.
+    passes = len(re.findall(r"structural[:\s-]*pass", body, re.IGNORECASE))
+    fails = len(re.findall(r"structural[:\s-]*fail", body, re.IGNORECASE))
+    if passes or fails:
+        return f"🧪 {passes} pass · {fails} fail"
+    variant = "deep" if "deep" in newest else ("quick" if "quick" in newest else "monitor")
+    return f"🧪 capture ({variant})"
+
+
+def _ocs_chatbot_eval(step: StepSnapshot, bodies: dict[str, str]) -> str:
+    # The sync layer already surfaces the judge verdict from
+    # verdicts/*.yaml on the StepSnapshot. Prefer that.
+    judge = step.judge
+    if judge is not None and judge.score is not None:
+        status = "pass" if judge.passed else ("fail" if judge.passed is False else "—")
+        return f"⚖️ {judge.score:.0f}/100 · {status}"
+    return "⚖️ ocs-chatbot-eval"
+
+
+def _opp_eval(step: StepSnapshot, bodies: dict[str, str]) -> str:
+    judge = step.judge
+    if judge is not None and judge.score is not None:
+        return f"🏁 run score {judge.score:.0f}/100"
+    # Fall back to scorecard body if present.
+    names = sorted((a.name for a in step.artifacts), reverse=True)
+    newest = next((n for n in names if n.endswith(".md") and n != "trend.md"), None)
+    if not newest:
+        return "🏁 opp-eval"
+    body = bodies.get(newest, "")
+    match = re.search(r"(?:overall|run\s+score)[:\s]+(\d+(?:\.\d+)?)", body, re.IGNORECASE)
+    if match:
+        return f"🏁 run score {match.group(1)}"
+    return "🏁 scorecard"
+
+
 # --- Registry + public entry point ---
 
 PREVIEW_EXTRACTORS: dict[str, PreviewFn] = {
     "idea-to-pdd":           _idea_to_idd,
+    "pdd-to-test-prompts":   _pdd_to_test_prompts,
     "pdd-to-learn-app":      _idd_to_learn_app,
     "pdd-to-deliver-app":    _idd_to_deliver_app,
     "app-deploy":            _app_deploy,
@@ -225,6 +282,9 @@ PREVIEW_EXTRACTORS: dict[str, PreviewFn] = {
     "llo-uat":               _llo_uat,
     "llo-launch":            _llo_launch,
     "ocs-agent-setup":       _ocs_agent_setup,
+    "ocs-chatbot-qa":        _ocs_chatbot_qa,
+    "ocs-chatbot-eval":      _ocs_chatbot_eval,
+    "opp-eval":              _opp_eval,
     "timeline-monitor":      _timeline_monitor,
     "flw-data-review":       _flw_data_review,
     "opp-closeout":          _opp_closeout,

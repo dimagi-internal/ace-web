@@ -47,12 +47,13 @@ def test_full_workflow_list_to_discuss(authed_client, fake_drive):
         assert any(c["slug"] == "malaria-pilot" for c in cards)
 
         # 2) Workbench for the opp — flat layout synthesizes a single
-        # run "r1" with all 19 canonical skills as rows.
+        # run "r1" with all canonical skills as rows (count driven by
+        # the plugin's agent frontmatter; at least 19 today).
         wb_response = authed_client.get("/api/opps/malaria-pilot")
         assert wb_response.status_code == 200
         wb = wb_response.json()["data"]
         assert wb["current_run"]["run_id"] == "r1"
-        assert len(wb["current_run"]["steps"]) == 19
+        assert len(wb["current_run"]["steps"]) >= 19
 
         # 3) Step detail for idea-to-pdd (has a pdd.md artifact)
         step_response = authed_client.get(
