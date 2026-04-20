@@ -122,23 +122,3 @@ export function runAction(
     { method: "POST", body: JSON.stringify(payload) },
   );
 }
-
-export interface ForkPayload {
-  from_skill: string;
-  mode: "with-feedback" | "empty";
-  feedback?: string;
-}
-
-export interface ForkResponse {
-  new_run_id: string;
-  working_session_slug: string;
-}
-
-export function forkRun(
-  slug: string, runId: string, payload: ForkPayload,
-): Promise<ForkResponse> {
-  return request<ForkResponse>(
-    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/fork`,
-    { method: "POST", body: JSON.stringify(payload) },
-  );
-}

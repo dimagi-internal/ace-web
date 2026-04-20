@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, GitBranch, Pencil } from "lucide-react";
+import { ExternalLink, Pencil } from "lucide-react";
 
 import { getStepDetail } from "../../api/opps";
 import type { Artifact, StepDetail } from "../../api/types";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ActionButtons } from "./ActionButtons";
 import { ArtifactBody } from "./ArtifactBody";
 import { DiscussInChatButton } from "./DiscussInChatButton";
 import { EditArtifactDialog } from "./EditArtifactDialog";
-import { ForkDialog } from "./ForkDialog";
 import { GateHistory } from "./GateHistory";
 import { JudgeVerdict } from "./JudgeVerdict";
 import { LinkedChats } from "./LinkedChats";
@@ -26,7 +24,6 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
   const [loading, setLoading] = useState(true);
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null);
   const [editing, setEditing] = useState<Artifact | null>(null);
-  const [forkOpen, setForkOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -64,20 +61,6 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
         runId={runId}
         skillName={detail.skill_name}
         status={detail.status}
-      />
-
-      <div>
-        <Button size="sm" variant="outline" onClick={() => setForkOpen(true)}>
-          <GitBranch className="mr-1.5 h-3.5 w-3.5" />
-          Fork from here
-        </Button>
-      </div>
-      <ForkDialog
-        open={forkOpen}
-        onOpenChange={setForkOpen}
-        slug={slug}
-        runId={runId}
-        skill={skill}
       />
 
       <DiscussInChatButton slug={slug} runId={runId} skill={skill} />

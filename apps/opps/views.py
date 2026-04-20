@@ -12,7 +12,6 @@ from apps.opps.drive_client import (
     DriveClient,
     get_drive_client,
 )
-from apps.opps.fork import ForkError, fork_run
 from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
 from apps.opps.parsers import parse_opp_yaml
@@ -638,43 +637,3 @@ def opp_action(request, slug: str, run_id: str, action: str):
         "message_id": message.id,
         "turn_index": message.turn_index,
     }))
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def opp_fork(request, slug: str, run_id: str):
-    """POST /api/opps/<slug>/runs/<run_id>/fork — create a new run."""
-    client, err = _require_drive(request)
-    if err is not None:
-        return err
-    ace_folder_id = _resolve_ace_root_folder_id(client)
-    if ace_folder_id is None:
-        return Response(
-            error_response("ACE root folder not found", code="ace-root-not-found"),
-            status=404,
-        )
-
-    body = request.data if isinstance(request.data, dict) else {}
-
-    try:
-        result = fork_run(
-            drive=client,
-            ace_root_folder_id=ace_folder_id,
-            slug=slug,
-            from_run_id=run_id,
-            from_skill=body.get("from_skill", ""),
-            mode=body.get("mode", ""),
-            feedback=body.get("feedback"),
-            owner=request.user,
-        )
-    except ForkError as exc:
-        status = 404 if exc.code in ("opp-not-found", "step-not-found") else 400
-        return Response(error_response(str(exc), code=exc.code), status=status)
-
-    return Response(
-        success_response({
-            "new_run_id": result.new_run_id,
-            "working_session_slug": result.working_session.slug,
-        }),
-        status=201,
-    )
