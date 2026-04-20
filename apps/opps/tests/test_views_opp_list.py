@@ -117,6 +117,49 @@ def test_opp_list_skips_non_opp_folders(authed_client):
     assert {c["slug"] for c in cards} == {"turmeric-smoketest-20260418-1114"}
 
 
+def test_opp_list_includes_flat_idea_only_opp(authed_client):
+    """New flat layout (2026-04-20): opp folder contains just idea.md
+    (optionally pdd.md) at the root — no runs/ subfolder, no state.yaml.
+    /ace:run initializes state.yaml itself when the lifecycle starts.
+    List view must recognize these. Regression test for the bug where
+    a flat idea.md-only opp created by opp_creator was invisible in /opps.
+    """
+    tree = {"ACE": {"flat-only": {"idea.md": "the idea body"}}}
+    fake = FakeDriveClient.from_tree(tree)
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        response = authed_client.get("/api/opps/")
+    assert response.status_code == 200
+    cards = response.json()["data"]
+    assert {c["slug"] for c in cards} == {"flat-only"}
+
+
+def test_opp_list_overlays_workspace_display_name(authed_client, authed_user):
+    """display_name now lives on the OppWorkspace DB row (not in a Drive
+    state.yaml). The list view layers the DB display_name over the
+    Drive-derived manifest so cards show the human-readable name.
+
+    Regression test for the Task 5 side effect where display_name
+    defaulted to slug everywhere after the Drive write was dropped.
+    """
+    from apps.opps.models import OppWorkspace
+    OppWorkspace.objects.create(
+        slug="flat-only",
+        display_name="Pretty Name",
+        created_by=authed_user,
+    )
+    tree = {"ACE": {"flat-only": {"idea.md": "idea"}}}
+    fake = FakeDriveClient.from_tree(tree)
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        response = authed_client.get("/api/opps/")
+    cards = response.json()["data"]
+    card = next(c for c in cards if c["slug"] == "flat-only")
+    assert card["display_name"] == "Pretty Name"
+
+
 def test_opp_list_returns_empty_when_no_ace_root_configured(authed_client):
     """No ACE_DRIVE_ROOT_FOLDER_ID set → empty list, not a 500.
 
