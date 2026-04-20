@@ -136,6 +136,7 @@ def serialize_opp_card(opp: OppManifest, current_run: RunDetail | None) -> dict:
         "slug": opp.slug,
         "display_name": opp.display_name,
         "labels": opp.labels,
+        "tags": list(opp.tags),
         "created_at": opp.created_at,
         "created_by": opp.created_by,
         "current_run_id": opp.current_run_id,
