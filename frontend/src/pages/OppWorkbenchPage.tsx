@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { getOpp, getWorkingSession } from "../api/opps";
-import type { OppSnapshot, Run, Step } from "../api/types";
+import type { OppSnapshot, Step } from "../api/types";
 import { ChatPanel } from "../components/opps/ChatPanel";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { OppSidebar } from "../components/opps/OppSidebar";
