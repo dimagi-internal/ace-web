@@ -14,14 +14,14 @@
 set -euo pipefail
 
 BASE_URL="${ACE_WEB_BASE_URL:-https://labs.connect.dimagi.com/ace}"
-COOKIE_JAR="${TURMERIC_COOKIE_JAR:-/tmp/turmeric-smoketest/cookies.txt}"
+COOKIE_JAR="${ACE_WEB_COOKIE_JAR:-${TURMERIC_COOKIE_JAR:-/tmp/ace-web-walkthrough/cookies.txt}}"
 SLUG_FILE="${TURMERIC_SLUG_FILE:-/tmp/turmeric-smoketest/slug.txt}"
 MIN_COMPLETE="${TURMERIC_MIN_COMPLETE:-6}"
 
 log() { echo "[turmeric-data-check] $*" >&2; }
 
-[ -f "$COOKIE_JAR" ] || { log "cookies missing: $COOKIE_JAR — run turmeric_auth_login.sh"; exit 2; }
-[ -f "$SLUG_FILE" ]  || { log "slug file missing: $SLUG_FILE — run turmeric_cli_setup.sh"; exit 2; }
+[ -f "$COOKIE_JAR" ] || { log "cookies missing: $COOKIE_JAR — run tools/walkthrough/walkthrough_auth_login.sh"; exit 2; }
+[ -f "$SLUG_FILE" ]  || { log "slug file missing: $SLUG_FILE — run /ace:run <slug> --idea <pdd-file> --ace-web-url ... and echo \"\$SLUG\" > $SLUG_FILE"; exit 2; }
 
 SLUG="$(tr -d '[:space:]' < "$SLUG_FILE")"
 [ -n "$SLUG" ] || { log "slug file is empty: $SLUG_FILE"; exit 2; }

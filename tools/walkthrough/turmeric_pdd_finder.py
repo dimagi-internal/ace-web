@@ -63,7 +63,9 @@ def find_latest_turmeric_pdd(
 
 if __name__ == "__main__":
     # Convenience: `python -m tools.walkthrough.turmeric_pdd_finder --print-body`
-    # prints only the body to stdout. Used by turmeric_cli_setup.sh.
+    # prints only the body to stdout. Pipe into a file to feed /ace:run:
+    #   python tools/walkthrough/turmeric_pdd_finder.py --print-body > /tmp/pdd.txt
+    #   /ace:run <slug> --idea /tmp/pdd.txt --mode auto --ace-web-url <url>
     import argparse
     import os
     import sys

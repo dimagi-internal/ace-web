@@ -5,8 +5,8 @@ Repeatable end-to-end tours of the ACE → Drive → ace-web flow against prod
 
 | Spec | Scenes | Setup | Use when |
 |------|--------|-------|----------|
-| `turmeric-step1-web` | 4 | `turmeric_cli_setup.sh` (dry-run, ~2 min, ~$1) | Smoke-test the ace-web tier after a deploy |
-| `turmeric-end-to-end` | 5 | Manual `/ace:run` without `--dry-run` (20–60 min, significant tokens) | Tour a real populated lifecycle for demos or post-run review |
+| `turmeric-step1-web` | 4 | `/ace:run <slug> --dry-run --idea <pdd-file> --ace-web-url <url>` (~2 min, ~$1) | Smoke-test the ace-web tier after a deploy |
+| `turmeric-end-to-end` | 5 | Same recipe without `--dry-run` (20–60 min, significant tokens) | Tour a real populated lifecycle for demos or post-run review |
 
 Spec: `docs/specs/2026-04-17-turmeric-smoke-walkthrough-design.md`.
 Plan: `docs/plans/2026-04-17-turmeric-smoke-walkthrough.md`.
@@ -46,8 +46,10 @@ which sends real emails). The workbench-overview scene captures their
 status at a glance via the sidebar.
 
 **Setup:** see the comment block at the top of `turmeric-end-to-end.yaml`.
-Shortest safe path is `turmeric_cli_setup.sh` → drive a real `/ace:run
-<slug> --mode auto` → stop at Phase 4 → `/walkthrough turmeric-end-to-end`.
+Shortest safe path is `turmeric_pdd_finder.py` → `/ace:run <slug> --mode
+auto --idea <pdd-file> --ace-web-url <url>` → stop at Phase 4 (interrupt
+or cap scope to avoid Phase 5's real emails) → `/walkthrough
+turmeric-end-to-end`.
 
 Cleanup is manual for now. After a run, delete the
 `turmeric-smoketest-<stamp>` opp from ace-web's `/opps` UI (trash icon on
@@ -85,26 +87,50 @@ until you delete them manually.
 ## CLI path
 
 ```bash
+# 1. Fetch the Turmeric PDD to a local file
+mkdir -p /tmp/turmeric-smoketest
+python tools/walkthrough/turmeric_pdd_finder.py > /tmp/turmeric-smoketest/pdd.txt
+
+# 2. Run /ace:run with the new scripted flags (ACE plugin >= 0.5.0).
+#    --idea seeds idea.md from the PDD file, skipping AskUserQuestion.
+#    --ace-web-url uploads the transcript to /api/ingest/upload after
+#    the run via the upload-transcript skill (e2e-login, shared secret).
+SLUG="turmeric-smoketest-$(date +%Y%m%d-%H%M)"
 export ACE_E2E_AUTH_TOKEN="<value from deploy/aws/task-definition.json>"
-bash tools/walkthrough/turmeric_cli_setup.sh
-# then in Claude Code:
+
+claude -p "/ace:run $SLUG --mode auto --dry-run \
+           --idea /tmp/turmeric-smoketest/pdd.txt \
+           --ace-web-url https://labs.connect.dimagi.com/ace" \
+  --output-format stream-json --verbose \
+  > /tmp/turmeric-smoketest/transcript-$SLUG.jsonl
+
+# 3. Persist the slug so the step1-web walkthrough can find it
+echo "$SLUG" > /tmp/turmeric-smoketest/slug.txt
+
+# 4. In Claude Code:
 /walkthrough turmeric-step1-web
 ```
 
-The CLI setup script:
-1. POSTs `/auth/e2e-login/` as `ace@dimagi-ai.com` → session cookie in
-   `/tmp/turmeric-smoketest/cookies.txt`
-2. POSTs `/api/opps/` with the PDD body to create a fresh
-   `turmeric-smoketest-<YYYYMMDD-HHMM>` opp
-3. Runs `claude -p "/ace:run <slug> --dry-run --mode auto"` and writes
-   the JSONL transcript
-4. Uploads the transcript to `/api/ingest/upload` via the same session
-   cookie (no personal token, no `ace-upload` CLI required)
-5. Polls `/api/opps/<slug>` until Drive sync completes and writes the
-   slug to `/tmp/turmeric-smoketest/slug.txt`
+What `/ace:run` now handles natively (replacing the deleted
+`turmeric_cli_setup.sh`):
+1. Creates the `ACE/<slug>/` Drive folder (flat layout; ACE plugin
+   owns state.yaml).
+2. Seeds `idea.md` from `--idea /path/to/file` — no interactive prompt.
+3. Dispatches the `ace-orchestrator` agent through Phase 1.
+4. On completion, dispatches the `upload-transcript` skill (from the
+   ACE plugin) which does the e2e-login + POST `/api/ingest/upload`
+   dance — shared-secret auth, no personal bearer tokens.
+
+ace-web's `/opps` list picks up the new Drive folder automatically;
+the `OppWorkspace` DB row materializes lazily on first view (e.g.
+when you click into `/opps/<slug>`).
 
 **Cost note:** `/ace:run --dry-run` still burns LLM tokens for the
-orchestrator's planning + per-step dispatch. Budget a few dollars per run.
+orchestrator's planning + per-step dispatch. Budget a few dollars per
+run. For the **real** (non-`--dry-run`) path that powers the
+`turmeric-end-to-end` walkthrough, drop `--dry-run` and plan for a
+20–60 minute run that burns significantly more tokens (Nova calls
+for Learn/Deliver apps, app-test evaluation loop, OCS agent clone).
 
 ## Running the walkthrough deck
 
