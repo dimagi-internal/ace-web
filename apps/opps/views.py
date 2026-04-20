@@ -515,24 +515,52 @@ def discuss(request, slug: str, run_id: str, skill: str):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def step_chats(request, slug: str, run_id: str, skill: str):
-    """List prior ace-web chat sessions linked to this opp/run/step."""
+    """List prior ace-web chat sessions linked to this opp/run/step.
+
+    Returns BOTH:
+      - Step-specific sessions (full match on opp_slug + run_id + skill) —
+        typically "Discuss in chat" seeds, with ``kind='step'``
+      - Opp-wide sessions (opp_slug match, but no step_skill on the Session) —
+        typically uploaded transcripts from ``/ace:run --ace-web-url`` and
+        the opp's working session, with ``kind='opp'``
+
+    Step-specific chats are listed first. Both buckets share the same
+    response shape (a flat list) so existing frontend rendering keeps
+    working — the ``kind`` field lets the UI render a small badge.
+    """
     client, err = _require_drive(request)
     if err is not None:
         return err
 
-    chats = Session.objects.filter(
-        opp_slug=slug, opp_run_id=run_id, opp_step_skill=skill,
-    ).order_by("-updated_at")[:20]
+    step_chats_qs = (
+        Session.objects
+        .filter(opp_slug=slug, opp_run_id=run_id, opp_step_skill=skill)
+        .order_by("-updated_at")[:20]
+    )
+    opp_chats_qs = (
+        Session.objects
+        .filter(opp_slug=slug)
+        .exclude(opp_step_skill=skill, opp_run_id=run_id)
+        .order_by("-updated_at")[:20]
+    )
 
-    return Response(success_response([
-        {
+    def _row(c: Session, kind: str) -> dict:
+        return {
             "slug": c.slug,
             "title": c.title or "(untitled)",
             "updated_at": c.updated_at.isoformat(),
             "owner_email": c.owner.email,
+            "source": c.source,            # "web" | "upload"
+            "kind": kind,                  # "step" | "opp"
+            "step_skill": c.opp_step_skill or None,
         }
-        for c in chats
-    ]))
+
+    payload = [_row(c, "step") for c in step_chats_qs]
+    # Cap the combined list so a noisy opp doesn't make the panel unbounded.
+    remaining = max(0, 20 - len(payload))
+    payload += [_row(c, "opp") for c in opp_chats_qs[:remaining]]
+
+    return Response(success_response(payload))
 
 
 @api_view(["GET"])

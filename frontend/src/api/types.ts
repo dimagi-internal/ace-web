@@ -215,6 +215,9 @@ export interface LinkedChat {
   title: string;
   updated_at: string;
   owner_email: string;
+  source: SessionSource;
+  kind: "step" | "opp";
+  step_skill: string | null;
 }
 
 export interface DiscussResponse {
