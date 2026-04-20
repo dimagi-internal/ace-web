@@ -27,3 +27,16 @@ def test_slug_uniqueness(user, db):
         OppWorkspace.objects.create(
             slug="malaria-pilot", display_name="B", created_by=user,
         )
+
+
+def test_opp_workspace_tags_default_empty_and_settable(user, db):
+    """Tags are a free-form list for grouping related opps (e.g. iterations
+    of the same idea). See docs/plans/2026-04-20-drop-multi-run-simplify.md."""
+    w = OppWorkspace.objects.create(
+        slug="tagged-opp", display_name="Tagged Opp", created_by=user,
+    )
+    assert w.tags == []
+    w.tags = ["turmeric", "smoke-test"]
+    w.save()
+    w.refresh_from_db()
+    assert w.tags == ["turmeric", "smoke-test"]
