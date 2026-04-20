@@ -68,6 +68,24 @@ def _require_drive(request):
         )
 
 
+def _overlay_workspace_display_name(manifest, slug: str) -> None:
+    """If an OppWorkspace row exists for this slug and carries a non-slug
+    display_name, overlay it onto the Drive-derived manifest in place.
+
+    Since 2026-04-20, display_name lives only on the OppWorkspace DB row —
+    no longer in a Drive state.yaml (that ownership moved to the ACE plugin
+    per docs/plans/2026-04-20-drop-multi-run-simplify.md). Views that render
+    opp metadata layer the DB display_name over the Drive snapshot at the
+    boundary so the sync module stays pure.
+    """
+    try:
+        ws = OppWorkspace.objects.only("display_name").get(slug=slug)
+    except OppWorkspace.DoesNotExist:
+        return
+    if ws.display_name and ws.display_name != slug:
+        manifest.display_name = ws.display_name
+
+
 def _opp_list_impl(request):
     """Plain function form of the opp-list handler. Called directly by
     opp_collection (GET) to avoid double-wrapping with @api_view."""
@@ -91,28 +109,34 @@ def _opp_list_impl(request):
             try:
                 body = client.get_content(opp_yaml.id, opp_yaml.mime_type).content
                 manifest = parse_opp_yaml(body)
+                _overlay_workspace_display_name(manifest, child.name)
                 cards.append(serialize_opp_card(manifest, current_run=None))
                 continue
             except Exception:
                 pass
 
-        # Flat / web-created layouts: any of these at ACE/<slug>/ is enough
-        # to identify this folder as an opp. load_opp handles both the old
-        # (state.yaml + pdd.md) and new (idea.md + runs/) shapes. During the
-        # IDD→PDD rename transition we accept either primary doc name.
+        # Flat layout: any of these at ACE/<slug>/ is enough to identify
+        # this folder as an opp. Three accepted shapes:
+        #   a) new flat (2026-04-20): idea.md at root (state.yaml optional —
+        #      /ace:run writes it when the lifecycle actually starts)
+        #   b) old flat: state.yaml + pdd.md at root
+        #   c) ace-web-created (pre-2026-04-20): idea.md + runs/ subfolder
+        # During the IDD→PDD rename transition we accept either primary doc.
         names = {f.name for f in opp_children}
         has_primary_doc = "pdd.md" in names or "idd.md" in names
+        has_runs_subfolder = any(
+            f.name == "runs" and f.mime_type == "application/vnd.google-apps.folder"
+            for f in opp_children
+        )
         looks_like_opp = (
-            "state.yaml" in names and has_primary_doc
-        ) or (
-            "idea.md" in names and any(
-                f.name == "runs" and f.mime_type == "application/vnd.google-apps.folder"
-                for f in opp_children
-            )
+            "idea.md" in names  # (a) new flat OR (c) with runs
+            or ("state.yaml" in names and has_primary_doc)  # (b) old flat
+            or ("idea.md" in names and has_runs_subfolder)  # (c) explicit
         )
         if looks_like_opp:
             try:
                 snap = load_opp(client, ace_folder_id=ace_folder_id, slug=child.name)
+                _overlay_workspace_display_name(snap.opp, child.name)
                 cards.append(serialize_opp_card(snap.opp, snap.current_run))
             except Exception:
                 continue
@@ -239,6 +263,7 @@ def workbench(request, slug: str):
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
+    _overlay_workspace_display_name(snap.opp, slug)
 
     return Response(success_response(serialize_opp_snapshot(snap)))
 
@@ -264,6 +289,7 @@ def step_detail(request, slug: str, run_id: str, skill: str):
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
+    _overlay_workspace_display_name(snap.opp, slug)
 
     step_snap = next(
         (s for s in snap.current_run.steps if s.step.skill_name == skill), None
@@ -312,6 +338,7 @@ def artifact_body(request, slug: str, run_id: str, skill: str, artifact_name: st
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
+    _overlay_workspace_display_name(snap.opp, slug)
 
     step_snap = next(
         (s for s in snap.current_run.steps if s.step.skill_name == skill), None
@@ -413,6 +440,7 @@ def discuss(request, slug: str, run_id: str, skill: str):
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
+    _overlay_workspace_display_name(snap.opp, slug)
 
     try:
         seed_body = build_chat_seed(
