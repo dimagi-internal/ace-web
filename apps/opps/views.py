@@ -12,15 +12,12 @@ from apps.opps.drive_client import (
     DriveClient,
     get_drive_client,
 )
-from apps.opps.fork import ForkError, fork_run
 from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
-from apps.opps.parsers import parse_opp_yaml
 from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
     serialize_opp_card,
     serialize_opp_snapshot,
-    serialize_run_detail,
     serialize_step_snapshot,
 )
 from apps.opps.sync import delete_opp_folder, load_opp
@@ -103,43 +100,19 @@ def _opp_list_impl(request):
             continue
         opp_children = client.list_files(child.id)
 
-        # Structured layout: ACE/<slug>/opp.yaml
-        opp_yaml = next((f for f in opp_children if f.name == "opp.yaml"), None)
-        if opp_yaml is not None:
-            try:
-                body = client.get_content(opp_yaml.id, opp_yaml.mime_type).content
-                manifest = parse_opp_yaml(body)
-                _overlay_workspace_display_name(manifest, child.name)
-                cards.append(serialize_opp_card(manifest, current_run=None))
-                continue
-            except Exception:
-                pass
-
-        # Flat layout: any of these at ACE/<slug>/ is enough to identify
-        # this folder as an opp. Three accepted shapes:
-        #   a) new flat (2026-04-20): idea.md at root (state.yaml optional —
-        #      /ace:run writes it when the lifecycle actually starts)
-        #   b) old flat: state.yaml + pdd.md at root
-        #   c) ace-web-created (pre-2026-04-20): idea.md + runs/ subfolder
-        # During the IDD→PDD rename transition we accept either primary doc.
+        # Minimum signal that this folder is an opp: idea.md at the root
+        # (canonical shape). state.yaml is also accepted for legacy opps
+        # created before /ace:run owned state (no idea.md in that case).
         names = {f.name for f in opp_children}
-        has_primary_doc = "pdd.md" in names or "idd.md" in names
-        has_runs_subfolder = any(
-            f.name == "runs" and f.mime_type == "application/vnd.google-apps.folder"
-            for f in opp_children
-        )
-        looks_like_opp = (
-            "idea.md" in names  # (a) new flat OR (c) with runs
-            or ("state.yaml" in names and has_primary_doc)  # (b) old flat
-            or ("idea.md" in names and has_runs_subfolder)  # (c) explicit
-        )
-        if looks_like_opp:
-            try:
-                snap = load_opp(client, ace_folder_id=ace_folder_id, slug=child.name)
-                _overlay_workspace_display_name(snap.opp, child.name)
-                cards.append(serialize_opp_card(snap.opp, snap.current_run))
-            except Exception:
-                continue
+        if "idea.md" not in names and "state.yaml" not in names:
+            continue
+
+        try:
+            snap = load_opp(client, ace_folder_id=ace_folder_id, slug=child.name)
+            _overlay_workspace_display_name(snap.opp, child.name)
+            cards.append(serialize_opp_card(snap.opp, snap.current_run))
+        except Exception:
+            continue
 
     return Response(success_response(cards))
 
@@ -361,53 +334,6 @@ def artifact_body(request, slug: str, run_id: str, skill: str, artifact_name: st
     # Serve as HttpResponse (not DRF Response) to avoid wrapping a file body
     # in the envelope. The envelope is for JSON; this is raw content.
     return HttpResponse(content.content, content_type=artifact.mime_type or "text/plain")
-
-
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def opp_compare(request, slug: str):
-    client, err = _require_drive(request)
-    if err is not None:
-        return err
-
-    from_id = request.GET.get("from", "")
-    to_id = request.GET.get("to", "")
-    if not from_id or not to_id:
-        return Response(
-            error_response(
-                "compare requires `from` and `to` query params", code="missing-params"
-            ),
-            status=400,
-        )
-
-    ace_folder_id = _resolve_ace_root_folder_id(client)
-    if ace_folder_id is None:
-        return Response(
-            error_response("ACE root folder not found", code="ace-root-not-found"),
-            status=404,
-        )
-
-    try:
-        snap_from = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=from_id)
-        snap_to = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=to_id)
-    except FileNotFoundError:
-        return Response(
-            error_response(f"no opp or run for {slug!r}", code="opp-not-found"),
-            status=404,
-        )
-
-    return Response(
-        success_response(
-            {
-                "opp": {
-                    "slug": snap_to.opp.slug,
-                    "display_name": snap_to.opp.display_name,
-                },
-                "from_run": serialize_run_detail(snap_from.current_run),
-                "to_run": serialize_run_detail(snap_to.current_run),
-            }
-        )
-    )
 
 
 def _skill_md_relative_path(skill: str) -> str:
@@ -638,43 +564,3 @@ def opp_action(request, slug: str, run_id: str, action: str):
         "message_id": message.id,
         "turn_index": message.turn_index,
     }))
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def opp_fork(request, slug: str, run_id: str):
-    """POST /api/opps/<slug>/runs/<run_id>/fork — create a new run."""
-    client, err = _require_drive(request)
-    if err is not None:
-        return err
-    ace_folder_id = _resolve_ace_root_folder_id(client)
-    if ace_folder_id is None:
-        return Response(
-            error_response("ACE root folder not found", code="ace-root-not-found"),
-            status=404,
-        )
-
-    body = request.data if isinstance(request.data, dict) else {}
-
-    try:
-        result = fork_run(
-            drive=client,
-            ace_root_folder_id=ace_folder_id,
-            slug=slug,
-            from_run_id=run_id,
-            from_skill=body.get("from_skill", ""),
-            mode=body.get("mode", ""),
-            feedback=body.get("feedback"),
-            owner=request.user,
-        )
-    except ForkError as exc:
-        status = 404 if exc.code in ("opp-not-found", "step-not-found") else 400
-        return Response(error_response(str(exc), code=exc.code), status=status)
-
-    return Response(
-        success_response({
-            "new_run_id": result.new_run_id,
-            "working_session_slug": result.working_session.slug,
-        }),
-        status=201,
-    )

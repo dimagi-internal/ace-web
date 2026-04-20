@@ -12,7 +12,6 @@ urlpatterns = [
         name="opps-working-session",
     ),
     path("<slug:slug>", views.workbench, name="opps-workbench"),
-    path("<slug:slug>/compare", views.opp_compare, name="opps-compare"),
     path(
         "<slug:slug>/runs/<str:run_id>/steps/<str:skill>",
         views.step_detail,
@@ -42,9 +41,5 @@ urlpatterns = [
     path(
         "<slug:slug>/runs/<str:run_id>/actions/<str:action>",
         views.opp_action, name="opps-action",
-    ),
-    path(
-        "<slug:slug>/runs/<str:run_id>/fork",
-        views.opp_fork, name="opps-fork",
     ),
 ]

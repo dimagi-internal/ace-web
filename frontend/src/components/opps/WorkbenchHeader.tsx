@@ -2,19 +2,17 @@ import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import type { OppCard, Run, RunSummary } from "../../api/types";
+import type { OppCard, Run } from "../../api/types";
 import { Button } from "@/components/ui/button";
 import { DeleteOppDialog } from "./DeleteOppDialog";
-import { RunSelector } from "./RunSelector";
 
 interface Props {
   opp: OppCard;
   run: Run;
-  runs: RunSummary[];
   onRefresh: () => void;
 }
 
-export function WorkbenchHeader({ opp, run, runs, onRefresh }: Props) {
+export function WorkbenchHeader({ opp, run, onRefresh }: Props) {
   const navigate = useNavigate();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -29,7 +27,6 @@ export function WorkbenchHeader({ opp, run, runs, onRefresh }: Props) {
           {run.mode} mode
         </span>
         <span className="ml-auto flex items-center gap-3">
-          <RunSelector slug={opp.slug} currentRunId={run.run_id} runs={runs} />
           <button
             type="button"
             onClick={onRefresh}

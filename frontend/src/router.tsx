@@ -9,7 +9,6 @@ import { AuthCliPage } from "./pages/AuthCliPage";
 import SessionsPage from "./pages/SessionsPage";
 import OppListPage from "./pages/OppListPage";
 import OppWorkbenchPage from "./pages/OppWorkbenchPage";
-import OppComparePage from "./pages/OppComparePage";
 import SettingsPage from "./pages/SettingsPage";
 import ShareViewPage from "./pages/ShareViewPage";
 import SystemPage from "./pages/SystemPage";
@@ -34,7 +33,6 @@ export const router = createBrowserRouter(
           path: "opps/:slug/runs/:runId/steps/:skill",
           element: <OppWorkbenchPage />,
         },
-        { path: "opps/:slug/compare", element: <OppComparePage /> },
         { path: "system", element: <SystemPage /> },
         { path: "share/:token", element: <ShareViewPage /> },
       ],

@@ -216,12 +216,6 @@ export interface LinkedChat {
   owner_email: string;
 }
 
-export interface CompareResult {
-  opp: { slug: string; display_name: string };
-  from_run: Run;
-  to_run: Run;
-}
-
 export interface DiscussResponse {
   session_slug: string;
 }

@@ -14,7 +14,7 @@ import { useOppSocket } from "../hooks/useOppSocket";
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "loaded"; snapshot: OppSnapshot; priorRun: Run | null };
+  | { kind: "loaded"; snapshot: OppSnapshot };
 
 export default function OppWorkbenchPage() {
   const { slug = "", runId, skill } = useParams();
@@ -41,26 +41,8 @@ export default function OppWorkbenchPage() {
         setState({ kind: "loading" });
       }
       getOpp(slug, runId)
-        .then(async (snapshot) => {
-          // Fetch the prior run (if any) to compute per-row deltas. The runs
-          // list is newest-first; skip the current run, take the next one.
-          const currentIdx = snapshot.runs.findIndex(
-            (r) => r.run_id === snapshot.current_run.run_id,
-          );
-          const priorSummary =
-            currentIdx >= 0 && currentIdx + 1 < snapshot.runs.length
-              ? snapshot.runs[currentIdx + 1]
-              : null;
-          let priorRun: Run | null = null;
-          if (priorSummary) {
-            try {
-              const priorSnap = await getOpp(slug, priorSummary.run_id);
-              priorRun = priorSnap.current_run;
-            } catch {
-              priorRun = null;
-            }
-          }
-          setState({ kind: "loaded", snapshot, priorRun });
+        .then((snapshot) => {
+          setState({ kind: "loaded", snapshot });
         })
         .catch((err) => {
           // On silent refresh failure, keep the current state so the UI
@@ -89,7 +71,7 @@ export default function OppWorkbenchPage() {
   if (state.kind === "loading") return <LoadingSpinner label={`Loading ${slug}…`} />;
   if (state.kind === "error") return <ErrorState message={state.message} onRetry={() => load()} />;
 
-  const { snapshot, priorRun } = state;
+  const { snapshot } = state;
   const selectedStep: Step | null = selectedSkill
     ? snapshot.current_run.steps.find((s) => s.skill_name === selectedSkill) ?? null
     : null;
@@ -99,7 +81,6 @@ export default function OppWorkbenchPage() {
       <WorkbenchHeader
         opp={snapshot.opp}
         run={snapshot.current_run}
-        runs={snapshot.runs}
         onRefresh={() => load()}
       />
       <div className="flex flex-1 overflow-hidden">
@@ -109,7 +90,7 @@ export default function OppWorkbenchPage() {
         <main className="flex-1 overflow-y-auto">
           <SkillList
             steps={snapshot.current_run.steps}
-            priorRunSteps={priorRun?.steps ?? []}
+            priorRunSteps={[]}
             phases={snapshot.phases}
             selectedSkill={selectedSkill}
             onSelect={setSelectedSkill}
