@@ -25,6 +25,15 @@ class OppWorkspace(models.Model):
         on_delete=models.PROTECT,
         related_name="created_opps",
     )
+    tags = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Free-form tags for grouping related opps (e.g. iterations of "
+            "the same idea). Future UI: tag filter + side-by-side compare. "
+            "See docs/plans/2026-04-20-drop-multi-run-simplify.md."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

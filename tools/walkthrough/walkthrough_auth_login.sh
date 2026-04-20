@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Log in as ace@dimagi-ai.com via /auth/e2e-login/ and persist the
 # session cookie to the shared cookie jar. Called by canopy:walkthrough
-# via turmeric-step1-web.yaml's auth.login hook.
+# via any ace-web walkthrough's auth.login hook. Also imports cookies
+# into the gstack browse profile so the walkthrough's Chromium session
+# is authenticated for browser-driven scenes.
+#
+# Generic (not turmeric-specific) — works for any ace-web walkthrough
+# against any deployed instance that has ACE_E2E_AUTH_TOKEN wired up.
 #
 # Required env:
 #   ACE_E2E_AUTH_TOKEN    shared-secret from deploy/aws/task-definition.json
@@ -9,14 +14,14 @@
 # Optional env:
 #   ACE_WEB_BASE_URL      default: https://labs.connect.dimagi.com/ace
 #   ACE_E2E_EMAIL         default: ace@dimagi-ai.com
-#   TURMERIC_COOKIE_JAR   default: /tmp/turmeric-smoketest/cookies.txt
+#   ACE_WEB_COOKIE_JAR    default: /tmp/ace-web-walkthrough/cookies.txt
 set -euo pipefail
 
 BASE_URL="${ACE_WEB_BASE_URL:-https://labs.connect.dimagi.com/ace}"
 E2E_EMAIL="${ACE_E2E_EMAIL:-ace@dimagi-ai.com}"
-COOKIE_JAR="${TURMERIC_COOKIE_JAR:-/tmp/turmeric-smoketest/cookies.txt}"
+COOKIE_JAR="${ACE_WEB_COOKIE_JAR:-${TURMERIC_COOKIE_JAR:-/tmp/ace-web-walkthrough/cookies.txt}}"
 
-log() { echo "[turmeric-auth-login] $*" >&2; }
+log() { echo "[walkthrough-auth-login] $*" >&2; }
 
 if [ -z "${ACE_E2E_AUTH_TOKEN:-}" ]; then
   log "ACE_E2E_AUTH_TOKEN not set."

@@ -9,8 +9,8 @@ base_url: "https://labs.connect.dimagi.com/ace"
 # injects before the first scene. No OAuth round-trip, no personal tokens.
 auth:
   type: command
-  check: "bash tools/walkthrough/turmeric_auth_check.sh"
-  login: "bash tools/walkthrough/turmeric_auth_login.sh"
+  check: "bash tools/walkthrough/walkthrough_auth_check.sh"
+  login: "bash tools/walkthrough/walkthrough_auth_login.sh"
   inject_url: "/"
 
 personas:
@@ -18,7 +18,7 @@ personas:
     name: "Smoke-Test Runner"
     role: "Dimagi engineer validating a pre-release"
     color: "#2563eb"
-    intro: "The runner has just executed turmeric_web_setup.py or turmeric_cli_setup.sh. The slug is in /tmp/turmeric-smoketest/slug.txt. Four scenes verify the web plumbing end-to-end; only idea-to-pdd is populated (the setup runs --dry-run), so downstream phases stay pending by design."
+    intro: "The runner has just executed turmeric_web_setup.py (web wizard path) or `/ace:run <slug> --dry-run --idea /tmp/pdd.txt` (CLI path). The slug is in /tmp/turmeric-smoketest/slug.txt (web path) or was passed to /ace:run (CLI path). Four scenes verify the web plumbing end-to-end; only idea-to-pdd is populated (setup is --dry-run), so downstream phases stay pending by design."
 
 # Four scenes. Each proves a distinct piece of the ace-web plumbing; scenes
 # that captured identical screenshots in prior runs (pdd artifact re-click,

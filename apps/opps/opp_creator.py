@@ -60,26 +60,15 @@ def create_opp(
                 "slug-taken", f"Drive folder {slug!r} already exists"
             )
 
-    # Drive writes (outside the Postgres transaction)
+    # Drive writes (outside the Postgres transaction). Flat layout:
+    # ACE/<slug>/{idea.md, pdd.md?}. The ACE plugin (/ace:run) owns
+    # state.yaml and writes it directly at the opp root when the
+    # lifecycle actually starts. See
+    # docs/plans/2026-04-20-drop-multi-run-simplify.md.
     opp_folder_id = drive.create_folder(ace_root_folder_id, slug)
-    runs_folder_id = drive.create_folder(opp_folder_id, "runs")
-    run1_folder_id = drive.create_folder(runs_folder_id, "run-001")
     drive.upload_file(opp_folder_id, "idea.md", idea, "text/markdown")
     if pdd:
         drive.upload_file(opp_folder_id, "pdd.md", pdd, "text/markdown")
-    # display_name is read back through load_opp → state_data.get("display_name",
-    # slug), so persist it here; otherwise the opp card shows slug==display_name
-    # and the secondary line is redundant.
-    state_lines = [
-        f"opp: {slug}",
-        f"mode: {mode}",
-        "current_run: run-001",
-        "phase: design-review",
-    ]
-    if display_name and display_name != slug:
-        state_lines.append(f"display_name: {display_name}")
-    state_yaml = "\n".join(state_lines) + "\n"
-    drive.upload_file(run1_folder_id, "state.yaml", state_yaml, "application/yaml")
 
     # Transactional: workspace + working session + seed messages
     with transaction.atomic():
