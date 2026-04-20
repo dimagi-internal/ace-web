@@ -91,21 +91,3 @@ def test_full_workflow_list_to_discuss(authed_client, fake_drive):
         assert any(c["slug"] == session_slug for c in chats)
 
 
-def test_full_workflow_compare_runs(authed_client, fake_drive):
-    with _patch_drive(fake_drive):
-        response = authed_client.get(
-            "/api/opps/malaria-pilot/compare?from=2026-04-01-001&to=2026-04-06-002"
-        )
-        assert response.status_code == 200
-        data = response.json()["data"]
-        assert data["from_run"]["run_id"] == "2026-04-01-001"
-        assert data["to_run"]["run_id"] == "2026-04-06-002"
-        # The fixture has pdd-to-learn-app with judge 7.1 in v1 and 8.5 in v2
-        from_lla = next(
-            s for s in data["from_run"]["steps"] if s["skill_name"] == "pdd-to-learn-app"
-        )
-        to_lla = next(
-            s for s in data["to_run"]["steps"] if s["skill_name"] == "pdd-to-learn-app"
-        )
-        assert from_lla["judge"]["score"] == 7.1
-        assert to_lla["judge"]["score"] == 8.5

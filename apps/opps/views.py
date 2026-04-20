@@ -19,7 +19,6 @@ from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
     serialize_opp_card,
     serialize_opp_snapshot,
-    serialize_run_detail,
     serialize_step_snapshot,
 )
 from apps.opps.sync import delete_opp_folder, load_opp
@@ -360,53 +359,6 @@ def artifact_body(request, slug: str, run_id: str, skill: str, artifact_name: st
     # Serve as HttpResponse (not DRF Response) to avoid wrapping a file body
     # in the envelope. The envelope is for JSON; this is raw content.
     return HttpResponse(content.content, content_type=artifact.mime_type or "text/plain")
-
-
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def opp_compare(request, slug: str):
-    client, err = _require_drive(request)
-    if err is not None:
-        return err
-
-    from_id = request.GET.get("from", "")
-    to_id = request.GET.get("to", "")
-    if not from_id or not to_id:
-        return Response(
-            error_response(
-                "compare requires `from` and `to` query params", code="missing-params"
-            ),
-            status=400,
-        )
-
-    ace_folder_id = _resolve_ace_root_folder_id(client)
-    if ace_folder_id is None:
-        return Response(
-            error_response("ACE root folder not found", code="ace-root-not-found"),
-            status=404,
-        )
-
-    try:
-        snap_from = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=from_id)
-        snap_to = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=to_id)
-    except FileNotFoundError:
-        return Response(
-            error_response(f"no opp or run for {slug!r}", code="opp-not-found"),
-            status=404,
-        )
-
-    return Response(
-        success_response(
-            {
-                "opp": {
-                    "slug": snap_to.opp.slug,
-                    "display_name": snap_to.opp.display_name,
-                },
-                "from_run": serialize_run_detail(snap_from.current_run),
-                "to_run": serialize_run_detail(snap_to.current_run),
-            }
-        )
-    )
 
 
 def _skill_md_relative_path(skill: str) -> str:

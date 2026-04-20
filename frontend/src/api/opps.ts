@@ -1,6 +1,5 @@
 import { request } from "./client";
 import type {
-  CompareResult,
   CreateOppPayload,
   CreateOppResponse,
   DiscussResponse,
@@ -61,17 +60,6 @@ export function discussStep(
   return request<DiscussResponse>(
     `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(skill)}/discuss`,
     { method: "POST" },
-  );
-}
-
-export function compareRuns(
-  slug: string,
-  fromRunId: string,
-  toRunId: string,
-): Promise<CompareResult> {
-  const qs = new URLSearchParams({ from: fromRunId, to: toRunId });
-  return request<CompareResult>(
-    `/opps/${encodeURIComponent(slug)}/compare?${qs.toString()}`,
   );
 }
 
