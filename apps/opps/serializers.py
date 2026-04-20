@@ -24,7 +24,6 @@ from apps.opps.sync import (
     ArtifactRef,
     OppSnapshot,
     RunDetail,
-    RunSummary,
     StepSnapshot,
 )
 from apps.system.reader import load_system_overview
@@ -132,15 +131,6 @@ def serialize_run_detail(run: RunDetail) -> dict:
     }
 
 
-def serialize_run_summary(run: RunSummary) -> dict:
-    return {
-        "run_id": run.run_id,
-        "status": run.status,
-        "started_at": run.started_at,
-        "completed_at": run.completed_at,
-    }
-
-
 def serialize_opp_card(opp: OppManifest, current_run: RunDetail | None) -> dict:
     return {
         "slug": opp.slug,
@@ -160,7 +150,6 @@ def serialize_opp_snapshot(snap: OppSnapshot) -> dict:
     return {
         "opp": serialize_opp_card(snap.opp, snap.current_run),
         "pdd_body": snap.pdd_body,
-        "runs": [serialize_run_summary(r) for r in snap.all_runs],
         "current_run": serialize_run_detail(snap.current_run),
         "phases": list(overview.get("phases") or []),
     }

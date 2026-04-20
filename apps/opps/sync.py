@@ -1,37 +1,33 @@
 """Drive-folder → workbench payload sync.
 
 Reads an ACE opportunity folder from Google Drive via a DriveClient and
-returns a fully-expanded OppSnapshot suitable for JSON serialization.
+returns an OppSnapshot suitable for JSON serialization.
 
-This file handles the STRUCTURED layout:
-    ACE/<slug>/opp.yaml
-    ACE/<slug>/pdd.md
-    ACE/<slug>/runs/<run-id>/run.yaml
-    ACE/<slug>/runs/<run-id>/events.jsonl
-    ACE/<slug>/runs/<run-id>/steps/<n>-<skill>/step.yaml
-    ACE/<slug>/runs/<run-id>/steps/<n>-<skill>/judge.yaml
-    ACE/<slug>/runs/<run-id>/steps/<n>-<skill>/gates.jsonl
-    ACE/<slug>/runs/<run-id>/steps/<n>-<skill>/output/<artifact>
+One layout, one entry point:
 
-Flat-layout fallback (for legacy ACE/<slug>/state.yaml + pdd.md + subfolders)
-is in Task 11, as a second entry point in this module.
+    ACE/<slug>/idea.md                  (required)
+    ACE/<slug>/pdd.md  or  idd.md       (optional; consumed as the
+                                         idea-to-pdd artifact)
+    ACE/<slug>/state.yaml               (optional; written by /ace:run
+                                         when the lifecycle starts)
+    ACE/<slug>/<subfolder>/*            (optional; grouped artifacts
+                                         per `_FLAT_SUBFOLDER_SKILLS`)
+
+Per-opp step rows are synthesized from the canonical 19-skill registry
+in ``apps.opps.skills`` — presence of a skill's expected subfolder flips
+its row from `pending` to `complete`. Each opp is a single run; the
+`run_id` slot always contains ``"r1"`` and exists only because the
+frontend payload shape predates the drop-multi-run refactor.
+See docs/plans/2026-04-20-drop-multi-run-simplify.md § deferred work.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+import yaml
+
 from apps.opps.drive_client import DriveClient, DriveFile
-from apps.opps.parsers import (
-    GateDecision,
-    JudgeVerdict,
-    OppManifest,
-    StepManifest,
-    parse_gates_jsonl,
-    parse_judge_yaml,
-    parse_opp_yaml,
-    parse_run_yaml,
-    parse_step_yaml,
-)
+from apps.opps.parsers import GateDecision, JudgeVerdict, OppManifest, StepManifest
 
 # --- Output dataclasses ---
 
@@ -71,20 +67,10 @@ class RunDetail:
 
 
 @dataclass
-class RunSummary:
-    run_id: str
-    status: str
-    started_at: str | None
-    completed_at: str | None
-    folder_id: str
-
-
-@dataclass
 class OppSnapshot:
     opp: OppManifest
     pdd_body: str
     opp_folder_id: str
-    all_runs: list[RunSummary]  # sorted newest-first
     current_run: RunDetail
 
 
@@ -109,168 +95,7 @@ def _read_text(client: DriveClient, file: DriveFile) -> str:
     return client.get_content(file.id, file.mime_type).content
 
 
-# --- Main entry point ---
-
-
-def load_opp(
-    client: DriveClient,
-    *,
-    ace_folder_id: str,
-    slug: str,
-    run_id: str | None = None,
-) -> OppSnapshot:
-    """Load a full opp snapshot from the STRUCTURED layout.
-
-    If the given slug is not present under ace_folder_id, raises FileNotFoundError.
-    If the slug is present but does not have an `opp.yaml` (i.e. it's a legacy
-    flat layout), raises FileNotFoundError — callers should fall through to
-    the flat-layout loader.
-    """
-    # Locate the opp folder
-    ace_children = client.list_files(ace_folder_id)
-    opp_folder = _find_child_folder(ace_children, slug)
-    if opp_folder is None:
-        raise FileNotFoundError(f"no opp folder named {slug!r} under ACE/")
-
-    opp_children = client.list_files(opp_folder.id)
-    opp_yaml_file = _find_child(opp_children, "opp.yaml")
-    if opp_yaml_file is None:
-        # Flat legacy layout — no opp.yaml, state.yaml at the top level.
-        return _load_flat_opp(client, slug=slug, opp_folder=opp_folder, opp_children=opp_children)
-
-    opp_manifest = parse_opp_yaml(_read_text(client, opp_yaml_file))
-
-    # IDD→PDD rename transition: accept either primary-doc filename.
-    pdd_file = _find_child(opp_children, "pdd.md") or _find_child(opp_children, "idd.md")
-    pdd_body = _read_text(client, pdd_file) if pdd_file else ""
-
-    runs_folder = _find_child_folder(opp_children, "runs")
-    if runs_folder is None:
-        raise FileNotFoundError(f"opp {slug!r} has no runs/ subfolder")
-
-    run_folders = [
-        f
-        for f in client.list_files(runs_folder.id)
-        if f.mime_type == "application/vnd.google-apps.folder"
-    ]
-    # Sort newest first by name (ids are date-prefixed per the spec).
-    run_folders.sort(key=lambda f: f.name, reverse=True)
-
-    if not run_folders:
-        raise FileNotFoundError(f"opp {slug!r} has runs/ but no run folders inside")
-
-    # Build lightweight summaries for the run switcher
-    all_runs: list[RunSummary] = []
-    for rf in run_folders:
-        rf_children = client.list_files(rf.id)
-        run_yaml_file = _find_child(rf_children, "run.yaml")
-        if run_yaml_file is None:
-            continue
-        run = parse_run_yaml(_read_text(client, run_yaml_file))
-        all_runs.append(
-            RunSummary(
-                run_id=run.run_id,
-                status=run.status,
-                started_at=run.started_at,
-                completed_at=run.completed_at,
-                folder_id=rf.id,
-            )
-        )
-
-    # Resolve which run to expand
-    target_run_id = run_id or opp_manifest.current_run_id or all_runs[0].run_id
-    target_summary = next((r for r in all_runs if r.run_id == target_run_id), None)
-    if target_summary is None:
-        # Fall back to latest
-        target_summary = all_runs[0]
-
-    current_run = _load_run_detail(client, target_summary.folder_id)
-
-    return OppSnapshot(
-        opp=opp_manifest,
-        pdd_body=pdd_body,
-        opp_folder_id=opp_folder.id,
-        all_runs=all_runs,
-        current_run=current_run,
-    )
-
-
-def _load_run_detail(client: DriveClient, run_folder_id: str) -> RunDetail:
-    files = client.list_files(run_folder_id)
-    run_yaml_file = _find_child(files, "run.yaml")
-    if run_yaml_file is None:
-        raise FileNotFoundError("run folder has no run.yaml")
-    run = parse_run_yaml(_read_text(client, run_yaml_file))
-
-    steps_folder = _find_child_folder(files, "steps")
-    steps: list[StepSnapshot] = []
-    if steps_folder is not None:
-        step_folders = [
-            f
-            for f in client.list_files(steps_folder.id)
-            if f.mime_type == "application/vnd.google-apps.folder"
-        ]
-        # Sort by name (which is "<ordinal>-<skill>").
-        step_folders.sort(key=lambda f: f.name)
-        for sf in step_folders:
-            steps.append(_load_step_snapshot(client, sf.id))
-
-    return RunDetail(
-        run_id=run.run_id,
-        mode=run.mode,
-        status=run.status,
-        started_at=run.started_at,
-        completed_at=run.completed_at,
-        current_phase=run.current_phase,
-        current_step=run.current_step,
-        skill_versions=run.skill_versions,
-        notes=run.notes,
-        steps=steps,
-        folder_id=run_folder_id,
-    )
-
-
-def _load_step_snapshot(client: DriveClient, step_folder_id: str) -> StepSnapshot:
-    files = client.list_files(step_folder_id)
-
-    step_yaml_file = _find_child(files, "step.yaml")
-    if step_yaml_file is None:
-        raise FileNotFoundError("step folder has no step.yaml")
-    step = parse_step_yaml(_read_text(client, step_yaml_file))
-
-    judge_file = _find_child(files, "judge.yaml")
-    judge = parse_judge_yaml(_read_text(client, judge_file)) if judge_file else None
-
-    gates_file = _find_child(files, "gates.jsonl")
-    gates = parse_gates_jsonl(_read_text(client, gates_file)) if gates_file else []
-
-    output_folder = _find_child_folder(files, "output")
-    artifacts: list[ArtifactRef] = []
-    if output_folder is not None:
-        for f in client.list_files(output_folder.id, recursive=True):
-            if f.mime_type == "application/vnd.google-apps.folder":
-                continue
-            artifacts.append(
-                ArtifactRef(
-                    name=f.name,
-                    drive_file_id=f.id,
-                    drive_web_link=f.web_view_link,
-                    size_bytes=f.size_bytes,
-                    mime_type=f.mime_type,
-                    path=f.path,
-                )
-            )
-
-    return StepSnapshot(
-        step=step,
-        judge=judge,
-        gates=gates,
-        artifacts=artifacts,
-        folder_id=step_folder_id,
-    )
-
-
-# --- Flat legacy layout support ---
+# --- Flat layout: single-run per opp ---
 
 # Map from flat-layout subfolder name to the set of skills whose artifacts
 # are expected to live inside it. Derived from the ACE plugin's current
@@ -284,23 +109,37 @@ _FLAT_SUBFOLDER_SKILLS: dict[str, set[str]] = {
 }
 
 
-def _load_flat_opp(
+def load_opp(
     client: DriveClient,
     *,
+    ace_folder_id: str,
     slug: str,
-    opp_folder: DriveFile,
-    opp_children: list[DriveFile],
+    run_id: str | None = None,  # accepted for URL-shape compat; ignored
 ) -> OppSnapshot:
-    """Read a legacy flat-layout opp as an implicit single run."""
-    import yaml
+    """Load a full opp snapshot from ``ACE/<slug>/`` on Drive.
 
+    Raises FileNotFoundError if no folder named ``slug`` exists under
+    ``ace_folder_id``.
+
+    ``run_id`` is accepted but ignored — there is exactly one run per
+    opp. The parameter exists for URL-shape compatibility with the
+    pre-refactor multi-run world; callers may pass ``"r1"`` or ``None``.
+    """
     from apps.opps.skills import SKILL_REGISTRY
 
-    # Parse state.yaml if present for current_step / mode hints. Check both
-    # the legacy top-level location and the newer runs/run-001/state.yaml
-    # path used by web-created opps (apps/opps/opp_creator.py). Without the
-    # second lookup, display_name written at create time is invisible to the
-    # list/workbench — the opp card would show slug as its own secondary line.
+    # Locate the opp folder
+    ace_children = client.list_files(ace_folder_id)
+    opp_folder = _find_child_folder(ace_children, slug)
+    if opp_folder is None:
+        raise FileNotFoundError(f"no opp folder named {slug!r} under ACE/")
+
+    opp_children = client.list_files(opp_folder.id)
+
+    # Parse state.yaml if present for current_step / mode hints. Two
+    # locations are checked for back-compat with opps created before
+    # the drop-multi-run refactor (see docs/plans/2026-04-20-*.md):
+    #   - ACE/<slug>/state.yaml   (current, written by /ace:run)
+    #   - ACE/<slug>/runs/run-001/state.yaml  (legacy ace-web-created)
     state_file = _find_child(opp_children, "state.yaml")
     if state_file is None:
         runs_folder = _find_child(opp_children, "runs")
@@ -393,7 +232,7 @@ def _load_flat_opp(
         current_phase=state_data.get("current_phase"),
         current_step=state_data.get("current_step"),
         skill_versions={},
-        notes="Legacy flat-layout opp — synthesized as implicit single run 'r1'.",
+        notes="",
         steps=steps,
         folder_id=opp_folder.id,
     )
@@ -411,15 +250,6 @@ def _load_flat_opp(
         opp=opp_manifest,
         pdd_body=pdd_body,
         opp_folder_id=opp_folder.id,
-        all_runs=[
-            RunSummary(
-                run_id="r1",
-                status="running",
-                started_at=state_data.get("started_at"),
-                completed_at=None,
-                folder_id=opp_folder.id,
-            )
-        ],
         current_run=run_detail,
     )
 

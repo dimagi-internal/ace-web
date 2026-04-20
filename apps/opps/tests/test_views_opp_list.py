@@ -36,7 +36,7 @@ def _combined_tree() -> dict:
     }
 
 
-def test_opp_list_returns_both_structured_and_flat(authed_client):
+def test_opp_list_returns_both_opps(authed_client):
     fake = FakeDriveClient.from_tree(_combined_tree())
     with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id",
@@ -59,8 +59,8 @@ def test_opp_list_malaria_card_fields(authed_client):
     cards = response.json()["data"]
     malaria = next(c for c in cards if c["slug"] == "malaria-pilot")
     assert malaria["display_name"] == "Malaria Pilot — Northern Mozambique"
-    assert malaria["current_run_id"] == "2026-04-06-002"
-    assert "malaria" in malaria["labels"]
+    # Flat layout synthesizes run_id "r1".
+    assert malaria["current_run_id"] == "r1"
 
 
 def test_opp_list_drive_not_configured_returns_500(authed_client):

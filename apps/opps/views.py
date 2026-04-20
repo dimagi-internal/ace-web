@@ -14,7 +14,6 @@ from apps.opps.drive_client import (
 )
 from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
-from apps.opps.parsers import parse_opp_yaml
 from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
     serialize_opp_card,
@@ -101,43 +100,19 @@ def _opp_list_impl(request):
             continue
         opp_children = client.list_files(child.id)
 
-        # Structured layout: ACE/<slug>/opp.yaml
-        opp_yaml = next((f for f in opp_children if f.name == "opp.yaml"), None)
-        if opp_yaml is not None:
-            try:
-                body = client.get_content(opp_yaml.id, opp_yaml.mime_type).content
-                manifest = parse_opp_yaml(body)
-                _overlay_workspace_display_name(manifest, child.name)
-                cards.append(serialize_opp_card(manifest, current_run=None))
-                continue
-            except Exception:
-                pass
-
-        # Flat layout: any of these at ACE/<slug>/ is enough to identify
-        # this folder as an opp. Three accepted shapes:
-        #   a) new flat (2026-04-20): idea.md at root (state.yaml optional —
-        #      /ace:run writes it when the lifecycle actually starts)
-        #   b) old flat: state.yaml + pdd.md at root
-        #   c) ace-web-created (pre-2026-04-20): idea.md + runs/ subfolder
-        # During the IDD→PDD rename transition we accept either primary doc.
+        # Minimum signal that this folder is an opp: idea.md at the root
+        # (canonical shape). state.yaml is also accepted for legacy opps
+        # created before /ace:run owned state (no idea.md in that case).
         names = {f.name for f in opp_children}
-        has_primary_doc = "pdd.md" in names or "idd.md" in names
-        has_runs_subfolder = any(
-            f.name == "runs" and f.mime_type == "application/vnd.google-apps.folder"
-            for f in opp_children
-        )
-        looks_like_opp = (
-            "idea.md" in names  # (a) new flat OR (c) with runs
-            or ("state.yaml" in names and has_primary_doc)  # (b) old flat
-            or ("idea.md" in names and has_runs_subfolder)  # (c) explicit
-        )
-        if looks_like_opp:
-            try:
-                snap = load_opp(client, ace_folder_id=ace_folder_id, slug=child.name)
-                _overlay_workspace_display_name(snap.opp, child.name)
-                cards.append(serialize_opp_card(snap.opp, snap.current_run))
-            except Exception:
-                continue
+        if "idea.md" not in names and "state.yaml" not in names:
+            continue
+
+        try:
+            snap = load_opp(client, ace_folder_id=ace_folder_id, slug=child.name)
+            _overlay_workspace_display_name(snap.opp, child.name)
+            cards.append(serialize_opp_card(snap.opp, snap.current_run))
+        except Exception:
+            continue
 
     return Response(success_response(cards))
 

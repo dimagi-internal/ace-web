@@ -18,8 +18,6 @@ def test_flat_layout_synthesizes_implicit_run(client):
     snap = load_opp(client, ace_folder_id=ace_id, slug="nutrition-legacy")
     assert snap.opp.slug == "nutrition-legacy"
     assert snap.opp.current_run_id == "r1"
-    assert len(snap.all_runs) == 1
-    assert snap.all_runs[0].run_id == "r1"
     assert snap.current_run.run_id == "r1"
 
 

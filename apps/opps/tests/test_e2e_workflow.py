@@ -12,7 +12,7 @@ from django.test import Client
 from apps.auth.models import User
 from apps.opps.tests.fixtures.fake_drive import (
     FakeDriveClient,
-    malaria_pilot_structured_tree,
+    malaria_pilot_tree,
 )
 from apps.sessions.models import Session
 
@@ -27,7 +27,7 @@ def authed_client(db):
 
 @pytest.fixture
 def fake_drive():
-    return FakeDriveClient.from_tree(malaria_pilot_structured_tree())
+    return FakeDriveClient.from_tree(malaria_pilot_tree())
 
 
 def _patch_drive(fake):
@@ -46,26 +46,26 @@ def test_full_workflow_list_to_discuss(authed_client, fake_drive):
         cards = list_response.json()["data"]
         assert any(c["slug"] == "malaria-pilot" for c in cards)
 
-        # 2) Workbench for the opp
+        # 2) Workbench for the opp — flat layout synthesizes a single
+        # run "r1" with all 19 canonical skills as rows.
         wb_response = authed_client.get("/api/opps/malaria-pilot")
         assert wb_response.status_code == 200
         wb = wb_response.json()["data"]
-        assert wb["current_run"]["run_id"] == "2026-04-06-002"
-        assert len(wb["current_run"]["steps"]) >= 4
+        assert wb["current_run"]["run_id"] == "r1"
+        assert len(wb["current_run"]["steps"]) == 19
 
-        # 3) Step detail for app-deploy (the gate-pending step)
+        # 3) Step detail for idea-to-pdd (has a pdd.md artifact)
         step_response = authed_client.get(
-            "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/app-deploy"
+            "/api/opps/malaria-pilot/runs/r1/steps/idea-to-pdd"
         )
         assert step_response.status_code == 200
         step = step_response.json()["data"]
-        assert "is_gate" not in step  # gate badge is dropped to match the System tab
-        assert len(step["gates"]) == 1
-        assert step["gates"][0]["decision"] == "pending"
+        assert step["skill_name"] == "idea-to-pdd"
+        assert any(a["name"] == "pdd.md" for a in step["artifacts"])
 
         # 4) Discuss — creates a new session with the seed system message
         discuss_response = authed_client.post(
-            "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/app-deploy/discuss",
+            "/api/opps/malaria-pilot/runs/r1/steps/idea-to-pdd/discuss",
             content_type="application/json",
         )
         assert discuss_response.status_code == 201
@@ -73,18 +73,17 @@ def test_full_workflow_list_to_discuss(authed_client, fake_drive):
 
         session = Session.objects.get(slug=session_slug)
         assert session.opp_slug == "malaria-pilot"
-        assert session.opp_run_id == "2026-04-06-002"
-        assert session.opp_step_skill == "app-deploy"
+        assert session.opp_run_id == "r1"
+        assert session.opp_step_skill == "idea-to-pdd"
 
         seed = session.messages.filter(role="system").first()
         assert seed is not None
-        assert "Discussing `app-deploy`" in seed.plaintext
+        assert "Discussing `idea-to-pdd`" in seed.plaintext
         assert "Malaria Pilot IDD" in seed.plaintext
-        assert "Gate history" in seed.plaintext
 
         # 5) Linked chats now includes the session we just created
         chats_response = authed_client.get(
-            "/api/opps/malaria-pilot/runs/2026-04-06-002/steps/app-deploy/chats"
+            "/api/opps/malaria-pilot/runs/r1/steps/idea-to-pdd/chats"
         )
         assert chats_response.status_code == 200
         chats = chats_response.json()["data"]

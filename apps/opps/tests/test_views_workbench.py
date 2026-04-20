@@ -7,7 +7,7 @@ from django.test import Client
 from apps.auth.models import User
 from apps.opps.tests.fixtures.fake_drive import (
     FakeDriveClient,
-    malaria_pilot_structured_tree,
+    malaria_pilot_tree,
 )
 
 
@@ -32,35 +32,27 @@ def _with_fake_drive(authed_client, fake, url, **query):
 
 
 def test_workbench_returns_full_snapshot(authed_client):
-    fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
+    fake = FakeDriveClient.from_tree(malaria_pilot_tree())
     response = _with_fake_drive(authed_client, fake, "/api/opps/malaria-pilot")
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["opp"]["slug"] == "malaria-pilot"
-    assert data["current_run"]["run_id"] == "2026-04-06-002"
-    assert len(data["current_run"]["steps"]) == 4
-    assert len(data["runs"]) == 2
-
-
-def test_workbench_with_run_id_query_param(authed_client):
-    fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
-    response = _with_fake_drive(
-        authed_client, fake, "/api/opps/malaria-pilot", run_id="2026-04-01-001"
-    )
-    data = response.json()["data"]
-    assert data["current_run"]["run_id"] == "2026-04-01-001"
-    assert len(data["current_run"]["steps"]) == 2
+    # Flat layout always synthesizes a single run with id "r1".
+    assert data["current_run"]["run_id"] == "r1"
+    # All 19 canonical skills emitted as rows (status depends on which
+    # subfolders carry artifacts).
+    assert len(data["current_run"]["steps"]) == 19
 
 
 def test_workbench_unknown_opp_returns_404(authed_client):
-    fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
+    fake = FakeDriveClient.from_tree(malaria_pilot_tree())
     response = _with_fake_drive(authed_client, fake, "/api/opps/nonexistent")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "opp-not-found"
 
 
 def test_workbench_includes_pdd_body(authed_client):
-    fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
+    fake = FakeDriveClient.from_tree(malaria_pilot_tree())
     response = _with_fake_drive(authed_client, fake, "/api/opps/malaria-pilot")
     data = response.json()["data"]
     assert "Malaria Pilot IDD" in data["pdd_body"]
