@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { getOpp, getWorkingSession } from "../api/opps";
+import { getOpp } from "../api/opps";
 import type { OppSnapshot, Step } from "../api/types";
-import { ChatPanel } from "../components/opps/ChatPanel";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { OppSidebar } from "../components/opps/OppSidebar";
 import { PendingGatesBanner } from "../components/opps/PendingGatesBanner";
@@ -21,20 +20,6 @@ export default function OppWorkbenchPage() {
   const { slug = "", runId, skill } = useParams();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
-  const [workingSessionSlug, setWorkingSessionSlug] = useState<string | null>(null);
-  const [workingSessionError, setWorkingSessionError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!slug) return;
-    setWorkingSessionSlug(null);
-    setWorkingSessionError(null);
-    getWorkingSession(slug)
-      .then((r) => setWorkingSessionSlug(r.working_session_slug))
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        setWorkingSessionError(msg || "could not open chat");
-      });
-  }, [slug]);
 
   const load = useCallback(
     (opts: { silent?: boolean } = {}) => {
@@ -101,7 +86,7 @@ export default function OppWorkbenchPage() {
             onSelect={setSelectedSkill}
           />
         </main>
-        <section className="w-[320px] border-l border-border bg-background">
+        <section className="w-[640px] shrink-0 border-l border-border bg-background">
           {selectedStep ? (
             <StepDetailPane
               slug={slug}
@@ -110,20 +95,6 @@ export default function OppWorkbenchPage() {
             />
           ) : (
             <EmptyState title="Select a step" description="Click a row to see its details." />
-          )}
-        </section>
-        <section className="w-[400px] shrink-0 border-l border-border bg-background">
-          {workingSessionSlug ? (
-            <ChatPanel key={workingSessionSlug} slug={workingSessionSlug} />
-          ) : workingSessionError ? (
-            <div className="flex h-full flex-col items-center justify-center gap-1 p-4 text-center text-xs text-muted-foreground">
-              <div>Chat unavailable</div>
-              <div className="opacity-70">{workingSessionError}</div>
-            </div>
-          ) : (
-            <div className="flex h-full items-center justify-center p-4 text-xs text-muted-foreground">
-              Starting chat…
-            </div>
           )}
         </section>
       </div>
