@@ -118,6 +118,40 @@ def test_create_opp_slug_collision(authed_client, db):
     assert resp.json()["error"]["code"] == "slug-taken"
 
 
+def test_create_opp_writes_flat_layout_no_runs_subfolder(authed_client, db):
+    """New opps are flat: idea.md (+ optional pdd.md) at the opp root,
+    no `runs/` subfolder, no state.yaml. /ace:run owns state.yaml.
+
+    See docs/plans/2026-04-20-drop-multi-run-simplify.md — the refactor
+    drops the ace-web-invented multi-run layout in favor of the ACE
+    plugin's flat layout.
+    """
+    fake = FakeDriveClient.from_tree({"ACE": {}})
+    ace_id = fake.folder_id("ACE")
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+        resp = authed_client.post(
+            "/api/opps/",
+            data={
+                "slug": "flat-test",
+                "display_name": "Flat Test",
+                "idea": "the idea body",
+                "mode": "review",
+            },
+            content_type="application/json",
+        )
+    assert resp.status_code == 201
+
+    opp_children = {f.name for f in fake.list_files(fake.folder_id("ACE/flat-test"))}
+    assert "idea.md" in opp_children
+    assert "runs" not in opp_children, (
+        "opp_creator must not create a runs/ subfolder — /ace:run owns Drive state"
+    )
+    assert "state.yaml" not in opp_children, (
+        "opp_creator must not write state.yaml — /ace:run initializes it at run start"
+    )
+
+
 def test_create_opp_invalid_slug(authed_client, db):
     resp = authed_client.post(
         "/api/opps/",
