@@ -121,6 +121,7 @@ export interface OppCard {
   slug: string;
   display_name: string;
   labels: string[];
+  tags: string[];
   created_at: string | null;
   created_by: string | null;
   current_run_id: string | null;

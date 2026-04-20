@@ -27,6 +27,7 @@ class OppManifest:
     created_at: str | None = None
     created_by: str | None = None
     labels: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
     current_run_id: str | None = None
 
 

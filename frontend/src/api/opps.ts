@@ -10,8 +10,11 @@ import type {
   WorkingSessionResponse,
 } from "./types";
 
-export function listOpps(): Promise<OppCard[]> {
-  return request<OppCard[]>("/opps/");
+export function listOpps(tags?: string[]): Promise<OppCard[]> {
+  const q = tags && tags.length > 0
+    ? `?tags=${encodeURIComponent(tags.join(","))}`
+    : "";
+  return request<OppCard[]>(`/opps/${q}`);
 }
 
 export function createOpp(payload: CreateOppPayload): Promise<CreateOppResponse> {
@@ -25,6 +28,13 @@ export function deleteOpp(slug: string): Promise<void> {
   return request<void>(`/opps/${encodeURIComponent(slug)}`, {
     method: "DELETE",
   });
+}
+
+export function updateOppTags(slug: string, tags: string[]): Promise<{ slug: string; tags: string[] }> {
+  return request<{ slug: string; tags: string[] }>(
+    `/opps/${encodeURIComponent(slug)}`,
+    { method: "PATCH", body: JSON.stringify({ tags }) },
+  );
 }
 
 export function getOpp(slug: string, runId?: string): Promise<OppSnapshot> {

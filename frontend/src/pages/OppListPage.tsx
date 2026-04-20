@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 
 import { listOpps } from "../api/opps";
 import type { OppCard } from "../api/types";
@@ -17,17 +17,18 @@ type LoadState =
 export default function OppListPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [filter, setFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<OppCard | null>(null);
 
-  const load = () => {
+  const load = useCallback(() => {
     setState({ kind: "loading" });
-    listOpps()
+    listOpps(tagFilter.length > 0 ? tagFilter : undefined)
       .then((opps) => setState({ kind: "loaded", opps }))
       .catch((err) => setState({ kind: "error", message: String(err?.message ?? err) }));
-  };
+  }, [tagFilter]);
 
-  useEffect(load, []);
+  useEffect(load, [load]);
 
   const filtered = useMemo(() => {
     if (state.kind !== "loaded") return [];
@@ -37,9 +38,16 @@ export default function OppListPage() {
       (o) =>
         o.slug.toLowerCase().includes(needle) ||
         o.display_name.toLowerCase().includes(needle) ||
+        o.tags.some((t) => t.toLowerCase().includes(needle)) ||
         o.labels.some((l) => l.toLowerCase().includes(needle)),
     );
   }, [state, filter]);
+
+  const toggleTagFilter = (tag: string) => {
+    setTagFilter((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  };
 
   if (state.kind === "loading") return <LoadingSpinner label="Loading opportunities…" />;
   if (state.kind === "error") return <ErrorState message={state.message} onRetry={load} />;
@@ -49,9 +57,32 @@ export default function OppListPage() {
       <header className="flex items-center gap-4 border-b border-border bg-card px-6 py-4">
         <h1 className="text-xl font-semibold text-foreground">Opportunities</h1>
         <span className="text-sm text-muted-foreground">{state.opps.length} total</span>
+        {tagFilter.length > 0 && (
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-muted-foreground">tag filter:</span>
+            {tagFilter.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => toggleTagFilter(t)}
+                className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-primary hover:bg-primary/20"
+              >
+                {t}
+                <X className="h-3 w-3" />
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setTagFilter([])}
+              className="text-muted-foreground underline hover:text-foreground"
+            >
+              clear
+            </button>
+          </div>
+        )}
         <input
           type="text"
-          placeholder="Filter by slug, name, or label…"
+          placeholder="Filter by slug, name, tag…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           className="ml-auto w-64 rounded border border-input bg-card px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
@@ -126,11 +157,31 @@ export default function OppListPage() {
                   )}
                 </div>
               )}
-              {opp.labels.length > 0 && (
+              {(opp.tags.length > 0 || opp.labels.length > 0) && (
                 <div className="mt-3 flex flex-wrap gap-1">
+                  {opp.tags.map((tag) => (
+                    <button
+                      key={`tag-${tag}`}
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleTagFilter(tag);
+                      }}
+                      className={
+                        "rounded-full px-2 py-0.5 text-xs transition " +
+                        (tagFilter.includes(tag)
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-primary/10 text-primary hover:bg-primary/20")
+                      }
+                      title={tagFilter.includes(tag) ? "Remove tag filter" : "Filter by this tag"}
+                    >
+                      {tag}
+                    </button>
+                  ))}
                   {opp.labels.map((label) => (
                     <span
-                      key={label}
+                      key={`label-${label}`}
                       className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
                     >
                       {label}

@@ -66,26 +66,33 @@ def _require_drive(request):
 
 
 def _overlay_workspace_display_name(manifest, slug: str) -> None:
-    """If an OppWorkspace row exists for this slug and carries a non-slug
-    display_name, overlay it onto the Drive-derived manifest in place.
+    """Layer OppWorkspace DB metadata (display_name + tags) onto the
+    Drive-derived manifest in place.
 
     Since 2026-04-20, display_name lives only on the OppWorkspace DB row —
     no longer in a Drive state.yaml (that ownership moved to the ACE plugin
-    per docs/plans/2026-04-20-drop-multi-run-simplify.md). Views that render
-    opp metadata layer the DB display_name over the Drive snapshot at the
-    boundary so the sync module stays pure.
+    per docs/plans/2026-04-20-drop-multi-run-simplify.md). Tags are also
+    DB-only (free-form grouping across sibling opps). Views that render
+    opp metadata layer both over the Drive snapshot at the boundary so the
+    sync module stays pure.
     """
     try:
-        ws = OppWorkspace.objects.only("display_name").get(slug=slug)
+        ws = OppWorkspace.objects.only("display_name", "tags").get(slug=slug)
     except OppWorkspace.DoesNotExist:
         return
     if ws.display_name and ws.display_name != slug:
         manifest.display_name = ws.display_name
+    manifest.tags = list(ws.tags or [])
 
 
 def _opp_list_impl(request):
     """Plain function form of the opp-list handler. Called directly by
-    opp_collection (GET) to avoid double-wrapping with @api_view."""
+    opp_collection (GET) to avoid double-wrapping with @api_view.
+
+    Supports ``?tags=X,Y`` to filter to opps whose OppWorkspace.tags
+    contains ALL of the listed tags (intersection — matches the "narrow
+    down to iterations of the same idea" UX).
+    """
     client, err = _require_drive(request)
     if err is not None:
         return err
@@ -93,6 +100,11 @@ def _opp_list_impl(request):
     ace_folder_id = _resolve_ace_root_folder_id(client)
     if ace_folder_id is None:
         return Response(success_response([]))
+
+    # Parse ?tags=X,Y — comma-separated, whitespace trimmed, empty tags
+    # dropped. No tags param → no filter applied.
+    raw_tags = request.GET.get("tags", "") or ""
+    required_tags = {t.strip() for t in raw_tags.split(",") if t.strip()}
 
     cards: list[dict] = []
     for child in client.list_files(ace_folder_id):
@@ -110,6 +122,8 @@ def _opp_list_impl(request):
         try:
             snap = load_opp(client, ace_folder_id=ace_folder_id, slug=child.name)
             _overlay_workspace_display_name(snap.opp, child.name)
+            if required_tags and not required_tags.issubset(set(snap.opp.tags)):
+                continue
             cards.append(serialize_opp_card(snap.opp, snap.current_run))
         except Exception:
             continue
@@ -210,11 +224,54 @@ def delete_opp(request, slug: str):
     return Response(status=204)
 
 
-@api_view(["GET", "DELETE"])
+def patch_opp(request, slug: str):
+    """PATCH /api/opps/<slug> — update mutable OppWorkspace fields.
+
+    Currently supports: `tags` (replaces the full list). Lazily
+    materializes an OppWorkspace row if the opp folder exists on Drive
+    but no DB row does — same shape as opp_working_session does.
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            error_response("auth required", code="auth-required"), status=401
+        )
+    body = request.data if isinstance(request.data, dict) else {}
+
+    # Validate tags: list of short strings, each cleaned up (strip + drop blanks).
+    raw_tags = body.get("tags")
+    if raw_tags is None or not isinstance(raw_tags, list):
+        return Response(
+            error_response("tags must be a list of strings", code="invalid-tags"),
+            status=400,
+        )
+    cleaned: list[str] = []
+    for t in raw_tags:
+        if not isinstance(t, str):
+            return Response(
+                error_response("tags must be a list of strings", code="invalid-tags"),
+                status=400,
+            )
+        stripped = t.strip()
+        if stripped and len(stripped) <= 64 and stripped not in cleaned:
+            cleaned.append(stripped)
+
+    workspace, _ = OppWorkspace.objects.get_or_create(
+        slug=slug,
+        defaults={"display_name": slug, "created_by": request.user},
+    )
+    workspace.tags = cleaned
+    workspace.save(update_fields=["tags", "updated_at"])
+
+    return Response(success_response({"slug": slug, "tags": cleaned}))
+
+
+@api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([AllowAny])  # Drive availability enforced via _require_drive
 def workbench(request, slug: str):
     if request.method == "DELETE":
         return delete_opp(request, slug)
+    if request.method == "PATCH":
+        return patch_opp(request, slug)
 
     client, err = _require_drive(request)
     if err is not None:
