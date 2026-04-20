@@ -82,3 +82,44 @@ def test_upload_tool_use_session(client):
     roles = list(messages.values_list("role", flat=True))
     assert "tool_use" in roles
     assert "tool_result" in roles
+
+
+def test_upload_with_opp_linkage_populates_session_fields(client):
+    """Plugin's upload-transcript skill passes opp_slug / opp_run_id /
+    opp_step_skill as multipart form fields so the resulting Session is
+    surfaced under the opp in the Workbench."""
+    content = (FIXTURES / "simple_session.jsonl").read_bytes()
+    file = BytesIO(content)
+    file.name = "simple_session.jsonl"
+    resp = client.post(
+        "/api/ingest/upload",
+        {
+            "file": file,
+            "opp_slug": "malaria-pilot",
+            "opp_run_id": "r1",
+            "opp_step_skill": "idea-to-pdd",
+        },
+        format="multipart",
+    )
+    assert resp.status_code == 201
+    body = resp.json()["data"]
+    assert body["opp_slug"] == "malaria-pilot"
+    assert body["opp_run_id"] == "r1"
+    assert body["opp_step_skill"] == "idea-to-pdd"
+    session = Session.objects.get(slug=body["session_slug"])
+    assert session.opp_slug == "malaria-pilot"
+    assert session.opp_run_id == "r1"
+    assert session.opp_step_skill == "idea-to-pdd"
+
+
+def test_upload_without_opp_linkage_leaves_fields_blank(client):
+    """Omitting opp_* fields is valid — upload still succeeds, linkage
+    fields stay empty strings on the Session."""
+    resp = _upload_fixture(client)
+    assert resp.status_code == 201
+    body = resp.json()["data"]
+    assert body["opp_slug"] is None
+    session = Session.objects.get(slug=body["session_slug"])
+    assert session.opp_slug == ""
+    assert session.opp_run_id == ""
+    assert session.opp_step_skill == ""

@@ -26,6 +26,14 @@ def upload(request: Request) -> Response:
             status=400,
         )
 
+    # Optional opp/run/step linkage. The ACE plugin's `upload-transcript`
+    # skill passes these multipart fields so a transcript produced by
+    # `/ace:run` shows up against the originating opp in the Workbench's
+    # "linked chats" panel. Absent fields = orphan upload (still valid).
+    opp_slug = (request.data.get("opp_slug") or "").strip()
+    opp_run_id = (request.data.get("opp_run_id") or "").strip()
+    opp_step_skill = (request.data.get("opp_step_skill") or "").strip()
+
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
         for chunk in file.chunks():
             tmp.write(chunk)
@@ -53,6 +61,9 @@ def upload(request: Request) -> Response:
         status="imported",
         cli_session_id=parsed.cli_session_id or "",
         title=f"Imported: {file.name}",
+        opp_slug=opp_slug,
+        opp_run_id=opp_run_id,
+        opp_step_skill=opp_step_skill,
     )
 
     messages = []
@@ -83,6 +94,9 @@ def upload(request: Request) -> Response:
             "session_slug": session.slug,
             "message_count": len(messages),
             "cli_session_id": parsed.cli_session_id,
+            "opp_slug": session.opp_slug or None,
+            "opp_run_id": session.opp_run_id or None,
+            "opp_step_skill": session.opp_step_skill or None,
         }),
         status=status.HTTP_201_CREATED,
     )

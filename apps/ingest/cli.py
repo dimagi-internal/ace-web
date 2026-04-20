@@ -34,12 +34,27 @@ def load_config(path: Path) -> Config:
     return Config(server=data["server"], token=data["token"])
 
 
-def upload_file(path: Path, config: Config) -> bool:
+def upload_file(
+    path: Path,
+    config: Config,
+    *,
+    opp_slug: str | None = None,
+    opp_run_id: str | None = None,
+    opp_step_skill: str | None = None,
+) -> bool:
     url = f"{config.server.rstrip('/')}/api/ingest/upload"
+    form_fields: dict[str, str] = {}
+    if opp_slug:
+        form_fields["opp_slug"] = opp_slug
+    if opp_run_id:
+        form_fields["opp_run_id"] = opp_run_id
+    if opp_step_skill:
+        form_fields["opp_step_skill"] = opp_step_skill
     with open(path, "rb") as f:
         resp = httpx.post(
             url,
             files={"file": (path.name, f, "application/x-ndjson")},
+            data=form_fields or None,
             headers={"Authorization": f"Bearer {config.token}"},
             timeout=60,
         )
@@ -47,7 +62,12 @@ def upload_file(path: Path, config: Config) -> bool:
         data = resp.json().get("data", {})
         slug = data.get("session_slug")
         count = data.get("message_count", "?")
-        print(f"  ok {path.name} -> {slug} ({count} messages)", file=sys.stderr)
+        linked = data.get("opp_slug")
+        link_str = f" [opp={linked}]" if linked else ""
+        print(
+            f"  ok {path.name} -> {slug} ({count} messages){link_str}",
+            file=sys.stderr,
+        )
         return True
     if resp.status_code == 409:
         print(f"  -- {path.name} (already uploaded, skipping)", file=sys.stderr)
@@ -93,6 +113,21 @@ def main() -> None:
         default=Path.home() / ".ace" / "config.toml",
         help="Config file path",
     )
+    parser.add_argument(
+        "--opp-slug",
+        default=None,
+        help="Link the uploaded transcript to this ACE opportunity slug",
+    )
+    parser.add_argument(
+        "--opp-run-id",
+        default=None,
+        help="Opp run id (currently always 'r1' — reserved for multi-run)",
+    )
+    parser.add_argument(
+        "--opp-step-skill",
+        default=None,
+        help="Skill name (e.g. idea-to-pdd) if this transcript is scoped to one step",
+    )
     args = parser.parse_args()
 
     if args.configure:
@@ -119,7 +154,13 @@ def main() -> None:
 
     successes = 0
     for f in files:
-        if upload_file(f, config):
+        if upload_file(
+            f,
+            config,
+            opp_slug=args.opp_slug,
+            opp_run_id=args.opp_run_id,
+            opp_step_skill=args.opp_step_skill,
+        ):
             successes += 1
 
     print(f"\n{successes}/{len(files)} uploaded", file=sys.stderr)

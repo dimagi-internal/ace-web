@@ -6,6 +6,7 @@ import type { OppSnapshot, Step } from "../api/types";
 import { ChatPanel } from "../components/opps/ChatPanel";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { OppSidebar } from "../components/opps/OppSidebar";
+import { PendingGatesBanner } from "../components/opps/PendingGatesBanner";
 import { SkillList } from "../components/opps/SkillList";
 import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
@@ -82,6 +83,10 @@ export default function OppWorkbenchPage() {
         opp={snapshot.opp}
         run={snapshot.current_run}
         onRefresh={() => load()}
+      />
+      <PendingGatesBanner
+        steps={snapshot.current_run.steps}
+        onSelect={setSelectedSkill}
       />
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-[180px] border-r border-border bg-background">

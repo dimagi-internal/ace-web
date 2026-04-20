@@ -24,6 +24,7 @@ from apps.opps.sync import (
     ArtifactRef,
     OppSnapshot,
     RunDetail,
+    ScorecardSnapshot,
     StepSnapshot,
 )
 from apps.system.reader import load_system_overview
@@ -153,4 +154,16 @@ def serialize_opp_snapshot(snap: OppSnapshot) -> dict:
         "pdd_body": snap.pdd_body,
         "current_run": serialize_run_detail(snap.current_run),
         "phases": list(overview.get("phases") or []),
+    }
+
+
+def serialize_scorecard(sc: ScorecardSnapshot) -> dict:
+    """Run-level opp-eval payload for the Workbench header."""
+    return {
+        "latest_verdict": serialize_judge(sc.latest_verdict),
+        "latest_verdict_variant": sc.latest_verdict_variant,
+        "latest_scorecard_path": sc.latest_scorecard_path,
+        "latest_scorecard_body": sc.latest_scorecard_body,
+        "trend_path": sc.trend_path,
+        "trend_body": sc.trend_body,
     }

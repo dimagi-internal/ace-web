@@ -41,17 +41,17 @@ def test_serialize_opp_snapshot_current_run_has_all_steps(snap):
     data = serialize_opp_snapshot(snap)
     steps = data["current_run"]["steps"]
     skills = [s["skill_name"] for s in steps]
-    # All 19 canonical skills are emitted as rows (with status pending
-    # if no artifacts are present on Drive).
+    # All canonical skills are emitted as rows (with status pending if no
+    # artifacts are present on Drive). Count comes from plugin agent
+    # frontmatter — at least 19 today.
     assert "idea-to-pdd" in skills
     assert "app-deploy" in skills
-    assert len(skills) == 19
+    assert len(skills) >= 19
 
 
 def test_serialize_step_snapshot_no_judge_no_gates(snap):
-    """Flat layout doesn't emit judge verdicts or gate histories —
-    those were structured-layout-only. Payload still contains the
-    judge/gates keys with null/empty values for frontend compat."""
+    """When no verdicts/ files and no state.yaml gates: are present, the
+    step payload contains null judge and empty gates for frontend compat."""
     step_snap = next(
         s for s in snap.current_run.steps if s.step.skill_name == "idea-to-pdd"
     )

@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import type { OppCard, Run } from "../../api/types";
 import { Button } from "@/components/ui/button";
 import { DeleteOppDialog } from "./DeleteOppDialog";
+import { ScorecardPanel } from "./ScorecardPanel";
 import { TagEditor } from "./TagEditor";
 
 interface Props {
@@ -28,6 +29,7 @@ export function WorkbenchHeader({ opp, run, onRefresh }: Props) {
           {run.mode} mode
         </span>
         <TagEditor slug={opp.slug} initialTags={opp.tags ?? []} />
+        <ScorecardPanel slug={opp.slug} />
         <span className="ml-auto flex items-center gap-3">
           <button
             type="button"

@@ -12,6 +12,7 @@ urlpatterns = [
         name="opps-working-session",
     ),
     path("<slug:slug>", views.workbench, name="opps-workbench"),
+    path("<slug:slug>/scorecard", views.scorecard, name="opps-scorecard"),
     path(
         "<slug:slug>/runs/<str:run_id>/steps/<str:skill>",
         views.step_detail,
