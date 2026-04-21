@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { artifactBodyUrl } from "@/api/opps";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { parseFrontmatter, type Frontmatter } from "@/lib/frontmatter";
 
 const MAX_BYTES = 50 * 1024;
 
@@ -19,7 +20,12 @@ export function ArtifactBody({ slug, runId, skill, artifactName, mimeType, webVi
     | { kind: "loading" }
     | { kind: "error"; message: string }
     | { kind: "too-large"; size: number }
-    | { kind: "loaded"; content: string; rendered: "markdown" | "code" }
+    | {
+        kind: "loaded";
+        content: string;
+        rendered: "markdown" | "code";
+        metadata: Frontmatter | null;
+      }
   >({ kind: "loading" });
 
   useEffect(() => {
@@ -41,16 +47,18 @@ export function ArtifactBody({ slug, runId, skill, artifactName, mimeType, webVi
         const isYaml = artifactName.endsWith(".yaml") || artifactName.endsWith(".yml");
         const isJson = artifactName.endsWith(".json");
         if (isMd) {
-          setState({ kind: "loaded", content, rendered: "markdown" });
+          const { metadata, body } = parseFrontmatter(content);
+          setState({ kind: "loaded", content: body, rendered: "markdown", metadata });
         } else if (isYaml || isJson) {
           const lang = isYaml ? "yaml" : "json";
           setState({
             kind: "loaded",
             content: `\`\`\`${lang}\n${content}\n\`\`\``,
             rendered: "markdown",
+            metadata: null,
           });
         } else {
-          setState({ kind: "loaded", content, rendered: "code" });
+          setState({ kind: "loaded", content, rendered: "code", metadata: null });
         }
       })
       .catch((err) => {
@@ -83,6 +91,18 @@ export function ArtifactBody({ slug, runId, skill, artifactName, mimeType, webVi
   if (state.rendered === "markdown") {
     return (
       <div className="p-3">
+        {state.metadata && state.metadata.length > 0 && (
+          <dl className="mb-4 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+            {state.metadata.map(([key, value]) => (
+              <div key={key} className="contents">
+                <dt className="font-medium text-muted-foreground">{key}</dt>
+                <dd className="truncate text-foreground" title={value}>
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
         <MarkdownRenderer content={state.content} />
       </div>
     );

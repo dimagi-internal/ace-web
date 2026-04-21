@@ -14,12 +14,12 @@ Plan: `docs/plans/2026-04-17-turmeric-smoke-walkthrough.md`.
 ## `turmeric-step1-web` — web-tier smoke test
 
 Four scenes, web-tier only. The setup path runs `/ace:run --dry-run`, which
-seeds only Phase 1 (`idea-to-pdd`) with a real PDD and leaves the other 18
+seeds only Phase 1 (`idea-to-pdd`) with a real PDD and leaves the other 21
 skills pending. The walkthrough therefore exercises just the four pieces of
 plumbing that are actually load-bearing for a smoke test:
 
 1. **Opp appears in the list** — opp create → Drive folder → list read-through
-2. **Workbench three-pane renders** — Drive sync, WebSocket auth, 19-skill sidebar (with 18 pending-state rows in one view), chat pane mount
+2. **Workbench three-pane renders** — Drive sync, opps list + 22-skill lifecycle sidebar (with 21 pending-state rows in one view) + empty-state detail pane
 3. **Drive artifact round-trips** — `idea-to-pdd` detail pane fetches `pdd.md` from Drive via the ace-web API and renders it verbatim
 4. **Opps → chat bridge** — "Discuss in chat" seeds a new `/chat/<slug>` session with the step context
 
@@ -33,10 +33,10 @@ Scene 2 already covers via the sidebar — no new plumbing was under test.
 Five scenes across a real run. Prerequisite: the opp's lifecycle has
 actually executed (no `--dry-run`), so phases 1–4 carry real artifacts
 plus judge verdicts. Picks the most interesting step per lifecycle
-stage rather than re-capturing all 19 skills:
+stage rather than re-capturing all 22 skills:
 
 1. **Opp list shows lifecycle progress** — same list view, but the Turmeric card now sits atop a populated pipeline
-2. **19-skill lifecycle — real progress, not stubs** — workbench landing with ≥6 ✓ marks + judge bars rendering scores
+2. **22-skill lifecycle — real progress, not stubs** — workbench landing with ≥6 ✓ marks + judge bars rendering scores
 3. **ACE calls Nova — pdd-to-learn-app** — cross-system artifact: the CommCare Learn app that ACE generated via Nova, with judge verdict
 4. **Evaluation loop — app-test judge verdict** — structured test results + judge score + rationale, proves the feedback loop
 5. **Cycle grade — closeout** — the closeout artifact that feeds learnings-summary into the next PDD

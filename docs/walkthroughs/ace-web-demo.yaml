@@ -1,5 +1,5 @@
 name: "ACE Web — CRISPR-Connect Lifecycle"
-narrative: "Follow a CRISPR-Connect opportunity from IDD through the 19-skill pipeline, inspect results in the workbench, and discuss findings in chat."
+narrative: "Follow a CRISPR-Connect opportunity from IDD through the 22-skill pipeline, inspect results in the workbench, and discuss findings in chat."
 base_url: "https://labs.connect.dimagi.com"
 
 auth:
@@ -23,8 +23,8 @@ scenes:
 
   - persona: jj
     title: "Workbench — pipeline overview"
-    show: "Open CRISPR-Test-001 in the workbench: the 19-skill pipeline with status indicators, completed steps highlighted, pending steps greyed"
-    impressive_because: "The full 19-skill CRISPR-Connect pipeline rendered as an interactive grid — click any step to see artifacts, judge scores, and gate history"
+    show: "Open CRISPR-Test-001 in the workbench: the 22-skill pipeline with status indicators, completed steps highlighted, pending steps greyed"
+    impressive_because: "The full 22-skill CRISPR-Connect pipeline rendered as an interactive grid — click any step to see artifacts, judge scores, and gate history"
 
   - persona: jj
     title: "IDD review"

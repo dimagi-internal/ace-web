@@ -1,5 +1,5 @@
 name: "Turmeric End-to-End — Real Lifecycle Tour"
-narrative: "Against an opp whose 19-skill lifecycle has actually executed (not --dry-run), tour the five most interesting screens — from PDD through Nova-generated apps and judge verdicts to the cycle grade at closeout."
+narrative: "Against an opp whose 22-skill lifecycle has actually executed (not --dry-run), tour the five most interesting screens — from PDD through Nova-generated apps and judge verdicts to the cycle grade at closeout."
 base_url: "https://labs.connect.dimagi.com/ace"
 
 # Setup prerequisite — this walkthrough assumes the opp's lifecycle has
@@ -72,8 +72,8 @@ scenes:
     impressive_because: "Proves the list view is a live read-through of Drive state, not a cached snapshot. The same card that looked sparse after --dry-run now sits atop a run with real artifacts."
 
   - persona: reviewer
-    title: "19-skill lifecycle — real progress, not stubs"
-    show: "Navigate to /opps/<slug>. Skills sidebar shows most phase-1-through-4 steps with ✓ (complete) markers instead of ○ (pending). Judge bars render for skills that have evaluations (idea-to-pdd, pdd-to-learn-app, pdd-to-deliver-app, app-test, training-materials). Chat pane connected."
+    title: "22-skill lifecycle — real progress, not stubs"
+    show: "Navigate to /opps/<slug>. Skills sidebar shows most phase-1-through-4 steps with ✓ (complete) markers instead of ○ (pending). Judge bars render for skills that have evaluations (idea-to-pdd, pdd-to-learn-app, pdd-to-deliver-app, app-test, training-materials). Gate history appears on steps that were reviewed in review-mode."
     impressive_because: "One screen tells the whole story of the ACE cycle to date — which phases succeeded, which have judge verdicts, which haven't run yet. This is where stakeholders get a 10-second status read."
     ai_quality: "Sidebar should show ≥6 skills with ✓ markers and at least one skill row rendering a green/amber judge bar with a numeric score."
 
