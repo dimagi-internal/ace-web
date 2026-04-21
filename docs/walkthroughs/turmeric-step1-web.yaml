@@ -33,8 +33,8 @@ scenes:
 
   - persona: runner
     title: "Workbench three-pane renders"
-    show: "Navigate to /opps/<slug>. Left: skills sidebar with 19 skills across 6 phases (only idea-to-pdd ✓, rest ○). Middle: empty-state detail pane. Right: chat pane with 'Connected' indicator and the two seeded messages."
-    impressive_because: "Exercises a lot at once: 3-pane mount, Drive sync, 19-skill phase rendering, WebSocket auth + handshake, pending-status rendering for 18 skills, and the chat session attached to the opp."
+    show: "Navigate to /opps/<slug>. Left: opps list with the turmeric-smoketest row selected. Middle: skills sidebar with 22 skills across 6 phases (only idea-to-pdd ✓, rest ○). Right: empty-state detail pane ('Select a step')."
+    impressive_because: "Exercises a lot at once: 3-pane mount, Drive sync, 22-skill phase rendering, pending-status rendering for 21 skills, and the tags/review-mode/refresh header controls — all lit up in one view."
 
   - persona: runner
     title: "Drive artifact round-trips — idea-to-pdd"
