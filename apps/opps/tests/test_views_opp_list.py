@@ -173,3 +173,74 @@ def test_opp_list_returns_empty_when_no_ace_root_configured(authed_client):
     body = response.json()
     assert body["error"] is None
     assert body["data"] == []
+
+
+class _CountingDriveClient:
+    """Wrap a FakeDriveClient to count Drive calls. The list endpoint used
+    to call the full ``load_opp`` per opp (recursive tree listing + N
+    verdict reads + artifact manifest matching), which on real Drive took
+    ~3.5 s per opp — observed 14 s for four opps on labs 2026-04-21. The
+    list view now uses a card-only loader; this test pins the new budget
+    so we don't silently regress.
+    """
+    def __init__(self, inner):
+        self._inner = inner
+        self.list_files_calls: list[tuple[str, bool]] = []
+        self.recursive_list_calls = 0
+        self.get_content_calls: list[str] = []
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def list_files(self, folder_id, recursive=False, page_size=100):
+        self.list_files_calls.append((folder_id, recursive))
+        if recursive:
+            self.recursive_list_calls += 1
+        return self._inner.list_files(folder_id, recursive=recursive, page_size=page_size)
+
+    def get_content(self, file_id, mime_type):
+        self.get_content_calls.append(file_id)
+        return self._inner.get_content(file_id, mime_type)
+
+
+def test_opp_list_drive_call_budget(authed_client):
+    """List endpoint must stay O(N) on Drive calls, not O(N · per-opp-work).
+
+    Budget for N opps in the ACE root:
+      - 1 ``list_files`` on the ACE root (to discover opp folders)
+      - 1 ``list_files`` per opp folder (for the idea.md/state.yaml signal
+        check — already performed by the view and reused by load_opp_card)
+      - 0 recursive listings (load_opp's ``list_files(recursive=True)``
+        must NOT fire from the list path)
+      - At most 1 ``get_content`` per opp (state.yaml only; skipped if the
+        opp folder doesn't have one)
+
+    Total: ≤ 2N + 1 list_files, ≤ N get_content, 0 recursive.
+
+    Regression test for a 14-second list response observed on labs
+    (4 opps × ~3.5 s/opp via full load_opp). If this test fails because
+    you added a new per-opp Drive read, add a matching entry to
+    ``load_opp_card`` in ``apps/opps/sync.py`` instead — don't reach back
+    into ``load_opp``.
+    """
+    fake = FakeDriveClient.from_tree(_combined_tree())
+    counting = _CountingDriveClient(fake)
+    with patch("apps.opps.views.get_drive_client", return_value=counting), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        response = authed_client.get("/api/opps/")
+    assert response.status_code == 200
+    # Two opps in the combined tree.
+    n_opps = 2
+    assert counting.recursive_list_calls == 0, (
+        f"List endpoint made {counting.recursive_list_calls} recursive Drive "
+        f"listings — load_opp's recursive scan is back in the list path."
+    )
+    assert len(counting.list_files_calls) <= 2 * n_opps + 1, (
+        f"List endpoint made {len(counting.list_files_calls)} list_files "
+        f"calls for {n_opps} opps — budget is 2N+1."
+    )
+    assert len(counting.get_content_calls) <= n_opps, (
+        f"List endpoint made {len(counting.get_content_calls)} get_content "
+        f"calls for {n_opps} opps — budget is N (state.yaml each)."
+    )

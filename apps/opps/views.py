@@ -16,12 +16,11 @@ from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
 from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
-    serialize_opp_card,
     serialize_opp_snapshot,
     serialize_scorecard,
     serialize_step_snapshot,
 )
-from apps.opps.sync import delete_opp_folder, load_opp, load_scorecard
+from apps.opps.sync import delete_opp_folder, load_opp, load_opp_card, load_scorecard
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
 
@@ -121,11 +120,22 @@ def _opp_list_impl(request):
             continue
 
         try:
-            snap = load_opp(client, ace_folder_id=ace_folder_id, slug=child.name)
-            _overlay_workspace_display_name(snap.opp, child.name)
-            if required_tags and not required_tags.issubset(set(snap.opp.tags)):
+            card = load_opp_card(client, opp_folder=child, opp_children=opp_children)
+            _overlay_workspace_display_name(card.opp, child.name)
+            if required_tags and not required_tags.issubset(set(card.opp.tags)):
                 continue
-            cards.append(serialize_opp_card(snap.opp, snap.current_run))
+            cards.append({
+                "slug": card.opp.slug,
+                "display_name": card.opp.display_name,
+                "labels": card.opp.labels,
+                "tags": list(card.opp.tags),
+                "created_at": card.opp.created_at,
+                "created_by": card.opp.created_by,
+                "current_run_id": card.opp.current_run_id,
+                "current_phase": card.current_phase,
+                "current_step": card.current_step,
+                "status": card.status,
+            })
         except Exception:
             continue
 
