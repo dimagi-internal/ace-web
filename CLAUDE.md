@@ -23,9 +23,16 @@ day-to-day work happens in this repo directly to avoid submodule pointer churn.
 
 ## Current status
 
+**Initial development is complete as of 2026-04-21.** Phases 1 through 4 have
+all shipped; Phase 5 ("Polish") is **deferred indefinitely** — we reviewed the
+scope (observability, evals, a11y, security review, demo prep, docs pass) and
+decided the concrete value didn't justify the work at this stage. Revisit if
+a specific pain point surfaces in real team use, but do not plan it as
+proactive work.
+
 The whole-product design is in `docs/specs/2026-04-08-ace-web-design.md`.
 Phases below come from that spec — they are engineering execution checkpoints,
-not user-shippable milestones (the team only uses ace-web after Phase 5).
+not user-shippable milestones.
 
 | Phase | Name                       | Scope                                                                           | Status                                    |
 |-------|----------------------------|---------------------------------------------------------------------------------|-------------------------------------------|
@@ -34,7 +41,7 @@ not user-shippable milestones (the team only uses ace-web after Phase 5).
 | 2.5   | AWS migration              | GCP → AWS ECS Fargate tenant, CommCare Connect OAuth, nginx sidecar, /ace/* prefix | **Done** — per `docs/plans/2026-04-08-aws-migration.md` |
 | 3     | Multi-player collaboration | WebSocket consumer, channels-redis, ASGI auth, drafts, presence                 | **Done** — per `docs/plans/2026-04-09-3-multi-player.md` |
 | 4     | Library and ingest         | Session list, search/filter, share tokens, `ace upload` CLI, design system (shadcn + dark/light), personal tokens | **Done** — shipped piecemeal (see note below). Stale plan at `docs/plans/2026-04-09-phase-4-library-ingest.md` does NOT reflect what landed. |
-| 5     | Polish                     | Observability, evals, accessibility, security review, demo prep, full docs     | Pending                                   |
+| 5     | Polish                     | Observability, evals, accessibility, security review, demo prep, full docs     | **Deferred** — see "Phase 5 deferred" note below. Do not propose this as planned work. |
 
 **Parallel track — ACE Opportunity Workbench** (`apps/opps/` + `/opps` UI, spec
 `docs/specs/2026-04-08-ace-opp-visualization-design.md`, plan
@@ -255,7 +262,20 @@ Workbench's linked-chats panel. Orphan uploads (no opp fields) still work.
 
 ## What does NOT ship yet
 
-- No observability, no eval harness, no security review — Phase 5.
+- No observability, no eval harness, no security review — see **Phase 5 deferred** note below.
+
+**Phase 5 deferred (2026-04-21):** The Phase 5 "Polish" bundle (structured
+logs + correlation fields, p50/p95/p99 metrics, eval harness against
+`CLIBackend`, keyboard a11y + aria-live streaming, end-to-end security
+review, demo-prep walkthrough, full docs pass) was reviewed against what
+already exists — the ACE plugin's transcript-ingest path
+(`/ace:run --ace-web-url` → `apps/ingest/` → `/sessions` Imported tab) and
+the `createLoggingProxy` pattern in `../ace/mcp/ocs/logging.ts` — and
+consciously dropped. We don't see concrete value in doing it as proactive
+work right now. Treat the `### 4.7 Polish` section of
+`docs/specs/2026-04-08-ace-web-design.md` as aspirational; don't draft a
+`docs/plans/2026-04-*-phase-5-*.md` unless a specific operational problem
+makes the case for a specific piece of it. **Initial development is done.**
 
 **Phase 4 note:** the library/ingest surface shipped piecemeal across many
 PRs rather than as the single Task-1-through-N execution the plan doc
