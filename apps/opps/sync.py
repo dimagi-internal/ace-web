@@ -337,6 +337,77 @@ def _gates_from_state(state_data: dict) -> dict[str, list[GateDecision]]:
 # --- Main entry point ---
 
 
+@dataclass
+class OppCard:
+    """Minimal opp snapshot for the /api/opps/ list — no step synthesis,
+    no artifact attribution, no verdict reads. Just enough to render a card.
+
+    Populated from at most two Drive calls per opp: the folder listing
+    (already performed by the caller for the signal check) and a single
+    ``state.yaml`` ``get_content`` (skipped if the file isn't present).
+    ``load_opp`` does ~6 calls per opp including a recursive tree scan
+    and N verdict reads — far too expensive for a list view.
+    """
+    opp: OppManifest
+    current_phase: str | None
+    current_step: str | None
+    status: str
+
+
+def load_opp_card(
+    client: DriveClient,
+    *,
+    opp_folder: DriveFile,
+    opp_children: list[DriveFile],
+) -> OppCard:
+    """Read the subset of ``ACE/<slug>/`` needed for a list card.
+
+    ``opp_children`` is the caller-provided listing of the opp folder
+    (they already fetched it to decide whether this folder is an opp),
+    so we don't re-list. We only fetch the body of ``state.yaml`` when
+    it's present.
+
+    Handles both flat (state.yaml at root) and legacy (runs/run-001/state.yaml)
+    layouts — the latter requires one extra listing to descend into runs/,
+    acceptable because it's rare and only triggered for pre-refactor opps.
+    """
+    slug = opp_folder.name
+
+    state_file = _find_child(opp_children, "state.yaml")
+    if state_file is None:
+        runs_folder = _find_child(opp_children, "runs")
+        if runs_folder is not None and _is_folder(runs_folder):
+            run_children = client.list_files(runs_folder.id)
+            run1 = _find_child(run_children, "run-001")
+            if run1 is not None and _is_folder(run1):
+                state_file = _find_child(
+                    client.list_files(run1.id), "state.yaml"
+                )
+
+    state_data: dict = {}
+    if state_file is not None:
+        try:
+            state_data = yaml.safe_load(_read_text(client, state_file)) or {}
+        except yaml.YAMLError:
+            log.warning("state.yaml for %s is not valid YAML", slug)
+
+    opp_manifest = OppManifest(
+        slug=slug,
+        display_name=state_data.get("display_name", slug),
+        created_at=state_data.get("started_at") or state_data.get("created"),
+        created_by=state_data.get("created_by") or state_data.get("initiated_by"),
+        labels=[],
+        current_run_id="r1",
+    )
+
+    return OppCard(
+        opp=opp_manifest,
+        current_phase=state_data.get("current_phase"),
+        current_step=state_data.get("current_step"),
+        status="running",  # match load_opp's hardcoded status
+    )
+
+
 def load_opp(
     client: DriveClient,
     *,
