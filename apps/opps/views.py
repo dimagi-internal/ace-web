@@ -58,11 +58,7 @@ def _resolve_workspace(request):
             status=401,
         )
 
-    slug = None
-    if request.resolver_match is not None:
-        slug = (request.resolver_match.kwargs or {}).get("workspace_slug")
-    if not slug:
-        slug = request.headers.get("X-ACE-Workspace") or None
+    slug = request.headers.get("X-ACE-Workspace") or None
 
     if slug:
         try:
