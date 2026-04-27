@@ -43,10 +43,11 @@ def test_create_session_creates_owner_participant(client, user):
     assert s.participants.filter(user=user, role="owner").exists()
 
 
-def test_list_sessions_returns_all_sessions(client, user, other_user):
-    """Sessions are visible to every authed Dimagi user for now — the
-    list endpoint is not filtered by owner (see apps/sessions/views.py
-    `_list_sessions` for the deferred sharing/ACL story)."""
+def test_list_sessions_returns_only_visible_to_user(client, user, other_user):
+    """Post-multi-tenancy: orphan sessions (workspace=None) are visible only
+    to their owner. Workspace-tied sessions are visible to all members of
+    that workspace. See `_scope_sessions_to_user` in apps/sessions/views.py.
+    """
     Session.objects.create(owner=user, title="mine")
     Session.objects.create(owner=other_user, title="theirs")
 
@@ -54,7 +55,7 @@ def test_list_sessions_returns_all_sessions(client, user, other_user):
     assert resp.status_code == 200
     titles = [s["title"] for s in resp.json()["data"]["items"]]
     assert "mine" in titles
-    assert "theirs" in titles
+    assert "theirs" not in titles  # other_user's orphan session is hidden
 
 
 def test_list_sessions_owner_filter(client, user, other_user):
@@ -170,7 +171,13 @@ def test_add_participant_by_email(client, user, other_user):
     assert SessionParticipant.objects.filter(session=s, user=other_user).exists()
 
 
-def test_add_participant_rejects_non_dimagi_email(client, user):
+def test_add_participant_rejects_email_outside_allowlist_when_set(
+    client, user, settings
+):
+    """When ACE_ALLOWED_EMAIL_DOMAINS is non-empty, participants must
+    match. (Empty list — the new default — accepts any email; the
+    real access-control gate is workspace membership.)"""
+    settings.ACE_ALLOWED_EMAIL_DOMAINS = ["dimagi.com"]
     s = Session.objects.create(owner=user, title="x")
     SessionParticipant.objects.create(session=s, user=user, role="owner")
     resp = client.post(
