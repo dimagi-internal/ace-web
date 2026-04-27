@@ -12,6 +12,7 @@ urlpatterns = [
     path("api/", include("apps.sessions.urls")),
     path("api/ingest/", include("apps.ingest.urls")),
     path("api/opps/", include("apps.opps.urls")),
+    path("api/workspaces/", include("apps.workspaces.urls")),
     path("api/system/", include("apps.system.urls")),
     path("api/auth/", include((token_urlpatterns, "auth_tokens"))),
     path("api/share/<str:token>", public_share_view, name="public_share"),
