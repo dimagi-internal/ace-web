@@ -5,6 +5,7 @@ import { AuthCliPage } from "./pages/AuthCliPage";
 import { ChatPage } from "./pages/ChatPage";
 import { ChatRedirectPage } from "./pages/ChatRedirectPage";
 import HealthPage from "./pages/HealthPage";
+import InviteAcceptPage from "./pages/InviteAcceptPage";
 import { NoWorkspaceRedirect } from "./pages/NoWorkspaceRedirect";
 import OppListPage from "./pages/OppListPage";
 import OppWorkbenchPage from "./pages/OppWorkbenchPage";
@@ -13,6 +14,7 @@ import SettingsPage from "./pages/SettingsPage";
 import ShareViewPage from "./pages/ShareViewPage";
 import SystemPage from "./pages/SystemPage";
 import WelcomePage from "./pages/WelcomePage";
+import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
 
 export const router = createBrowserRouter(
   [
@@ -35,11 +37,13 @@ export const router = createBrowserRouter(
             { path: "sessions", element: <SessionsPage /> },
             { path: "chat", element: <ChatRedirectPage /> },
             { path: "chat/:slug", element: <ChatPage /> },
+            { path: "workspace-settings", element: <WorkspaceSettingsPage /> },
           ],
         },
 
         // User-level (workspace-agnostic)
         { path: "welcome", element: <WelcomePage /> },
+        { path: "invite/:token", element: <InviteAcceptPage /> },
         { path: "settings", element: <SettingsPage /> },
         { path: "system", element: <SystemPage /> },
         { path: "health", element: <HealthPage /> },
