@@ -12,16 +12,13 @@ urlpatterns = [
     path("api/", include("apps.common.urls")),
     path("api/", include("apps.sessions.urls")),
     path("api/ingest/", include("apps.ingest.urls")),
+    # Opps endpoints. Workspace identity is resolved via the
+    # `X-ACE-Workspace` header (auto-injected by the frontend's
+    # `apiFetch` from the URL pathname). A workspace-scoped URL
+    # mount was tried earlier but Django passes captured URL kwargs
+    # to view functions, which the opp views don't accept — header
+    # resolution is the simpler path.
     path("api/opps/", include("apps.opps.urls")),
-    # Workspace-scoped duplicate of the opps routes — same views, but with
-    # `workspace_slug` extracted from the URL kwargs (read by
-    # `apps.opps.views._resolve_workspace`). The bare `/api/opps/` path is
-    # preserved for backward-compat; it falls through to the user's first
-    # workspace per the same resolver.
-    path(
-        "api/workspaces/<slug:workspace_slug>/opps/",
-        include("apps.opps.urls"),
-    ),
     path("api/workspaces/", include("apps.workspaces.urls")),
     path("api/invites/<str:token>/", workspaces_views.invite_preview, name="invite_preview"),
     path(
