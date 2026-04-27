@@ -130,3 +130,21 @@ export function acceptInvite(token: string): Promise<AcceptResult> {
     method: "POST",
   });
 }
+
+export function leaveWorkspace(slug: string): Promise<void> {
+  return apiFetch<void>(`/api/workspaces/${slug}/leave/`, {
+    method: "POST",
+  });
+}
+
+export interface ActivityRow {
+  action: string;
+  subject: string;
+  scopes_used: string[];
+  context: Record<string, unknown>;
+  created_at: string;
+}
+
+export function listActivity(slug: string): Promise<ActivityRow[]> {
+  return apiFetch<ActivityRow[]>(`/api/workspaces/${slug}/activity/`);
+}

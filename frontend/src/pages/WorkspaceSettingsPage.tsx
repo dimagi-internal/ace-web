@@ -6,17 +6,22 @@ import {
   getDriveConfig,
   getWorkspace,
   inviteMember,
+  leaveWorkspace,
+  listActivity,
   removeMember,
   verifyDriveAccess,
+  type ActivityRow,
   type WorkspaceDetail,
   type WorkspaceRole,
 } from "../api/workspaces";
 import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 
 const ROLE_OPTIONS: WorkspaceRole[] = ["owner", "editor", "viewer"];
 
 export default function WorkspaceSettingsPage() {
   const { workspaceSlug } = useParams<{ workspaceSlug: string }>();
+  const navigate = useNavigate();
   const [ws, setWs] = useState<WorkspaceDetail | null>(null);
   const [saEmail, setSaEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,12 +33,23 @@ export default function WorkspaceSettingsPage() {
     token: string;
   } | null>(null);
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
+  const [driveBroken, setDriveBroken] = useState<string | null>(null);
+  const [activity, setActivity] = useState<ActivityRow[]>([]);
 
   useEffect(() => {
     if (!workspaceSlug) return;
     getWorkspace(workspaceSlug).then(setWs).catch((e) => setError(String((e as Error).message)));
     getDriveConfig().then((c) => setSaEmail(c.service_account_email)).catch(() => {});
+    // Auto-verify on page load to surface drive-access-broken state.
+    verifyDriveAccess(workspaceSlug)
+      .then(() => setDriveBroken(null))
+      .catch((e) => setDriveBroken(String((e as Error).message)));
   }, [workspaceSlug, reload]);
+
+  useEffect(() => {
+    if (!workspaceSlug || !ws || ws.my_role !== "owner") return;
+    listActivity(workspaceSlug).then(setActivity).catch(() => {});
+  }, [workspaceSlug, ws, reload]);
 
   if (!workspaceSlug) return null;
   if (error) return <div className="p-6 text-destructive">{error}</div>;
@@ -89,10 +105,32 @@ export default function WorkspaceSettingsPage() {
     }
   }
 
+  async function handleLeave() {
+    if (!confirm(`Leave the workspace "${ws.display_name}"?`)) return;
+    setError(null);
+    try {
+      await leaveWorkspace(workspaceSlug!);
+      navigate("/welcome");
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="text-2xl font-semibold text-foreground">{ws.display_name}</h1>
       <p className="text-sm text-muted-foreground">/{ws.slug}</p>
+
+      {driveBroken && (
+        <div className="mt-4 rounded border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+          <strong>Drive access broken:</strong> {driveBroken}
+          <p className="mt-1 text-xs">
+            Re-share the folder with{" "}
+            <span className="font-mono">{saEmail}</span> as Editor, then click
+            "Verify Drive access" below.
+          </p>
+        </div>
+      )}
 
       <section className="mt-8">
         <h2 className="text-lg font-medium text-foreground">Drive folder</h2>
@@ -202,6 +240,41 @@ export default function WorkspaceSettingsPage() {
           )}
         </section>
       )}
+
+      {isOwner && activity.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-lg font-medium text-foreground">Recent activity</h2>
+          <p className="text-xs text-muted-foreground">
+            Last {activity.length} Drive accesses against this workspace.
+          </p>
+          <ul className="mt-2 divide-y divide-border text-sm">
+            {activity.slice(0, 25).map((a, i) => (
+              <li key={i} className="flex justify-between py-2">
+                <span className="text-foreground">
+                  {a.action}
+                  {a.subject && (
+                    <span className="text-muted-foreground"> as {a.subject}</span>
+                  )}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {new Date(a.created_at).toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="mt-12 border-t border-border pt-6">
+        <h2 className="text-sm font-medium text-muted-foreground">Danger zone</h2>
+        <Button
+          variant="outline"
+          className="mt-3 text-destructive"
+          onClick={handleLeave}
+        >
+          Leave workspace
+        </Button>
+      </section>
     </div>
   );
 }

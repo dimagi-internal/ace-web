@@ -293,3 +293,63 @@ def test_invite_accept_email_mismatch_403():
     resp = c.post(f"/api/invites/{inv.token}/accept/")
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "email-mismatch"
+
+
+# ─────────────────────────── Phase C: leave-workspace ───────────────────────────
+
+
+@pytest.mark.django_db
+def test_leave_workspace_self_remove(alice, bob):
+    ws = make_ws("acme", alice)
+    WorkspaceMembership.objects.create(workspace=ws, user=bob, role="editor")
+    c = APIClient()
+    c.force_authenticate(bob)
+    resp = c.post(f"/api/workspaces/{ws.slug}/leave/")
+    assert resp.status_code == 204
+    assert not WorkspaceMembership.objects.filter(workspace=ws, user=bob).exists()
+
+
+@pytest.mark.django_db
+def test_leave_workspace_last_owner_blocked(auth_client, alice):
+    ws = make_ws("acme", alice)
+    resp = auth_client.post(f"/api/workspaces/{ws.slug}/leave/")
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "last-owner"
+
+
+@pytest.mark.django_db
+def test_activity_owner_only(auth_client, alice, bob):
+    ws = make_ws("acme", alice)
+    WorkspaceMembership.objects.create(workspace=ws, user=bob, role="editor")
+    # Owner can fetch
+    resp = auth_client.get(f"/api/workspaces/{ws.slug}/activity/")
+    assert resp.status_code == 200
+
+    # Non-owner forbidden
+    c = APIClient()
+    c.force_authenticate(bob)
+    resp = c.get(f"/api/workspaces/{ws.slug}/activity/")
+    assert resp.status_code == 403
+
+
+@pytest.mark.django_db
+def test_activity_returns_workspace_scoped_logs(auth_client, alice):
+    """Audit log is read-through to AccessLog.context.workspace_slug."""
+    from apps.service_accounts.models import AccessLog, ServiceAccount
+    ws = make_ws("acme", alice)
+    sa = ServiceAccount.objects.create(
+        name="t-sa", credential_type="api_key", credential_encrypted="x",
+    )
+    AccessLog.objects.create(
+        service_account=sa, action="direct_access",
+        scopes_used=[], context={"workspace_slug": "acme"},
+    )
+    AccessLog.objects.create(
+        service_account=sa, action="direct_access",
+        scopes_used=[], context={"workspace_slug": "other"},
+    )
+    resp = auth_client.get(f"/api/workspaces/{ws.slug}/activity/")
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert len(body) == 1
+    assert body[0]["context"]["workspace_slug"] == "acme"

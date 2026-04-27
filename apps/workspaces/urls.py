@@ -19,4 +19,6 @@ urlpatterns = [
         views.member_detail,
         name="member-detail",
     ),
+    path("<slug:slug>/leave/", views.leave_workspace, name="leave"),
+    path("<slug:slug>/activity/", views.workspace_activity, name="activity"),
 ]

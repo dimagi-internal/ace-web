@@ -438,6 +438,62 @@ def invite_preview(request, token):
     }))
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def workspace_activity(request, slug):
+    """Read-through to apps.service_accounts.AccessLog filtered by this
+    workspace's `context.workspace_slug`. Owner-only because the log
+    can include other members' actions."""
+    ws, err = _require_owner(request, slug)
+    if err is not None:
+        return err
+    from apps.service_accounts.models import AccessLog
+    rows = (
+        AccessLog.objects
+        .filter(context__workspace_slug=ws.slug)
+        .order_by("-created_at")[:100]
+    )
+    return Response(success_response([
+        {
+            "action": r.action,
+            "subject": r.subject,
+            "scopes_used": r.scopes_used,
+            "context": r.context,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def leave_workspace(request, slug):
+    """Self-remove from a workspace. Last owners can't leave; they must
+    promote another member to owner first."""
+    ws, err = _require_member(request, slug)
+    if err is not None:
+        return err
+    membership = ws.memberships.filter(user=request.user).first()
+    if membership is None:
+        return Response(
+            error_response("not a member", code="not-found"), status=404
+        )
+    if membership.role == "owner":
+        other_owners = ws.memberships.filter(role="owner").exclude(
+            user=request.user,
+        ).count()
+        if other_owners == 0:
+            return Response(
+                error_response(
+                    "you are the last owner; promote someone else first",
+                    code="last-owner",
+                ),
+                status=400,
+            )
+    membership.delete()
+    return Response(status=204)
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def invite_accept(request, token):
