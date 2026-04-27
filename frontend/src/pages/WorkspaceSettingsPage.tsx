@@ -106,6 +106,7 @@ export default function WorkspaceSettingsPage() {
   }
 
   async function handleLeave() {
+    if (!ws) return;
     if (!confirm(`Leave the workspace "${ws.display_name}"?`)) return;
     setError(null);
     try {
