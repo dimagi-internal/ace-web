@@ -1,5 +1,5 @@
 """REST API views for the ACE opportunity Workbench."""
-from django.db import transaction
+from django.db import models, transaction
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -110,7 +110,7 @@ def _require_drive(request):
         )
 
 
-def _overlay_workspace_display_name(manifest, slug: str) -> None:
+def _overlay_workspace_display_name(manifest, slug: str, workspace=None) -> None:
     """Layer OppWorkspace DB metadata (display_name + tags) onto the
     Drive-derived manifest in place.
 
@@ -120,14 +120,21 @@ def _overlay_workspace_display_name(manifest, slug: str) -> None:
     DB-only (free-form grouping across sibling opps). Views that render
     opp metadata layer both over the Drive snapshot at the boundary so the
     sync module stays pure.
+
+    The `workspace` arg scopes the lookup to the active Workspace —
+    multiple Workspaces can have an opp with the same slug, so a global
+    .get(slug=...) is no longer well-defined.
     """
     try:
-        ws = OppWorkspace.objects.only("display_name", "tags").get(slug=slug)
+        q = OppWorkspace.objects.only("display_name", "tags")
+        if workspace is not None:
+            q = q.filter(workspace=workspace)
+        opp_ws = q.get(slug=slug)
     except OppWorkspace.DoesNotExist:
         return
-    if ws.display_name and ws.display_name != slug:
-        manifest.display_name = ws.display_name
-    manifest.tags = list(ws.tags or [])
+    if opp_ws.display_name and opp_ws.display_name != slug:
+        manifest.display_name = opp_ws.display_name
+    manifest.tags = list(opp_ws.tags or [])
 
 
 def _opp_list_impl(request):
@@ -166,7 +173,7 @@ def _opp_list_impl(request):
 
         try:
             card = load_opp_card(client, opp_folder=child, opp_children=opp_children)
-            _overlay_workspace_display_name(card.opp, child.name)
+            _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
             if required_tags and not required_tags.issubset(set(card.opp.tags)):
                 continue
             cards.append({
@@ -275,8 +282,14 @@ def delete_opp(request, slug: str):
         )
 
     with transaction.atomic():
-        Session.objects.filter(opp_slug=slug).delete()
-        OppWorkspace.objects.filter(slug=slug).delete()
+        # Cascade-delete linked Sessions. Match by opp_slug AND
+        # (workspace=ws OR workspace IS NULL) — the latter captures
+        # legacy sessions that pre-date the workspace FK and weren't
+        # backfilled because they were created without an opp tie.
+        Session.objects.filter(opp_slug=slug).filter(
+            models.Q(workspace=ws) | models.Q(workspace__isnull=True)
+        ).delete()
+        OppWorkspace.objects.filter(workspace=ws, slug=slug).delete()
 
     return Response(status=204)
 
@@ -292,6 +305,9 @@ def patch_opp(request, slug: str):
         return Response(
             error_response("auth required", code="auth-required"), status=401
         )
+    ws, err = _resolve_workspace(request)
+    if err is not None:
+        return err
     body = request.data if isinstance(request.data, dict) else {}
 
     # Validate tags: list of short strings, each cleaned up (strip + drop blanks).
@@ -313,6 +329,7 @@ def patch_opp(request, slug: str):
             cleaned.append(stripped)
 
     workspace, _ = OppWorkspace.objects.get_or_create(
+        workspace=ws,
         slug=slug,
         defaults={"display_name": slug, "created_by": request.user},
     )
@@ -350,7 +367,7 @@ def workbench(request, slug: str):
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
-    _overlay_workspace_display_name(snap.opp, slug)
+    _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
 
     return Response(success_response(serialize_opp_snapshot(snap)))
 
@@ -376,7 +393,7 @@ def step_detail(request, slug: str, run_id: str, skill: str):
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
-    _overlay_workspace_display_name(snap.opp, slug)
+    _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
 
     step_snap = next(
         (s for s in snap.current_run.steps if s.step.skill_name == skill), None
@@ -425,7 +442,7 @@ def artifact_body(request, slug: str, run_id: str, skill: str, artifact_name: st
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
-    _overlay_workspace_display_name(snap.opp, slug)
+    _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
 
     step_snap = next(
         (s for s in snap.current_run.steps if s.step.skill_name == skill), None
@@ -511,7 +528,7 @@ def discuss(request, slug: str, run_id: str, skill: str):
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
-    _overlay_workspace_display_name(snap.opp, slug)
+    _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
 
     try:
         seed_body = build_chat_seed(
@@ -633,12 +650,16 @@ def opp_working_session(request, slug: str):
         return Response(
             error_response("auth required", code="auth-required"), status=401
         )
+    ws, err = _resolve_workspace(request)
+    if err is not None:
+        return err
 
     try:
-        workspace = OppWorkspace.objects.get(slug=slug)
+        workspace = OppWorkspace.objects.get(workspace=ws, slug=slug)
     except OppWorkspace.DoesNotExist:
         workspace = OppWorkspace.objects.create(
             slug=slug, display_name=slug, created_by=request.user,
+            workspace=ws,
         )
 
     if workspace.working_session is None or workspace.working_session.status != "active":
@@ -714,8 +735,11 @@ def opp_artifact_write(request, slug: str, run_id: str, skill: str, artifact_nam
 def opp_action(request, slug: str, run_id: str, action: str):
     if not request.user.is_authenticated:
         return Response(error_response("auth required", code="auth-required"), status=401)
+    ws, err = _resolve_workspace(request)
+    if err is not None:
+        return err
     try:
-        workspace = OppWorkspace.objects.get(slug=slug)
+        workspace = OppWorkspace.objects.get(workspace=ws, slug=slug)
     except OppWorkspace.DoesNotExist:
         return Response(error_response("opp not found", code="opp-not-found"), status=404)
     session = workspace.working_session

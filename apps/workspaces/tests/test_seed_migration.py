@@ -4,6 +4,12 @@ We invoke the migration's `seed_and_backfill` function directly with a
 shim `apps` object that returns the live Django models, rather than
 running the migration through migrate. The function's logic doesn't
 depend on the historical schema, so this is sufficient and much faster.
+
+After Phase B's PK pivot, OppWorkspace.workspace is non-nullable, so
+the backfill-of-NULLs branch can no longer be exercised in tests
+(which run all migrations to head). The tests below cover the still-
+meaningful paths: workspace creation, membership seeding, idempotency,
+and the oldest-user fallback.
 """
 import importlib
 
@@ -11,8 +17,6 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 
-from apps.opps.models import OppWorkspace
-from apps.sessions.models import IngestUpload, Session, ShareToken
 from apps.workspaces.models import Workspace, WorkspaceMembership
 
 User = get_user_model()
@@ -31,12 +35,9 @@ class _AppShim:
 
 @pytest.mark.django_db
 @override_settings(ACE_DRIVE_ROOT_FOLDER_ID="folder-test-1")
-def test_seed_creates_dimagi_team_and_backfills_opp():
+def test_seed_creates_dimagi_team_workspace_and_owner_membership():
     founder = User.objects.create_user(email="jjackson@dimagi.com")
     User.objects.create_user(email="ace@dimagi-ai.com")
-    opp = OppWorkspace.objects.create(
-        slug="acme-opp", display_name="ACME", created_by=founder,
-    )
 
     seed_and_backfill(_AppShim(), schema_editor=None)
 
@@ -48,35 +49,6 @@ def test_seed_creates_dimagi_team_and_backfills_opp():
     assert WorkspaceMembership.objects.filter(
         workspace=ws, user__email="ace@dimagi-ai.com", role="editor",
     ).exists()
-
-    opp.refresh_from_db()
-    assert opp.workspace == ws
-
-
-@pytest.mark.django_db
-@override_settings(ACE_DRIVE_ROOT_FOLDER_ID="folder-test-2")
-def test_seed_backfills_session_share_token_and_upload():
-    founder = User.objects.create_user(email="jjackson@dimagi.com")
-    OppWorkspace.objects.create(
-        slug="acme-opp", display_name="ACME", created_by=founder,
-    )
-    session = Session.objects.create(
-        title="seed-test", owner=founder, opp_slug="acme-opp",
-    )
-    tok = ShareToken.objects.create(session=session, created_by=founder)
-    upload = IngestUpload.objects.create(
-        session=session, uploaded_by=founder, line_count=1, raw_bytes=10,
-    )
-
-    seed_and_backfill(_AppShim(), schema_editor=None)
-
-    ws = Workspace.objects.get(slug="dimagi-team")
-    session.refresh_from_db()
-    assert session.workspace == ws
-    tok.refresh_from_db()
-    assert tok.workspace == ws
-    upload.refresh_from_db()
-    assert upload.workspace == ws
 
 
 @pytest.mark.django_db

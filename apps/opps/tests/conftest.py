@@ -92,6 +92,38 @@ def _ensure_workspace_membership(db, monkeypatch):
 
     monkeypatch.setattr(User.objects, "create", _wrap_create)
     monkeypatch.setattr(User.objects, "create_user", _wrap_create_user)
+
+    # Also auto-attach the test workspace to OppWorkspace creates that
+    # don't supply one. Phase B made `workspace` non-nullable, but most
+    # existing tests predate workspaces and create OppWorkspaces without
+    # passing one. The shim defaults to the test workspace.
+    from apps.opps.models import OppWorkspace
+    original_opp_create = OppWorkspace.objects.create
+
+    def _wrap_opp_create(*args, **kwargs):
+        if "workspace" not in kwargs and "workspace_id" not in kwargs:
+            ws = state.get("workspace") or _ensure_ws()
+            if ws is None:
+                # Force a User to exist so the workspace can be created.
+                u = User.objects.first() or User.objects.create(
+                    email="conftest@test", display_name="conftest",
+                )
+                ws = state.get("workspace")
+                if ws is None:
+                    ws = Workspace.objects.create(
+                        slug="test-workspace",
+                        display_name="Test Workspace",
+                        drive_root_folder_id="test-drive-root-folder-id",
+                        created_by=u,
+                    )
+                    state["workspace"] = ws
+                WorkspaceMembership.objects.get_or_create(
+                    workspace=ws, user=u, defaults={"role": "owner"},
+                )
+            kwargs["workspace"] = ws
+        return original_opp_create(*args, **kwargs)
+
+    monkeypatch.setattr(OppWorkspace.objects, "create", _wrap_opp_create)
     yield
 
 
