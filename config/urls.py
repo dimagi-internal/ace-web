@@ -5,6 +5,7 @@ from django.views.generic import TemplateView
 
 from apps.auth.urls import token_urlpatterns
 from apps.sessions.share_views import public_share_view
+from apps.workspaces import views as workspaces_views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -22,6 +23,12 @@ urlpatterns = [
         include("apps.opps.urls"),
     ),
     path("api/workspaces/", include("apps.workspaces.urls")),
+    path("api/invites/<str:token>/", workspaces_views.invite_preview, name="invite_preview"),
+    path(
+        "api/invites/<str:token>/accept/",
+        workspaces_views.invite_accept,
+        name="invite_accept",
+    ),
     path("api/system/", include("apps.system.urls")),
     path("api/auth/", include((token_urlpatterns, "auth_tokens"))),
     path("api/share/<str:token>", public_share_view, name="public_share"),
