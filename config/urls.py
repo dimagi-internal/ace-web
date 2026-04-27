@@ -12,6 +12,15 @@ urlpatterns = [
     path("api/", include("apps.sessions.urls")),
     path("api/ingest/", include("apps.ingest.urls")),
     path("api/opps/", include("apps.opps.urls")),
+    # Workspace-scoped duplicate of the opps routes — same views, but with
+    # `workspace_slug` extracted from the URL kwargs (read by
+    # `apps.opps.views._resolve_workspace`). The bare `/api/opps/` path is
+    # preserved for backward-compat; it falls through to the user's first
+    # workspace per the same resolver.
+    path(
+        "api/workspaces/<slug:workspace_slug>/opps/",
+        include("apps.opps.urls"),
+    ),
     path("api/workspaces/", include("apps.workspaces.urls")),
     path("api/system/", include("apps.system.urls")),
     path("api/auth/", include((token_urlpatterns, "auth_tokens"))),

@@ -1,5 +1,4 @@
 """REST API views for the ACE opportunity Workbench."""
-from django.conf import settings
 from django.db import transaction
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
@@ -8,10 +7,7 @@ from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
 from apps.opps.actions import ActionError, ActionPayload, inject_action
-from apps.opps.drive_client import (
-    DriveClient,
-    get_drive_client,
-)
+from apps.opps.drive_client import get_drive_client
 from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
 from apps.opps.seed import build_chat_seed
@@ -23,6 +19,8 @@ from apps.opps.serializers import (
 from apps.opps.sync import delete_opp_folder, load_opp, load_opp_card, load_scorecard
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
+from apps.workspaces.models import Workspace
+from apps.workspaces.permissions import is_member, user_workspaces
 
 
 @api_view(["GET"])
@@ -32,34 +30,81 @@ def health(request):
     return Response(success_response({"status": "ok", "module": "opps"}))
 
 
-def _resolve_ace_root_folder_id(client: DriveClient) -> str | None:
-    """Return the Drive folder id of the shared ACE root folder.
+def _resolve_ace_root_folder_id(workspace) -> str | None:
+    """Return the Drive folder id of the workspace's ACE root folder.
 
-    Reads from `settings.ACE_DRIVE_ROOT_FOLDER_ID`, which is pinned in
-    environment config (defaulted to the shared ACE folder the team already
-    uses). The `client` argument is currently unused but retained so a
-    future name-based fallback can live alongside this id-pinned path
-    (e.g. walking top-level folders via `client.list_files` when the
-    pinned id is empty).
-
-    Returns None when the setting is empty — callers treat that as
-    "no ACE root configured" and return an empty list / 404 as appropriate.
+    Each Workspace pins its own `drive_root_folder_id` (post-2026-04-27
+    multi-tenancy). Returns None when no workspace is provided —
+    callers treat that as "no workspace context" and return an empty
+    list / 404 as appropriate.
     """
-    folder_id = getattr(settings, "ACE_DRIVE_ROOT_FOLDER_ID", "") or ""
-    return folder_id or None
+    if workspace is None:
+        return None
+    return workspace.drive_root_folder_id or None
 
 
-def _require_drive(request):
-    """Return (drive_client, error_response). error_response is None on success."""
+def _resolve_workspace(request):
+    """Return (workspace, error_response). Reads workspace identity from
+    (in priority order): URL kwarg `workspace_slug`, request header
+    `X-ACE-Workspace`, or — as a backward-compat fallback for the
+    legacy `/api/opps/` paths — the user's first workspace.
+
+    Membership is enforced; non-members get a 404 (not 403) so workspace
+    existence isn't leaked.
+    """
     if not request.user.is_authenticated:
         return None, Response(
             error_response("authentication required", code="auth-required"),
             status=401,
         )
-    try:
-        return get_drive_client(), None
-    except ServiceAccountNotFound as exc:
+
+    slug = None
+    if request.resolver_match is not None:
+        slug = (request.resolver_match.kwargs or {}).get("workspace_slug")
+    if not slug:
+        slug = request.headers.get("X-ACE-Workspace") or None
+
+    if slug:
+        try:
+            ws = Workspace.objects.get(slug=slug)
+        except Workspace.DoesNotExist:
+            return None, Response(
+                error_response("workspace not found", code="not-found"),
+                status=404,
+            )
+        if not is_member(request.user, ws):
+            return None, Response(
+                error_response("workspace not found", code="not-found"),
+                status=404,
+            )
+        return ws, None
+
+    # Legacy fallback: bare /api/opps/ paths default to the user's most-recent
+    # workspace. Phase B retires this once the frontend always provides
+    # `workspace_slug` in the URL.
+    ws = user_workspaces(request.user).first()
+    if ws is None:
         return None, Response(
+            error_response(
+                "no workspace — create or join one first",
+                code="no-workspace",
+            ),
+            status=403,
+        )
+    return ws, None
+
+
+def _require_drive(request):
+    """Return (workspace, drive_client, error_response). On error, the first
+    two are None.
+    """
+    ws, err = _resolve_workspace(request)
+    if err is not None:
+        return None, None, err
+    try:
+        return ws, get_drive_client(workspace=ws), None
+    except ServiceAccountNotFound as exc:
+        return ws, None, Response(
             error_response(str(exc), code="drive-not-configured"),
             status=500,
         )
@@ -93,11 +138,11 @@ def _opp_list_impl(request):
     contains ALL of the listed tags (intersection — matches the "narrow
     down to iterations of the same idea" UX).
     """
-    client, err = _require_drive(request)
+    ws, client, err = _require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(client)
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(success_response([]))
 
@@ -164,10 +209,10 @@ def opp_create(request):
             status=400,
         )
 
-    client, err = _require_drive(request)
+    ws, client, err = _require_drive(request)
     if err is not None:
         return err
-    ace_folder_id = _resolve_ace_root_folder_id(client)
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -184,6 +229,7 @@ def opp_create(request):
             idea=payload.get("idea", ""),
             mode=payload.get("mode", "review"),
             pdd=payload.get("pdd", ""),
+            workspace=ws,
         )
     except CreateOppError as exc:
         status = 409 if exc.code == "slug-taken" else 400
@@ -210,10 +256,10 @@ def opp_collection(request):
 def delete_opp(request, slug: str):
     """Handle DELETE. Called from workbench() when request.method == 'DELETE'.
     Not decorated with @api_view — workbench() carries the decorator."""
-    client, err = _require_drive(request)
+    ws, client, err = _require_drive(request)
     if err is not None:
         return err
-    ace_folder_id = _resolve_ace_root_folder_id(client)
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -284,11 +330,11 @@ def workbench(request, slug: str):
     if request.method == "PATCH":
         return patch_opp(request, slug)
 
-    client, err = _require_drive(request)
+    ws, client, err = _require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(client)
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -312,11 +358,11 @@ def workbench(request, slug: str):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def step_detail(request, slug: str, run_id: str, skill: str):
-    client, err = _require_drive(request)
+    ws, client, err = _require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(client)
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -361,11 +407,11 @@ def step_detail(request, slug: str, run_id: str, skill: str):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def artifact_body(request, slug: str, run_id: str, skill: str, artifact_name: str):
-    client, err = _require_drive(request)
+    ws, client, err = _require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(client)
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -413,11 +459,11 @@ def scorecard(request, slug: str):
     Drive folder. Returns an all-empty payload (no 404) when opp-eval
     hasn't run yet — opp-eval is ad-hoc, not part of the default pipeline.
     """
-    client, err = _require_drive(request)
+    ws, client, err = _require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(client)
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -447,11 +493,11 @@ def _skill_md_relative_path(skill: str) -> str:
 @permission_classes([AllowAny])
 def discuss(request, slug: str, run_id: str, skill: str):
     """Create a new ace-web chat Session linked to this opp/run/step."""
-    client, err = _require_drive(request)
+    ws, client, err = _require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(client)
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -538,7 +584,7 @@ def step_chats(request, slug: str, run_id: str, skill: str):
     response shape (a flat list) so existing frontend rendering keeps
     working — the ``kind`` field lets the UI render a small badge.
     """
-    client, err = _require_drive(request)
+    ws, client, err = _require_drive(request)
     if err is not None:
         return err
 
@@ -616,10 +662,10 @@ def opp_working_session(request, slug: str):
 @permission_classes([AllowAny])
 def opp_artifact_write(request, slug: str, run_id: str, skill: str, artifact_name: str):
     """PUT the body of an existing artifact back to Drive."""
-    client, err = _require_drive(request)
+    ws, client, err = _require_drive(request)
     if err is not None:
         return err
-    ace_folder_id = _resolve_ace_root_folder_id(client)
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),

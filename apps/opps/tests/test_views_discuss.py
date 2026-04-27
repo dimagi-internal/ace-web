@@ -24,7 +24,7 @@ def authed_client(db):
 def _with_fake(authed_client, fake):
     return patch.multiple(
         "apps.opps.views",
-        get_drive_client=lambda: fake,
+        get_drive_client=lambda *a, **kw: fake,
         _resolve_ace_root_folder_id=lambda client: fake.folder_id("ACE"),
     )
 

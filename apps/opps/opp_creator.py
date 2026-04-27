@@ -39,6 +39,7 @@ def create_opp(
     idea: str,
     mode: str = "review",
     pdd: str = "",
+    workspace=None,
 ) -> CreateOppResult:
     """Create a new opp: Drive folder + workspace row + seeded chat session.
 
@@ -46,12 +47,21 @@ def create_opp(
     This lets callers that already have a PDD (e.g. the Turmeric smoke-test
     setup script) pre-populate the idea-to-pdd artifact so the workbench
     preview isn't empty on first load.
+
+    The ``workspace`` argument scopes the slug-uniqueness check. Phase A
+    keeps `OppWorkspace.slug` as the global PK so the per-workspace check
+    is currently a no-op for correctness; Phase B's PK pivot is what makes
+    it load-bearing. Passing the workspace anyway means callers don't have
+    to change again at the Phase B cut-over.
     """
     if not SLUG_RE.match(slug):
         raise CreateOppError("invalid-slug", f"invalid slug {slug!r}")
     if mode not in ("auto", "review"):
         raise CreateOppError("invalid-mode", f"invalid mode {mode!r}")
-    if OppWorkspace.objects.filter(slug=slug).exists():
+    slug_q = OppWorkspace.objects.filter(slug=slug)
+    if workspace is not None:
+        slug_q = slug_q.filter(workspace=workspace)
+    if slug_q.exists():
         raise CreateOppError("slug-taken", f"opp {slug!r} already exists")
     # Drive-side collision
     for child in drive.list_files(ace_root_folder_id):
@@ -102,11 +112,12 @@ def create_opp(
             plaintext=f"Run /ace:step idea-to-pdd for {slug}.",
             status="complete",
         )
-        workspace = OppWorkspace.objects.create(
+        opp_ws = OppWorkspace.objects.create(
             slug=slug,
             display_name=display_name,
             working_session=session,
             created_by=owner,
+            workspace=workspace,
         )
 
-    return CreateOppResult(slug=slug, workspace=workspace, working_session=session)
+    return CreateOppResult(slug=slug, workspace=opp_ws, working_session=session)
