@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.ingest.apps.IngestConfig",
     "apps.service_accounts.apps.ServiceAccountsConfig",
     "apps.system.apps.SystemConfig",
+    "apps.workspaces.apps.WorkspacesConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -219,7 +220,11 @@ ACE_USE_FAKE_CLI_BACKEND = env.bool("ACE_USE_FAKE_CLI_BACKEND", default=False)
 ACE_E2E_AUTH_TOKEN = env("ACE_E2E_AUTH_TOKEN", default="")
 
 # --- Allowed email domains ---
-ACE_ALLOWED_EMAIL_DOMAINS = ["dimagi.com", "dimagi-ai.com"]
+# Empty list = allow any Connect-authenticated user. Workspace memberships
+# are the actual access-control gate; the domain filter is preserved as a
+# deployment safety knob (set to a non-empty list to revert to allow-listed
+# signups).
+ACE_ALLOWED_EMAIL_DOMAINS = env.list("ACE_ALLOWED_EMAIL_DOMAINS", default=[])
 
 # --- Service Accounts ---
 SERVICE_ACCOUNTS = {

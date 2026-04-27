@@ -34,6 +34,35 @@ def upload(request: Request) -> Response:
     opp_run_id = (request.data.get("opp_run_id") or "").strip()
     opp_step_skill = (request.data.get("opp_step_skill") or "").strip()
 
+    # Optional workspace resolution via Drive folder id (added in the
+    # multi-tenancy Phase A). The plugin's upload-transcript skill is
+    # being updated to pass this; uploads from older plugin versions
+    # will arrive without it and become orphan uploads attached only
+    # to the uploading user.
+    ace_root_folder_id = (request.data.get("ace_root_folder_id") or "").strip()
+    workspace = None
+    if ace_root_folder_id:
+        from apps.workspaces.models import Workspace
+        from apps.workspaces.permissions import is_member
+        try:
+            workspace = Workspace.objects.get(drive_root_folder_id=ace_root_folder_id)
+        except Workspace.DoesNotExist:
+            return Response(
+                error_response(
+                    message="no workspace claims this drive_root_folder_id",
+                    code="workspace-not-found",
+                ),
+                status=404,
+            )
+        if not is_member(request.user, workspace):
+            return Response(
+                error_response(
+                    message="you are not a member of this workspace",
+                    code="not-a-member",
+                ),
+                status=403,
+            )
+
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
         for chunk in file.chunks():
             tmp.write(chunk)
@@ -64,6 +93,7 @@ def upload(request: Request) -> Response:
         opp_slug=opp_slug,
         opp_run_id=opp_run_id,
         opp_step_skill=opp_step_skill,
+        workspace=workspace,
     )
 
     messages = []
@@ -87,6 +117,7 @@ def upload(request: Request) -> Response:
         raw_bytes=parsed.raw_bytes,
         line_count=parsed.line_count,
         cli_session_id=parsed.cli_session_id or "",
+        workspace=workspace,
     )
 
     return Response(

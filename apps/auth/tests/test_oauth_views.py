@@ -86,7 +86,13 @@ def test_callback_creates_dimagi_user_and_logs_in(client):
     assert user.display_name == "Jane Doe"
 
 
-def test_callback_rejects_non_dimagi_email(client):
+def test_callback_rejects_email_outside_allowlist_when_set(client, settings):
+    """When ACE_ALLOWED_EMAIL_DOMAINS is non-empty, emails outside the
+    allowlist are rejected at the callback. (When the list is empty —
+    the new default — any Connect-authenticated email is allowed; see
+    `test_callback_allows_any_email_when_allowlist_empty`.)"""
+    settings.ACE_ALLOWED_EMAIL_DOMAINS = ["dimagi.com"]
+
     session = client.session
     session["oauth_state"] = "s123"
     session["oauth_code_verifier"] = "v123"
@@ -106,6 +112,33 @@ def test_callback_rejects_non_dimagi_email(client):
     assert resp.status_code == 302
     assert "/auth/login/" in resp.url
     assert not User.objects.filter(email="ext@example.com").exists()
+
+
+def test_callback_allows_any_email_when_allowlist_empty(client, settings):
+    """Default behavior post-multi-tenancy: empty ACE_ALLOWED_EMAIL_DOMAINS
+    means any Connect-authenticated email signs in. Workspace membership
+    is the real access-control gate."""
+    settings.ACE_ALLOWED_EMAIL_DOMAINS = []
+
+    session = client.session
+    session["oauth_state"] = "s123"
+    session["oauth_code_verifier"] = "v123"
+    session["oauth_next"] = "/"
+    session.save()
+
+    token_json = {"access_token": "tok", "expires_in": 3600}
+    profile = {"id": 1, "username": "ext", "email": "ext@example.com"}
+
+    with patch("apps.auth.oauth_views.httpx.post") as mock_post, \
+         patch("apps.auth.oauth_views.introspect_token", return_value=profile), \
+         patch("apps.auth.oauth_views.fetch_userinfo", return_value=None):
+        mock_post.return_value.raise_for_status = lambda: None
+        mock_post.return_value.json.return_value = token_json
+        resp = client.get("/auth/callback/?state=s123&code=authcode")
+
+    # Successfully signed in: redirect to next, user row created.
+    assert resp.status_code == 302
+    assert User.objects.filter(email="ext@example.com").exists()
 
 
 def test_logout_clears_session(client):

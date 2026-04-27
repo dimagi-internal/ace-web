@@ -38,8 +38,8 @@ def _tree_with_three_opps() -> dict:
 def _patch_drive(fake):
     return patch.multiple(
         "apps.opps.views",
-        get_drive_client=lambda: fake,
-        _resolve_ace_root_folder_id=lambda client: fake.folder_id("ACE"),
+        get_drive_client=lambda *a, **kw: fake,
+        _resolve_ace_root_folder_id=lambda *a, **kw: fake.folder_id("ACE"),
     )
 
 

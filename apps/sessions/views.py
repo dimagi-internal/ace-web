@@ -8,6 +8,7 @@ lives in the consumer's _handle_chat_send → _activate_imported_session.
 from __future__ import annotations
 
 from django.db import IntegrityError
+from django.db.models import Q
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -16,6 +17,7 @@ from rest_framework.response import Response
 
 from apps.auth.models import User
 from apps.common.envelope import error_response, success_response
+from apps.workspaces.permissions import user_workspaces
 
 from .models import Session, SessionParticipant
 from .serializers import (
@@ -24,6 +26,23 @@ from .serializers import (
     SessionDetailSerializer,
     SessionSerializer,
 )
+
+
+def _scope_sessions_to_user(qs, user):
+    """Restrict a Session queryset to sessions the user can see:
+    sessions in workspaces they're a member of, plus orphan sessions
+    (workspace=NULL) that they own.
+
+    Phase A: this is the read-side membership gate. The orphan
+    fallback preserves visibility for sessions created before
+    workspaces existed and for chat sessions not yet tied to an opp.
+    """
+    if not user.is_authenticated:
+        return qs.none()
+    member_ws_ids = list(user_workspaces(user).values_list("slug", flat=True))
+    return qs.filter(
+        Q(workspace__in=member_ws_ids) | Q(workspace__isnull=True, owner=user)
+    )
 
 
 @api_view(["POST", "GET"])
@@ -44,11 +63,10 @@ def _create_session(request: Request) -> Response:
 
 
 def _list_sessions(request: Request) -> Response:
-    # All authenticated Dimagi users can see every session. Ownership is
-    # still tracked (and a future sharing/ACL layer can filter here), but
-    # for the current internal-tool scope the list is shared. Filter-by-
-    # owner is available via ?owner=<id> if callers want it.
-    qs = Session.objects.all()
+    # Membership-gated: users see sessions in workspaces they're a member of,
+    # plus orphan sessions (no workspace) that they own. Filter-by-owner is
+    # available via ?owner=<id> if callers want to narrow further.
+    qs = _scope_sessions_to_user(Session.objects.all(), request.user)
     owner_filter = request.query_params.get("owner")
     if owner_filter:
         qs = qs.filter(owner_id=owner_filter)
@@ -155,17 +173,22 @@ def participant_collection(request: Request, slug: str) -> Response:
         )
 
     email = (request.data or {}).get("email", "").strip().lower()
-    # Stricter than endswith('@dimagi.com'): rpartition on '@' ensures
-    # there is exactly one '@' and the domain is exactly dimagi.com, so
-    # addresses like "alice@dimagi.com@evil.com" cannot slip through on
-    # the validation path (the downstream User.objects.get would still
-    # reject them, but as a not_found — the correct behavior is a
-    # validation_error at this edge).
+    # Validate the email shape (exactly one '@'). Domain allowlist is
+    # only enforced when ACE_ALLOWED_EMAIL_DOMAINS is non-empty (matches
+    # the new auth flow — workspace membership is the access-control gate).
     from django.conf import settings as django_settings
 
-    allowed_domains = getattr(django_settings, "ACE_ALLOWED_EMAIL_DOMAINS", ["dimagi.com"])
     local, sep, domain = email.rpartition("@")
-    if sep != "@" or domain not in allowed_domains or "@" in local or not local:
+    if sep != "@" or "@" in local or not local or not domain:
+        return Response(
+            error_response(
+                message="invalid email address",
+                code="validation_error",
+            ),
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    allowed_domains = getattr(django_settings, "ACE_ALLOWED_EMAIL_DOMAINS", []) or []
+    if allowed_domains and domain not in allowed_domains:
         allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
         return Response(
             error_response(

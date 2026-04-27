@@ -12,7 +12,13 @@ from django.db import models
 
 
 class OppWorkspace(models.Model):
-    slug = models.CharField(max_length=64, primary_key=True)
+    """Per-opp workspace row. Phase B (2026-04-27) pivoted the primary key
+    from `slug` (globally unique) to a synthetic `id` (BigAutoField) so
+    `slug` can be unique-per-Workspace instead. The `workspace` FK is now
+    non-nullable; the data migration in `ace_workspaces.0002` populated it
+    for every existing row before this pivot landed."""
+
+    slug = models.CharField(max_length=64)
     display_name = models.CharField(max_length=200)
     working_session = models.ForeignKey(
         "ace_sessions.Session",
@@ -34,14 +40,21 @@ class OppWorkspace(models.Model):
             "See docs/plans/2026-04-20-drop-multi-run-simplify.md."
         ),
     )
+    workspace = models.ForeignKey(
+        "ace_workspaces.Workspace",
+        on_delete=models.CASCADE,
+        related_name="opps",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "opp_workspaces"
+        unique_together = [("workspace", "slug")]
         indexes = [
             models.Index(fields=["-created_at"]),
+            models.Index(fields=["slug"]),
         ]
 
     def __str__(self):
-        return f"{self.slug}: {self.display_name}"
+        return f"{self.workspace.slug}/{self.slug}: {self.display_name}"

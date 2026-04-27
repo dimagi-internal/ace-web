@@ -5,6 +5,7 @@ from django.views.generic import TemplateView
 
 from apps.auth.urls import token_urlpatterns
 from apps.sessions.share_views import public_share_view
+from apps.workspaces import views as workspaces_views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -12,6 +13,22 @@ urlpatterns = [
     path("api/", include("apps.sessions.urls")),
     path("api/ingest/", include("apps.ingest.urls")),
     path("api/opps/", include("apps.opps.urls")),
+    # Workspace-scoped duplicate of the opps routes — same views, but with
+    # `workspace_slug` extracted from the URL kwargs (read by
+    # `apps.opps.views._resolve_workspace`). The bare `/api/opps/` path is
+    # preserved for backward-compat; it falls through to the user's first
+    # workspace per the same resolver.
+    path(
+        "api/workspaces/<slug:workspace_slug>/opps/",
+        include("apps.opps.urls"),
+    ),
+    path("api/workspaces/", include("apps.workspaces.urls")),
+    path("api/invites/<str:token>/", workspaces_views.invite_preview, name="invite_preview"),
+    path(
+        "api/invites/<str:token>/accept/",
+        workspaces_views.invite_accept,
+        name="invite_accept",
+    ),
     path("api/system/", include("apps.system.urls")),
     path("api/auth/", include((token_urlpatterns, "auth_tokens"))),
     path("api/share/<str:token>", public_share_view, name="public_share"),

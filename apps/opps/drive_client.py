@@ -236,16 +236,25 @@ class DriveServiceAccountNotConfigured(RuntimeError):
     ServiceAccountNotFound from the registry instead."""
 
 
-def get_drive_client(on_behalf_of: str | None = None) -> GoogleDriveClient:
+def get_drive_client(
+    workspace=None, on_behalf_of: str | None = None,
+) -> GoogleDriveClient:
     """Return a Drive client backed by the 'ace-drive' service account.
 
     Args:
+        workspace: Optional Workspace; when provided, the AccessLog row
+            is annotated with `workspace_slug`. The credential itself is
+            shared across all workspaces (one `ace-drive` SA), so this
+            is purely for audit attribution.
         on_behalf_of: Optional email to impersonate via domain-wide delegation.
             Requires a matching ImpersonationGrant in the registry.
     """
+    context: dict = {"caller": "opps.drive_client"}
+    if workspace is not None:
+        context["workspace_slug"] = workspace.slug
     creds = registry.get_credentials(
         "ace-drive",
         on_behalf_of=on_behalf_of,
-        context={"caller": "opps.drive_client"},
+        context=context,
     )
     return GoogleDriveClient(creds)
