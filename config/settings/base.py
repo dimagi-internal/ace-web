@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.ingest.apps.IngestConfig",
     "apps.service_accounts.apps.ServiceAccountsConfig",
     "apps.system.apps.SystemConfig",
+    "apps.workspaces.apps.WorkspacesConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
