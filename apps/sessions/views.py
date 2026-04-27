@@ -8,13 +8,12 @@ lives in the consumer's _handle_chat_send → _activate_imported_session.
 from __future__ import annotations
 
 from django.db import IntegrityError
+from django.db.models import Q
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
-
-from django.db.models import Q
 
 from apps.auth.models import User
 from apps.common.envelope import error_response, success_response

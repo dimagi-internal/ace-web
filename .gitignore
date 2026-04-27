@@ -53,3 +53,4 @@ e2e-test.sqlite3
 # track lockfiles (package.json is the source of truth for pinned versions)
 frontend/bun.lock
 .gstack/
+.claude/settings.local.json
