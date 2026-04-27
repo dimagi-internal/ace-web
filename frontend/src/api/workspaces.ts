@@ -10,6 +10,7 @@ export interface WorkspaceSummary {
 }
 
 export interface WorkspaceMember {
+  user_id: number;
   user_email: string;
   user_display_name: string;
   role: WorkspaceRole;

@@ -133,22 +133,10 @@ export default function WorkspaceSettingsPage() {
                   {isOwner ? (
                     <select
                       value={m.role}
-                      onChange={(e) => {
-                        const userId = Number(
-                          ws.members.indexOf(m) /* placeholder */,
-                        );
-                        // The API exposes user_email, not user_id.
-                        // We can't change roles without user_id; this UI
-                        // is a placeholder hook for the API call. Until
-                        // the serializer surfaces user_id, role-change
-                        // is admin-only via Django admin.
-                        void userId;
-                        void handleRoleChange;
-                        void e;
-                      }}
+                      onChange={(e) =>
+                        handleRoleChange(m.user_id, e.target.value as WorkspaceRole)
+                      }
                       className="rounded border border-input bg-background px-2 py-1 text-xs"
-                      disabled
-                      title="Role changes via Django admin (Phase B v1)"
                     >
                       {ROLE_OPTIONS.map((r) => (
                         <option key={r} value={r}>{r}</option>
@@ -162,16 +150,11 @@ export default function WorkspaceSettingsPage() {
                   {new Date(m.joined_at).toLocaleDateString()}
                 </td>
                 <td className="py-2 text-right">
-                  {isOwner && m.user_email !== "" && m.role !== "owner" && (
+                  {isOwner && m.role !== "owner" && (
                     <button
                       type="button"
-                      onClick={() =>
-                        // Same caveat: needs user_id from the serializer.
-                        void handleRemove(m.user_email, 0)
-                      }
-                      className="text-xs text-destructive opacity-50"
-                      title="Removal via Django admin (Phase B v1)"
-                      disabled
+                      onClick={() => handleRemove(m.user_email, m.user_id)}
+                      className="text-xs text-destructive hover:underline"
                     >
                       Remove
                     </button>

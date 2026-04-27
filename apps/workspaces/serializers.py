@@ -24,6 +24,7 @@ class WorkspaceSummarySerializer(serializers.ModelSerializer):
 
 
 class WorkspaceMemberSerializer(serializers.ModelSerializer):
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
     user_email = serializers.CharField(source="user.email", read_only=True)
     user_display_name = serializers.CharField(
         source="user.display_name", read_only=True
@@ -31,7 +32,7 @@ class WorkspaceMemberSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WorkspaceMembership
-        fields = ["user_email", "user_display_name", "role", "joined_at"]
+        fields = ["user_id", "user_email", "user_display_name", "role", "joined_at"]
 
 
 class WorkspaceDetailSerializer(serializers.ModelSerializer):
