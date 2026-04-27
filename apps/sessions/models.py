@@ -63,6 +63,13 @@ class Session(models.Model):
     opp_run_id = models.CharField(max_length=64, blank=True, default="")
     opp_step_skill = models.CharField(max_length=64, blank=True, default="")
 
+    workspace = models.ForeignKey(
+        "ace_workspaces.Workspace",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="sessions",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -248,6 +255,12 @@ class ShareToken(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="share_tokens"
     )
     revoked_at = models.DateTimeField(null=True, blank=True)
+    workspace = models.ForeignKey(
+        "ace_workspaces.Workspace",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="share_tokens",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -268,6 +281,12 @@ class IngestUpload(models.Model):
     raw_bytes = models.BigIntegerField(default=0)
     line_count = models.IntegerField(default=0)
     cli_session_id = models.CharField(max_length=200, blank=True, default="")
+    workspace = models.ForeignKey(
+        "ace_workspaces.Workspace",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="ingest_uploads",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

@@ -34,6 +34,12 @@ class OppWorkspace(models.Model):
             "See docs/plans/2026-04-20-drop-multi-run-simplify.md."
         ),
     )
+    workspace = models.ForeignKey(
+        "ace_workspaces.Workspace",
+        on_delete=models.CASCADE,
+        related_name="opps",
+        null=True, blank=True,  # Backfilled by ace_workspaces.0002_seed_dimagi_team
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
