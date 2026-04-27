@@ -67,15 +67,17 @@ def test_login(request: HttpRequest) -> HttpResponse:
     if not email:
         return JsonResponse({"error": "email is required"}, status=400)
 
-    # Enforce allowed email domains — same domains as the real OAuth flow.
-    allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", ["dimagi.com"])
-    _, _, email_domain = email.rpartition("@")
-    if email_domain not in allowed_domains:
-        allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
-        return JsonResponse(
-            {"error": f"email must be from: {allowed_str}"},
-            status=400,
-        )
+    # Enforce allowed email domains — same semantics as the real OAuth flow.
+    # Empty list = allow any email (workspace membership is the real gate).
+    allowed_domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", []) or []
+    if allowed_domains:
+        _, _, email_domain = email.rpartition("@")
+        if email_domain not in allowed_domains:
+            allowed_str = ", ".join(f"@{d}" for d in allowed_domains)
+            return JsonResponse(
+                {"error": f"email must be from: {allowed_str}"},
+                status=400,
+            )
 
     user, _created = User.objects.get_or_create(
         email=email,

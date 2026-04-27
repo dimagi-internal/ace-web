@@ -29,8 +29,13 @@ logger = logging.getLogger(__name__)
 
 
 def _is_allowed_domain(email: str) -> bool:
-    """Check if the email domain is in ACE_ALLOWED_EMAIL_DOMAINS."""
-    domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", ["dimagi.com"])
+    """Check if the email domain is in ACE_ALLOWED_EMAIL_DOMAINS.
+
+    Empty list = allow any (workspace membership is the real gate).
+    """
+    domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", []) or []
+    if not domains:
+        return True
     _, _, domain = email.rpartition("@")
     return domain.lower() in domains
 

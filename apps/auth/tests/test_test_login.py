@@ -99,10 +99,12 @@ def test_view_logs_in_user_when_both_flags_enabled(settings):
         clear_url_caches()
 
 
-def test_view_rejects_non_dimagi_email(settings):
-    """Enforce the @dimagi.com constraint even in the test-login path."""
+def test_view_rejects_email_outside_allowlist_when_set(settings):
+    """When ACE_ALLOWED_EMAIL_DOMAINS is non-empty, the test-login path
+    still enforces it. (Empty list — the new default — allows any email.)"""
     settings.ACE_ALLOW_TEST_LOGIN = True
     settings.DEBUG = True
+    settings.ACE_ALLOWED_EMAIL_DOMAINS = ["dimagi.com"]
 
     from django.http import HttpRequest
 
