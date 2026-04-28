@@ -107,14 +107,27 @@ export default function OppListPage() {
       )}
 
       {filtered.length === 0 ? (
-        <EmptyState
-          title={filter ? "No opps match your filter" : "No opportunities yet"}
-          description={
-            filter
-              ? "Try a different search term."
-              : "Run ACE against an opportunity and it will show up here."
-          }
-        />
+        filter ? (
+          <EmptyState
+            title="No opps match your filter"
+            description="Try a different search term."
+          />
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">
+                No opportunities yet
+              </h2>
+              <p className="mt-1 max-w-md text-sm text-muted-foreground">
+                Create your first opp to start an ACE cycle in this workspace.
+              </p>
+            </div>
+            <Button onClick={() => setNewDialogOpen(true)}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              Create your first opp
+            </Button>
+          </div>
+        )
       ) : (
         <div className="grid grid-cols-1 gap-3 p-6 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((opp) => (

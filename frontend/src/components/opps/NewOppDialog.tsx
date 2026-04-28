@@ -15,6 +15,15 @@ import { cn } from "@/lib/utils";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;
 
+function deriveSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -23,6 +32,7 @@ interface Props {
 export function NewOppDialog({ open, onOpenChange }: Props) {
   const navigate = useNavigate();
   const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [idea, setIdea] = useState("");
   const [mode, setMode] = useState<"auto" | "review">("review");
@@ -31,6 +41,11 @@ export function NewOppDialog({ open, onOpenChange }: Props) {
 
   const slugValid = SLUG_RE.test(slug);
   const canSubmit = slugValid && displayName.trim() && idea.trim() && !submitting;
+
+  function handleDisplayNameChange(v: string) {
+    setDisplayName(v);
+    if (!slugTouched) setSlug(deriveSlug(v));
+  }
 
   async function handleSubmit() {
     setError(null);
@@ -57,10 +72,23 @@ export function NewOppDialog({ open, onOpenChange }: Props) {
 
         <div className="flex flex-col gap-4 py-2">
           <label className="flex flex-col gap-1 text-sm">
+            Display name
+            <Input
+              value={displayName}
+              onChange={(e) => handleDisplayNameChange(e.target.value)}
+              placeholder="Malaria Pilot 2026"
+              autoFocus
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm">
             Slug (kebab-case, must be unique)
             <Input
               value={slug}
-              onChange={(e) => setSlug(e.target.value.toLowerCase())}
+              onChange={(e) => {
+                setSlugTouched(true);
+                setSlug(e.target.value.toLowerCase());
+              }}
               placeholder="malaria-pilot-2026"
               className={cn(slug && !slugValid && "border-destructive")}
             />
@@ -69,15 +97,6 @@ export function NewOppDialog({ open, onOpenChange }: Props) {
                 Lowercase letters, digits, hyphens. Can't start or end with a hyphen.
               </span>
             )}
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            Display name
-            <Input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Malaria Pilot 2026"
-            />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">

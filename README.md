@@ -1,26 +1,53 @@
 # ace-web
 
-The web harness for the ACE (AI Connect Engine / CRISPR-Connect) initiative.
+Browser-based workbench for the ACE (CRISPR-Connect) initiative.
 
-Module 1 of the larger ACE web system — a browser-based chat harness that talks
-to Claude via the local CLI (subscription auth) with multi-player drafts,
-persistent transcripts, and upload support for existing local `.jsonl` sessions.
+ace-web is the web companion to the [`ace` Claude Code plugin](../ace/). It
+gives a Dimagi team or third-party LLO a place to:
+
+- See every ACE opportunity in their workspace, with per-skill artifacts,
+  judge verdicts, gates, and run-level scorecards (the **Workbench**).
+- Talk to Claude in a multi-player chat that's wired to the same context
+  (multi-player drafts, persistent transcripts, transcript ingest from
+  local `.jsonl` files).
+- Onboard a new workspace by pointing at a Google Drive folder — no CLI
+  required for the day-to-day inspection loop.
+
+Drive is the source of truth: opps live as files under `ACE/<opp-slug>/`
+in a workspace's Drive folder; ace-web reads through to them via a shared
+service account.
+
+## Status
+
+- **Initial development complete (2026-04-21).** Phases 1-4 shipped.
+  Phase 5 ("Polish": observability, evals, a11y, security review) was
+  reviewed and **deferred indefinitely** — revisit only when a concrete
+  pain point shows up.
+- **Multi-tenant Workspaces shipped (2026-04-27).** The hard-coded
+  `ACE_DRIVE_ROOT_FOLDER_ID` is now migration-only; each workspace owns
+  its own Drive folder + member list (Owner / Editor / Viewer), with
+  self-onboarding at `/welcome` and invite-by-email at `/invite/<token>`.
+
+For a phase-by-phase status table and the canonical map of where things
+live, see [`CLAUDE.md`](./CLAUDE.md). For the whole-product vision and
+the engineering execution plan it phases into, see
+[`docs/specs/2026-04-08-ace-web-design.md`](./docs/specs/2026-04-08-ace-web-design.md).
 
 ## Where things live
 
 - **Design spec** (the whole vision): `docs/specs/2026-04-08-ace-web-design.md`
-- **Implementation plans** (per-phase): `docs/plans/`
-- **Learnings**: `docs/learnings/`
-- **Agent context**: `CLAUDE.md`
+- **Implementation plans** (per phase): `docs/plans/`
+- **Learnings** (load-bearing gotchas — read before touching the relevant
+  area): `docs/learnings/`
+- **Architecture notes**: `docs/architecture/`
+- **Deploy runbook**: `docs/deploy.md`
+- **Agent context** (what every Claude session reads first): `CLAUDE.md`
 
-The broader ACE plugin (CRISPR-Connect orchestration) lives in the sibling
-[`ace` repo](../ace/). ace-web is a separate module — its design spec lives
-in this repo.
-
-This repo is consumed as a git submodule from the `ace` repo so cross-module
-work (plan updates, spec references) can happen in one checkout. Day-to-day
-implementation work on ace-web itself should happen in this repo directly —
-not through the ace worktree — to avoid submodule pointer churn.
+The broader ACE plugin (CRISPR-Connect orchestration) lives in the
+sibling `ace` repo at `../ace/`. ace-web is a separate module — its
+design spec lives here, not there. This repo is consumed as a git
+submodule from `ace`, but day-to-day work happens in this repo
+directly to avoid submodule pointer churn.
 
 ## Quick start (local dev)
 
@@ -30,18 +57,41 @@ docker compose up
 
 Then open http://localhost:8000.
 
+The first time you sign in, you'll land on `/welcome` — give your
+workspace a name, share a Google Drive folder with the service account,
+and you're in. You can run a full ACE opportunity from the browser
+(`+ New Opp` on the Opps tab) or upload `.jsonl` transcripts from
+prior CLI runs (`ace upload` or the Sessions tab's import flow).
+
 ## Stack
 
-- Django 5 + Channels 4 + DRF (ASGI via uvicorn)
-- React 19 + Vite + Tailwind 3.4
-- PostgreSQL (AWS RDS in prod, local Postgres via docker compose)
-- Deployed on AWS ECS Fargate behind the connect-labs ALB
+- **Backend**: Django 5 + Channels 4 + DRF, ASGI via uvicorn
+- **Frontend**: React 19 + Vite + TypeScript + Tailwind + shadcn/ui
+- **Data**: PostgreSQL (AWS RDS in prod, local Postgres via docker compose)
+- **Realtime**: WebSocket-only (`SessionConsumer`), channels-redis backed
+  by ElastiCache in prod
+- **Drive access**: shared Google service account, key in AWS Secrets
+  Manager (`ACE_DRIVE_SA_KEY_JSON`)
+- **Claude**: local Claude CLI subprocess (`apps/common/CLIBackend`),
+  subscription credential blob in `SystemConfig`
 
-## Current status
+## Deploy
 
-Plan 1A (foundation) complete. See `docs/plans/2026-04-07-1a-foundation.md`
-for the full task list and the post-execution corrections section documenting
-all the review findings applied during execution.
+ace-web runs on AWS ECS Fargate as a tenant of the connect-labs shared
+infrastructure (cluster `labs-jj-cluster`, ALB path prefix `/ace/*`).
+Manual deploy:
 
-Plans 1B (single-player chat), 1C (multi-player + drafts), and 1D (transcript
-library + share + ingest) are next.
+```bash
+gh workflow run deploy-labs.yml --ref main -f run_migrations=true
+```
+
+See [`docs/deploy.md`](./docs/deploy.md) for the full runbook (image
+build, secrets, rollbacks, first-time setup).
+
+## Tests
+
+```bash
+pytest -v        # backend
+bunx tsc -b      # frontend type check
+ruff check .     # lint
+```
