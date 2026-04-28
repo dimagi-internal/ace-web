@@ -23,11 +23,13 @@ def test_returns_none_when_drive_root_folder_id_is_empty():
     assert _resolve_ace_root_folder_id(ws) is None
 
 
-def test_default_setting_is_the_shared_ace_folder_id():
-    """The ACE_DRIVE_ROOT_FOLDER_ID setting is now a migration-only seed
-    consumed by `apps/workspaces/migrations/0002_seed_dimagi_team.py`. We
-    still pin the literal so an accidental edit in `config/settings/base.py`
-    fails loudly."""
+def test_default_setting_is_empty_string():
+    """ACE_DRIVE_ROOT_FOLDER_ID is migration-only (read by
+    apps/workspaces/migrations/0002_seed_dimagi_team.py to seed the founding
+    workspace) and not used at runtime. The default is empty so the public
+    repo doesn't embed any specific tenant's folder id; deployments that
+    need the seed inject it via the env (e.g. AWS Secrets Manager). The
+    seed migration handles an empty value by skipping the seed."""
     from django.conf import settings
 
-    assert settings.ACE_DRIVE_ROOT_FOLDER_ID == "1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz"
+    assert settings.ACE_DRIVE_ROOT_FOLDER_ID == ""
