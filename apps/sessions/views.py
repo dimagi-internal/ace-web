@@ -231,17 +231,40 @@ def participant_collection(request: Request, slug: str) -> Response:
 # ────────────────────────────── helpers ──────────────────────────────
 
 def _load_session_for_participant(slug: str, user) -> Session | None:
-    """Return the session if it exists — reads are shared across all
-    authenticated Dimagi users for now.
+    """Return the session if the caller is allowed to read it.
 
-    A future sharing/ACL layer can reintroduce per-session gating. Owner-
-    only mutation checks (DELETE, PATCH, add-participant) still live at
-    the call sites, so this helper only gates the read path.
+    For workspace-tied sessions: the user must be a member of that
+    workspace (any role). Non-members get None (the caller maps that to
+    a 404 so workspace existence isn't leaked).
+
+    For orphan sessions (workspace=NULL — legacy sessions and the
+    unattached blank chats created via POST /api/sessions): the user
+    must be the session owner OR an existing SessionParticipant.
+
+    Owner-only mutation checks (DELETE, PATCH, add-participant) still
+    live at the call sites; this helper only gates the read path.
     """
+    if not user or not user.is_authenticated:
+        return None
     try:
-        return Session.objects.get(slug=slug)
+        session = Session.objects.select_related("workspace").get(slug=slug)
     except Session.DoesNotExist:
         return None
+
+    if session.workspace_id is not None:
+        from apps.workspaces.permissions import is_member
+        if not is_member(user, session.workspace):
+            return None
+        return session
+
+    # Orphan session — owner or pre-existing participant only.
+    if session.owner_id == user.id:
+        return session
+    if SessionParticipant.objects.filter(
+        session_id=session.pk, user_id=user.id
+    ).exists():
+        return session
+    return None
 
 
 def _not_found() -> Response:

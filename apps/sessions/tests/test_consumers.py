@@ -126,11 +126,11 @@ async def test_connect_rejects_anonymous(fake_redis, session):
     assert code == 4001
 
 
-async def test_connect_auto_joins_non_participant(fake_redis, session, django_user_model):
-    """Any authed Dimagi user can connect to any session — the consumer
-    auto-promotes them to `editor` so presence + drafts + writes keep
-    working. Sharing/ACL is a deferred layer (see
-    apps/sessions/consumers.py `_participant_role`)."""
+async def test_connect_rejects_stranger_for_orphan_session(fake_redis, session, django_user_model):
+    """For orphan sessions (workspace=NULL), only the owner or an
+    explicit participant may connect. Strangers (any other authed user)
+    get the handshake closed with 4003. See apps/sessions/consumers.py
+    `_participant_role`."""
     from asgiref.sync import sync_to_async
 
     from apps.sessions.models import SessionParticipant
@@ -139,14 +139,14 @@ async def test_connect_auto_joins_non_participant(fake_redis, session, django_us
         email="stranger@dimagi.com", display_name="Stranger"
     )
     communicator, connected = await _connect(stranger, session.slug)
-    assert connected is True
-    role = await sync_to_async(
+    assert connected is False
+    # Stranger must NOT have been auto-promoted to a participant.
+    has_row = await sync_to_async(
         lambda: SessionParticipant.objects.filter(
             session=session, user=stranger
-        ).values_list("role", flat=True).first()
+        ).exists()
     )()
-    assert role == "editor"
-    await communicator.disconnect()
+    assert has_row is False
 
 
 async def test_connect_rejects_unknown_session(fake_redis, django_user_model):
@@ -158,6 +158,51 @@ async def test_connect_rejects_unknown_session(fake_redis, django_user_model):
     )
     communicator, connected = await _connect(user, "no-such-slug")
     assert connected is False
+
+
+async def test_connect_rejects_non_member_for_workspace_session(
+    fake_redis, django_user_model
+):
+    """Workspace-tied sessions reject connection attempts from users
+    who are not members of the session's workspace, even if they're
+    authenticated. Auto-join only fires for actual workspace members.
+    See apps/sessions/consumers.py `_participant_role`."""
+    from asgiref.sync import sync_to_async
+
+    from apps.sessions.models import Session, SessionParticipant
+    from apps.workspaces.models import Workspace, WorkspaceMembership
+
+    bob = await sync_to_async(django_user_model.objects.create_user)(
+        email="bob@example.com", display_name="Bob"
+    )
+    alice = await sync_to_async(django_user_model.objects.create_user)(
+        email="alice@example.com", display_name="Alice"
+    )
+    ws_b = await sync_to_async(Workspace.objects.create)(
+        slug="ws-b-only",
+        display_name="Workspace B",
+        drive_root_folder_id="folder-b-only",
+        created_by=bob,
+    )
+    await sync_to_async(WorkspaceMembership.objects.create)(
+        workspace=ws_b, user=bob, role="owner"
+    )
+    bob_session = await sync_to_async(Session.objects.create)(
+        owner=bob, title="bob's ws-tied chat", workspace=ws_b
+    )
+    await sync_to_async(SessionParticipant.objects.create)(
+        session=bob_session, user=bob, role="owner"
+    )
+
+    # Alice is authenticated but NOT a member of ws-b.
+    communicator, connected = await _connect(alice, bob_session.slug)
+    assert connected is False
+    has_row = await sync_to_async(
+        lambda: SessionParticipant.objects.filter(
+            session=bob_session, user=alice
+        ).exists()
+    )()
+    assert has_row is False
 
 
 async def test_connect_sends_session_state(fake_redis, session, alice):

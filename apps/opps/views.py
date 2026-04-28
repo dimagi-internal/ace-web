@@ -601,6 +601,7 @@ def discuss(request, slug: str, run_id: str, skill: str):
             opp_run_id=run_id,
             opp_step_skill=skill,
             idd_ref=idd_drive_id,
+            workspace=ws,
         )
         Message.objects.create(
             session=session,
@@ -703,6 +704,7 @@ def opp_working_session(request, slug: str):
             status="active",
             source="web",
             opp_slug=slug,
+            workspace=ws,
         )
         workspace.working_session = session
         workspace.save(update_fields=["working_session", "updated_at"])
