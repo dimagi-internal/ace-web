@@ -40,7 +40,7 @@ not user-shippable milestones.
 | 2     | Conversation engine        | ChatBackend, CLIBackend, CLI auth (PTY), SSE streaming, REST + chat UI, recents | **Done**                                  |
 | 2.5   | AWS migration              | GCP → AWS ECS Fargate tenant, CommCare Connect OAuth, nginx sidecar, /ace/* prefix | **Done** — per `docs/plans/2026-04-08-aws-migration.md` |
 | 3     | Multi-player collaboration | WebSocket consumer, channels-redis, ASGI auth, drafts, presence                 | **Done** — per `docs/plans/2026-04-09-3-multi-player.md` |
-| 4     | Library and ingest         | Session list, search/filter, share tokens, `ace upload` CLI, design system (shadcn + dark/light), personal tokens | **Done** — shipped piecemeal (see note below). Stale plan at `docs/plans/2026-04-09-phase-4-library-ingest.md` does NOT reflect what landed. |
+| 4     | Library and ingest         | Session list, search/filter, share tokens, `ace upload` CLI, design system (shadcn + dark/light), personal tokens | **Done** — shipped piecemeal across many PRs. Original plan at `docs/plans/2026-04-09-phase-4-library-ingest.md` is marked HISTORICAL at the top; what's live is summarized inside that file. |
 | 5     | Polish                     | Observability, evals, accessibility, security review, demo prep, full docs     | **Deferred** — see "Phase 5 deferred" note below. Do not propose this as planned work. |
 
 **Parallel track — ACE Opportunity Workbench** (`apps/opps/` + `/opps` UI, spec
@@ -278,18 +278,13 @@ work right now. Treat the `### 4.7 Polish` section of
 `docs/plans/2026-04-*-phase-5-*.md` unless a specific operational problem
 makes the case for a specific piece of it. **Initial development is done.**
 
-**Phase 4 note:** the library/ingest surface shipped piecemeal across many
-PRs rather than as the single Task-1-through-N execution the plan doc
-describes. What's live: `/sessions` library with search/filter tabs and
-pagination (`apps/sessions/` + `SessionsPage.tsx`), `/settings` page
-(`SettingsPage.tsx` — Claude Max subscription + ACE API tokens),
-shadcn/ui + dark/light theme (`ThemeProvider.tsx` + `components/ui/`),
-share tokens (`apps/sessions/share_views.py` + `/share/:token`),
-`apps/ingest/` + the `ace-upload` CLI entrypoint (`pyproject.toml`
-`[project.scripts]`), and `PersonalToken` model + bearer auth backend
-(`apps/auth/token_backend.py`). Treat the plan at
-`docs/plans/2026-04-09-phase-4-library-ingest.md` as historical — it no
-longer maps to the file layout or the landing order.
+**Phase 4 note:** Library/ingest shipped piecemeal across many PRs
+rather than as the single Task-1-through-N execution the original
+plan described. The plan file at
+`docs/plans/2026-04-09-phase-4-library-ingest.md` is marked HISTORICAL
+at the top; the inventory of what's live (and where to read it) lives
+in that file's status header. Source of truth for the live surface is
+`apps/sessions/`, `apps/ingest/`, `apps/auth/`, and `frontend/src/`.
 
 See `docs/specs/2026-04-08-ace-web-design.md` for the full vision and what
 each phase covers.

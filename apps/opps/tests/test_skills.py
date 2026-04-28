@@ -1,12 +1,15 @@
 """Tests for the dynamic skill metadata loader.
 
-The registry is loaded from ``ACE_PLUGIN_PATH`` at first access. These
-tests rely on the default settings value pointing at the sibling ``ace``
-repo; any machine with the plugin vendored in gets real data.
+The registry is loaded from ``ACE_PLUGIN_PATH`` at first access. The
+package-level conftest pins this to the stub plugin under
+``fixtures/stub_plugin/``, so the registry is always populated for
+these tests.
 """
+import logging
 from dataclasses import FrozenInstanceError
 
 import pytest
+from django.test import override_settings
 
 from apps.opps.skills import (
     SKILL_REGISTRY,
@@ -110,3 +113,22 @@ def test_skills_in_phase_ordered():
         assert ordinals == sorted(ordinals)
         for s in skills:
             assert s.phase == phase
+
+
+def test_empty_registry_logs_warning(caplog):
+    """A misconfigured ACE_PLUGIN_PATH should be loud, not silent.
+
+    Empty registry means the Workbench renders zero step rows — exactly
+    the silent failure mode that erased the 23-test baseline for weeks
+    before the stub-plugin fix landed. The log line is the contract that
+    keeps it visible going forward.
+    """
+    with override_settings(ACE_PLUGIN_PATH="/nonexistent/ace-plugin-path"):
+        reset_cache()
+        with caplog.at_level(logging.WARNING, logger="apps.opps.skills"):
+            assert len(SKILL_REGISTRY) == 0
+    assert any(
+        "Skill registry is empty" in r.getMessage()
+        and "/nonexistent/ace-plugin-path" in r.getMessage()
+        for r in caplog.records
+    )
