@@ -558,12 +558,17 @@ def discuss(request, slug: str, run_id: str, skill: str):
         )
     _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
 
+    workbench_url = request.build_absolute_uri(
+        f"/w/{ws.slug}/opps/{slug}/runs/{run_id}/steps/{skill}"
+    )
+
     try:
         seed_body = build_chat_seed(
             snap,
             skill=skill,
             drive_client=client,
             skill_md_path=_skill_md_relative_path(skill),
+            workbench_url=workbench_url,
         )
     except ValueError as exc:
         return Response(
