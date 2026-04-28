@@ -122,11 +122,13 @@ def test_messages_list_returns_ordered_messages(client, user):
     assert [r["turn_index"] for r in rows] == [1, 2]
 
 
-def test_messages_list_allows_any_authed_user(client, user, other_user):
-    """Any authed Dimagi user can read any session's messages for now
-    (see apps/sessions/views.py `_load_session_for_participant` — the
-    helper no longer gates on participant role). Sharing/ACL is a
-    deferred layer."""
+def test_messages_list_rejects_stranger_for_orphan_session(client, user, other_user):
+    """Post-2026-04-28: orphan sessions (workspace=NULL) are accessible
+    only to the owner or an existing participant. A stranger gets 404
+    so workspace/session existence isn't leaked. See
+    `_load_session_for_participant` in apps/sessions/views.py and
+    apps/sessions/tests/test_workspace_boundary.py for the workspace-
+    tied counterpart."""
     s = Session.objects.create(owner=other_user, title="notmine")
     Message.objects.create(
         session=s, turn_index=1, role="user",
@@ -134,9 +136,7 @@ def test_messages_list_allows_any_authed_user(client, user, other_user):
         status="complete",
     )
     resp = client.get(f"/api/sessions/{s.slug}/messages")
-    assert resp.status_code == 200
-    rows = resp.json()["data"]
-    assert rows[0]["plaintext"] == "hi from other"
+    assert resp.status_code == 404
 
 
 def test_messages_list_allows_editor_participant(client, user, other_user):

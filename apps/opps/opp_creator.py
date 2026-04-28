@@ -90,6 +90,7 @@ def create_opp(
             source="web",
             opp_slug=slug,
             opp_run_id="run-001",
+            workspace=workspace,
         )
         Message.objects.create(
             session=session,

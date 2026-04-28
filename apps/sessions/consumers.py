@@ -506,25 +506,55 @@ async def _broadcast_stream_event(
 # ────────────────────── sync DB helpers ──────────────────────
 
 def _participant_role(slug: str, user_id: int) -> str | None:
-    """Look up the user's role in the session, auto-joining as `editor` if
-    they aren't already a participant. Sessions are visible to every
-    authenticated Dimagi user while we don't yet have a sharing layer;
-    auto-joining on first socket connect preserves the existing presence
-    + draft + message semantics (which key off the participant row).
-    Returns None only if the session itself doesn't exist.
+    """Look up the user's role in the session.
+
+    If the user is already a participant, return their role.
+
+    Otherwise, auto-join them as `editor` IF they're allowed to access
+    the session — for workspace-tied sessions that means workspace
+    membership; for orphan sessions that means session ownership.
+    Strangers (non-members of the session's workspace, non-owners of
+    an orphan session) get None and the consumer rejects the
+    handshake with close 4003.
+
+    Auto-join on first socket connect preserves the presence + draft +
+    message semantics (which key off the participant row) for users
+    who are entitled to the session in the first place.
     """
-    session_pk = Session.objects.filter(slug=slug).values_list("pk", flat=True).first()
-    if session_pk is None:
+    session = (
+        Session.objects.select_related("workspace")
+        .filter(slug=slug)
+        .first()
+    )
+    if session is None:
         return None
     role = (
-        SessionParticipant.objects.filter(session_id=session_pk, user_id=user_id)
+        SessionParticipant.objects.filter(session_id=session.pk, user_id=user_id)
         .values_list("role", flat=True)
         .first()
     )
     if role is not None:
         return role
+
+    # Not a participant yet — gate auto-join on workspace/owner.
+    if session.workspace_id is not None:
+        # Local imports avoid an apps.auth ↔ apps.sessions import-order
+        # tangle at module load time.
+        from apps.auth.models import User as _User
+        from apps.workspaces.permissions import is_member
+        try:
+            user_obj = _User.objects.get(pk=user_id)
+        except _User.DoesNotExist:
+            return None
+        if not is_member(user_obj, session.workspace):
+            return None
+    else:
+        # Orphan session — only the owner may auto-join.
+        if session.owner_id != user_id:
+            return None
+
     SessionParticipant.objects.get_or_create(
-        session_id=session_pk, user_id=user_id,
+        session_id=session.pk, user_id=user_id,
         defaults={"role": "editor"},
     )
     return "editor"
