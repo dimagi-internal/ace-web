@@ -126,8 +126,20 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
 
       {activeArtifact && (
         <div className="rounded border border-border">
-          <div className="border-b border-border bg-card px-3 py-1.5 font-mono text-[10px] text-muted-foreground">
-            {activeArtifact.name}
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-1.5 font-mono text-[10px] text-muted-foreground">
+            <span className="truncate">{activeArtifact.name}</span>
+            {activeArtifact.drive_web_link && (
+              <a
+                href={activeArtifact.drive_web_link}
+                target="_blank"
+                rel="noreferrer"
+                className="flex shrink-0 items-center gap-1 font-sans hover:text-foreground"
+                title="Open in Drive"
+              >
+                Open in Drive
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
           </div>
           <ArtifactBody
             slug={slug}

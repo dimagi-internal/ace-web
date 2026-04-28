@@ -37,8 +37,15 @@ def build_chat_seed(
     skill: str,
     drive_client: DriveClient,
     skill_md_path: str,
+    workbench_url: str | None = None,
 ) -> str:
-    """Return a markdown-formatted seed message for the new chat session."""
+    """Return a markdown-formatted seed message for the new chat session.
+
+    ``workbench_url`` (optional) is a deep-link back to the originating step
+    page in the ace-web Workbench (``/w/<workspace>/opps/<slug>/runs/<run>/steps/<skill>``).
+    When provided, it's surfaced near the top of the seed so a user reopening
+    the chat days later can navigate back to the step they were debating.
+    """
     step_snap = next(
         (s for s in snap.current_run.steps if s.step.skill_name == skill), None
     )
@@ -53,6 +60,9 @@ def build_chat_seed(
         f"# Discussing `{skill}` — opp `{snap.opp.slug}`, run `{snap.current_run.run_id}`"
     )
     sections.append(PREAMBLE.strip())
+
+    if workbench_url:
+        sections.append(f"**View in Workbench:** [{workbench_url}]({workbench_url})")
 
     sections.append(
         f"**Skill source:** `{skill_md_path}` (edit this file to improve the skill)"

@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { ExternalLink } from "lucide-react";
 
 import { artifactBodyUrl } from "@/api/opps";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { parseFrontmatter, type Frontmatter } from "@/lib/frontmatter";
+
+const URL_RE = /^https?:\/\/\S+$/;
 
 const MAX_BYTES = 50 * 1024;
 
@@ -97,7 +100,19 @@ export function ArtifactBody({ slug, runId, skill, artifactName, mimeType, webVi
               <div key={key} className="contents">
                 <dt className="font-medium text-muted-foreground">{key}</dt>
                 <dd className="truncate text-foreground" title={value}>
-                  {value}
+                  {URL_RE.test(value) ? (
+                    <a
+                      href={value}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-primary hover:underline"
+                    >
+                      <span className="truncate">{value}</span>
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                  ) : (
+                    value
+                  )}
                 </dd>
               </div>
             ))}
