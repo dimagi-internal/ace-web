@@ -13,4 +13,7 @@ Items closed or rejected during PM cycles. Read this before every scout run to a
 - Pure UI/copy changes can ship with `tsc -b` + a written manual test plan as the verification ceiling — don't block on "exercise the live flow" when it requires a fresh user + real third-party state to set up
 
 ## Pending context refresh
-- `context.md` "What Matters Most #1" still references hard-coded `ACE_DRIVE_ROOT_FOLDER_ID` — multi-tenant Workspaces shipped 2026-04-27 making that migration-only. Update before next scout to point at the real remaining third-party adoption gap (rough self-onboarding copy/error-recovery on `/welcome` + empty states that assume a Dimagi audience). Surfaced 2026-04-28-user-value.
+(none — context.md refreshed 2026-04-28 before the adoption-blockers cycle)
+
+## Anti-patterns observed
+- **Pin-the-literal tests codify drift.** `apps/opps/tests/test_resolve_root_folder.py::test_default_setting_is_the_shared_ace_folder_id` claimed to be a "fail loudly on accidental edit" guard, but actually pinned the leaked literal value into the test suite — meaning the architecturally correct fix (default empty post-Workspaces) tripped the guard. Prefer asserting the *invariant* ("default is empty / not tenant-specific") over the literal value. Surfaced 2026-04-28-adoption-blockers.
