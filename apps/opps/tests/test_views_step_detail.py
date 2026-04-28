@@ -4,6 +4,7 @@ Flat layout synthesizes a single implicit run with id "r1"; the URL
 pattern still carries `run_id` for back-compat but the value is
 ignored by the handler. See docs/plans/2026-04-20-drop-multi-run-simplify.md.
 """
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +14,7 @@ from apps.auth.models import User
 from apps.opps.tests.fixtures.fake_drive import (
     FakeDriveClient,
     malaria_pilot_tree,
+    nutrition_legacy_flat_tree,
 )
 
 
@@ -55,3 +57,46 @@ def test_step_detail_unknown_step_returns_404(authed_client):
         "/api/opps/malaria-pilot/runs/r1/steps/nonexistent",
     )
     assert response.status_code == 404
+
+
+def test_step_detail_logs_when_artifact_body_read_fails(authed_client, caplog):
+    """If get_content blows up on a step's artifact, the step view still
+    returns 200 (other artifacts may be readable) but emits a warning
+    with traceback so a real Drive permission / 503 doesn't go silent.
+    Regression test for the swallowed-exception silence in views.py.
+
+    Scenario: target ``pdd-to-learn-app`` on the nutrition-legacy
+    fixture, whose ``app-summaries/learn-app-summary.md`` matches the
+    manifest entry for that skill. load_opp doesn't read that file
+    itself (it's only surfaced via manifest attribution), so failing
+    it only trips the artifact-body loop inside step_detail.
+    """
+    fake = FakeDriveClient.from_tree(nutrition_legacy_flat_tree())
+    real_get_content = fake.get_content
+    learn_summary_id = fake.file_id(
+        "ACE/nutrition-legacy/app-summaries/learn-app-summary.md"
+    )
+
+    def _selective_503(file_id, mime_type):
+        if file_id == learn_summary_id:
+            raise RuntimeError("simulated drive 503")
+        return real_get_content(file_id, mime_type)
+
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")), \
+         patch.object(fake, "get_content", side_effect=_selective_503), \
+         caplog.at_level(logging.WARNING, logger="apps.opps.views"):
+        response = authed_client.get(
+            "/api/opps/nutrition-legacy/runs/r1/steps/pdd-to-learn-app"
+        )
+
+    assert response.status_code == 200
+    matching = [
+        r for r in caplog.records
+        if "step_detail" in r.getMessage()
+        and "nutrition-legacy" in r.getMessage()
+        and "pdd-to-learn-app" in r.getMessage()
+    ]
+    assert matching, "expected a warning naming opp + skill"
+    assert matching[0].exc_info is not None, "log line should carry traceback"

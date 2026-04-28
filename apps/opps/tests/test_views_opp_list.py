@@ -1,4 +1,5 @@
 """Tests for GET /api/opps/ — the opportunity list endpoint."""
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -244,3 +245,50 @@ def test_opp_list_drive_call_budget(authed_client):
         f"List endpoint made {len(counting.get_content_calls)} get_content "
         f"calls for {n_opps} opps — budget is N (state.yaml each)."
     )
+
+
+def test_opp_list_surfaces_per_card_failures(authed_client, caplog):
+    """A broken state.yaml on one opp must NOT erase that opp from the
+    list, NOT erase healthy opps, AND NOT vanish silently. The failing
+    opp surfaces with status='error' and a log.warning is emitted with
+    a full traceback so operators can find the root cause.
+
+    Regression test for the swallowed-exception silence in views.py.
+    """
+    fake = FakeDriveClient.from_tree(_combined_tree())
+
+    real_load = __import__("apps.opps.sync", fromlist=["load_opp_card"]).load_opp_card
+
+    def _selectively_broken(client, *, opp_folder, opp_children):
+        if opp_folder.name == "malaria-pilot":
+            raise RuntimeError("simulated state.yaml parse failure")
+        return real_load(client, opp_folder=opp_folder, opp_children=opp_children)
+
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")), \
+         patch("apps.opps.views.load_opp_card", side_effect=_selectively_broken), \
+         caplog.at_level(logging.WARNING, logger="apps.opps.views"):
+        response = authed_client.get("/api/opps/")
+
+    assert response.status_code == 200
+    cards = response.json()["data"]
+    by_slug = {c["slug"]: c for c in cards}
+
+    # Healthy opp still rendered normally.
+    assert by_slug["nutrition-legacy"]["status"] != "error"
+
+    # Failing opp surfaces as an error card, not silently dropped.
+    assert by_slug["malaria-pilot"]["status"] == "error"
+    assert by_slug["malaria-pilot"]["error"]["message"] == (
+        "simulated state.yaml parse failure"
+    )
+
+    # Operator-facing log line includes the slug AND the exception class
+    # so paging through logs is productive.
+    matching = [
+        r for r in caplog.records
+        if "opp_list" in r.getMessage() and "malaria-pilot" in r.getMessage()
+    ]
+    assert matching, "expected a warning log naming the failing opp"
+    assert matching[0].exc_info is not None, "log line should carry traceback"

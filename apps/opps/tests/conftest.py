@@ -1,10 +1,28 @@
 """Shared fixtures for apps/opps/tests/.
 
-The Phase A multi-tenancy work means every opp endpoint goes through
-`_resolve_workspace`, which requires the request user to have at least
-one WorkspaceMembership. Existing tests authenticate a user via
-`force_login` but don't set up a workspace; the fixtures below ensure
-every test user is a member of a default test workspace.
+Two pieces of test infrastructure live here:
+
+1. **Workspace membership shim** (function-scoped, autouse). The Phase A
+   multi-tenancy work made every opp endpoint go through
+   `_resolve_workspace`, which requires the request user to have at
+   least one WorkspaceMembership. Existing tests authenticate a user
+   via `force_login` but don't set up a workspace; the shim wraps
+   `User.objects.create` so any new User automatically becomes Owner
+   of the default test workspace.
+
+2. **Hermetic skill registry stub** (session-scoped, autouse). Every
+   apps/opps test asserts behavior that depends on
+   `apps.opps.skills.SKILL_REGISTRY` being populated — `sync.py`
+   iterates the registry to synthesize step rows. Production reads
+   `ACE_PLUGIN_PATH` from settings; the Docker image vendors the
+   plugin to `/app/vendor/ace`, but on local checkouts the dev-default
+   walk-up in `config/settings/base.py` may not resolve to a real
+   plugin dir. The stub at `apps/opps/tests/fixtures/stub_plugin/` is
+   a frontmatter-only copy of the real plugin's `agents/*.md` plus the
+   real `lib/artifact-manifest.ts` — enough to satisfy the registry
+   loader without depending on host filesystem layout. Refresh the
+   stub by re-copying from the upstream `ace` plugin when its agent
+   frontmatter or artifact manifest changes.
 
 The default workspace's `drive_root_folder_id` is left as a placeholder
 because the tests that need a real folder id patch
@@ -13,12 +31,29 @@ folder id.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+from django.conf import settings as dj_settings
 from django.contrib.auth import get_user_model
 
 from apps.workspaces.models import Workspace, WorkspaceMembership
 
 User = get_user_model()
+
+
+_STUB_PLUGIN_PATH = (Path(__file__).parent / "fixtures" / "stub_plugin").resolve()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _stub_ace_plugin_path():
+    """Pin ACE_PLUGIN_PATH to the in-repo stub for the whole opps test
+    session. See module docstring for context."""
+    from apps.opps.skills import reset_cache
+
+    dj_settings.ACE_PLUGIN_PATH = str(_STUB_PLUGIN_PATH)
+    reset_cache()
+    yield
 
 
 @pytest.fixture(autouse=True)

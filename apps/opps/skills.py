@@ -10,11 +10,14 @@ Cached per process. Tests that swap ``ACE_PLUGIN_PATH`` must call
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
 from django.conf import settings
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -88,6 +91,16 @@ def _load_registry() -> tuple[Skill, ...]:
             )
         )
     result.sort(key=lambda sk: sk.ordinal)
+    if not result:
+        # Loud once-per-process signal so a misconfigured ACE_PLUGIN_PATH
+        # (Docker vendor missing, dev sibling-repo not found) doesn't
+        # silently produce an empty Workbench. Tests pin the path
+        # explicitly via apps/opps/tests/conftest.py and never hit this.
+        log.warning(
+            "Skill registry is empty; ACE_PLUGIN_PATH=%r resolved to no agents. "
+            "Workbench will render zero step rows until the path is fixed.",
+            plugin_path,
+        )
     return tuple(result)
 
 

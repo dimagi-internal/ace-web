@@ -1,4 +1,6 @@
 """REST API views for the ACE opportunity Workbench."""
+import logging
+
 from django.db import models, transaction
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
@@ -21,6 +23,8 @@ from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
 from apps.workspaces.models import Workspace
 from apps.workspaces.permissions import is_member, user_workspaces
+
+log = logging.getLogger(__name__)
 
 
 @api_view(["GET"])
@@ -184,8 +188,29 @@ def _opp_list_impl(request):
                 "current_step": card.current_step,
                 "status": card.status,
             })
-        except Exception:
-            continue
+        except Exception as exc:
+            # A malformed state.yaml or a Drive blip on one opp shouldn't
+            # erase the whole list — but it shouldn't vanish silently
+            # either. Log loudly and surface a placeholder card so the UI
+            # can show "couldn't load" instead of pretending the opp
+            # doesn't exist.
+            log.warning(
+                "opp_list: failed to load card for %r: %s",
+                child.name, exc, exc_info=True,
+            )
+            cards.append({
+                "slug": child.name,
+                "display_name": child.name,
+                "labels": [],
+                "tags": [],
+                "created_at": None,
+                "created_by": None,
+                "current_run_id": None,
+                "current_phase": None,
+                "current_step": None,
+                "status": "error",
+                "error": {"message": str(exc) or exc.__class__.__name__},
+            })
 
     return Response(success_response(cards))
 
@@ -401,13 +426,20 @@ def step_detail(request, slug: str, run_id: str, skill: str):
         )
 
     # Fetch the primary artifact body so the frontend can show it inline.
+    # A single artifact failure shouldn't blank out the whole step view,
+    # but it shouldn't be silent either — log so a Drive permission /
+    # 503 / content-decode bug shows up in operator logs.
     primary_body = ""
     bodies: dict[str, str] = {}
     for artifact in step_snap.artifacts:
         try:
             content = client.get_content(artifact.drive_file_id, artifact.mime_type)
             bodies[artifact.path] = content.content
-        except Exception:
+        except Exception as exc:
+            log.warning(
+                "step_detail: failed to read artifact %s for %s/%s: %s",
+                artifact.path, slug, skill, exc, exc_info=True,
+            )
             continue
     if step_snap.artifacts:
         primary_body = bodies.get(step_snap.artifacts[0].path, "")

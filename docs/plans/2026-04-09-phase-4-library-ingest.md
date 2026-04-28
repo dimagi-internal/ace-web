@@ -1,6 +1,30 @@
-# Phase 4: Library & Ingest — Implementation Plan
+# Phase 4: Library & Ingest — Implementation Plan (HISTORICAL — DO NOT EXECUTE)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **STATUS — 2026-04-28:** This plan is **historical**. Phase 4
+> shipped piecemeal across many PRs rather than as the single Task-1-
+> through-N execution described below. Treat this document as a record
+> of original intent — the file layout, ordering, and several specific
+> task definitions DO NOT match what's actually live in the repo.
+>
+> **What's actually live:**
+> - `/sessions` library with search/filter tabs and pagination
+>   (`apps/sessions/` + `frontend/src/pages/SessionsPage.tsx`)
+> - `/settings` page (`SettingsPage.tsx`) — Claude Max subscription +
+>   ACE API tokens
+> - shadcn/ui + dark/light theme (`ThemeProvider.tsx` + `components/ui/`)
+> - share tokens (`apps/sessions/share_views.py` + `/share/:token`)
+> - `apps/ingest/` + the `ace-upload` CLI entrypoint
+>   (see `pyproject.toml` `[project.scripts]`)
+> - `PersonalToken` model + bearer auth backend
+>   (`apps/auth/token_backend.py`)
+>
+> **Do not run this plan.** If you want to verify or extend any of the
+> above, read the live source under `apps/sessions/`, `apps/ingest/`,
+> `apps/auth/`, and `frontend/src/`. The original spec at
+> `docs/specs/2026-04-09-phase-4-library-ingest-design.md` is also of
+> historical interest only.
+
+> **For agentic workers (historical context):** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a design-system foundation (shadcn/ui, dark/light toggle), a basic session library page, and a JSONL ingest system (CLI + endpoint + personal tokens) so the team can find past sessions and import local CLI transcripts.
 
