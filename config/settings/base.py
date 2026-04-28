@@ -151,15 +151,13 @@ ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 # Top-level Drive folder that holds ACE opportunities. Default matches the
 # ACE plugin convention.
 ACE_DRIVE_ROOT_FOLDER_NAME = env("ACE_DRIVE_ROOT_FOLDER_NAME", default="ACE")
-# Pinned folder id for the ACE root. When set, apps.opps.views resolves the
-# root folder directly from this id instead of doing a name-based lookup.
-# This is the primary mechanism in production; the name-based fallback is
-# reserved for future hypothetical multi-tenant scenarios. Sourced from the
-# shared "ACE" Google Drive folder the team already uses.
-ACE_DRIVE_ROOT_FOLDER_ID = env(
-    "ACE_DRIVE_ROOT_FOLDER_ID",
-    default="1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz",
-)
+# Migration-only seed value for the founding workspace's Drive folder.
+# Read by apps/workspaces/migrations/0002_seed_dimagi_team.py to populate
+# the dimagi-team workspace once at bootstrap; not read at runtime.
+# Per-workspace Drive folders are stored on Workspace.drive_root_folder_id
+# (post-2026-04-27 multi-tenancy work). Empty default is safe — the
+# migration skips the seed when this is unset.
+ACE_DRIVE_ROOT_FOLDER_ID = env("ACE_DRIVE_ROOT_FOLDER_ID", default="")
 
 # ACE plugin repo path — the System Overview tab reads skill definitions,
 # agent definitions, and the artifact manifest from this directory.

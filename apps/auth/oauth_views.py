@@ -43,7 +43,16 @@ def login_page(request: HttpRequest) -> HttpResponse:
         return redirect(next_url)
 
     next_url = request.GET.get("next", default_next)
-    context = {"next": next_url}
+    show_test_login = bool(
+        getattr(settings, "DEBUG", False)
+        and getattr(settings, "ACE_ALLOW_TEST_LOGIN", False)
+    )
+    context = {
+        "next": next_url,
+        "show_test_login": show_test_login,
+        "test_login_url": f"{_prefix}/auth/test-login/",
+        "post_login_url": f"{_prefix}/" if _prefix else "/",
+    }
     return render(request, "auth/login.html", context)
 
 

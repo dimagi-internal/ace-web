@@ -57,11 +57,27 @@ docker compose up
 
 Then open http://localhost:8000.
 
-The first time you sign in, you'll land on `/welcome` — give your
-workspace a name, share a Google Drive folder with the service account,
-and you're in. You can run a full ACE opportunity from the browser
-(`+ New Opp` on the Opps tab) or upload `.jsonl` transcripts from
-prior CLI runs (`ace upload` or the Sessions tab's import flow).
+### Trying it out — no credentials needed
+
+The dev container ships with two escape hatches enabled
+(`ACE_ALLOW_TEST_LOGIN=True`, `ACE_USE_FAKE_CLI_BACKEND=True` — both
+set automatically by `config/settings/development.py`):
+
+1. On the sign-in page, use the **"Sign in as test user"** form at the
+   bottom — type any email, get logged in. No CommCare Connect OAuth
+   credentials required.
+2. Land on `/welcome` and create a workspace. You'll need a Google Drive
+   folder shared with the configured service account if you want Drive
+   features to work; otherwise opps will be empty.
+3. Try chat — it'll respond with deterministic test text via the
+   `FakeCLIBackend` until you wire up real claude CLI credentials (see
+   `docs/architecture/cli-credentials.md`).
+
+That's enough to click around and understand the surface area. To use
+ACE for real, configure CommCare Connect OAuth (`CONNECT_OAUTH_CLIENT_ID`
++ `CONNECT_OAUTH_CLIENT_SECRET` in `.env`), point a workspace at a real
+Drive folder shared with the service account, and upload claude CLI
+credentials via `/ace-web:create-cli-credentials`.
 
 ## Stack
 

@@ -9,22 +9,76 @@
     .container { background: #fff; border-radius: 8px; padding: 2.5rem 3rem; max-width: 400px; width: 100%; box-shadow: 0 2px 8px rgba(0,0,0,.1); text-align: center; }
     h1 { font-size: 1.4rem; margin: 0 0 1rem; color: #1a1a1a; }
     p { color: #555; margin: 0 0 1.5rem; line-height: 1.5; }
-    .btn { display: inline-block; background: #1a56db; color: #fff; text-decoration: none; padding: .75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; }
+    .btn { display: inline-block; background: #1a56db; color: #fff; text-decoration: none; padding: .75rem 1.5rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; border: none; width: 100%; box-sizing: border-box; }
     .btn:hover { background: #1e429f; }
     .messages { margin-bottom: 1rem; }
     .messages li { list-style: none; background: #fee2e2; color: #991b1b; padding: .6rem 1rem; border-radius: 4px; margin-bottom: .5rem; }
+    .dev-panel { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px dashed #ddd; text-align: left; }
+    .dev-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: #888; font-weight: 600; margin-bottom: .5rem; }
+    .dev-panel h2 { font-size: .95rem; margin: .25rem 0 .5rem; color: #1a1a1a; }
+    .dev-panel p { font-size: .8rem; color: #666; margin: 0 0 .75rem; }
+    .dev-panel input { width: 100%; box-sizing: border-box; padding: .55rem .75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: .9rem; margin-bottom: .5rem; font-family: inherit; }
+    .dev-panel .btn { background: #4b5563; font-size: .9rem; padding: .55rem 1rem; }
+    .dev-panel .btn:hover { background: #374151; }
+    .dev-error { color: #991b1b; font-size: .8rem; margin-top: .5rem; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>ace-web</h1>
-    <p>Sign in with your Dimagi CommCare Connect account to continue.</p>
+    <p>Sign in with your CommCare Connect account to continue.</p>
     {% if messages %}
     <ul class="messages">
       {% for message in messages %}<li>{{ message }}</li>{% endfor %}
     </ul>
     {% endif %}
     <a class="btn" href="{% url 'auth:initiate' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Sign in with CommCare Connect</a>
+
+    {% if show_test_login %}
+    <div class="dev-panel">
+      <div class="dev-label">Local dev only</div>
+      <h2>Sign in as a test user</h2>
+      <p>No OAuth credentials needed. Available because <code>DEBUG=True</code> and <code>ACE_ALLOW_TEST_LOGIN=True</code>.</p>
+      <form id="test-login-form" autocomplete="off">
+        <input
+          id="test-login-email"
+          type="email"
+          placeholder="you@example.com"
+          required
+        >
+        <button type="submit" class="btn">Sign in as test user</button>
+        <div id="test-login-error" class="dev-error" hidden></div>
+      </form>
+    </div>
+    <script>
+      (function () {
+        var form = document.getElementById("test-login-form");
+        var emailEl = document.getElementById("test-login-email");
+        var errEl = document.getElementById("test-login-error");
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          errEl.hidden = true;
+          fetch("{{ test_login_url }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: emailEl.value.trim() })
+          }).then(function (r) {
+            if (r.ok) {
+              window.location.href = "{{ next|default:post_login_url }}";
+            } else {
+              return r.json().then(function (j) {
+                errEl.textContent = (j && j.error) || ("HTTP " + r.status);
+                errEl.hidden = false;
+              });
+            }
+          }).catch(function (err) {
+            errEl.textContent = String(err);
+            errEl.hidden = false;
+          });
+        });
+      })();
+    </script>
+    {% endif %}
   </div>
 </body>
 </html>
