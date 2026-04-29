@@ -8,7 +8,7 @@ lives in the consumer's _handle_chat_send → _activate_imported_session.
 from __future__ import annotations
 
 from django.db import IntegrityError
-from django.db.models import Q
+from django.db.models import OuterRef, Q, Subquery
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -19,13 +19,27 @@ from apps.auth.models import User
 from apps.common.envelope import error_response, success_response
 from apps.workspaces.permissions import user_workspaces
 
-from .models import Session, SessionParticipant
+from .models import Message, Session, SessionParticipant
 from .serializers import (
     MessageSerializer,
     ParticipantSerializer,
     SessionDetailSerializer,
     SessionSerializer,
 )
+
+
+def _annotate_first_user_plaintext(qs):
+    """Annotate ``first_user_plaintext`` with the earliest user message body.
+
+    SessionSerializer.get_preview reads this annotation when present to
+    avoid an N+1 ``messages.first()`` lookup per row in list responses.
+    """
+    first_user_msg = (
+        Message.objects.filter(session=OuterRef("pk"), role="user")
+        .order_by("turn_index")
+        .values("plaintext")[:1]
+    )
+    return qs.annotate(first_user_plaintext=Subquery(first_user_msg))
 
 
 def _scope_sessions_to_user(qs, user):
@@ -78,7 +92,15 @@ def _list_sessions(request: Request) -> Response:
         qs = qs.filter(source=source_filter)
     q = request.query_params.get("q", "").strip()
     if q:
-        qs = qs.filter(title__icontains=q)
+        # Match either the title or the body of any user message in the
+        # session — so typing a topic finds sessions where the topic was
+        # actually discussed, not just sessions whose auto-title happens to
+        # mention it. ``distinct`` because the join over messages would
+        # otherwise duplicate rows.
+        qs = qs.filter(
+            Q(title__icontains=q)
+            | Q(messages__role="user", messages__plaintext__icontains=q)
+        ).distinct()
     total = qs.count()
     try:
         page = max(1, int(request.query_params.get("page", "1")))
@@ -89,7 +111,9 @@ def _list_sessions(request: Request) -> Response:
     except ValueError:
         page_size = 20
     offset = (page - 1) * page_size
-    qs = qs.order_by("-updated_at")[offset : offset + page_size]
+    qs = _annotate_first_user_plaintext(qs).order_by("-updated_at")[
+        offset : offset + page_size
+    ]
     return Response(
         success_response({
             "items": SessionSerializer(qs, many=True).data,

@@ -112,7 +112,7 @@ export default function SessionsPage() {
         )}
         <div className="ml-auto flex items-center gap-2">
           <Input
-            placeholder="Search titles…"
+            placeholder="Search titles or chat content…"
             value={query}
             onChange={(e) => { setQuery(e.target.value); setPage(1); }}
             className="w-56"
@@ -213,15 +213,20 @@ export default function SessionsPage() {
         {!loading && !error && data && data.items.length > 0 && (
           <div className="divide-y divide-border">
             {data.items.map((s) => (
-              <div key={s.slug} className="group flex items-center gap-3 px-6 py-2.5 hover:bg-muted/50">
-                <Link to={`/chat/${s.slug}`} className="flex min-w-0 flex-1 items-center gap-3">
-                  <span className="truncate font-medium text-foreground">{s.title || "Untitled"}</span>
-                  <Badge variant="outline" className="shrink-0 text-[10px]">{s.source}</Badge>
-                  {s.status === "archived" && (
-                    <Badge variant="secondary" className="shrink-0 text-[10px]">archived</Badge>
+              <div key={s.slug} className="group flex items-start gap-3 px-6 py-2.5 hover:bg-muted/50">
+                <Link to={`/chat/${s.slug}`} className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="truncate font-medium text-foreground">{s.title || "Untitled"}</span>
+                    <Badge variant="outline" className="shrink-0 text-[10px]">{s.source}</Badge>
+                    {s.status === "archived" && (
+                      <Badge variant="secondary" className="shrink-0 text-[10px]">archived</Badge>
+                    )}
+                  </div>
+                  {s.preview && (
+                    <span className="truncate text-xs text-muted-foreground">{s.preview}</span>
                   )}
                 </Link>
-                <span className="shrink-0 text-xs text-muted-foreground">
+                <span className="shrink-0 pt-0.5 text-xs text-muted-foreground">
                   {new Date(s.updated_at).toLocaleDateString()}
                 </span>
                 <DropdownMenu>

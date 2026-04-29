@@ -639,17 +639,20 @@ def step_chats(request, slug: str, run_id: str, skill: str):
     if err is not None:
         return err
 
-    step_chats_qs = (
+    from apps.sessions.serializers import _truncate_preview
+    from apps.sessions.views import _annotate_first_user_plaintext
+
+    step_chats_qs = _annotate_first_user_plaintext(
         Session.objects
         .filter(opp_slug=slug, opp_run_id=run_id, opp_step_skill=skill)
-        .order_by("-updated_at")[:20]
-    )
-    opp_chats_qs = (
+        .order_by("-updated_at")
+    )[:20]
+    opp_chats_qs = _annotate_first_user_plaintext(
         Session.objects
         .filter(opp_slug=slug)
         .exclude(opp_step_skill=skill, opp_run_id=run_id)
-        .order_by("-updated_at")[:20]
-    )
+        .order_by("-updated_at")
+    )[:20]
 
     def _row(c: Session, kind: str) -> dict:
         return {
@@ -660,6 +663,7 @@ def step_chats(request, slug: str, run_id: str, skill: str):
             "source": c.source,            # "web" | "upload"
             "kind": kind,                  # "step" | "opp"
             "step_skill": c.opp_step_skill or None,
+            "preview": _truncate_preview(getattr(c, "first_user_plaintext", "") or ""),
         }
 
     payload = [_row(c, "step") for c in step_chats_qs]

@@ -113,6 +113,11 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
               </div>
+              {s.preview && (
+                <div className="truncate text-xs text-muted-foreground/80">
+                  {s.preview}
+                </div>
+              )}
               <div className="truncate text-xs text-muted-foreground">
                 {relativeTime(s.updated_at)}
               </div>

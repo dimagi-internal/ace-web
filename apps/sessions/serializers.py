@@ -24,8 +24,19 @@ class MessageSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+PREVIEW_LIMIT = 120
+
+
+def _truncate_preview(text: str) -> str:
+    text = " ".join(text.split())
+    if len(text) <= PREVIEW_LIMIT:
+        return text
+    return text[: PREVIEW_LIMIT - 1].rstrip() + "…"
+
+
 class SessionSerializer(serializers.ModelSerializer):
     message_count = serializers.SerializerMethodField()
+    preview = serializers.SerializerMethodField()
 
     class Meta:
         model = Session
@@ -39,13 +50,27 @@ class SessionSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "message_count",
+            "preview",
         ]
         read_only_fields = [
-            "slug", "cli_session_id", "created_at", "updated_at", "message_count",
+            "slug", "cli_session_id", "created_at", "updated_at",
+            "message_count", "preview",
         ]
 
     def get_message_count(self, obj: Session) -> int:
         return obj.messages.count()
+
+    def get_preview(self, obj: Session) -> str:
+        annotated = getattr(obj, "first_user_plaintext", None)
+        if annotated is not None:
+            return _truncate_preview(annotated)
+        msg = (
+            obj.messages.filter(role="user")
+            .order_by("turn_index")
+            .values_list("plaintext", flat=True)
+            .first()
+        )
+        return _truncate_preview(msg or "")
 
 
 class SessionDetailSerializer(SessionSerializer):

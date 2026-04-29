@@ -34,6 +34,48 @@ def test_session_serializer_includes_message_count(session):
     assert data["message_count"] == 1
 
 
+def test_preview_is_first_user_message_plaintext(session):
+    Message.objects.create(
+        session=session, turn_index=0, role="user",
+        content={"text": "What is the capital of France?"},
+        plaintext="What is the capital of France?", status="complete",
+    )
+    Message.objects.create(
+        session=session, turn_index=1, role="assistant",
+        content={"text": "Paris."}, plaintext="Paris.", status="complete",
+    )
+    data = SessionSerializer(session).data
+    assert data["preview"] == "What is the capital of France?"
+
+
+def test_preview_is_empty_when_no_user_messages(session):
+    Message.objects.create(
+        session=session, turn_index=0, role="assistant",
+        content={"text": "hi"}, plaintext="hi", status="complete",
+    )
+    assert SessionSerializer(session).data["preview"] == ""
+
+
+def test_preview_truncates_long_plaintext(session):
+    long_text = "alpha " * 80  # > 120 chars
+    Message.objects.create(
+        session=session, turn_index=0, role="user",
+        content={"text": long_text}, plaintext=long_text, status="complete",
+    )
+    preview = SessionSerializer(session).data["preview"]
+    assert len(preview) <= 120
+    assert preview.endswith("…")
+
+
+def test_preview_collapses_internal_whitespace(session):
+    Message.objects.create(
+        session=session, turn_index=0, role="user",
+        content={"text": "line one\n\nline two"},
+        plaintext="line one\n\nline two", status="complete",
+    )
+    assert SessionSerializer(session).data["preview"] == "line one line two"
+
+
 def test_message_serializer_basic(session):
     msg = Message.objects.create(
         session=session, turn_index=1, role="assistant",
