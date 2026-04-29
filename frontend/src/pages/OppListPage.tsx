@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertCircle, ArrowDownUp, Plus, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowDownUp, GitCompareArrows, Plus, Trash2, X } from "lucide-react";
 
 import { listOpps } from "../api/opps";
 import type { OppCard } from "../api/types";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
+import { CompareWithDialog } from "../components/opps/CompareWithDialog";
 import { DeleteOppDialog } from "../components/opps/DeleteOppDialog";
 import { NewOppDialog } from "../components/opps/NewOppDialog";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ export default function OppListPage() {
   const [sortKey, setSortKey] = useState<SortKey>("recent");
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<OppCard | null>(null);
+  const [compareSource, setCompareSource] = useState<OppCard | null>(null);
 
   const load = useCallback(() => {
     setState({ kind: "loading" });
@@ -173,6 +175,14 @@ export default function OppListPage() {
           }}
         />
       )}
+      {compareSource && (
+        <CompareWithDialog
+          open={true}
+          onOpenChange={(v) => { if (!v) setCompareSource(null); }}
+          source={compareSource}
+          candidates={allOpps}
+        />
+      )}
 
       {visibleOpps.length === 0 ? (
         filter || needsReviewOnly ? (
@@ -220,6 +230,20 @@ export default function OppListPage() {
                   <div className="truncate text-xs text-muted-foreground">{opp.slug}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label={`Compare ${opp.slug} with another opp`}
+                    title="Compare with another opp"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setCompareSource(opp);
+                    }}
+                    disabled={allOpps.length < 2}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <GitCompareArrows className="h-4 w-4" />
+                  </button>
                   <button
                     type="button"
                     aria-label={`Delete ${opp.slug}`}

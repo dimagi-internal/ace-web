@@ -403,3 +403,73 @@ Overall: **82/100** (pass)
             }
         }
     }
+
+
+def compare_pair_tree() -> dict:
+    """Two opps under a single ACE root, with different opp-eval scores
+    and different pending-gate counts. Used by the compare endpoint tests.
+
+    Layout:
+      ACE/idea-v1/  — score 70/100, 2 pending gates  (the "before")
+      ACE/idea-v2/  — score 82/100, 1 pending gate   (the "after")
+    """
+    return {
+        "ACE": {
+            "idea-v1": {
+                "state.yaml": """current_phase: design-review
+current_step: idea-to-pdd
+mode: review
+started_at: 2026-04-20T10:00:00Z
+gates:
+  idea-to-pdd:
+    decision: pending
+    decided_by: ""
+    decided_at: 2026-04-20T11:00:00Z
+    note: ""
+  pdd-to-learn-app:
+    decision: pending
+    decided_by: ""
+    decided_at: 2026-04-20T12:00:00Z
+    note: ""
+""",
+                "idea.md": "Pilot idea v1 — first attempt.",
+                "pdd.md": "# PDD v1\n\nFirst draft.",
+                "verdicts": {
+                    "opp-eval-deep.yaml": """skill: opp-eval
+mode: deep
+ran_at: 2026-04-20T14:00:00Z
+overall_score: 70
+verdict: fail
+""",
+                },
+            },
+            "idea-v2": {
+                "state.yaml": """current_phase: design-review
+current_step: idea-to-pdd
+mode: review
+started_at: 2026-04-25T10:00:00Z
+gates:
+  idea-to-pdd:
+    decision: approved
+    decided_by: neal@dimagi.com
+    decided_at: 2026-04-25T11:00:00Z
+    note: ""
+  pdd-to-learn-app:
+    decision: pending
+    decided_by: ""
+    decided_at: 2026-04-25T12:00:00Z
+    note: ""
+""",
+                "idea.md": "Pilot idea v2 — sharpened EM, deeper appendix.",
+                "pdd.md": "# PDD v2\n\nSecond pass.",
+                "verdicts": {
+                    "opp-eval-deep.yaml": """skill: opp-eval
+mode: deep
+ran_at: 2026-04-25T14:00:00Z
+overall_score: 82
+verdict: pass
+""",
+                },
+            },
+        }
+    }

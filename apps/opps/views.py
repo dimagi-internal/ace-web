@@ -18,7 +18,13 @@ from apps.opps.serializers import (
     serialize_scorecard,
     serialize_step_snapshot,
 )
-from apps.opps.sync import delete_opp_folder, load_opp, load_opp_card, load_scorecard
+from apps.opps.sync import (
+    delete_opp_folder,
+    load_opp,
+    load_opp_card,
+    load_opp_card_by_slug,
+    load_scorecard,
+)
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
 from apps.workspaces.models import Workspace
@@ -530,6 +536,100 @@ def scorecard(request, slug: str):
         )
 
     return Response(success_response(serialize_scorecard(sc)))
+
+
+def _count_pending_gates(snap) -> int:
+    """Count gates whose latest decision is 'pending' on a step snapshot."""
+    return sum(
+        1
+        for s in snap.current_run.steps
+        if s.gates and s.gates[-1].decision == "pending"
+    )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def opp_compare(request, slug_a: str, slug_b: str):
+    """Side-by-side comparison of two opps in the same workspace.
+
+    Loads both OppSnapshots plus an opp-eval summary for each, and
+    returns a small `summary` block with score / pending-gate deltas
+    so the frontend can render the "did the new run improve?" banner
+    without re-deriving anything.
+    """
+    if slug_a == slug_b:
+        return Response(
+            error_response(
+                "cannot compare an opp to itself", code="same-opp",
+            ),
+            status=400,
+        )
+
+    ws, client, err = _require_drive(request)
+    if err is not None:
+        return err
+
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        snap_a = load_opp(client, ace_folder_id=ace_folder_id, slug=slug_a)
+    except FileNotFoundError:
+        return Response(
+            error_response(f"no opp named {slug_a!r}", code="opp-not-found"),
+            status=404,
+        )
+    try:
+        snap_b = load_opp(client, ace_folder_id=ace_folder_id, slug=slug_b)
+    except FileNotFoundError:
+        return Response(
+            error_response(f"no opp named {slug_b!r}", code="opp-not-found"),
+            status=404,
+        )
+
+    _overlay_workspace_display_name(snap_a.opp, slug_a, workspace=ws)
+    _overlay_workspace_display_name(snap_b.opp, slug_b, workspace=ws)
+
+    # Pull eval scores via the card helper (cheap follow-up listing per opp).
+    # Tolerate failure: a missing/malformed eval shouldn't 500 the compare view.
+    try:
+        card_a = load_opp_card_by_slug(client, ace_folder_id=ace_folder_id, slug=slug_a)
+        score_a, passed_a = card_a.eval_score, card_a.eval_passed
+    except Exception as exc:  # noqa: BLE001
+        log.warning("compare: failed to load card for %r: %s", slug_a, exc)
+        score_a, passed_a = None, None
+    try:
+        card_b = load_opp_card_by_slug(client, ace_folder_id=ace_folder_id, slug=slug_b)
+        score_b, passed_b = card_b.eval_score, card_b.eval_passed
+    except Exception as exc:  # noqa: BLE001
+        log.warning("compare: failed to load card for %r: %s", slug_b, exc)
+        score_b, passed_b = None, None
+
+    pending_a = _count_pending_gates(snap_a)
+    pending_b = _count_pending_gates(snap_b)
+
+    score_delta = (
+        score_b - score_a if score_a is not None and score_b is not None else None
+    )
+
+    return Response(success_response({
+        "a": serialize_opp_snapshot(snap_a),
+        "b": serialize_opp_snapshot(snap_b),
+        "summary": {
+            "score_a": score_a,
+            "passed_a": passed_a,
+            "score_b": score_b,
+            "passed_b": passed_b,
+            "score_delta": score_delta,
+            "pending_gates_a": pending_a,
+            "pending_gates_b": pending_b,
+            "pending_gates_delta": pending_b - pending_a,
+        },
+    }))
 
 
 def _skill_md_relative_path(skill: str) -> str:
