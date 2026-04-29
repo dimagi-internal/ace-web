@@ -328,7 +328,9 @@ function statusColor(status: string): string {
 }
 
 function ScoreChip({ score, passed }: { score: number; passed: boolean | null }) {
-  const rounded = Math.round(score);
+  // Match ScorecardPanel.tsx's convention: plugin scores are usually 0-100,
+  // some opps land 0-10 — branch on the value, never assume scale.
+  const scoreLabel = score > 10 ? `${score.toFixed(0)}/100` : `${score.toFixed(1)}/10`;
   const tone =
     passed === true
       ? "bg-emerald-900/60 text-emerald-200 border-emerald-700"
@@ -341,10 +343,10 @@ function ScoreChip({ score, passed }: { score: number; passed: boolean | null })
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
-      title={`opp-eval ${label}: ${rounded}/100`}
+      title={`opp-eval ${label}: ${scoreLabel}`}
     >
       <span aria-hidden="true">{glyph}</span>
-      <span>{rounded}<span className="opacity-60">/100</span></span>
+      <span>{scoreLabel}</span>
       <span className="opacity-70">opp-eval {label}</span>
     </span>
   );
