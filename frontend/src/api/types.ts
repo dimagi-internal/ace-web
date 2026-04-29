@@ -19,6 +19,7 @@ export interface Session {
   created_at: string;
   updated_at: string;
   message_count: number;
+  preview: string;
 }
 
 export interface SessionDetail extends Session {
@@ -218,6 +219,7 @@ export interface LinkedChat {
   source: SessionSource;
   kind: "step" | "opp";
   step_skill: string | null;
+  preview: string;
 }
 
 export interface DiscussResponse {

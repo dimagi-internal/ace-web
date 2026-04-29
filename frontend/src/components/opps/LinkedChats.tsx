@@ -71,17 +71,24 @@ export function LinkedChats({ slug, runId, skill }: Props) {
 
 function ChatList({ chats }: { chats: LinkedChat[] }) {
   return (
-    <ul className="mt-1 flex flex-col gap-0.5 text-[10px]">
+    <ul className="mt-1 flex flex-col gap-1.5 text-[10px]">
       {chats.map((c) => (
-        <li key={c.slug} className="flex items-baseline gap-1.5">
-          <Link
-            to={`/chat/${c.slug}`}
-            className="truncate text-primary underline hover:text-primary/80"
-          >
-            {c.title}
-          </Link>
-          <ChatBadges chat={c} />
-          <span className="shrink-0 text-muted-foreground">· {c.owner_email}</span>
+        <li key={c.slug} className="flex flex-col gap-0.5">
+          <div className="flex items-baseline gap-1.5">
+            <Link
+              to={`/chat/${c.slug}`}
+              className="truncate text-primary underline hover:text-primary/80"
+            >
+              {c.title}
+            </Link>
+            <ChatBadges chat={c} />
+            <span className="shrink-0 text-muted-foreground">· {c.owner_email}</span>
+          </div>
+          {c.preview && (
+            <div className="truncate pl-1 text-muted-foreground/80" title={c.preview}>
+              {c.preview}
+            </div>
+          )}
         </li>
       ))}
     </ul>
