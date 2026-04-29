@@ -10,6 +10,7 @@ from apps.opps.tests.fixtures.fake_drive import (
     FakeDriveClient,
     malaria_pilot_structured_tree,
     nutrition_legacy_flat_tree,
+    opp_with_scorecard_tree,
     web_created_opp_tree,
 )
 
@@ -211,12 +212,20 @@ def test_opp_list_drive_call_budget(authed_client):
       - 1 ``list_files`` on the ACE root (to discover opp folders)
       - 1 ``list_files`` per opp folder (for the idea.md/state.yaml signal
         check — already performed by the view and reused by load_opp_card)
+      - +1 ``list_files`` ONLY for opps that carry a ``verdicts/`` subfolder
+        (so the opp-eval score chip can be surfaced on the card).
       - 0 recursive listings (load_opp's ``list_files(recursive=True)``
         must NOT fire from the list path)
-      - At most 1 ``get_content`` per opp (state.yaml only; skipped if the
-        opp folder doesn't have one)
+      - At most 1 ``get_content`` per opp for ``state.yaml``, plus at most
+        1 ``get_content`` per opp that has an ``opp-eval-*.yaml`` verdict.
 
-    Total: ≤ 2N + 1 list_files, ≤ N get_content, 0 recursive.
+    Total: ≤ (2 + V) · N + 1 list_files, ≤ (1 + V) · N get_content,
+    0 recursive — where V = fraction of opps with verdicts.
+
+    The combined tree (malaria-pilot + nutrition-legacy) has no verdicts/
+    folders, so V = 0 and the budget is the original 2N+1 / N. The
+    opp-eval score chip is paid per opp that has been judged, never per
+    opp on the list.
 
     Regression test for a 14-second list response observed on labs
     (4 opps × ~3.5 s/opp via full load_opp). If this test fails because
@@ -231,7 +240,7 @@ def test_opp_list_drive_call_budget(authed_client):
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     assert response.status_code == 200
-    # Two opps in the combined tree.
+    # Two opps in the combined tree, neither with a verdicts/ folder.
     n_opps = 2
     assert counting.recursive_list_calls == 0, (
         f"List endpoint made {counting.recursive_list_calls} recursive Drive "
@@ -239,12 +248,174 @@ def test_opp_list_drive_call_budget(authed_client):
     )
     assert len(counting.list_files_calls) <= 2 * n_opps + 1, (
         f"List endpoint made {len(counting.list_files_calls)} list_files "
-        f"calls for {n_opps} opps — budget is 2N+1."
+        f"calls for {n_opps} opps (no verdicts) — budget is 2N+1."
     )
     assert len(counting.get_content_calls) <= n_opps, (
         f"List endpoint made {len(counting.get_content_calls)} get_content "
-        f"calls for {n_opps} opps — budget is N (state.yaml each)."
+        f"calls for {n_opps} opps (no verdicts) — budget is N (state.yaml)."
     )
+
+
+def test_opp_list_surfaces_pending_gates(authed_client):
+    """An opp whose state.yaml has a ``gates:`` map with a ``pending``
+    decision must show that skill in the card's ``pending_gates`` field.
+    The /opps page uses this to surface a "needs review" badge without
+    needing to drill into the opp.
+    """
+    tree = {
+        "ACE": {
+            "needs-review-opp": {
+                "idea.md": "Idea body",
+                "state.yaml": """current_phase: design-review
+current_step: idea-to-pdd
+gates:
+  idea-to-pdd:
+    decision: pending
+    decided_by: ""
+    decided_at: ""
+    note: ""
+  ocs-agent-setup:
+    decision: pending
+    decided_by: ""
+""",
+            }
+        }
+    }
+    fake = FakeDriveClient.from_tree(tree)
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        response = authed_client.get("/api/opps/")
+    cards = response.json()["data"]
+    card = next(c for c in cards if c["slug"] == "needs-review-opp")
+    # Sorted alphabetically (deterministic across runs).
+    assert card["pending_gates"] == ["idea-to-pdd", "ocs-agent-setup"]
+
+
+def test_opp_list_omits_approved_gates_from_pending(authed_client):
+    """Approved or rejected gates must NOT appear in pending_gates — only
+    ``decision: pending`` qualifies. Otherwise the "needs review" badge
+    would never clear once a gate had been touched."""
+    tree = {
+        "ACE": {
+            "mixed-gates-opp": {
+                "idea.md": "Idea body",
+                "state.yaml": """gates:
+  idea-to-pdd:
+    decision: approved
+    decided_by: neal@dimagi.com
+  ocs-agent-setup:
+    decision: pending
+""",
+            }
+        }
+    }
+    fake = FakeDriveClient.from_tree(tree)
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        response = authed_client.get("/api/opps/")
+    cards = response.json()["data"]
+    card = next(c for c in cards if c["slug"] == "mixed-gates-opp")
+    assert card["pending_gates"] == ["ocs-agent-setup"]
+
+
+def test_opp_list_surfaces_opp_eval_score(authed_client):
+    """An opp with verdicts/opp-eval-deep.yaml must surface eval_score +
+    eval_passed on its card payload. Lets the /opps page render a score
+    chip without drilling into each opp.
+
+    Uses the canonical ``opp_with_scorecard_tree`` fixture which already
+    contains a realistic opp-eval-deep.yaml (overall_score: 82, verdict:
+    pass).
+    """
+    fake = FakeDriveClient.from_tree(opp_with_scorecard_tree())
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        response = authed_client.get("/api/opps/")
+    cards = response.json()["data"]
+    card = next(c for c in cards if c["slug"] == "cholera-smoketest")
+    assert card["eval_score"] == 82.0
+    assert card["eval_passed"] is True
+
+
+def test_opp_list_eval_score_blank_for_unjudged_opp(authed_client):
+    """An opp with no verdicts/ folder — or no opp-eval-*.yaml inside —
+    must surface ``eval_score: null`` rather than crashing or making a
+    spurious Drive call."""
+    fake = FakeDriveClient.from_tree(_combined_tree())
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        response = authed_client.get("/api/opps/")
+    cards = response.json()["data"]
+    for card in cards:
+        assert card["eval_score"] is None
+        assert card["eval_passed"] is None
+        assert card["pending_gates"] == []
+
+
+def test_opp_list_eval_score_prefers_deep_over_monitor_over_quick(authed_client):
+    """When multiple opp-eval verdict variants coexist, deep beats
+    monitor beats quick — matches the priority used by the per-step
+    Workbench surface (``_load_verdicts``)."""
+    tree = {
+        "ACE": {
+            "multi-variant-opp": {
+                "idea.md": "Idea body",
+                "verdicts": {
+                    "opp-eval-quick.yaml": (
+                        "skill: opp-eval\nmode: quick\noverall_score: 50\nverdict: fail\n"
+                    ),
+                    "opp-eval-monitor.yaml": (
+                        "skill: opp-eval\nmode: monitor\noverall_score: 70\nverdict: pass\n"
+                    ),
+                    "opp-eval-deep.yaml": (
+                        "skill: opp-eval\nmode: deep\noverall_score: 90\nverdict: pass\n"
+                    ),
+                },
+            }
+        }
+    }
+    fake = FakeDriveClient.from_tree(tree)
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        response = authed_client.get("/api/opps/")
+    cards = response.json()["data"]
+    card = next(c for c in cards if c["slug"] == "multi-variant-opp")
+    assert card["eval_score"] == 90.0
+    assert card["eval_passed"] is True
+
+
+def test_opp_list_eval_score_tolerates_malformed_verdict(authed_client, caplog):
+    """A garbage opp-eval-*.yaml must NOT 500 the list — the card surfaces
+    eval_score: null and the failure is logged. The /opps page should
+    stay loadable even when one opp has a corrupt verdict file."""
+    tree = {
+        "ACE": {
+            "broken-verdict-opp": {
+                "idea.md": "Idea body",
+                "verdicts": {
+                    # Valid YAML that's syntactically fine but missing both
+                    # score keys → _parse_verdict_yaml returns a verdict
+                    # with score=None, passed=None. Card surfaces them.
+                    "opp-eval-deep.yaml": "skill: opp-eval\nrandom_key: 99\n",
+                },
+            }
+        }
+    }
+    fake = FakeDriveClient.from_tree(tree)
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        response = authed_client.get("/api/opps/")
+    assert response.status_code == 200
+    cards = response.json()["data"]
+    card = next(c for c in cards if c["slug"] == "broken-verdict-opp")
+    assert card["eval_score"] is None
+    assert card["eval_passed"] is None
 
 
 def test_opp_list_surfaces_per_card_failures(authed_client, caplog):

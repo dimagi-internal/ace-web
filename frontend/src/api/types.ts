@@ -129,6 +129,9 @@ export interface OppCard {
   current_phase: string | null;
   current_step: string | null;
   status: string;
+  pending_gates: string[];
+  eval_score: number | null;
+  eval_passed: boolean | null;
 }
 
 export interface Artifact {

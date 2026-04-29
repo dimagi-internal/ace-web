@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowDownUp, Plus, Trash2, X } from "lucide-react";
 
 import { listOpps } from "../api/opps";
 import type { OppCard } from "../api/types";
@@ -14,10 +14,29 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "loaded"; opps: OppCard[] };
 
+type SortKey = "recent" | "score" | "status" | "slug";
+
+const SORT_LABELS: Record<SortKey, string> = {
+  recent: "Recent activity",
+  score: "Score (high → low)",
+  status: "Status",
+  slug: "Slug (A → Z)",
+};
+
+const STATUS_RANK: Record<string, number> = {
+  error: 0,
+  failed: 1,
+  blocked: 2,
+  running: 3,
+  complete: 4,
+};
+
 export default function OppListPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [filter, setFilter] = useState("");
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("recent");
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<OppCard | null>(null);
 
@@ -30,18 +49,30 @@ export default function OppListPage() {
 
   useEffect(load, [load]);
 
-  const filtered = useMemo(() => {
+  const allOpps = state.kind === "loaded" ? state.opps : [];
+  const needsReviewCount = useMemo(
+    () => allOpps.filter((o) => (o.pending_gates ?? []).length > 0).length,
+    [allOpps],
+  );
+
+  const visibleOpps = useMemo(() => {
     if (state.kind !== "loaded") return [];
+    let out = state.opps;
+    if (needsReviewOnly) {
+      out = out.filter((o) => (o.pending_gates ?? []).length > 0);
+    }
     const needle = filter.trim().toLowerCase();
-    if (!needle) return state.opps;
-    return state.opps.filter(
-      (o) =>
-        o.slug.toLowerCase().includes(needle) ||
-        o.display_name.toLowerCase().includes(needle) ||
-        o.tags.some((t) => t.toLowerCase().includes(needle)) ||
-        o.labels.some((l) => l.toLowerCase().includes(needle)),
-    );
-  }, [state, filter]);
+    if (needle) {
+      out = out.filter(
+        (o) =>
+          o.slug.toLowerCase().includes(needle) ||
+          o.display_name.toLowerCase().includes(needle) ||
+          o.tags.some((t) => t.toLowerCase().includes(needle)) ||
+          o.labels.some((l) => l.toLowerCase().includes(needle)),
+      );
+    }
+    return sortOpps(out, sortKey);
+  }, [state, filter, sortKey, needsReviewOnly]);
 
   const toggleTagFilter = (tag: string) => {
     setTagFilter((prev) =>
@@ -54,9 +85,29 @@ export default function OppListPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-4 border-b border-border bg-card px-6 py-4">
+      <header className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-6 py-4">
         <h1 className="text-xl font-semibold text-foreground">Opportunities</h1>
         <span className="text-sm text-muted-foreground">{state.opps.length} total</span>
+
+        {needsReviewCount > 0 && (
+          <button
+            type="button"
+            aria-pressed={needsReviewOnly}
+            onClick={() => setNeedsReviewOnly((v) => !v)}
+            className={
+              "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition " +
+              (needsReviewOnly
+                ? "bg-amber-500 text-amber-950 hover:bg-amber-400"
+                : "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25")
+            }
+            title={needsReviewOnly ? "Clear filter" : "Show only opps with pending gates"}
+          >
+            <AlertCircle className="h-3.5 w-3.5" />
+            Needs review ({needsReviewCount})
+            {needsReviewOnly && <X className="h-3 w-3" />}
+          </button>
+        )}
+
         {tagFilter.length > 0 && (
           <div className="flex items-center gap-1 text-xs">
             <span className="text-muted-foreground">tag filter:</span>
@@ -80,17 +131,34 @@ export default function OppListPage() {
             </button>
           </div>
         )}
-        <input
-          type="text"
-          placeholder="Filter by slug, name, tag…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="ml-auto w-64 rounded border border-input bg-card px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-        />
-        <Button size="sm" onClick={() => setNewDialogOpen(true)}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          New Opp
-        </Button>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <ArrowDownUp className="h-3.5 w-3.5" />
+            Sort by
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              className="rounded border border-input bg-card px-2 py-1 text-xs text-foreground focus:border-ring focus:outline-none"
+              aria-label="Sort opportunities"
+            >
+              {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+                <option key={k} value={k}>{SORT_LABELS[k]}</option>
+              ))}
+            </select>
+          </label>
+          <input
+            type="text"
+            placeholder="Filter by slug, name, tag…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="w-64 rounded border border-input bg-card px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+          />
+          <Button size="sm" onClick={() => setNewDialogOpen(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            New Opp
+          </Button>
+        </div>
       </header>
       <NewOppDialog open={newDialogOpen} onOpenChange={setNewDialogOpen} />
       {deleteTarget && (
@@ -106,11 +174,19 @@ export default function OppListPage() {
         />
       )}
 
-      {filtered.length === 0 ? (
-        filter ? (
+      {visibleOpps.length === 0 ? (
+        filter || needsReviewOnly ? (
           <EmptyState
-            title="No opps match your filter"
-            description="Try a different search term."
+            title={
+              needsReviewOnly
+                ? "No opps awaiting review"
+                : "No opps match your filter"
+            }
+            description={
+              needsReviewOnly
+                ? "Every opp has its pending gates resolved."
+                : "Try a different search term."
+            }
           />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center">
@@ -130,20 +206,20 @@ export default function OppListPage() {
         )
       ) : (
         <div className="grid grid-cols-1 gap-3 p-6 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((opp) => (
+          {visibleOpps.map((opp) => (
             <Link
               key={opp.slug}
               to={`/opps/${opp.slug}`}
               className="group rounded border border-border bg-card p-4 transition hover:border-primary"
             >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="font-semibold text-foreground group-hover:text-primary">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h2 className="truncate font-semibold text-foreground group-hover:text-primary">
                     {opp.display_name || opp.slug}
                   </h2>
-                  <div className="text-xs text-muted-foreground">{opp.slug}</div>
+                  <div className="truncate text-xs text-muted-foreground">{opp.slug}</div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2">
                   <button
                     type="button"
                     aria-label={`Delete ${opp.slug}`}
@@ -159,6 +235,23 @@ export default function OppListPage() {
                   <StatusBadge status={opp.status} />
                 </div>
               </div>
+
+              {opp.eval_score !== null && opp.eval_score !== undefined && (
+                <div className="mt-2">
+                  <ScoreChip score={opp.eval_score} passed={opp.eval_passed} />
+                </div>
+              )}
+
+              {(opp.pending_gates ?? []).length > 0 && (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-300">
+                  <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
+                  <span className="font-medium">Awaiting review:</span>
+                  <span className="truncate font-mono text-amber-200">
+                    {(opp.pending_gates ?? []).join(", ")}
+                  </span>
+                </div>
+              )}
+
               {opp.current_step && (
                 <div className="mt-3 text-sm text-muted-foreground">
                   <span className="text-muted-foreground">current:</span>{" "}
@@ -232,4 +325,61 @@ function statusColor(status: string): string {
     default:
       return "bg-muted text-muted-foreground";
   }
+}
+
+function ScoreChip({ score, passed }: { score: number; passed: boolean | null }) {
+  const rounded = Math.round(score);
+  const tone =
+    passed === true
+      ? "bg-emerald-900/60 text-emerald-200 border-emerald-700"
+      : passed === false
+        ? "bg-red-900/60 text-red-200 border-red-700"
+        : "bg-muted text-muted-foreground border-border";
+  const glyph = passed === true ? "✓" : passed === false ? "✕" : "·";
+  const label =
+    passed === true ? "passed" : passed === false ? "failed" : "scored";
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
+      title={`opp-eval ${label}: ${rounded}/100`}
+    >
+      <span aria-hidden="true">{glyph}</span>
+      <span>{rounded}<span className="opacity-60">/100</span></span>
+      <span className="opacity-70">opp-eval {label}</span>
+    </span>
+  );
+}
+
+function sortOpps(opps: OppCard[], key: SortKey): OppCard[] {
+  const out = [...opps];
+  switch (key) {
+    case "recent":
+      out.sort((a, b) => {
+        const at = a.created_at ?? "";
+        const bt = b.created_at ?? "";
+        if (at === bt) return a.slug.localeCompare(b.slug);
+        return bt.localeCompare(at); // newest first
+      });
+      break;
+    case "score":
+      out.sort((a, b) => {
+        const av = a.eval_score ?? -1;
+        const bv = b.eval_score ?? -1;
+        if (av === bv) return a.slug.localeCompare(b.slug);
+        return bv - av;
+      });
+      break;
+    case "status":
+      out.sort((a, b) => {
+        const ar = STATUS_RANK[a.status] ?? 99;
+        const br = STATUS_RANK[b.status] ?? 99;
+        if (ar === br) return a.slug.localeCompare(b.slug);
+        return ar - br;
+      });
+      break;
+    case "slug":
+      out.sort((a, b) => a.slug.localeCompare(b.slug));
+      break;
+  }
+  return out;
 }
