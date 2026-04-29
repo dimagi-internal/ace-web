@@ -171,9 +171,43 @@ export default function SessionsPage() {
         )}
         {!loading && !error && data && data.items.length === 0 && (
           <div className="p-12 text-center">
-            <p className="text-muted-foreground">
-              {query ? "No sessions match your search." : "No sessions yet — start a chat."}
-            </p>
+            {query ? (
+              <p className="text-muted-foreground">No sessions match your search.</p>
+            ) : statusFilter === "imported" ? (
+              <>
+                <p className="text-muted-foreground">
+                  No imported sessions yet.
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Upload a Claude CLI transcript (<code>.jsonl</code>) to import an
+                  existing session.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                  Upload .jsonl
+                </Button>
+              </>
+            ) : statusFilter === "archived" ? (
+              <p className="text-muted-foreground">
+                No archived sessions.
+              </p>
+            ) : (
+              <>
+                <p className="text-muted-foreground">No sessions yet.</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Start a chat with Claude — or upload an existing CLI transcript.
+                </p>
+                <Button size="sm" className="mt-4" onClick={handleNewChat}>
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  Start a chat
+                </Button>
+              </>
+            )}
           </div>
         )}
         {!loading && !error && data && data.items.length > 0 && (
