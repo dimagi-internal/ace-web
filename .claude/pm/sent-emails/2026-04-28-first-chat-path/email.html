@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1f2937; max-width: 720px; line-height: 1.55; }
+  h1 { font-size: 24px; margin: 0 0 12px; color: #111827; }
+  h2 { font-size: 18px; margin: 28px 0 8px; color: #111827; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+  h3 { font-size: 15px; margin: 18px 0 6px; color: #374151; }
+  blockquote { margin: 0 0 16px; padding: 12px 16px; background: #f3f4f6; border-left: 3px solid #6366f1; color: #374151; font-style: italic; }
+  ul { padding-left: 20px; }
+  li { margin: 6px 0; }
+  .highlight { margin: 18px 0; padding: 14px 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
+  .highlight-title { font-weight: 600; color: #111827; margin-bottom: 6px; }
+  .try-it { color: #6b7280; font-size: 14px; margin-top: 6px; }
+  .try-it a { color: #4f46e5; text-decoration: none; }
+  .try-it a:hover { text-decoration: underline; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 13px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  img.shot { display: block; max-width: 100%; height: auto; margin: 10px 0; border: 1px solid #e5e7eb; border-radius: 6px; }
+  .shot-caption { font-size: 13px; color: #6b7280; margin: 4px 0 12px; font-style: italic; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f9fafb; font-weight: 600; }
+  hr { border: none; border-top: 1px solid #e5e7eb; margin: 28px 0; }
+  .meta { color: #6b7280; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>What's new in ace-web</h1>
+
+<blockquote>
+If you've signed in for the first time, you no longer have to play detective to figure out how to start a chat. We tightened three concrete dead-ends along the new-user path — empty-state CTAs, an actionable inline message when Claude CLI isn't connected, and a clearer "how do I connect?" page that finally mentions the easy option.
+</blockquote>
+
+<h2>Highlights</h2>
+
+<div class="highlight">
+  <div class="highlight-title">Inline "Connect Claude CLI" callout above the chat box</div>
+  <p>The placeholder text used to read <code>Claude CLI not connected — visit /auth/cli to enable chat</code>, but the path lived inside a textarea so you couldn't click it. Replaced with a real amber callout sitting directly above the input, with a clickable <strong>Connect now →</strong> link.</p>
+  <img class="shot" src="cid:chat-cli-blocked" alt="Chat with the new amber Connect Claude CLI callout above the SendBox">
+  <div class="shot-caption">After: amber strip with clickable "Connect now →" link directly above the input.</div>
+  <p class="try-it"><strong>Try it:</strong> <a href="https://labs.connect.dimagi.com/ace/chat">https://labs.connect.dimagi.com/ace/chat</a> in a session where the server doesn't have CLI credentials yet.</p>
+</div>
+
+<div class="highlight">
+  <div class="highlight-title">Connect Claude CLI page now leads with the easy path</div>
+  <p>Used to push the python-script flow first, which assumes you have the repo checked out and python ready. Now leads with <code>/ace-web:create-cli-credentials</code> (a Claude Code slash command, one line) and keeps the script as the fallback. The disconnected-state copy stops being operator-speak and starts being user-friendly.</p>
+  <img class="shot" src="cid:auth-cli" alt="Connect Claude CLI page with new Option 1 / Option 2 boxes">
+  <div class="shot-caption">After: friendly "Not connected" copy + Option 1 (Claude Code skill, marked <em>easiest</em>) and Option 2 (python script) boxes.</div>
+  <p class="try-it"><strong>Try it:</strong> <a href="https://labs.connect.dimagi.com/ace/auth/cli">https://labs.connect.dimagi.com/ace/auth/cli</a></p>
+</div>
+
+<div class="highlight">
+  <div class="highlight-title">Sessions tab empty-states stop being a one-line dead-end</div>
+  <p>The active-empty branch now has a real <strong>Start a chat</strong> button. The imported-empty branch has its own <strong>Upload .jsonl</strong> CTA. The archived-empty branch finally says "No archived sessions." instead of the misleading "No sessions yet — start a chat" the old code shipped on every empty filter.</p>
+  <img class="shot" src="cid:sessions-archived-empty" alt="Sessions tab on the Archived filter showing 'No archived sessions.'">
+  <div class="shot-caption">After: the Archived tab now correctly says "No archived sessions." instead of the old misleading active-tab copy. The active-empty branch (not screenshot-able for an account with existing chats) similarly gains a <em>Start a chat</em> button.</div>
+  <p class="try-it"><strong>Try it:</strong> <a href="https://labs.connect.dimagi.com/ace/sessions">https://labs.connect.dimagi.com/ace/sessions</a> — click the Archived or Imported tab if you don't have rows there.</p>
+</div>
+
+<hr>
+
+<h2>* Internal notes</h2>
+
+<p class="meta"><strong>Sprint summary:</strong> first-chat-path, 1 PR (bundled), one autonomous cycle. Most of the wall-clock spent on tooling bootstrap in a fresh worktree — <code>.venv</code> and <code>node_modules</code> had to be built from scratch.</p>
+
+<table>
+  <thead>
+    <tr><th>PR</th><th>Lens</th><th>Title</th><th>Self-review</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><a href="https://github.com/jjackson/ace-web/pull/143">#143</a></td><td>adoption / UX</td><td>clearer first-chat path for new web-only users</td><td>"would defend in CR"</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Convince-self gate:</strong></p>
+<ul>
+  <li>3a (mechanical): tsc -b clean, ruff clean, 519/519 pytest pass, secret scan clean, diff size 233/1500. <strong>PASS</strong>.</li>
+  <li>3b (5 questions): all answered; riskiest line is the new <code>Link</code> import in <code>SendBox.tsx</code> (consistent with existing <code>CliAuthBanner</code>). <strong>PASS</strong>.</li>
+  <li>3c (dogfood): SKIPPED at gate-time per project learning. Screenshots in this email captured post-deploy from labs prod.</li>
+  <li>3d (post-deploy health): <strong>PASS</strong> on first poll.</li>
+</ul>
+
+<p><strong>Self-review blocks:</strong> none this sprint.</p>
+
+<p><strong>What I'd do next</strong> (suggestion, not commitment):</p>
+<ul>
+  <li>Two carryover items from the trust-reliability cycle (<code>apps/opps/seed.py</code> exception leak; <code>apps/sessions/auto_title.py</code> <code>logger.warning</code> → <code>exception</code>) are still in backlog.</li>
+  <li>"Linked chats panel preview snippet" item from integration-depth is still in backlog.</li>
+  <li>A pure tech-debt cycle could revisit the legacy <code>google_sub</code> no-op field (CLAUDE.md notes it's "kept to avoid a schema migration").</li>
+</ul>
+
+<hr>
+
+<h2>** Canopy self-improvement notes</h2>
+
+<p>No new universal lessons promoted to a canopy PR this sprint. Two candidates being watched:</p>
+<ul>
+  <li><strong>"Worktree environments often lack tooling — bootstrap defensively."</strong> Two confirming cases now (this cycle + 2026-04-28-adoption-blockers). One more before opening a canopy PR.</li>
+  <li><strong>"Stale assumption docstrings outlive the assumption."</strong> Captured in project <code>learnings.md</code>; needs a third confirming case before promoting universal.</li>
+</ul>
+
+<p class="meta">Two new <em>project</em>-level learnings captured from this sprint's user feedback:</p>
+<ul class="meta">
+  <li>Release-notes emails ship as <strong>HTML, not raw markdown</strong>, with <strong>before/after screenshots</strong> embedded.</li>
+  <li>Screenshots in PM emails always come from <strong>prod (labs)</strong>, never localhost.</li>
+</ul>
+
+</body>
+</html>
