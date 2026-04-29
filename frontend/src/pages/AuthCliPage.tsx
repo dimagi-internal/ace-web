@@ -47,48 +47,103 @@ export function AuthCliPage() {
         <div className="rounded border border-amber-300 bg-amber-50 p-4 text-amber-900">
           <div className="font-semibold">Not connected</div>
           <p className="mt-1 text-sm">
-            The server has no credentials, or the stored token failed a live
-            check (expired or revoked).
+            ace-web doesn't have a working Claude credential yet. Pick one of
+            the two options below to upload yours — the easy path takes about
+            ten seconds.
           </p>
         </div>
       ) : (
         <div className="text-sm text-muted-foreground">Checking CLI status…</div>
       )}
 
-      <div className="mt-6 space-y-3">
+      <div className="mt-6 space-y-4">
         <h2 className="text-lg font-semibold">How to connect</h2>
-        <ol className="list-decimal space-y-2 pl-5 text-sm">
-          <li>
-            Authenticate the claude CLI locally (once):{" "}
-            <code className="rounded bg-muted px-1">claude setup-token</code>{" "}
-            and complete the browser flow. Skip this if you already use{" "}
-            <code className="rounded bg-muted px-1">claude -p</code> locally.
-          </li>
-          <li>
-            Mint a personal access token at{" "}
-            <Link to="/settings" className="font-semibold underline">
+
+        <div className="rounded border border-border p-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold">
+              Option 1 — Claude Code skill (recommended)
+            </h3>
+            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+              easiest
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            If you already use{" "}
+            <a
+              href="https://claude.com/claude-code"
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              Claude Code
+            </a>
+            , one slash command uploads your local CLI credential to this
+            server.
+          </p>
+          <pre className="mt-2 overflow-x-auto rounded bg-muted p-3 text-xs">
+            <code>{`/ace-web:create-cli-credentials ${baseUrl}`}</code>
+          </pre>
+          <p className="mt-2 text-xs text-muted-foreground">
+            The skill walks you through it — it'll ask you for an ACE API
+            token (mint one at{" "}
+            <Link to="/settings" className="underline">
               /settings
             </Link>
-            .
-          </li>
-          <li>
-            From the ace-web checkout, run:
-            <pre className="mt-1 overflow-x-auto rounded bg-muted p-3 text-xs">
-              <code>
-                {`ACE_URL=${baseUrl} ACE_TOKEN=<token> python scripts/ace_cli_login.py`}
+            ), read your local{" "}
+            <code className="rounded bg-muted px-1">
+              ~/.claude/.credentials.json
+            </code>{" "}
+            (or macOS Keychain), and POST the blob. Refresh this page when
+            done.
+          </p>
+        </div>
+
+        <div className="rounded border border-border p-4">
+          <h3 className="text-sm font-semibold">
+            Option 2 — Python script (no Claude Code required)
+          </h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Use this if you don't have Claude Code installed but you do have a
+            local checkout of the ace-web repo.
+          </p>
+          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
+            <li>
+              Authenticate the claude CLI locally (once):{" "}
+              <code className="rounded bg-muted px-1">claude setup-token</code>{" "}
+              and complete the browser flow. Skip this if you already use{" "}
+              <code className="rounded bg-muted px-1">claude -p</code> locally.
+            </li>
+            <li>
+              Mint a personal access token at{" "}
+              <Link to="/settings" className="font-semibold underline">
+                /settings
+              </Link>
+              .
+            </li>
+            <li>
+              From the ace-web checkout, run:
+              <pre className="mt-1 overflow-x-auto rounded bg-muted p-3 text-xs">
+                <code>
+                  {`ACE_URL=${baseUrl} ACE_TOKEN=<token> python scripts/ace_cli_login.py`}
+                </code>
+              </pre>
+            </li>
+            <li>
+              The script reads your local credential blob (macOS Keychain or{" "}
+              <code className="rounded bg-muted px-1">
+                ~/.claude/.credentials.json
               </code>
-            </pre>
-          </li>
-          <li>
-            The script reads your local credential blob (macOS Keychain or{" "}
-            <code className="rounded bg-muted px-1">~/.claude/.credentials.json</code>)
-            and POSTs it to this server. Refresh this page when done.
-          </li>
-        </ol>
+              ) and POSTs it to this server. Refresh this page when done.
+            </li>
+          </ol>
+        </div>
+
         <p className="text-xs text-muted-foreground">
-          The credential blob includes a refresh token, so the server's{" "}
-          <code className="rounded bg-muted px-1">claude</code> CLI keeps
-          working as tokens rotate — no re-upload needed unless you revoke.
+          Either path uploads a credential blob with a refresh token, so the
+          server's <code className="rounded bg-muted px-1">claude</code> CLI
+          keeps working as tokens rotate — no re-upload needed unless you
+          revoke.
         </p>
       </div>
     </div>
