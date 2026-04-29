@@ -7,6 +7,7 @@ import { ChatRedirectPage } from "./pages/ChatRedirectPage";
 import HealthPage from "./pages/HealthPage";
 import InviteAcceptPage from "./pages/InviteAcceptPage";
 import { NoWorkspaceRedirect } from "./pages/NoWorkspaceRedirect";
+import OppComparePage from "./pages/OppComparePage";
 import OppListPage from "./pages/OppListPage";
 import OppWorkbenchPage from "./pages/OppWorkbenchPage";
 import SessionsPage from "./pages/SessionsPage";
@@ -28,6 +29,10 @@ export const router = createBrowserRouter(
           children: [
             { index: true, element: <Navigate to="opps" replace /> },
             { path: "opps", element: <OppListPage /> },
+            {
+              path: "opps/compare/:slugA/:slugB",
+              element: <OppComparePage />,
+            },
             { path: "opps/:slug", element: <OppWorkbenchPage /> },
             { path: "opps/:slug/runs/:runId", element: <OppWorkbenchPage /> },
             {

@@ -432,6 +432,23 @@ def load_opp_card(
     )
 
 
+def load_opp_card_by_slug(
+    client: DriveClient, *, ace_folder_id: str, slug: str
+) -> OppCard:
+    """Locate ``ACE/<slug>/`` and return its OppCard.
+
+    Convenience wrapper for callers that have a slug but not the
+    pre-listed children (e.g. the compare endpoint). Raises
+    FileNotFoundError when the opp folder doesn't exist.
+    """
+    ace_children = client.list_files(ace_folder_id)
+    opp_folder = _find_child_folder(ace_children, slug)
+    if opp_folder is None:
+        raise FileNotFoundError(f"no opp folder named {slug!r} under ACE/")
+    opp_children = client.list_files(opp_folder.id)
+    return load_opp_card(client, opp_folder=opp_folder, opp_children=opp_children)
+
+
 _OPP_EVAL_VARIANTS = ("opp-eval-deep.yaml", "opp-eval-monitor.yaml", "opp-eval-quick.yaml")
 
 

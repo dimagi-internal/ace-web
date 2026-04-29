@@ -5,6 +5,7 @@ import type {
   DiscussResponse,
   LinkedChat,
   OppCard,
+  OppCompare,
   OppSnapshot,
   Scorecard,
   StepDetail,
@@ -41,6 +42,12 @@ export function updateOppTags(slug: string, tags: string[]): Promise<{ slug: str
 export function getOpp(slug: string, runId?: string): Promise<OppSnapshot> {
   const q = runId ? `?run_id=${encodeURIComponent(runId)}` : "";
   return request<OppSnapshot>(`/opps/${encodeURIComponent(slug)}${q}`);
+}
+
+export function getOppCompare(slugA: string, slugB: string): Promise<OppCompare> {
+  return request<OppCompare>(
+    `/opps/compare/${encodeURIComponent(slugA)}/${encodeURIComponent(slugB)}`,
+  );
 }
 
 export function getScorecard(slug: string): Promise<Scorecard> {

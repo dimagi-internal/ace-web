@@ -229,6 +229,23 @@ export interface DiscussResponse {
   session_slug: string;
 }
 
+export interface OppCompareSummary {
+  score_a: number | null;
+  passed_a: boolean | null;
+  score_b: number | null;
+  passed_b: boolean | null;
+  score_delta: number | null;
+  pending_gates_a: number;
+  pending_gates_b: number;
+  pending_gates_delta: number;
+}
+
+export interface OppCompare {
+  a: OppSnapshot;
+  b: OppSnapshot;
+  summary: OppCompareSummary;
+}
+
 export interface Scorecard {
   latest_verdict: Judge | null;
   latest_verdict_variant: "deep" | "monitor" | "quick" | null;
