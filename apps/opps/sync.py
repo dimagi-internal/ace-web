@@ -339,19 +339,26 @@ def _gates_from_state(state_data: dict) -> dict[str, list[GateDecision]]:
 
 @dataclass
 class OppCard:
-    """Minimal opp snapshot for the /api/opps/ list — no step synthesis,
-    no artifact attribution, no verdict reads. Just enough to render a card.
+    """Minimal opp snapshot for the /api/opps/ list.
 
-    Populated from at most two Drive calls per opp: the folder listing
-    (already performed by the caller for the signal check) and a single
-    ``state.yaml`` ``get_content`` (skipped if the file isn't present).
+    Populated from a bounded number of Drive calls per opp:
+      - Folder listing (already performed by the caller for the signal
+        check) — reused, no extra call.
+      - ``state.yaml`` ``get_content`` (skipped when absent).
+      - When (and only when) the opp has a ``verdicts/`` subfolder: one
+        ``list_files`` of that folder plus one ``get_content`` for the
+        highest-rank ``opp-eval-*.yaml`` (deep > monitor > quick).
+
     ``load_opp`` does ~6 calls per opp including a recursive tree scan
-    and N verdict reads — far too expensive for a list view.
+    and N verdict reads — too expensive for a list view.
     """
     opp: OppManifest
     current_phase: str | None
     current_step: str | None
     status: str
+    pending_gate_skills: list[str]      # skills with gate decision == "pending"
+    eval_score: float | None            # latest opp-eval overall_score (0-100), if any
+    eval_passed: bool | None            # latest opp-eval verdict pass/fail, if any
 
 
 def load_opp_card(
@@ -400,12 +407,77 @@ def load_opp_card(
         current_run_id="r1",
     )
 
+    # Gates come for free from state.yaml — no extra Drive call.
+    gates_by_skill = _gates_from_state(state_data)
+    pending = sorted(
+        skill
+        for skill, history in gates_by_skill.items()
+        if history and history[-1].decision == "pending"
+    )
+
+    # opp-eval verdict — only fetched when the opp has a verdicts/ subfolder
+    # AND that folder contains an opp-eval-*.yaml. This is bounded by the
+    # opp's existing artifact tree, so the marginal cost is zero for opps
+    # that haven't been judged yet.
+    eval_score, eval_passed = _load_opp_eval_summary(client, opp_children)
+
     return OppCard(
         opp=opp_manifest,
         current_phase=state_data.get("current_phase"),
         current_step=state_data.get("current_step"),
         status="running",  # match load_opp's hardcoded status
+        pending_gate_skills=pending,
+        eval_score=eval_score,
+        eval_passed=eval_passed,
     )
+
+
+_OPP_EVAL_VARIANTS = ("opp-eval-deep.yaml", "opp-eval-monitor.yaml", "opp-eval-quick.yaml")
+
+
+def _load_opp_eval_summary(
+    client: DriveClient, opp_children: list[DriveFile]
+) -> tuple[float | None, bool | None]:
+    """Return (score, passed) from the opp's latest opp-eval verdict.
+
+    Looks for ``verdicts/opp-eval-{deep,monitor,quick}.yaml`` in the
+    opp's ``verdicts/`` subfolder, prefers deep over monitor over quick,
+    parses the chosen file, and returns its score + pass/fail.
+
+    Returns (None, None) when the opp has no verdicts/ folder or no
+    matching opp-eval verdict. Drive errors / malformed YAML degrade
+    silently — the list page should never 500 because of one bad file.
+    """
+    verdicts_folder = _find_child_folder(opp_children, "verdicts")
+    if verdicts_folder is None:
+        return (None, None)
+
+    try:
+        verdict_files = client.list_files(verdicts_folder.id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to list verdicts/ for opp: %s", exc)
+        return (None, None)
+
+    # Pick highest-rank variant present.
+    by_name = {f.name: f for f in verdict_files if not _is_folder(f)}
+    chosen: DriveFile | None = None
+    for variant in _OPP_EVAL_VARIANTS:
+        if variant in by_name:
+            chosen = by_name[variant]
+            break
+    if chosen is None:
+        return (None, None)
+
+    try:
+        body = _read_text(client, chosen)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to read %s: %s", chosen.name, exc)
+        return (None, None)
+
+    verdict = _parse_verdict_yaml(body)
+    if verdict is None:
+        return (None, None)
+    return (verdict.score, verdict.passed)
 
 
 def load_opp(
