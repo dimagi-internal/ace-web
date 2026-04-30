@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { SystemSnapshot } from "./types";
 
-type ViewMode = "pipeline" | "agents";
+type ViewMode = "pipeline" | "agents" | "mcps";
 
 interface Props {
   snapshot: SystemSnapshot;
@@ -14,6 +14,7 @@ interface Props {
 export function SystemHeader({ snapshot, view, onViewChange, updateDismissed, onDismissUpdate }: Props) {
   const judgeCount = snapshot.skills.filter((s) => s.has_judge).length;
   const recurringCount = snapshot.skills.filter((s) => s.is_recurring).length;
+  const mcpToolCount = snapshot.mcps.reduce((acc, s) => acc + s.tools.length, 0);
 
   return (
     <div className="flex flex-col border-b border-border">
@@ -52,21 +53,30 @@ export function SystemHeader({ snapshot, view, onViewChange, updateDismissed, on
             <span>
               <strong className="text-foreground">{recurringCount}</strong> recurring
             </span>
+            <span>
+              <strong className="text-foreground">{mcpToolCount}</strong> MCP tools
+            </span>
           </div>
         </div>
 
         <div className="flex overflow-hidden rounded-md border border-border bg-card text-xs">
-          {(["pipeline", "agents"] as const).map((mode) => (
+          {(
+            [
+              { mode: "pipeline", label: "Pipeline" },
+              { mode: "agents", label: "Agents" },
+              { mode: "mcps", label: "MCPs" },
+            ] as const
+          ).map(({ mode, label }) => (
             <button
               key={mode}
               type="button"
               onClick={() => onViewChange(mode)}
               className={cn(
-                "px-3 py-1.5 font-medium capitalize",
+                "px-3 py-1.5 font-medium",
                 view === mode ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {mode}
+              {label}
             </button>
           ))}
         </div>

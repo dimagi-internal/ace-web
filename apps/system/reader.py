@@ -9,12 +9,13 @@ phase is a one-file edit in the plugin, no ace-web change required.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
 from typing import Any
 
-from apps.system.parsers import parse_artifact_manifest, parse_frontmatter
+from apps.system.parsers import parse_artifact_manifest, parse_frontmatter, parse_mcp_tools
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +79,90 @@ def _load_artifacts(plugin_path: Path) -> list[dict[str, Any]]:
     except Exception as exc:
         log.warning("Failed to parse artifact manifest: %s", exc)
         return []
+
+
+_TOOL_NAME_RE = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b")
+
+
+def _resolve_server_path(plugin_path: Path, server_args: list[Any]) -> Path | None:
+    """Resolve the .ts file path from a plugin.json mcpServers[X].args entry.
+
+    The args list looks like ``["tsx", "${CLAUDE_PLUGIN_ROOT}/mcp/foo.ts"]``.
+    Strip the placeholder and join with plugin_path.
+    """
+    for arg in server_args or []:
+        if not isinstance(arg, str):
+            continue
+        if arg.endswith(".ts"):
+            relative = arg.replace("${CLAUDE_PLUGIN_ROOT}", "").lstrip("/")
+            candidate = plugin_path / relative
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _load_mcps(
+    plugin_path: Path, skill_files: dict[str, tuple[dict, str]]
+) -> list[dict[str, Any]]:
+    """Load MCP servers and their tools from the plugin's plugin.json.
+
+    For each server declared in plugin.json#mcpServers, locate the .ts source,
+    parse ``server.tool('name', ...)`` registrations, and cross-reference each
+    tool name against skill bodies to produce ``used_by``.
+    """
+    plugin_json = plugin_path / ".claude-plugin" / "plugin.json"
+    if not plugin_json.is_file():
+        return []
+    try:
+        manifest = json.loads(plugin_json.read_text(encoding="utf-8"))
+    except Exception as exc:
+        log.warning("Failed to parse %s: %s", plugin_json, exc)
+        return []
+
+    mcp_servers = manifest.get("mcpServers") or {}
+    if not isinstance(mcp_servers, dict):
+        return []
+
+    # Build an index of which skills mention each tool name. We scan every
+    # skill body once and collect the tool-shaped tokens.
+    skill_mentions: dict[str, set[str]] = {}
+    for skill_name, (_meta, body) in skill_files.items():
+        if not body:
+            continue
+        for tok in _TOOL_NAME_RE.findall(body):
+            skill_mentions.setdefault(tok, set()).add(skill_name)
+
+    servers: list[dict[str, Any]] = []
+    for server_name in sorted(mcp_servers.keys()):
+        cfg = mcp_servers[server_name] or {}
+        ts_path = _resolve_server_path(plugin_path, cfg.get("args") or [])
+        if ts_path is None:
+            servers.append(
+                {
+                    "name": server_name,
+                    "source_file": None,
+                    "tools": [],
+                    "warning": "server file not found",
+                }
+            )
+            continue
+        try:
+            ts_source = ts_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            log.warning("Failed to read %s: %s", ts_path, exc)
+            continue
+        tools = parse_mcp_tools(ts_source)
+        for tool in tools:
+            tool["used_by"] = sorted(skill_mentions.get(tool["name"], set()))
+        servers.append(
+            {
+                "name": server_name,
+                "source_file": str(ts_path.relative_to(plugin_path)),
+                "tools": tools,
+                "warning": None,
+            }
+        )
+    return servers
 
 
 def _phase_skill_entries(
@@ -213,12 +298,14 @@ def load_system_overview(plugin_path: str) -> dict[str, Any]:
             "agents": [],
             "artifacts": [],
             "phases": [],
+            "mcps": [],
             "warning": f"ACE plugin not found at {plugin_path}",
         }
 
     skill_files = _load_skill_files(pp)
     agent_files = _load_agent_files(pp)
     artifacts = _load_artifacts(pp)
+    mcps = _load_mcps(pp, skill_files)
 
     phases, skill_index = _phase_skill_entries(agent_files)
 
@@ -257,6 +344,7 @@ def load_system_overview(plugin_path: str) -> dict[str, Any]:
             }
             for p in phases
         ],
+        "mcps": mcps,
         "warning": None,
     }
 

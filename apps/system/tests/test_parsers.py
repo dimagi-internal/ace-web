@@ -1,6 +1,6 @@
 """Tests for pure parsing functions — frontmatter and artifact manifest."""
 
-from apps.system.parsers import parse_artifact_manifest, parse_frontmatter
+from apps.system.parsers import parse_artifact_manifest, parse_frontmatter, parse_mcp_tools
 
 # ---------------------------------------------------------------------------
 # parse_frontmatter
@@ -192,3 +192,122 @@ class TestParseArtifactManifest:
         state_yaml = next((e for e in result if e["path"] == "state.yaml"), None)
         assert state_yaml is not None
         assert "state:" in state_yaml["description"]
+
+
+# ---------------------------------------------------------------------------
+# parse_mcp_tools
+# ---------------------------------------------------------------------------
+
+
+class TestParseMcpTools:
+    def test_three_arg_shape_uses_preceding_comment(self):
+        """server.tool(name, schema, handler) falls back to the // comment above."""
+        src = """
+const server = new McpServer({ name: 'demo' });
+
+// Look up an opportunity by id
+server.tool('get_opp',
+  { organization_slug: z.string(), opportunity_id: z.string() },
+  async (args) => runAtom(args)
+);
+""".strip()
+        tools = parse_mcp_tools(src)
+        assert len(tools) == 1
+        assert tools[0]["name"] == "get_opp"
+        assert tools[0]["description"] == "Look up an opportunity by id"
+        assert tools[0]["params"] == ["organization_slug", "opportunity_id"]
+
+    def test_four_arg_shape_uses_inline_description(self):
+        """server.tool(name, description, schema, handler) — gdrive shape."""
+        src = """
+server.tool(
+  'sheets_read',
+  'Read a range of cells from a Google Spreadsheet. Returns rows as arrays.',
+  {
+    spreadsheetId: z.string().describe('The spreadsheet ID'),
+    range: z.string().describe('A1 notation range, e.g. "Sheet1!A1:D10"'),
+  },
+  async ({ spreadsheetId, range }) => result(null),
+);
+""".strip()
+        tools = parse_mcp_tools(src)
+        assert len(tools) == 1
+        assert tools[0]["name"] == "sheets_read"
+        assert "Read a range of cells" in tools[0]["description"]
+        assert tools[0]["params"] == ["spreadsheetId", "range"]
+
+    def test_section_divider_comment_filtered(self):
+        """`── Programs ──` style headers describe a group, not the tool."""
+        src = """
+// ── Programs ──────────────────────────────────────────────────────
+
+server.tool('connect_list_programs',
+  { organization_slug: z.string() },
+  async (args) => null
+);
+""".strip()
+        tools = parse_mcp_tools(src)
+        assert tools[0]["description"] is None
+
+    def test_nested_zod_object_does_not_leak_inner_keys(self):
+        """A z.object({...}) param shouldn't surface its inner fields as top-level keys."""
+        src = """
+server.tool('connect_set_verification_flags',
+  {
+    organization_slug: z.string(),
+    flags: z.object({ duplicate: z.boolean(), gps: z.boolean() }),
+  },
+  async (args) => null
+);
+""".strip()
+        tools = parse_mcp_tools(src)
+        assert tools[0]["params"] == ["organization_slug", "flags"]
+
+    def test_concatenated_description_strings(self):
+        """`'foo' + 'bar'` style descriptions are concatenated."""
+        src = """
+server.tool(
+  'big_tool',
+  'first part ' + 'second part',
+  { x: z.string() },
+  async (args) => null
+);
+""".strip()
+        tools = parse_mcp_tools(src)
+        assert tools[0]["description"] == "first part second part"
+
+    def test_multiple_tools_with_line_numbers(self):
+        src = """
+server.tool('one', { a: z.string() }, async () => null);
+
+server.tool('two', { b: z.string() }, async () => null);
+""".strip()
+        tools = parse_mcp_tools(src)
+        assert [t["name"] for t in tools] == ["one", "two"]
+        assert tools[0]["line"] < tools[1]["line"]
+
+    def test_real_mcp_servers_parse(self):
+        """Regression: the four real MCP server files must parse without errors."""
+        import os
+        from pathlib import Path
+        mcp_dir = Path("/Users/jjackson/emdash-projects/ace/mcp")
+        if not mcp_dir.is_dir():
+            import pytest
+            pytest.skip("ACE plugin not available in this environment")
+        # Each known server should yield at least a handful of tools.
+        expected_min = {
+            "connect-server.ts": 20,
+            "google-drive-server.ts": 15,
+            "mobile-server.ts": 10,
+            "ocs-server.ts": 20,
+        }
+        for fname, minimum in expected_min.items():
+            f = mcp_dir / fname
+            if not f.is_file():
+                continue
+            tools = parse_mcp_tools(f.read_text())
+            assert len(tools) >= minimum, f"{fname}: only got {len(tools)} tools"
+            # Every tool has a snake_case name and at least an empty params list
+            for t in tools:
+                assert "_" in t["name"]
+                assert isinstance(t["params"], list)

@@ -6,13 +6,14 @@ import { SystemHeader } from "../components/system/SystemHeader";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { PipelineView } from "../components/system/PipelineView";
 import { AgentsView } from "../components/system/AgentsView";
+import { McpsView } from "../components/system/McpsView";
 
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "loaded"; snapshot: SystemSnapshot };
 
-type ViewMode = "pipeline" | "agents";
+type ViewMode = "pipeline" | "agents" | "mcps";
 
 export default function SystemPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
@@ -51,7 +52,9 @@ export default function SystemPage() {
         updateDismissed={updateDismissed}
         onDismissUpdate={() => setUpdateDismissed(true)}
       />
-      {view === "pipeline" ? <PipelineView snapshot={snapshot} /> : <AgentsView snapshot={snapshot} />}
+      {view === "pipeline" && <PipelineView snapshot={snapshot} />}
+      {view === "agents" && <AgentsView snapshot={snapshot} />}
+      {view === "mcps" && <McpsView snapshot={snapshot} />}
     </div>
   );
 }
