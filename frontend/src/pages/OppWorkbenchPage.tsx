@@ -4,7 +4,6 @@ import { useParams } from "react-router-dom";
 import { getOpp } from "../api/opps";
 import type { OppSnapshot, Step } from "../api/types";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
-import { OppSidebar } from "../components/opps/OppSidebar";
 import { PendingGatesBanner } from "../components/opps/PendingGatesBanner";
 import { SkillList } from "../components/opps/SkillList";
 import { StepDetailPane } from "../components/opps/StepDetailPane";
@@ -74,9 +73,6 @@ export default function OppWorkbenchPage() {
         onSelect={setSelectedSkill}
       />
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-[180px] border-r border-border bg-background">
-          <OppSidebar />
-        </aside>
         <main className="flex-1 overflow-y-auto">
           <SkillList
             steps={snapshot.current_run.steps}
