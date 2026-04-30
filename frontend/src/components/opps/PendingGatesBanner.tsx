@@ -28,8 +28,8 @@ export function PendingGatesBanner({ steps, onSelect }: Props) {
       <AlertTriangle className="h-3.5 w-3.5 text-amber-500" aria-hidden />
       <span className="font-medium text-amber-700 dark:text-amber-300">
         {pending.length === 1
-          ? "1 gate awaiting review"
-          : `${pending.length} gates awaiting review`}
+          ? "1 gate brief, no decision recorded"
+          : `${pending.length} gate briefs, no decisions recorded`}
       </span>
       <span className="flex flex-wrap gap-1.5">
         {pending.map((s) => (

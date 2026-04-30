@@ -132,6 +132,7 @@ export interface OppCard {
   pending_gates: string[];
   eval_score: number | null;
   eval_passed: boolean | null;
+  last_activity_at: string | null;
 }
 
 export interface Artifact {
