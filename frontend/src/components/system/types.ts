@@ -43,6 +43,21 @@ export interface AgentDetail extends AgentSummary {
   body_markdown: string;
 }
 
+export interface McpToolSummary {
+  name: string;
+  description: string | null;
+  params: string[];
+  used_by: string[];
+  line: number;
+}
+
+export interface McpServerSummary {
+  name: string;
+  source_file: string | null;
+  tools: McpToolSummary[];
+  warning: string | null;
+}
+
 export interface SystemSnapshot {
   plugin_version: string | null;
   remote_version: string | null;
@@ -51,5 +66,6 @@ export interface SystemSnapshot {
   agents: AgentSummary[];
   artifacts: ArtifactEntry[];
   phases: PhaseInfo[];
+  mcps: McpServerSummary[];
   warning: string | null;
 }

@@ -77,6 +77,48 @@ def plugin_dir(tmp_path):
         "] as const;\n"
     )
 
+    # .claude-plugin/plugin.json declaring two MCP servers
+    plugin_meta = tmp_path / ".claude-plugin"
+    plugin_meta.mkdir()
+    (plugin_meta / "plugin.json").write_text(
+        '{\n'
+        '  "name": "ace",\n'
+        '  "mcpServers": {\n'
+        '    "ace-demo": {\n'
+        '      "command": "npx",\n'
+        '      "args": ["tsx", "${CLAUDE_PLUGIN_ROOT}/mcp/demo-server.ts"]\n'
+        '    },\n'
+        '    "ace-missing": {\n'
+        '      "command": "npx",\n'
+        '      "args": ["tsx", "${CLAUDE_PLUGIN_ROOT}/mcp/missing.ts"]\n'
+        '    }\n'
+        '  }\n'
+        '}\n'
+    )
+
+    # mcp/demo-server.ts with two tools, one referenced by idea-to-pdd
+    mcp_dir = tmp_path / "mcp"
+    mcp_dir.mkdir()
+    (mcp_dir / "demo-server.ts").write_text(
+        "// Look up an opportunity by id\n"
+        "server.tool('demo_get_opp',\n"
+        "  { organization_slug: z.string(), opportunity_id: z.string() },\n"
+        "  async (args) => null\n"
+        ");\n"
+        "\n"
+        "server.tool(\n"
+        "  'demo_list_things',\n"
+        "  'List the things',\n"
+        "  { limit: z.number() },\n"
+        "  async () => null\n"
+        ");\n"
+    )
+    # idea-to-pdd's body mentions demo_get_opp so the cross-reference fires
+    skill_md = tmp_path / "skills" / "idea-to-pdd" / "SKILL.md"
+    skill_md.write_text(
+        skill_md.read_text() + "\nUses MCP tool `demo_get_opp` for lookups.\n"
+    )
+
     return tmp_path
 
 
@@ -130,7 +172,35 @@ class TestLoadSystemOverview:
         assert overview["skills"] == []
         assert overview["agents"] == []
         assert overview["artifacts"] == []
+        assert overview["mcps"] == []
         assert overview["warning"] is not None
+
+    def test_mcps_loaded_from_plugin_json(self, plugin_dir):
+        overview = load_system_overview(str(plugin_dir))
+        names = [s["name"] for s in overview["mcps"]]
+        assert names == ["ace-demo", "ace-missing"]
+
+    def test_mcp_tools_parsed(self, plugin_dir):
+        overview = load_system_overview(str(plugin_dir))
+        demo = next(s for s in overview["mcps"] if s["name"] == "ace-demo")
+        tool_names = [t["name"] for t in demo["tools"]]
+        assert tool_names == ["demo_get_opp", "demo_list_things"]
+        assert demo["tools"][0]["description"] == "Look up an opportunity by id"
+        assert demo["tools"][1]["description"] == "List the things"
+
+    def test_mcp_used_by_cross_reference(self, plugin_dir):
+        overview = load_system_overview(str(plugin_dir))
+        demo = next(s for s in overview["mcps"] if s["name"] == "ace-demo")
+        get_opp = next(t for t in demo["tools"] if t["name"] == "demo_get_opp")
+        assert get_opp["used_by"] == ["idea-to-pdd"]
+        list_things = next(t for t in demo["tools"] if t["name"] == "demo_list_things")
+        assert list_things["used_by"] == []
+
+    def test_mcp_missing_server_file(self, plugin_dir):
+        overview = load_system_overview(str(plugin_dir))
+        missing = next(s for s in overview["mcps"] if s["name"] == "ace-missing")
+        assert missing["tools"] == []
+        assert missing["warning"]
 
 
 class TestLoadSkillDetail:
