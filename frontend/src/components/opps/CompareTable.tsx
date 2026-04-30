@@ -114,7 +114,7 @@ function StepCell({ step }: { step: Step }) {
 function gateBadge(step: Step): string | null {
   if (!step.gates || step.gates.length === 0) return null;
   const last = step.gates[step.gates.length - 1];
-  if (last.decision === "pending") return "● awaiting review";
+  if (last.decision === "pending") return "● no decision";
   if (last.decision === "approved") return "✓ approved";
   if (last.decision === "rejected") return "✕ rejected";
   return null;

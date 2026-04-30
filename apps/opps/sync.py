@@ -351,6 +351,15 @@ class OppCard:
 
     ``load_opp`` does ~6 calls per opp including a recursive tree scan
     and N verdict reads — too expensive for a list view.
+
+    Note on ``status`` and ``last_activity_at``: ace-web has no live
+    process signal — we only see what Drive shows us. ``status`` reports
+    what we observed (``ok`` = state.yaml present and parsable; ``no-state``
+    = no state.yaml; ``error`` set by callers when load failed). It does
+    NOT claim "running"; the plugin may have exited hours ago.
+    ``last_activity_at`` is state.yaml's Drive modifiedTime — the plugin
+    updates state.yaml on every step transition, so this is the best
+    cheap proxy for "when did anything happen here."
     """
     opp: OppManifest
     current_phase: str | None
@@ -359,6 +368,7 @@ class OppCard:
     pending_gate_skills: list[str]      # skills with gate decision == "pending"
     eval_score: float | None            # latest opp-eval overall_score (0-100), if any
     eval_passed: bool | None            # latest opp-eval verdict pass/fail, if any
+    last_activity_at: str | None        # state.yaml modifiedTime (ISO-8601), if present
 
 
 def load_opp_card(
@@ -425,10 +435,11 @@ def load_opp_card(
         opp=opp_manifest,
         current_phase=state_data.get("current_phase"),
         current_step=state_data.get("current_step"),
-        status="running",  # match load_opp's hardcoded status
+        status="ok" if state_file is not None else "no-state",
         pending_gate_skills=pending,
         eval_score=eval_score,
         eval_passed=eval_passed,
+        last_activity_at=state_file.modified_time if state_file is not None else None,
     )
 
 

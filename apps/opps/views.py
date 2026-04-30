@@ -196,6 +196,7 @@ def _opp_list_impl(request):
                 "pending_gates": list(card.pending_gate_skills),
                 "eval_score": card.eval_score,
                 "eval_passed": card.eval_passed,
+                "last_activity_at": card.last_activity_at,
             })
         except Exception as exc:
             # A malformed state.yaml or a Drive blip on one opp shouldn't
@@ -221,6 +222,7 @@ def _opp_list_impl(request):
                 "pending_gates": [],
                 "eval_score": None,
                 "eval_passed": None,
+                "last_activity_at": None,
                 "error": {"message": str(exc) or exc.__class__.__name__},
             })
 
