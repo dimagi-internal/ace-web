@@ -288,7 +288,6 @@ server.tool('two', { b: z.string() }, async () => null);
 
     def test_real_mcp_servers_parse(self):
         """Regression: the four real MCP server files must parse without errors."""
-        import os
         from pathlib import Path
         mcp_dir = Path("/Users/jjackson/emdash-projects/ace/mcp")
         if not mcp_dir.is_dir():
