@@ -84,6 +84,24 @@ def test_promote_returns_authenticated_flag(admin):
 
 
 @pytest.mark.django_db
+def test_dimagi_ai_automation_can_promote(db):
+    """ace@dimagi-ai.com (automation account) can promote without is_staff."""
+    bot = get_user_model().objects.create_user(email="ace@dimagi-ai.com")
+    assert not bot.is_staff
+    UserCredential.objects.create(
+        user=bot,
+        blob_encrypted=json.dumps({"claudeAiOauth": {"accessToken": REAL}}),
+        token_prefix=REAL[:15],
+    )
+    client = APIClient()
+    client.force_authenticate(user=bot)
+    resp = client.post("/api/auth/cli/promote")
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["data"]["promoted"] is True
+    assert SystemConfig.objects.filter(key="claude_credentials_blob").exists()
+
+
+@pytest.mark.django_db
 def test_promote_corrupt_blob_returns_400(admin):
     """If the admin's personal blob is structurally valid JSON but missing
     claudeAiOauth.accessToken, store_credentials_blob raises ValueError; the

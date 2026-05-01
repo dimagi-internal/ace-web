@@ -61,6 +61,40 @@ def test_admin_can_write_global(admin):
 
 
 @pytest.mark.django_db
+def test_dimagi_ai_automation_can_write_global(db):
+    """ace@dimagi-ai.com (automation account) can rotate the global blob
+    without is_staff. Lets the e2e bot manage its own instance-wide
+    fallback creds without a human."""
+    bot = get_user_model().objects.create_user(email="ace@dimagi-ai.com")
+    assert not bot.is_staff
+    client = APIClient()
+    client.force_authenticate(user=bot)
+    resp = client.post("/api/auth/cli/upload?scope=global", BLOB, format="json")
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["data"]["scope"] == "global"
+    assert SystemConfig.objects.filter(key="claude_credentials_blob").exists()
+
+
+@pytest.mark.django_db
+def test_dimagi_ai_check_is_case_insensitive(db):
+    """Email casing shouldn't gate automation access."""
+    bot = get_user_model().objects.create_user(email="ACE@DIMAGI-AI.COM")
+    client = APIClient()
+    client.force_authenticate(user=bot)
+    resp = client.post("/api/auth/cli/upload?scope=global", BLOB, format="json")
+    assert resp.status_code == 200, resp.content
+
+
+@pytest.mark.django_db
+def test_dimagi_com_user_still_blocked_from_global(user):
+    """Regular @dimagi.com users (not the automation domain) still need is_staff."""
+    client = APIClient()
+    client.force_authenticate(user=user)
+    resp = client.post("/api/auth/cli/upload?scope=global", BLOB, format="json")
+    assert resp.status_code == 403
+
+
+@pytest.mark.django_db
 def test_malformed_blob_rejected(user):
     client = APIClient()
     client.force_authenticate(user=user)
