@@ -105,6 +105,14 @@ RUN useradd -m -u 1000 app \
     && printf '{\n  "ace": {\n    "source": {\n      "source": "github",\n      "repo": "jjackson/ace"\n    },\n    "installLocation": "/home/app/.claude/plugins/marketplaces/ace",\n    "lastUpdated": "%s"\n  }\n}\n' \
         "${INSTALLED_AT}" \
         > /home/app/.claude/plugins/known_marketplaces.json \
+    # Plugin enablement — installed + registered isn't enough either. Claude
+    # 2.x reads ~/.claude/settings.json `enabledPlugins` to decide which
+    # registered plugins to actually load. Without this entry the plugin is
+    # silently disabled even though everything else looks right (verified by
+    # in-container ECS Exec poking — toggling this entry flips
+    # init.plugins=[] → ['ace']).
+    && printf '{\n  "enabledPlugins": {\n    "ace@ace": true\n  }\n}\n' \
+        > /home/app/.claude/settings.json \
     && mkdir -p /home/app/.claude/plugin-data/ace \
     && chown -R app:app /app /home/app/.claude
 
