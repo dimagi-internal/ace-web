@@ -93,6 +93,22 @@ async def test_resume_uses_existing_cli_session_id(session):
     assert "sess_existing" in args
 
 
+async def test_spawn_passes_dangerously_skip_permissions(session):
+    """Without --dangerously-skip-permissions, claude -p answers as a
+    plain chatbot and the entire ACE plugin is unreachable. Regression
+    guard for that flag landing in every subprocess invocation."""
+    fixture = (FIXTURES / "stream_json_simple.txt").read_bytes()
+    backend = CLIBackend()
+    create = AsyncMock(return_value=_fake_proc(fixture))
+    with patch("asyncio.create_subprocess_exec", new=create):
+        async for _ in backend.stream_completion(session=session, new_user_message="hi"):
+            pass
+    args = create.call_args[0]
+    assert "--dangerously-skip-permissions" in args, (
+        f"missing --dangerously-skip-permissions in spawn args: {args!r}"
+    )
+
+
 async def test_resume_yields_events_as_they_arrive_not_buffered(session):
     """Critical: streaming UX requires real-time token delivery, not buffer-and-dump.
 
