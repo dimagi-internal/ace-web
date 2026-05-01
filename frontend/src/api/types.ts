@@ -86,6 +86,7 @@ export type WsAction =
 export type WsEvent =
   | { event: "session.state"; data: SessionState }
   | { event: "session.error"; data: { code: string; message: string; detail?: unknown } }
+  | { event: "session.title_updated"; data: { title: string } }
   | { event: "chat.stream_start"; data: { message_id: number; turn_index: number } }
   | { event: "chat.delta"; data: { message_id: number; text: string } }
   | { event: "chat.tool_use"; data: { parent_message_id: number; tool_message_id: number; block: Record<string, unknown> } }
