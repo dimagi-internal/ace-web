@@ -121,9 +121,12 @@ function ChatNotFound({ slug, detail }: { slug: string; detail: string }) {
             <Button type="button" onClick={handleNew}>
               Start a new chat
             </Button>
-            <Button asChild type="button" variant="outline">
-              <Link to={sessionsHref}>View all chats</Link>
-            </Button>
+            <Link
+              to={sessionsHref}
+              className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              View all chats
+            </Link>
           </div>
         </div>
       </div>
