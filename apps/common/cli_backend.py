@@ -213,7 +213,19 @@ class CLIBackend:
         Raises CLIBackendError if the subprocess dies before accepting the prompt
         (e.g., binary missing, permission denied, instant crash).
         """
-        full_args = [self._binary, "-p", "--verbose", "--output-format", "stream-json", *args]
+        # --dangerously-skip-permissions lets the assistant actually use Bash,
+        # Read, Edit, Write, MCP tools, etc. without per-call permission
+        # prompts. Required for non-interactive server use — there's no UI
+        # to approve prompts in real time. The blast radius is bounded by the
+        # staged per-session HOME (rm-tree'd in the finally block) and by the
+        # MCP credentials we explicitly grant (Drive SA key, Connect/OCS
+        # session cookies). Without this flag, claude -p answers as a plain
+        # chatbot and the entire ACE plugin is unreachable.
+        full_args = [
+            self._binary, "-p", "--verbose", "--output-format", "stream-json",
+            "--dangerously-skip-permissions",
+            *args,
+        ]
         proc = await asyncio.create_subprocess_exec(
             *full_args,
             stdin=asyncio.subprocess.PIPE,
