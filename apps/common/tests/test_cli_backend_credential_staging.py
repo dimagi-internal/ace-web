@@ -273,3 +273,76 @@ def test_persist_refreshed_blob_skips_malformed_blob():
         assert json.loads(cred.blob_encrypted) == original
     finally:
         backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
+def test_staged_env_symlinks_plugins_from_real_home(monkeypatch, tmp_path):
+    """The staged HOME must symlink ~/.claude/plugins/ from the real HOME so
+    claude -p can see installed plugins, slash commands, and MCP servers.
+    Without this the assistant runs as a tool-less chatbot in the container.
+    """
+    fake_home = tmp_path / "real-home"
+    real_claude = fake_home / ".claude"
+    plugins_dir = real_claude / "plugins" / "cache" / "ace" / "ace" / "0.10.55"
+    plugins_dir.mkdir(parents=True)
+    (plugins_dir / "VERSION").write_text("0.10.55\n")
+    (real_claude / "plugins" / "installed_plugins.json").write_text("{}")
+    (real_claude / "settings.json").write_text("{\"theme\":\"dark\"}")
+
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    user = get_user_model().objects.create_user(email="plug@dimagi.com")
+    blob = {"claudeAiOauth": {"accessToken": REAL, "refreshToken": "r"}}
+    UserCredential.objects.create(
+        user=user,
+        blob_encrypted=json.dumps(blob),
+        token_prefix=REAL[:15],
+    )
+    session = Session.objects.create(owner=user, slug="plug-sess", title="t")
+
+    backend = CLIBackend()
+    env, staged_home, _ = backend._stage_env_for(session)
+    try:
+        staged_claude = Path(staged_home) / ".claude"
+        # The plugins dir + settings.json must be reachable from the staged HOME.
+        assert (staged_claude / "plugins").exists()
+        assert (staged_claude / "plugins" / "installed_plugins.json").exists()
+        assert (staged_claude / "settings.json").exists()
+        # And it really is the real plugin tree (not a fresh empty dir).
+        assert (staged_claude / "plugins" / "cache" / "ace" / "ace" / "0.10.55"
+                / "VERSION").read_text().strip() == "0.10.55"
+        # But credentials.json was NOT symlinked from the real home — we wrote
+        # our own session-isolated copy.
+        creds_link = staged_claude / ".credentials.json"
+        assert creds_link.is_file() and not creds_link.is_symlink()
+    finally:
+        backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
+def test_staged_env_symlink_works_when_real_home_has_no_claude_dir(
+    monkeypatch, tmp_path
+):
+    """If the real HOME has no ~/.claude/ at all (e.g. dev laptop without claude
+    installed), staging must still succeed — plugins just won't be available."""
+    fake_home = tmp_path / "fresh-home"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    user = get_user_model().objects.create_user(email="fresh@dimagi.com")
+    blob = {"claudeAiOauth": {"accessToken": REAL, "refreshToken": "r"}}
+    UserCredential.objects.create(
+        user=user,
+        blob_encrypted=json.dumps(blob),
+        token_prefix=REAL[:15],
+    )
+    session = Session.objects.create(owner=user, slug="fresh-sess", title="t")
+
+    backend = CLIBackend()
+    env, staged_home, _ = backend._stage_env_for(session)
+    try:
+        staged_claude = Path(staged_home) / ".claude"
+        assert staged_claude.is_dir()
+        assert (staged_claude / ".credentials.json").exists()
+    finally:
+        backend._teardown_staged_home(staged_home)

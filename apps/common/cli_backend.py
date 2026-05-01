@@ -284,6 +284,32 @@ class CLIBackend:
         )
         claude_dir = staged_root / ".claude"
         claude_dir.mkdir(parents=True, exist_ok=True)
+
+        # Symlink everything from the real ~/.claude/ EXCEPT .credentials.json
+        # into the staged HOME. We need plugins/, settings.json, plugin-data/,
+        # etc. visible to the subprocess so slash commands and MCP servers
+        # work; we own the credentials file so concurrent sessions can't
+        # clobber each other's OAuth refreshes (see _persist_refreshed_blob).
+        original_home = os.environ.get("HOME") or ""
+        if original_home:
+            real_claude_dir = Path(original_home) / ".claude"
+            if real_claude_dir.is_dir():
+                for entry in real_claude_dir.iterdir():
+                    # Skip credentials — we manage that file ourselves.
+                    if entry.name == ".credentials.json":
+                        continue
+                    link = claude_dir / entry.name
+                    if link.exists() or link.is_symlink():
+                        continue
+                    try:
+                        link.symlink_to(entry)
+                    except OSError:
+                        # Best-effort — a missing plugin is recoverable but
+                        # shouldn't bring the whole turn down.
+                        logger.warning(
+                            "Could not symlink %s → %s", entry, link, exc_info=True
+                        )
+
         if blob_json:
             creds_path = claude_dir / ".credentials.json"
             creds_path.write_text(blob_json)
