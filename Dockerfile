@@ -22,11 +22,21 @@ RUN echo "claude-cli cache key: ${CLAUDE_CLI_REF}" && \
     ca-certificates \
     gnupg \
     git \
+    unzip \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g @anthropic-ai/claude-code@latest \
+    # 1Password CLI — entrypoint uses `op inject` to render the ACE plugin's
+    # .env.tpl into a real .env at container start, pulling secrets from the
+    # AI-Agents vault under a service-account token. Removes the need to
+    # provision per-credential secrets in AWS Secrets Manager for every new
+    # 1Password item the ACE plugin starts using.
+    && curl -fsSLo /tmp/op.zip "https://cache.agilebits.com/dist/1P/op2/pkg/v2.32.1/op_linux_amd64_v2.32.1.zip" \
+    && cd /tmp && unzip -q op.zip && mv op /usr/local/bin/op && chmod +x /usr/local/bin/op \
+    && rm -f op.zip op.sig \
     && rm -rf /var/lib/apt/lists/* \
-    && echo "claude --version output:" && claude --version
+    && echo "claude --version output:" && claude --version \
+    && echo "op --version output:" && op --version
 
 # Vendor the ACE plugin repo. Serves two purposes:
 #   1. The System Overview tab reads skill/agent/artifact metadata from here
