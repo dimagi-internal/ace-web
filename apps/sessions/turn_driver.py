@@ -130,7 +130,13 @@ async def drive_assistant_turn(
     # harvest any tool_use rows that belong to THIS turn (rows created by
     # _create_tool_message have turn_index > this value).
     turn_start_index = message.turn_index
-    backend = _get_backend(user=message.session.owner)
+    # Backend selection runs sync ORM (UserCredential / SystemConfig lookups
+    # + a live `claude -p ok` validation probe). Without sync_to_async,
+    # Django raises SynchronousOnlyOperation, get_stored_token returns None,
+    # cli_is_ready=False, and the selector silently falls back to
+    # ApiBackend — which is a tool-less raw API path. Result: chat answers
+    # like a chatbot, slash commands and MCP servers are unreachable.
+    backend = await sync_to_async(_get_backend)(user=message.session.owner)
     await sync_to_async(_mark_streaming)(message)
 
     accumulated: list[str] = []
