@@ -50,6 +50,14 @@ STDERR_TAIL_LINES = 400
 # MCP) hard to distinguish from "frozen" in CloudWatch.
 HEARTBEAT_INTERVAL_SECONDS = 30.0
 
+# asyncio.StreamReader's default readline limit is 2**16 (64 KB). A single
+# stream-json line from claude can easily blow past that — tool_result blocks
+# carry full file contents, large text deltas, etc. Hitting the limit raises
+# ValueError("Separator is found, but chunk is longer than limit") and kills
+# the whole turn. Set the buffer to 50 MiB which is generous enough for any
+# realistic tool output but still bounded so a runaway can't OOM the worker.
+STREAM_READER_LIMIT_BYTES = 50 * 1024 * 1024
+
 
 class CLIBackendError(RuntimeError):
     """Raised when the CLI subprocess fails in a way the consumer should know about."""
@@ -232,6 +240,7 @@ class CLIBackend:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            limit=STREAM_READER_LIMIT_BYTES,
         )
 
         proc._ace_stderr_buf = deque(maxlen=STDERR_TAIL_LINES)
