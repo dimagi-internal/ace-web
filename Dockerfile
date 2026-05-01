@@ -83,12 +83,28 @@ RUN DJANGO_SECRET_KEY=build-time-placeholder \
 RUN useradd -m -u 1000 app \
     && mkdir -p /app/.ace-claude-home \
     && ACE_VERSION=$(cat /app/vendor/ace/VERSION 2>/dev/null || echo "vendored") \
+    && INSTALLED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    # Plugin install: cache/<marketplace>/<plugin>/<version> -> /app/vendor/ace
     && mkdir -p /home/app/.claude/plugins/cache/ace/ace \
     && ln -s /app/vendor/ace "/home/app/.claude/plugins/cache/ace/ace/${ACE_VERSION}" \
-    && INSTALLED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    # Plugin registry — must match the schema Claude Code 2.x writes itself,
+    # otherwise the loader silently skips the entry. Verified by reading a
+    # real laptop install + the /api/system/cli-diag probe in the container.
     && printf '{\n  "version": 2,\n  "plugins": {\n    "ace@ace": [\n      {\n        "scope": "user",\n        "installPath": "/home/app/.claude/plugins/cache/ace/ace/%s",\n        "version": "%s",\n        "installedAt": "%s",\n        "lastUpdated": "%s"\n      }\n    ]\n  }\n}\n' \
         "${ACE_VERSION}" "${ACE_VERSION}" "${INSTALLED_AT}" "${INSTALLED_AT}" \
         > /home/app/.claude/plugins/installed_plugins.json \
+    # Marketplace registration — installed_plugins.json alone isn't enough;
+    # claude resolves the plugin's source marketplace on load, and without a
+    # `known_marketplaces.json` entry + a marketplaces/<id>/ dir the plugin
+    # is silently dropped (init payload shows plugins=[] mcp_servers=[]).
+    # Symlinking the same /app/vendor/ace tree as the marketplace install
+    # location works because /app/vendor/ace/.claude-plugin/marketplace.json
+    # is exactly what the loader reads.
+    && mkdir -p /home/app/.claude/plugins/marketplaces \
+    && ln -s /app/vendor/ace /home/app/.claude/plugins/marketplaces/ace \
+    && printf '{\n  "ace": {\n    "source": {\n      "source": "github",\n      "repo": "jjackson/ace"\n    },\n    "installLocation": "/home/app/.claude/plugins/marketplaces/ace",\n    "lastUpdated": "%s"\n  }\n}\n' \
+        "${INSTALLED_AT}" \
+        > /home/app/.claude/plugins/known_marketplaces.json \
     && mkdir -p /home/app/.claude/plugin-data/ace \
     && chown -R app:app /app /home/app/.claude
 
