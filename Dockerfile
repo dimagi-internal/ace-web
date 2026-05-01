@@ -85,7 +85,10 @@ RUN useradd -m -u 1000 app \
     && ACE_VERSION=$(cat /app/vendor/ace/VERSION 2>/dev/null || echo "vendored") \
     && mkdir -p /home/app/.claude/plugins/cache/ace/ace \
     && ln -s /app/vendor/ace "/home/app/.claude/plugins/cache/ace/ace/${ACE_VERSION}" \
-    && printf '%s\n' "{\"ace@ace\":{\"version\":\"${ACE_VERSION}\",\"installPath\":\"/home/app/.claude/plugins/cache/ace/ace/${ACE_VERSION}\",\"installedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}" > /home/app/.claude/plugins/installed_plugins.json \
+    && INSTALLED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    && printf '{\n  "version": 2,\n  "plugins": {\n    "ace@ace": [\n      {\n        "scope": "user",\n        "installPath": "/home/app/.claude/plugins/cache/ace/ace/%s",\n        "version": "%s",\n        "installedAt": "%s",\n        "lastUpdated": "%s"\n      }\n    ]\n  }\n}\n' \
+        "${ACE_VERSION}" "${ACE_VERSION}" "${INSTALLED_AT}" "${INSTALLED_AT}" \
+        > /home/app/.claude/plugins/installed_plugins.json \
     && mkdir -p /home/app/.claude/plugin-data/ace \
     && chown -R app:app /app /home/app/.claude
 
