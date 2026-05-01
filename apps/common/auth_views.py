@@ -24,6 +24,19 @@ from .envelope import error_response, success_response
 
 logger = logging.getLogger(__name__)
 
+# Domain reserved for ACE automation identities (e.g. ace@dimagi-ai.com,
+# the canonical e2e bot per CLAUDE.md). These accounts manage the shared
+# global credential blob without needing is_staff, so automation can
+# rotate the instance-wide subscription on its own.
+_AUTOMATION_EMAIL_DOMAIN = "@dimagi-ai.com"
+
+
+def _can_write_global(user) -> bool:
+    if user.is_staff:
+        return True
+    email = (user.email or "").lower()
+    return email.endswith(_AUTOMATION_EMAIL_DOMAIN)
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -83,9 +96,12 @@ def cli_auth_upload(request: Request) -> Response:
             error_response(message="scope must be 'user' or 'global'", code="bad_scope"),
             status=400,
         )
-    if scope == "global" and not request.user.is_staff:
+    if scope == "global" and not _can_write_global(request.user):
         return Response(
-            error_response(message="global scope requires staff", code="forbidden"),
+            error_response(
+                message="global scope requires staff or automation account",
+                code="forbidden",
+            ),
             status=403,
         )
 
@@ -140,10 +156,19 @@ def cli_auth_upload(request: Request) -> Response:
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def cli_auth_promote(request: Request) -> Response:
-    """Admin-only: copy the caller's UserCredential blob to the global SystemConfig row."""
-    if not request.user.is_staff:
+    """Copy the caller's UserCredential blob to the global SystemConfig row.
+
+    Allowed callers: ``is_staff`` users + automation accounts on the
+    ``@dimagi-ai.com`` domain. The latter exists so the e2e bot
+    (``ace@dimagi-ai.com``) can rotate the instance-wide subscription
+    without a human in the loop.
+    """
+    if not _can_write_global(request.user):
         return Response(
-            error_response(message="staff only", code="forbidden"),
+            error_response(
+                message="promote requires staff or automation account",
+                code="forbidden",
+            ),
             status=403,
         )
     from .models import UserCredential
