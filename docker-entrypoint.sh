@@ -23,4 +23,30 @@ else
     echo "[entrypoint] ACE_DRIVE_SA_KEY_JSON not set — ACE plugin MCP servers will fail to auth to Drive"
 fi
 
+# Render the ACE plugin's .env from .env.tpl using the 1Password service
+# account. OP_SERVICE_ACCOUNT_TOKEN comes from AWS Secrets Manager. Source
+# tpl is the canonical one inside the vendored plugin tree (/app/vendor/ace).
+# Output goes to the plugin-data dir where the ACE MCP servers (ocs-server,
+# connect-server, etc.) explicitly load it via dotenv. Without this, those
+# MCPs come up but are missing OCS_*, ACE_HQ_*, ACE_GMAIL_*, etc., and any
+# downstream skill that needs those creds fails.
+ACE_ENV_TPL="${ACE_PLUGIN_PATH:-/app/vendor/ace}/.env.tpl"
+ACE_ENV_PATH="${PLUGIN_DATA_DIR}/.env"
+if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -f "$ACE_ENV_TPL" ]; then
+    mkdir -p "$PLUGIN_DATA_DIR"
+    if op inject -i "$ACE_ENV_TPL" -o "$ACE_ENV_PATH" --account dimagi.1password.com 2>/tmp/op-inject.err; then
+        chmod 600 "$ACE_ENV_PATH"
+        echo "[entrypoint] op inject succeeded → $ACE_ENV_PATH ($(grep -c '^[A-Z]' "$ACE_ENV_PATH") env keys)"
+    else
+        echo "[entrypoint] op inject FAILED — see /tmp/op-inject.err"
+        head -c 500 /tmp/op-inject.err >&2
+        echo "" >&2
+        echo "[entrypoint] continuing without rendered .env; downstream ACE MCPs may fail to find OCS/HQ/Gmail creds"
+    fi
+elif [ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]; then
+    echo "[entrypoint] OP_SERVICE_ACCOUNT_TOKEN not set — skipping op inject. ACE plugin MCPs that need 1Password-backed creds (OCS, Connect, Gmail, HQ) will fail."
+elif [ ! -f "$ACE_ENV_TPL" ]; then
+    echo "[entrypoint] No .env.tpl found at $ACE_ENV_TPL — skipping op inject. Did the ACE plugin clone succeed?"
+fi
+
 exec "$@"
