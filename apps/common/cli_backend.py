@@ -291,6 +291,7 @@ class CLIBackend:
         # work; we own the credentials file so concurrent sessions can't
         # clobber each other's OAuth refreshes (see _persist_refreshed_blob).
         original_home = os.environ.get("HOME") or ""
+        symlinked_names: list[str] = []
         if original_home:
             real_claude_dir = Path(original_home) / ".claude"
             if real_claude_dir.is_dir():
@@ -303,12 +304,28 @@ class CLIBackend:
                         continue
                     try:
                         link.symlink_to(entry)
+                        symlinked_names.append(entry.name)
                     except OSError:
                         # Best-effort — a missing plugin is recoverable but
                         # shouldn't bring the whole turn down.
                         logger.warning(
                             "Could not symlink %s → %s", entry, link, exc_info=True
                         )
+            else:
+                logger.warning(
+                    "stage_env_for: HOME=%r has no ~/.claude/ — claude subprocess "
+                    "will run with no plugins / slash commands / MCP servers",
+                    original_home,
+                )
+        else:
+            logger.warning(
+                "stage_env_for: $HOME is unset — claude subprocess will run with "
+                "no plugins / slash commands / MCP servers"
+            )
+        logger.info(
+            "stage_env_for: session=%s staged=%s real_home=%r symlinked=%s",
+            session.slug, staged_root, original_home, symlinked_names,
+        )
 
         if blob_json:
             creds_path = claude_dir / ".credentials.json"
