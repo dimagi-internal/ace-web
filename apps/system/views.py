@@ -100,11 +100,23 @@ def cli_diag(request):
         "--dangerously-skip-permissions",
     ]
 
-    # Build env with the SAME logic cli_backend uses (minus the per-user
-    # blob staging — for diag we just use the global blob via the env that
-    # validate_stored_token uses, which is whatever's in the running
-    # process). HOME inspection is the goal here.
+    # Build env with the SAME logic cli_backend uses, plus pull the global
+    # blob from SystemConfig and set CLAUDE_CODE_OAUTH_TOKEN so claude doesn't
+    # bail with "Not logged in".
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+
+    from apps.common.models import SystemConfig
+    global_row = SystemConfig.objects.filter(key="claude_credentials_blob").first()
+    if global_row:
+        try:
+            blob = json.loads(global_row.value)
+            access = (blob.get("claudeAiOauth") or {}).get("accessToken") or ""
+            if access:
+                env["CLAUDE_CODE_OAUTH_TOKEN"] = access
+        except Exception:
+            pass
+
     home = env.get("HOME", "")
     real_claude_dir = Path(home) / ".claude" if home else None
     real_claude_listing = (
@@ -112,6 +124,14 @@ def cli_diag(request):
         if real_claude_dir and real_claude_dir.is_dir()
         else None
     )
+    installed_plugins_text = ""
+    if real_claude_dir and real_claude_dir.is_dir():
+        ip = real_claude_dir / "plugins" / "installed_plugins.json"
+        if ip.is_file():
+            try:
+                installed_plugins_text = ip.read_text()[:2000]
+            except Exception:
+                installed_plugins_text = "(unreadable)"
 
     started = time.monotonic()
     try:
@@ -182,6 +202,7 @@ def cli_diag(request):
                 "CLAUDE_CODE_OAUTH_TOKEN_prefix": (
                     env.get("CLAUDE_CODE_OAUTH_TOKEN", "")[:18] or None
                 ),
+                "installed_plugins_json": installed_plugins_text,
             },
             "stderr_tail": stderr_text[-2000:] if stderr_text else "",
             "stream_event_count": len(raw_events),
