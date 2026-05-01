@@ -8,7 +8,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # System dependencies: postgres client libs for psycopg, curl for healthchecks,
 # git for cloning vendored plugins, Node.js + the Claude CLI (the chat backend
 # spawns `claude -p` as a subprocess).
-RUN apt-get update && apt-get install -y --no-install-recommends \
+#
+# Bump CLAUDE_CLI_REF whenever you need to force a fresh `npm install` of the
+# Claude CLI — its layer is otherwise cached forever (no version pin to
+# fingerprint), and the build-cache hit means we keep shipping whatever
+# version the layer was first built with.
+ARG CLAUDE_CLI_REF=2026-05-01-skip-permissions-rollout
+RUN echo "claude-cli cache key: ${CLAUDE_CLI_REF}" && \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     curl \
@@ -17,9 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g @anthropic-ai/claude-code \
+    && npm install -g @anthropic-ai/claude-code@latest \
     && rm -rf /var/lib/apt/lists/* \
-    && claude --version
+    && echo "claude --version output:" && claude --version
 
 # Vendor the ACE plugin repo. Serves two purposes:
 #   1. The System Overview tab reads skill/agent/artifact metadata from here
