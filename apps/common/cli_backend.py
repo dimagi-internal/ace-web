@@ -22,7 +22,9 @@ import logging
 import os
 import shutil
 import tempfile
+import time
 import uuid
+from collections import deque
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -36,6 +38,17 @@ from .circuit_breaker import CircuitBreaker, CircuitOpenError
 from .cli_event_parser import parse_stream_json_lines
 
 logger = logging.getLogger(__name__)
+
+# How many lines of stderr we keep in memory per subprocess. The kernel's
+# stderr pipe buffer is ~64 KB; a long-running run can emit far more than
+# that (MCP warnings, retries). We log every line at WARNING and keep the
+# tail for inclusion in error reports.
+STDERR_TAIL_LINES = 400
+
+# Heartbeat cadence for "subprocess still alive" log lines. Anything coarser
+# than the ALB idle timeout makes long quiet stretches (e.g. waiting on an
+# MCP) hard to distinguish from "frozen" in CloudWatch.
+HEARTBEAT_INTERVAL_SECONDS = 30.0
 
 
 class CLIBackendError(RuntimeError):
@@ -94,6 +107,7 @@ class CLIBackend:
                     args=["--resume", session.cli_session_id],
                     prompt=new_user_message,
                     env=staged_env,
+                    session_slug=session.slug,
                 )
                 had_events = False
                 try:
@@ -126,7 +140,9 @@ class CLIBackend:
 
             # ── attempt 2: fresh session with seeded history ──
             history_prompt = await self._build_seeded_prompt(session, new_user_message)
-            proc = await self._spawn(args=[], prompt=history_prompt, env=staged_env)
+            proc = await self._spawn(
+                args=[], prompt=history_prompt, env=staged_env, session_slug=session.slug
+            )
             had_events = False
             try:
                 async for event in self._drain(proc):
@@ -143,15 +159,9 @@ class CLIBackend:
                 await self._cleanup(proc)
 
             if not had_events:
-                stderr_text = ""
-                if proc.stderr:
-                    try:
-                        stderr_bytes = await asyncio.wait_for(proc.stderr.read(), timeout=2)
-                        stderr_text = stderr_bytes.decode("utf-8", errors="replace")[:2000]
-                    except Exception:
-                        pass
+                stderr_text = _proc_stderr_tail(proc, char_limit=2000)
                 if stderr_text:
-                    logger.error("claude CLI stderr: %s", stderr_text)
+                    logger.error("claude CLI stderr tail: %s", stderr_text)
                 self._breaker.record_failure()
                 raise CLIBackendError(
                     f"claude CLI failed (rc={proc.returncode}, events={had_events})"
@@ -184,17 +194,26 @@ class CLIBackend:
 
     # ────────────────────────────── helpers ──────────────────────────────
 
-    async def _spawn(self, *, args: list[str], prompt: str, env: dict[str, str]):
+    async def _spawn(
+        self, *, args: list[str], prompt: str, env: dict[str, str], session_slug: str = ""
+    ):
         """Spawn the CLI subprocess, write the prompt to stdin, close it.
+
+        Also starts two concurrent background tasks attached to ``proc``:
+          * ``_ace_stderr_task`` — drains stderr line-by-line into
+            ``_ace_stderr_buf`` (bounded deque) and logs every line at
+            WARNING. Without this, a chatty CLI fills the kernel's stderr
+            pipe buffer (~64 KB) and the subprocess blocks on its next
+            stderr write — fatal for 30-min runs.
+          * ``_ace_heartbeat_task`` — logs "subprocess alive" every
+            ``HEARTBEAT_INTERVAL_SECONDS`` so quiet stretches (waiting on
+            an MCP, slow Anthropic response) are distinguishable from
+            "frozen" in CloudWatch.
 
         Raises CLIBackendError if the subprocess dies before accepting the prompt
         (e.g., binary missing, permission denied, instant crash).
         """
         full_args = [self._binary, "-p", "--verbose", "--output-format", "stream-json", *args]
-        # stderr=DEVNULL avoids a deadlock where a chatty CLI fills the stderr pipe
-        # buffer (~64KB) and blocks before we can drain it. A future task should
-        # capture stderr in a concurrent background task so error logs are available
-        # without risking the deadlock.
         proc = await asyncio.create_subprocess_exec(
             *full_args,
             stdin=asyncio.subprocess.PIPE,
@@ -202,6 +221,19 @@ class CLIBackend:
             stderr=asyncio.subprocess.PIPE,
             env=env,
         )
+
+        proc._ace_stderr_buf = deque(maxlen=STDERR_TAIL_LINES)
+        proc._ace_started_at = time.monotonic()
+        proc._ace_session_slug = session_slug
+        proc._ace_stderr_task = asyncio.create_task(
+            _drain_stderr_into(proc, proc._ace_stderr_buf, session_slug),
+            name=f"cli-stderr-{session_slug or id(proc)}",
+        )
+        proc._ace_heartbeat_task = asyncio.create_task(
+            _heartbeat(proc, session_slug),
+            name=f"cli-heartbeat-{session_slug or id(proc)}",
+        )
+
         try:
             proc.stdin.write(prompt.encode("utf-8"))
             await proc.stdin.drain()
@@ -387,30 +419,42 @@ class CLIBackend:
         await _save()
 
     async def _cleanup(self, proc) -> None:
-        """Terminate the subprocess if it's still running.
+        """Terminate the subprocess if it's still running, then cancel its
+        stderr-drain and heartbeat tasks.
 
         Runs the SIGTERM → SIGKILL escalation under asyncio.shield so that a
         client-disconnect-triggered cancellation of the enclosing view cannot
         interrupt the cleanup mid-flight and leak the subprocess.
         """
-        if proc.returncode is not None:
-            return
         try:
-            proc.terminate()
-        except ProcessLookupError:
-            return
-
-        try:
-            await asyncio.shield(
-                asyncio.wait_for(proc.wait(), timeout=self._terminate_grace)
-            )
-        except (TimeoutError, asyncio.CancelledError):
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                return
-            with contextlib.suppress(asyncio.CancelledError, ProcessLookupError):
-                await asyncio.shield(proc.wait())
+            if proc.returncode is None:
+                try:
+                    proc.terminate()
+                except ProcessLookupError:
+                    pass
+                else:
+                    try:
+                        await asyncio.shield(
+                            asyncio.wait_for(proc.wait(), timeout=self._terminate_grace)
+                        )
+                    except (TimeoutError, asyncio.CancelledError):
+                        try:
+                            proc.kill()
+                        except ProcessLookupError:
+                            pass
+                        else:
+                            with contextlib.suppress(
+                                asyncio.CancelledError, ProcessLookupError
+                            ):
+                                await asyncio.shield(proc.wait())
+        finally:
+            for attr in ("_ace_stderr_task", "_ace_heartbeat_task"):
+                task = getattr(proc, attr, None)
+                if task is None or task.done():
+                    continue
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await asyncio.shield(asyncio.wait_for(task, timeout=1.0))
 
 
 def _escape_turn_boundaries(text: str) -> str:
@@ -428,3 +472,65 @@ def _escape_turn_boundaries(text: str) -> str:
         else:
             escaped.append(line)
     return "\n".join(escaped)
+
+
+async def _drain_stderr_into(proc, buf: deque[str], session_slug: str) -> None:
+    """Read subprocess stderr line-by-line, log it, keep the tail in ``buf``.
+
+    Runs as a background task started by ``CLIBackend._spawn``. Cancellation
+    is handled by ``CLIBackend._cleanup``. Naturally exits on stderr EOF
+    (subprocess died or closed stderr).
+    """
+    if proc.stderr is None:
+        return
+    try:
+        while True:
+            line = await proc.stderr.readline()
+            if not line:
+                break
+            text = line.decode("utf-8", errors="replace").rstrip("\n")
+            if not text:
+                continue
+            buf.append(text)
+            logger.warning("claude-cli[%s] stderr: %s", session_slug or "?", text)
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        logger.exception("stderr drain failed for session=%s", session_slug or "?")
+
+
+async def _heartbeat(proc, session_slug: str) -> None:
+    """Log a 'subprocess alive' line every ``HEARTBEAT_INTERVAL_SECONDS``.
+
+    Lets CloudWatch tail-watchers distinguish "still working" from "frozen"
+    during quiet stretches (waiting on an MCP, slow Anthropic response).
+    Naturally exits when the subprocess exits (via cancellation in cleanup).
+    """
+    started = getattr(proc, "_ace_started_at", time.monotonic())
+    try:
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
+            if proc.returncode is not None:
+                return
+            elapsed = time.monotonic() - started
+            stderr_lines = len(getattr(proc, "_ace_stderr_buf", ()) or ())
+            logger.info(
+                "claude-cli[%s] heartbeat: pid=%s elapsed=%.0fs stderr_lines=%d",
+                session_slug or "?",
+                proc.pid,
+                elapsed,
+                stderr_lines,
+            )
+    except asyncio.CancelledError:
+        return
+
+
+def _proc_stderr_tail(proc, *, char_limit: int = 2000) -> str:
+    """Return the buffered stderr tail, joined and clipped to ``char_limit``."""
+    buf = getattr(proc, "_ace_stderr_buf", None)
+    if not buf:
+        return ""
+    text = "\n".join(buf)
+    if len(text) > char_limit:
+        return text[-char_limit:]
+    return text
