@@ -46,7 +46,10 @@ async def generate_title_for_session(session: Session) -> None:
     # if the FK isn't already cached. ``refresh_from_db`` above doesn't
     # populate FKs, so wrap the access in sync_to_async.
     owner = await sync_to_async(lambda: session.owner)()
-    backend = _get_backend(user=owner)
+    # Same async-context gotcha as turn_driver — _get_backend hits sync ORM
+    # via the cli_is_ready validation probe. Without sync_to_async, Django
+    # raises SynchronousOnlyOperation and we silently fall back to ApiBackend.
+    backend = await sync_to_async(_get_backend)(user=owner)
 
     accumulated: list[str] = []
     try:
