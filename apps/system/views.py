@@ -133,6 +133,27 @@ def cli_diag(request):
             except Exception:
                 installed_plugins_text = "(unreadable)"
 
+    # Probe the ACE plugin install dir (symlink target) so we can see
+    # whether plugin.json + the layout the loader expects is actually there.
+    plugin_probe = {}
+    plugin_path = getattr(settings, "ACE_PLUGIN_PATH", "/app/vendor/ace")
+    try:
+        pp = Path(plugin_path)
+        plugin_probe["path"] = str(pp)
+        plugin_probe["exists"] = pp.exists()
+        if pp.is_dir():
+            plugin_probe["entries"] = sorted(p.name for p in pp.iterdir())[:50]
+            plugin_json = pp / ".claude-plugin" / "plugin.json"
+            if plugin_json.is_file():
+                plugin_probe["plugin_json"] = plugin_json.read_text()[:2000]
+            else:
+                # Older layout: plugin.json at root
+                root_pj = pp / "plugin.json"
+                if root_pj.is_file():
+                    plugin_probe["plugin_json_root"] = root_pj.read_text()[:2000]
+    except Exception as exc:
+        plugin_probe["error"] = f"{type(exc).__name__}: {exc}"
+
     started = time.monotonic()
     try:
         proc = subprocess.Popen(  # noqa: S603 - controlled args
@@ -203,6 +224,7 @@ def cli_diag(request):
                     env.get("CLAUDE_CODE_OAUTH_TOKEN", "")[:18] or None
                 ),
                 "installed_plugins_json": installed_plugins_text,
+                "plugin_probe": plugin_probe,
             },
             "stderr_tail": stderr_text[-2000:] if stderr_text else "",
             "stream_event_count": len(raw_events),
