@@ -89,6 +89,13 @@ COPY --chown=app:app docker-entrypoint.sh /app/docker-entrypoint.sh
 
 USER app
 
+# Docker's USER directive does NOT auto-set HOME. Without this, processes
+# started by the entrypoint (uvicorn, cli_backend's claude -p subprocess)
+# may inherit HOME=/root or no HOME at all — which makes the staged-HOME
+# symlink in apps/common/cli_backend.py look in the wrong place for the
+# ACE plugin and the assistant runs as a tool-less chatbot.
+ENV HOME=/home/app
+
 # Claude plugin discovery + MCP config paths for this container.
 ENV ACE_PLUGIN_PATH=/app/vendor/ace \
     CLAUDE_PLUGIN_DATA=/home/app/.claude/plugin-data/ace
