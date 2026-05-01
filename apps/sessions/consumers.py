@@ -156,6 +156,11 @@ class SessionConsumer(AsyncJsonWebsocketConsumer):
     async def chat_stream_cancelled(self, event):
         await self.send_json({"event": "chat.stream_cancelled", "data": event["data"]})
 
+    async def session_title_updated(self, event):
+        await self.send_json(
+            {"event": "session.title_updated", "data": {"title": event["title"]}}
+        )
+
     async def presence_joined(self, event):
         await self.send_json({
             "event": "presence.joined",

@@ -6,6 +6,7 @@ import type {
   SessionState,
   WsEvent,
 } from "../api/types";
+import { notifySessionsUpdated } from "./useRecentSessions";
 
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000];
@@ -61,6 +62,17 @@ export function useSessionSocket(slug: string): UseSessionSocketResult {
   }, []);
 
   const applyEvent = useCallback((frame: WsEvent) => {
+    // Side-effect events (no local state to mutate, but other surfaces
+    // need to refresh). Handle BEFORE setState so React strict-mode's
+    // double-invocation of the updater doesn't double-fire the event.
+    if (frame.event === "session.title_updated") {
+      // Tells RecentSessionsSidebar AND ChatPage's header to re-fetch.
+      // Both already listen for this event for user-driven changes
+      // (rename); piggy-backing the auto-title broadcast onto the same
+      // channel keeps them consistent.
+      notifySessionsUpdated();
+      return;
+    }
     setState((prev) => {
       switch (frame.event) {
         case "session.state":

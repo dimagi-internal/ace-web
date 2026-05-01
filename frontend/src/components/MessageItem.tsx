@@ -1,3 +1,5 @@
+import { AlertTriangle, OctagonX } from "lucide-react";
+
 import type { Message } from "../api/types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
@@ -5,10 +7,28 @@ interface Props {
   message: Message;
 }
 
+// The backend marks cancelled-by-user turns as status=error with
+// error_detail prefixed by "cancelled". Treat that visually as a
+// neutral "stopped" state, not a scary "error" state.
+function classifyError(detail: string | null) {
+  const text = (detail ?? "").trim();
+  if (text.toLowerCase().startsWith("cancelled")) {
+    return {
+      kind: "stopped" as const,
+      label: text.replace(/^cancelled/i, "Stopped").trim() || "Stopped",
+    };
+  }
+  return {
+    kind: "error" as const,
+    label: text || "Something went wrong",
+  };
+}
+
 export function MessageItem({ message }: Props) {
   const text = message.plaintext;
   const isStreaming = message.status === "streaming";
   const isPending = message.status === "pending";
+  const isError = message.status === "error";
 
   if (message.role === "tool_use") {
     return (
@@ -63,6 +83,40 @@ export function MessageItem({ message }: Props) {
       {isStreaming && (
         <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-current align-middle" />
       )}
+      {isError && message.role === "assistant" && (
+        <ErrorFooter detail={message.error_detail} hasPartial={Boolean(text)} />
+      )}
+    </div>
+  );
+}
+
+function ErrorFooter({
+  detail,
+  hasPartial,
+}: {
+  detail: string | null;
+  hasPartial: boolean;
+}) {
+  const { kind, label } = classifyError(detail);
+  const isStopped = kind === "stopped";
+  // Stopped = neutral muted treatment; error = amber warning. Avoid
+  // destructive red — even a real CLI error is recoverable (the user
+  // resends the next turn) and red bubbles reflexively read as "your
+  // chat is broken".
+  const Icon = isStopped ? OctagonX : AlertTriangle;
+  const tone = isStopped
+    ? "text-muted-foreground"
+    : "text-amber-700 dark:text-amber-300";
+  return (
+    <div
+      className={`mt-2 flex items-start gap-1.5 border-t border-border/40 pt-1.5 text-xs italic ${tone}`}
+      role="status"
+    >
+      <Icon className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+      <span>
+        {label}
+        {hasPartial ? " · partial response shown above" : ""}
+      </span>
     </div>
   );
 }
