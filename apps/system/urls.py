@@ -8,4 +8,5 @@ urlpatterns = [
     path("skills/<str:name>", views.skill_detail, name="system-skill-detail"),
     path("agents/<str:name>", views.agent_detail, name="system-agent-detail"),
     path("version", views.version, name="system-version"),
+    path("cli-diag", views.cli_diag, name="system-cli-diag"),
 ]
