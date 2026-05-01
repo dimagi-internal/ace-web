@@ -2,8 +2,8 @@
   "family": "labs-jj-ace-web",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "512",
-  "memory": "1024",
+  "cpu": "1024",
+  "memory": "4096",
   "executionRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ecs-task-execution-role",
   "taskRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ecs-task-role",
   "containerDefinitions": [
