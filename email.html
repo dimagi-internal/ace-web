@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f6f7f9;-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f7f9;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f2937;">
+
+        <tr><td style="padding:20px 32px;background:#0f172a;color:#fff;">
+          <table role="presentation" width="100%"><tr>
+            <td style="font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;">ACE · release notes</td>
+            <td align="right" style="font-size:13px;color:#94a3b8;">May 2, 2026</td>
+          </tr></table>
+        </td></tr>
+
+        <tr><td style="padding:36px 32px 8px;">
+          <h1 style="margin:0 0 12px;font-size:26px;line-height:1.25;color:#0f172a;font-weight:700;">Chats show opp display names, not slugs.</h1>
+          <p style="margin:0;font-size:16px;line-height:1.6;color:#475569;">One day after sprint 1 wired opps into the chat surfaces, the chat header, sidebar group headers, and `/sessions` row badges all switch from <code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;">turmeric-market-survey-20260420-1000</code> to <em>"Turmeric Market Survey 2026-04-20"</em>.</p>
+        </td></tr>
+
+        <tr><td style="padding:28px 32px 0;">
+          <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="color:#0f172a;text-decoration:none;">All chat surfaces show human display names</a>
+          </h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">The chat header breadcrumb, the per-opp section headers in the recent-chats sidebar, and the <code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;">opp:</code> badges on each <code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;">/sessions</code> row now read <code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;">OppWorkspace.display_name</code> instead of the raw slug. Slug fallback still applies if the OppWorkspace row was deleted or the chat predates the opp.</p>
+          <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="text-decoration:none;display:block;">
+            <img src="https://raw.githubusercontent.com/jjackson/ace-web/pm-assets/2026-05-02-opp-display-names/screenshots/01-display-names-everywhere.png"
+                 alt="Chat surfaces showing 'Turmeric Market Survey 2026-04-20' display name in the header, sidebar, and Sessions list"
+                 width="576"
+                 style="display:block;width:100%;max-width:576px;height:auto;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;">
+          </a>
+          <p style="margin:0 0 18px;font-size:13px;color:#64748b;font-style:italic;">After: the chat header, sidebar, and Sessions list all read the human display name.</p>
+          <p style="margin:0 0 4px;font-size:14px;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="color:#4338ca;text-decoration:none;font-weight:500;">Try it on labs →</a>
+          </p>
+        </td></tr>
+
+        <tr><td style="padding:36px 32px 32px;">
+          <div style="height:1px;background:#e2e8f0;margin-bottom:20px;"></div>
+          <p style="margin:0 0 8px;font-size:13px;color:#64748b;">
+            <strong style="color:#475569;">Sprint internals.</strong> 1 autonomous cycle, 1 PR (<a href="https://github.com/jjackson/ace-web/pull/182" style="color:#4338ca;text-decoration:none;">#182</a>), gates green, deploy verified, prod dogfood under the new <a href="https://github.com/jjackson/canopy/pull/33" style="color:#4338ca;text-decoration:none;">canopy rule</a> (3c against deployed prod, never localhost). 162 net lines, 3 new pytest tests.
+          </p>
+          <p style="margin:0 0 8px;font-size:13px;color:#64748b;">
+            <strong style="color:#475569;">Up next, optionally.</strong> Tighter screenshot crops in the release-notes email (carryover from sprints 1, 2, 3).
+          </p>
+          <p style="margin:0 0 12px;font-size:14px;color:#475569;">— ACE autonomous PM, on behalf of the Dimagi ACE team</p>
+          <p style="margin:0;font-size:12px;color:#94a3b8;">Sent automatically by the autonomous PM cycle. Reply to opt out.</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
