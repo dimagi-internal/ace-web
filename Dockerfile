@@ -50,11 +50,27 @@ RUN echo "claude-cli cache key: ${CLAUDE_CLI_REF}" && \
 # remote branch moves — otherwise the cached clone would snapshot-freeze the
 # plugin at whatever main was the first time this image was built).
 ARG ACE_REF=main
-RUN git clone https://github.com/jjackson/ace.git /app/vendor/ace \
-    && cd /app/vendor/ace \
+# Clone the ACE plugin directly into Claude Code's plugin cache path as a
+# real directory. Earlier we placed the plugin at /app/vendor/ace and
+# symlinked the cache entry there; Claude Code 2.x removes those symlinks
+# at runtime — verified live: cache/ace/ace/<v> is empty by the time the
+# first `claude -p` finishes, so the ACE stdio MCPs (gdrive/ocs/connect/
+# mobile) lose their on-disk install path and disappear from the deferred
+# tool registry mid-session. (Nova's HTTP MCP survives the same deletion
+# because it doesn't need on-disk files to spawn.)
+#
+# Cache as the real install location + /app/vendor/ace symlinked back to
+# it for ACE_PLUGIN_PATH consumers (System Overview tab + ACE plugin
+# discovery in the entrypoint's op-inject step).
+RUN mkdir -p /home/app/.claude/plugins/cache/ace/ace /app/vendor \
+    && git clone https://github.com/jjackson/ace.git /tmp/ace-clone \
+    && cd /tmp/ace-clone \
     && git checkout ${ACE_REF} \
     && npm install --no-audit --no-fund \
-    && rm -rf .git
+    && rm -rf .git \
+    && ACE_VERSION="$(cat VERSION 2>/dev/null || echo vendored)" \
+    && mv /tmp/ace-clone "/home/app/.claude/plugins/cache/ace/ace/${ACE_VERSION}" \
+    && ln -s "/home/app/.claude/plugins/cache/ace/ace/${ACE_VERSION}" /app/vendor/ace
 
 # Vendor the Nova plugin (CommCare app builder). Two repos:
 #   1. github.com/voidcraft-labs/nova-marketplace — minimal, just contains
@@ -74,14 +90,18 @@ RUN git clone https://github.com/jjackson/ace.git /app/vendor/ace \
 # nova_headers.py for the helper.
 ARG NOVA_REF=main
 ARG NOVA_VERSION=1.0.0
-RUN git clone https://github.com/voidcraft-labs/nova-marketplace.git /app/vendor/nova-marketplace \
+# Same install pattern as ACE: cache is the real install location;
+# /app/vendor/nova-plugin symlinked back for downstream consumers.
+RUN mkdir -p /home/app/.claude/plugins/cache/nova-marketplace/nova \
+    && git clone https://github.com/voidcraft-labs/nova-marketplace.git /app/vendor/nova-marketplace \
     && cd /app/vendor/nova-marketplace \
     && git checkout ${NOVA_REF} \
     && rm -rf .git \
-    && git clone https://github.com/voidcraft-labs/nova-plugin.git /app/vendor/nova-plugin \
-    && cd /app/vendor/nova-plugin \
+    && git clone https://github.com/voidcraft-labs/nova-plugin.git "/home/app/.claude/plugins/cache/nova-marketplace/nova/${NOVA_VERSION}" \
+    && cd "/home/app/.claude/plugins/cache/nova-marketplace/nova/${NOVA_VERSION}" \
     && git checkout ${NOVA_REF} \
     && rm -rf .git \
+    && ln -s "/home/app/.claude/plugins/cache/nova-marketplace/nova/${NOVA_VERSION}" /app/vendor/nova-plugin \
     && printf '{\n  "mcpServers": {\n    "nova": {\n      "type": "http",\n      "url": "https://mcp.commcare.app/mcp",\n      "headersHelper": "cd /app && python manage.py nova_headers"\n    }\n  }\n}\n' \
         > /app/vendor/nova-plugin/.mcp.json
 
@@ -144,12 +164,11 @@ RUN useradd -m -u 1000 app \
     && ACE_VERSION=$(cat /app/vendor/ace/VERSION 2>/dev/null || echo "vendored") \
     && NOVA_INSTALL_VERSION=${NOVA_VERSION} \
     && INSTALLED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    # Plugin install (ACE): cache/<marketplace>/<plugin>/<version> -> /app/vendor/ace
-    && mkdir -p /home/app/.claude/plugins/cache/ace/ace \
-    && ln -s /app/vendor/ace "/home/app/.claude/plugins/cache/ace/ace/${ACE_VERSION}" \
-    # Plugin install (Nova): cache symlinks to the vendored nova-plugin repo.
-    && mkdir -p /home/app/.claude/plugins/cache/nova-marketplace/nova \
-    && ln -s /app/vendor/nova-plugin "/home/app/.claude/plugins/cache/nova-marketplace/nova/${NOVA_INSTALL_VERSION}" \
+    # Plugin install dirs were created above when we cloned the plugins
+    # directly into cache/<marketplace>/<plugin>/<version>/ as REAL
+    # directories. Verify they exist before generating the registry.
+    && [ -d "/home/app/.claude/plugins/cache/ace/ace/${ACE_VERSION}" ] || (echo "ACE plugin install missing" && exit 1) \
+    && [ -d "/home/app/.claude/plugins/cache/nova-marketplace/nova/${NOVA_INSTALL_VERSION}" ] || (echo "Nova plugin install missing" && exit 1) \
     # Plugin registry — must match the schema Claude Code 2.x writes itself,
     # otherwise the loader silently skips the entry. Verified by reading a
     # real laptop install + the /api/system/cli-diag probe in the container.
