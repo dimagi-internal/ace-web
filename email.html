@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f6f7f9;-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f7f9;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f2937;">
+
+        <!-- Brand bar -->
+        <tr><td style="padding:20px 32px;background:#0f172a;color:#fff;">
+          <table role="presentation" width="100%"><tr>
+            <td style="font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;">ACE · RELEASE NOTES</td>
+            <td align="right" style="font-size:13px;color:#94a3b8;">May 1, 2026</td>
+          </tr></table>
+        </td></tr>
+
+        <!-- Hero -->
+        <tr><td style="padding:36px 32px 8px;">
+          <h1 style="margin:0 0 12px;font-size:26px;line-height:1.25;color:#0f172a;font-weight:700;">The chat doesn't make you wait alone.</h1>
+          <p style="margin:0;font-size:16px;line-height:1.6;color:#475569;">Two small follow-ups to yesterday's clarity ship: a welcome panel for blank chats, and a "Thinking…" label that holds until Claude actually starts replying.</p>
+        </td></tr>
+
+        <!-- Highlight 1 -->
+        <tr><td style="padding:28px 32px 0;">
+          <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="color:#0f172a;text-decoration:none;">Welcome panel and starter chips on a blank chat</a>
+          </h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">Opening <strong>+ New Chat</strong> used to drop you straight into a black void with only a tiny placeholder hinting at what to type. Now you land on a centered welcome with three one-click starter prompts curated for the ACE team — list active opportunities, run <code style="background:#f1f5f9;border-radius:3px;padding:1px 4px;font-size:13px;">/ace:doctor</code>, or ask which MCP servers are wired in. Click a chip and the textarea fills; edit before sending or send straight off.</p>
+          <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="text-decoration:none;display:block;">
+            <img src="https://raw.githubusercontent.com/jjackson/ace-web/pm-assets/2026-05-01-chat-not-alone/screenshots/01-welcome-panel.png"
+                 alt="A blank chat now shows a welcome panel: sparkle icon, 'Start a new chat' heading, a one-line subtitle, and three suggestion chip buttons stacked vertically."
+                 width="576"
+                 style="display:block;width:100%;max-width:576px;height:auto;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;">
+          </a>
+          <p style="margin:0 0 18px;font-size:13px;color:#64748b;font-style:italic;">After: blank chat surface now invites you in instead of staring back.</p>
+          <p style="margin:0 0 4px;font-size:14px;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="color:#4338ca;text-decoration:none;font-weight:500;">Try it on labs →</a>
+          </p>
+        </td></tr>
+        <tr><td style="padding:28px 32px 0;"><div style="height:1px;background:#e2e8f0;"></div></td></tr>
+
+        <!-- Highlight 2 -->
+        <tr><td style="padding:28px 32px 0;">
+          <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="color:#0f172a;text-decoration:none;">"Thinking…" stays put until the first token</a>
+          </h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">The bouncing-dots indicator used to vanish the moment the WebSocket reported a stream had started, leaving a single 1px cursor floating in an otherwise-empty bubble for the 100–300ms before any actual text arrived. That window felt like the chat had stuttered. Now <em>Thinking…</em> persists smoothly until the first character of the response shows up, so the visual hand-off is continuous.</p>
+          <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="text-decoration:none;display:block;">
+            <img src="https://raw.githubusercontent.com/jjackson/ace-web/pm-assets/2026-05-01-chat-not-alone/screenshots/02-thinking-continuous.png"
+                 alt="A chat shows the user prompt '/ace:doctor' (sent via the new chip), and the assistant bubble below it shows the 'Thinking…' label with three bouncing dots — captured during the streaming-but-no-text-yet window where a 1px floating cursor used to be."
+                 width="576"
+                 style="display:block;width:100%;max-width:576px;height:auto;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;">
+          </a>
+          <p style="margin:0 0 18px;font-size:13px;color:#64748b;font-style:italic;">After: <em>Thinking…</em> still showing during the first chunk-arrival window, where a lone cursor used to float. Bonus: the prompt was sent via a starter chip (highlight 1).</p>
+          <p style="margin:0 0 4px;font-size:14px;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="color:#4338ca;text-decoration:none;font-weight:500;">Try it on labs →</a>
+          </p>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="padding:36px 32px 12px;">
+          <div style="height:1px;background:#e2e8f0;margin-bottom:20px;"></div>
+          <p style="margin:0 0 8px;font-size:13px;color:#64748b;">
+            <strong style="color:#475569;">Sprint internals.</strong> 1 autonomous cycle · 1 PR (<a href="https://github.com/jjackson/ace-web/pull/169" style="color:#4338ca;text-decoration:none;">#169</a>) · gates green on first try (cycle-1 lesson #2 applied: mechanical checks now run on the staged-only tree) · deploy verified · post-deploy health green.
+          </p>
+          <p style="margin:0 0 8px;font-size:13px;color:#64748b;">
+            <strong style="color:#475569;">Up next, optionally.</strong> A canopy PR for the staged-only-gate lesson — it's now confirmed across two consecutive sprints.
+          </p>
+          <p style="margin:0 0 12px;font-size:13px;color:#64748b;">
+            — ACE autonomous PM, on behalf of the Dimagi ACE team
+          </p>
+          <p style="margin:0;font-size:12px;color:#94a3b8;">Sent automatically by the autonomous PM cycle. Reply to opt out.</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
