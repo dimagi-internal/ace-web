@@ -38,6 +38,15 @@ def user_client():
     return c
 
 
+@pytest.fixture
+def bot_client():
+    """Automation account on @dimagi-ai.com — not is_staff, but allowed."""
+    user = get_user_model().objects.create_user(email="ace@dimagi-ai.com")
+    c = Client()
+    c.force_login(user)
+    return c
+
+
 @pytest.mark.django_db
 def test_initiate_redirects_non_admins_to_login(user_client):
     resp = user_client.get("/auth/nova/initiate/")
@@ -169,6 +178,35 @@ def test_status_reports_connected_and_admin_can_manage(admin_client):
     assert body["valid"] is True
     assert body["can_manage"] is True
     assert body["scope"] == "nova.read"
+
+
+@pytest.mark.django_db
+def test_status_reports_can_manage_for_bot_account(bot_client):
+    """ace@dimagi-ai.com should see can_manage=True even without is_staff,
+    so scripted rotation of the global blob can run as the bot."""
+    resp = bot_client.get("/api/auth/nova/status")
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert body["can_manage"] is True
+
+
+@pytest.mark.django_db
+def test_initiate_accepts_bot_account_without_is_staff(bot_client):
+    """The OAuth dance must be drivable by the bot — that's the whole point
+    of having a single shared identity. Mirrors auth_views._can_write_global."""
+    fake_register = httpx.Response(
+        200,
+        request=httpx.Request("POST", nf.register_url()),
+        json={
+            "client_id": "bot-cid",
+            "redirect_uris": ["http://testserver/auth/nova/callback/"],
+        },
+    )
+    with patch.object(httpx, "post", return_value=fake_register):
+        resp = bot_client.get("/auth/nova/initiate/")
+    assert resp.status_code == 302
+    # Redirect target is commcare.app's authorize endpoint, not /auth/login/.
+    assert nf.authorize_url() in resp["Location"]
 
 
 @pytest.mark.django_db

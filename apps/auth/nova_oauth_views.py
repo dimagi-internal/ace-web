@@ -1,9 +1,13 @@
 """Nova OAuth (commcare.app) — server-side authorization_code + PKCE flow.
 
 The HTML/redirect handlers — initiate the dance, catch the callback,
-store the blob, return the user to /settings. Admin-only because the
-single shared identity is ace@dimagi-ai.com and we don't want random
-users overwriting it.
+store the blob, return the user to /settings. Restricted to staff +
+ACE automation accounts (``ace@dimagi-ai.com``) so the single shared
+credential blob isn't trampled by random users; the bot identity needs
+the same privilege so a script (e2e-login + initiate) can rotate Nova
+auth without a human in the loop. Mirrors the
+``apps.common.auth_views._can_write_global`` rule for the Claude
+credentials.
 
 JSON status / disconnect endpoints live in apps/common/auth_views.py
 under /api/auth/nova/* alongside the Claude credential ones.
@@ -24,12 +28,13 @@ from django.shortcuts import redirect
 from django.urls import reverse
 
 from apps.common import nova_auth_flow as nf
+from apps.common.auth_views import _can_write_global
 
 logger = logging.getLogger(__name__)
 
 
 def _staff_required(view):
-    return login_required(user_passes_test(lambda u: u.is_staff)(view))
+    return login_required(user_passes_test(_can_write_global)(view))
 
 
 def _settings_redirect(query: str = "") -> HttpResponse:

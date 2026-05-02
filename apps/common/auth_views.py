@@ -252,7 +252,7 @@ def nova_auth_status(request: Request) -> Response:
             "valid": False,
             "expires_at": None,
             "scope": None,
-            "can_manage": request.user.is_staff,
+            "can_manage": _can_write_global(request.user),
         }))
     valid = nova_auth_flow.validate_token()
     return Response(success_response({
@@ -260,16 +260,19 @@ def nova_auth_status(request: Request) -> Response:
         "valid": valid,
         "expires_at": blob.get("expires_at"),
         "scope": blob.get("scope"),
-        "can_manage": request.user.is_staff,
+        "can_manage": _can_write_global(request.user),
     }))
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def nova_auth_disconnect(request: Request) -> Response:
-    if not request.user.is_staff:
+    if not _can_write_global(request.user):
         return Response(
-            error_response(message="staff only", code="forbidden"),
+            error_response(
+                message="disconnect requires staff or automation account",
+                code="forbidden",
+            ),
             status=403,
         )
     nova_auth_flow.clear_blob()
