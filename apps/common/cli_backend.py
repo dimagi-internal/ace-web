@@ -37,7 +37,12 @@ from .chat_backend import StreamEvent, StreamEventType
 from .circuit_breaker import CircuitBreaker, CircuitOpenError
 from .cli_event_parser import parse_stream_json_lines
 from .nova_auth_flow import get_fresh_token as get_fresh_nova_token
-from .nova_auth_flow import resource as nova_mcp_resource
+
+# Env-var name read by the bundled Nova plugin's .mcp.json (Dockerfile
+# rewrites the plugin's headers to ``Bearer ${NOVA_BEARER_TOKEN:-}``).
+# Empty string when Nova isn't connected — Claude Code expands the
+# default and the MCP server returns 401 at call time, recoverable.
+NOVA_BEARER_TOKEN_ENV = "NOVA_BEARER_TOKEN"
 
 logger = logging.getLogger(__name__)
 
@@ -109,20 +114,14 @@ class CLIBackend:
         # other's ~/.claude/.credentials.json. Torn down in the outer finally.
         # ``source`` tells us where the blob came from so we can persist any
         # CLI-refreshed version back to the same storage before teardown.
-        # ``mcp_config_path`` is the staged .mcp.json (Nova MCP bearer token)
-        # if Nova creds were available, else None.
-        staged_env, staged_home, source, mcp_config_path = await sync_to_async(
-            self._stage_env_for
-        )(session)
+        staged_env, staged_home, source = await sync_to_async(self._stage_env_for)(
+            session
+        )
         try:
-            extra_args: list[str] = []
-            if mcp_config_path:
-                extra_args = ["--mcp-config", mcp_config_path]
-
             # ── attempt 1: resume if we have a CLI session id AND resume is allowed ──
             if session.cli_session_id and not force_fresh_session:
                 proc = await self._spawn(
-                    args=[*extra_args, "--resume", session.cli_session_id],
+                    args=["--resume", session.cli_session_id],
                     prompt=new_user_message,
                     env=staged_env,
                     session_slug=session.slug,
@@ -159,7 +158,7 @@ class CLIBackend:
             # ── attempt 2: fresh session with seeded history ──
             history_prompt = await self._build_seeded_prompt(session, new_user_message)
             proc = await self._spawn(
-                args=extra_args,
+                args=[],
                 prompt=history_prompt,
                 env=staged_env,
                 session_slug=session.slug,
@@ -282,17 +281,21 @@ class CLIBackend:
 
     def _stage_env_for(
         self, session: Session
-    ) -> tuple[dict[str, str], str, str | None, str | None]:
+    ) -> tuple[dict[str, str], str, str | None]:
         """Resolve the owner's credential blob and stage it in a fresh temp HOME.
 
-        Returns ``(env_dict, staged_home_path, source, mcp_config_path)`` where
-        ``source`` is one of ``"user"``, ``"global"``, ``"env"`` or ``None``
-        (no token resolved), and ``mcp_config_path`` is the absolute path to
-        a staged ``.mcp.json`` if Nova MCP credentials are available, else
-        None. Caller MUST call ``_teardown_staged_home(home)`` in a finally
-        block to remove the directory. ``source`` is used by
+        Returns ``(env_dict, staged_home_path, source)`` where ``source`` is
+        one of ``"user"``, ``"global"``, ``"env"`` or ``None`` (no token
+        resolved). Caller MUST call ``_teardown_staged_home(home)`` in a
+        finally block to remove the directory. ``source`` is used by
         ``_persist_refreshed_blob`` to write any CLI-refreshed Claude blob
         back to the right storage layer before teardown.
+
+        Also injects ``NOVA_BEARER_TOKEN`` into the spawn env from the
+        stored Nova OAuth blob (refreshing if near expiry). Empty when
+        Nova isn't connected; the bundled plugin's ``.mcp.json`` uses
+        ``${NOVA_BEARER_TOKEN:-}`` so the empty value just becomes
+        ``Bearer `` and the MCP server returns 401 at call time.
         """
         env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
 
@@ -368,56 +371,23 @@ class CLIBackend:
         if token:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token
 
-        mcp_config_path = self._stage_mcp_config(staged_root, original_home)
-        return env, str(staged_root), source, mcp_config_path
+        env[NOVA_BEARER_TOKEN_ENV] = self._resolve_nova_bearer()
+        return env, str(staged_root), source
 
-    def _stage_mcp_config(self, staged_root: Path, original_home: str) -> str | None:
-        """Write a per-spawn ``.mcp.json`` if a fresh Nova bearer token is available.
+    def _resolve_nova_bearer(self) -> str:
+        """Mint a fresh Nova access token for ``${NOVA_BEARER_TOKEN}`` expansion.
 
-        When the bundled Nova plugin's own ``.mcp.json`` already includes a
-        ``headersHelper`` (the prod container case — the Dockerfile rewrites
-        the plugin's config to point at ``manage.py nova_headers``), we
-        skip the per-spawn write so we don't end up with two ``nova`` MCP
-        servers — one under the plugin's ``mcp__plugin_nova_nova__*``
-        prefix, one under our project ``mcp__nova__*`` prefix. The plugin
-        path is canonical because it gives the tool prefix the ACE skills
-        (``pdd-to-learn-app`` etc.) actually call.
-
-        Otherwise — local dev where the plugin isn't installed, or
-        installed without the headers helper baked in — we mint and inline
-        a token here so chat still has Nova access (just under
-        ``mcp__nova__*``).
-
-        Token refresh is single-source-of-truth in
-        ``nova_auth_flow.get_fresh_token``; this method only stages.
+        ``get_fresh_token`` transparently refreshes if the stored token is
+        within the 5-min refresh buffer and persists the rotated blob back
+        to ``SystemConfig``. We swallow any exception and return ``""``
+        because a Nova outage must NOT take chat down — the worst case is
+        Nova MCP calls fail with 401 inside the chat, which is recoverable.
         """
-        if _plugin_nova_has_headers_helper(original_home):
-            return None
-
         try:
-            token = get_fresh_nova_token()
+            return get_fresh_nova_token() or ""
         except Exception:
             logger.warning("nova: get_fresh_nova_token raised", exc_info=True)
-            return None
-        if not token:
-            return None
-
-        config = {
-            "mcpServers": {
-                "nova": {
-                    "type": "http",
-                    "url": nova_mcp_resource(),
-                    "headers": {"Authorization": f"Bearer {token}"},
-                }
-            }
-        }
-        path = staged_root / ".mcp.json"
-        path.write_text(json.dumps(config))
-        try:
-            path.chmod(0o600)
-        except OSError:
-            pass
-        return str(path)
+            return ""
 
     def _persist_refreshed_blob(
         self, session: Session, source: str | None, staged_home: str
@@ -584,45 +554,6 @@ class CLIBackend:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await asyncio.shield(asyncio.wait_for(task, timeout=1.0))
-
-
-def _plugin_nova_has_headers_helper(original_home: str) -> bool:
-    """Return True iff the bundled Nova plugin's .mcp.json wires headersHelper.
-
-    Reads ``<original_home>/.claude/plugins/installed_plugins.json``,
-    locates plugin entries whose key starts with ``nova@`` (the
-    canonical id is ``nova@nova-marketplace``), opens that plugin's
-    ``.mcp.json``, and checks whether the ``nova`` MCP server entry
-    declares ``headersHelper``.
-
-    Defensive: returns False (= "fall back to per-spawn write") on any
-    parse / IO error so a malformed plugin install never silently
-    disables Nova access.
-    """
-    if not original_home:
-        return False
-    registry = Path(original_home) / ".claude" / "plugins" / "installed_plugins.json"
-    if not registry.exists():
-        return False
-    try:
-        data = json.loads(registry.read_text())
-        for plugin_id, entries in (data.get("plugins") or {}).items():
-            if not plugin_id.startswith("nova@"):
-                continue
-            for entry in entries or []:
-                install_path = entry.get("installPath")
-                if not install_path:
-                    continue
-                mcp = Path(install_path) / ".mcp.json"
-                if not mcp.exists():
-                    continue
-                cfg = json.loads(mcp.read_text())
-                nova = (cfg.get("mcpServers") or {}).get("nova") or {}
-                if "headersHelper" in nova:
-                    return True
-    except (OSError, ValueError):
-        return False
-    return False
 
 
 def _escape_turn_boundaries(text: str) -> str:
