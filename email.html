@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f6f7f9;-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f7f9;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f2937;">
+
+        <!-- Brand bar -->
+        <tr><td style="padding:20px 32px;background:#0f172a;color:#fff;">
+          <table role="presentation" width="100%"><tr>
+            <td style="font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;">ACE WEB · RELEASE NOTES</td>
+            <td align="right" style="font-size:13px;color:#94a3b8;">May 1, 2026</td>
+          </tr></table>
+        </td></tr>
+
+        <!-- Hero -->
+        <tr><td style="padding:36px 32px 8px;">
+          <h1 style="margin:0 0 12px;font-size:26px;line-height:1.25;color:#0f172a;font-weight:700;">The chat tells you what it's doing.</h1>
+          <p style="margin:0;font-size:16px;line-height:1.6;color:#475569;">Three quiet but constant chat-UI gaps closed in one ship: titles flow live, stopped turns explain themselves, and broken URLs land somewhere real instead of an infinite spinner.</p>
+        </td></tr>
+
+        <!-- Highlight 1 -->
+        <tr><td style="padding:28px 32px 0;">
+          <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="color:#0f172a;text-decoration:none;">Live auto-titles in the chat header and sidebar</a>
+          </h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">Server-generated chat titles now appear the moment they're ready, instead of staying <em>Untitled</em> until you reload the tab. The auto-title task already existed — we just never broadcast the result. Now it pushes a <code style="background:#f1f5f9;border-radius:3px;padding:1px 4px;font-size:13px;">session.title_updated</code> WebSocket event that both the chat header and the recent-sessions sidebar pick up automatically.</p>
+          <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="text-decoration:none;display:block;">
+            <img src="https://raw.githubusercontent.com/jjackson/ace-web/pm-assets/2026-05-01-chat-ui-clarity/screenshots/01-live-auto-title.png"
+                 alt="Chat header showing the auto-generated title 'CommCare Connect FLW visit verification' next to a recent-sessions sidebar that has flipped to the same title."
+                 width="576"
+                 style="display:block;width:100%;max-width:576px;height:auto;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;">
+          </a>
+          <p style="margin:0 0 18px;font-size:13px;color:#64748b;font-style:italic;">After: header and sidebar both flip to the auto-derived title within ~30s of the first response, no refresh.</p>
+          <p style="margin:0 0 4px;font-size:14px;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="color:#4338ca;text-decoration:none;font-weight:500;">Try it on labs →</a>
+          </p>
+        </td></tr>
+        <tr><td style="padding:28px 32px 0;"><div style="height:1px;background:#e2e8f0;"></div></td></tr>
+
+        <!-- Highlight 2 -->
+        <tr><td style="padding:28px 32px 0;">
+          <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="color:#0f172a;text-decoration:none;">Stopped and errored messages now say so</a>
+          </h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">Pressing <strong>stop</strong> used to leave an empty grey pill — you couldn't tell whether anything happened. The backend was already labelling those messages as cancelled with the partial-character count; the frontend just didn't render it. Now the bubble shows a clear <em>Stopped</em> indicator (and an amber warning row when the CLI itself errored), with any partial text preserved above.</p>
+          <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="text-decoration:none;display:block;">
+            <img src="https://raw.githubusercontent.com/jjackson/ace-web/pm-assets/2026-05-01-chat-ui-clarity/screenshots/02-stop-shows-partial.png"
+                 alt="A long user prompt with the assistant bubble below it showing only a 'Stopped' label after the user clicked the stop button before any tokens arrived."
+                 width="576"
+                 style="display:block;width:100%;max-width:576px;height:auto;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;">
+          </a>
+          <p style="margin:0 0 18px;font-size:13px;color:#64748b;font-style:italic;">After: stop pressed before tokens arrived → a clean <em>Stopped</em> indicator. Stop after streaming starts also shows the partial text it captured.</p>
+          <p style="margin:0 0 4px;font-size:14px;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat" style="color:#4338ca;text-decoration:none;font-weight:500;">Try it on labs →</a>
+          </p>
+        </td></tr>
+        <tr><td style="padding:28px 32px 0;"><div style="height:1px;background:#e2e8f0;"></div></td></tr>
+
+        <!-- Highlight 3 -->
+        <tr><td style="padding:28px 32px 0;">
+          <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat/this-chat-was-deleted-or-fake" style="color:#0f172a;text-decoration:none;">Bad chat URLs land on a real page</a>
+          </h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">A deleted-or-invalid chat slug used to hang on <em>Loading…</em> forever — the page caught the 404 with a state collision that never escaped the loading branch. Now you get a recovery page with two affordances: start a new chat or jump to all chats.</p>
+          <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat/this-chat-was-deleted-or-fake" style="text-decoration:none;display:block;">
+            <img src="https://raw.githubusercontent.com/jjackson/ace-web/pm-assets/2026-05-01-chat-ui-clarity/screenshots/03-bad-slug-recovery.png"
+                 alt="A page reading 'This chat isn't here', the failing slug rendered in code, the error detail 'session not found', and two buttons — 'Start a new chat' and 'View all chats'."
+                 width="576"
+                 style="display:block;width:100%;max-width:576px;height:auto;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;">
+          </a>
+          <p style="margin:0 0 18px;font-size:13px;color:#64748b;font-style:italic;">After: explicit recovery page with two recovery affordances.</p>
+          <p style="margin:0 0 4px;font-size:14px;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/chat/this-chat-was-deleted-or-fake" style="color:#4338ca;text-decoration:none;font-weight:500;">Try it on labs →</a>
+          </p>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="padding:36px 32px 12px;">
+          <div style="height:1px;background:#e2e8f0;margin-bottom:20px;"></div>
+          <p style="margin:0 0 8px;font-size:13px;color:#64748b;">
+            <strong style="color:#475569;">Sprint internals.</strong> 1 autonomous cycle · 2 PRs (<a href="https://github.com/jjackson/ace-web/pull/165" style="color:#4338ca;text-decoration:none;">#165</a> bundled, <a href="https://github.com/jjackson/ace-web/pull/166" style="color:#4338ca;text-decoration:none;">#166</a> fix-forward) · gates green · deploy verified · post-deploy health green.
+          </p>
+          <p style="margin:0 0 8px;font-size:13px;color:#64748b;">
+            <strong style="color:#475569;">Up next, optionally.</strong> Empty-state welcome panel + suggestion chips for brand-new chats — the only chat-UI clarity gap I dropped from this cycle's scope.
+          </p>
+          <p style="margin:0 0 12px;font-size:13px;color:#64748b;">
+            — ACE autonomous PM, on behalf of the Dimagi ACE team
+          </p>
+          <p style="margin:0;font-size:12px;color:#94a3b8;">Sent automatically by the autonomous PM cycle. Reply to opt out.</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
