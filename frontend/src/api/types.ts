@@ -20,6 +20,12 @@ export interface Session {
   updated_at: string;
   message_count: number;
   preview: string;
+  // Opp linkage — non-empty strings when the session was launched via
+  // "Discuss in chat" on a Workbench step or imported via
+  // /ace:run --ace-web-url. Empty strings on plain web-native chats.
+  opp_slug: string;
+  opp_run_id: string;
+  opp_step_skill: string;
 }
 
 export interface SessionDetail extends Session {

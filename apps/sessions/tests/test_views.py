@@ -77,6 +77,20 @@ def test_list_sessions_filters_by_status(client, user):
     assert titles == ["archived"]
 
 
+def test_list_sessions_filters_by_opp(client, user):
+    """``?opp=<slug>`` narrows the list to sessions linked to that opp,
+    ignoring sessions linked to other opps and unlinked (``opp_slug=""``)
+    sessions. Drives the new Opp filter on the /sessions page."""
+    Session.objects.create(owner=user, title="malaria a", opp_slug="malaria-pilot")
+    Session.objects.create(owner=user, title="malaria b", opp_slug="malaria-pilot")
+    Session.objects.create(owner=user, title="other", opp_slug="other-opp")
+    Session.objects.create(owner=user, title="unlinked")  # opp_slug=""
+
+    resp = client.get("/api/sessions?opp=malaria-pilot")
+    titles = sorted(s["title"] for s in resp.json()["data"]["items"])
+    assert titles == ["malaria a", "malaria b"]
+
+
 def test_list_sessions_respects_limit(client, user):
     for i in range(15):
         Session.objects.create(owner=user, title=f"s{i}")

@@ -90,6 +90,9 @@ def _list_sessions(request: Request) -> Response:
     source_filter = request.query_params.get("source")
     if source_filter:
         qs = qs.filter(source=source_filter)
+    opp_filter = request.query_params.get("opp")
+    if opp_filter:
+        qs = qs.filter(opp_slug=opp_filter)
     q = request.query_params.get("q", "").strip()
     if q:
         # Match either the title or the body of any user message in the

@@ -51,10 +51,19 @@ class SessionSerializer(serializers.ModelSerializer):
             "updated_at",
             "message_count",
             "preview",
+            # Opp linkage — populated server-side by the "Discuss in chat"
+            # seed and the /ingest/upload path. Read-only for the chat UI;
+            # the chat surface uses these to render the opp breadcrumb,
+            # group the recent-sessions sidebar, and drive the ?opp=
+            # filter on the /sessions page.
+            "opp_slug",
+            "opp_run_id",
+            "opp_step_skill",
         ]
         read_only_fields = [
             "slug", "cli_session_id", "created_at", "updated_at",
             "message_count", "preview",
+            "opp_slug", "opp_run_id", "opp_step_skill",
         ]
 
     def get_message_count(self, obj: Session) -> int:

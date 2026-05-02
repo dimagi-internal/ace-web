@@ -5,6 +5,7 @@ export interface ListSessionsParams {
   q?: string;
   status?: string;
   source?: string;
+  opp?: string;
   page?: number;
   pageSize?: number;
 }
@@ -14,6 +15,7 @@ export const listSessions = (params: ListSessionsParams = {}) => {
   if (params.q) qs.set("q", params.q);
   if (params.status) qs.set("status", params.status);
   if (params.source) qs.set("source", params.source);
+  if (params.opp) qs.set("opp", params.opp);
   if (params.page) qs.set("page", String(params.page));
   if (params.pageSize) qs.set("page_size", String(params.pageSize));
   return apiFetch<SessionListPage>(`/api/sessions?${qs}`);
