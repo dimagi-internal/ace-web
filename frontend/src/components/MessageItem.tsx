@@ -57,7 +57,13 @@ export function MessageItem({ message }: Props) {
     message.role === "user"
       ? "ml-auto bg-primary text-primary-foreground"
       : "mr-auto bg-muted text-foreground";
-  const showThinking = isPending && message.role === "assistant" && !text;
+  // Hold the "Thinking…" treatment through the gap between
+  // chat.stream_start (status flips to "streaming") and the first
+  // chat.delta (text becomes non-empty). Without `|| isStreaming`,
+  // the bubble collapsed to just a 1px floating cursor for that
+  // 100-300ms window — visible bubble-collapse stutter every turn.
+  const showThinking =
+    (isPending || isStreaming) && message.role === "assistant" && !text;
   return (
     <div
       className={`my-2 max-w-[80%] rounded-2xl px-4 py-2 ${bubbleClass}`}
@@ -80,7 +86,7 @@ export function MessageItem({ message }: Props) {
       ) : (
         <div className="whitespace-pre-wrap">{text}</div>
       )}
-      {isStreaming && (
+      {isStreaming && text && (
         <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-current align-middle" />
       )}
       {isError && message.role === "assistant" && (

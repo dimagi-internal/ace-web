@@ -110,7 +110,17 @@ export function ChatPanel({ slug }: Props) {
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">
-        <MessageList messages={socket.state.messages} />
+        <MessageList
+          messages={socket.state.messages}
+          onUseSuggestion={
+            // Only offer suggestions when we actually own draft writes —
+            // i.e. there's a live draft and we're either the holder or
+            // the holder is idle. Otherwise the click silently no-ops
+            // (updateDraft only sends when active_draft is non-null and
+            // the user is the editor).
+            socket.state.active_draft ? socket.updateDraft : undefined
+          }
+        />
       </div>
       <SendBox
         draft={socket.state.active_draft}
