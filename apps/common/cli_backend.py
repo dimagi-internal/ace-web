@@ -36,6 +36,8 @@ from .auth_flow import get_stored_token
 from .chat_backend import StreamEvent, StreamEventType
 from .circuit_breaker import CircuitBreaker, CircuitOpenError
 from .cli_event_parser import parse_stream_json_lines
+from .nova_auth_flow import get_fresh_token as get_fresh_nova_token
+from .nova_auth_flow import resource as nova_mcp_resource
 
 logger = logging.getLogger(__name__)
 
@@ -107,12 +109,20 @@ class CLIBackend:
         # other's ~/.claude/.credentials.json. Torn down in the outer finally.
         # ``source`` tells us where the blob came from so we can persist any
         # CLI-refreshed version back to the same storage before teardown.
-        staged_env, staged_home, source = await sync_to_async(self._stage_env_for)(session)
+        # ``mcp_config_path`` is the staged .mcp.json (Nova MCP bearer token)
+        # if Nova creds were available, else None.
+        staged_env, staged_home, source, mcp_config_path = await sync_to_async(
+            self._stage_env_for
+        )(session)
         try:
+            extra_args: list[str] = []
+            if mcp_config_path:
+                extra_args = ["--mcp-config", mcp_config_path]
+
             # ── attempt 1: resume if we have a CLI session id AND resume is allowed ──
             if session.cli_session_id and not force_fresh_session:
                 proc = await self._spawn(
-                    args=["--resume", session.cli_session_id],
+                    args=[*extra_args, "--resume", session.cli_session_id],
                     prompt=new_user_message,
                     env=staged_env,
                     session_slug=session.slug,
@@ -149,7 +159,10 @@ class CLIBackend:
             # ── attempt 2: fresh session with seeded history ──
             history_prompt = await self._build_seeded_prompt(session, new_user_message)
             proc = await self._spawn(
-                args=[], prompt=history_prompt, env=staged_env, session_slug=session.slug
+                args=extra_args,
+                prompt=history_prompt,
+                env=staged_env,
+                session_slug=session.slug,
             )
             had_events = False
             try:
@@ -269,15 +282,17 @@ class CLIBackend:
 
     def _stage_env_for(
         self, session: Session
-    ) -> tuple[dict[str, str], str, str | None]:
+    ) -> tuple[dict[str, str], str, str | None, str | None]:
         """Resolve the owner's credential blob and stage it in a fresh temp HOME.
 
-        Returns ``(env_dict, staged_home_path, source)`` where ``source`` is
-        one of ``"user"``, ``"global"``, ``"env"`` or ``None`` (no token
-        resolved). Caller MUST call ``_teardown_staged_home(home)`` in a
-        finally block to remove the directory. The ``source`` is used by
-        ``_persist_refreshed_blob`` to write any CLI-refreshed blob back to
-        the right storage layer before teardown.
+        Returns ``(env_dict, staged_home_path, source, mcp_config_path)`` where
+        ``source`` is one of ``"user"``, ``"global"``, ``"env"`` or ``None``
+        (no token resolved), and ``mcp_config_path`` is the absolute path to
+        a staged ``.mcp.json`` if Nova MCP credentials are available, else
+        None. Caller MUST call ``_teardown_staged_home(home)`` in a finally
+        block to remove the directory. ``source`` is used by
+        ``_persist_refreshed_blob`` to write any CLI-refreshed Claude blob
+        back to the right storage layer before teardown.
         """
         env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
 
@@ -352,7 +367,46 @@ class CLIBackend:
         env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
         if token:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token
-        return env, str(staged_root), source
+
+        mcp_config_path = self._stage_mcp_config(staged_root)
+        return env, str(staged_root), source, mcp_config_path
+
+    def _stage_mcp_config(self, staged_root: Path) -> str | None:
+        """Write a per-spawn ``.mcp.json`` if a fresh Nova bearer token is available.
+
+        Mints (or refreshes) the access token from ``SystemConfig`` and inlines
+        it into the ``Authorization`` header for ``mcp.commcare.app``. Returns
+        the absolute path to be passed via ``--mcp-config`` to the CLI, or
+        None if Nova isn't connected — in which case Nova MCP tools simply
+        aren't available for this spawn.
+
+        Token refresh is single-source-of-truth in
+        ``nova_auth_flow.get_fresh_token``; this method only stages.
+        """
+        try:
+            token = get_fresh_nova_token()
+        except Exception:
+            logger.warning("nova: get_fresh_nova_token raised", exc_info=True)
+            return None
+        if not token:
+            return None
+
+        config = {
+            "mcpServers": {
+                "nova": {
+                    "type": "http",
+                    "url": nova_mcp_resource(),
+                    "headers": {"Authorization": f"Bearer {token}"},
+                }
+            }
+        }
+        path = staged_root / ".mcp.json"
+        path.write_text(json.dumps(config))
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
+        return str(path)
 
     def _persist_refreshed_blob(
         self, session: Session, source: str | None, staged_home: str
