@@ -37,6 +37,18 @@ if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -f "$ACE_ENV_TPL" ]; then
     if op inject -i "$ACE_ENV_TPL" -o "$ACE_ENV_PATH" --account dimagi.1password.com 2>/tmp/op-inject.err; then
         chmod 600 "$ACE_ENV_PATH"
         echo "[entrypoint] op inject succeeded → $ACE_ENV_PATH ($(grep -c '^[A-Z]' "$ACE_ENV_PATH") env keys)"
+        # Mirror to the plugin's vendor dir as well. When Claude Code launches
+        # the ACE MCP servers, it does NOT pass `${CLAUDE_PLUGIN_DATA}`
+        # through the env block (known issue, anthropics/claude-code#9427), so
+        # the MCPs fall back to `process.cwd() + '/.env'`. cwd is the plugin
+        # directory (/app/vendor/ace), so a copy here makes the cwd-fallback
+        # work even when the env-block substitution doesn't.
+        if [ -d "${ACE_PLUGIN_PATH:-/app/vendor/ace}" ]; then
+            cp -f "$ACE_ENV_PATH" "${ACE_PLUGIN_PATH:-/app/vendor/ace}/.env" 2>/dev/null \
+                && chmod 600 "${ACE_PLUGIN_PATH:-/app/vendor/ace}/.env" \
+                && echo "[entrypoint] mirrored .env to ${ACE_PLUGIN_PATH:-/app/vendor/ace}/.env (cwd-fallback for MCPs)" \
+                || echo "[entrypoint] could not mirror .env to plugin cwd — MCPs may 401 if Claude Code doesn't pass CLAUDE_PLUGIN_DATA"
+        fi
     else
         echo "[entrypoint] op inject FAILED — see /tmp/op-inject.err"
         head -c 500 /tmp/op-inject.err >&2
