@@ -34,7 +34,10 @@ ACE_ENV_TPL="${ACE_PLUGIN_PATH:-/app/vendor/ace}/.env.tpl"
 ACE_ENV_PATH="${PLUGIN_DATA_DIR}/.env"
 if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -f "$ACE_ENV_TPL" ]; then
     mkdir -p "$PLUGIN_DATA_DIR"
-    if op inject -i "$ACE_ENV_TPL" -o "$ACE_ENV_PATH" --account dimagi.1password.com 2>/tmp/op-inject.err; then
+    # Service-account auth (OP_SERVICE_ACCOUNT_TOKEN) doesn't accept --account;
+    # the token's tied to a single sign-in URL already. Verified via
+    # `op whoami` returning the integration without the flag.
+    if op inject -i "$ACE_ENV_TPL" -o "$ACE_ENV_PATH" 2>/tmp/op-inject.err; then
         chmod 600 "$ACE_ENV_PATH"
         echo "[entrypoint] op inject succeeded → $ACE_ENV_PATH ($(grep -c '^[A-Z]' "$ACE_ENV_PATH") env keys)"
         # Mirror to the plugin's vendor dir as well. When Claude Code launches
