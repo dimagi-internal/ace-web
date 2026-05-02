@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Archive, ArchiveRestore, MoreHorizontal, Plus, Trash2, Upload } from "lucide-react";
+import { Archive, ArchiveRestore, MoreHorizontal, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,8 @@ import {
   updateSession,
   type ListSessionsParams,
 } from "@/api/sessions";
-import type { Session, SessionListPage } from "@/api/types";
+import { listOpps } from "@/api/opps";
+import type { OppCard, Session, SessionListPage } from "@/api/types";
 import { uploadSession } from "@/api/ingest";
 
 type StatusFilter = "active" | "archived" | "imported" | "";
@@ -48,9 +49,28 @@ export default function SessionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [oppFilter, setOppFilter] = useState<string>("");
+  const [opps, setOpps] = useState<OppCard[]>([]);
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<Session | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Populate the Opp filter dropdown once on mount. Cardinality is small
+  // (typically <20 opps per workspace), so loading the full list once and
+  // doing client-side filtering is simpler than wiring an autocomplete.
+  // Opps that no chat is linked to still appear in the dropdown — that's
+  // fine; selecting one returns an empty list (server-filtered).
+  useEffect(() => {
+    listOpps()
+      .then(setOpps)
+      .catch(() => setOpps([]));
+  }, []);
+
+  const oppDisplayBySlug = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const o of opps) m.set(o.slug, o.display_name || o.slug);
+    return m;
+  }, [opps]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -58,10 +78,11 @@ export default function SessionsPage() {
     const params: ListSessionsParams = { page, pageSize: 20 };
     if (query.trim()) params.q = query.trim();
     if (statusFilter) params.status = statusFilter;
+    if (oppFilter) params.opp = oppFilter;
     listSessions(params)
       .then((d) => { setData(d); setLoading(false); })
       .catch((err) => { setError(String(err?.message ?? err)); setLoading(false); });
-  }, [query, statusFilter, page]);
+  }, [query, statusFilter, oppFilter, page]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -153,6 +174,53 @@ export default function SessionsPage() {
             {f.label}
           </Button>
         ))}
+        <span className="mx-2 h-4 w-px bg-border" aria-hidden="true" />
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant={oppFilter ? "default" : "ghost"}
+                size="sm"
+                className="h-7 text-xs"
+              />
+            }
+          >
+            {oppFilter
+              ? `Opp: ${oppDisplayBySlug.get(oppFilter) ?? oppFilter}`
+              : "Opp"}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="max-h-72 overflow-y-auto">
+            <DropdownMenuItem
+              onClick={() => { setOppFilter(""); setPage(1); }}
+            >
+              All opps
+            </DropdownMenuItem>
+            {opps.length > 0 && <DropdownMenuSeparator />}
+            {opps.map((o) => (
+              <DropdownMenuItem
+                key={o.slug}
+                onClick={() => { setOppFilter(o.slug); setPage(1); }}
+              >
+                {o.display_name || o.slug}
+              </DropdownMenuItem>
+            ))}
+            {opps.length === 0 && (
+              <DropdownMenuItem disabled>(no opps)</DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {oppFilter && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => { setOppFilter(""); setPage(1); }}
+            title="Clear opp filter"
+            aria-label="Clear opp filter"
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        )}
       </div>
 
       <main className="flex-1 overflow-y-auto">
@@ -217,6 +285,19 @@ export default function SessionsPage() {
                 <Link to={`/chat/${s.slug}`} className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="truncate font-medium text-foreground">{s.title || "Untitled"}</span>
+                    {s.opp_slug && (
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 border-primary/40 text-[10px] text-primary"
+                        title={
+                          s.opp_step_skill
+                            ? `${oppDisplayBySlug.get(s.opp_slug) ?? s.opp_slug} · ${s.opp_step_skill}`
+                            : (oppDisplayBySlug.get(s.opp_slug) ?? s.opp_slug)
+                        }
+                      >
+                        opp: {oppDisplayBySlug.get(s.opp_slug) ?? s.opp_slug}
+                      </Badge>
+                    )}
                     <Badge variant="outline" className="shrink-0 text-[10px]">{s.source}</Badge>
                     {s.status === "archived" && (
                       <Badge variant="secondary" className="shrink-0 text-[10px]">archived</Badge>

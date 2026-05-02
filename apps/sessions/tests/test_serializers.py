@@ -48,6 +48,27 @@ def test_preview_is_first_user_message_plaintext(session):
     assert data["preview"] == "What is the capital of France?"
 
 
+def test_session_serializer_exposes_opp_pointers(session):
+    """Opp linkage fields must round-trip on the wire so the chat UI can
+    render the opp breadcrumb, group the recent-sessions sidebar by opp,
+    and drive the ?opp= filter on /sessions. They default to "" when the
+    session is not opp-linked."""
+    data = SessionSerializer(session).data
+    assert data["opp_slug"] == ""
+    assert data["opp_run_id"] == ""
+    assert data["opp_step_skill"] == ""
+
+    session.opp_slug = "malaria-pilot"
+    session.opp_run_id = "2026-04-06-002"
+    session.opp_step_skill = "app-deploy"
+    session.save(update_fields=["opp_slug", "opp_run_id", "opp_step_skill"])
+
+    data = SessionSerializer(session).data
+    assert data["opp_slug"] == "malaria-pilot"
+    assert data["opp_run_id"] == "2026-04-06-002"
+    assert data["opp_step_skill"] == "app-deploy"
+
+
 def test_preview_is_empty_when_no_user_messages(session):
     Message.objects.create(
         session=session, turn_index=0, role="assistant",
