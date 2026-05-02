@@ -166,7 +166,12 @@ RUN useradd -m -u 1000 app \
     && printf '{\n  "enabledPlugins": {\n    "ace@ace": true,\n    "nova@nova-marketplace": true\n  }\n}\n' \
         > /home/app/.claude/settings.json \
     && mkdir -p /home/app/.claude/plugin-data/ace \
-    && chown -R app:app /app /home/app/.claude /home/app/.cache
+    # /home/app may have been created by an earlier RUN-as-root step
+    # (the Playwright install above creates /home/app/.cache before useradd
+    # runs, leaving /home/app itself owned by root). Recursive chown of the
+    # whole home dir so the runtime user can also write things like
+    # ~/.config/op which the 1Password CLI needs.
+    && chown -R app:app /app /home/app
 
 # Entrypoint writes the Drive SA key from ACE_DRIVE_SA_KEY_JSON (Secrets
 # Manager) to $CLAUDE_PLUGIN_DATA/gws-sa-key.json at container start, so
