@@ -52,6 +52,23 @@ if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -f "$ACE_ENV_TPL" ]; then
                 && echo "[entrypoint] mirrored .env to ${ACE_PLUGIN_PATH:-/app/vendor/ace}/.env (cwd-fallback for MCPs)" \
                 || echo "[entrypoint] could not mirror .env to plugin cwd — MCPs may 401 if Claude Code doesn't pass CLAUDE_PLUGIN_DATA"
         fi
+        # Also mirror to the path that lib/plugin-data-dir.ts derives from
+        # import.meta.url when CLAUDE_PLUGIN_DATA isn't passed: it walks up
+        # to find a `plugins/cache/<mp>/<plugin>/<v>/...` segment, then
+        # composes a sibling `<plugins-root>/data/<mp>-<plugin>` path. With
+        # the new install layout (cache=real-dir), import.meta.url resolves
+        # cleanly into that pattern, so the derivation finds
+        # /home/app/.claude/plugins/data/ace-ace/.env. Mirror there too so
+        # both the cwd-fallback and the derivation-fallback resolve.
+        # Repro from a live Tier C v6 chat: claude self-healed by running
+        # `cp /home/app/.claude/plugin-data/ace/.env /home/app/.claude/plugins/data/ace-ace/.env`
+        # mid-session before its first connect_list_programs call worked.
+        DERIVED_DATA_DIR="/home/app/.claude/plugins/data/ace-ace"
+        mkdir -p "$DERIVED_DATA_DIR"
+        cp -f "$ACE_ENV_PATH" "$DERIVED_DATA_DIR/.env" 2>/dev/null \
+            && chmod 600 "$DERIVED_DATA_DIR/.env" \
+            && echo "[entrypoint] mirrored .env to $DERIVED_DATA_DIR/.env (derived-data-dir fallback)" \
+            || echo "[entrypoint] could not mirror .env to derived data dir"
     else
         echo "[entrypoint] op inject FAILED — see /tmp/op-inject.err"
         head -c 500 /tmp/op-inject.err >&2
