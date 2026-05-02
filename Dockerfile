@@ -56,6 +56,48 @@ RUN git clone https://github.com/jjackson/ace.git /app/vendor/ace \
     && npm install --no-audit --no-fund \
     && rm -rf .git
 
+# Vendor the Nova plugin (CommCare app builder). Two repos:
+#   1. github.com/voidcraft-labs/nova-marketplace — minimal, just contains
+#      .claude-plugin/marketplace.json that points at the plugin source.
+#   2. github.com/voidcraft-labs/nova-plugin — the actual skills + agents.
+# Nova's MCP is HTTP-based (https://mcp.commcare.app/mcp) so no node deps
+# to install for it; the only thing we need on disk is the skill/agent
+# definitions so Claude Code can resolve `/nova:upload_to_hq` etc.
+#
+# The Nova HTTP MCP needs auth on first call — see CONFIGURE_NOVA flow.
+# Until that's wired through 1Password, Phase 2 still requires manual
+# `/plugin install nova@nova-marketplace` + OAuth in a separate session.
+ARG NOVA_REF=main
+ARG NOVA_VERSION=1.0.0
+RUN git clone https://github.com/voidcraft-labs/nova-marketplace.git /app/vendor/nova-marketplace \
+    && cd /app/vendor/nova-marketplace \
+    && git checkout ${NOVA_REF} \
+    && rm -rf .git \
+    && git clone https://github.com/voidcraft-labs/nova-plugin.git /app/vendor/nova-plugin \
+    && cd /app/vendor/nova-plugin \
+    && git checkout ${NOVA_REF} \
+    && rm -rf .git
+
+# Install Playwright system dependencies so the ACE plugin's ace-connect
+# and ace-ocs MCP servers can launch Chromium for their authenticated-
+# session bootstrap. Without this, Phase 3 (Connect setup) and Phase 4
+# (OCS authoring) hard-block on missing libglib2.0. Reproduced today —
+# the Tier C v3 run got past Phase 1 and stalled at exactly this dep.
+#
+# `playwright install-deps chromium` apt-installs libglib + ~20 other
+# X11/font/audio libraries Chromium needs in a headless Linux env.
+# `playwright install chromium` downloads the Chromium binary itself
+# into /home/app/.cache/ms-playwright (we run it as root here; later
+# chown to app so the runtime user can read it).
+ARG PLAYWRIGHT_REF=2026-05-01-chromium-deps
+RUN echo "playwright cache key: ${PLAYWRIGHT_REF}" \
+    && cd /app/vendor/ace \
+    && PLAYWRIGHT_BROWSERS_PATH=/home/app/.cache/ms-playwright \
+       npx --yes playwright install-deps chromium \
+    && PLAYWRIGHT_BROWSERS_PATH=/home/app/.cache/ms-playwright \
+       npx --yes playwright install chromium \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install uv for fast, reproducible dep installs.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
@@ -93,38 +135,38 @@ RUN DJANGO_SECRET_KEY=build-time-placeholder \
 RUN useradd -m -u 1000 app \
     && mkdir -p /app/.ace-claude-home \
     && ACE_VERSION=$(cat /app/vendor/ace/VERSION 2>/dev/null || echo "vendored") \
+    && NOVA_INSTALL_VERSION=${NOVA_VERSION} \
     && INSTALLED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    # Plugin install: cache/<marketplace>/<plugin>/<version> -> /app/vendor/ace
+    # Plugin install (ACE): cache/<marketplace>/<plugin>/<version> -> /app/vendor/ace
     && mkdir -p /home/app/.claude/plugins/cache/ace/ace \
     && ln -s /app/vendor/ace "/home/app/.claude/plugins/cache/ace/ace/${ACE_VERSION}" \
+    # Plugin install (Nova): cache symlinks to the vendored nova-plugin repo.
+    && mkdir -p /home/app/.claude/plugins/cache/nova-marketplace/nova \
+    && ln -s /app/vendor/nova-plugin "/home/app/.claude/plugins/cache/nova-marketplace/nova/${NOVA_INSTALL_VERSION}" \
     # Plugin registry — must match the schema Claude Code 2.x writes itself,
     # otherwise the loader silently skips the entry. Verified by reading a
     # real laptop install + the /api/system/cli-diag probe in the container.
-    && printf '{\n  "version": 2,\n  "plugins": {\n    "ace@ace": [\n      {\n        "scope": "user",\n        "installPath": "/home/app/.claude/plugins/cache/ace/ace/%s",\n        "version": "%s",\n        "installedAt": "%s",\n        "lastUpdated": "%s"\n      }\n    ]\n  }\n}\n' \
+    && printf '{\n  "version": 2,\n  "plugins": {\n    "ace@ace": [\n      {\n        "scope": "user",\n        "installPath": "/home/app/.claude/plugins/cache/ace/ace/%s",\n        "version": "%s",\n        "installedAt": "%s",\n        "lastUpdated": "%s"\n      }\n    ],\n    "nova@nova-marketplace": [\n      {\n        "scope": "user",\n        "installPath": "/home/app/.claude/plugins/cache/nova-marketplace/nova/%s",\n        "version": "%s",\n        "installedAt": "%s",\n        "lastUpdated": "%s"\n      }\n    ]\n  }\n}\n' \
         "${ACE_VERSION}" "${ACE_VERSION}" "${INSTALLED_AT}" "${INSTALLED_AT}" \
+        "${NOVA_INSTALL_VERSION}" "${NOVA_INSTALL_VERSION}" "${INSTALLED_AT}" "${INSTALLED_AT}" \
         > /home/app/.claude/plugins/installed_plugins.json \
     # Marketplace registration — installed_plugins.json alone isn't enough;
     # claude resolves the plugin's source marketplace on load, and without a
     # `known_marketplaces.json` entry + a marketplaces/<id>/ dir the plugin
     # is silently dropped (init payload shows plugins=[] mcp_servers=[]).
-    # Symlinking the same /app/vendor/ace tree as the marketplace install
-    # location works because /app/vendor/ace/.claude-plugin/marketplace.json
-    # is exactly what the loader reads.
     && mkdir -p /home/app/.claude/plugins/marketplaces \
     && ln -s /app/vendor/ace /home/app/.claude/plugins/marketplaces/ace \
-    && printf '{\n  "ace": {\n    "source": {\n      "source": "github",\n      "repo": "jjackson/ace"\n    },\n    "installLocation": "/home/app/.claude/plugins/marketplaces/ace",\n    "lastUpdated": "%s"\n  }\n}\n' \
-        "${INSTALLED_AT}" \
+    && ln -s /app/vendor/nova-marketplace /home/app/.claude/plugins/marketplaces/nova-marketplace \
+    && printf '{\n  "ace": {\n    "source": {\n      "source": "github",\n      "repo": "jjackson/ace"\n    },\n    "installLocation": "/home/app/.claude/plugins/marketplaces/ace",\n    "lastUpdated": "%s"\n  },\n  "nova-marketplace": {\n    "source": {\n      "source": "github",\n      "repo": "voidcraft-labs/nova-marketplace"\n    },\n    "installLocation": "/home/app/.claude/plugins/marketplaces/nova-marketplace",\n    "lastUpdated": "%s"\n  }\n}\n' \
+        "${INSTALLED_AT}" "${INSTALLED_AT}" \
         > /home/app/.claude/plugins/known_marketplaces.json \
-    # Plugin enablement — installed + registered isn't enough either. Claude
-    # 2.x reads ~/.claude/settings.json `enabledPlugins` to decide which
-    # registered plugins to actually load. Without this entry the plugin is
-    # silently disabled even though everything else looks right (verified by
-    # in-container ECS Exec poking — toggling this entry flips
-    # init.plugins=[] → ['ace']).
-    && printf '{\n  "enabledPlugins": {\n    "ace@ace": true\n  }\n}\n' \
+    # Plugin enablement — Claude 2.x reads ~/.claude/settings.json
+    # `enabledPlugins` to decide which registered plugins to actually load.
+    # Without this entry the plugin is silently disabled.
+    && printf '{\n  "enabledPlugins": {\n    "ace@ace": true,\n    "nova@nova-marketplace": true\n  }\n}\n' \
         > /home/app/.claude/settings.json \
     && mkdir -p /home/app/.claude/plugin-data/ace \
-    && chown -R app:app /app /home/app/.claude
+    && chown -R app:app /app /home/app/.claude /home/app/.cache
 
 # Entrypoint writes the Drive SA key from ACE_DRIVE_SA_KEY_JSON (Secrets
 # Manager) to $CLAUDE_PLUGIN_DATA/gws-sa-key.json at container start, so
@@ -142,7 +184,8 @@ ENV HOME=/home/app
 
 # Claude plugin discovery + MCP config paths for this container.
 ENV ACE_PLUGIN_PATH=/app/vendor/ace \
-    CLAUDE_PLUGIN_DATA=/home/app/.claude/plugin-data/ace
+    CLAUDE_PLUGIN_DATA=/home/app/.claude/plugin-data/ace \
+    PLAYWRIGHT_BROWSERS_PATH=/home/app/.cache/ms-playwright
 
 EXPOSE 8000
 
