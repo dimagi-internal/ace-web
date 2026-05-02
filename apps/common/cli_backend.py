@@ -368,21 +368,32 @@ class CLIBackend:
         if token:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token
 
-        mcp_config_path = self._stage_mcp_config(staged_root)
+        mcp_config_path = self._stage_mcp_config(staged_root, original_home)
         return env, str(staged_root), source, mcp_config_path
 
-    def _stage_mcp_config(self, staged_root: Path) -> str | None:
+    def _stage_mcp_config(self, staged_root: Path, original_home: str) -> str | None:
         """Write a per-spawn ``.mcp.json`` if a fresh Nova bearer token is available.
 
-        Mints (or refreshes) the access token from ``SystemConfig`` and inlines
-        it into the ``Authorization`` header for ``mcp.commcare.app``. Returns
-        the absolute path to be passed via ``--mcp-config`` to the CLI, or
-        None if Nova isn't connected — in which case Nova MCP tools simply
-        aren't available for this spawn.
+        When the bundled Nova plugin's own ``.mcp.json`` already includes a
+        ``headersHelper`` (the prod container case — the Dockerfile rewrites
+        the plugin's config to point at ``manage.py nova_headers``), we
+        skip the per-spawn write so we don't end up with two ``nova`` MCP
+        servers — one under the plugin's ``mcp__plugin_nova_nova__*``
+        prefix, one under our project ``mcp__nova__*`` prefix. The plugin
+        path is canonical because it gives the tool prefix the ACE skills
+        (``pdd-to-learn-app`` etc.) actually call.
+
+        Otherwise — local dev where the plugin isn't installed, or
+        installed without the headers helper baked in — we mint and inline
+        a token here so chat still has Nova access (just under
+        ``mcp__nova__*``).
 
         Token refresh is single-source-of-truth in
         ``nova_auth_flow.get_fresh_token``; this method only stages.
         """
+        if _plugin_nova_has_headers_helper(original_home):
+            return None
+
         try:
             token = get_fresh_nova_token()
         except Exception:
@@ -573,6 +584,45 @@ class CLIBackend:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await asyncio.shield(asyncio.wait_for(task, timeout=1.0))
+
+
+def _plugin_nova_has_headers_helper(original_home: str) -> bool:
+    """Return True iff the bundled Nova plugin's .mcp.json wires headersHelper.
+
+    Reads ``<original_home>/.claude/plugins/installed_plugins.json``,
+    locates plugin entries whose key starts with ``nova@`` (the
+    canonical id is ``nova@nova-marketplace``), opens that plugin's
+    ``.mcp.json``, and checks whether the ``nova`` MCP server entry
+    declares ``headersHelper``.
+
+    Defensive: returns False (= "fall back to per-spawn write") on any
+    parse / IO error so a malformed plugin install never silently
+    disables Nova access.
+    """
+    if not original_home:
+        return False
+    registry = Path(original_home) / ".claude" / "plugins" / "installed_plugins.json"
+    if not registry.exists():
+        return False
+    try:
+        data = json.loads(registry.read_text())
+        for plugin_id, entries in (data.get("plugins") or {}).items():
+            if not plugin_id.startswith("nova@"):
+                continue
+            for entry in entries or []:
+                install_path = entry.get("installPath")
+                if not install_path:
+                    continue
+                mcp = Path(install_path) / ".mcp.json"
+                if not mcp.exists():
+                    continue
+                cfg = json.loads(mcp.read_text())
+                nova = (cfg.get("mcpServers") or {}).get("nova") or {}
+                if "headersHelper" in nova:
+                    return True
+    except (OSError, ValueError):
+        return False
+    return False
 
 
 def _escape_turn_boundaries(text: str) -> str:

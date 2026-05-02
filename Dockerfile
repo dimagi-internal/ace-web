@@ -64,9 +64,14 @@ RUN git clone https://github.com/jjackson/ace.git /app/vendor/ace \
 # to install for it; the only thing we need on disk is the skill/agent
 # definitions so Claude Code can resolve `/nova:upload_to_hq` etc.
 #
-# The Nova HTTP MCP needs auth on first call — see CONFIGURE_NOVA flow.
-# Until that's wired through 1Password, Phase 2 still requires manual
-# `/plugin install nova@nova-marketplace` + OAuth in a separate session.
+# We overwrite the plugin's bundled .mcp.json with one that adds a
+# `headersHelper` pointing at our Django management command — Claude
+# Code invokes the helper at MCP-connect time, the helper hits the
+# `nova_credentials_blob` row in SystemConfig (refreshing if needed)
+# and emits the Authorization header. Without this override the plugin
+# would try to OAuth interactively on first call, which is impossible
+# inside a headless container. See apps/common/management/commands/
+# nova_headers.py for the helper.
 ARG NOVA_REF=main
 ARG NOVA_VERSION=1.0.0
 RUN git clone https://github.com/voidcraft-labs/nova-marketplace.git /app/vendor/nova-marketplace \
@@ -76,7 +81,9 @@ RUN git clone https://github.com/voidcraft-labs/nova-marketplace.git /app/vendor
     && git clone https://github.com/voidcraft-labs/nova-plugin.git /app/vendor/nova-plugin \
     && cd /app/vendor/nova-plugin \
     && git checkout ${NOVA_REF} \
-    && rm -rf .git
+    && rm -rf .git \
+    && printf '{\n  "mcpServers": {\n    "nova": {\n      "type": "http",\n      "url": "https://mcp.commcare.app/mcp",\n      "headersHelper": "cd /app && python manage.py nova_headers"\n    }\n  }\n}\n' \
+        > /app/vendor/nova-plugin/.mcp.json
 
 # Install Playwright system dependencies so the ACE plugin's ace-connect
 # and ace-ocs MCP servers can launch Chromium for their authenticated-
