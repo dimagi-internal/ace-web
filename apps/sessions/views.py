@@ -42,6 +42,28 @@ def _annotate_first_user_plaintext(qs):
     return qs.annotate(first_user_plaintext=Subquery(first_user_msg))
 
 
+def _annotate_opp_display_name(qs):
+    """Annotate ``opp_display_name_annotated`` with the OppWorkspace
+    display name matching the session's (workspace, opp_slug). NULL when
+    the session isn't opp-linked or the OppWorkspace row was deleted;
+    the serializer normalizes that to "".
+
+    Avoids an N+1 lookup per row in list responses.
+    """
+    # Lazy import — apps.opps depends on apps.sessions, so a top-level
+    # import sets up a cycle.
+    from apps.opps.models import OppWorkspace
+
+    matching_opp = (
+        OppWorkspace.objects.filter(
+            workspace_id=OuterRef("workspace_id"),
+            slug=OuterRef("opp_slug"),
+        )
+        .values("display_name")[:1]
+    )
+    return qs.annotate(opp_display_name_annotated=Subquery(matching_opp))
+
+
 def _scope_sessions_to_user(qs, user):
     """Restrict a Session queryset to sessions the user can see:
     sessions in workspaces they're a member of, plus orphan sessions
@@ -114,9 +136,9 @@ def _list_sessions(request: Request) -> Response:
     except ValueError:
         page_size = 20
     offset = (page - 1) * page_size
-    qs = _annotate_first_user_plaintext(qs).order_by("-updated_at")[
-        offset : offset + page_size
-    ]
+    qs = _annotate_opp_display_name(
+        _annotate_first_user_plaintext(qs)
+    ).order_by("-updated_at")[offset : offset + page_size]
     return Response(
         success_response({
             "items": SessionSerializer(qs, many=True).data,

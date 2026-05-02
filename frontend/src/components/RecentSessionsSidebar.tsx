@@ -14,6 +14,8 @@ interface Props {
 
 interface OppGroup {
   oppSlug: string;
+  /** First non-empty opp_display_name seen in this group; "" if none. */
+  oppDisplayName: string;
   sessions: Session[];
 }
 
@@ -24,10 +26,14 @@ interface OppGroup {
  * Unlinked sessions go into the trailing "" bucket; callers render that
  * one last as "Other chats". Suppressing the section header for the
  * single-bucket case is the caller's job.
+ *
+ * Sprint 2: also surface the first non-empty opp_display_name in each
+ * group so the header can read "Crispr Malawi Pilot" instead of the slug.
  */
 function groupByOpp(sessions: Session[]): OppGroup[] {
   const order: string[] = [];
   const buckets = new Map<string, Session[]>();
+  const displayNames = new Map<string, string>();
   for (const s of sessions) {
     const key = s.opp_slug || "";
     if (!buckets.has(key)) {
@@ -35,12 +41,19 @@ function groupByOpp(sessions: Session[]): OppGroup[] {
       order.push(key);
     }
     buckets.get(key)!.push(s);
+    if (key && !displayNames.get(key) && s.opp_display_name) {
+      displayNames.set(key, s.opp_display_name);
+    }
   }
   // Always render unlinked chats last, regardless of when they last moved.
   return order
     .filter((k) => k !== "")
     .concat(buckets.has("") ? [""] : [])
-    .map((oppSlug) => ({ oppSlug, sessions: buckets.get(oppSlug)! }));
+    .map((oppSlug) => ({
+      oppSlug,
+      oppDisplayName: displayNames.get(oppSlug) ?? "",
+      sessions: buckets.get(oppSlug)!,
+    }));
 }
 
 export function RecentSessionsSidebar({ currentSlug }: Props) {
@@ -167,7 +180,8 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
         {!showGroupHeaders && sessions.map(renderRow)}
         {showGroupHeaders &&
           groups.map((g) => {
-            const headerLabel = g.oppSlug || "Other chats";
+            const headerLabel =
+              g.oppDisplayName || g.oppSlug || "Other chats";
             const oppHref = workspaceSlug
               ? `/w/${workspaceSlug}/opps/${g.oppSlug}`
               : `/opps/${g.oppSlug}`;
@@ -178,7 +192,11 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
                     <Link
                       to={oppHref}
                       className="truncate hover:text-foreground"
-                      title={`Open opp ${g.oppSlug}`}
+                      title={
+                        g.oppDisplayName && g.oppDisplayName !== g.oppSlug
+                          ? `${g.oppSlug} — open in Workbench`
+                          : `Open opp ${g.oppSlug}`
+                      }
                     >
                       {headerLabel}
                     </Link>

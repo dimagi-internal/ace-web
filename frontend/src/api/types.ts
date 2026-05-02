@@ -26,6 +26,10 @@ export interface Session {
   opp_slug: string;
   opp_run_id: string;
   opp_step_skill: string;
+  // Human display name resolved server-side from OppWorkspace. Empty
+  // when not opp-linked or when the OppWorkspace row was deleted; UI
+  // falls back to opp_slug.
+  opp_display_name: string;
 }
 
 export interface SessionDetail extends Session {

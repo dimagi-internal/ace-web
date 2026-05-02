@@ -5,6 +5,8 @@ interface Props {
   oppSlug: string;
   oppRunId: string;
   oppStepSkill: string;
+  /** Human display name from OppWorkspace; falls back to oppSlug when empty. */
+  oppDisplayName?: string;
 }
 
 /**
@@ -16,14 +18,13 @@ interface Props {
  * the asymmetry: from inside a chat, the user can now see what opp +
  * step they're discussing and click straight back to the Workbench.
  *
- * Display name today is the opp slug — the slug is already the
- * human-readable identifier across the codebase. Lifting to
- * OppWorkspace.display_name is a follow-up.
+ * Sprint 2: prefer oppDisplayName (from OppWorkspace) over oppSlug.
  */
 export function OppHeaderBreadcrumb({
   oppSlug,
   oppRunId,
   oppStepSkill,
+  oppDisplayName,
 }: Props) {
   const { workspaceSlug } = useParams<{ workspaceSlug?: string }>();
 
@@ -35,6 +36,7 @@ export function OppHeaderBreadcrumb({
   const oppHref = workspaceSlug
     ? `/w/${workspaceSlug}/opps/${oppSlug}`
     : `/opps/${oppSlug}`;
+  const oppLabel = oppDisplayName?.trim() || oppSlug;
 
   return (
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -42,8 +44,9 @@ export function OppHeaderBreadcrumb({
       <Link
         to={oppHref}
         className="font-medium text-foreground hover:underline"
+        title={oppDisplayName && oppDisplayName !== oppSlug ? oppSlug : undefined}
       >
-        {oppSlug}
+        {oppLabel}
       </Link>
       {oppStepSkill ? (
         <>

@@ -285,19 +285,31 @@ export default function SessionsPage() {
                 <Link to={`/chat/${s.slug}`} className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="truncate font-medium text-foreground">{s.title || "Untitled"}</span>
-                    {s.opp_slug && (
-                      <Badge
-                        variant="outline"
-                        className="shrink-0 border-primary/40 text-[10px] text-primary"
-                        title={
-                          s.opp_step_skill
-                            ? `${oppDisplayBySlug.get(s.opp_slug) ?? s.opp_slug} · ${s.opp_step_skill}`
-                            : (oppDisplayBySlug.get(s.opp_slug) ?? s.opp_slug)
-                        }
-                      >
-                        opp: {oppDisplayBySlug.get(s.opp_slug) ?? s.opp_slug}
-                      </Badge>
-                    )}
+                    {s.opp_slug && (() => {
+                      // Prefer server-side display_name over the OppCard
+                      // lookup so chats whose opp isn't in the dropdown
+                      // (e.g. deleted opp, paginated-off list) still
+                      // get a label. opp_display_name comes from the
+                      // serializer and is "" when the OppWorkspace row
+                      // is missing — fall through to the slug then.
+                      const label =
+                        s.opp_display_name ||
+                        oppDisplayBySlug.get(s.opp_slug) ||
+                        s.opp_slug;
+                      return (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 border-primary/40 text-[10px] text-primary"
+                          title={
+                            s.opp_step_skill
+                              ? `${label} · ${s.opp_step_skill}`
+                              : label
+                          }
+                        >
+                          opp: {label}
+                        </Badge>
+                      );
+                    })()}
                     <Badge variant="outline" className="shrink-0 text-[10px]">{s.source}</Badge>
                     {s.status === "archived" && (
                       <Badge variant="secondary" className="shrink-0 text-[10px]">archived</Badge>

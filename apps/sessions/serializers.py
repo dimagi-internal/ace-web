@@ -37,6 +37,7 @@ def _truncate_preview(text: str) -> str:
 class SessionSerializer(serializers.ModelSerializer):
     message_count = serializers.SerializerMethodField()
     preview = serializers.SerializerMethodField()
+    opp_display_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Session
@@ -59,15 +60,43 @@ class SessionSerializer(serializers.ModelSerializer):
             "opp_slug",
             "opp_run_id",
             "opp_step_skill",
+            # Human display name from OppWorkspace (sprint 2). Empty
+            # string when not opp-linked or when the OppWorkspace row
+            # has been deleted; chat UI falls back to opp_slug.
+            "opp_display_name",
         ]
         read_only_fields = [
             "slug", "cli_session_id", "created_at", "updated_at",
             "message_count", "preview",
             "opp_slug", "opp_run_id", "opp_step_skill",
+            "opp_display_name",
         ]
 
     def get_message_count(self, obj: Session) -> int:
         return obj.messages.count()
+
+    def get_opp_display_name(self, obj: Session) -> str:
+        # The list view annotates this on the queryset to avoid N+1; if
+        # present, prefer it. Otherwise (detail view, ad-hoc serialize)
+        # do a single targeted lookup. Empty string when the session
+        # isn't opp-linked or the OppWorkspace row has been deleted.
+        annotated = getattr(obj, "opp_display_name_annotated", None)
+        if annotated is not None:
+            return annotated or ""
+        if not obj.opp_slug:
+            return ""
+        # Lazy import — apps.opps depends on apps.sessions, so a top-level
+        # import would set up a cycle.
+        from apps.opps.models import OppWorkspace
+
+        return (
+            OppWorkspace.objects.filter(
+                workspace_id=obj.workspace_id, slug=obj.opp_slug,
+            )
+            .values_list("display_name", flat=True)
+            .first()
+            or ""
+        )
 
     def get_preview(self, obj: Session) -> str:
         annotated = getattr(obj, "first_user_plaintext", None)
