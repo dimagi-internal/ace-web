@@ -30,7 +30,7 @@ def test_staged_env_uses_user_blob_when_present(tmp_path):
     session = Session.objects.create(owner=user, slug="abc", title="t")
 
     backend = CLIBackend()
-    env, staged_home, source, _mcp = backend._stage_env_for(session)
+    env, staged_home, source = backend._stage_env_for(session)
     try:
         assert env["HOME"] == staged_home
         assert source == "user"
@@ -56,7 +56,7 @@ def test_staged_env_falls_back_to_global():
     session = Session.objects.create(owner=user, slug="def", title="t2")
 
     backend = CLIBackend()
-    env, staged_home, source, _mcp = backend._stage_env_for(session)
+    env, staged_home, source = backend._stage_env_for(session)
     try:
         assert source == "global"
         stored = json.loads((Path(staged_home) / ".claude" / ".credentials.json").read_text())
@@ -76,7 +76,7 @@ def test_staged_env_when_no_credentials_anywhere(monkeypatch):
     session = Session.objects.create(owner=user, slug="emp", title="t")
 
     backend = CLIBackend()
-    env, staged_home, source, _mcp = backend._stage_env_for(session)
+    env, staged_home, source = backend._stage_env_for(session)
     try:
         assert source is None
         creds_path = Path(staged_home) / ".claude" / ".credentials.json"
@@ -98,7 +98,7 @@ def test_staged_env_reconstructs_blob_from_env_source(monkeypatch):
     session = Session.objects.create(owner=user, slug="env-src", title="t")
 
     backend = CLIBackend()
-    env, staged_home, source, _mcp = backend._stage_env_for(session)
+    env, staged_home, source = backend._stage_env_for(session)
     try:
         assert source == "env"
         creds_path = Path(staged_home) / ".claude" / ".credentials.json"
@@ -122,8 +122,8 @@ def test_staged_homes_are_isolated_per_invocation():
     session = Session.objects.create(owner=user, slug="ghi", title="t3")
 
     backend = CLIBackend()
-    _, home1, _, _ = backend._stage_env_for(session)
-    _, home2, _, _ = backend._stage_env_for(session)
+    _, home1, _ = backend._stage_env_for(session)
+    _, home2, _ = backend._stage_env_for(session)
     try:
         assert home1 != home2
     finally:
@@ -149,7 +149,7 @@ def test_persist_refreshed_blob_updates_user_credential():
     session = Session.objects.create(owner=user, slug="refresh-sess", title="t")
 
     backend = CLIBackend()
-    env, staged_home, source, _mcp = backend._stage_env_for(session)
+    env, staged_home, source = backend._stage_env_for(session)
     assert source == "user"
     try:
         # Simulate CLI refresh by rewriting the creds file
@@ -192,7 +192,7 @@ def test_persist_refreshed_blob_noop_on_unchanged_file():
     )
     session = Session.objects.create(owner=user, slug="same-sess", title="t")
     backend = CLIBackend()
-    env, staged_home, source, _mcp = backend._stage_env_for(session)
+    env, staged_home, source = backend._stage_env_for(session)
     try:
         backend._persist_refreshed_blob(session, source, staged_home)
         cred = UserCredential.objects.get(user=user)
@@ -214,7 +214,7 @@ def test_persist_refreshed_blob_updates_global_systemconfig():
     session = Session.objects.create(owner=user, slug="g-sess", title="t")
 
     backend = CLIBackend()
-    env, staged_home, source, _mcp = backend._stage_env_for(session)
+    env, staged_home, source = backend._stage_env_for(session)
     assert source == "global"
     try:
         new_token = "sk-ant-oat01-" + "N" * 40
@@ -264,7 +264,7 @@ def test_persist_refreshed_blob_skips_malformed_blob():
     )
     session = Session.objects.create(owner=user, slug="broken-sess", title="t")
     backend = CLIBackend()
-    env, staged_home, source, _mcp = backend._stage_env_for(session)
+    env, staged_home, source = backend._stage_env_for(session)
     try:
         creds_path = Path(staged_home) / ".claude" / ".credentials.json"
         creds_path.write_text(json.dumps({"claudeAiOauth": {"accessToken": "not-real"}}))
@@ -301,7 +301,7 @@ def test_staged_env_symlinks_plugins_from_real_home(monkeypatch, tmp_path):
     session = Session.objects.create(owner=user, slug="plug-sess", title="t")
 
     backend = CLIBackend()
-    env, staged_home, _, _ = backend._stage_env_for(session)
+    env, staged_home, _ = backend._stage_env_for(session)
     try:
         staged_claude = Path(staged_home) / ".claude"
         # The plugins dir + settings.json must be reachable from the staged HOME.
@@ -339,7 +339,7 @@ def test_staged_env_symlink_works_when_real_home_has_no_claude_dir(
     session = Session.objects.create(owner=user, slug="fresh-sess", title="t")
 
     backend = CLIBackend()
-    env, staged_home, _, _ = backend._stage_env_for(session)
+    env, staged_home, _ = backend._stage_env_for(session)
     try:
         staged_claude = Path(staged_home) / ".claude"
         assert staged_claude.is_dir()

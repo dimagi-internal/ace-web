@@ -80,14 +80,15 @@ RUN mkdir -p /home/app/.claude/plugins/cache/ace/ace /app/vendor \
 # to install for it; the only thing we need on disk is the skill/agent
 # definitions so Claude Code can resolve `/nova:upload_to_hq` etc.
 #
-# We overwrite the plugin's bundled .mcp.json with one that adds a
-# `headersHelper` pointing at our Django management command — Claude
-# Code invokes the helper at MCP-connect time, the helper hits the
-# `nova_credentials_blob` row in SystemConfig (refreshing if needed)
-# and emits the Authorization header. Without this override the plugin
-# would try to OAuth interactively on first call, which is impossible
-# inside a headless container. See apps/common/management/commands/
-# nova_headers.py for the helper.
+# We overwrite the plugin's bundled .mcp.json with one that uses
+# Claude Code's env-var expansion: the Authorization header reads
+# ${NOVA_BEARER_TOKEN:-}, which CLIBackend._stage_env_for sets in the
+# subprocess env from the stored OAuth blob (refreshing if near expiry).
+# Without this override the plugin would try to OAuth interactively on
+# first call, which is impossible inside a headless container. The
+# `:-` default makes the token optional — when Nova isn't connected
+# the header expands to "Bearer " (empty) and the server returns 401
+# at call time instead of crashing the loader at parse time.
 ARG NOVA_REF=main
 ARG NOVA_VERSION=1.0.0
 # Same install pattern as ACE: cache is the real install location;
@@ -102,7 +103,7 @@ RUN mkdir -p /home/app/.claude/plugins/cache/nova-marketplace/nova \
     && git checkout ${NOVA_REF} \
     && rm -rf .git \
     && ln -s "/home/app/.claude/plugins/cache/nova-marketplace/nova/${NOVA_VERSION}" /app/vendor/nova-plugin \
-    && printf '{\n  "mcpServers": {\n    "nova": {\n      "type": "http",\n      "url": "https://mcp.commcare.app/mcp",\n      "headersHelper": "cd /app && python manage.py nova_headers"\n    }\n  }\n}\n' \
+    && printf '{\n  "mcpServers": {\n    "nova": {\n      "type": "http",\n      "url": "https://mcp.commcare.app/mcp",\n      "headers": {\n        "Authorization": "Bearer ${NOVA_BEARER_TOKEN:-}"\n      }\n    }\n  }\n}\n' \
         > /app/vendor/nova-plugin/.mcp.json
 
 # Install Playwright system dependencies so the ACE plugin's ace-connect
