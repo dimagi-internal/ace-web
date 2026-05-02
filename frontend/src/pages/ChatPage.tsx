@@ -77,6 +77,7 @@ export function ChatPage() {
               oppSlug={meta.opp_slug}
               oppRunId={meta.opp_run_id}
               oppStepSkill={meta.opp_step_skill}
+              oppDisplayName={meta.opp_display_name}
             />
             <InlineTitleEdit value={meta.title} onSave={handleTitleSave} />
           </div>

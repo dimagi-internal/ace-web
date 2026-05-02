@@ -57,6 +57,7 @@ def test_session_serializer_exposes_opp_pointers(session):
     assert data["opp_slug"] == ""
     assert data["opp_run_id"] == ""
     assert data["opp_step_skill"] == ""
+    assert data["opp_display_name"] == ""
 
     session.opp_slug = "malaria-pilot"
     session.opp_run_id = "2026-04-06-002"
@@ -67,6 +68,55 @@ def test_session_serializer_exposes_opp_pointers(session):
     assert data["opp_slug"] == "malaria-pilot"
     assert data["opp_run_id"] == "2026-04-06-002"
     assert data["opp_step_skill"] == "app-deploy"
+    # No matching OppWorkspace row → display_name falls back to "".
+    assert data["opp_display_name"] == ""
+
+
+@pytest.mark.django_db
+def test_opp_display_name_resolves_via_oppworkspace(django_user_model):
+    """When (workspace, opp_slug) matches an OppWorkspace row,
+    opp_display_name surfaces the human display_name. Drives the chat
+    header, sidebar group headers, and /sessions row badges."""
+    from apps.opps.models import OppWorkspace
+    from apps.workspaces.models import Workspace
+
+    user = django_user_model.objects.create_user(
+        email="dn@example.com", display_name="dn",
+    )
+    ws = Workspace.objects.create(
+        slug="dn-ws", display_name="DN", drive_root_folder_id="root",
+        created_by=user,
+    )
+    OppWorkspace.objects.create(
+        slug="malaria-pilot",
+        display_name="Malaria Pilot",
+        created_by=user,
+        workspace=ws,
+    )
+    s = Session.objects.create(
+        owner=user,
+        title="x",
+        workspace=ws,
+        opp_slug="malaria-pilot",
+        opp_run_id="r1",
+        opp_step_skill="app-deploy",
+    )
+    assert SessionSerializer(s).data["opp_display_name"] == "Malaria Pilot"
+
+
+@pytest.mark.django_db
+def test_opp_display_name_uses_annotation_when_present(django_user_model):
+    """The list view annotates opp_display_name_annotated to avoid N+1.
+    The serializer must prefer the annotation when present, even over a
+    fresh DB lookup."""
+    user = django_user_model.objects.create_user(
+        email="ann@example.com", display_name="a",
+    )
+    s = Session.objects.create(
+        owner=user, title="x", opp_slug="any-slug",
+    )
+    s.opp_display_name_annotated = "From Annotation"
+    assert SessionSerializer(s).data["opp_display_name"] == "From Annotation"
 
 
 def test_preview_is_empty_when_no_user_messages(session):
