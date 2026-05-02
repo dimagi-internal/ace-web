@@ -28,9 +28,11 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 import time
 
 import httpx
+import redis as _redis_sync
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,33 @@ NOVA_CLIENT_KEY = "nova_oauth_client"
 # Refresh access tokens this many seconds before they expire so a request
 # in flight when we hand over the token doesn't 401 partway through.
 NOVA_TOKEN_REFRESH_BUFFER = 300
+
+# Concurrent-refresh serialization. Better-Auth (commcare.app's OAuth
+# server) rotates refresh_tokens on every refresh, so two ECS tasks
+# racing to refresh the same blob would burn each other's tokens — the
+# loser gets `400 invalid_grant: session not found` and that user's
+# Nova chat 401s. Serialize via a Redis SETNX lock; the loser polls
+# the DB instead of POSTing /token itself.
+NOVA_REFRESH_LOCK_KEY = "nova:refresh-lock"
+NOVA_REFRESH_LOCK_TTL = 30  # seconds — /token RTT is sub-second normally
+NOVA_REFRESH_WAIT_TIMEOUT = 5.0  # max wall-clock to wait for another task
+
+_sync_redis = None
+
+
+def _get_redis():
+    """Return a cached sync Redis client. Tests monkeypatch this module attr.
+
+    Uses the same connection URL as the async client (channels-redis) so
+    everything talks to one Redis instance. Sync because get_fresh_token
+    runs from CLIBackend._stage_env_for, which is called via sync_to_async.
+    """
+    global _sync_redis
+    if _sync_redis is None:
+        _sync_redis = _redis_sync.from_url(
+            settings.ACE_REDIS_URL, decode_responses=True
+        )
+    return _sync_redis
 
 NOVA_DEFAULT_ISSUER = "https://commcare.app/api/auth"
 NOVA_DEFAULT_RESOURCE = "https://mcp.commcare.app/mcp"
@@ -185,20 +214,115 @@ def get_fresh_token() -> str | None:
 
     Returns None if no blob is stored or refresh fails. Callers staging
     a ``.mcp.json`` should treat None as "skip Nova MCP this spawn".
+
+    Concurrency: serializes refresh across processes via Redis SETNX so
+    Better-Auth's refresh_token rotation doesn't burn tokens between
+    racing ECS tasks. See ``_refresh_with_lock`` for the algorithm.
     """
     blob = get_blob()
     if not blob:
         return None
-
-    expires_at = int(blob.get("expires_at", 0))
-    if int(time.time()) < expires_at - NOVA_TOKEN_REFRESH_BUFFER:
+    if _is_token_fresh(blob):
         return blob.get("access_token")
+    return _refresh_with_lock()
 
+
+def _is_token_fresh(blob: dict) -> bool:
+    expires_at = int(blob.get("expires_at", 0))
+    return int(time.time()) < expires_at - NOVA_TOKEN_REFRESH_BUFFER
+
+
+def _refresh_with_lock() -> str | None:
+    """Acquire the cross-process refresh lock, then refresh + persist.
+
+    Two-phase race-resilient algorithm:
+      1. Try to claim ``nova:refresh-lock`` via ``SET NX EX``. If we get
+         it: re-read the blob (someone else may have just rotated it),
+         and only POST /token if we still need to. Persist the rotated
+         blob, release the lock.
+      2. If the lock is held by another task, poll the DB at
+         ``poll_interval`` until either (a) the holder rotates the blob
+         and we can return its fresh access_token without refreshing,
+         or (b) ``NOVA_REFRESH_WAIT_TIMEOUT`` elapses.
+
+    Lock release uses a Lua compare-and-delete so a stuck holder whose
+    TTL expires can't accidentally delete a newer holder's lock.
+
+    Redis unavailability degrades to lockless refresh — strictly worse
+    than the lock for multi-task deploys, but better than no Nova at all
+    for single-task / dev. Logged at WARNING so it surfaces.
+    """
+    try:
+        r = _get_redis()
+    except Exception:
+        logger.warning("nova: redis unavailable for refresh lock", exc_info=True)
+        return _refresh_blob_then_store(get_blob())
+
+    lock_token = secrets.token_hex(8)
+    deadline = time.time() + NOVA_REFRESH_WAIT_TIMEOUT
+    poll_interval = 0.2
+
+    while time.time() < deadline:
+        blob = get_blob()
+        if not blob:
+            return None
+        if _is_token_fresh(blob):
+            return blob.get("access_token")
+
+        try:
+            acquired = r.set(
+                NOVA_REFRESH_LOCK_KEY, lock_token,
+                nx=True, ex=NOVA_REFRESH_LOCK_TTL,
+            )
+        except Exception:
+            logger.warning("nova: redis SET NX failed", exc_info=True)
+            return _refresh_blob_then_store(blob)
+
+        if acquired:
+            try:
+                # Re-read inside the lock — covers the race against a
+                # task that JUST released and DB now has fresh tokens.
+                blob = get_blob()
+                if blob and _is_token_fresh(blob):
+                    return blob.get("access_token")
+                return _refresh_blob_then_store(blob)
+            finally:
+                _release_refresh_lock(r, lock_token)
+
+        time.sleep(poll_interval)
+
+    blob = get_blob()
+    if blob and _is_token_fresh(blob):
+        return blob.get("access_token")
+    logger.warning("nova: refresh lock wait timeout — returning stale/no token")
+    return None
+
+
+def _refresh_blob_then_store(blob: dict | None) -> str | None:
+    """POST /token, persist the rotated blob. Caller MUST hold the lock."""
+    if not blob:
+        return None
     refreshed = _refresh(blob)
     if refreshed is None:
         return None
     store_blob(refreshed)
     return refreshed.get("access_token")
+
+
+# Lua script: delete the lock IFF its value is still the token we wrote.
+# Prevents a task whose TTL has expired from deleting a newer holder's
+# lock after it eventually wakes up.
+_LOCK_RELEASE_LUA = (
+    "if redis.call('get',KEYS[1])==ARGV[1] then "
+    "return redis.call('del',KEYS[1]) else return 0 end"
+)
+
+
+def _release_refresh_lock(r, lock_token: str) -> None:
+    try:
+        r.eval(_LOCK_RELEASE_LUA, 1, NOVA_REFRESH_LOCK_KEY, lock_token)
+    except Exception:
+        logger.warning("nova: refresh-lock release failed", exc_info=True)
 
 
 def _refresh(blob: dict) -> dict | None:
