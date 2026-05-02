@@ -13,9 +13,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cliAuthStatus, promoteCliAuthToGlobal } from "@/api/auth";
+import { cliAuthStatus, disconnectNova, novaAuthStatus, promoteCliAuthToGlobal } from "@/api/auth";
 import { createToken, listTokens, revokeToken } from "@/api/tokens";
-import type { CliAuthStatus, PersonalToken } from "@/api/types";
+import type { CliAuthStatus, NovaAuthStatus, PersonalToken } from "@/api/types";
+
+const NOVA_CONNECT_URL = `${(import.meta.env.BASE_URL ?? "/").replace(/\/$/, "")}/auth/nova/initiate/`;
 
 export default function SettingsPage() {
   const [tokens, setTokens] = useState<PersonalToken[]>([]);
@@ -24,6 +26,7 @@ export default function SettingsPage() {
   const [newLabel, setNewLabel] = useState("");
   const [rawToken, setRawToken] = useState<string | null>(null);
   const [cliStatus, setCliStatus] = useState<CliAuthStatus | null>(null);
+  const [novaStatus, setNovaStatus] = useState<NovaAuthStatus | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -39,8 +42,45 @@ export default function SettingsPage() {
       .catch(() => setCliStatus(null));
   }, []);
 
+  const loadNovaStatus = useCallback(() => {
+    novaAuthStatus()
+      .then(setNovaStatus)
+      .catch(() => setNovaStatus(null));
+  }, []);
+
   useEffect(load, [load]);
   useEffect(loadCliStatus, [loadCliStatus]);
+  useEffect(loadNovaStatus, [loadNovaStatus]);
+
+  // Surface the redirect from /auth/nova/callback so the user sees
+  // a confirmation toast instead of a silent state change.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const novaParam = params.get("nova");
+    if (novaParam === "connected") toast.success("Nova connected");
+    else if (novaParam === "error") {
+      const reason = params.get("reason") ?? "unknown";
+      toast.error(`Nova connect failed: ${reason}`);
+    }
+    if (novaParam) {
+      params.delete("nova");
+      params.delete("reason");
+      const next = params.toString();
+      const url = window.location.pathname + (next ? `?${next}` : "");
+      window.history.replaceState({}, "", url);
+    }
+  }, []);
+
+  const handleDisconnectNova = async () => {
+    try {
+      await disconnectNova();
+      toast.success("Nova disconnected");
+      loadNovaStatus();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Disconnect failed";
+      toast.error(message);
+    }
+  };
 
   const handlePromote = async () => {
     try {
@@ -129,6 +169,60 @@ export default function SettingsPage() {
                 >
                   Promote my subscription to shared fallback (admin only)
                 </Button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {novaStatus && (
+          <section className="mt-10 max-w-2xl">
+            <h2 className="text-base font-semibold">Nova MCP</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Powers the Nova app-builder tools (<code>mcp__nova__*</code>) inside
+              chat. Single shared <code>ace@dimagi-ai.com</code> identity — connect
+              once, every workspace uses it.
+            </p>
+
+            <div className="mt-4 rounded border border-border p-4">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">Connection</div>
+                <Badge variant={novaStatus.connected ? "default" : "outline"}>
+                  {novaStatus.connected
+                    ? novaStatus.valid
+                      ? "Connected"
+                      : "Connected but failing"
+                    : "Not connected"}
+                </Badge>
+              </div>
+              {novaStatus.connected && novaStatus.expires_at && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Token expires {new Date(novaStatus.expires_at * 1000).toLocaleString()}
+                  {" · "}
+                  scopes: <code>{novaStatus.scope}</code>
+                </div>
+              )}
+              {novaStatus.can_manage && (
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      window.location.href = NOVA_CONNECT_URL;
+                    }}
+                  >
+                    {novaStatus.connected ? "Reconnect" : "Connect Nova"}
+                  </Button>
+                  {novaStatus.connected && (
+                    <Button size="sm" variant="ghost" onClick={handleDisconnectNova}>
+                      Disconnect
+                    </Button>
+                  )}
+                </div>
+              )}
+              {!novaStatus.can_manage && !novaStatus.connected && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Ask an admin to connect Nova on this instance.
+                </p>
               )}
             </div>
           </section>

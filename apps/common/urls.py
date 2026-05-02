@@ -12,4 +12,10 @@ urlpatterns = [
         auth_views.cli_auth_expected_shape,
         name="cli_auth_expected_shape",
     ),
+    path("auth/nova/status", auth_views.nova_auth_status, name="nova_auth_status"),
+    path(
+        "auth/nova/disconnect",
+        auth_views.nova_auth_disconnect,
+        name="nova_auth_disconnect",
+    ),
 ]

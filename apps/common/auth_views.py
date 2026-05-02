@@ -19,7 +19,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from . import auth_flow
+from . import auth_flow, nova_auth_flow
 from .envelope import error_response, success_response
 
 logger = logging.getLogger(__name__)
@@ -229,6 +229,52 @@ def cli_auth_expected_shape(_request: Request) -> Response:
     """Unauth'd introspection endpoint — the CLI tool calls this to check
     which blob shape the server accepts, without needing credentials."""
     return Response(success_response({"shape": _EXPECTED_BLOB_SHAPE}))
+
+
+# ── Nova MCP credential endpoints ────────────────────────────────
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def nova_auth_status(request: Request) -> Response:
+    """Report whether the global Nova MCP credential is present and live.
+
+    Probe is cheap (one /initialize POST against mcp.commcare.app) but we
+    only run it if a blob exists — otherwise the answer is trivially
+    "not connected". Available to all authed users so the UI can show
+    "Nova: connected" or "Nova: not connected"; only admins get the
+    Connect / Disconnect controls.
+    """
+    blob = nova_auth_flow.get_blob()
+    if not blob:
+        return Response(success_response({
+            "connected": False,
+            "valid": False,
+            "expires_at": None,
+            "scope": None,
+            "can_manage": request.user.is_staff,
+        }))
+    valid = nova_auth_flow.validate_token()
+    return Response(success_response({
+        "connected": True,
+        "valid": valid,
+        "expires_at": blob.get("expires_at"),
+        "scope": blob.get("scope"),
+        "can_manage": request.user.is_staff,
+    }))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def nova_auth_disconnect(request: Request) -> Response:
+    if not request.user.is_staff:
+        return Response(
+            error_response(message="staff only", code="forbidden"),
+            status=403,
+        )
+    nova_auth_flow.clear_blob()
+    logger.info("nova: cleared global blob (admin=%s)", request.user.email)
+    return Response(success_response({"disconnected": True}))
 
 
 def __deprecated_pty_endpoints() -> None:

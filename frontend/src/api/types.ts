@@ -117,6 +117,14 @@ export interface CliAuthPromoteResult {
   token_prefix: string;
 }
 
+export interface NovaAuthStatus {
+  connected: boolean;
+  valid: boolean;
+  expires_at: number | null;
+  scope: string | null;
+  can_manage: boolean;
+}
+
 // --- ACE Opportunity Workbench types (apps/opps) ---
 
 export interface OppCard {

@@ -43,9 +43,9 @@ def test_two_users_get_isolated_credentials():
     sc = Session.objects.create(owner=c, slug="s-c", title="c")
 
     backend = CLIBackend()
-    env_a, home_a, _ = backend._stage_env_for(sa)
-    env_b, home_b, _ = backend._stage_env_for(sb)
-    env_c, home_c, _ = backend._stage_env_for(sc)
+    env_a, home_a, _, _ = backend._stage_env_for(sa)
+    env_b, home_b, _, _ = backend._stage_env_for(sb)
+    env_c, home_c, _, _ = backend._stage_env_for(sc)
     try:
         assert env_a["CLAUDE_CODE_OAUTH_TOKEN"] == USER_A_TOKEN
         assert env_b["CLAUDE_CODE_OAUTH_TOKEN"] == USER_B_TOKEN
