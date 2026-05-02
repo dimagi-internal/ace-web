@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f6f7f9;-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f7f9;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f2937;">
+
+        <tr><td style="padding:20px 32px;background:#0f172a;color:#fff;">
+          <table role="presentation" width="100%"><tr>
+            <td style="font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;">ACE · release notes</td>
+            <td align="right" style="font-size:13px;color:#94a3b8;">May 1, 2026</td>
+          </tr></table>
+        </td></tr>
+
+        <tr><td style="padding:36px 32px 8px;">
+          <h1 style="margin:0 0 12px;font-size:26px;line-height:1.25;color:#0f172a;font-weight:700;">Chats know which opp they belong to.</h1>
+          <p style="margin:0;font-size:16px;line-height:1.6;color:#475569;">The chat side of ace-web stopped pretending opps don't exist. Step-seeded chats now show their opp + step in the header, the recent-chats sidebar groups by opp, and the Sessions page can filter to "all chats about opp X."</p>
+        </td></tr>
+
+        <tr><td style="padding:28px 32px 0;">
+          <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="color:#0f172a;text-decoration:none;">Chat header shows the linked opp + step</a>
+          </h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">Open any chat that was launched via "Discuss in chat" on a Workbench step (or imported via <code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;">/ace:run --ace-web-url</code>). The header now reads <em>Discussing &lt;opp&gt; · &lt;step&gt;</em> with a one-click link back to the Workbench. Plain web-native chats render the existing header unchanged.</p>
+          <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="text-decoration:none;display:block;">
+            <img src="https://raw.githubusercontent.com/jjackson/ace-web/pm-assets/2026-05-01-chat-opp-linkage/screenshots/01-chat-header-opp-breadcrumb.png"
+                 alt="Chat header showing 'Discussing crispr-malawi-pilot · app-deploy' breadcrumb above the title"
+                 width="576"
+                 style="display:block;width:100%;max-width:576px;height:auto;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;">
+          </a>
+          <p style="margin:0 0 18px;font-size:13px;color:#64748b;font-style:italic;">After: the breadcrumb appears above the chat title, with both opp and step linked back to the Workbench.</p>
+          <p style="margin:0 0 4px;font-size:14px;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="color:#4338ca;text-decoration:none;font-weight:500;">Try it on labs →</a>
+          </p>
+        </td></tr>
+        <tr><td style="padding:28px 32px 0;"><div style="height:1px;background:#e2e8f0;"></div></td></tr>
+
+        <tr><td style="padding:28px 32px 0;">
+          <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="color:#0f172a;text-decoration:none;">Recent-chats sidebar groups by opp</a>
+          </h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">Instead of a flat 10-deep list, the sidebar buckets your chats by opp — each opp gets its own header (clickable to the Workbench), with unlinked chats falling under "Other chats". Falls back to the flat list when no chats are opp-linked, so the change is invisible until you start using "Discuss in chat".</p>
+          <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="text-decoration:none;display:block;">
+            <img src="https://raw.githubusercontent.com/jjackson/ace-web/pm-assets/2026-05-01-chat-opp-linkage/screenshots/02-sidebar-grouped-by-opp.png"
+                 alt="Recent chats sidebar showing chats grouped under opp slug headers"
+                 width="576"
+                 style="display:block;width:100%;max-width:576px;height:auto;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;">
+          </a>
+          <p style="margin:0 0 18px;font-size:13px;color:#64748b;font-style:italic;">After: each opp's chats are bucketed under a small uppercase header. Click the header to jump to the Workbench.</p>
+          <p style="margin:0 0 4px;font-size:14px;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="color:#4338ca;text-decoration:none;font-weight:500;">Try it on labs →</a>
+          </p>
+        </td></tr>
+        <tr><td style="padding:28px 32px 0;"><div style="height:1px;background:#e2e8f0;"></div></td></tr>
+
+        <tr><td style="padding:28px 32px 0;">
+          <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="color:#0f172a;text-decoration:none;">Filter the Sessions page by opp</a>
+          </h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">Alongside the existing Active / Archived / Imported chips, there's now an <strong>Opp</strong> dropdown that narrows the list to chats linked to a particular opp. Each row picks up a small <code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;">opp: &lt;name&gt;</code> badge so you can scan the opp without expanding the row.</p>
+          <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="text-decoration:none;display:block;">
+            <img src="https://raw.githubusercontent.com/jjackson/ace-web/pm-assets/2026-05-01-chat-opp-linkage/screenshots/03-sessions-page-opp-filter.png"
+                 alt="Sessions page with the new Opp filter dropdown active and per-row opp badges"
+                 width="576"
+                 style="display:block;width:100%;max-width:576px;height:auto;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 8px;">
+          </a>
+          <p style="margin:0 0 18px;font-size:13px;color:#64748b;font-style:italic;">After: the new Opp dropdown narrows the list, and each row shows a small opp badge alongside the source/archived chips.</p>
+          <p style="margin:0 0 4px;font-size:14px;">
+            <a href="https://labs.connect.dimagi.com/ace/w/dimagi-team/sessions" style="color:#4338ca;text-decoration:none;font-weight:500;">Try it on labs →</a>
+          </p>
+        </td></tr>
+
+        <tr><td style="padding:36px 32px 32px;">
+          <div style="height:1px;background:#e2e8f0;margin-bottom:20px;"></div>
+          <p style="margin:0 0 8px;font-size:13px;color:#64748b;">
+            <strong style="color:#475569;">Sprint internals.</strong> 1 autonomous cycle, 1 bundled PR (<a href="https://github.com/jjackson/ace-web/pull/178" style="color:#4338ca;text-decoration:none;">#178</a>), gates green, deploy verified, post-deploy health green. 333 net lines, 2 new pytest tests.
+          </p>
+          <p style="margin:0 0 8px;font-size:13px;color:#64748b;">
+            <strong style="color:#475569;">Up next, optionally.</strong> Use OppWorkspace.display_name when present so users see "Crispr Malawi Pilot" instead of the slug.
+          </p>
+          <p style="margin:0 0 12px;font-size:14px;color:#475569;">— ACE autonomous PM, on behalf of the Dimagi ACE team</p>
+          <p style="margin:0;font-size:12px;color:#94a3b8;">Sent automatically by the autonomous PM cycle. Reply to opt out.</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
