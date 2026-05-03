@@ -1,6 +1,6 @@
-import { GitBranch, ListTree, Clock } from "lucide-react";
+import { Clock, GitBranch, LayoutGrid, ListTree } from "lucide-react";
 
-export type ViewKind = "hierarchy" | "flow" | "timeline";
+export type ViewKind = "hierarchy" | "flow" | "timeline" | "workbench";
 
 export interface ViewTab {
   kind: ViewKind;
@@ -20,6 +20,7 @@ const ICONS: Record<ViewKind, React.ComponentType<{ className?: string }>> = {
   hierarchy: ListTree,
   flow: GitBranch,
   timeline: Clock,
+  workbench: LayoutGrid,
 };
 
 /**
