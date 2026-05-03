@@ -78,6 +78,38 @@ class FakeDrive:
             )
         return out
 
+    def list_files(self, folder_id: str, recursive: bool = False) -> list[DriveFile]:
+        """List files under folder_id. When recursive, walk into subfolders;
+        each returned DriveFile.path is the slash-joined path from folder_id."""
+        node = self._index_by_id.get(folder_id)
+        if not isinstance(node, _Folder):
+            return []
+        out: list[DriveFile] = []
+
+        def walk(parent: _Folder, prefix: str) -> None:
+            for c in parent.children:
+                mime = (
+                    "application/vnd.google-apps.folder"
+                    if isinstance(c, _Folder)
+                    else c.mime_type
+                )
+                relpath = f"{prefix}{c.name}"
+                out.append(
+                    DriveFile(
+                        id=c.id, name=c.name, mime_type=mime,
+                        parent_id=parent.id,
+                        web_view_link=f"https://drive/{c.id}",
+                        size_bytes=len(getattr(c, "body", "")) or None,
+                        modified_time="2026-05-02T18:30:00Z",
+                        path=relpath,
+                    )
+                )
+                if recursive and isinstance(c, _Folder):
+                    walk(c, relpath + "/")
+
+        walk(node, "")
+        return out
+
     def get_content(self, file_id: str, mime_type: str) -> FileContent:
         node = self._index_by_id.get(file_id)
         body = getattr(node, "body", "") if node else ""
@@ -129,6 +161,24 @@ def _build_turmeric_layout() -> _Folder:
                                         parent="run-1830",
                                         body="# Turmeric PDD",
                                         mime_type="text/markdown",
+                                    ),
+                                    _Folder(
+                                        id="run-1830-verdicts", name="verdicts",
+                                        parent="run-1830",
+                                        children=[
+                                            _File(
+                                                id="verdict-1",
+                                                name="idea-to-pdd-deep.yaml",
+                                                parent="run-1830-verdicts",
+                                                body=(
+                                                    "skill: idea-to-pdd\n"
+                                                    "verdict: pass\n"
+                                                    "overall_score: 87\n"
+                                                    "evaluated_at: 2026-05-02T18:35:00Z\n"
+                                                ),
+                                                mime_type="text/yaml",
+                                            ),
+                                        ],
                                     ),
                                 ],
                             ),
@@ -203,3 +253,16 @@ def test_load_opp_loads_specific_run_when_run_id_given():
     )
     assert snap.current_run.run_id == "20260502-1430"
     assert snap.current_run.current_phase == "closeout"
+
+
+def test_load_opp_finds_nested_verdict_artifacts():
+    """Regression: _load_opp_run must list run folder recursively so verdicts/, scorecards/, etc. attribute correctly."""
+    fake = FakeDrive(_build_turmeric_layout())
+    snap = load_opp(fake, ace_root_folder_id="ACE", opp_slug="turmeric")
+    # The verdict at verdicts/idea-to-pdd-eval-deep.yaml should be parsed and attached.
+    idea_step = next(
+        (s for s in snap.current_run.steps if s.step.skill_name == "idea-to-pdd"), None
+    )
+    assert idea_step is not None, "idea-to-pdd step not found in run snapshot"
+    assert idea_step.judge is not None, "verdict was not attached to idea-to-pdd step"
+    assert idea_step.judge.score == 87.0

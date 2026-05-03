@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import yaml
@@ -80,6 +80,7 @@ class OppSnapshot:
     pdd_body: str
     opp_folder_id: str
     current_run: RunDetail
+    runs_summary: list["RunSummary"] = field(default_factory=list)
 
 
 # --- Drive helpers ---
@@ -132,17 +133,24 @@ def list_opp_runs(
     *,
     ace_root_folder_id: str,
     opp_slug: str,
+    opp_children: list[DriveFile] | None = None,
 ) -> list[RunSummary]:
     """List runs under <opp>/runs/, newest-first by run-id (sorts as string).
 
     Returns empty list if the opp folder doesn't exist or has no runs/
     subfolder. Each RunSummary is loaded by reading state.yaml from the
     run folder.
+
+    ``opp_children``: if the caller has already listed the opp folder, pass
+    the result here to avoid a redundant Drive call.  When ``None``, the opp
+    folder is re-listed via the ACE-root listing.
     """
-    opp_folder = _find_child_folder(client.list_folder(ace_root_folder_id), opp_slug)
-    if opp_folder is None:
-        return []
-    runs_folder = _find_child_folder(client.list_folder(opp_folder.id), "runs")
+    if opp_children is None:
+        opp_folder = _find_child_folder(client.list_folder(ace_root_folder_id), opp_slug)
+        if opp_folder is None:
+            return []
+        opp_children = client.list_folder(opp_folder.id)
+    runs_folder = _find_child_folder(opp_children, "runs")
     if runs_folder is None:
         return []
 
@@ -587,7 +595,10 @@ def _load_opp_card_multi_run(
 
     if runs_folder is not None:
         run_summaries = list_opp_runs(
-            client, ace_root_folder_id=ace_root_folder_id, opp_slug=opp_slug
+            client,
+            ace_root_folder_id=ace_root_folder_id,
+            opp_slug=opp_slug,
+            opp_children=opp_children,
         )
         if run_summaries:
             latest = run_summaries[0]
@@ -733,8 +744,12 @@ def load_opp(
 
     if runs_folder is not None:
         # Multi-run layout: dispatch through list_opp_runs to pick the target.
+        # Pass opp_children to avoid re-listing the opp folder a second time.
         run_summaries = list_opp_runs(
-            client, ace_root_folder_id=_ace_folder_id, opp_slug=_slug
+            client,
+            ace_root_folder_id=_ace_folder_id,
+            opp_slug=_slug,
+            opp_children=opp_children,
         )
         if not run_summaries:
             raise FileNotFoundError(
@@ -857,6 +872,7 @@ def _load_opp_flat(
         pdd_body=pdd_body,
         opp_folder_id=opp_folder.id,
         current_run=run_detail,
+        runs_summary=[],
     )
 
 
@@ -873,7 +889,7 @@ def _load_opp_run(
     run_folder_id = run_summary.folder_id
     slug = opp_folder.name
 
-    # List the run folder for artifact attribution (non-recursive via list_folder).
+    # List the run folder's immediate children for state.yaml lookup.
     run_children = client.list_folder(run_folder_id)
 
     # state.yaml is already parsed into run_summary — just read for extra fields.
@@ -901,10 +917,10 @@ def _load_opp_run(
     pdd_body = _read_text(client, pdd_file) if pdd_file else ""
 
     # Attribute run-folder files to skills via artifact manifest.
-    # Use a flat (non-recursive) listing for the run folder; the test's FakeDrive
-    # only exposes list_folder. For richer artifact attribution in production,
-    # the GoogleDriveClient's list_folder delegate to list_files(recursive=False).
-    run_tree = run_children  # non-recursive listing is sufficient for top-level attribution
+    # Must use recursive=True so files in skill subfolders (verdicts/, scorecards/,
+    # app-summaries/, etc.) are included — without this every skill would appear
+    # "pending" even after a complete run.
+    run_tree = client.list_files(run_folder_id, recursive=True)
     matchers = _artifact_matchers(overview.get("artifacts") or [])
     files_by_skill = _attribute_files_to_skills(run_tree, matchers)
 
@@ -958,6 +974,7 @@ def _load_opp_run(
         pdd_body=pdd_body,
         opp_folder_id=opp_folder.id,
         current_run=run_detail,
+        runs_summary=run_summaries,
     )
 
 
