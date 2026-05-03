@@ -7,7 +7,9 @@ Folder shape (the one the ACE plugin writes today):
 
     ACE/<slug>/idea.md                           (required)
     ACE/<slug>/pdd.md  or  idd.md                (optional; legacy name accepted)
-    ACE/<slug>/state.yaml                        (written by /ace:run)
+    ACE/<slug>/opp.yaml                          (multi-run layout: opp-level metadata)
+    ACE/<slug>/runs/<run-id>/run_state.yaml      (multi-run layout, current — written by /ace:run)
+    ACE/<slug>/state.yaml                        (legacy flat layout, pre-0.11.3 rename)
     ACE/<slug>/<subfolder>/*                     (per skill, per manifest)
     ACE/<slug>/verdicts/<skill>-*.yaml           (LLM-as-Judge verdicts)
     ACE/<slug>/gate-briefs/<skill>.md            (review-mode gate briefs)
@@ -100,6 +102,18 @@ def _find_child_folder(files: list[DriveFile], name: str) -> DriveFile | None:
     return None
 
 
+def _find_state_file(files: list[DriveFile]) -> DriveFile | None:
+    """Return the per-run state file from a folder listing.
+
+    The plugin renamed ``state.yaml`` → ``run_state.yaml`` in 0.11.3 to make
+    the per-run scope explicit (vs opp-level metadata in ``opp.yaml``). Some
+    opps in Drive still carry the old name because the rename is only
+    applied as opps are touched. Prefer ``run_state.yaml``; fall back to
+    ``state.yaml`` for unmigrated opps.
+    """
+    return _find_child(files, "run_state.yaml") or _find_child(files, "state.yaml")
+
+
 def _read_text(client: DriveClient, file: DriveFile) -> str:
     return client.get_content(file.id, file.mime_type).content
 
@@ -158,7 +172,7 @@ def list_opp_runs(
     for child in client.list_folder(runs_folder.id):
         if not _is_folder(child):
             continue
-        state_file = _find_child(client.list_folder(child.id), "state.yaml")
+        state_file = _find_state_file(client.list_folder(child.id))
         if state_file is None:
             continue
         try:
@@ -471,12 +485,12 @@ def list_opp_events_lean(
         )
         for rf in run_folders:
             run_inner = client.list_files(rf.id)
-            if _find_child(run_inner, "state.yaml") is not None:
+            if _find_state_file(run_inner) is not None:
                 state_source_children = run_inner
                 break
 
     # 3. Read state.yaml → gates
-    state_file = _find_child(state_source_children, "state.yaml")
+    state_file = _find_state_file(state_source_children)
     state_data: dict = {}
     if state_file is not None:
         try:
@@ -608,7 +622,7 @@ def load_opp_card(
             # has no state.yaml (e.g. a half-initialized run dir).
             for rf in run_folders:
                 run_inner = client.list_files(rf.id)
-                sf = _find_child(run_inner, "state.yaml")
+                sf = _find_state_file(run_inner)
                 if sf is not None:
                     state_file = sf
                     state_source_children = run_inner
@@ -617,7 +631,7 @@ def load_opp_card(
 
     if state_file is None:
         # Flat layout: state.yaml at opp root.
-        state_file = _find_child(opp_children, "state.yaml")
+        state_file = _find_state_file(opp_children)
         if state_file is not None:
             state_source_children = opp_children
 
@@ -861,7 +875,7 @@ def _load_opp_flat(
     opp_tree = client.list_files(opp_folder.id, recursive=True)
 
     # state.yaml lives at root (new shape) or runs/run-001/ (legacy).
-    state_file = _find_child(opp_children, "state.yaml")
+    state_file = _find_state_file(opp_children)
     if state_file is None:
         runs_folder = _find_child(opp_children, "runs")
         if runs_folder is not None and _is_folder(runs_folder):
@@ -960,7 +974,7 @@ def _load_opp_run(
     run_children = client.list_folder(run_folder_id)
 
     # state.yaml is already parsed into run_summary — just read for extra fields.
-    state_file = _find_child(run_children, "state.yaml")
+    state_file = _find_state_file(run_children)
     state_data: dict = {}
     if state_file is not None:
         try:
