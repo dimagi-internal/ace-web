@@ -20,6 +20,7 @@ from apps.opps.serializers import (
 )
 from apps.opps.sync import (
     delete_opp_folder,
+    list_opp_runs,
     load_opp,
     load_opp_card,
     load_opp_card_by_slug,
@@ -405,6 +406,37 @@ def workbench(request, slug: str):
     _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
 
     return Response(success_response(serialize_opp_snapshot(snap)))
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def runs_list(request, slug: str):
+    """GET /api/opps/<slug>/runs — list runs for an opp, newest-first.
+
+    Powers the frontend RunSelector dropdown. Returns an empty list (not 404)
+    when the opp exists but has no ``runs/`` subfolder (legacy flat layout).
+    """
+    ws, client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+    runs = list_opp_runs(client, ace_root_folder_id=ace_folder_id, opp_slug=slug)
+    return Response(success_response([
+        {
+            "run_id": r.run_id,
+            "folder_id": r.folder_id,
+            "current_phase": r.current_phase,
+            "current_step": r.current_step,
+            "mode": r.mode,
+            "last_actor": r.last_actor,
+            "last_actor_at": r.last_actor_at,
+        } for r in runs
+    ]))
 
 
 @api_view(["GET"])
