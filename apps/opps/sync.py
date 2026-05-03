@@ -462,6 +462,7 @@ class OppCard:
     eval_score: float | None            # latest opp-eval overall_score (0-100), if any
     eval_passed: bool | None            # latest opp-eval verdict pass/fail, if any
     last_activity_at: str | None        # state.yaml modifiedTime (ISO-8601), if present
+    run_count: int = 1                  # number of runs; legacy flat opps are always 1
 
 
 def load_opp_card(
@@ -593,6 +594,7 @@ def _load_opp_card_multi_run(
     current_phase: str | None = None
     current_step: str | None = None
 
+    run_count: int = 1
     if runs_folder is not None:
         run_summaries = list_opp_runs(
             client,
@@ -600,6 +602,7 @@ def _load_opp_card_multi_run(
             opp_slug=opp_slug,
             opp_children=opp_children,
         )
+        run_count = len(run_summaries)
         if run_summaries:
             latest = run_summaries[0]
             current_run_id = latest.run_id
@@ -623,6 +626,7 @@ def _load_opp_card_multi_run(
         "current_run_id": current_run_id,
         "current_phase": current_phase,
         "current_step": current_step,
+        "run_count": run_count,
     }
 
 

@@ -152,6 +152,7 @@ export interface OppCard {
   eval_score: number | null;
   eval_passed: boolean | null;
   last_activity_at: string | null;
+  run_count: number;
 }
 
 export interface Artifact {

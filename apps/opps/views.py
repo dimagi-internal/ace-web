@@ -198,6 +198,7 @@ def _opp_list_impl(request):
                 "eval_score": card.eval_score,
                 "eval_passed": card.eval_passed,
                 "last_activity_at": card.last_activity_at,
+                "run_count": card.run_count,
             })
         except Exception as exc:
             # A malformed state.yaml or a Drive blip on one opp shouldn't
@@ -224,6 +225,7 @@ def _opp_list_impl(request):
                 "eval_score": None,
                 "eval_passed": None,
                 "last_activity_at": None,
+                "run_count": 1,
                 "error": {"message": str(exc) or exc.__class__.__name__},
             })
 
