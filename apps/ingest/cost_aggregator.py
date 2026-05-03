@@ -21,6 +21,21 @@ from apps.ingest.pricing import compute_cost
 SCHEMA_VERSION = 1
 
 
+def _skill_phase_index() -> dict[str, dict]:
+    """Return {skill_name: {phase, phase_display, phase_ordinal}} from the ACE plugin registry.
+
+    Wraps apps.system.reader.get_skill_phase_index with a lazy import and
+    exception guard so the aggregator stays pure (no hard Django dependency at
+    module load time) and tests can monkeypatch this function in isolation.
+    """
+    try:
+        from apps.system.reader import get_skill_phase_index  # noqa: PLC0415
+
+        return get_skill_phase_index()
+    except Exception:
+        return {}
+
+
 def _empty_tokens() -> dict[str, int]:
     return {
         "input_tokens": 0,
@@ -97,6 +112,7 @@ def _resolve_segment_for_sidechain(
 
 def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     """Build the breakdown JSON. See module docstring for output shape."""
+    phase_index = _skill_phase_index()
     totals_tokens = _empty_tokens()
     totals_cost = 0.0
     totals_cost_partial = False
@@ -179,7 +195,8 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 seg = open_segments.pop(match_idx)
                 if event.timestamp is not None:
                     seg.last_ts = event.timestamp
-                phase_name = "_other"
+                registry_entry = phase_index.get(seg.skill_name)
+                phase_name = registry_entry["phase"] if registry_entry else "_other"
                 invocations_by_skill[(phase_name, seg.skill_name)].append(_finalize(seg))
             continue
 
@@ -234,7 +251,9 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         seg = open_segments.pop()
         finalized = _finalize(seg)
         finalized["incomplete"] = True
-        invocations_by_skill[("_other", seg.skill_name)].append(finalized)
+        registry_entry = phase_index.get(seg.skill_name)
+        incomplete_phase = registry_entry["phase"] if registry_entry else "_other"
+        invocations_by_skill[(incomplete_phase, seg.skill_name)].append(finalized)
 
     # Build per-skill summaries grouped by phase.
     phase_skills: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -269,6 +288,14 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         phase_cost_partial[phase_name] = phase_cost_partial[phase_name] or cost_partial
         phase_wall[phase_name] += wall_sum
 
+    # Build a phase meta index from the registry for display/ordinal lookups.
+    # {phase_name: (phase_display, phase_ordinal)}
+    phase_meta_by_name: dict[str, tuple[str, int]] = {}
+    for entry in phase_index.values():
+        pn = entry["phase"]
+        if pn not in phase_meta_by_name:
+            phase_meta_by_name[pn] = (entry["phase_display"], entry["phase_ordinal"])
+
     phases: list[dict[str, Any]] = []
     if any(orchestration_tokens.values()):
         phases.append({
@@ -282,10 +309,17 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             "skills": [],
         })
     for name, skills in phase_skills.items():
+        if name == "_other":
+            phase_display = "Other"
+            phase_ordinal = 999
+        else:
+            meta = phase_meta_by_name.get(name)
+            phase_display = meta[0] if meta else name
+            phase_ordinal = meta[1] if meta else 500
         phases.append({
             "phase_name": name,
-            "phase_display": "Other" if name == "_other" else name,
-            "phase_ordinal": 999 if name == "_other" else 500,
+            "phase_display": phase_display,
+            "phase_ordinal": phase_ordinal,
             "wall_time_seconds": phase_wall[name],
             "estimated_cost_usd": round(phase_cost[name], 6),
             "cost_is_partial": phase_cost_partial[name],

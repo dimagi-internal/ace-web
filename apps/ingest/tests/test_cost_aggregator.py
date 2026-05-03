@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -18,7 +19,7 @@ def test_aggregate_returns_schema_v1_with_totals():
     assert "computed_at" in breakdown
 
 
-def test_aggregate_skill_segment_appears_under_other_phase():
+def test_aggregate_skill_segment_appears_under_other_phase(no_registry):
     """Without phase labeling (Task 7), skills land under the _other phase."""
     from apps.ingest.cost_aggregator import aggregate
     breakdown = aggregate(_events())
@@ -30,7 +31,7 @@ def test_aggregate_skill_segment_appears_under_other_phase():
     assert len(skill["invocations"]) == 2
 
 
-def test_aggregate_skill_wall_time_uses_first_to_last_event():
+def test_aggregate_skill_wall_time_uses_first_to_last_event(no_registry):
     """Two invocations: 15s (18:00:05->18:00:20) and 10s (18:01:05->18:01:15). Sum = 25s."""
     from apps.ingest.cost_aggregator import aggregate
     breakdown = aggregate(_events())
@@ -39,7 +40,7 @@ def test_aggregate_skill_wall_time_uses_first_to_last_event():
     assert skill["wall_time_seconds"] == 25
 
 
-def test_aggregate_skill_tokens_sum_inside_segment():
+def test_aggregate_skill_tokens_sum_inside_segment(no_registry):
     """Skill 1 tokens include the dispatch turn (m-2) plus the inner turn (m-3).
     The dispatch assistant turn (m-2: 10/5/0/1100) is attributed to the segment
     it opens rather than to orchestration. Inner turn m-3: 200/300/500/2000.
@@ -63,7 +64,7 @@ def test_aggregate_totals_match_sum_of_all_assistant_turns():
     assert breakdown["totals"]["input_tokens"] == 905
 
 
-def test_aggregate_attributes_sidechain_to_agent_segment():
+def test_aggregate_attributes_sidechain_to_agent_segment(no_registry):
     """The two sidechain turns (u-6, u-7) under tu-agent-1 must roll into
     the design-review segment, not into orchestration. The dispatch turn
     (u-5: 15/8/0/2200) also attributes to the segment it opens."""
@@ -124,7 +125,7 @@ def test_aggregate_unknown_model_marks_segment_partial():
     assert breakdown["totals"]["cost_is_partial"] is True
 
 
-def test_aggregate_unknown_skill_name_still_appears():
+def test_aggregate_unknown_skill_name_still_appears(no_registry):
     """Unknown skills (not in apps/system registry) appear under _other.
     Phase 7 wiring will route known skills elsewhere; here we just verify
     both unknown skills landed."""
@@ -133,3 +134,77 @@ def test_aggregate_unknown_skill_name_still_appears():
     all_skill_names = {s["skill_name"] for p in breakdown["phases"] for s in p["skills"]}
     assert "ace:made-up-skill" in all_skill_names
     assert "ace:does-not-exist" in all_skill_names
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def no_registry(monkeypatch):
+    """Monkeypatch _skill_phase_index to return an empty dict.
+
+    Apply to any test that asserts _other phase content so the test is
+    independent of the real ACE plugin being installed.
+    """
+    from apps.ingest import cost_aggregator
+    monkeypatch.setattr(cost_aggregator, "_skill_phase_index", lambda: {})
+
+
+# ---------------------------------------------------------------------------
+# Task 7: phase labeling via registry
+# ---------------------------------------------------------------------------
+
+def test_aggregate_labels_known_skills_with_phase_from_registry(monkeypatch):
+    """Skills in the registry appear under their proper phase row, not _other."""
+    from apps.ingest import cost_aggregator
+
+    fake_registry = {
+        "ace:idea-to-pdd": {
+            "phase": "design-review",
+            "phase_display": "Phase 1: Design Review",
+            "phase_ordinal": 1,
+        },
+        "ace:design-review": {
+            "phase": "design-review",
+            "phase_display": "Phase 1: Design Review",
+            "phase_ordinal": 1,
+        },
+    }
+    monkeypatch.setattr(cost_aggregator, "_skill_phase_index", lambda: fake_registry)
+
+    breakdown = cost_aggregator.aggregate(_events())
+
+    # Both skills must appear under the design-review phase.
+    dr_phase = next(
+        (p for p in breakdown["phases"] if p["phase_name"] == "design-review"), None
+    )
+    assert dr_phase is not None, "Expected a 'design-review' phase row"
+    assert dr_phase["phase_display"] == "Phase 1: Design Review"
+    assert dr_phase["phase_ordinal"] == 1
+
+    dr_skill_names = {s["skill_name"] for s in dr_phase["skills"]}
+    assert "ace:idea-to-pdd" in dr_skill_names
+    assert "ace:design-review" in dr_skill_names
+
+    # Neither skill should appear under _other.
+    other = next((p for p in breakdown["phases"] if p["phase_name"] == "_other"), None)
+    if other is not None:
+        other_skill_names = {s["skill_name"] for s in other["skills"]}
+        assert "ace:idea-to-pdd" not in other_skill_names
+        assert "ace:design-review" not in other_skill_names
+
+
+def test_aggregate_unknown_skill_falls_back_to_other(monkeypatch):
+    """With an empty registry, all skills land in _other."""
+    from apps.ingest import cost_aggregator
+
+    monkeypatch.setattr(cost_aggregator, "_skill_phase_index", lambda: {})
+
+    breakdown = cost_aggregator.aggregate(_events())
+    other = next((p for p in breakdown["phases"] if p["phase_name"] == "_other"), None)
+    assert other is not None
+
+    other_skill_names = {s["skill_name"] for s in other["skills"]}
+    assert "ace:idea-to-pdd" in other_skill_names
+    assert "ace:design-review" in other_skill_names
