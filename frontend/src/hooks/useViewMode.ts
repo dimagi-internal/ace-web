@@ -1,7 +1,12 @@
 import { useSearchParams } from "react-router-dom";
 import type { ViewKind } from "../components/views/ViewSwitcher";
 
-const VALID: readonly ViewKind[] = ["hierarchy", "flow", "timeline"] as const;
+const VALID: readonly ViewKind[] = [
+  "hierarchy",
+  "flow",
+  "timeline",
+  "workbench",
+] as const;
 
 function parse(raw: string | null, fallback: ViewKind): ViewKind {
   if (raw && (VALID as readonly string[]).includes(raw)) return raw as ViewKind;
