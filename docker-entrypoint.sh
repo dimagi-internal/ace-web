@@ -19,6 +19,22 @@ if [ -n "${ACE_DRIVE_SA_KEY_JSON:-}" ]; then
     printf '%s' "$ACE_DRIVE_SA_KEY_JSON" > "$SA_KEY_PATH"
     chmod 600 "$SA_KEY_PATH"
     echo "[entrypoint] Wrote ACE plugin SA key to $SA_KEY_PATH"
+    # Mirror to the derived-data-dir path that lib/plugin-data-dir.ts
+    # composes when Claude Code passes ${CLAUDE_PLUGIN_DATA} through as a
+    # literal (anthropics/claude-code#9427). Without this mirror, gdrive's
+    # resolveKeyPath looks at /home/app/.claude/plugins/data/ace-ace/
+    # gws-sa-key.json (not /home/app/.claude/plugin-data/ace/) and throws
+    # "No Google service-account key found" at startup → the MCP exits
+    # before responding to JSON-RPC initialize → the chat-side never sees
+    # ace-gdrive tools. Verified live: with this mirror, gdrive starts
+    # cleanly and registers its 22 tools in the deferred-tool registry.
+    # Same pattern as the .env three-mirror in this same script.
+    DERIVED_DATA_DIR="/home/app/.claude/plugins/data/ace-ace"
+    mkdir -p "$DERIVED_DATA_DIR"
+    cp -f "$SA_KEY_PATH" "$DERIVED_DATA_DIR/gws-sa-key.json" 2>/dev/null \
+        && chmod 600 "$DERIVED_DATA_DIR/gws-sa-key.json" \
+        && echo "[entrypoint] mirrored SA key to $DERIVED_DATA_DIR/gws-sa-key.json (derived-data-dir fallback)" \
+        || echo "[entrypoint] could not mirror SA key to derived data dir — ace-gdrive may fail when Claude Code doesn't pass CLAUDE_PLUGIN_DATA"
 else
     echo "[entrypoint] ACE_DRIVE_SA_KEY_JSON not set — ACE plugin MCP servers will fail to auth to Drive"
 fi
