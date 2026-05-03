@@ -25,7 +25,15 @@ RUN echo "claude-cli cache key: ${CLAUDE_CLI_REF}" && \
     unzip \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g @anthropic-ai/claude-code@latest \
+    # tsx@4.21.0 is global so the ACE plugin's MCP servers — declared as
+    # `npx tsx ${CLAUDE_PLUGIN_ROOT}/mcp/<server>.ts` — resolve instantly.
+    # The web chat path spawns claude from cwd=/app (Django's wd), which has
+    # no node_modules, so `npx tsx` would otherwise fall through to a
+    # registry install on every spawn. That on-the-fly install takes longer
+    # than Claude Code's 30s MCP-connection timeout and the connection
+    # closes with `MCP error -32000`. Pinning to the exact tsx version that
+    # the ACE plugin's package.json depends on keeps both paths in sync.
+    && npm install -g @anthropic-ai/claude-code@latest tsx@4.21.0 \
     # 1Password CLI — entrypoint uses `op inject` to render the ACE plugin's
     # .env.tpl into a real .env at container start, pulling secrets from the
     # AI-Agents vault under a service-account token. Removes the need to
