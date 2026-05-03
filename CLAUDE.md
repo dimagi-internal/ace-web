@@ -106,7 +106,7 @@ ace-web/
 ├── tests/           # Project-level tests (asgi smoke)
 ├── docs/
 │   ├── deploy.md
-│   ├── learnings/   # 7 load-bearing gotchas (see below)
+│   ├── learnings/   # load-bearing gotchas (see below)
 │   ├── specs/       # Design specs (ace-web + opp visualization)
 │   └── plans/       # 1a-foundation, 2-conversation-engine, aws-migration, ace-opp-workbench
 ├── Dockerfile, Dockerfile.frontend, docker-compose.yml
@@ -164,6 +164,7 @@ Frontend:
 
 Deploy & infrastructure:
 - [alb-nginx-django-https](docs/learnings/alb-nginx-django-https.md) — `SECURE_PROXY_SSL_HEADER` + nginx `$real_scheme` map preserve the ALB's `https`, and every `proxy_pass` must rewrite `Host` so ALB health checks don't trip `ALLOWED_HOSTS`. Silent until triggered in real infra.
+- [mcp-bootstrap-container-traps](docs/learnings/mcp-bootstrap-container-traps.md) — two infra failure modes that both look like "MCP tools missing" in chat: (1) `op inject` parses `{{ }}` and `op://` literals inside `.env.tpl` comments and aborts the whole render; (2) `npx tsx` from a cwd without `node_modules` triggers an on-the-fly registry install that races Claude Code's 30 s MCP connection timeout. Read before touching `Dockerfile`, `docker-entrypoint.sh`, or `.env.tpl`.
 - [aws-migration](docs/plans/2026-04-08-aws-migration.md) — completed migration from standalone GCP Cloud Run to AWS ECS Fargate as a connect-labs shared-infrastructure tenant. IAP auth swapped for CommCare Connect OAuth. Filestore dropped in favor of the CLIBackend hybrid-resume Django-replay path. Two-container ECS task (Django + nginx sidecar). Shared RDS, ALB, and (Phase 3) ElastiCache reduce incremental cost to ~$5-15/month.
 
 For the full Phase 1 post-execution fix list (25 items including settings hardening,
