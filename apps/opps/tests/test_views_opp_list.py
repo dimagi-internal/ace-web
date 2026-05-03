@@ -11,6 +11,7 @@ from apps.opps.tests.fixtures.fake_drive import (
     malaria_pilot_structured_tree,
     nutrition_legacy_flat_tree,
     opp_with_scorecard_tree,
+    turmeric_multi_run_tree,
     web_created_opp_tree,
 )
 
@@ -160,6 +161,36 @@ def test_opp_list_overlays_workspace_display_name(authed_client, authed_user):
     cards = response.json()["data"]
     card = next(c for c in cards if c["slug"] == "flat-only")
     assert card["display_name"] == "Pretty Name"
+
+
+def test_opp_list_includes_multi_run_layout_opp(authed_client):
+    """Multi-run-layout opps (post 2026-05-02): opp folder has opp.yaml +
+    runs/<timestamp>/ but NO idea.md or state.yaml at the opp root. The list
+    endpoint must still recognize them and surface latest-run phase / step /
+    eval / pending-gate data on the card.
+    """
+    fake = FakeDriveClient.from_tree(turmeric_multi_run_tree())
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        response = authed_client.get("/api/opps/")
+    assert response.status_code == 200
+    cards = response.json()["data"]
+    assert {c["slug"] for c in cards} == {"turmeric"}
+    card = cards[0]
+    # opp.yaml's display_name wins (no DB overlay in this test).
+    assert card["display_name"] == "Turmeric Market Survey"
+    # Latest run = 20260502-1830, current_phase = ocs.
+    assert card["current_run_id"] == "20260502-1830"
+    assert card["current_phase"] == "ocs"
+    assert card["current_step"] == "ocs-agent-setup"
+    assert card["status"] == "ok"
+    # Two runs sit under runs/.
+    assert card["run_count"] == 2
+    # opp-eval-deep.yaml under the latest run's verdicts/ → eval_score
+    # surfaces on the card.
+    assert card["eval_score"] == 84.0
+    assert card["eval_passed"] is True
 
 
 def test_opp_list_returns_empty_when_no_ace_root_configured(authed_client):

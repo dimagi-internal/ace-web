@@ -171,19 +171,19 @@ def _opp_list_impl(request):
             continue
         opp_children = client.list_files(child.id)
 
-        # Minimum signal that this folder is an opp: idea.md at the root
-        # (legacy flat-layout shape) OR an `inputs/` subfolder
-        # (multi-run layout, v0.11.0+). state.yaml at root is also accepted
-        # for legacy opps created before /ace:run owned state.
+        # Minimum signal that this folder is an opp. We accept four shapes:
+        #   - idea.md at root (flat layout, the canonical pre-2026-05-02 shape)
+        #   - state.yaml at root (legacy flat opps where /ace:run owns state)
+        #   - opp.yaml at root (multi-run layout — current ACE plugin)
+        #   - runs/ subfolder (multi-run layout, in case opp.yaml is missing)
+        # Without one of these, the folder is not an opp (e.g. the
+        # "Program Design Docs (PDDs)" sibling folder under ACE/).
         names = {f.name for f in opp_children}
-        folder_names = {
-            f.name for f in opp_children
-            if f.mime_type == "application/vnd.google-apps.folder"
-        }
-        if (
-            "idea.md" not in names
-            and "state.yaml" not in names
-            and "inputs" not in folder_names
+        if not (
+            "idea.md" in names
+            or "state.yaml" in names
+            or "opp.yaml" in names
+            or "runs" in names
         ):
             continue
 
