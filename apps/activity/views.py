@@ -19,6 +19,7 @@ Out-of-scope for v1:
 """
 from __future__ import annotations
 
+from django.core.cache import cache
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -39,6 +40,13 @@ from apps.sessions.views import _scope_sessions_to_user
 # multiple days for a typical workspace.
 DEFAULT_LIMIT = 200
 MAX_LIMIT = 500
+
+# Drive aggregation across a full workspace takes 30-60s the first
+# time (one load_opp call per opp). Cache the result for 60s so
+# subsequent loads — including the chat-only frontend that hits
+# /api/activity/?type=chat first and then /api/activity/?type=verdict,gate
+# — return instantly from the warm cache.
+DRIVE_CACHE_SECONDS = 60
 
 
 @api_view(["GET"])
@@ -91,19 +99,14 @@ def activity_feed(request: Request) -> Response:
     if needs_drive:
         ace_folder_id = _resolve_ace_root_folder_id(ws)
         if ace_folder_id is not None and client is not None:
-            opp_slugs_in_scope = _opp_scope(client, ace_folder_id, opp_slug)
-            for slug in opp_slugs_in_scope:
-                try:
-                    snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug)
-                except Exception:
-                    # Drive listing failures shouldn't kill the whole
-                    # feed; the timeline degrades to "this opp's events
-                    # are missing" rather than 500.
-                    continue
-                if "verdict" in requested_types:
-                    events.extend(_verdict_events(snap, slug))
-                if "gate" in requested_types:
-                    events.extend(_gate_events(snap, slug))
+            drive_events = _drive_events_cached(
+                ws.slug,
+                ace_folder_id,
+                opp_slug,
+                client,
+                requested_types,
+            )
+            events.extend(drive_events)
 
     # Sort newest-first by ts (string ISO-8601 sorts lexically when
     # timestamps share format; everything we emit uses UTC ISO).
@@ -186,6 +189,47 @@ def _gate_events(snap, opp_slug: str) -> list[dict]:
 
 
 _FOLDER_MIME = "application/vnd.google-apps.folder"
+
+
+def _drive_events_cached(
+    workspace_slug: str,
+    ace_folder_id: str,
+    opp_slug: str | None,
+    client,
+    requested_types: set[str],
+) -> list[dict]:
+    """Aggregate verdict + gate events for the requested opp scope, with
+    a 60-second cache keyed by (workspace, opp). The cache holds the
+    raw event lists for both kinds; the caller filters by which kinds
+    are actually wanted in the response.
+
+    Cache key intentionally excludes ``requested_types`` — verdict and
+    gate aggregation share the same load_opp() call, so caching the
+    union is strictly more efficient than caching subsets.
+    """
+    key = f"activity:drive:{workspace_slug}:{opp_slug or '*'}"
+    cached = cache.get(key)
+    if cached is None:
+        cached = {"verdict": [], "gate": []}
+        opp_slugs_in_scope = _opp_scope(client, ace_folder_id, opp_slug)
+        for slug in opp_slugs_in_scope:
+            try:
+                snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug)
+            except Exception:
+                # Drive listing failures shouldn't kill the whole feed;
+                # the timeline degrades to "this opp's events are
+                # missing" rather than 500.
+                continue
+            cached["verdict"].extend(_verdict_events(snap, slug))
+            cached["gate"].extend(_gate_events(snap, slug))
+        cache.set(key, cached, timeout=DRIVE_CACHE_SECONDS)
+
+    out: list[dict] = []
+    if "verdict" in requested_types:
+        out.extend(cached["verdict"])
+    if "gate" in requested_types:
+        out.extend(cached["gate"])
+    return out
 
 
 def _opp_scope(client, ace_folder_id: str, opp_slug: str | None) -> list[str]:

@@ -43,23 +43,60 @@ export function TimelineView({ oppSlug }: Props) {
     () => new Set(ALL_KINDS),
   );
   const [oppFilter, setOppFilter] = useState<string | null>(null);
-  const [events, setEvents] = useState<ActivityEvent[] | null>(null);
+  // Two independent event streams. Chats come from Postgres (fast,
+  // <500ms); verdicts + gates come from Drive aggregation (cold cache
+  // 30-60s, warm cache <100ms). Issuing them in parallel and rendering
+  // chats the moment they arrive makes the page usable while the slow
+  // path resolves. Phase 3 originally bundled both into one request,
+  // which made the page block on Drive even when the user only wanted
+  // chat events.
+  const [chatEvents, setChatEvents] = useState<ActivityEvent[] | null>(null);
+  const [driveEvents, setDriveEvents] = useState<ActivityEvent[] | null>(null);
+  const [driveLoading, setDriveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const wantChat = enabledKinds.has("chat");
+  const wantDrive = enabledKinds.has("verdict") || enabledKinds.has("gate");
+  const driveTypesArg = (
+    ["verdict", "gate"] as ActivityKind[]
+  ).filter((k) => enabledKinds.has(k));
 
   const load = useCallback(() => {
     setError(null);
-    fetchActivityFeed({
-      opp: oppSlug,
-      type: ALL_KINDS.filter((k) => enabledKinds.has(k)),
-    })
-      .then((p) => setEvents(p.items))
-      .catch((e) => setError(String((e as Error)?.message ?? e)));
-  }, [oppSlug, enabledKinds]);
+    setChatEvents(null);
+    setDriveEvents(null);
+    setDriveLoading(false);
+
+    if (wantChat) {
+      fetchActivityFeed({ opp: oppSlug, type: "chat" })
+        .then((p) => setChatEvents(p.items))
+        .catch((e) => setError(String((e as Error)?.message ?? e)));
+    } else {
+      setChatEvents([]);
+    }
+
+    if (wantDrive) {
+      setDriveLoading(true);
+      fetchActivityFeed({ opp: oppSlug, type: driveTypesArg })
+        .then((p) => setDriveEvents(p.items))
+        .catch((e) => setError(String((e as Error)?.message ?? e)))
+        .finally(() => setDriveLoading(false));
+    } else {
+      setDriveEvents([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [oppSlug, wantChat, wantDrive, driveTypesArg.join(",")]);
 
   useEffect(() => {
-    setEvents(null);
     load();
   }, [load]);
+
+  const events = useMemo(() => {
+    if (chatEvents === null && driveEvents === null) return null;
+    const merged = [...(chatEvents ?? []), ...(driveEvents ?? [])];
+    merged.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+    return merged;
+  }, [chatEvents, driveEvents]);
 
   // Visible after applying the in-rail opp filter (only relevant when
   // we're not already pinned to a single opp via the oppSlug prop).
@@ -182,12 +219,21 @@ export function TimelineView({ oppSlug }: Props) {
       <main className="overflow-y-auto px-6 py-5">
         {events === null ? (
           <p className="text-sm text-muted-foreground">Loading activity…</p>
-        ) : visibleEvents.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No activity matches the current filters.
-          </p>
         ) : (
-          <EventList events={visibleEvents} workspaceSlug={workspaceSlug} />
+          <>
+            {driveLoading && (
+              <p className="mb-3 text-xs text-muted-foreground/80">
+                Loading verdicts + gates… (chats already shown below)
+              </p>
+            )}
+            {visibleEvents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No activity matches the current filters.
+              </p>
+            ) : (
+              <EventList events={visibleEvents} workspaceSlug={workspaceSlug} />
+            )}
+          </>
         )}
       </main>
     </div>
