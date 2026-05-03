@@ -199,3 +199,36 @@ def test_upload_without_folder_id_creates_orphan(client, user):
     upload = IngestUpload.objects.get(uploaded_by=user)
     assert upload.workspace is None
     assert upload.session.workspace is None
+
+
+def test_upload_populates_cost_breakdown(client):
+    resp = _upload_fixture(client, "cost_session.jsonl")
+    assert resp.status_code == 201
+    slug = resp.json()["data"]["session_slug"]
+    session = Session.objects.get(slug=slug)
+    assert session.cost_breakdown
+    assert session.cost_breakdown["schema_version"] == 1
+    assert session.cost_breakdown["totals"]["input_tokens"] > 0
+
+
+def test_upload_simple_session_has_breakdown_with_zero_or_minimal_costs(client):
+    """The simple_session fixture has no usage blocks; breakdown should
+    still populate with zero totals (not an empty dict)."""
+    resp = _upload_fixture(client, "simple_session.jsonl")
+    slug = resp.json()["data"]["session_slug"]
+    session = Session.objects.get(slug=slug)
+    assert session.cost_breakdown.get("schema_version") == 1
+    assert session.cost_breakdown["totals"]["input_tokens"] == 0
+
+
+def test_upload_aggregator_failure_does_not_block_ingest(client, monkeypatch):
+    """If the aggregator raises, the session is still created with empty breakdown."""
+    from apps.ingest import views as ingest_views
+    def _boom(_events):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(ingest_views, "aggregate", _boom)
+    resp = _upload_fixture(client, "cost_session.jsonl")
+    assert resp.status_code == 201
+    slug = resp.json()["data"]["session_slug"]
+    session = Session.objects.get(slug=slug)
+    assert session.cost_breakdown == {}
