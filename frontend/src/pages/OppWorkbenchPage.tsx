@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 
 import { getOpp } from "../api/opps";
 import type { OppSnapshot, Step } from "../api/types";
@@ -17,7 +17,11 @@ type LoadState =
   | { kind: "loaded"; snapshot: OppSnapshot };
 
 export default function OppWorkbenchPage() {
-  const { slug = "", runId, skill } = useParams();
+  const { slug = "", runId: pathRunId, skill } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // ?run_id= query param takes precedence; fall back to :runId path segment
+  // (kept for backwards-compat with existing /opps/:slug/runs/:runId routes).
+  const runId = searchParams.get("run_id") ?? pathRunId;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
 
@@ -26,7 +30,7 @@ export default function OppWorkbenchPage() {
       if (!opts.silent) {
         setState({ kind: "loading" });
       }
-      getOpp(slug, runId)
+      getOpp(slug, runId ?? undefined)
         .then((snapshot) => {
           setState({ kind: "loaded", snapshot });
         })
@@ -67,6 +71,9 @@ export default function OppWorkbenchPage() {
       <WorkbenchHeader
         opp={snapshot.opp}
         run={snapshot.current_run}
+        runs={snapshot.runs ?? []}
+        selectedRunId={snapshot.selected_run_id ?? null}
+        onRunChange={(id) => setSearchParams({ run_id: id })}
         onRefresh={() => load()}
       />
       <PendingGatesBanner

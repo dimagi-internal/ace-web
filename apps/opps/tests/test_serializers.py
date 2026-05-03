@@ -22,9 +22,15 @@ def snap():
 
 def test_serialize_opp_snapshot_top_level_keys(snap):
     data = serialize_opp_snapshot(snap)
-    assert set(data.keys()) == {"opp", "pdd_body", "current_run", "phases"}
+    assert set(data.keys()) == {
+        "opp", "pdd_body", "current_run", "phases", "runs", "selected_run_id",
+    }
     # phases is a list (possibly empty if ACE_PLUGIN_PATH isn't a real plugin dir).
     assert isinstance(data["phases"], list)
+    # Flat layout has no multi-run structure; runs[] is empty.
+    assert data["runs"] == []
+    # selected_run_id matches the synthesised single-run id.
+    assert data["selected_run_id"] == "r1"
 
 
 def test_serialize_opp_card_fields(snap):

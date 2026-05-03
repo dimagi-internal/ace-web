@@ -2,19 +2,23 @@ import { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import type { OppCard, Run } from "../../api/types";
+import type { OppCard, Run, RunSummary } from "../../api/types";
 import { Button } from "@/components/ui/button";
 import { DeleteOppDialog } from "./DeleteOppDialog";
+import { RunSelector } from "./RunSelector";
 import { ScorecardPanel } from "./ScorecardPanel";
 import { TagEditor } from "./TagEditor";
 
 interface Props {
   opp: OppCard;
   run: Run;
+  runs: RunSummary[];
+  selectedRunId: string | null;
+  onRunChange: (runId: string) => void;
   onRefresh: () => void;
 }
 
-export function WorkbenchHeader({ opp, run, onRefresh }: Props) {
+export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, onRefresh }: Props) {
   const navigate = useNavigate();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -22,6 +26,7 @@ export function WorkbenchHeader({ opp, run, onRefresh }: Props) {
     <>
       <div className="flex items-center gap-4 border-b border-border bg-card px-4 py-2 text-sm">
         <span className="font-semibold text-foreground">{opp.display_name || opp.slug}</span>
+        <RunSelector runs={runs} selectedRunId={selectedRunId} onChange={onRunChange} />
         <span className="text-muted-foreground">
           {run.current_phase ? `Phase · ${run.current_phase}` : "—"}
         </span>

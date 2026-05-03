@@ -14,6 +14,7 @@ edit in the plugin, not a code change here.
 """
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 from django.conf import settings
@@ -149,12 +150,32 @@ def serialize_opp_card(opp: OppManifest, current_run: RunDetail | None) -> dict:
 
 def serialize_opp_snapshot(snap: OppSnapshot) -> dict:
     overview = _system_overview()
-    return {
+    out = {
         "opp": serialize_opp_card(snap.opp, snap.current_run),
         "pdd_body": snap.pdd_body,
         "current_run": serialize_run_detail(snap.current_run),
         "phases": list(overview.get("phases") or []),
     }
+    out["runs"] = [
+        {
+            "run_id": r.run_id,
+            "current_phase": r.current_phase,
+            "current_step": r.current_step,
+            "mode": r.mode,
+            "last_actor": r.last_actor,
+            # PyYAML may parse ISO timestamps as datetime objects; normalise to str.
+            "last_actor_at": (
+                r.last_actor_at.isoformat().replace("+00:00", "Z")
+                if isinstance(r.last_actor_at, datetime.datetime)
+                else r.last_actor_at
+            ),
+        }
+        for r in (getattr(snap, "runs_summary", None) or [])
+    ]
+    out["selected_run_id"] = (
+        snap.current_run.run_id if snap.current_run is not None else None
+    )
+    return out
 
 
 def serialize_scorecard(sc: ScorecardSnapshot) -> dict:

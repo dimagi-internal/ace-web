@@ -152,6 +152,7 @@ export interface OppCard {
   eval_score: number | null;
   eval_passed: boolean | null;
   last_activity_at: string | null;
+  run_count: number;
 }
 
 export interface Artifact {
@@ -217,15 +218,18 @@ export interface Run {
 
 export interface RunSummary {
   run_id: string;
-  status: string;
-  started_at: string | null;
-  completed_at: string | null;
+  current_phase: string | null;
+  current_step: string | null;
+  mode: string | null;
+  last_actor: string | null;
+  last_actor_at: string | null;
 }
 
 export interface OppSnapshot {
   opp: OppCard;
   pdd_body: string;
   runs: RunSummary[];
+  selected_run_id: string | null;
   current_run: Run;
   phases: PhaseInfo[];
 }

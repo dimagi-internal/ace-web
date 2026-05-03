@@ -373,11 +373,15 @@ export default function OppListPage() {
                 </div>
               ) : null}
 
-              {opp.last_activity_at && (
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Last update: {relativeTime(opp.last_activity_at)}
-                </div>
-              )}
+              <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                <span>{opp.run_count === 1 ? "1 run" : `${opp.run_count} runs`}</span>
+                {opp.last_activity_at && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>last {relativeTime(opp.last_activity_at)}</span>
+                  </>
+                )}
+              </div>
 
               {/* "Gate brief written, no decision recorded in state.yaml's
                   gates: map." We deliberately don't say "awaiting review" —
