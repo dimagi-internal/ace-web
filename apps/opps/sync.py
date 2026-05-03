@@ -80,7 +80,7 @@ class OppSnapshot:
     pdd_body: str
     opp_folder_id: str
     current_run: RunDetail
-    runs_summary: list["RunSummary"] = field(default_factory=list)
+    runs_summary: list[RunSummary] = field(default_factory=list)
 
 
 # --- Drive helpers ---
@@ -472,7 +472,7 @@ def load_opp_card(
     opp_children: list[DriveFile] | None = None,
     ace_root_folder_id: str | None = None,
     opp_slug: str | None = None,
-) -> "OppCard | dict":
+) -> OppCard | dict:
     """Read the subset of ``ACE/<slug>/`` needed for a list card.
 
     Supports two calling conventions:
@@ -500,7 +500,9 @@ def load_opp_card(
     """
     # --- New multi-run path ---
     if ace_root_folder_id is not None and opp_slug is not None:
-        return _load_opp_card_multi_run(client, ace_root_folder_id=ace_root_folder_id, opp_slug=opp_slug)
+        return _load_opp_card_multi_run(
+            client, ace_root_folder_id=ace_root_folder_id, opp_slug=opp_slug
+        )
 
     # --- Legacy path (opp_folder + opp_children required) ---
     assert opp_folder is not None and opp_children is not None, (
@@ -515,7 +517,7 @@ def _load_opp_card_legacy(
     *,
     opp_folder: DriveFile,
     opp_children: list[DriveFile],
-) -> "OppCard":
+) -> OppCard:
     """Legacy load_opp_card implementation — flat layout, returns OppCard."""
     slug = opp_folder.name
 
@@ -846,7 +848,13 @@ def _load_opp_flat(
     verdicts_by_skill = _load_verdicts(client, opp_tree)
     gates_by_skill = _gates_from_state(state_data)
 
-    steps = _build_steps(skill_registry, artifacts_by_skill, verdicts_by_skill, gates_by_skill, opp_folder.id)
+    steps = _build_steps(
+        skill_registry,
+        artifacts_by_skill,
+        verdicts_by_skill,
+        gates_by_skill,
+        opp_folder.id,
+    )
 
     run_detail = RunDetail(
         run_id="r1",
@@ -917,7 +925,10 @@ def _load_opp_run(
         inputs_folder = _find_child_folder(opp_folder_children, "inputs")
         if inputs_folder is not None:
             inputs_children = client.list_folder(inputs_folder.id)
-            pdd_file = _find_child(inputs_children, "pdd.md") or _find_child(inputs_children, "idea.md")
+            pdd_file = (
+                _find_child(inputs_children, "pdd.md")
+                or _find_child(inputs_children, "idea.md")
+            )
     pdd_body = _read_text(client, pdd_file) if pdd_file else ""
 
     # Attribute run-folder files to skills via artifact manifest.
@@ -944,7 +955,13 @@ def _load_opp_run(
     verdicts_by_skill = _load_verdicts(client, run_tree)
     gates_by_skill = _gates_from_state(state_data)
 
-    steps = _build_steps(skill_registry, artifacts_by_skill, verdicts_by_skill, gates_by_skill, run_folder_id)
+    steps = _build_steps(
+        skill_registry,
+        artifacts_by_skill,
+        verdicts_by_skill,
+        gates_by_skill,
+        run_folder_id,
+    )
 
     # Read opp.yaml for display_name; fall back to state.yaml then slug.
     opp_data = _read_opp_yaml(client, opp_folder.id)
@@ -985,8 +1002,8 @@ def _load_opp_run(
 def _build_steps(
     skill_registry,
     artifacts_by_skill: dict[str, list[ArtifactRef]],
-    verdicts_by_skill: dict[str, "JudgeVerdict"],
-    gates_by_skill: dict[str, list["GateDecision"]],
+    verdicts_by_skill: dict[str, JudgeVerdict],
+    gates_by_skill: dict[str, list[GateDecision]],
     folder_id: str,
 ) -> list[StepSnapshot]:
     """Synthesize StepSnapshot rows from the skill registry + Drive data."""

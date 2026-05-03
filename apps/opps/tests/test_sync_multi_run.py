@@ -13,9 +13,8 @@ Layout being tested:
     └── ...
 """
 from __future__ import annotations
-from dataclasses import dataclass
 
-import pytest
+from dataclasses import dataclass
 
 from apps.opps.drive_client import DriveFile, FileContent
 from apps.opps.sync import (
@@ -256,7 +255,11 @@ def test_load_opp_loads_specific_run_when_run_id_given():
 
 
 def test_load_opp_finds_nested_verdict_artifacts():
-    """Regression: _load_opp_run must list run folder recursively so verdicts/, scorecards/, etc. attribute correctly."""
+    """Regression: _load_opp_run must list the run folder recursively.
+
+    Without recursive=True, files in skill subfolders (verdicts/,
+    scorecards/, etc.) would not get attributed.
+    """
     fake = FakeDrive(_build_turmeric_layout())
     snap = load_opp(fake, ace_root_folder_id="ACE", opp_slug="turmeric")
     # The verdict at verdicts/idea-to-pdd-eval-deep.yaml should be parsed and attached.
