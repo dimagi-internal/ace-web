@@ -138,6 +138,7 @@ The `opps` module adds **no ORM tables** — it reads through to Google Drive.
   `docs/learnings/channels-ws-proxy-path.md` for the `/ace/ws/` proxy
   detail and `docs/learnings/channels-websocket-auth.md` for the handshake
   auth pattern.
+- **Per-session and per-opp cost & timing breakdown**: ace-web aggregates wall time and token costs from uploaded JSONL transcripts at ingest time, persists to `Session.cost_breakdown` (JSONField), and surfaces them as a Cost & Timing tab on session detail and a rollup chip on the Opp Workbench. Phase / skill labels reuse `apps/system/reader.py`'s plugin-derived registry. Aggregator logic in `apps/ingest/cost_aggregator.py`; pricing table in `apps/ingest/pricing.py` (refresh ~twice/year). Sidechain attribution gotcha: `docs/learnings/sidechain-attribution.md`.
 
 ## Learnings (read before touching the relevant area)
 

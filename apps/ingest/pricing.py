@@ -10,7 +10,7 @@ having partial pricing rather than silently zero-billing.
 """
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 PRICING: dict[str, dict[str, float]] = {
     "claude-opus-4":   {"input": 15.0, "output": 75.0, "cache_write": 18.75, "cache_read": 1.5},

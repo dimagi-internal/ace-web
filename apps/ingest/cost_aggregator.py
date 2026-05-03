@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from apps.ingest.parser import CostEvent
@@ -328,7 +328,11 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         })
     phases.sort(key=lambda p: p["phase_ordinal"])
 
-    cache_total = totals_tokens["cache_read_tokens"] + totals_tokens["cache_creation_tokens"] + totals_tokens["input_tokens"]
+    cache_total = (
+        totals_tokens["cache_read_tokens"]
+        + totals_tokens["cache_creation_tokens"]
+        + totals_tokens["input_tokens"]
+    )
     cache_hit_ratio = (
         totals_tokens["cache_read_tokens"] / cache_total
         if cache_total > 0
@@ -337,7 +341,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
 
     return {
         "schema_version": SCHEMA_VERSION,
-        "computed_at": datetime.now(timezone.utc).isoformat(),
+        "computed_at": datetime.now(UTC).isoformat(),
         "totals": {
             "wall_time_seconds": _wall_time_seconds(totals_first_ts, totals_last_ts),
             "input_tokens": totals_tokens["input_tokens"],
