@@ -10,7 +10,6 @@ import { DiscussInChatButton } from "./DiscussInChatButton";
 import { EditArtifactDialog } from "./EditArtifactDialog";
 import { GateHistory } from "./GateHistory";
 import { JudgeVerdict } from "./JudgeVerdict";
-import { LinkedChats } from "./LinkedChats";
 import { LoadingSpinner } from "./LoadingStates";
 
 interface Props {
@@ -154,7 +153,6 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
 
       <JudgeVerdict judge={detail.judge} />
       {detail.gates.length > 0 && <GateHistory gates={detail.gates} />}
-      <LinkedChats slug={slug} runId={runId} skill={skill} />
 
       {editing && (
         <EditArtifactDialog
