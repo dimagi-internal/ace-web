@@ -10,6 +10,7 @@ import { DeleteOppDialog } from "../components/opps/DeleteOppDialog";
 import { NewOppDialog } from "../components/opps/NewOppDialog";
 import { OppChatChildren } from "../components/views/hierarchy/OppChatChildren";
 import { PlaceholderView } from "../components/views/PlaceholderView";
+import { TimelineView } from "../components/views/TimelineView";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
 import { useViewMode } from "../hooks/useViewMode";
 import { relativeTime } from "../lib/relativeTime";
@@ -225,7 +226,11 @@ export default function OppListPage() {
         />
       )}
 
-      {view === "timeline" && <PlaceholderView kind="timeline" />}
+      {view === "timeline" && (
+        <div className="min-h-0 flex-1">
+          <TimelineView />
+        </div>
+      )}
       {view === "flow" && <PlaceholderView kind="flow" />}
       {view === "hierarchy" && (visibleOpps.length === 0 ? (
         filter || needsReviewOnly ? (

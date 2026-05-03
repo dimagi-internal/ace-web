@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "apps.service_accounts.apps.ServiceAccountsConfig",
     "apps.system.apps.SystemConfig",
     "apps.workspaces.apps.WorkspacesConfig",
+    "apps.activity.apps.ActivityConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
