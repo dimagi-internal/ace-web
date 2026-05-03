@@ -410,6 +410,74 @@ def _gates_from_state(state_data: dict) -> dict[str, list[GateDecision]]:
     return out
 
 
+# --- Lean event aggregation (for the activity feed) ---
+
+
+def list_opp_events_lean(
+    client: DriveClient,
+    *,
+    ace_folder_id: str,
+    slug: str,
+) -> tuple[dict[str, JudgeVerdict], dict[str, list[GateDecision]]]:
+    """Fast verdict + gate aggregation for the activity feed.
+
+    Skips the expensive parts of ``load_opp``:
+      - No recursive walk of the whole opp folder (saves the bulk of
+        Drive API time — easily 5-15s per opp on cold cache)
+      - No pdd.md read
+      - No artifact-manifest attribution
+      - No skill registry / system overview load
+
+    Drive calls per opp:
+      1. List ACE root (typically already done by caller; we re-list
+         here for safety because the caller may pass a stale cache).
+      2. List opp folder top-level (1 call).
+      3. Read state.yaml (1 call) → gates.
+      4. List ``verdicts/`` if present (1 call).
+      5. Read each verdict YAML in that folder (N calls).
+
+    Total: 4 + N. Compare with load_opp's ~30+ calls (the recursive
+    walk dominates at depth-2+ trees).
+
+    Returns ``({skill: JudgeVerdict}, {skill: [GateDecision, ...]})`` —
+    same shape the activity feed already consumes via _verdict_events
+    and _gate_events.
+    """
+    # 1. Locate the opp folder
+    ace_children = client.list_files(ace_folder_id)
+    opp_folder = _find_child_folder(ace_children, slug)
+    if opp_folder is None:
+        return {}, {}
+
+    # 2. List opp folder top-level (NOT recursive)
+    opp_children = client.list_files(opp_folder.id)
+
+    # 3. Read state.yaml → gates
+    state_file = _find_child(opp_children, "state.yaml")
+    state_data: dict = {}
+    if state_file is not None:
+        try:
+            raw = _read_text(client, state_file)
+            state_data = yaml.safe_load(raw) or {}
+        except (yaml.YAMLError, Exception):  # noqa: BLE001
+            state_data = {}
+    gates_by_skill = _gates_from_state(state_data)
+
+    # 4. Find verdicts/ folder + list its contents
+    verdicts_folder = _find_child_folder(opp_children, "verdicts")
+    verdict_files: list[DriveFile] = []
+    if verdicts_folder is not None:
+        # Set path on each so _load_verdicts' regex matches "verdicts/<stem>.yaml"
+        children = client.list_files(verdicts_folder.id)
+        for f in children:
+            f.path = f"verdicts/{f.name}"
+            verdict_files.append(f)
+
+    # 5. Reuse existing _load_verdicts (parses + dedupes by skill).
+    verdicts_by_skill = _load_verdicts(client, verdict_files)
+    return verdicts_by_skill, gates_by_skill
+
+
 # --- opp.yaml helper ---
 
 

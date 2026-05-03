@@ -26,7 +26,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.common.envelope import success_response
-from apps.opps.sync import load_opp
+from apps.opps.sync import list_opp_events_lean
 from apps.opps.views import (
     _require_drive,
     _resolve_ace_root_folder_id,
@@ -141,10 +141,9 @@ def _chat_events(request: Request, workspace_slug: str, opp_slug: str | None) ->
     return out
 
 
-def _verdict_events(snap, opp_slug: str) -> list[dict]:
+def _verdict_events_from_dict(verdicts_by_skill: dict, opp_slug: str) -> list[dict]:
     out: list[dict] = []
-    for step_snap in snap.current_run.steps:
-        v = step_snap.judge
+    for skill, v in verdicts_by_skill.items():
         if v is None or not v.evaluated_at:
             continue
         out.append(
@@ -152,21 +151,18 @@ def _verdict_events(snap, opp_slug: str) -> list[dict]:
                 "kind": "verdict",
                 "ts": v.evaluated_at,
                 "opp_slug": opp_slug,
-                "step_skill": step_snap.step.skill_name,
-                "title": _verdict_title(v, step_snap.step.skill_name),
-                "meta": {
-                    "score": v.score,
-                    "passed": v.passed,
-                },
+                "step_skill": skill,
+                "title": _verdict_title(v, skill),
+                "meta": {"score": v.score, "passed": v.passed},
             }
         )
     return out
 
 
-def _gate_events(snap, opp_slug: str) -> list[dict]:
+def _gate_events_from_dict(gates_by_skill: dict, opp_slug: str) -> list[dict]:
     out: list[dict] = []
-    for step_snap in snap.current_run.steps:
-        for gate in step_snap.gates:
+    for skill, gates in gates_by_skill.items():
+        for gate in gates:
             if not gate.ts or gate.decision == "pending":
                 # Skip gates that have no decision yet — those are the
                 # subject of the PendingGatesBanner, not the activity feed.
@@ -176,8 +172,8 @@ def _gate_events(snap, opp_slug: str) -> list[dict]:
                     "kind": "gate",
                     "ts": gate.ts,
                     "opp_slug": opp_slug,
-                    "step_skill": step_snap.step.skill_name,
-                    "title": _gate_title(gate, step_snap.step.skill_name),
+                    "step_skill": skill,
+                    "title": _gate_title(gate, skill),
                     "meta": {
                         "decision": gate.decision,
                         "decided_by": gate.decided_by,
@@ -214,14 +210,21 @@ def _drive_events_cached(
         opp_slugs_in_scope = _opp_scope(client, ace_folder_id, opp_slug)
         for slug in opp_slugs_in_scope:
             try:
-                snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug)
+                # Lean per-opp scan — verdicts + gates only, no
+                # recursive walk, no pdd.md read, no manifest match.
+                # See apps/opps/sync.py:list_opp_events_lean.
+                verdicts, gates = list_opp_events_lean(
+                    client, ace_folder_id=ace_folder_id, slug=slug,
+                )
             except Exception:
                 # Drive listing failures shouldn't kill the whole feed;
                 # the timeline degrades to "this opp's events are
                 # missing" rather than 500.
                 continue
-            cached["verdict"].extend(_verdict_events(snap, slug))
-            cached["gate"].extend(_gate_events(snap, slug))
+            cached["verdict"].extend(
+                _verdict_events_from_dict(verdicts, slug)
+            )
+            cached["gate"].extend(_gate_events_from_dict(gates, slug))
         cache.set(key, cached, timeout=DRIVE_CACHE_SECONDS)
 
     out: list[dict] = []
