@@ -30,12 +30,13 @@ class DriveFile:
     path: str = ""  # full slash-separated path from the listing root
     size_bytes: int | None = None
     modified_time: str | None = None                # ISO-8601 string, as returned by Drive
+    parent_id: str | None = None                    # immediate parent folder id (optional)
 
 
 @dataclass
 class FileContent:
     content: str                                    # UTF-8 for text files; base64 for binary
-    content_type: str                               # e.g. "text/markdown", "application/json"
+    content_type: str = "text/plain"               # e.g. "text/markdown", "application/json"
     encoding: str | None = None                     # "base64" for binary files
 
 
@@ -47,6 +48,10 @@ class DriveClient(ABC):
         self, folder_id: str, recursive: bool = False, page_size: int = 100
     ) -> list[DriveFile]:
         """List immediate children of a folder, or the full recursive tree."""
+
+    def list_folder(self, folder_id: str) -> list[DriveFile]:
+        """List immediate children of a folder (non-recursive convenience alias)."""
+        return self.list_files(folder_id, recursive=False)
 
     @abstractmethod
     def get_file(self, file_id: str) -> DriveFile:
