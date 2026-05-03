@@ -69,7 +69,7 @@ def upload(request: Request) -> Response:
         tmp_path = Path(tmp.name)
 
     try:
-        parsed = parse_session_file(tmp_path)
+        parsed, cost_events = parse_session_file(tmp_path)
     finally:
         tmp_path.unlink(missing_ok=True)
 
