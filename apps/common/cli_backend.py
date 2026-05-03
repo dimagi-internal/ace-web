@@ -1,6 +1,40 @@
-"""CLIBackend — wraps `claude -p --output-format stream-json` as a subprocess.
+"""CLIBackend — wraps `claude -p --input-format stream-json --output-format stream-json` as a subprocess.
 
-Hybrid resume strategy:
+Wire format
+-----------
+We use stream-json on BOTH stdin and stdout. The user message goes in as one
+``{"type":"user","message":{"role":"user","content":"<text>"}}`` JSON line.
+The CLI streams response events back on stdout in the same envelope shape.
+
+Why stream-json input (vs. plain ``-p`` text):
+  * Canonical multi-turn protocol — claude treats stdin as a stream of user
+    messages, not a single one-shot prompt. Future work (long-lived per-session
+    process) drops in cleanly without touching the wire format again.
+  * No prompt-text injection edge cases — the message body is JSON-quoted, so
+    user input that looks like a turn boundary or a control sequence can't
+    confuse the CLI.
+  * Better auth ergonomics — the CLI never tries to interpret stdin as a shell
+    pipe.
+
+Stdin lifecycle (load-bearing)
+------------------------------
+With ``--input-format stream-json``, the CLI keeps reading stdin until EOF and
+will hang if you write a message and never close stdin. BUT — verified live
+on 2.1.126 — if stdin EOFs *too early* (before the CLI has fully booted MCPs
++ hooks and read the buffered message), the CLI bails after running just the
+SessionStart hooks and produces no result event. We work around this by:
+
+  1. ``_spawn`` writes the JSON user message and **does NOT close stdin**.
+  2. ``_drain`` yields events as they arrive. Once it sees the ``result``
+     event (StreamEventType.DONE), it closes stdin to signal "no more
+     messages." The CLI then exits cleanly.
+
+If the consumer breaks out of the ``async for`` before DONE arrives, the
+``finally`` block in ``stream_completion`` calls ``_cleanup(proc)`` which
+SIGTERMs the subprocess and stdin closes implicitly.
+
+Hybrid resume strategy
+----------------------
   1. If session.cli_session_id is set, try `--resume <id>` with only the new
      user message as the prompt. Yield events as they arrive.
   2. After the resume subprocess exits, if it produced no events OR exited
@@ -242,7 +276,9 @@ class CLIBackend:
         # session cookies). Without this flag, claude -p answers as a plain
         # chatbot and the entire ACE plugin is unreachable.
         full_args = [
-            self._binary, "-p", "--verbose", "--output-format", "stream-json",
+            self._binary, "-p", "--verbose",
+            "--input-format", "stream-json",
+            "--output-format", "stream-json",
             "--dangerously-skip-permissions",
             *args,
         ]
@@ -267,10 +303,16 @@ class CLIBackend:
             name=f"cli-heartbeat-{session_slug or id(proc)}",
         )
 
+        # Stream-json input: one JSON line per user message. We do NOT close
+        # stdin here — see module docstring "Stdin lifecycle". _drain closes
+        # stdin after observing the result/DONE event so the CLI exits cleanly.
+        envelope = json.dumps({
+            "type": "user",
+            "message": {"role": "user", "content": prompt},
+        }).encode("utf-8") + b"\n"
         try:
-            proc.stdin.write(prompt.encode("utf-8"))
+            proc.stdin.write(envelope)
             await proc.stdin.drain()
-            proc.stdin.close()
         except (ConnectionResetError, BrokenPipeError) as exc:
             await self._cleanup(proc)
             self._breaker.record_failure()
@@ -474,7 +516,15 @@ class CLIBackend:
             logger.warning("Failed to clean staged CLI home %s", staged_home)
 
     async def _drain(self, proc) -> AsyncIterator[StreamEvent]:
-        """Read stdout line by line and yield parsed StreamEvents."""
+        """Read stdout line by line and yield parsed StreamEvents.
+
+        Closes ``proc.stdin`` once a DONE event is observed. With
+        ``--input-format stream-json``, the CLI keeps reading stdin until EOF,
+        so we MUST close stdin once the turn is complete or the process hangs
+        forever waiting for the next user message. See the module docstring
+        "Stdin lifecycle" section for the full rationale.
+        """
+        stdin_closed = False
         while True:
             line = await proc.stdout.readline()
             if not line:
@@ -482,6 +532,15 @@ class CLIBackend:
             text = line.decode("utf-8", errors="replace")
             for event in parse_stream_json_lines([text]):
                 yield event
+                if (
+                    not stdin_closed
+                    and event.type is StreamEventType.DONE
+                    and proc.stdin is not None
+                    and not proc.stdin.is_closing()
+                ):
+                    with contextlib.suppress(Exception):
+                        proc.stdin.close()
+                    stdin_closed = True
 
     async def _build_seeded_prompt(self, session: Session, new_user_message: str) -> str:
         """Format the full message history as a fallback prompt.
