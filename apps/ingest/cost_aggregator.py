@@ -50,6 +50,7 @@ def _wall_time_seconds(start: datetime | None, end: datetime | None) -> int:
 class _OpenSegment:
     skill_name: str
     tool_use_id: str
+    containing_msg_uuid: str | None  # uuid of the assistant msg that contained the tool_use block
     start_ts: datetime | None
     last_ts: datetime | None
     tokens: dict[str, int] = field(default_factory=_empty_tokens)
@@ -65,6 +66,32 @@ def _finalize(seg: _OpenSegment) -> dict[str, Any]:
         "estimated_cost_usd": round(seg.cost_resolved, 6),
         "cost_is_partial": seg.cost_is_partial,
     }
+
+
+def _resolve_segment_for_sidechain(
+    event: CostEvent,
+    parent_of: dict[str, str | None],
+    open_segments: list[_OpenSegment],
+) -> _OpenSegment | None:
+    """Walk parent_uuid upward; return the open segment whose
+    containing_msg_uuid matches an ancestor uuid.
+
+    Each Agent segment records the uuid of the orchestrator assistant turn
+    that contained the tool_use block (containing_msg_uuid). Sidechain turns
+    inside that agent have parentUuid chains that lead back to that same uuid.
+    We walk the chain until we find a match or exhaust it.
+
+    A seen-set bounds the walk against circular uuid references.
+    """
+    cur = event.parent_uuid
+    seen: set[str] = set()
+    while cur and cur not in seen:
+        seen.add(cur)
+        for seg in open_segments:
+            if seg.containing_msg_uuid == cur:
+                return seg
+        cur = parent_of.get(cur)
+    return None
 
 
 def aggregate(events: list[CostEvent]) -> dict[str, Any]:
@@ -86,6 +113,26 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
 
     open_segments: list[_OpenSegment] = []
 
+    # Build ancestry index: every event uuid → its parent_uuid.
+    # Used by _resolve_segment_for_sidechain to walk the parentUuid chain.
+    parent_of: dict[str, str | None] = {
+        e.uuid: e.parent_uuid for e in events if e.uuid
+    }
+
+    # Pre-scan: identify which assistant-turn uuids are "dispatch turns" —
+    # turns whose only content is a Skill/Agent tool_use block. The parser
+    # emits assistant_turn before tool_use for the same uuid, so without
+    # this we'd incorrectly route dispatch-turn usage to orchestration before
+    # the segment is even open. We store pending usage by uuid and apply it
+    # when the tool_use event opens the segment.
+    dispatch_turn_uuids: set[str] = {
+        e.uuid
+        for e in events
+        if e.kind == "tool_use" and e.tool_name in ("Skill", "Agent") and e.uuid
+    }
+    # Pending usage from dispatch assistant_turns: uuid → (usage, cost, model)
+    pending_dispatch: dict[str, tuple[dict[str, Any] | None, float | None]] = {}
+
     for event in events:
         # Track session-level wall time spanning everything.
         if event.timestamp is not None:
@@ -100,12 +147,24 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 or (event.tool_input or {}).get("subagent_type")
                 or "(unknown)"
             )
-            open_segments.append(_OpenSegment(
+            seg = _OpenSegment(
                 skill_name=skill_name,
                 tool_use_id=event.tool_use_id or "",
+                containing_msg_uuid=event.uuid,  # the orchestrator msg uuid
                 start_ts=event.timestamp,
                 last_ts=event.timestamp,
-            ))
+            )
+            # Apply any pending dispatch-turn usage that belongs to this segment.
+            # The assistant_turn for this uuid was seen before the tool_use event,
+            # so its usage was deferred rather than attributed to orchestration.
+            if event.uuid and event.uuid in pending_dispatch:
+                pending_usage, pending_cost = pending_dispatch.pop(event.uuid)
+                _add_usage(seg.tokens, pending_usage)
+                if pending_cost is None:
+                    seg.cost_is_partial = True
+                else:
+                    seg.cost_resolved += pending_cost
+            open_segments.append(seg)
             continue
 
         if event.kind == "tool_result":
@@ -130,18 +189,33 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 totals_cost_partial = True
             else:
                 totals_cost += cost
-            # Attribute to the innermost open segment, or to orchestration
-            # if no segment is open. Sidechain attribution lands in Task 5.
-            if open_segments and not event.is_sidechain:
-                seg = open_segments[-1]
-                _add_usage(seg.tokens, event.usage)
+
+            target_seg: _OpenSegment | None = None
+            if event.is_sidechain:
+                # Sidechain turn: walk parentUuid upward to find the open segment
+                # whose containing_msg_uuid matches an ancestor. If none found,
+                # the turn falls through to orchestration below.
+                target_seg = _resolve_segment_for_sidechain(
+                    event, parent_of, open_segments
+                )
+            elif event.uuid in dispatch_turn_uuids:
+                # Dispatch turn: this assistant_turn opens a Skill/Agent segment
+                # on the very next event (same uuid). Defer usage to that segment
+                # rather than routing to orchestration or the currently-open segment.
+                pending_dispatch[event.uuid] = (event.usage, cost)
+                continue
+            elif open_segments:
+                target_seg = open_segments[-1]
+
+            if target_seg is not None:
+                _add_usage(target_seg.tokens, event.usage)
                 if cost is None:
-                    seg.cost_is_partial = True
+                    target_seg.cost_is_partial = True
                 else:
-                    seg.cost_resolved += cost
+                    target_seg.cost_resolved += cost
                 if event.timestamp is not None:
-                    seg.last_ts = event.timestamp
-            elif not event.is_sidechain:
+                    target_seg.last_ts = event.timestamp
+            else:
                 _add_usage(orchestration_tokens, event.usage)
                 if cost is None:
                     orchestration_cost_partial = True
