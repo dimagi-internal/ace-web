@@ -590,15 +590,27 @@ def _load_opp_card_legacy(
     slug = opp_folder.name
 
     state_file = _find_child(opp_children, "state.yaml")
+    latest_run_id: str | None = None
     if state_file is None:
         runs_folder = _find_child(opp_children, "runs")
         if runs_folder is not None and _is_folder(runs_folder):
             run_children = client.list_files(runs_folder.id)
+            # Legacy multi-run shape: runs/run-001/state.yaml
             run1 = _find_child(run_children, "run-001")
             if run1 is not None and _is_folder(run1):
                 state_file = _find_child(
                     client.list_files(run1.id), "state.yaml"
                 )
+            else:
+                # v0.11.0+ multi-run shape: runs/<YYYYMMDD-HHMM>/state.yaml.
+                # Pick the lex-max subfolder (newest by run-id string sort).
+                run_subfolders = [r for r in run_children if _is_folder(r)]
+                if run_subfolders:
+                    latest = max(run_subfolders, key=lambda r: r.name)
+                    latest_run_id = latest.name
+                    state_file = _find_child(
+                        client.list_files(latest.id), "state.yaml"
+                    )
 
     state_data: dict = {}
     if state_file is not None:
@@ -613,7 +625,7 @@ def _load_opp_card_legacy(
         created_at=state_data.get("started_at") or state_data.get("created"),
         created_by=state_data.get("created_by") or state_data.get("initiated_by"),
         labels=[],
-        current_run_id="r1",
+        current_run_id=latest_run_id or "r1",
     )
 
     # Gates come for free from state.yaml — no extra Drive call.
