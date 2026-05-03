@@ -48,11 +48,17 @@ def _fake_proc(stdout_bytes: bytes, returncode: int = 0):
     proc.terminate = lambda: None
     proc.kill = lambda: None
     proc.pid = 12345
-    # stdin mock — _spawn writes prompt + drains + closes
+    # stdin mock — _spawn writes the user-message envelope + drains.
+    # _drain closes stdin after observing DONE (see "Stdin lifecycle" in
+    # cli_backend.py); is_closing() is a regular bool, not awaitable.
     proc.stdin = AsyncMock()
     proc.stdin.write = lambda data: None
     proc.stdin.drain = AsyncMock()
-    proc.stdin.close = lambda: None
+    proc.stdin._closed = False
+    def _close():
+        proc.stdin._closed = True
+    proc.stdin.close = _close
+    proc.stdin.is_closing = lambda: proc.stdin._closed
     return proc
 
 
@@ -106,6 +112,75 @@ async def test_spawn_passes_dangerously_skip_permissions(session):
     args = create.call_args[0]
     assert "--dangerously-skip-permissions" in args, (
         f"missing --dangerously-skip-permissions in spawn args: {args!r}"
+    )
+
+
+async def test_spawn_uses_stream_json_input_format(session):
+    """Stream-json input is the canonical multi-turn wire format. Without
+    --input-format stream-json the CLI treats stdin as raw text, which means
+    no JSON-quoting of the user message and no clean path to multi-turn."""
+    fixture = (FIXTURES / "stream_json_simple.txt").read_bytes()
+    backend = CLIBackend()
+    create = AsyncMock(return_value=_fake_proc(fixture))
+    with patch("asyncio.create_subprocess_exec", new=create):
+        async for _ in backend.stream_completion(session=session, new_user_message="hi"):
+            pass
+    args = create.call_args[0]
+    assert "--input-format" in args, f"missing --input-format: {args!r}"
+    assert "stream-json" in args
+    # input-format and output-format both pass stream-json; assert the input
+    # one is paired correctly by index
+    idx = args.index("--input-format")
+    assert args[idx + 1] == "stream-json"
+
+
+async def test_spawn_writes_user_message_as_json_envelope(session):
+    """On the resume path, the new user message goes onto stdin wrapped in a
+    stream-json envelope: {"type":"user","message":{"role":"user","content":"<text>"}}\\n
+    The seeded-history path concatenates history into one prompt string and
+    wraps the whole concatenation in the same envelope (covered by the
+    existing test_resume_failure_falls_back_to_full_history which exercises
+    that path)."""
+    import json as _json
+
+    session.cli_session_id = "sess_resume"
+    await sync_to_async(session.save)()
+    fixture = (FIXTURES / "stream_json_simple.txt").read_bytes()
+    fake = _fake_proc(fixture)
+    written: list[bytes] = []
+    fake.stdin.write = lambda data: written.append(data)
+
+    backend = CLIBackend()
+    with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=fake)):
+        async for _ in backend.stream_completion(
+            session=session, new_user_message="hello world"
+        ):
+            pass
+
+    assert written, "nothing was written to stdin"
+    payload = b"".join(written).decode("utf-8").strip()
+    parsed = _json.loads(payload)
+    assert parsed["type"] == "user"
+    assert parsed["message"]["role"] == "user"
+    assert parsed["message"]["content"] == "hello world"
+
+
+async def test_drain_closes_stdin_after_done_event(session):
+    """--input-format stream-json keeps the CLI reading stdin until EOF; if
+    we never close stdin the subprocess hangs forever after the turn finishes.
+    The drain loop must close stdin once it sees the result/DONE event so
+    the CLI exits cleanly."""
+    # stream_json_simple.txt ends with a result event → produces a DONE.
+    fixture = (FIXTURES / "stream_json_simple.txt").read_bytes()
+    fake = _fake_proc(fixture)
+    backend = CLIBackend()
+    with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=fake)):
+        async for _ in backend.stream_completion(session=session, new_user_message="hi"):
+            pass
+
+    assert fake.stdin._closed, (
+        "stdin was never closed — CLI would hang forever waiting for the next "
+        "user message"
     )
 
 
