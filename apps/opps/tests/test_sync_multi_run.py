@@ -266,3 +266,19 @@ def test_load_opp_finds_nested_verdict_artifacts():
     assert idea_step is not None, "idea-to-pdd step not found in run snapshot"
     assert idea_step.judge is not None, "verdict was not attached to idea-to-pdd step"
     assert idea_step.judge.score == 87.0
+
+
+def test_serializer_includes_runs_and_selected_run_id(monkeypatch):
+    """The serializer surfaces runs[] (from runs_summary) and selected_run_id."""
+    from apps.opps.serializers import serialize_opp_snapshot
+    fake = FakeDrive(_build_turmeric_layout())
+    snap = load_opp(fake, ace_root_folder_id="ACE", opp_slug="turmeric")
+    serialized = serialize_opp_snapshot(snap)
+    assert serialized["selected_run_id"] == "20260502-1830"
+    assert [r["run_id"] for r in serialized["runs"]] == ["20260502-1830", "20260502-1430"]
+    # Confirm the run-summary fields are present:
+    first = serialized["runs"][0]
+    assert first["current_phase"] == "ocs"
+    assert first["current_step"] == "ocs-agent-setup"
+    assert first["mode"] == "default"
+    assert first["last_actor_at"] == "2026-05-02T18:42:00Z"
