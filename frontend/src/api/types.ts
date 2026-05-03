@@ -331,3 +331,75 @@ export interface SharedMessage {
   status: MessageStatus;
   created_at: string;
 }
+
+export interface CostTokens {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+}
+
+export interface CostInvocation {
+  start_ts: string | null;
+  wall_time_seconds: number;
+  estimated_cost_usd: number;
+  cost_is_partial: boolean;
+  incomplete?: boolean;
+  tokens: CostTokens;
+}
+
+export interface CostSkill {
+  skill_name: string;
+  invocation_count: number;
+  wall_time_seconds: number;
+  estimated_cost_usd: number;
+  cost_is_partial: boolean;
+  tokens: CostTokens;
+  invocations: CostInvocation[];
+}
+
+export interface CostPhase {
+  phase_name: string;
+  phase_display: string;
+  phase_ordinal: number;
+  wall_time_seconds: number;
+  estimated_cost_usd: number;
+  cost_is_partial: boolean;
+  tokens: CostTokens;
+  skills: CostSkill[];
+}
+
+export interface CostBreakdown {
+  schema_version: number;  // 0 = no data; 1 = populated
+  computed_at?: string;
+  totals: (CostTokens & {
+    wall_time_seconds: number;
+    estimated_cost_usd: number;
+    cost_is_partial: boolean;
+    cache_hit_ratio: number;
+  }) | null;
+  phases: CostPhase[];
+}
+
+export interface CostRollupPhase {
+  phase_name: string;
+  phase_display: string;
+  phase_ordinal: number;
+  wall_time_seconds: number;
+  estimated_cost_usd: number;
+  cost_is_partial: boolean;
+  tokens: CostTokens;
+  session_slugs: string[];
+}
+
+export interface CostRollup {
+  totals: CostTokens & {
+    wall_time_seconds: number;
+    estimated_cost_usd: number;
+    cost_is_partial: boolean;
+    cache_hit_ratio: number;
+  };
+  phases: CostRollupPhase[];
+  session_count: number;
+  sessions_without_breakdown: number;
+}
