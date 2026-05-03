@@ -442,6 +442,11 @@ def list_opp_events_lean(
     Returns ``({skill: JudgeVerdict}, {skill: [GateDecision, ...]})`` —
     same shape the activity feed already consumes via _verdict_events
     and _gate_events.
+
+    Multi-run aware: when the opp has a ``runs/`` subfolder (current
+    ACE-plugin shape), reads ``state.yaml`` and ``verdicts/`` from the
+    latest run instead of the opp root. Without this, new-layout opps
+    silently produce empty timelines.
     """
     # 1. Locate the opp folder
     ace_children = client.list_files(ace_folder_id)
@@ -452,8 +457,26 @@ def list_opp_events_lean(
     # 2. List opp folder top-level (NOT recursive)
     opp_children = client.list_files(opp_folder.id)
 
+    # Multi-run layout: state.yaml and verdicts/ live under runs/<latest>/.
+    # Pick the newest run-folder by name (sorts as string — timestamp run-IDs
+    # are lexicographically newest-first when reversed). Fall through to the
+    # opp root if no usable run is found, matching the flat-layout behaviour.
+    state_source_children: list[DriveFile] = opp_children
+    runs_folder = _find_child_folder(opp_children, "runs")
+    if runs_folder is not None:
+        run_children = client.list_files(runs_folder.id)
+        run_folders = sorted(
+            (c for c in run_children if _is_folder(c)),
+            key=lambda f: f.name, reverse=True,
+        )
+        for rf in run_folders:
+            run_inner = client.list_files(rf.id)
+            if _find_child(run_inner, "state.yaml") is not None:
+                state_source_children = run_inner
+                break
+
     # 3. Read state.yaml → gates
-    state_file = _find_child(opp_children, "state.yaml")
+    state_file = _find_child(state_source_children, "state.yaml")
     state_data: dict = {}
     if state_file is not None:
         try:
@@ -464,7 +487,7 @@ def list_opp_events_lean(
     gates_by_skill = _gates_from_state(state_data)
 
     # 4. Find verdicts/ folder + list its contents
-    verdicts_folder = _find_child_folder(opp_children, "verdicts")
+    verdicts_folder = _find_child_folder(state_source_children, "verdicts")
     verdict_files: list[DriveFile] = []
     if verdicts_folder is not None:
         # Set path on each so _load_verdicts' regex matches "verdicts/<stem>.yaml"
@@ -536,81 +559,67 @@ class OppCard:
 def load_opp_card(
     client: DriveClient,
     *,
-    opp_folder: DriveFile | None = None,
-    opp_children: list[DriveFile] | None = None,
-    ace_root_folder_id: str | None = None,
-    opp_slug: str | None = None,
-) -> OppCard | dict:
-    """Read the subset of ``ACE/<slug>/`` needed for a list card.
-
-    Supports two calling conventions:
-
-    **Legacy** (returns OppCard dataclass)::
-
-        load_opp_card(client, opp_folder=<DriveFile>, opp_children=<list>)
-
-    ``opp_children`` is the caller-provided listing of the opp folder
-    (they already fetched it to decide whether this folder is an opp),
-    so we don't re-list. We only fetch the body of ``state.yaml`` when
-    it's present.
-
-    **New multi-run** (returns dict)::
-
-        load_opp_card(client, ace_root_folder_id=<str>, opp_slug=<str>)
-
-    Reads ``opp.yaml`` for ``display_name``; if the opp has a ``runs/``
-    subfolder, populates ``current_run_id``, ``current_phase``,
-    ``current_step`` from the latest run's ``state.yaml``.
-
-    Handles both flat (state.yaml at root) and legacy (runs/run-001/state.yaml)
-    layouts — the latter requires one extra listing to descend into runs/,
-    acceptable because it's rare and only triggered for pre-refactor opps.
-    """
-    # --- New multi-run path ---
-    if ace_root_folder_id is not None and opp_slug is not None:
-        return _load_opp_card_multi_run(
-            client, ace_root_folder_id=ace_root_folder_id, opp_slug=opp_slug
-        )
-
-    # --- Legacy path (opp_folder + opp_children required) ---
-    assert opp_folder is not None and opp_children is not None, (
-        "load_opp_card requires either (opp_folder, opp_children) or "
-        "(ace_root_folder_id, opp_slug)"
-    )
-    return _load_opp_card_legacy(client, opp_folder=opp_folder, opp_children=opp_children)
-
-
-def _load_opp_card_legacy(
-    client: DriveClient,
-    *,
     opp_folder: DriveFile,
     opp_children: list[DriveFile],
 ) -> OppCard:
-    """Legacy load_opp_card implementation — flat layout, returns OppCard."""
+    """Read the subset of ``ACE/<slug>/`` needed for a list card.
+
+    Handles three Drive layouts in one pass:
+
+    1. **Flat** (pre-2026-05-02): ``state.yaml`` + ``idea.md`` at opp root,
+       with ``verdicts/`` and per-skill subfolders alongside.
+    2. **Legacy multi-run**: ``runs/run-001/state.yaml`` (older convention).
+    3. **Multi-run with timestamp run IDs** (current ACE plugin shape):
+       ``opp.yaml`` at root, ``runs/<YYYYMMDD-HHMM>/{state.yaml,verdicts/,...}``,
+       and inputs/pdd.md as the canonical PDD source.
+
+    ``opp_children`` is the caller-provided listing of the opp folder
+    (they already fetched it to decide whether this folder is an opp),
+    so we don't re-list. We only fetch the body of ``state.yaml`` /
+    ``opp.yaml`` when they're present.
+    """
     slug = opp_folder.name
 
-    state_file = _find_child(opp_children, "state.yaml")
-    latest_run_id: str | None = None
+    # opp.yaml at root carries multi-run-layout metadata (display_name,
+    # created_at, created_by). Absent in flat-layout opps — safe no-op.
+    opp_yaml_data: dict = {}
+    if _find_child(opp_children, "opp.yaml") is not None:
+        opp_yaml_data = _read_opp_yaml(client, opp_folder.id)
+
+    # Locate state.yaml + the folder we'll search for verdicts/.
+    # state.yaml lives next to verdicts/ — root for flat, run folder for
+    # multi-run. Tracking both keeps _load_opp_eval_summary's reads on
+    # the right children list.
+    state_file: DriveFile | None = None
+    state_source_children: list[DriveFile] = opp_children
+    run_count = 1
+    latest_run_name: str | None = None
+
+    runs_folder = _find_child_folder(opp_children, "runs")
+    if runs_folder is not None:
+        run_children = client.list_files(runs_folder.id)
+        run_folders = sorted(
+            (c for c in run_children if _is_folder(c)),
+            key=lambda f: f.name, reverse=True,
+        )
+        if run_folders:
+            run_count = len(run_folders)
+            # Try newest run first; fall through to older runs if newest
+            # has no state.yaml (e.g. a half-initialized run dir).
+            for rf in run_folders:
+                run_inner = client.list_files(rf.id)
+                sf = _find_child(run_inner, "state.yaml")
+                if sf is not None:
+                    state_file = sf
+                    state_source_children = run_inner
+                    latest_run_name = rf.name
+                    break
+
     if state_file is None:
-        runs_folder = _find_child(opp_children, "runs")
-        if runs_folder is not None and _is_folder(runs_folder):
-            run_children = client.list_files(runs_folder.id)
-            # Legacy multi-run shape: runs/run-001/state.yaml
-            run1 = _find_child(run_children, "run-001")
-            if run1 is not None and _is_folder(run1):
-                state_file = _find_child(
-                    client.list_files(run1.id), "state.yaml"
-                )
-            else:
-                # v0.11.0+ multi-run shape: runs/<YYYYMMDD-HHMM>/state.yaml.
-                # Pick the lex-max subfolder (newest by run-id string sort).
-                run_subfolders = [r for r in run_children if _is_folder(r)]
-                if run_subfolders:
-                    latest = max(run_subfolders, key=lambda r: r.name)
-                    latest_run_id = latest.name
-                    state_file = _find_child(
-                        client.list_files(latest.id), "state.yaml"
-                    )
+        # Flat layout: state.yaml at opp root.
+        state_file = _find_child(opp_children, "state.yaml")
+        if state_file is not None:
+            state_source_children = opp_children
 
     state_data: dict = {}
     if state_file is not None:
@@ -619,13 +628,34 @@ def _load_opp_card_legacy(
         except yaml.YAMLError:
             log.warning("state.yaml for %s is not valid YAML", slug)
 
+    # current_run_id: latest run-folder name when multi-run, "r1" when flat
+    # (the synthesised single-run id the frontend payload still expects).
+    current_run_id = latest_run_name or "r1"
+
+    # display_name precedence: opp.yaml (multi-run) → state.yaml → slug.
+    display_name = (
+        opp_yaml_data.get("display_name")
+        or state_data.get("display_name")
+        or slug
+    )
+    created_at = (
+        opp_yaml_data.get("created_at")
+        or state_data.get("started_at")
+        or state_data.get("created")
+    )
+    created_by = (
+        opp_yaml_data.get("created_by")
+        or state_data.get("created_by")
+        or state_data.get("initiated_by")
+    )
+
     opp_manifest = OppManifest(
         slug=slug,
-        display_name=state_data.get("display_name", slug),
-        created_at=state_data.get("started_at") or state_data.get("created"),
-        created_by=state_data.get("created_by") or state_data.get("initiated_by"),
+        display_name=display_name,
+        created_at=created_at,
+        created_by=created_by,
         labels=[],
-        current_run_id=latest_run_id or "r1",
+        current_run_id=current_run_id,
     )
 
     # Gates come for free from state.yaml — no extra Drive call.
@@ -636,80 +666,25 @@ def _load_opp_card_legacy(
         if history and history[-1].decision == "pending"
     )
 
-    # opp-eval verdict — only fetched when the opp has a verdicts/ subfolder
-    # AND that folder contains an opp-eval-*.yaml. This is bounded by the
-    # opp's existing artifact tree, so the marginal cost is zero for opps
-    # that haven't been judged yet.
-    eval_score, eval_passed = _load_opp_eval_summary(client, opp_children)
+    # opp-eval verdict — only fetched when the run/opp has a verdicts/
+    # subfolder AND it contains an opp-eval-*.yaml.
+    eval_score, eval_passed = _load_opp_eval_summary(client, state_source_children)
 
+    # The plugin's state.yaml key names diverged between layouts:
+    # flat opps use ``current_phase`` / ``current_step``; multi-run runs
+    # use ``phase`` / ``step`` (matching ``list_opp_runs``). Accept both
+    # so this card loader works regardless of which the plugin emits.
     return OppCard(
         opp=opp_manifest,
-        current_phase=state_data.get("current_phase"),
-        current_step=state_data.get("current_step"),
+        current_phase=state_data.get("current_phase") or state_data.get("phase"),
+        current_step=state_data.get("current_step") or state_data.get("step"),
         status="ok" if state_file is not None else "no-state",
         pending_gate_skills=pending,
         eval_score=eval_score,
         eval_passed=eval_passed,
         last_activity_at=state_file.modified_time if state_file is not None else None,
+        run_count=run_count,
     )
-
-
-def _load_opp_card_multi_run(
-    client: DriveClient,
-    *,
-    ace_root_folder_id: str,
-    opp_slug: str,
-) -> dict:
-    """Multi-run-aware load_opp_card — returns a plain dict."""
-    opp_folder = _find_child_folder(client.list_folder(ace_root_folder_id), opp_slug)
-    if opp_folder is None:
-        raise FileNotFoundError(f"opp {opp_slug!r} not found under {ace_root_folder_id!r}")
-
-    opp_data = _read_opp_yaml(client, opp_folder.id)
-    display_name = opp_data.get("display_name", opp_slug)
-
-    # Check for multi-run layout (runs/ subfolder).
-    opp_children = client.list_folder(opp_folder.id)
-    runs_folder = _find_child_folder(opp_children, "runs")
-
-    current_run_id: str | None = None
-    current_phase: str | None = None
-    current_step: str | None = None
-
-    run_count: int = 1
-    if runs_folder is not None:
-        run_summaries = list_opp_runs(
-            client,
-            ace_root_folder_id=ace_root_folder_id,
-            opp_slug=opp_slug,
-            opp_children=opp_children,
-        )
-        run_count = len(run_summaries)
-        if run_summaries:
-            latest = run_summaries[0]
-            current_run_id = latest.run_id
-            current_phase = latest.current_phase
-            current_step = latest.current_step
-    else:
-        # Flat layout — read state.yaml from opp root.
-        state_file = _find_child(opp_children, "state.yaml")
-        if state_file is not None:
-            try:
-                state_data = yaml.safe_load(_read_text(client, state_file)) or {}
-            except yaml.YAMLError:
-                state_data = {}
-            current_run_id = "r1"
-            current_phase = state_data.get("current_phase")
-            current_step = state_data.get("current_step")
-
-    return {
-        "slug": opp_slug,
-        "display_name": display_name,
-        "current_run_id": current_run_id,
-        "current_phase": current_phase,
-        "current_step": current_step,
-        "run_count": run_count,
-    }
 
 
 def load_opp_card_by_slug(

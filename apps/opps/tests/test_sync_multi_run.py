@@ -19,9 +19,10 @@ from dataclasses import dataclass
 from apps.opps.drive_client import DriveFile, FileContent
 from apps.opps.sync import (
     OppSnapshot,
+    list_opp_events_lean,
     list_opp_runs,
     load_opp,
-    load_opp_card,
+    load_opp_card_by_slug,
 )
 
 
@@ -230,11 +231,12 @@ def test_list_opp_runs_returns_runs_newest_first():
 
 def test_load_opp_card_uses_opp_yaml_display_name():
     fake = FakeDrive(_build_turmeric_layout())
-    card = load_opp_card(fake, ace_root_folder_id="ACE", opp_slug="turmeric")
-    assert card["slug"] == "turmeric"
-    assert card["display_name"] == "Turmeric Market Survey"
-    assert card["current_run_id"] == "20260502-1830"
-    assert card["current_phase"] == "ocs"
+    card = load_opp_card_by_slug(fake, ace_folder_id="ACE", slug="turmeric")
+    assert card.opp.slug == "turmeric"
+    assert card.opp.display_name == "Turmeric Market Survey"
+    assert card.opp.current_run_id == "20260502-1830"
+    assert card.current_phase == "ocs"
+    assert card.run_count == 2
 
 
 def test_load_opp_returns_default_run_when_no_id_specified():
@@ -269,6 +271,26 @@ def test_load_opp_finds_nested_verdict_artifacts():
     assert idea_step is not None, "idea-to-pdd step not found in run snapshot"
     assert idea_step.judge is not None, "verdict was not attached to idea-to-pdd step"
     assert idea_step.judge.score == 87.0
+
+
+def test_list_opp_events_lean_descends_into_latest_run():
+    """For multi-run-layout opps, state.yaml + verdicts/ live under
+    runs/<latest>/, not at the opp root. The lean event aggregator (used
+    by the activity Timeline) must descend into the latest run so its
+    verdicts and gates show up in the feed.
+    """
+    fake = FakeDrive(_build_turmeric_layout())
+    verdicts_by_skill, gates_by_skill = list_opp_events_lean(
+        fake, ace_folder_id="ACE", slug="turmeric"
+    )
+    assert "idea-to-pdd" in verdicts_by_skill
+    assert verdicts_by_skill["idea-to-pdd"].score == 87.0
+    # PyYAML auto-parses ISO-8601 timestamps into datetime; either string
+    # or datetime is acceptable — the helper just hands the value through.
+    assert verdicts_by_skill["idea-to-pdd"].evaluated_at is not None
+    # The fixture's latest run has gates: {} so gates_by_skill is empty,
+    # but the helper must still return a dict (not raise).
+    assert isinstance(gates_by_skill, dict)
 
 
 def test_serializer_includes_runs_and_selected_run_id(monkeypatch):

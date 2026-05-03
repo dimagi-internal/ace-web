@@ -308,6 +308,79 @@ def web_created_opp_tree() -> dict:
     }
 
 
+def turmeric_multi_run_tree() -> dict:
+    """Multi-run-layout fixture for turmeric — the new ACE-plugin shape
+    (2026-05-02+) where state.yaml, idea.md, verdicts/, and scorecards/
+    all live under ``runs/<timestamp-run-id>/`` instead of at the opp root.
+    Opp root carries ``opp.yaml`` (display_name, slug, created_by) and an
+    optional ``inputs/`` folder for the canonical PDD.
+
+    Two runs: ``20260502-1830`` (newest) is "ocs / ocs-agent-setup" with an
+    idea-to-pdd verdict; ``20260502-1430`` is the older "closeout" run.
+    """
+    return {
+        "ACE": {
+            "turmeric": {
+                "opp.yaml": (
+                    "display_name: Turmeric Market Survey\n"
+                    "slug: turmeric\n"
+                    "created_at: 2026-05-02T14:30:00Z\n"
+                    "created_by: ace@dimagi-ai.com\n"
+                ),
+                "inputs": {
+                    "pdd.md": "# Turmeric PDD\n\nFLWs photograph turmeric vendors.",
+                },
+                "runs": {
+                    "20260502-1830": {
+                        "state.yaml": (
+                            "current_phase: ocs\n"
+                            "current_step: ocs-agent-setup\n"
+                            "mode: review\n"
+                            "started_at: 2026-05-02T18:30:00Z\n"
+                            "initiated_by: ace@dimagi-ai.com\n"
+                            "last_actor: ace@dimagi-ai.com\n"
+                            "last_actor_at: 2026-05-02T18:42:00Z\n"
+                            "gates:\n"
+                            "  idea-to-pdd:\n"
+                            "    decision: approved\n"
+                            "    decided_by: ace@dimagi-ai.com\n"
+                            "    decided_at: 2026-05-02T18:35:30Z\n"
+                            "    note: ''\n"
+                        ),
+                        "idea.md": "Turmeric idea body.",
+                        "verdicts": {
+                            "idea-to-pdd-deep.yaml": (
+                                "skill: idea-to-pdd\n"
+                                "verdict: pass\n"
+                                "overall_score: 87\n"
+                                "evaluated_at: 2026-05-02T18:35:00Z\n"
+                            ),
+                            "opp-eval-deep.yaml": (
+                                "skill: opp-eval\n"
+                                "mode: deep\n"
+                                "overall_score: 84\n"
+                                "verdict: pass\n"
+                                "evaluated_at: 2026-05-02T18:40:00Z\n"
+                            ),
+                        },
+                    },
+                    "20260502-1430": {
+                        "state.yaml": (
+                            "current_phase: closeout\n"
+                            "current_step: cycle-grade\n"
+                            "mode: review\n"
+                            "started_at: 2026-05-02T14:30:00Z\n"
+                            "last_actor: ace@dimagi-ai.com\n"
+                            "last_actor_at: 2026-05-02T16:01:00Z\n"
+                        ),
+                        "idea.md": "Earlier turmeric idea.",
+                    },
+                },
+            }
+        }
+    }
+
+
 def opp_with_scorecard_tree() -> dict:
     """Flat-layout fixture with an opp-eval scorecard, verdict, and trend.
 
