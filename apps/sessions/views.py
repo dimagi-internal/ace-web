@@ -321,3 +321,25 @@ def _not_found() -> Response:
         error_response(message="session not found", code="not_found"),
         status=status.HTTP_404_NOT_FOUND,
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def session_cost_breakdown(request: Request, slug: str) -> Response:
+    """Return the persisted cost breakdown for a session.
+
+    Empty breakdown (legacy upload pre-2026-05-03 or aggregator failure)
+    returns schema_version=0 + null totals + empty phases so the UI can
+    render its 'no cost data' state without a 404 round-trip.
+    """
+    session = _load_session_for_participant(slug, request.user)
+    if session is None:
+        return _not_found()
+    breakdown = session.cost_breakdown or {}
+    if not breakdown:
+        return Response(success_response({
+            "schema_version": 0,
+            "totals": None,
+            "phases": [],
+        }))
+    return Response(success_response(breakdown))
