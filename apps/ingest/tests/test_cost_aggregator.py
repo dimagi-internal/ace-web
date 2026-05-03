@@ -95,3 +95,41 @@ def test_aggregate_orchestration_excludes_sidechain_tokens():
     # behavior the implementation uses and assert it consistently.
     assert orch["tokens"]["input_tokens"] == 100 + 40
     assert orch["tokens"]["output_tokens"] == 50 + 30
+
+
+def test_aggregate_finalizes_interrupted_segment():
+    """tu-interrupted has no matching tool_result. It must still appear,
+    flagged incomplete, with wall_time bounded by last event inside."""
+    from apps.ingest.cost_aggregator import aggregate
+    breakdown = aggregate(_events("cost_session_edge.jsonl"))
+    # Segments still open at end of stream finalize at the last event
+    # observed inside them. The made-up-skill segment opened at e-1
+    # 19:00:00, contained e-2 at 19:00:05, was never closed. Wall time
+    # = 5s, flagged incomplete.
+    skills = [s for p in breakdown["phases"] for s in p["skills"]]
+    interrupted = next((s for s in skills if s["skill_name"] == "ace:made-up-skill"), None)
+    assert interrupted is not None
+    assert interrupted["invocations"][0]["wall_time_seconds"] == 5
+    assert interrupted["invocations"][0].get("incomplete") is True
+
+
+def test_aggregate_unknown_model_marks_segment_partial():
+    from apps.ingest.cost_aggregator import aggregate
+    breakdown = aggregate(_events("cost_session_edge.jsonl"))
+    skills = [s for p in breakdown["phases"] for s in p["skills"]]
+    unknown = next(s for s in skills if s["skill_name"] == "ace:does-not-exist")
+    # The inner turn used "some-future-model" which is unpriced.
+    assert unknown["cost_is_partial"] is True
+    # And totals flag the same.
+    assert breakdown["totals"]["cost_is_partial"] is True
+
+
+def test_aggregate_unknown_skill_name_still_appears():
+    """Unknown skills (not in apps/system registry) appear under _other.
+    Phase 7 wiring will route known skills elsewhere; here we just verify
+    both unknown skills landed."""
+    from apps.ingest.cost_aggregator import aggregate
+    breakdown = aggregate(_events("cost_session_edge.jsonl"))
+    all_skill_names = {s["skill_name"] for p in breakdown["phases"] for s in p["skills"]}
+    assert "ace:made-up-skill" in all_skill_names
+    assert "ace:does-not-exist" in all_skill_names

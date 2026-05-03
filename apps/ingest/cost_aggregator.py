@@ -65,6 +65,7 @@ def _finalize(seg: _OpenSegment) -> dict[str, Any]:
         "tokens": seg.tokens,
         "estimated_cost_usd": round(seg.cost_resolved, 6),
         "cost_is_partial": seg.cost_is_partial,
+        "incomplete": False,
     }
 
 
@@ -226,6 +227,14 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                         orchestration_first_ts = event.timestamp
                     orchestration_last_ts = event.timestamp
             continue
+
+    # Finalize segments still open at end of stream — interrupted/crashed
+    # runs. Flag with incomplete=True so the UI can render "(interrupted)".
+    while open_segments:
+        seg = open_segments.pop()
+        finalized = _finalize(seg)
+        finalized["incomplete"] = True
+        invocations_by_skill[("_other", seg.skill_name)].append(finalized)
 
     # Build per-skill summaries grouped by phase.
     phase_skills: dict[str, list[dict[str, Any]]] = defaultdict(list)
