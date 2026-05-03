@@ -119,14 +119,31 @@ export default function OppListPage() {
     );
   };
 
-  if (state.kind === "loading") return <LoadingSpinner label="Loading opportunities…" />;
-  if (state.kind === "error") return <ErrorState message={state.message} onRetry={load} />;
+  // Only the Hierarchy view depends on the opp list; Timeline and Flow
+  // render their own data and shouldn't be gated on Drive listing
+  // 18 opps (a 30+ second cold-cache hit). For non-hierarchy views,
+  // fall through and render the page chrome + body immediately.
+  if (view === "hierarchy") {
+    if (state.kind === "loading")
+      return <LoadingSpinner label="Loading opportunities…" />;
+    if (state.kind === "error")
+      return <ErrorState message={state.message} onRetry={load} />;
+  }
+  // For non-hierarchy views, error state still surfaces (so the user
+  // sees something is wrong) but loading state is silent — the view's
+  // own loading indicator covers it.
+  if (state.kind === "error" && view !== "hierarchy") {
+    // Show the error inline above the view, not full-page, so the
+    // switcher stays usable.
+  }
 
   return (
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-6 py-4">
         <h1 className="text-xl font-semibold text-foreground">Opportunities</h1>
-        <span className="text-sm text-muted-foreground">{state.opps.length} total</span>
+        <span className="text-sm text-muted-foreground">
+          {state.kind === "loaded" ? `${state.opps.length} total` : "loading…"}
+        </span>
 
         {needsReviewCount > 0 && (
           <button
