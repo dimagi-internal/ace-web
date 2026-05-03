@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { AlertCircle, ArrowDownUp, GitCompareArrows, Plus, Trash2, X } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
+import { AlertCircle, ArrowDownUp, ChevronDown, ChevronRight, GitCompareArrows, Plus, Trash2, X } from "lucide-react";
 
 import { listOpps } from "../api/opps";
 import type { OppCard } from "../api/types";
@@ -8,6 +8,10 @@ import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/Loadi
 import { CompareWithDialog } from "../components/opps/CompareWithDialog";
 import { DeleteOppDialog } from "../components/opps/DeleteOppDialog";
 import { NewOppDialog } from "../components/opps/NewOppDialog";
+import { OppChatChildren } from "../components/views/hierarchy/OppChatChildren";
+import { PlaceholderView } from "../components/views/PlaceholderView";
+import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
+import { useViewMode } from "../hooks/useViewMode";
 import { relativeTime } from "../lib/relativeTime";
 import { Button } from "@/components/ui/button";
 
@@ -34,7 +38,24 @@ const STATUS_RANK: Record<string, number> = {
   ok: 2,
 };
 
+// Workspace-wide view tabs. Flow is disabled at this scope — it's per-opp
+// only — but rendered so users can SEE that other modes exist; clicking
+// it shows a tooltip explaining why it's not active here. Hierarchy is
+// the default; Timeline ships in a follow-up sprint.
+const VIEW_TABS: ViewTab[] = [
+  { kind: "hierarchy", label: "Hierarchy" },
+  {
+    kind: "flow",
+    label: "Flow",
+    disabled: true,
+    disabledReason: "Open an opp to see its flow view",
+  },
+  { kind: "timeline", label: "Timeline" },
+];
+
 export default function OppListPage() {
+  const { workspaceSlug = "" } = useParams<{ workspaceSlug?: string }>();
+  const { view, setView } = useViewMode("hierarchy");
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [filter, setFilter] = useState("");
   const [tagFilter, setTagFilter] = useState<string[]>([]);
@@ -43,6 +64,19 @@ export default function OppListPage() {
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<OppCard | null>(null);
   const [compareSource, setCompareSource] = useState<OppCard | null>(null);
+  // Per-opp expansion state for the Hierarchy view's chat-children. Lives
+  // in component state (not URL) — bookmarking a specific expanded
+  // opp would be over-engineered for v1; users re-expand on visit.
+  const [expandedOpps, setExpandedOpps] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (slug: string) => {
+    setExpandedOpps((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+  };
 
   const load = useCallback(() => {
     setState({ kind: "loading" });
@@ -168,6 +202,7 @@ export default function OppListPage() {
           </Button>
         </div>
       </header>
+      <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
       <NewOppDialog open={newDialogOpen} onOpenChange={setNewDialogOpen} />
       {deleteTarget && (
         <DeleteOppDialog
@@ -190,7 +225,9 @@ export default function OppListPage() {
         />
       )}
 
-      {visibleOpps.length === 0 ? (
+      {view === "timeline" && <PlaceholderView kind="timeline" />}
+      {view === "flow" && <PlaceholderView kind="flow" />}
+      {view === "hierarchy" && (visibleOpps.length === 0 ? (
         filter || needsReviewOnly ? (
           <EmptyState
             title={
@@ -222,18 +259,39 @@ export default function OppListPage() {
         )
       ) : (
         <div className="grid grid-cols-1 gap-3 p-6 md:grid-cols-2 xl:grid-cols-3">
-          {visibleOpps.map((opp) => (
+          {visibleOpps.map((opp) => {
+            const isExpanded = expandedOpps.has(opp.slug);
+            return (
+            <div key={opp.slug} className="overflow-hidden rounded border border-border bg-card transition hover:border-primary">
             <Link
-              key={opp.slug}
               to={`/opps/${opp.slug}`}
-              className="group rounded border border-border bg-card p-4 transition hover:border-primary"
+              className="group block p-4"
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h2 className="truncate font-semibold text-foreground group-hover:text-primary">
-                    {opp.display_name || opp.slug}
-                  </h2>
-                  <div className="truncate text-xs text-muted-foreground">{opp.slug}</div>
+                <div className="flex min-w-0 items-start gap-1.5">
+                  <button
+                    type="button"
+                    aria-label={isExpanded ? `Collapse ${opp.slug} chats` : `Show chats linked to ${opp.slug}`}
+                    title={isExpanded ? "Hide linked chats" : "Show linked chats"}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleExpanded(opp.slug);
+                    }}
+                    className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <div className="min-w-0">
+                    <h2 className="truncate font-semibold text-foreground group-hover:text-primary">
+                      {opp.display_name || opp.slug}
+                    </h2>
+                    <div className="truncate text-xs text-muted-foreground">{opp.slug}</div>
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
@@ -351,9 +409,14 @@ export default function OppListPage() {
                 </div>
               )}
             </Link>
-          ))}
+            {isExpanded && workspaceSlug && (
+              <OppChatChildren oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
+            )}
+            </div>
+            );
+          })}
         </div>
-      )}
+      ))}
     </div>
   );
 }
