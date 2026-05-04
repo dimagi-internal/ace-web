@@ -22,3 +22,17 @@ export function formatTokens(n: number): string {
 export function formatCacheHitRatio(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;
 }
+
+export interface CostTokenBreakdown {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+}
+
+/** Sum across input + output + cache_creation + cache_read. */
+export function totalTokens(t: CostTokenBreakdown): number {
+  return (
+    t.input_tokens + t.output_tokens + t.cache_creation_tokens + t.cache_read_tokens
+  );
+}

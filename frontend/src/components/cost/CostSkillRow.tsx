@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 
 import type { CostSkill } from "../../api/types";
 import { CostInvocationRow } from "./CostInvocationRow";
-import { formatDuration, formatTokens, formatUsd } from "./format";
+import { formatDuration, formatTokens, formatUsd, totalTokens } from "./format";
 
 interface Props {
   skill: CostSkill;
@@ -38,7 +38,12 @@ export function CostSkillRow({ skill }: Props) {
         </td>
         <td className="py-1.5">{formatDuration(skill.wall_time_seconds)}</td>
         <td className="py-1.5">{formatUsd(skill.estimated_cost_usd, skill.cost_is_partial)}</td>
-        <td className="py-1.5">{formatTokens(skill.tokens.output_tokens)}</td>
+        <td
+          className="py-1.5 tabular-nums"
+          title={`${skill.tokens.input_tokens.toLocaleString()} input · ${skill.tokens.output_tokens.toLocaleString()} output · ${skill.tokens.cache_creation_tokens.toLocaleString()} cache write · ${skill.tokens.cache_read_tokens.toLocaleString()} cache read`}
+        >
+          {formatTokens(totalTokens(skill.tokens))}
+        </td>
         <td className="py-1.5">{Math.round(hit * 100)}%</td>
       </tr>
       {open

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { getSessionCostBreakdown } from "../../api/costs";
 import type { CostBreakdown } from "../../api/types";
 import { CostPhaseRow } from "./CostPhaseRow";
-import { formatCacheHitRatio, formatDuration, formatUsd } from "./format";
+import { formatCacheHitRatio, formatDuration, formatTokens, formatUsd, totalTokens } from "./format";
 
 interface Props {
   slug: string;
@@ -58,6 +58,10 @@ export function CostTimingTab({ slug }: Props) {
           <div className="text-muted-foreground text-xs uppercase">Cost</div>
           <div className="text-lg font-medium">{formatUsd(t.estimated_cost_usd, t.cost_is_partial)}</div>
         </div>
+        <div title={`${t.input_tokens.toLocaleString()} input · ${t.output_tokens.toLocaleString()} output · ${t.cache_creation_tokens.toLocaleString()} cache write · ${t.cache_read_tokens.toLocaleString()} cache read`}>
+          <div className="text-muted-foreground text-xs uppercase">Tokens</div>
+          <div className="text-lg font-medium tabular-nums">{formatTokens(totalTokens(t))}</div>
+        </div>
         <div>
           <div className="text-muted-foreground text-xs uppercase">Cache hit</div>
           <div className="text-lg font-medium">{formatCacheHitRatio(t.cache_hit_ratio)}</div>
@@ -69,7 +73,7 @@ export function CostTimingTab({ slug }: Props) {
             <th className="pl-2 py-2">Phase / skill</th>
             <th className="py-2">Wall</th>
             <th className="py-2">Cost</th>
-            <th className="py-2">Output tokens</th>
+            <th className="py-2">Tokens</th>
             <th className="py-2">Cache %</th>
           </tr>
         </thead>
