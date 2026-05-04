@@ -14,11 +14,19 @@ export function ThemeToggle() {
     }
   };
 
+  const nextTheme = theme === "dark" ? "light" : "dark";
+  const label = `Switch to ${nextTheme} theme`;
   return (
-    <Button variant="ghost" size="icon" onClick={toggleTheme}>
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={toggleTheme}
+      aria-label={label}
+      title={label}
+    >
       <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
       <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-      <span className="sr-only">Toggle theme</span>
+      <span className="sr-only">{label}</span>
     </Button>
   );
 }
