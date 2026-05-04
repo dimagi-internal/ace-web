@@ -319,10 +319,19 @@ export default function OppListPage() {
                     )}
                   </button>
                   <div className="min-w-0">
-                    <h2 className="truncate font-semibold text-foreground group-hover:text-primary">
+                    <h2
+                      className="truncate font-semibold text-foreground group-hover:text-primary"
+                      title={
+                        opp.created_at
+                          ? `${opp.display_name || opp.slug}\nCreated ${new Date(opp.created_at).toLocaleString()}${opp.created_by ? " by " + opp.created_by : ""}`
+                          : opp.display_name || opp.slug
+                      }
+                    >
                       {opp.display_name || opp.slug}
                     </h2>
-                    <div className="truncate text-xs text-muted-foreground">{opp.slug}</div>
+                    <div className="truncate text-xs text-muted-foreground" title={opp.slug}>
+                      {opp.slug}
+                    </div>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -549,11 +558,11 @@ function ScoreChip({
   const verb = passed === true ? "passed" : passed === false ? "failed" : "scored";
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
       title={`opp-eval ${verb}: ${Math.round(scorePct)}/100`}
     >
       <span aria-hidden="true">{glyph}</span>
-      <span>{Math.round(scorePct)}/100 {verb}</span>
+      <span>{Math.round(scorePct)}/100</span>
     </span>
   );
 }

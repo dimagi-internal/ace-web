@@ -81,15 +81,14 @@ export function SkillList({
         if (phaseSteps.length === 0) return null;
         return (
           <section key={phase.name} className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <span className="h-0.5 w-2 bg-muted-foreground" />
+            <div className="flex items-baseline gap-2">
               <h3 className="text-xs font-semibold text-foreground/80">
                 Phase {phase.ordinal} · {phase.display_name}
                 <span className="ml-1.5 font-normal text-muted-foreground">
                   · {phaseSteps.length} {phaseSteps.length === 1 ? "step" : "steps"}
                 </span>
               </h3>
-              <span className="h-px flex-1 bg-border" />
+              <span aria-hidden className="h-px flex-1 bg-border" />
             </div>
             <div className="flex flex-col gap-0.5">
               {phaseSteps.map((step) => (
@@ -127,8 +126,7 @@ export function SkillList({
           phaseSteps.sort((a, b) => a.ordinal - b.ordinal);
           return (
             <section key={`legacy-${phaseName}`} className="flex flex-col gap-1 opacity-75">
-              <div className="flex items-center gap-2">
-                <span className="h-0.5 w-2 bg-amber-500/60" />
+              <div className="flex items-baseline gap-2">
                 <h3 className="text-xs font-semibold text-amber-500/80">
                   Legacy · {phaseName}
                   <span className="ml-1.5 font-normal text-amber-500/60">
@@ -136,7 +134,7 @@ export function SkillList({
                     {phaseSteps.length === 1 ? "step" : "steps"}
                   </span>
                 </h3>
-                <span className="h-px flex-1 bg-border" />
+                <span aria-hidden className="h-px flex-1 bg-border" />
               </div>
               <div className="flex flex-col gap-0.5">
                 {phaseSteps.map((step) => (
