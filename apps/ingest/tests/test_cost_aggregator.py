@@ -188,12 +188,63 @@ def test_aggregate_labels_known_skills_with_phase_from_registry(monkeypatch):
     assert "ace:idea-to-pdd" in dr_skill_names
     assert "ace:design-review" in dr_skill_names
 
-    # Neither skill should appear under _other.
-    other = next((p for p in breakdown["phases"] if p["phase_name"] == "_other"), None)
-    if other is not None:
-        other_skill_names = {s["skill_name"] for s in other["skills"]}
-        assert "ace:idea-to-pdd" not in other_skill_names
-        assert "ace:design-review" not in other_skill_names
+
+def test_aggregate_attributes_post_dispatch_orchestration_to_current_phase(monkeypatch):
+    """Orchestration turns AFTER a phase has been dispatched roll into that
+    phase as a synthetic '(orchestration)' skill row.
+
+    In the cost_session.jsonl fixture, u-12 is a pure-text orchestration turn
+    that fires AFTER all skill/agent dispatches close. With the registry
+    mapping the dispatched skills to 'design-review', u-12's tokens (40/30/
+    0/4300) should land under design-review as '(orchestration)'.
+
+    u-1, by contrast, is BEFORE any dispatch — current_phase is still None,
+    so it stays in the global _orchestration bucket (genuine setup work).
+    """
+    from apps.ingest import cost_aggregator
+
+    fake_registry = {
+        "ace:idea-to-pdd": {
+            "phase": "design-review",
+            "phase_display": "Phase 1: Design Review",
+            "phase_ordinal": 1,
+        },
+        "ace:design-review": {
+            "phase": "design-review",
+            "phase_display": "Phase 1: Design Review",
+            "phase_ordinal": 1,
+        },
+    }
+    monkeypatch.setattr(cost_aggregator, "_skill_phase_index", lambda: fake_registry)
+
+    breakdown = cost_aggregator.aggregate(_events())
+
+    # u-1 (pre-dispatch setup) goes into the global _orchestration bucket.
+    orch = next(p for p in breakdown["phases"] if p["phase_name"] == "_orchestration")
+    assert orch["tokens"]["input_tokens"] == 100  # u-1 only
+    assert orch["tokens"]["output_tokens"] == 50
+
+    # u-12 (post-dispatch) goes into design-review as a synthetic skill.
+    dr = next(p for p in breakdown["phases"] if p["phase_name"] == "design-review")
+    orch_skill = next(
+        (s for s in dr["skills"] if s["skill_name"] == "(orchestration)"), None
+    )
+    assert orch_skill is not None, "Expected a '(orchestration)' synthetic skill in design-review"
+    assert orch_skill["invocation_count"] == 1
+    assert orch_skill["tokens"]["input_tokens"] == 40
+    assert orch_skill["tokens"]["output_tokens"] == 30
+    assert orch_skill["tokens"]["cache_read_tokens"] == 4300
+
+
+def test_aggregate_no_phase_orchestration_when_registry_empty(no_registry):
+    """When the registry is empty, no skill maps to a phase, so current_phase
+    never updates from None — all orchestration stays in the global
+    _orchestration bucket. No '(orchestration)' synthetic skill anywhere."""
+    from apps.ingest.cost_aggregator import aggregate
+    breakdown = aggregate(_events())
+    for ph in breakdown["phases"]:
+        names = {s["skill_name"] for s in ph["skills"]}
+        assert "(orchestration)" not in names
 
 
 def test_aggregate_unknown_skill_falls_back_to_other(monkeypatch):

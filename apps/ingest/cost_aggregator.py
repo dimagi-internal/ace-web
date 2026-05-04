@@ -128,6 +128,18 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     orchestration_first_ts: datetime | None = None
     orchestration_last_ts: datetime | None = None
 
+    # Per-phase orchestrator-thinking buckets. An orchestration assistant turn
+    # (no enclosing segment, not sidechain) is attributed to the most-recently-
+    # dispatched phase if any — i.e., the orchestrator was just doing work
+    # "for" Phase X. Before any dispatch fires, current_phase is None and the
+    # turn falls into the global _orchestration bucket (genuine setup work).
+    current_phase: str | None = None
+    phase_orch_tokens: dict[str, dict[str, int]] = defaultdict(_empty_tokens)
+    phase_orch_cost: dict[str, float] = defaultdict(float)
+    phase_orch_cost_partial: dict[str, bool] = defaultdict(bool)
+    phase_orch_first_ts: dict[str, datetime] = {}
+    phase_orch_last_ts: dict[str, datetime] = {}
+
     open_segments: list[_OpenSegment] = []
 
     # Build ancestry index: every event uuid → its parent_uuid.
@@ -164,6 +176,13 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 or (event.tool_input or {}).get("subagent_type")
                 or "(unknown)"
             )
+            # Update current_phase cursor: the orchestrator is now (and
+            # subsequent orchestration turns belong to) the phase this skill
+            # maps to. Unknown skills don't update the cursor — they leave it
+            # pointing at the previous phase.
+            registry_entry = phase_index.get(skill_name)
+            if registry_entry is not None:
+                current_phase = registry_entry["phase"]
             seg = _OpenSegment(
                 skill_name=skill_name,
                 tool_use_id=event.tool_use_id or "",
@@ -233,6 +252,19 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     target_seg.cost_resolved += cost
                 if event.timestamp is not None:
                     target_seg.last_ts = event.timestamp
+            elif current_phase is not None:
+                # Orchestration thinking after at least one phase has been
+                # entered: attribute to that phase. Surfaces in the phase row
+                # as a synthetic "(orchestration)" skill.
+                _add_usage(phase_orch_tokens[current_phase], event.usage)
+                if cost is None:
+                    phase_orch_cost_partial[current_phase] = True
+                else:
+                    phase_orch_cost[current_phase] += cost
+                if event.timestamp is not None:
+                    if current_phase not in phase_orch_first_ts:
+                        phase_orch_first_ts[current_phase] = event.timestamp
+                    phase_orch_last_ts[current_phase] = event.timestamp
             else:
                 _add_usage(orchestration_tokens, event.usage)
                 if cost is None:
@@ -287,6 +319,33 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         phase_cost[phase_name] += cost_sum
         phase_cost_partial[phase_name] = phase_cost_partial[phase_name] or cost_partial
         phase_wall[phase_name] += wall_sum
+
+    # Inject phase-orchestration as a synthetic skill row in each phase that
+    # has any. Surfaces orchestrator thinking ("(orchestration)") alongside
+    # the real skills so the phase totals add up to skills + orchestration.
+    for phase_name, tokens in phase_orch_tokens.items():
+        if not any(tokens.values()):
+            continue
+        wall = _wall_time_seconds(
+            phase_orch_first_ts.get(phase_name),
+            phase_orch_last_ts.get(phase_name),
+        )
+        cost = phase_orch_cost[phase_name]
+        partial = phase_orch_cost_partial[phase_name]
+        phase_skills[phase_name].append({
+            "skill_name": "(orchestration)",
+            "invocation_count": 1,
+            "wall_time_seconds": wall,
+            "estimated_cost_usd": round(cost, 6),
+            "cost_is_partial": partial,
+            "tokens": dict(tokens),
+            "invocations": [],
+        })
+        for k in tokens:
+            phase_tokens[phase_name][k] += tokens[k]
+        phase_cost[phase_name] += cost
+        phase_cost_partial[phase_name] = phase_cost_partial[phase_name] or partial
+        phase_wall[phase_name] += wall
 
     # Build a phase meta index from the registry for display/ordinal lookups.
     # {phase_name: (phase_display, phase_ordinal)}
