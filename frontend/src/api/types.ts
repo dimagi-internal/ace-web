@@ -376,6 +376,7 @@ export interface CostInvocation {
 
 export interface CostSkill {
   skill_name: string;
+  skill_display?: string;
   invocation_count: number;
   wall_time_seconds: number;
   estimated_cost_usd: number;

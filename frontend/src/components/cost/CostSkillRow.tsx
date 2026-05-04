@@ -30,7 +30,7 @@ export function CostSkillRow({ skill }: Props) {
             ) : (
               <span className="w-3" />
             )}
-            <span>{skill.skill_name}</span>
+            <span>{skill.skill_display ?? skill.skill_name}</span>
             {expandable ? (
               <span className="text-xs text-muted-foreground">×{skill.invocation_count}</span>
             ) : null}
