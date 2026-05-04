@@ -68,7 +68,20 @@ export function SkillRow({ step, isSelected, priorRunStep, onClick }: Props) {
 
 function StatusDot({ status }: { status: string }) {
   const color = statusColor(status);
-  return <span className={`w-3 shrink-0 text-center text-[11px] ${color}`}>{statusGlyph(status)}</span>;
+  const label = statusLabel(status);
+  return (
+    <span
+      className={`w-3 shrink-0 text-center text-[11px] ${color}`}
+      // Pair the color-only glyph with a tooltip word so the status is
+      // legible to screen readers and color-blind users; AT users can't
+      // distinguish red ✗ from amber ⚠ on color alone.
+      title={label}
+      aria-label={label}
+      role="img"
+    >
+      {statusGlyph(status)}
+    </span>
+  );
 }
 
 function statusGlyph(status: string): string {
@@ -79,6 +92,18 @@ function statusGlyph(status: string): string {
   if (status === "error") return "✗";
   if (status === "skipped") return "—";
   return "○";
+}
+
+function statusLabel(status: string): string {
+  if (status === "complete") return "complete";
+  if (status === "running") return "running";
+  if (status === "judge-fail") return "judge failed";
+  if (status === "gate-pending") return "gate awaiting review";
+  if (status === "gate-rejected") return "gate rejected";
+  if (status === "error") return "error";
+  if (status === "skipped") return "skipped";
+  if (status === "pending") return "pending";
+  return status;
 }
 
 function statusColor(status: string): string {
