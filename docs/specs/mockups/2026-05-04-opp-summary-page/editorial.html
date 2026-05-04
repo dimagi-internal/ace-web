@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en" class="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Turmeric Supplementation Pilot — Run Summary</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..900&family=Geist+Mono:wght@300..700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Geist', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['Geist Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    :root {
+      --bg: oklch(0.99 0 0);
+      --fg: oklch(0.145 0 0);
+      --card: oklch(1 0 0);
+      --muted: oklch(0.97 0 0);
+      --muted-fg: oklch(0.556 0 0);
+      --border: oklch(0.922 0 0);
+      --accent: oklch(0.55 0.15 50);     /* warm amber-ish, evokes turmeric */
+      --status-ok: oklch(0.723 0.191 149.579);
+      --status-warn: oklch(0.795 0.184 86.047);
+    }
+    .dark {
+      --bg: oklch(0.145 0 0);
+      --fg: oklch(0.985 0 0);
+      --card: oklch(0.205 0 0);
+      --muted: oklch(0.235 0 0);
+      --muted-fg: oklch(0.7 0 0);
+      --border: oklch(0.295 0 0);
+      --accent: oklch(0.7 0.16 60);
+    }
+    body { background: var(--bg); color: var(--fg); font-family: 'Geist', sans-serif; -webkit-font-smoothing: antialiased; }
+    .surface { background: var(--card); border-color: var(--border); }
+    .muted { background: var(--muted); }
+    .muted-fg { color: var(--muted-fg); }
+    .border-soft { border-color: var(--border); }
+    .accent-fg { color: var(--accent); }
+    .accent-bg  { background: var(--accent); }
+    .status-ok-bg { background: var(--status-ok); }
+
+    /* hero gradient — warm, restrained */
+    .hero {
+      background:
+        radial-gradient(1200px 400px at 20% -10%, color-mix(in oklch, var(--accent) 12%, transparent), transparent 60%),
+        radial-gradient(800px 300px at 90% 0%, color-mix(in oklch, var(--accent) 8%, transparent), transparent 60%);
+    }
+    .grid-faint {
+      background-image:
+        linear-gradient(to right, color-mix(in oklch, var(--fg) 4%, transparent) 1px, transparent 1px),
+        linear-gradient(to bottom, color-mix(in oklch, var(--fg) 4%, transparent) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+
+    /* live status dot */
+    .pulse-dot {
+      position: relative;
+      width: 8px; height: 8px; border-radius: 9999px;
+      background: var(--status-ok);
+    }
+    .pulse-dot::after {
+      content: ''; position: absolute; inset: -6px; border-radius: 9999px;
+      background: var(--status-ok); opacity: 0.35; animation: pulse 1.6s ease-out infinite;
+    }
+    @keyframes pulse { 0% { transform: scale(0.6); opacity: 0.4; } 100% { transform: scale(1.5); opacity: 0; } }
+
+    /* link affordance */
+    .link-arrow { transition: transform .18s ease; display: inline-block; }
+    a:hover .link-arrow { transform: translateX(3px); }
+    .card-hover { transition: transform .2s ease, box-shadow .2s ease; }
+    .card-hover:hover { transform: translateY(-1px); box-shadow: 0 6px 24px -8px color-mix(in oklch, var(--fg) 18%, transparent); }
+
+    /* mock chatbot */
+    .bubble-user { background: var(--muted); color: var(--fg); border-radius: 14px 14px 4px 14px; }
+    .bubble-bot { background: color-mix(in oklch, var(--accent) 8%, var(--card)); color: var(--fg); border-radius: 14px 14px 14px 4px; border: 1px solid color-mix(in oklch, var(--accent) 22%, var(--border)); }
+  </style>
+</head>
+<body class="min-h-screen">
+  <!-- top utility bar (intentionally tiny) -->
+  <div class="border-b border-soft">
+    <div class="mx-auto max-w-3xl px-6 py-3 flex items-center justify-between text-xs muted-fg">
+      <div class="font-mono tracking-tight">turmeric-supplementation-pilot · run 20260415-1430</div>
+      <div class="flex items-center gap-3">
+        <a href="#" class="hover:underline">Share link</a>
+        <button id="theme-toggle" class="rounded-md border border-soft px-2 py-1 hover:muted">Toggle theme</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- hero -->
+  <header class="hero border-b border-soft">
+    <div class="mx-auto max-w-3xl px-6 pt-16 pb-14">
+      <div class="flex items-center gap-2 text-xs uppercase tracking-[0.18em] muted-fg mb-6">
+        <span class="pulse-dot"></span>
+        <span>Active · ends June 15, 2026</span>
+      </div>
+      <h1 class="text-5xl md:text-6xl font-semibold tracking-tight leading-[1.05]">
+        Turmeric Supplementation
+        <span class="muted-fg block text-3xl md:text-4xl mt-2 font-normal">A maternal-health pilot in two districts of Bihar.</span>
+      </h1>
+      <p class="mt-8 max-w-2xl text-lg leading-relaxed muted-fg">
+        Three months of FLW-led visits delivering turmeric supplementation counseling and adherence checks to 240
+        pregnant women across four PHCs. This page is the public summary of what was built — the apps, the
+        opportunity, the training pack, and the support assistant.
+      </p>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-3xl px-6 py-14 space-y-20">
+
+    <!-- ── Apps ──────────────────────────────────────────────── -->
+    <section>
+      <div class="flex items-baseline justify-between mb-6">
+        <h2 class="text-2xl font-semibold tracking-tight">CommCare apps</h2>
+        <span class="text-xs uppercase tracking-wider muted-fg">2 published</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <a class="surface border border-soft rounded-2xl p-5 card-hover block" href="#">
+          <div class="text-xs uppercase tracking-wider muted-fg mb-3">Learn app</div>
+          <div class="text-lg font-medium mb-1">Turmeric Onboarding</div>
+          <div class="text-sm muted-fg">5 modules · 12 forms · passing score 80</div>
+          <div class="mt-5 flex items-center gap-3 text-sm">
+            <span class="inline-flex items-center gap-1 accent-fg">Open in Nova <span class="link-arrow">→</span></span>
+            <span class="muted-fg">·</span>
+            <a class="hover:underline muted-fg" href="#">CommCare HQ build</a>
+          </div>
+        </a>
+        <a class="surface border border-soft rounded-2xl p-5 card-hover block" href="#">
+          <div class="text-xs uppercase tracking-wider muted-fg mb-3">Deliver app</div>
+          <div class="text-lg font-medium mb-1">Turmeric Visit</div>
+          <div class="text-sm muted-fg">3 forms · 1 delivery unit · GPS + photo verified</div>
+          <div class="mt-5 flex items-center gap-3 text-sm">
+            <span class="inline-flex items-center gap-1 accent-fg">Open in Nova <span class="link-arrow">→</span></span>
+            <span class="muted-fg">·</span>
+            <a class="hover:underline muted-fg" href="#">CommCare HQ build</a>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <!-- ── Connect opportunity ───────────────────────────────── -->
+    <section>
+      <div class="flex items-baseline justify-between mb-6">
+        <h2 class="text-2xl font-semibold tracking-tight">Connect opportunity</h2>
+        <span class="text-xs uppercase tracking-wider muted-fg">Live</span>
+      </div>
+      <a href="#" class="surface border border-soft rounded-2xl p-6 card-hover block">
+        <div class="flex flex-wrap items-start justify-between gap-6">
+          <div>
+            <div class="text-lg font-medium">Turmeric Supplementation · Bihar 2026</div>
+            <div class="text-sm muted-fg mt-1">Program: Maternal Supplementation 2026 · 240 visits · 4 PHCs</div>
+            <div class="text-sm muted-fg mt-1 font-mono">opp_id: 4f9c…b821</div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs uppercase tracking-wider muted-fg mb-1">Schedule</div>
+            <div class="text-sm">Apr 15 – Jun 15, 2026</div>
+            <div class="mt-3 text-sm accent-fg inline-flex items-center gap-1">
+              View on Connect <span class="link-arrow">→</span>
+            </div>
+          </div>
+        </div>
+      </a>
+    </section>
+
+    <!-- ── Training materials ─────────────────────────────────── -->
+    <section>
+      <div class="flex items-baseline justify-between mb-6">
+        <h2 class="text-2xl font-semibold tracking-tight">Training pack</h2>
+        <span class="text-xs uppercase tracking-wider muted-fg">5 documents</span>
+      </div>
+
+      <!-- deck as hero -->
+      <a href="#" class="surface border border-soft rounded-2xl p-6 card-hover block mb-4 relative overflow-hidden">
+        <div class="absolute inset-0 grid-faint opacity-30 pointer-events-none"></div>
+        <div class="relative flex items-center gap-5">
+          <div class="w-24 h-16 rounded-md border border-soft muted flex items-center justify-center text-xs muted-fg">
+            <span class="font-mono">.slides</span>
+          </div>
+          <div class="flex-1">
+            <div class="text-xs uppercase tracking-wider muted-fg mb-1">Recordable training deck</div>
+            <div class="text-lg font-medium">FLW Training · Turmeric Supplementation</div>
+            <div class="text-sm muted-fg mt-1">28 slides · LLO can record directly in Slides</div>
+          </div>
+          <div class="text-sm accent-fg inline-flex items-center gap-1">Open <span class="link-arrow">→</span></div>
+        </div>
+      </a>
+
+      <!-- doc list -->
+      <ul class="surface border border-soft rounded-2xl divide-y divide-[color:var(--border)] overflow-hidden">
+        <li><a href="#" class="flex items-center justify-between px-5 py-4 hover:muted">
+          <span><span class="text-sm font-medium">LLO manager guide</span><span class="muted-fg text-sm"> · for the program manager overseeing FLWs</span></span>
+          <span class="text-sm accent-fg inline-flex items-center gap-1">Open <span class="link-arrow">→</span></span>
+        </a></li>
+        <li><a href="#" class="flex items-center justify-between px-5 py-4 hover:muted">
+          <span><span class="text-sm font-medium">FLW training guide</span><span class="muted-fg text-sm"> · step-by-step using Learn + Deliver</span></span>
+          <span class="text-sm accent-fg inline-flex items-center gap-1">Open <span class="link-arrow">→</span></span>
+        </a></li>
+        <li><a href="#" class="flex items-center justify-between px-5 py-4 hover:muted">
+          <span><span class="text-sm font-medium">Quick reference card</span><span class="muted-fg text-sm"> · single-page laminated pocket card</span></span>
+          <span class="text-sm accent-fg inline-flex items-center gap-1">Open <span class="link-arrow">→</span></span>
+        </a></li>
+        <li><a href="#" class="flex items-center justify-between px-5 py-4 hover:muted">
+          <span><span class="text-sm font-medium">FAQ</span><span class="muted-fg text-sm"> · anticipated questions from LLOs and FLWs</span></span>
+          <span class="text-sm accent-fg inline-flex items-center gap-1">Open <span class="link-arrow">→</span></span>
+        </a></li>
+      </ul>
+    </section>
+
+    <!-- ── Assistant ──────────────────────────────────────────── -->
+    <section>
+      <div class="flex items-baseline justify-between mb-6">
+        <h2 class="text-2xl font-semibold tracking-tight">Talk to the support assistant</h2>
+        <a href="#" class="text-xs uppercase tracking-wider accent-fg inline-flex items-center gap-1">Open standalone <span class="link-arrow">→</span></a>
+      </div>
+      <div class="surface border border-soft rounded-2xl p-1 overflow-hidden">
+        <div class="muted px-5 py-3 border-b border-soft text-xs muted-fg flex items-center gap-2">
+          <span class="pulse-dot"></span>
+          <span>Trained on the PDD, training materials, and app guides for this opportunity.</span>
+        </div>
+        <div class="p-5 space-y-3 max-h-[360px] overflow-y-auto" id="chat">
+          <div class="flex justify-end"><div class="bubble-user px-4 py-2.5 max-w-[80%] text-sm">How long should the FLW spend on the dietary recall section?</div></div>
+          <div class="flex justify-start"><div class="bubble-bot px-4 py-2.5 max-w-[85%] text-sm">
+            About <strong>4–5 minutes</strong>. The PDD's Evidence Model expects at least 3 of the 7 prompts answered with a specific food example to score the section as complete. <span class="muted-fg">— from <em>FLW training guide §2.3</em></span>
+          </div></div>
+          <div class="flex justify-end"><div class="bubble-user px-4 py-2.5 max-w-[80%] text-sm">What if the photo is blurry?</div></div>
+          <div class="flex justify-start"><div class="bubble-bot px-4 py-2.5 max-w-[85%] text-sm">
+            Retake. The Deliver app rejects submissions where the GPS is &gt; 30m off and flags blurry photos for LLO review the same evening. <span class="muted-fg">— from <em>Quick reference card</em></span>
+          </div></div>
+        </div>
+        <form class="border-t border-soft p-3 flex items-center gap-2" onsubmit="return false">
+          <input class="flex-1 bg-transparent px-3 py-2 text-sm outline-none placeholder:muted-fg" placeholder="Ask the assistant a question…" />
+          <button class="accent-bg text-white text-sm rounded-md px-3 py-2 font-medium opacity-90 hover:opacity-100">Send</button>
+        </form>
+      </div>
+      <p class="muted-fg text-xs mt-3">The assistant escalates to <span class="font-mono">ace@dimagi-ai.com</span> for issues it can't resolve.</p>
+    </section>
+
+    <!-- ── Open questions ─────────────────────────────────────── -->
+    <section>
+      <div class="flex items-baseline justify-between mb-6">
+        <div>
+          <h2 class="text-2xl font-semibold tracking-tight">Open questions</h2>
+          <p class="muted-fg text-sm mt-1">Items the design surfaced that still need a human answer. Defaults are what the run used; replace them in Drive when you have a real answer.</p>
+        </div>
+        <a href="#" class="text-xs uppercase tracking-wider accent-fg inline-flex items-center gap-1 whitespace-nowrap">Edit in Drive <span class="link-arrow">→</span></a>
+      </div>
+
+      <div class="surface border border-soft rounded-2xl overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="muted text-xs uppercase tracking-wider muted-fg">
+            <tr>
+              <th class="text-left px-5 py-3 font-medium w-10">#</th>
+              <th class="text-left px-5 py-3 font-medium">Question</th>
+              <th class="text-left px-5 py-3 font-medium">Default used</th>
+              <th class="text-left px-5 py-3 font-medium">Source</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-[color:var(--border)]">
+            <tr>
+              <td class="px-5 py-4 muted-fg font-mono">1</td>
+              <td class="px-5 py-4">Upper bound on FLW visits per day before fatigue effects?</td>
+              <td class="px-5 py-4">8 visits/day</td>
+              <td class="px-5 py-4 muted-fg">archetype default · atomic-visit</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 muted-fg font-mono">2</td>
+              <td class="px-5 py-4">Which languages should the Learn app support?</td>
+              <td class="px-5 py-4">English + Hindi</td>
+              <td class="px-5 py-4 muted-fg">idea.md §2.1; LLO directory</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 muted-fg font-mono">3</td>
+              <td class="px-5 py-4">How long after enrollment should the first visit happen?</td>
+              <td class="px-5 py-4">7 days</td>
+              <td class="px-5 py-4 muted-fg">stress-test executability dimension</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── Footer ─────────────────────────────────────────────── -->
+    <footer class="pt-10 border-t border-soft text-sm muted-fg flex flex-wrap items-center justify-between gap-3">
+      <span>Generated by ACE · run 20260415-1430</span>
+      <a href="#" class="hover:underline inline-flex items-center gap-1">See the full build process <span class="link-arrow">→</span></a>
+    </footer>
+
+  </main>
+
+  <script>
+    const root = document.documentElement;
+    const btn = document.getElementById('theme-toggle');
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq.matches) root.classList.add('dark');
+    btn.addEventListener('click', () => root.classList.toggle('dark'));
+  </script>
+</body>
+</html>

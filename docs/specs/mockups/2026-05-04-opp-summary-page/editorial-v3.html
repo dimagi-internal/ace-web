@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en" class="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Turmeric Supplementation Pilot — Run Summary</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..900&family=Geist+Mono:wght@300..700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: { extend: { fontFamily: {
+        sans: ['Geist', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['Geist Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+      }}},
+    };
+  </script>
+  <style>
+    :root {
+      --bg: oklch(0.99 0 0);
+      --fg: oklch(0.145 0 0);
+      --card: oklch(1 0 0);
+      --muted: oklch(0.97 0 0);
+      --muted-fg: oklch(0.556 0 0);
+      --border: oklch(0.922 0 0);
+      --accent: oklch(0.55 0.15 50);
+      --status-ok: oklch(0.723 0.191 149.579);
+    }
+    .dark {
+      --bg: oklch(0.145 0 0);
+      --fg: oklch(0.985 0 0);
+      --card: oklch(0.205 0 0);
+      --muted: oklch(0.235 0 0);
+      --muted-fg: oklch(0.7 0 0);
+      --border: oklch(0.295 0 0);
+      --accent: oklch(0.7 0.16 60);
+    }
+    body { background: var(--bg); color: var(--fg); font-family: 'Geist', sans-serif; -webkit-font-smoothing: antialiased; }
+    .surface { background: var(--card); border-color: var(--border); }
+    .muted { background: var(--muted); }
+    .muted-fg { color: var(--muted-fg); }
+    .border-soft { border-color: var(--border); }
+    .accent-fg { color: var(--accent); }
+    .accent-bg  { background: var(--accent); }
+
+    .hero {
+      background:
+        radial-gradient(1200px 360px at 20% -10%, color-mix(in oklch, var(--accent) 10%, transparent), transparent 60%);
+    }
+
+    .pulse-dot { position:relative; width:8px; height:8px; border-radius:9999px; background: var(--status-ok); }
+    .pulse-dot::after { content:''; position:absolute; inset:-6px; border-radius:9999px; background: var(--status-ok); opacity:.35; animation: pulse 1.6s ease-out infinite; }
+    @keyframes pulse { 0% { transform:scale(0.6); opacity:.4; } 100% { transform:scale(1.5); opacity:0; } }
+
+    .link-arrow { transition: transform .18s ease; display:inline-block; }
+    a:hover .link-arrow { transform: translateX(3px); }
+
+    .row { display:flex; align-items:baseline; justify-content:space-between; gap:1.5rem; padding:0.85rem 0; }
+    .row + .row { border-top: 1px solid var(--border); }
+    .row .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted-fg); width: 64px; flex-shrink: 0; }
+    .row .name  { flex: 1; font-size: 0.975rem; }
+    .row .links { display: flex; gap: 1rem; font-size: 0.875rem; white-space: nowrap; }
+    .row .links a { color: var(--accent); }
+
+    /* mock OCS widget popup — for visualization only */
+    .ocs-launcher {
+      position: fixed; right: 24px; bottom: 24px; z-index: 60;
+      width: 56px; height: 56px; border-radius: 9999px;
+      background: var(--accent); color: white;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 10px 30px -8px color-mix(in oklch, var(--accent) 60%, transparent);
+      cursor: pointer; transition: transform .18s ease;
+    }
+    .ocs-launcher:hover { transform: translateY(-2px); }
+    .ocs-launcher svg { width: 24px; height: 24px; }
+
+    .ocs-panel {
+      position: fixed; right: 24px; bottom: 96px; z-index: 60;
+      width: 360px; max-width: calc(100vw - 48px);
+      height: 480px; max-height: 70vh;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; overflow: hidden;
+      box-shadow: 0 20px 60px -16px color-mix(in oklch, var(--fg) 30%, transparent);
+      display: none; flex-direction: column;
+    }
+    .ocs-panel.open { display: flex; }
+    .bubble-user { background: var(--muted); color: var(--fg); border-radius: 14px 14px 4px 14px; }
+    .bubble-bot  { background: color-mix(in oklch, var(--accent) 8%, var(--card)); color: var(--fg); border-radius: 14px 14px 14px 4px; border: 1px solid color-mix(in oklch, var(--accent) 22%, var(--border)); }
+  </style>
+</head>
+<body class="min-h-screen">
+  <!-- top utility bar -->
+  <div class="border-b border-soft">
+    <div class="mx-auto max-w-3xl px-6 py-3 flex items-center justify-between text-xs muted-fg">
+      <div class="font-mono tracking-tight">turmeric-supplementation-pilot · run 20260415-1430</div>
+      <div class="flex items-center gap-3">
+        <a href="#" class="hover:underline">Share link</a>
+        <button id="theme-toggle" class="rounded-md border border-soft px-2 py-1 hover:muted">Toggle theme</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- hero -->
+  <header class="hero border-b border-soft">
+    <div class="mx-auto max-w-3xl px-6 pt-16 pb-14">
+      <div class="flex items-center gap-2 text-xs uppercase tracking-[0.18em] muted-fg mb-6">
+        <span class="pulse-dot"></span>
+        <span>Active · ends June 15, 2026</span>
+      </div>
+      <h1 class="text-5xl md:text-6xl font-semibold tracking-tight leading-[1.05]">
+        Turmeric Supplementation
+        <span class="muted-fg block text-3xl md:text-4xl mt-2 font-normal">A maternal-health pilot in two districts of Bihar.</span>
+      </h1>
+      <p class="mt-8 max-w-2xl text-lg leading-relaxed muted-fg">
+        Three months of FLW-led visits delivering turmeric supplementation counseling and adherence checks
+        across four PHCs. This page is the public summary of what was built.
+      </p>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-3xl px-6 py-14 space-y-16">
+
+    <!-- ── Apps ────────────────────────────────── -->
+    <section>
+      <h2 class="text-sm uppercase tracking-[0.18em] muted-fg mb-4">CommCare apps</h2>
+      <div>
+        <div class="row">
+          <span class="label">Learn</span>
+          <span class="name">Turmeric Onboarding</span>
+          <span class="links">
+            <a href="#">Open in Nova <span class="link-arrow">→</span></a>
+            <a href="#">Open in CommCare HQ <span class="link-arrow">→</span></a>
+          </span>
+        </div>
+        <div class="row">
+          <span class="label">Deliver</span>
+          <span class="name">Turmeric Visit</span>
+          <span class="links">
+            <a href="#">Open in Nova <span class="link-arrow">→</span></a>
+            <a href="#">Open in CommCare HQ <span class="link-arrow">→</span></a>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Connect ─────────────────────────────── -->
+    <section>
+      <h2 class="text-sm uppercase tracking-[0.18em] muted-fg mb-4">Connect opportunity</h2>
+      <div>
+        <div class="row">
+          <span class="label">Opp</span>
+          <span class="name">
+            Turmeric Supplementation · Bihar 2026
+            <span class="muted-fg"> · Apr 15 – Jun 15</span>
+          </span>
+          <span class="links"><a href="#">Open on Connect <span class="link-arrow">→</span></a></span>
+        </div>
+        <div class="row">
+          <span class="label">Program</span>
+          <span class="name">Maternal Supplementation 2026</span>
+          <span class="links"><a href="#">Open on Connect <span class="link-arrow">→</span></a></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Training pack ───────────────────────── -->
+    <section>
+      <h2 class="text-sm uppercase tracking-[0.18em] muted-fg mb-4">Training pack</h2>
+      <div>
+        <div class="row">
+          <span class="label">Deck</span>
+          <span class="name">FLW Training · Turmeric Supplementation</span>
+          <span class="links"><a href="#">Open in Slides <span class="link-arrow">→</span></a></span>
+        </div>
+        <div class="row">
+          <span class="label">Doc</span>
+          <span class="name">LLO manager guide</span>
+          <span class="links"><a href="#">Open <span class="link-arrow">→</span></a></span>
+        </div>
+        <div class="row">
+          <span class="label">Doc</span>
+          <span class="name">FLW training guide</span>
+          <span class="links"><a href="#">Open <span class="link-arrow">→</span></a></span>
+        </div>
+        <div class="row">
+          <span class="label">Doc</span>
+          <span class="name">Quick reference card</span>
+          <span class="links"><a href="#">Open <span class="link-arrow">→</span></a></span>
+        </div>
+        <div class="row">
+          <span class="label">Doc</span>
+          <span class="name">FAQ</span>
+          <span class="links"><a href="#">Open <span class="link-arrow">→</span></a></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Open questions ──────────────────────── -->
+    <section>
+      <div class="flex items-baseline justify-between mb-4">
+        <h2 class="text-sm uppercase tracking-[0.18em] muted-fg">Open questions</h2>
+        <a href="#" class="text-sm accent-fg inline-flex items-center gap-1">Edit in Drive <span class="link-arrow">→</span></a>
+      </div>
+      <table class="w-full text-sm">
+        <thead class="text-xs uppercase tracking-wider muted-fg">
+          <tr>
+            <th class="text-left py-2 pr-4 font-medium w-6">#</th>
+            <th class="text-left py-2 pr-4 font-medium">Question</th>
+            <th class="text-left py-2 pr-4 font-medium">Default</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-[color:var(--border)]">
+          <tr>
+            <td class="py-3 pr-4 muted-fg font-mono">1</td>
+            <td class="py-3 pr-4">Upper bound on FLW visits per day before fatigue effects?</td>
+            <td class="py-3 pr-4 muted-fg">8 visits/day</td>
+          </tr>
+          <tr>
+            <td class="py-3 pr-4 muted-fg font-mono">2</td>
+            <td class="py-3 pr-4">Which languages should the Learn app support?</td>
+            <td class="py-3 pr-4 muted-fg">English + Hindi</td>
+          </tr>
+          <tr>
+            <td class="py-3 pr-4 muted-fg font-mono">3</td>
+            <td class="py-3 pr-4">How long after enrollment should the first visit happen?</td>
+            <td class="py-3 pr-4 muted-fg">7 days</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ── Footer ──────────────────────────────── -->
+    <footer class="pt-8 border-t border-soft text-sm muted-fg flex flex-wrap items-center justify-between gap-3">
+      <span>Generated by ACE · run 20260415-1430</span>
+      <a href="#" class="hover:underline inline-flex items-center gap-1">See the full build process <span class="link-arrow">→</span></a>
+    </footer>
+
+  </main>
+
+  <!-- ── OCS widget popup (mock) ─────────────────────────────────────── -->
+  <!--
+    In production this is the OCS web component:
+      <script src="https://chatbots.dimagi.com/static/widget.js"></script>
+      <open-chat-studio-widget public-id="…" embed-key="…"></open-chat-studio-widget>
+    The mock below approximates its launcher + panel behavior so the page
+    visualizes correctly without real credentials.
+  -->
+  <div class="ocs-panel" id="ocs-panel">
+    <div class="px-4 py-3 border-b border-soft flex items-center justify-between">
+      <div>
+        <div class="text-sm font-medium">Support assistant</div>
+        <div class="text-xs muted-fg flex items-center gap-1.5"><span class="pulse-dot"></span> Trained on this opportunity</div>
+      </div>
+      <button onclick="toggleChat()" class="muted-fg hover:opacity-80" aria-label="Close">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-4 space-y-3 text-sm">
+      <div class="flex justify-end"><div class="bubble-user px-3.5 py-2 max-w-[85%]">How long should the FLW spend on the dietary recall section?</div></div>
+      <div class="flex justify-start"><div class="bubble-bot px-3.5 py-2 max-w-[88%]">
+        About <strong>4–5 minutes</strong>. The PDD's Evidence Model expects at least 3 of the 7 prompts answered with a specific food example. <span class="muted-fg">— FLW training guide §2.3</span>
+      </div></div>
+    </div>
+    <form class="border-t border-soft p-2.5 flex items-center gap-2" onsubmit="return false">
+      <input class="flex-1 bg-transparent px-3 py-2 text-sm outline-none placeholder:muted-fg" placeholder="Ask a question…" />
+      <button class="accent-bg text-white text-sm rounded-md px-3 py-1.5 font-medium opacity-90 hover:opacity-100">Send</button>
+    </form>
+  </div>
+
+  <button class="ocs-launcher" onclick="toggleChat()" aria-label="Open assistant">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+  </button>
+
+  <script>
+    const root = document.documentElement;
+    const btn = document.getElementById('theme-toggle');
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq.matches) root.classList.add('dark');
+    btn.addEventListener('click', () => root.classList.toggle('dark'));
+
+    function toggleChat() {
+      document.getElementById('ocs-panel').classList.toggle('open');
+    }
+  </script>
+</body>
+</html>
