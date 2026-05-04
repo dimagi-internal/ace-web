@@ -21,6 +21,24 @@ from apps.ingest.pricing import compute_cost
 SCHEMA_VERSION = 1
 
 
+def _registry_lookup(
+    phase_index: dict[str, dict], name: str
+) -> dict | None:
+    """Look up a skill or agent in the phase index, with namespace fallback.
+
+    JSONL transcripts identify skills/agents with the plugin namespace
+    prefix (e.g. "ace:idea-to-pdd", "ace:design-review"). The registry indexes
+    by the unprefixed name from each agent's frontmatter. Try the literal
+    name first, then strip the "<namespace>:" prefix and try again.
+    """
+    direct = phase_index.get(name)
+    if direct is not None:
+        return direct
+    if ":" in name:
+        return phase_index.get(name.split(":", 1)[1])
+    return None
+
+
 def _skill_phase_index() -> dict[str, dict]:
     """Return {skill_name: {phase, phase_display, phase_ordinal}} from the ACE plugin registry.
 
@@ -180,7 +198,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             # subsequent orchestration turns belong to) the phase this skill
             # maps to. Unknown skills don't update the cursor — they leave it
             # pointing at the previous phase.
-            registry_entry = phase_index.get(skill_name)
+            registry_entry = _registry_lookup(phase_index, skill_name)
             if registry_entry is not None:
                 current_phase = registry_entry["phase"]
             seg = _OpenSegment(
@@ -214,7 +232,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 seg = open_segments.pop(match_idx)
                 if event.timestamp is not None:
                     seg.last_ts = event.timestamp
-                registry_entry = phase_index.get(seg.skill_name)
+                registry_entry = _registry_lookup(phase_index, seg.skill_name)
                 phase_name = registry_entry["phase"] if registry_entry else "_other"
                 invocations_by_skill[(phase_name, seg.skill_name)].append(_finalize(seg))
             continue
@@ -283,7 +301,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         seg = open_segments.pop()
         finalized = _finalize(seg)
         finalized["incomplete"] = True
-        registry_entry = phase_index.get(seg.skill_name)
+        registry_entry = _registry_lookup(phase_index, seg.skill_name)
         incomplete_phase = registry_entry["phase"] if registry_entry else "_other"
         invocations_by_skill[(incomplete_phase, seg.skill_name)].append(finalized)
 
