@@ -94,7 +94,7 @@ export function ErrorState({
         <button
           type="button"
           onClick={onRetry}
-          className="mt-3 rounded bg-destructive px-3 py-1 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90"
+          className="mt-3 rounded bg-destructive px-3 py-1 text-xs font-semibold text-white hover:bg-destructive/90"
         >
           Retry
         </button>
@@ -109,16 +109,16 @@ export function ErrorState({
 
 function friendlyExplanation(message: string): string {
   const m = message.trim();
-  if (/^5\d\d/.test(m)) {
+  if (/\b5\d\d\b/.test(m) || /server\s*error/i.test(m)) {
     return "We couldn't load this from Drive — the service may be slow or rate-limited. Wait a moment and try again.";
   }
-  if (/^404/.test(m) || /not\s*found/i.test(m)) {
-    return "This resource doesn't exist (anymore). It may have been deleted, renamed, or moved in Drive.";
+  if (/\b404\b/.test(m) || /not[\s_-]*found/i.test(m)) {
+    return "This doesn't exist (anymore). It may have been deleted, renamed, or moved in Drive.";
   }
-  if (/^40[13]/.test(m)) {
+  if (/\b40[13]\b/.test(m) || /forbidden|unauthor/i.test(m)) {
     return "You don't have permission to see this. Check your workspace membership.";
   }
-  if (/network|fetch|timeout/i.test(m)) {
+  if (/network|fetch|timeout|econnref|enotfound/i.test(m)) {
     return "Network problem reaching the server. Check your connection and try again.";
   }
   return "We couldn't complete that request. The details below may help diagnose it.";
