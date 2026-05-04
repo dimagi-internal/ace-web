@@ -51,6 +51,18 @@ def _skill_display_name_lookup() -> dict[str, str]:
     }
 
 
+def _phase_display_name_lookup() -> dict[str, str]:
+    """{phase_name: display_name} resolved from the plugin's agent
+    frontmatter. Same caching path as _skill_display_name_lookup."""
+    from django.conf import settings as _s
+    overview = _load_system_overview(getattr(_s, "ACE_PLUGIN_PATH", "") or "")
+    return {
+        p["name"]: p.get("display_name") or p["name"]
+        for p in (overview.get("phases") or [])
+        if p.get("name")
+    }
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])  # Scaffold-only; later views gate Drive access via _require_drive.
 def health(request):
@@ -214,6 +226,7 @@ def _opp_list_impl(request):
             if required_tags and not required_tags.issubset(set(card.opp.tags)):
                 continue
             display_lookup = _skill_display_name_lookup()
+            phase_lookup = _phase_display_name_lookup()
             pending_slugs = list(card.pending_gate_skills)
             cards.append({
                 "slug": card.opp.slug,
@@ -224,6 +237,11 @@ def _opp_list_impl(request):
                 "created_by": card.opp.created_by,
                 "current_run_id": card.opp.current_run_id,
                 "current_phase": card.current_phase,
+                "current_phase_display": (
+                    phase_lookup.get(card.current_phase)
+                    if card.current_phase
+                    else None
+                ),
                 "current_step": card.current_step,
                 "current_step_display": (
                     display_lookup.get(card.current_step)
@@ -260,6 +278,7 @@ def _opp_list_impl(request):
                 "created_by": None,
                 "current_run_id": None,
                 "current_phase": None,
+                "current_phase_display": None,
                 "current_step": None,
                 "current_step_display": None,
                 "status": "error",

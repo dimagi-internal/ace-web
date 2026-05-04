@@ -146,6 +146,10 @@ export interface OppCard {
   created_by: string | null;
   current_run_id: string | null;
   current_phase: string | null;
+  // Human label for ``current_phase`` ("Design Review" instead of
+  // ``design-review``), resolved server-side from the plugin's agent
+  // frontmatter. Null when ``current_phase`` is null or unknown.
+  current_phase_display: string | null;
   current_step: string | null;
   // Human label for ``current_step`` ("Idea to PDD" instead of
   // ``idea-to-pdd``), resolved server-side from the plugin's SKILL.md
