@@ -163,12 +163,12 @@ export default function OppListPage() {
             }
             title={
               needsReviewOnly
-                ? "Clear filter"
-                : "Show only opps with gate briefs that have no decision recorded"
+                ? "Clear filter — show all opps"
+                : "Show only opps with at least one gate awaiting your review"
             }
           >
             <AlertCircle className="h-3.5 w-3.5" />
-            Undecided gates ({needsReviewCount})
+            Awaiting review ({needsReviewCount})
             {needsReviewOnly && <X className="h-3 w-3" />}
           </button>
         )}
@@ -310,12 +310,12 @@ export default function OppListPage() {
                       e.stopPropagation();
                       toggleExpanded(opp.slug);
                     }}
-                    className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="-ml-1 mt-0.5 shrink-0 rounded p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
                   >
                     {isExpanded ? (
-                      <ChevronDown className="h-3.5 w-3.5" />
+                      <ChevronDown className="h-4 w-4" />
                     ) : (
-                      <ChevronRight className="h-3.5 w-3.5" />
+                      <ChevronRight className="h-4 w-4" />
                     )}
                   </button>
                   <div className="min-w-0">

@@ -71,20 +71,26 @@ export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) 
         >
           {detail.display_name || detail.skill_name}
         </div>
-        <div className="text-[11px] text-muted-foreground">
-          {detail.phase_display} · status{" "}
-          <span className="text-foreground">{detail.status}</span>
+        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span>{detail.phase_display}</span>
+          <span aria-hidden>·</span>
+          <StatusPill status={detail.status} />
         </div>
       </div>
 
+      {/* Primary actions for THIS step (Run/Rerun, Approve/Reject)
+          come first because they're the per-status decisions a user
+          makes after reading the artifacts. The "Discuss in chat"
+          escape-hatch comes AFTER the artifacts/judge/gate so users
+          read the context before they jump to chat — it was previously
+          stacked above the artifacts and pulled the eye away from
+          the content the user needs to read first. */}
       <ActionButtons
         slug={slug}
         runId={runId}
         skillName={detail.skill_name}
         status={detail.status}
       />
-
-      <DiscussInChatButton slug={slug} runId={runId} skill={skill} />
 
       {detail.artifacts.length > 0 && (
         <div>
@@ -176,6 +182,8 @@ export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) 
       <JudgeVerdict judge={detail.judge} />
       {detail.gates.length > 0 && <GateHistory gates={detail.gates} />}
 
+      <DiscussInChatButton slug={slug} runId={runId} skill={skill} />
+
       {editing && (
         <EditArtifactDialog
           open={editing !== null}
@@ -187,5 +195,34 @@ export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) 
         />
       )}
     </div>
+  );
+}
+
+// Same status palette as SkillRow's StatusDot, just rendered as a
+// labeled pill so the status is legible in the step-detail header
+// without having to look back to the lifecycle column.
+function StatusPill({ status }: { status: string }) {
+  const tone =
+    status === "complete" ? "border-green-500/40 bg-green-500/10 text-green-500"
+    : status === "running" ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+    : status === "judge-fail" || status === "error" ? "border-destructive/40 bg-destructive/10 text-destructive"
+    : status === "gate-pending" || status === "gate-rejected" ? "border-amber-500/40 bg-amber-500/10 text-amber-500"
+    : "border-border bg-muted text-muted-foreground";
+  const label =
+    status === "complete" ? "complete"
+    : status === "running" ? "running"
+    : status === "judge-fail" ? "judge failed"
+    : status === "gate-pending" ? "gate awaiting review"
+    : status === "gate-rejected" ? "gate rejected"
+    : status === "error" ? "error"
+    : status === "skipped" ? "skipped"
+    : status === "pending" ? "not started"
+    : status;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${tone}`}
+    >
+      {label}
+    </span>
   );
 }

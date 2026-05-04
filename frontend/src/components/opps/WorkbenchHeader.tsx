@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { RefreshCw, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 import type { OppCard, Run, RunSummary } from "../../api/types";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { CostRollupCard } from "./CostRollupCard";
 import { DeleteOppDialog } from "./DeleteOppDialog";
 import { RunSelector } from "./RunSelector";
@@ -23,6 +25,20 @@ interface Props {
 export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, onRefresh, workspaceSlug }: Props) {
   const navigate = useNavigate();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.resolve(onRefresh());
+      toast.success("Refreshed from Drive");
+    } finally {
+      // Brief artificial floor so the spinner is visible even when the
+      // request returns instantly — without it the user can't tell the
+      // refresh actually happened.
+      setTimeout(() => setRefreshing(false), 400);
+    }
+  };
 
   return (
     <>
@@ -70,11 +86,12 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
           <Button
             variant="ghost"
             size="sm"
-            onClick={onRefresh}
+            onClick={handleRefresh}
+            disabled={refreshing}
             title="Re-read this opp's data from Google Drive"
           >
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-            Refresh
+            <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", refreshing && "animate-spin")} />
+            {refreshing ? "Refreshing…" : "Refresh"}
           </Button>
           <span aria-hidden className="h-5 w-px bg-border" />
           <Button
