@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Search, X } from "lucide-react";
 
 import type { PhaseInfo, Step } from "../../api/types";
@@ -21,7 +22,22 @@ export function SkillList({
 }: Props) {
   const priorBySkill = new Map(priorRunSteps.map((s) => [s.skill_name, s] as const));
   const sortedPhases = [...phases].sort((a, b) => a.ordinal - b.ordinal);
-  const [filter, setFilter] = useState("");
+  // Persist filter via URL ``?lifecycle_filter=…`` so refreshing the page
+  // (e.g. after a deploy) preserves the user's narrowing. Cleared by the
+  // X button or by emptying the input — empty value drops the param.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filter = searchParams.get("lifecycle_filter") ?? "";
+  const setFilter = (next: string) => {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next) params.set("lifecycle_filter", next);
+        else params.delete("lifecycle_filter");
+        return params;
+      },
+      { replace: true },
+    );
+  };
 
   // Filter steps by display_name OR skill_name OR phase display_name.
   // Empty filter means everything passes.

@@ -215,10 +215,10 @@ function ChatListSection({ title, chats, activeSlug, onSelect, emptyHint }: Chat
                     )}
                     {c.kind === "opp" && c.step_skill && (
                       <span
-                        className="shrink-0 rounded bg-muted px-1 font-mono text-[8px] text-muted-foreground"
-                        title={`Scoped to step: ${c.step_skill}`}
+                        className="shrink-0 rounded bg-muted px-1 text-[10px] text-muted-foreground"
+                        title={`Scoped to step: ${c.step_skill_display || c.step_skill}`}
                       >
-                        {c.step_skill}
+                        {c.step_skill_display || c.step_skill}
                       </span>
                     )}
                   </div>

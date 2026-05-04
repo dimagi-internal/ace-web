@@ -301,13 +301,15 @@ export default function SessionsPage() {
                       // when we've fallen all the way through to the slug.
                       const fellThroughToSlug = label === s.opp_slug;
                       const display = fellThroughToSlug ? `opp: ${label}` : label;
+                      const stepLabel =
+                        s.opp_step_skill_display || s.opp_step_skill;
                       return (
                         <Badge
                           variant="outline"
                           className="shrink-0 border-primary/40 text-[10px] text-primary"
                           title={
-                            s.opp_step_skill
-                              ? `${label} (${s.opp_slug}) · step: ${s.opp_step_skill}`
+                            stepLabel
+                              ? `${label} (${s.opp_slug}) · step: ${stepLabel}`
                               : `${label} (${s.opp_slug})`
                           }
                         >

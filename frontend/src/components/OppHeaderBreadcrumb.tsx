@@ -7,6 +7,9 @@ interface Props {
   oppStepSkill: string;
   /** Human display name from OppWorkspace; falls back to oppSlug when empty. */
   oppDisplayName?: string;
+  /** Human display name for oppStepSkill from the plugin SKILL.md
+   *  metadata; falls back to oppStepSkill when empty. */
+  oppStepSkillDisplay?: string;
 }
 
 /**
@@ -25,6 +28,7 @@ export function OppHeaderBreadcrumb({
   oppRunId,
   oppStepSkill,
   oppDisplayName,
+  oppStepSkillDisplay,
 }: Props) {
   const { workspaceSlug } = useParams<{ workspaceSlug?: string }>();
 
@@ -37,6 +41,7 @@ export function OppHeaderBreadcrumb({
     ? `/w/${workspaceSlug}/opps/${oppSlug}`
     : `/opps/${oppSlug}`;
   const oppLabel = oppDisplayName?.trim() || oppSlug;
+  const stepLabel = oppStepSkillDisplay?.trim() || oppStepSkill;
 
   return (
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -54,8 +59,9 @@ export function OppHeaderBreadcrumb({
           <Link
             to={stepHref}
             className="inline-flex items-center gap-1 text-foreground hover:underline"
+            title={stepLabel !== oppStepSkill ? oppStepSkill : undefined}
           >
-            {oppStepSkill}
+            {stepLabel}
             <ExternalLink className="h-3 w-3" aria-hidden="true" />
           </Link>
         </>

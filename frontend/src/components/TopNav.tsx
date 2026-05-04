@@ -29,15 +29,18 @@ export function TopNav() {
       <Link
         to={slug ? `/w/${slug}/opps` : "/welcome"}
         className="font-semibold text-foreground"
-        title="ACE — agentic CRISPR-Connect orchestration. Visit Overview for the full picture."
+        title="ACE Workbench — agentic CRISPR-Connect orchestration"
       >
         ACE
       </Link>
       <Link
         to="/system"
         aria-label="What is ACE? — open the Overview"
-        title="What is ACE? — open the Overview"
-        className="rounded-full border border-border px-1.5 text-[10px] font-semibold leading-none text-muted-foreground hover:border-primary hover:text-primary"
+        title={
+          "ACE = Autonomous CRISPR-Connect Engine.\n" +
+          "Click for the full overview: phases, skills, and how a cycle runs."
+        }
+        className="rounded-full border border-border px-1.5 text-[10px] font-semibold leading-none text-muted-foreground transition hover:border-primary hover:text-primary"
       >
         ?
       </Link>

@@ -26,7 +26,23 @@ export function CostRollupCard({ oppSlug, workspaceSlug }: Props) {
     };
   }, [oppSlug, workspaceSlug]);
 
-  if (data === null || data.session_count === 0) return null;
+  // Stay invisible while the API call is in flight (don't render a
+  // placeholder, which would jump-cut to the real value on load and
+  // jitter the header layout). Once the API returns, render even the
+  // empty state — that way users know cost data WILL appear once chats
+  // accumulate, instead of wondering why the chip is missing on this
+  // opp but present on another.
+  if (data === null) return null;
+  if (data.session_count === 0) {
+    return (
+      <span
+        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground/60"
+        title="No chats with cost data linked to this opp yet. Costs accumulate as ACE runs."
+      >
+        $— · —
+      </span>
+    );
+  }
   const t = data.totals;
   const sessionLabel = data.session_count === 1 ? "1 chat" : `${data.session_count} chats`;
   return (
