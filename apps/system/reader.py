@@ -9,6 +9,7 @@ phase is a one-file edit in the plugin, no ace-web change required.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import re
@@ -285,11 +286,20 @@ def _build_skill_summary(
     }
 
 
+@functools.cache
 def load_system_overview(plugin_path: str) -> dict[str, Any]:
     """Load the full system overview from the ACE plugin directory.
 
     Returns a dict ready for serialization with keys: skills, agents,
     artifacts, phases, warning.
+
+    Cached per process keyed on ``plugin_path`` — the plugin is read-only at
+    runtime (it changes only on container rebuild), and this function does
+    ~60 file reads + a regex pass over every skill body, so callers on hot
+    paths (per-opp loops, per-session serializers) used to bottleneck on it.
+    Tests that swap ``ACE_PLUGIN_PATH`` mid-process must call
+    ``clear_caches()``; ``apps.opps.skills.reset_cache`` and
+    ``apps.opps.serializers.reset_system_overview_cache`` already do so.
     """
     pp = Path(plugin_path)
     if not pp.is_dir():
@@ -387,6 +397,9 @@ def get_skill_phase_index(plugin_path: str | None = None) -> dict[str, dict[str,
     The settings import is deferred to function-call time to avoid module
     load-order issues (this module is imported by opps/skills.py which may
     load before Django is fully configured in some test contexts).
+
+    Cached per process via ``_get_skill_phase_index_cached`` — the cost
+    aggregator and a few serializers call this on hot paths.
     """
     if plugin_path is None:
         # Lazy import to avoid load-order issues at module import time.
@@ -397,6 +410,11 @@ def get_skill_phase_index(plugin_path: str | None = None) -> dict[str, dict[str,
     if not plugin_path:
         return {}
 
+    return _get_skill_phase_index_cached(plugin_path)
+
+
+@functools.cache
+def _get_skill_phase_index_cached(plugin_path: str) -> dict[str, dict[str, Any]]:
     pp = Path(plugin_path)
     if not pp.is_dir():
         return {}
@@ -479,3 +497,41 @@ def load_agent_detail(plugin_path: str, agent_name: str) -> dict[str, Any] | Non
         "model": meta.get("model", ""),
         "body_markdown": body,
     }
+
+
+@functools.cache
+def skill_display_names(plugin_path: str) -> dict[str, str]:
+    """``{skill_name: display_name}`` derived from ``load_system_overview``.
+
+    Cached per process. Use this from any hot loop or per-row serializer
+    that needs to render a skill's friendly name from its slug; the older
+    inline pattern (``for s in overview['skills']: if s['name'] == ...``)
+    became a bottleneck once it was added to ``SessionSerializer`` and the
+    opp-list loop.
+    """
+    return {
+        s["name"]: s.get("display_name") or s["name"]
+        for s in (load_system_overview(plugin_path).get("skills") or [])
+        if s.get("name")
+    }
+
+
+@functools.cache
+def phase_display_names(plugin_path: str) -> dict[str, str]:
+    """``{phase_name: display_name}`` derived from ``load_system_overview``.
+    Cached per process. Same rationale as ``skill_display_names``."""
+    return {
+        p["name"]: p.get("display_name") or p["name"]
+        for p in (load_system_overview(plugin_path).get("phases") or [])
+        if p.get("name")
+    }
+
+
+def clear_caches() -> None:
+    """Clear all per-process caches in this module. Tests that swap
+    ``ACE_PLUGIN_PATH`` between cases must call this so the next read
+    reloads from the new directory."""
+    load_system_overview.cache_clear()
+    _get_skill_phase_index_cached.cache_clear()
+    skill_display_names.cache_clear()
+    phase_display_names.cache_clear()

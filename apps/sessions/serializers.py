@@ -82,28 +82,28 @@ class SessionSerializer(serializers.ModelSerializer):
         return obj.messages.count()
 
     def get_opp_step_skill_display(self, obj: Session) -> str:
-        """Resolve opp_step_skill (e.g. ``idea-to-pdd``) to its human
-        display_name (``Idea to PDD``) via the plugin's SKILL.md
-        metadata. Falls back to the slug itself when the skill isn't
-        in the registry. Empty string when not step-linked.
+        """Resolve ``opp_step_skill`` (e.g. ``idea-to-pdd``) to its human
+        display_name (``Idea to PDD``). Falls back to the slug when the
+        skill isn't in the plugin registry. Empty string when the row
+        isn't step-linked.
 
-        Uses ``apps.system.reader.load_system_overview``, which has its
-        own per-process cache, so the per-skill lookup is O(skills) on
-        first call and O(1) after — fine for a per-row serializer call.
+        Uses the process-cached ``skill_display_names`` dict from
+        ``apps.system.reader``, so the per-row cost is one dict lookup —
+        no filesystem I/O and no linear scan over the skill list.
         """
         if not obj.opp_step_skill:
             return ""
         try:
-            from django.conf import settings
+            from django.conf import settings  # noqa: PLC0415
 
-            from apps.system.reader import load_system_overview
-            overview = load_system_overview(getattr(settings, "ACE_PLUGIN_PATH", "") or "")
-            for s in overview.get("skills") or []:
-                if s.get("name") == obj.opp_step_skill:
-                    return s.get("display_name") or obj.opp_step_skill
+            from apps.system.reader import skill_display_names  # noqa: PLC0415
+
+            lookup = skill_display_names(
+                getattr(settings, "ACE_PLUGIN_PATH", "") or ""
+            )
+            return lookup.get(obj.opp_step_skill, obj.opp_step_skill)
         except Exception:
-            pass
-        return obj.opp_step_skill
+            return obj.opp_step_skill
 
     def get_opp_display_name(self, obj: Session) -> str:
         # The list view annotates this on the queryset to avoid N+1; if

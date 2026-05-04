@@ -29,7 +29,12 @@ from apps.opps.sync import (
 )
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
-from apps.system.reader import load_system_overview as _load_system_overview
+from apps.system.reader import (
+    phase_display_names as _phase_display_names,
+)
+from apps.system.reader import (
+    skill_display_names as _skill_display_names,
+)
 from apps.workspaces.models import Workspace
 from apps.workspaces.permissions import is_member, user_workspaces
 
@@ -37,30 +42,23 @@ log = logging.getLogger(__name__)
 
 
 def _skill_display_name_lookup() -> dict[str, str]:
-    """{skill_slug: display_name} resolved from the plugin's SKILL.md
-    metadata. Cached implicitly via apps.system.reader's per-process cache.
+    """``{skill_slug: display_name}`` for the current ``ACE_PLUGIN_PATH``.
 
-    Used to render human labels for the opp list's ``current_step`` and
-    ``pending_gates`` fields without fetching a full snapshot per opp."""
+    Thin wrapper that resolves the path from settings and defers to the
+    reader's process-cached ``skill_display_names``. Use this from hot
+    paths in views; same data available via the reader for non-view code.
+    """
     from django.conf import settings as _s
-    overview = _load_system_overview(getattr(_s, "ACE_PLUGIN_PATH", "") or "")
-    return {
-        s["name"]: s.get("display_name") or s["name"]
-        for s in (overview.get("skills") or [])
-        if s.get("name")
-    }
+
+    return _skill_display_names(getattr(_s, "ACE_PLUGIN_PATH", "") or "")
 
 
 def _phase_display_name_lookup() -> dict[str, str]:
-    """{phase_name: display_name} resolved from the plugin's agent
-    frontmatter. Same caching path as _skill_display_name_lookup."""
+    """``{phase_name: display_name}`` — settings-resolving wrapper around
+    ``apps.system.reader.phase_display_names``."""
     from django.conf import settings as _s
-    overview = _load_system_overview(getattr(_s, "ACE_PLUGIN_PATH", "") or "")
-    return {
-        p["name"]: p.get("display_name") or p["name"]
-        for p in (overview.get("phases") or [])
-        if p.get("name")
-    }
+
+    return _phase_display_names(getattr(_s, "ACE_PLUGIN_PATH", "") or "")
 
 
 @api_view(["GET"])
@@ -194,8 +192,34 @@ def _opp_list_impl(request):
     raw_tags = request.GET.get("tags", "") or ""
     required_tags = {t.strip() for t in raw_tags.split(",") if t.strip()}
 
+    # Resolve display-name lookups once per request, not per opp. Even with
+    # the reader cache these dict comprehensions are wasteful in a hot loop,
+    # and the prior implementation called load_system_overview per iteration.
+    display_lookup = _skill_display_name_lookup()
+    phase_lookup = _phase_display_name_lookup()
+
+    # The root listing is the one Drive call that can wipe out the whole
+    # response — every per-opp failure already falls back to a placeholder
+    # card inside the loop, but a 5xx on the root list bubbles up as a
+    # Django 500. The Drive client retries 5xx/429 internally; if we still
+    # land here, surface a graceful error envelope instead of crashing.
+    try:
+        root_children = client.list_files(ace_folder_id)
+    except Exception as exc:
+        log.warning(
+            "opp_list: root Drive listing failed for folder %s: %s",
+            ace_folder_id, exc, exc_info=True,
+        )
+        return Response(
+            error_response(
+                "couldn't reach Google Drive — try again in a moment",
+                code="drive-unavailable",
+            ),
+            status=503,
+        )
+
     cards: list[dict] = []
-    for child in client.list_files(ace_folder_id):
+    for child in root_children:
         if child.mime_type != "application/vnd.google-apps.folder":
             continue
         opp_children = client.list_files(child.id)
@@ -225,8 +249,6 @@ def _opp_list_impl(request):
             _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
             if required_tags and not required_tags.issubset(set(card.opp.tags)):
                 continue
-            display_lookup = _skill_display_name_lookup()
-            phase_lookup = _phase_display_name_lookup()
             pending_slugs = list(card.pending_gate_skills)
             cards.append({
                 "slug": card.opp.slug,
