@@ -89,10 +89,14 @@ def _extract_cost_events(lines: list[str]) -> list[CostEvent]:
             usage = message.get("usage")
             model = message.get("model")
             blocks = message.get("content", []) or []
+            # Defensive: real-world transcripts may have non-list content
+            # (string for user-style prompts in subagent transcripts).
+            if not isinstance(blocks, list):
+                blocks = []
             # One assistant_turn event per assistant message (carries usage),
             # plus one tool_use event per tool_use block (carries the skill name).
-            has_text = any(b.get("type") == "text" for b in blocks)
-            tool_blocks = [b for b in blocks if b.get("type") == "tool_use"]
+            has_text = any(isinstance(b, dict) and b.get("type") == "text" for b in blocks)
+            tool_blocks = [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_use"]
 
             if has_text or usage:
                 events.append(CostEvent(
@@ -119,7 +123,14 @@ def _extract_cost_events(lines: list[str]) -> list[CostEvent]:
 
         if kind == "user":
             blocks = payload.get("message", {}).get("content", []) or []
+            # Real-world transcripts: `content` is sometimes a plain string
+            # (the user's prompt) instead of a list of content blocks.
+            # Strings carry no tool_result blocks, so skip iteration.
+            if not isinstance(blocks, list):
+                continue
             for block in blocks:
+                if not isinstance(block, dict):
+                    continue
                 if block.get("type") == "tool_result":
                     events.append(CostEvent(
                         kind="tool_result",
@@ -167,6 +178,8 @@ def parse_session_file(path: Path) -> tuple[ParsedSession, list[CostEvent]]:
         if kind == "assistant":
             msg_id = payload.get("message", {}).get("id")
             blocks = payload.get("message", {}).get("content", [])
+            if not isinstance(blocks, list):
+                blocks = []
 
             if msg_id != current_msg_id and current_assistant_text:
                 session.turns.append(ParsedTurn(
@@ -178,6 +191,8 @@ def parse_session_file(path: Path) -> tuple[ParsedSession, list[CostEvent]]:
             current_msg_id = msg_id
 
             for block in blocks:
+                if not isinstance(block, dict):
+                    continue
                 block_type = block.get("type")
                 if block_type == "text":
                     current_assistant_text.append(block.get("text", ""))
@@ -208,7 +223,11 @@ def parse_session_file(path: Path) -> tuple[ParsedSession, list[CostEvent]]:
                 current_msg_id = None
 
             blocks = payload.get("message", {}).get("content", [])
+            if not isinstance(blocks, list):
+                continue
             for block in blocks:
+                if not isinstance(block, dict):
+                    continue
                 if block.get("type") == "tool_result":
                     session.turns.append(ParsedTurn(
                         role="tool_result",

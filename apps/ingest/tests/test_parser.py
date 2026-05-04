@@ -47,6 +47,21 @@ def test_parse_returns_line_count():
     assert result.line_count == 4
 
 
+def test_parse_handles_string_content_user_message():
+    """Real-world transcripts: a user message's `content` is sometimes a
+    plain string (the user's prompt) instead of a list of content blocks.
+    Iterating the string used to crash with AttributeError."""
+    from apps.ingest.parser import parse_session_file
+    session, events = parse_session_file(FIXTURES / "string_content_session.jsonl")
+    # No tool_results in this fixture; just an assistant text turn.
+    assert session.cli_session_id == "sess_string_001"
+    assert any(t.role == "assistant" for t in session.turns)
+    # Aggregator path: should not raise; should produce a single assistant_turn event.
+    assistant = [e for e in events if e.kind == "assistant_turn"]
+    assert len(assistant) == 1
+    assert assistant[0].usage["input_tokens"] == 50
+
+
 def test_extract_cost_events_emits_assistant_turns():
     from apps.ingest.parser import parse_session_file
     _session, events = parse_session_file(FIXTURES / "cost_session.jsonl")
