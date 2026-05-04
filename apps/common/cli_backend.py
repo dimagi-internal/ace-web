@@ -361,16 +361,21 @@ class CLIBackend:
         async with sp.lock:
             spawn_attempted = False
             had_any_event = False
-            # ``done_yielded`` distinguishes "consumer cancelled mid-turn"
-            # from "consumer cleanly returned after DONE." Async generators
-            # remain *suspended at the yield* until __anext__ is called
-            # again — but our callers (turn_driver / consumer) `return`
-            # immediately after consuming DONE, so the next thing the
-            # generator sees is an aclose() injecting GeneratorExit at the
-            # post-DONE yield. Without this flag we would treat that
-            # normal-completion aclose as a cancel and evict the
-            # SessionProcess after EVERY successful turn.
+            # ``done_yielded`` / ``error_yielded`` distinguish the three
+            # ways a turn ends, all of which trigger a post-yield
+            # aclose() from the consumer (which `return`s after consuming
+            # the terminal event):
+            #   * done_yielded  → turn succeeded; SP is healthy, do NOT
+            #     evict (defeats the whole point of the long-lived path).
+            #   * error_yielded → CLI emitted a terminal `result/error_*`
+            #     event; proc is in an unrecoverable state, evict and
+            #     clear cli_session_id if --resume was the cause.
+            #   * neither       → real consumer cancel mid-turn; evict.
+            # Without this state, the GeneratorExit handler would log
+            # every normal completion as a "consumer cancelled" event and
+            # evict the SessionProcess every turn.
             done_yielded = False
+            error_yielded = False
             try:
                 if not sp.is_alive():
                     await self._spawn_session_process(sp, session)
@@ -399,6 +404,20 @@ class CLIBackend:
                             # in the normal-completion case.
                             await self._mark_turn_complete(sp, session)
                             done_yielded = True
+                        if event.type is StreamEventType.ERROR:
+                            # CLI emitted a terminal error event (e.g.
+                            # error_during_execution from a stale --resume
+                            # session id, or error_max_turns). The proc
+                            # is in an unrecoverable state for this
+                            # session; evict before yielding so the
+                            # post-yield aclose has nothing left to do.
+                            error_yielded = True
+                            if sp.spawned_with_resume:
+                                await self._clear_cli_session_id(session)
+                            await self._evict_locked(
+                                sp, persist_for_session=session
+                            )
+                            await self._drop_session_from_pool(sp.slug)
                         yield event
                 except CLIBackendError:
                     # Resume-failure recovery: if the spawn we just did used
@@ -444,6 +463,18 @@ class CLIBackend:
                             if event.type is StreamEventType.DONE:
                                 await self._mark_turn_complete(sp, session)
                                 done_yielded = True
+                            if event.type is StreamEventType.ERROR:
+                                # Even the seeded-history fallback can hit
+                                # a terminal error event. Same handling as
+                                # the primary path: evict and (defensively)
+                                # clear cli_session_id.
+                                error_yielded = True
+                                if sp.spawned_with_resume:
+                                    await self._clear_cli_session_id(session)
+                                await self._evict_locked(
+                                    sp, persist_for_session=session
+                                )
+                                await self._drop_session_from_pool(sp.slug)
                             yield event
                     else:
                         raise
@@ -456,19 +487,20 @@ class CLIBackend:
                     await self._mark_turn_complete(sp, session)
 
             except (GeneratorExit, asyncio.CancelledError):
-                if done_yielded:
-                    # Normal cleanup after a successfully-completed turn —
-                    # caller broke out of its async for after consuming
-                    # DONE, the post-DONE yield is being aclose()'d. The
-                    # SessionProcess is healthy and ready for the next
-                    # turn; do NOT evict (that defeats the whole point of
-                    # the long-lived path).
+                if done_yielded or error_yielded:
+                    # Normal post-terminal cleanup — caller broke out of
+                    # its async for after consuming DONE (success path,
+                    # SP healthy) or ERROR (failure path, SP already
+                    # evicted in the for-loop). Either way, the
+                    # GeneratorExit just needs to propagate; nothing left
+                    # to do.
                     raise
-                # Real cancel — consumer aborted before the turn finished.
-                # The CLI is mid-stream and there is no documented cancel
-                # envelope on the 2.1.x stream-json input protocol, so the
-                # only safe recovery is to terminate the whole subprocess
-                # and evict. Next turn pays one MCP-startup cost.
+                # Real cancel — consumer aborted before the turn produced
+                # a terminal event. The CLI is mid-stream and there is no
+                # documented cancel envelope on the 2.1.x stream-json
+                # input protocol, so the only safe recovery is to
+                # terminate the whole subprocess and evict. Next turn
+                # pays one MCP-startup cost.
                 logger.info(
                     "long-lived: consumer cancelled mid-turn for session=%s "
                     "— evicting subprocess",

@@ -707,6 +707,66 @@ async def test_long_lived_break_after_done_does_not_evict(session):
     )
 
 
+async def test_long_lived_evicts_and_clears_session_id_on_terminal_error_event(session):
+    """REGRESSION (caught live on labs 2026-05-04 cross-task --resume): when
+    the CLI emits a terminal `result/error_*` event (e.g.
+    error_during_execution from a stale --resume session id whose origin
+    was on a different ECS task), we must:
+
+      1. yield the ERROR event upward so the consumer can broadcast
+         chat.stream_error,
+      2. evict the SessionProcess (proc is dead at that point),
+      3. clear ``Session.cli_session_id`` if --resume was the trigger,
+         so the next turn doesn't try the same stale id again,
+      4. NOT log it as "consumer cancelled mid-turn" — that misled
+         debugging in the original incident.
+    """
+    session.cli_session_id = "sess_will_fail"
+    await sync_to_async(session.save)()
+
+    # Fixture: init event (yields SESSION_ID) + error result. Mirrors what
+    # the CLI emits when --resume references a session it doesn't know.
+    error_payload = (
+        b'{"type":"system","subtype":"init","session_id":"sess_xyz",'
+        b'"cwd":"/tmp","tools":[]}\n'
+        b'{"type":"result","subtype":"error_during_execution",'
+        b'"duration_ms":100}\n'
+    )
+    fake = _fake_proc(error_payload, returncode=1)
+    terminated = []
+    fake.terminate = lambda: terminated.append("term")
+
+    backend = CLIBackend()
+    create = AsyncMock(return_value=fake)
+    with patch("asyncio.create_subprocess_exec", new=create):
+        events: list[StreamEventType] = []
+        # Consumer broadcasts chat.stream_error and `return`s after seeing
+        # ERROR — simulate that with break + aclose (matches production).
+        gen = backend.stream_completion(session=session, new_user_message="hi")
+        async for ev in gen:
+            events.append(ev.type)
+            if ev.type is StreamEventType.ERROR:
+                break
+        await gen.aclose()
+
+    assert StreamEventType.ERROR in events, (
+        "ERROR event was not yielded — consumer would never broadcast "
+        "chat.stream_error"
+    )
+    assert session.slug not in backend._sessions, (
+        "SessionProcess was not evicted after terminal error event — the "
+        "next turn would try to reuse a dead subprocess"
+    )
+    await sync_to_async(session.refresh_from_db)()
+    assert session.cli_session_id is None, (
+        "cli_session_id was not cleared after --resume failed with a "
+        "terminal error — the next turn would try the same stale id again"
+    )
+    assert terminated == ["term"], (
+        f"subprocess was not terminated. terminate() calls: {terminated}"
+    )
+
+
 def test_session_process_initial_state():
     """SessionProcess starts with no proc, no staged home, no credential
     source — those are all populated by ``_spawn_session_process`` and
