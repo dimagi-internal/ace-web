@@ -341,10 +341,9 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         # tab uses (e.g. "Idea to PDD" instead of the raw "ace:idea-to-pdd").
         # Falls back to the raw name for unknown / non-ACE skills.
         registry_entry = _registry_lookup(phase_index, skill_name)
-        skill_display = (
-            registry_entry["skill_display"] if registry_entry and registry_entry.get("skill_display")
-            else skill_name
-        )
+        skill_display = skill_name
+        if registry_entry and registry_entry.get("skill_display"):
+            skill_display = registry_entry["skill_display"]
         phase_skills[phase_name].append({
             "skill_name": skill_name,
             "skill_display": skill_display,
