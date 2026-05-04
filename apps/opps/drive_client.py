@@ -15,10 +15,66 @@ are intentionally not ported.
 from __future__ import annotations
 
 import base64
+import functools
+import logging
+import random
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from apps.service_accounts import registry
+
+log = logging.getLogger(__name__)
+
+
+# Drive 5xx + 429 are common-enough that letting them surface as Django 500s
+# was a real source of perceived flakiness on the opp list and Workbench. Read
+# operations are idempotent so retrying is safe; writes are intentionally not
+# wrapped because a duplicate create/upload on retry could leak resources.
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+_RETRY_ATTEMPTS = 3
+_RETRY_BASE_DELAY = 0.5  # seconds; effective delays roughly 0.5s, 1.0s, 2.0s + jitter
+
+
+def _drive_retry(method):
+    """Decorator: retry the wrapped Drive read on transient HttpError 5xx/429.
+
+    Three attempts total with exponential backoff and small jitter. Non-retryable
+    statuses (and non-HttpError exceptions) propagate immediately. Each retry is
+    logged at WARNING with the underlying status so the cause stays visible
+    even though the request ultimately succeeds.
+    """
+
+    @functools.wraps(method)
+    def _wrapped(self, *args, **kwargs):
+        # Local import keeps the module importable in test envs that stub
+        # googleapiclient out (e.g. apps/opps/tests/fixtures/fake_drive.py
+        # never raises HttpError).
+        from googleapiclient.errors import HttpError  # noqa: PLC0415
+
+        last_exc: Exception | None = None
+        for attempt in range(1, _RETRY_ATTEMPTS + 1):
+            try:
+                return method(self, *args, **kwargs)
+            except HttpError as exc:
+                status = getattr(getattr(exc, "resp", None), "status", None)
+                if status not in _RETRYABLE_STATUS or attempt == _RETRY_ATTEMPTS:
+                    raise
+                delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                delay += random.uniform(0, delay * 0.25)
+                log.warning(
+                    "drive_retry: %s attempt %d/%d failed status=%s; sleeping %.2fs",
+                    method.__name__, attempt, _RETRY_ATTEMPTS, status, delay,
+                )
+                time.sleep(delay)
+                last_exc = exc
+        # Defensive — loop above either returns or raises; this is unreachable
+        # but mypy / type-checkers like the explicit fallthrough.
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("drive_retry: exhausted attempts without exception")
+
+    return _wrapped
 
 
 @dataclass
@@ -100,6 +156,7 @@ class GoogleDriveClient(DriveClient):
         from googleapiclient.discovery import build
         self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
 
+    @_drive_retry
     def list_files(
         self, folder_id: str, recursive: bool = False, page_size: int = 100
     ) -> list[DriveFile]:
@@ -152,6 +209,7 @@ class GoogleDriveClient(DriveClient):
             modified_time=f.get("modifiedTime"),
         )
 
+    @_drive_retry
     def get_file(self, file_id: str) -> DriveFile:
         f = self._service.files().get(
             fileId=file_id,
@@ -160,6 +218,7 @@ class GoogleDriveClient(DriveClient):
         ).execute()
         return self._to_drive_file(f, path=f["name"])
 
+    @_drive_retry
     def get_content(self, file_id: str, mime_type: str) -> FileContent:
         export_map = {
             "application/vnd.google-apps.document": ("text/plain", "text/plain"),

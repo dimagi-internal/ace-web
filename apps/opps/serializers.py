@@ -47,9 +47,16 @@ def _system_overview() -> dict[str, Any]:
 
 def reset_system_overview_cache() -> None:
     """Test helper — clear the cached system overview so the next call
-    reloads from the (possibly overridden) ``ACE_PLUGIN_PATH``."""
+    reloads from the (possibly overridden) ``ACE_PLUGIN_PATH``.
+
+    Also clears ``apps.system.reader``'s per-path caches; this wrapper
+    pre-dates those caches and tests still expect a single reset call to
+    flush every layer."""
     global _SYSTEM_OVERVIEW_CACHE
     _SYSTEM_OVERVIEW_CACHE = None
+    from apps.system.reader import clear_caches as _clear_reader_caches  # noqa: PLC0415
+
+    _clear_reader_caches()
 
 
 def serialize_artifact(a: ArtifactRef) -> dict:

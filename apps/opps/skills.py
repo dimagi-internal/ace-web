@@ -106,8 +106,15 @@ def _load_registry() -> tuple[Skill, ...]:
 
 def reset_cache() -> None:
     """Clear the cached registry. Tests that override ``ACE_PLUGIN_PATH``
-    must call this so the next access reloads from the new plugin dir."""
+    must call this so the next access reloads from the new plugin dir.
+
+    Also flushes ``apps.system.reader``'s per-path caches — the registry
+    is built from ``load_system_overview`` and tests that swap the plugin
+    path expect every downstream cache to follow."""
     _load_registry.cache_clear()
+    from apps.system.reader import clear_caches as _clear_reader_caches  # noqa: PLC0415
+
+    _clear_reader_caches()
 
 
 class _SkillRegistryProxy:
