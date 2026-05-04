@@ -296,17 +296,22 @@ export default function SessionsPage() {
                         s.opp_display_name ||
                         oppDisplayBySlug.get(s.opp_slug) ||
                         s.opp_slug;
+                      // Drop the "opp:" prefix when the label is the real
+                      // display name; we only need the prefix to disambiguate
+                      // when we've fallen all the way through to the slug.
+                      const fellThroughToSlug = label === s.opp_slug;
+                      const display = fellThroughToSlug ? `opp: ${label}` : label;
                       return (
                         <Badge
                           variant="outline"
                           className="shrink-0 border-primary/40 text-[10px] text-primary"
                           title={
                             s.opp_step_skill
-                              ? `${label} · ${s.opp_step_skill}`
-                              : label
+                              ? `${label} (${s.opp_slug}) · step: ${s.opp_step_skill}`
+                              : `${label} (${s.opp_slug})`
                           }
                         >
-                          opp: {label}
+                          {display}
                         </Badge>
                       );
                     })()}

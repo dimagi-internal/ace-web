@@ -67,8 +67,18 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
               Phase · {run.current_phase}
             </span>
           )}
+          {/* "review" is the only mode that requires user attention
+              (gates pause for approval). Make it visually prominent so
+              a reviewer landing on the workbench gets the signal. The
+              other modes (default, auto, dry-run, sandbox) are passive
+              status info and stay muted. */}
           <span
-            className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+            className={
+              "rounded px-2 py-0.5 text-xs " +
+              (run.mode === "review"
+                ? "border border-amber-500/40 bg-amber-500/10 text-amber-500"
+                : "bg-muted text-muted-foreground")
+            }
             title={`Run mode: ${run.mode} (${modeExplanation(run.mode)})`}
           >
             {run.mode}
