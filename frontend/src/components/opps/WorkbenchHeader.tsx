@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RefreshCw, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -26,11 +26,22 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
   const navigate = useNavigate();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<number>(() => Date.now());
+  const [staleTick, setStaleTick] = useState(0);
+
+  // Bump every 30s so the relative "X ago" label stays current without
+  // having to wait for an explicit re-render. setInterval is safe here
+  // because the component lives at the top of the workbench tree.
+  useEffect(() => {
+    const id = setInterval(() => setStaleTick((t) => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
       await Promise.resolve(onRefresh());
+      setLastRefreshedAt(Date.now());
       toast.success("Refreshed from Drive");
     } catch (err) {
       // Surface refresh failures (Drive timeout, auth lapse, etc.) so
@@ -105,6 +116,15 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
             it pulled the eye to a low-priority action and sat flush
             against the trash icon, which was a mis-click hazard. */}
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* staleTick re-reads here to keep the relative label current */}
+          <span
+            className="text-[10px] text-muted-foreground/70"
+            title={`Last refreshed: ${new Date(lastRefreshedAt).toLocaleString()}`}
+          >
+            {/* Reference staleTick so React re-renders this span on tick. */}
+            <span aria-hidden className="hidden">{staleTick}</span>
+            {refreshing ? "refreshing…" : `updated ${secondsAgoLabel(lastRefreshedAt)}`}
+          </span>
           <Button
             variant="ghost"
             size="sm"
@@ -137,6 +157,16 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
       />
     </>
   );
+}
+
+function secondsAgoLabel(when: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - when) / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ago`;
 }
 
 function modeExplanation(mode: string): string {
