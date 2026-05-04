@@ -361,6 +361,16 @@ class CLIBackend:
         async with sp.lock:
             spawn_attempted = False
             had_any_event = False
+            # ``done_yielded`` distinguishes "consumer cancelled mid-turn"
+            # from "consumer cleanly returned after DONE." Async generators
+            # remain *suspended at the yield* until __anext__ is called
+            # again — but our callers (turn_driver / consumer) `return`
+            # immediately after consuming DONE, so the next thing the
+            # generator sees is an aclose() injecting GeneratorExit at the
+            # post-DONE yield. Without this flag we would treat that
+            # normal-completion aclose as a cancel and evict the
+            # SessionProcess after EVERY successful turn.
+            done_yielded = False
             try:
                 if not sp.is_alive():
                     await self._spawn_session_process(sp, session)
@@ -379,6 +389,16 @@ class CLIBackend:
                             await self._persist_session_id(
                                 session, event.session_id
                             )
+                        if event.type is StreamEventType.DONE:
+                            # Run the success path BEFORE yielding DONE so
+                            # the post-yield aclose's GeneratorExit (fired
+                            # when the consumer returns after consuming
+                            # DONE) sees done_yielded=True and skips
+                            # eviction. If we deferred this to after the
+                            # for-loop, the post-loop code would never run
+                            # in the normal-completion case.
+                            await self._mark_turn_complete(sp, session)
+                            done_yielded = True
                         yield event
                 except CLIBackendError:
                     # Resume-failure recovery: if the spawn we just did used
@@ -421,36 +441,34 @@ class CLIBackend:
                                 await self._persist_session_id(
                                     session, event.session_id
                                 )
+                            if event.type is StreamEventType.DONE:
+                                await self._mark_turn_complete(sp, session)
+                                done_yielded = True
                             yield event
                     else:
                         raise
 
-                sp.last_active = time.monotonic()
-                # Persist any OAuth refresh that landed during this turn.
-                # Same rationale as the one-shot path's finally block: the
-                # claude CLI refreshes tokens in-place by overwriting
-                # ``$HOME/.claude/.credentials.json``; if we let the worker
-                # die without reading it back, the next call uses an
-                # already-burned refresh token and 401s.
-                try:
-                    await sync_to_async(self._persist_refreshed_blob)(
-                        session, sp.credential_source, sp.staged_home
-                    )
-                except Exception:
-                    logger.warning(
-                        "long-lived: failed to persist refreshed blob "
-                        "for session=%s",
-                        session.slug,
-                        exc_info=True,
-                    )
-                self._breaker.record_success()
+                # Belt-and-braces: a turn that streamed events but never
+                # emitted DONE (CLI-side bug, partial result, etc.) still
+                # needs the bookkeeping. Real turns always go through the
+                # in-loop branch above.
+                if not done_yielded:
+                    await self._mark_turn_complete(sp, session)
 
             except (GeneratorExit, asyncio.CancelledError):
-                # Consumer cancelled mid-turn (browser closed, stop_event
-                # fired). The CLI is mid-stream and there is no documented
-                # cancel envelope on the 2.1.x stream-json input protocol,
-                # so the only safe recovery is to terminate the whole
-                # subprocess and evict. Next turn pays one MCP-startup cost.
+                if done_yielded:
+                    # Normal cleanup after a successfully-completed turn —
+                    # caller broke out of its async for after consuming
+                    # DONE, the post-DONE yield is being aclose()'d. The
+                    # SessionProcess is healthy and ready for the next
+                    # turn; do NOT evict (that defeats the whole point of
+                    # the long-lived path).
+                    raise
+                # Real cancel — consumer aborted before the turn finished.
+                # The CLI is mid-stream and there is no documented cancel
+                # envelope on the 2.1.x stream-json input protocol, so the
+                # only safe recovery is to terminate the whole subprocess
+                # and evict. Next turn pays one MCP-startup cost.
                 logger.info(
                     "long-lived: consumer cancelled mid-turn for session=%s "
                     "— evicting subprocess",
@@ -499,6 +517,32 @@ class CLIBackend:
                 await self._drop_session_from_pool(sp.slug)
                 self._breaker.record_failure()
                 raise
+
+    async def _mark_turn_complete(
+        self, sp: SessionProcess, session: Session
+    ) -> None:
+        """End-of-turn bookkeeping for the long-lived path: refresh
+        last_active, persist any OAuth blob the CLI rewrote during the
+        turn, and tell the circuit breaker the call succeeded.
+
+        Persistence is best-effort — the claude CLI rewrites the
+        credentials file in-place when it refreshes, and we MUST read it
+        back here (rather than at eviction time) because Anthropic
+        single-uses refresh tokens and a worker hard-kill between turns
+        would otherwise lose the rotation.
+        """
+        sp.last_active = time.monotonic()
+        try:
+            await sync_to_async(self._persist_refreshed_blob)(
+                session, sp.credential_source, sp.staged_home
+            )
+        except Exception:
+            logger.warning(
+                "long-lived: failed to persist refreshed blob for session=%s",
+                session.slug,
+                exc_info=True,
+            )
+        self._breaker.record_success()
 
     async def _get_or_create_session_process(
         self, session: Session

@@ -650,6 +650,63 @@ async def test_long_lived_cancel_evicts_session_process(session):
     )
 
 
+async def test_long_lived_break_after_done_does_not_evict(session):
+    """REGRESSION (caught live on labs 2026-05-04): production consumers
+    `return` from their async-for loop immediately after broadcasting DONE.
+    That leaves our long-lived generator suspended at the post-DONE yield;
+    when the outer scope closes (gc / explicit aclose), Python injects
+    GeneratorExit at the suspended yield. If we treat that as a "consumer
+    cancelled mid-turn" event we evict the SessionProcess after EVERY
+    successful turn — defeating the entire point of Phase 1B.
+
+    This test simulates the consumer's break-after-DONE-then-aclose
+    pattern and asserts the SessionProcess is left intact, ready for the
+    next turn to reuse.
+    """
+    init = (FIXTURES / "stream_json_session_init.txt").read_bytes()
+    follow_up = (FIXTURES / "stream_json_simple.txt").read_bytes()
+    fake = _multi_turn_fake_proc([init, follow_up])
+    terminated = []
+    fake.terminate = lambda: terminated.append("term")
+
+    backend = CLIBackend()
+    create = AsyncMock(return_value=fake)
+    with patch("asyncio.create_subprocess_exec", new=create):
+        # Turn 1: drive the generator and break right after DONE — exactly
+        # what `_run_turn_driver` does in production.
+        gen1 = backend.stream_completion(session=session, new_user_message="hi")
+        async for ev in gen1:
+            if ev.type is StreamEventType.DONE:
+                break
+        await gen1.aclose()
+
+        # SP must still be in the pool with the subprocess alive.
+        assert session.slug in backend._sessions, (
+            "post-DONE aclose evicted the SessionProcess — Phase 1B "
+            "regression: every chat turn would force a respawn"
+        )
+        sp = backend._sessions[session.slug]
+        assert sp.proc is not None and sp.proc.returncode is None, (
+            "subprocess was terminated despite the turn completing successfully"
+        )
+        assert terminated == [], (
+            f"terminate() was called after a clean DONE — that means the "
+            f"GeneratorExit handler wrongly evicted. Calls: {terminated}"
+        )
+
+        # Turn 2: must reuse the same subprocess.
+        async for _ in backend.stream_completion(
+            session=session, new_user_message="follow up"
+        ):
+            pass
+
+    assert create.call_count == 1, (
+        f"second turn spawned a new subprocess instead of reusing — "
+        f"call_count={create.call_count}. The break-after-DONE eviction "
+        f"regression is back."
+    )
+
+
 def test_session_process_initial_state():
     """SessionProcess starts with no proc, no staged home, no credential
     source — those are all populated by ``_spawn_session_process`` and
