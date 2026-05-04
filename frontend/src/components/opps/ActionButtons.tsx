@@ -20,12 +20,32 @@ export function ActionButtons({ slug, runId, skillName, status }: Props) {
     setBusy(true);
     try {
       await runAction(slug, runId, action, { skill: skillName, ...payload });
-      toast.success(`${action} → chat`);
+      toast.success(actionSuccessMessage(action), {
+        description: "ACE picks it up in the working chat — see the right pane for the response.",
+      });
     } catch (e) {
-      toast.error(`${action} failed: ${(e as Error).message}`);
+      toast.error(`${humanizeAction(action)} failed`, {
+        description: (e as Error).message,
+      });
     } finally {
       setBusy(false);
     }
+  }
+
+  function humanizeAction(a: string): string {
+    if (a === "approve") return "Approve gate";
+    if (a === "reject") return "Reject gate";
+    if (a === "rerun") return "Rerun";
+    if (a === "run") return "Run";
+    return a;
+  }
+
+  function actionSuccessMessage(a: string): string {
+    if (a === "approve") return "Gate approved";
+    if (a === "reject") return "Gate rejected";
+    if (a === "rerun") return "Rerun queued";
+    if (a === "run") return "Run queued";
+    return `${humanizeAction(a)} sent`;
   }
 
   const showRun = status === "pending";

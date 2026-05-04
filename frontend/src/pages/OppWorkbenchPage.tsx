@@ -22,6 +22,18 @@ const VIEW_TABS: ViewTab[] = [
   { kind: "flow", label: "Flow" },
 ];
 
+// Cheap human form for the initial loading label, before the API
+// returns the real display_name. "leep-paint-collection" → "Leep Paint
+// Collection". Ugly enough to be obvious it's a fallback if the slug
+// doesn't have words in it.
+function humanizeSlug(slug: string): string {
+  if (!slug) return "opp";
+  return slug
+    .split(/[-_]/)
+    .map((p) => (p ? p[0].toUpperCase() + p.slice(1) : ""))
+    .join(" ");
+}
+
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
@@ -70,7 +82,8 @@ export default function OppWorkbenchPage() {
     if (skill) setSelectedSkill(skill);
   }, [skill]);
 
-  if (state.kind === "loading") return <LoadingSpinner label={`Loading ${slug}…`} />;
+  if (state.kind === "loading")
+    return <LoadingSpinner label={`Loading ${humanizeSlug(slug)}…`} />;
   if (state.kind === "error") return <ErrorState message={state.message} onRetry={() => load()} />;
 
   const { snapshot } = state;

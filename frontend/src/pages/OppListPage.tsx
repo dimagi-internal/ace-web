@@ -23,12 +23,17 @@ type LoadState =
 
 type SortKey = "recent" | "score" | "status" | "slug";
 
-const SORT_LABELS: Record<SortKey, string> = {
-  recent: "Last activity",
-  score: "Score (high → low)",
-  status: "Status",
-  slug: "Slug (A → Z)",
-};
+// Each option: short label that fits the dropdown width + a longer
+// title attribute explaining the sort key, so a new user can hover to
+// see what "Status" actually orders by. Avoid the word "slug" in the
+// option label itself — name it "ID" since users see the slug as the
+// stable identifier.
+const SORT_OPTIONS: { key: SortKey; label: string; title: string }[] = [
+  { key: "recent", label: "Last activity", title: "Most recently active opps first" },
+  { key: "score", label: "Score (high → low)", title: "Highest opp-eval scores first; opps without a score sink to the bottom" },
+  { key: "status", label: "Needs attention", title: "Load failures and undecided gates first, then everything else" },
+  { key: "slug", label: "ID (A → Z)", title: "Alphabetical by opp identifier" },
+];
 
 // We rank opps the user is most likely to need to look at first:
 // load failures, then opps with no state.yaml, then opps with undecided gates,
@@ -201,18 +206,23 @@ export default function OppListPage() {
               onChange={(e) => setSortKey(e.target.value as SortKey)}
               className="rounded border border-input bg-card px-2 py-1 text-xs text-foreground focus:border-ring focus:outline-none"
               aria-label="Sort opportunities"
+              title={SORT_OPTIONS.find((o) => o.key === sortKey)?.title}
             >
-              {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
-                <option key={k} value={k}>{SORT_LABELS[k]}</option>
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key} title={o.title}>
+                  {o.label}
+                </option>
               ))}
             </select>
           </label>
           <input
             type="text"
-            placeholder="Filter by slug, name, tag…"
+            placeholder="Filter by name or tag…"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             className="w-64 rounded border border-input bg-card px-3 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+            aria-label="Filter opportunities by name, tag, or ID"
+            title="Matches anywhere in the opp's name, tags, labels, or ID"
           />
           <Button size="sm" onClick={() => setNewDialogOpen(true)}>
             <Plus className="mr-1.5 h-3.5 w-3.5" />
