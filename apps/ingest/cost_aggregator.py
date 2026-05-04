@@ -233,7 +233,16 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 if event.timestamp is not None:
                     seg.last_ts = event.timestamp
                 registry_entry = _registry_lookup(phase_index, seg.skill_name)
-                phase_name = registry_entry["phase"] if registry_entry else "_other"
+                if registry_entry is not None:
+                    phase_name = registry_entry["phase"]
+                elif current_phase is not None:
+                    # Unknown skill (e.g. nova:autobuild) inside a known phase:
+                    # attribute to current_phase. The orchestrator was doing
+                    # phase-X work and delegated to a non-ACE plugin tool —
+                    # that tool's spend belongs to phase X, not "Other".
+                    phase_name = current_phase
+                else:
+                    phase_name = "_other"
                 invocations_by_skill[(phase_name, seg.skill_name)].append(_finalize(seg))
             continue
 
@@ -302,7 +311,12 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         finalized = _finalize(seg)
         finalized["incomplete"] = True
         registry_entry = _registry_lookup(phase_index, seg.skill_name)
-        incomplete_phase = registry_entry["phase"] if registry_entry else "_other"
+        if registry_entry is not None:
+            incomplete_phase = registry_entry["phase"]
+        elif current_phase is not None:
+            incomplete_phase = current_phase
+        else:
+            incomplete_phase = "_other"
         invocations_by_skill[(incomplete_phase, seg.skill_name)].append(finalized)
 
     # Build per-skill summaries grouped by phase.
@@ -323,8 +337,16 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             cost_sum += inv["estimated_cost_usd"]
             cost_partial = cost_partial or inv.get("cost_is_partial", False)
             wall_sum += inv["wall_time_seconds"]
+        # Canonical display name from the registry — same label the System
+        # tab uses (e.g. "Idea to PDD" instead of the raw "ace:idea-to-pdd").
+        # Falls back to the raw name for unknown / non-ACE skills.
+        registry_entry = _registry_lookup(phase_index, skill_name)
+        skill_display = skill_name
+        if registry_entry and registry_entry.get("skill_display"):
+            skill_display = registry_entry["skill_display"]
         phase_skills[phase_name].append({
             "skill_name": skill_name,
+            "skill_display": skill_display,
             "invocation_count": len(invocations),
             "wall_time_seconds": wall_sum,
             "estimated_cost_usd": round(cost_sum, 6),
@@ -352,6 +374,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         partial = phase_orch_cost_partial[phase_name]
         phase_skills[phase_name].append({
             "skill_name": "(orchestration)",
+            "skill_display": "(orchestration)",
             "invocation_count": 1,
             "wall_time_seconds": wall,
             "estimated_cost_usd": round(cost, 6),

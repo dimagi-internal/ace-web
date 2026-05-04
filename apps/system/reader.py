@@ -413,28 +413,55 @@ def get_skill_phase_index(plugin_path: str | None = None) -> dict[str, dict[str,
         p["name"]: (p["display_name"], p["ordinal"]) for p in phases
     }
 
-    result: dict[str, dict[str, Any]] = {}
-    for skill_name, entry in skill_index.items():
-        phase_name = entry["phase"]
+    # Skill display names from the System Overview reader (the authoritative
+    # human-readable label — same one the System tab shows).
+    skill_display_by_name: dict[str, str] = {}
+    for s in load_system_overview(str(pp)).get("skills", []):
+        if s.get("name"):
+            skill_display_by_name[s["name"]] = s.get("display_name") or s["name"]
+
+    def _entry(phase_name: str, skill_name: str) -> dict[str, Any]:
         phase_display, phase_ordinal = phase_meta.get(phase_name, (phase_name, 999))
-        result[skill_name] = {
+        return {
             "phase": phase_name,
             "phase_display": phase_display,
             "phase_ordinal": phase_ordinal,
+            "skill_display": skill_display_by_name.get(skill_name, skill_name),
         }
-    # Also index each phase's orchestrator agent by name. The cost aggregator's
-    # current_phase cursor advances on Skill *and* Agent dispatches; an Agent
-    # dispatch's subagent_type is the agent name (e.g. "ace:design-review"),
-    # not a skill, so it would otherwise miss the lookup.
+
+    result: dict[str, dict[str, Any]] = {}
+    for skill_name, entry in skill_index.items():
+        result[skill_name] = _entry(entry["phase"], skill_name)
+
+    # Also index each phase's orchestrator agent by name. An Agent dispatch's
+    # subagent_type is the agent name (e.g. "ace:design-review"), not a skill,
+    # so it would otherwise miss the lookup. An agent IS its phase, so use the
+    # phase_display as the skill_display — preserves canonical capitalization
+    # like "OCS Setup" that title-casing the kebab name would lose.
     for p in phases:
         agent_name = p.get("agent")
         if not agent_name or agent_name in result:
             continue
-        result[agent_name] = {
-            "phase": p["name"],
-            "phase_display": p["display_name"],
-            "phase_ordinal": p["ordinal"],
-        }
+        entry = _entry(p["name"], agent_name)
+        entry["skill_display"] = p["display_name"]
+        result[agent_name] = entry
+
+    # Also index each skill's eval_skill child (e.g. "idea-to-pdd-eval"
+    # declared as eval_skill: of "idea-to-pdd"). They run as part of the same
+    # phase as their parent skill and should attribute to it.
+    for agent_meta, _body in agent_files.values():
+        phase_name = agent_meta.get("phase")
+        if not phase_name:
+            continue
+        for entries in (agent_meta.get("skills") or [], agent_meta.get("recurring_skills") or []):
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                eval_name = entry.get("eval_skill")
+                if not eval_name or eval_name in result:
+                    continue
+                result[eval_name] = _entry(phase_name, eval_name)
+
     return result
 
 
