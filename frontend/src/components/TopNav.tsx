@@ -25,7 +25,7 @@ export function TopNav() {
   const slug = current?.slug ?? all[0]?.slug;
 
   return (
-    <nav className="flex items-center gap-4 border-b border-border bg-card px-4 py-2 text-sm">
+    <nav className="flex items-center gap-3 border-b border-border bg-card px-4 py-2 text-sm">
       <Link
         to={slug ? `/w/${slug}/opps` : "/welcome"}
         className="font-semibold text-foreground"
@@ -42,6 +42,9 @@ export function TopNav() {
         ?
       </Link>
       <WorkspaceSwitcher />
+
+      {/* Workspace-scoped nav: lives next to the workspace switcher,
+          so it's visually clear these change WHEN you change workspace. */}
       <div className="flex items-center gap-4">
         {WORKSPACE_NAV.map((item) => {
           const target = slug ? `/w/${slug}/${item.subPath}` : `/${item.subPath}`;
@@ -59,6 +62,11 @@ export function TopNav() {
             </Link>
           );
         })}
+      </div>
+
+      {/* Global nav + utility, right-aligned and separated by a divider
+          so global pages aren't visually confused with workspace pages. */}
+      <div className="ml-auto flex items-center gap-4">
         {GLOBAL_NAV.map((item) => {
           const isActive = pathname.startsWith(item.path);
           return (
@@ -74,8 +82,7 @@ export function TopNav() {
             </Link>
           );
         })}
-      </div>
-      <div className="ml-auto">
+        <span aria-hidden className="h-5 w-px bg-border" />
         <ThemeToggle />
       </div>
     </nav>

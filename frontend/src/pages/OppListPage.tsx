@@ -264,13 +264,13 @@ export default function OppListPage() {
           <EmptyState
             title={
               needsReviewOnly
-                ? "No opps with undecided gates"
+                ? "Nothing awaiting review"
                 : "No opps match your filter"
             }
             description={
               needsReviewOnly
-                ? "Every gate brief has a decision recorded."
-                : "Try a different search term."
+                ? "Every gate has a decision recorded — you're caught up."
+                : "Try a different name or tag."
             }
           />
         ) : (
@@ -403,11 +403,17 @@ export default function OppListPage() {
               ) : null}
 
               <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{opp.run_count === 1 ? "1 run" : `${opp.run_count} runs`}</span>
+                <span
+                  title="Each run is one execution of /ace:run for this opp. Reruns iterate on the same opp by overwriting state.yaml."
+                >
+                  {opp.run_count === 1 ? "1 run" : `${opp.run_count} runs`}
+                </span>
                 {opp.last_activity_at && (
                   <>
                     <span aria-hidden="true">·</span>
-                    <span>last {relativeTime(opp.last_activity_at)}</span>
+                    <span title={new Date(opp.last_activity_at).toLocaleString()}>
+                      last {relativeTime(opp.last_activity_at)}
+                    </span>
                   </>
                 )}
               </div>

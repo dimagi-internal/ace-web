@@ -37,8 +37,8 @@ export function PendingGatesBanner({ steps, onSelect }: Props) {
             key={s.skill_name}
             type="button"
             onClick={() => onSelect(s.skill_name)}
-            className="rounded bg-amber-500/20 px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-500/30 dark:text-amber-200"
-            title={`Review gate for ${s.skill_name}`}
+            className="cursor-pointer rounded border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-700 transition hover:border-amber-500/60 hover:bg-amber-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 dark:text-amber-200"
+            title={`Review gate for ${s.display_name || s.skill_name}`}
           >
             {s.display_name || s.skill_name}
           </button>

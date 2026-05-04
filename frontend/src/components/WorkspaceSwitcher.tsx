@@ -21,26 +21,42 @@ export function WorkspaceSwitcher() {
     );
   }
 
+  // Keep a tiny "Workspace" label outside the switcher so the bare
+  // workspace name doesn't read as a passive header — new users
+  // wouldn't otherwise realize they can switch context here.
+  const switcherTitle =
+    all.length > 1
+      ? `Switch workspace (${all.length} available)`
+      : current?.display_name
+        ? `Workspace: ${current.display_name}`
+        : "Workspace";
   return (
-    <div className="relative inline-block">
-      <select
-        className="appearance-none rounded border border-input bg-card px-3 py-1.5 pr-8 text-sm font-medium text-foreground"
-        value={current?.slug ?? ""}
-        onChange={(e) => {
-          const target = e.target.value;
-          if (target) navigate(`/w/${target}/opps`);
-        }}
-      >
-        <option value="" disabled>
-          {current ? current.display_name : "Pick a workspace"}
-        </option>
-        {all.map((w) => (
-          <option key={w.slug} value={w.slug}>
-            {w.display_name}
+    <div className="flex items-center gap-1.5">
+      <span className="hidden text-[10px] uppercase tracking-wider text-muted-foreground sm:inline">
+        Workspace
+      </span>
+      <div className="relative inline-block">
+        <select
+          className="appearance-none rounded border border-input bg-card px-3 py-1.5 pr-8 text-sm font-medium text-foreground hover:border-primary/60"
+          value={current?.slug ?? ""}
+          onChange={(e) => {
+            const target = e.target.value;
+            if (target) navigate(`/w/${target}/opps`);
+          }}
+          aria-label={switcherTitle}
+          title={switcherTitle}
+        >
+          <option value="" disabled>
+            {current ? current.display_name : "Pick a workspace"}
           </option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          {all.map((w) => (
+            <option key={w.slug} value={w.slug}>
+              {w.display_name}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      </div>
     </div>
   );
 }
