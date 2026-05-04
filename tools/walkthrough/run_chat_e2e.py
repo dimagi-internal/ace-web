@@ -2,9 +2,9 @@
 
 A smoke harness for "can the deployed claude subprocess stay alive long
 enough to finish an ACE skill / phase / full /ace:run?" Authenticates as
-ace@dimagi-ai.com via /auth/e2e-login/, creates a fresh session, posts a
-single prompt, and streams every chat.* event with timestamps until the
-turn completes (or errors / times out).
+ace@dimagi-ai.com via /auth/e2e-login/, creates a fresh session, posts
+one or more prompts (each driving a chat turn), and streams every chat.*
+event with timestamps until the turn completes (or errors / times out).
 
 Usage:
     ACE_WEB_BASE_URL=https://labs.connect.dimagi.com/ace \\
@@ -12,11 +12,24 @@ Usage:
     python tools/walkthrough/run_chat_e2e.py "your prompt here" \\
         [--timeout-seconds 2400] [--session-title "Tier A smoke"]
 
+Multi-turn (Phase 1B reuse smoke — drive N turns into one session,
+sharing the cookie jar so the ALB AWSALB stickiness cookie stays
+constant and all turns land on the same ECS task):
+
+    python tools/walkthrough/run_chat_e2e.py \\
+        "Reply with HELLO." "Reply with WORLD." "Reply with AGAIN."
+
+The single httpx.AsyncClient + cookie snapshot pattern is LOAD-BEARING
+for reuse verification: a fresh client per invocation discards the
+AWSALB cookie and ALB hashes the next WebSocket to a different task
+~50% of the time on a 2-task service, which makes Phase 1B's
+long-lived subprocess pool look broken when it isn't.
+
 Prints one line per event to stdout (machine-readable, ts-prefixed) and
 a summary at the end. Exit codes:
-    0 = chat.stream_complete observed
-    1 = chat.stream_error observed
-    2 = timeout
+    0 = all turns completed cleanly (chat.stream_complete)
+    1 = a turn errored (chat.stream_error)
+    2 = a turn timed out
     3 = WebSocket failed before any chat event
     4 = setup (login / session create) failed
 """
@@ -234,7 +247,15 @@ async def _stream_until_terminal(ws, deadline: float, started: float) -> int:
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("prompt", help="The prompt to send into the chat")
+    parser.add_argument(
+        "prompts",
+        nargs="+",
+        help=(
+            "One or more prompts. Each drives a single chat turn against the "
+            "same session, sharing one cookie jar — required to land all turns "
+            "on the same ECS task via the ALB AWSALB stickiness cookie."
+        ),
+    )
     parser.add_argument("--base-url", default=os.environ.get("ACE_WEB_BASE_URL", DEFAULT_BASE))
     parser.add_argument("--email", default=os.environ.get("ACE_E2E_EMAIL", DEFAULT_EMAIL))
     parser.add_argument(
@@ -253,8 +274,15 @@ async def main() -> int:
 
     base = args.base_url.rstrip("/")
     print(f"[{_ts()}] base_url={base}")
-    print(f"[{_ts()}] email={args.email} timeout={args.timeout_seconds}s")
+    print(f"[{_ts()}] email={args.email} timeout={args.timeout_seconds}s "
+          f"prompts={len(args.prompts)}")
 
+    # ONE httpx client = ONE persistent cookie jar. The ``cookies`` snapshot
+    # below carries the ALB AWSALB stickiness cookie set on the first
+    # response, so every subsequent WebSocket upgrade hashes to the same
+    # ECS task and reuses Phase 1B's long-lived subprocess. A fresh client
+    # per turn discards that cookie and re-rolls task affinity each time —
+    # which makes the long-lived path look broken for cross-task hops.
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as http:
         try:
             await _e2e_login(http, base, args.email, args.token)
@@ -275,17 +303,36 @@ async def main() -> int:
             print(f"[{_ts()}] session created slug={slug}")
 
         cookies = {k: v for k, v in http.cookies.items()}
+        awsalb = cookies.get("AWSALB", "")
+        if awsalb:
+            print(f"[{_ts()}] AWSALB cookie present (first 24 chars): {awsalb[:24]!r}")
+        else:
+            print(f"[{_ts()}] WARNING: no AWSALB cookie — multi-turn will hop "
+                  "ECS tasks and Phase 1B reuse won't engage")
 
-    try:
-        return await _drive_chat(
-            base, slug, cookies, args.prompt, float(args.timeout_seconds)
-        )
-    except TimeoutError as exc:
-        print(f"[{_ts()}] timeout: {exc}")
-        return 2
-    except Exception as exc:
-        print(f"[{_ts()}] unhandled exception: {type(exc).__name__}: {exc}")
-        return 3
+    last_rc = 0
+    multi = len(args.prompts) > 1
+    for i, prompt in enumerate(args.prompts, 1):
+        if multi:
+            print(f"[{_ts()}] ─── turn {i}/{len(args.prompts)} ───")
+        try:
+            last_rc = await _drive_chat(
+                base, slug, cookies, prompt, float(args.timeout_seconds)
+            )
+        except TimeoutError as exc:
+            print(f"[{_ts()}] timeout: {exc}")
+            return 2
+        except Exception as exc:
+            print(f"[{_ts()}] unhandled exception: {type(exc).__name__}: {exc}")
+            return 3
+        if last_rc != 0:
+            remaining = len(args.prompts) - i
+            if remaining:
+                print(f"[{_ts()}] turn {i} returned rc={last_rc} — aborting "
+                      f"remaining {remaining} prompt(s)")
+            return last_rc
+
+    return last_rc
 
 
 if __name__ == "__main__":

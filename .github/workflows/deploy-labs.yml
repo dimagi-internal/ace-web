@@ -177,14 +177,33 @@ jobs:
             exit 1
           fi
 
-      - name: Shorten ALB target-group deregistration delay
+      - name: Configure ALB target-group attributes (dereg + stickiness)
         run: |
-          # Default 300s deregistration drain is the long pole in rolling
-          # cutover. Reduce to 30s — labs has no long-poll requests beyond
-          # SSE/WebSocket, which the app already handles via reconnect.
-          # Idempotent: re-running the same attribute is a no-op.
+          # Self-healing target-group config. Both attributes are
+          # idempotent — re-applying the same value is a no-op — so it's
+          # safe to run on every deploy. The reason this lives in the
+          # deploy workflow rather than a one-time setup script: if the
+          # target group is ever recreated (one-time-setup.sh re-run,
+          # IaC drift, manual ops), the next deploy restores both
+          # settings automatically.
+          #
           # Requires elasticloadbalancing:ModifyTargetGroupAttributes on
           # the github-actions-labs-deploy role (added 2026-04-18).
+          #
+          # 1. deregistration_delay.timeout_seconds=30
+          #    Default 300s drain is the long pole in rolling cutover.
+          #    Labs has no long-poll requests beyond SSE/WebSocket, which
+          #    the app already handles via reconnect.
+          #
+          # 2. stickiness (lb_cookie, 1h)
+          #    LOAD-BEARING for Phase 1B — pins each browser to one ECS
+          #    task via the AWSALB cookie so the per-Session long-lived
+          #    `claude` subprocess pool gets reused across turns instead
+          #    of every WebSocket re-rolling task affinity (~50% reuse on
+          #    a 2-task service without it). Originally set up manually
+          #    for the auth-flow PTY (see docs/deploy.md "ALB target-
+          #    group stickiness"); promoted into IaC so a recreated TG
+          #    can't silently regress chat reuse.
           TG_ARN=$(aws ecs describe-services \
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_SERVICE }} \
@@ -193,9 +212,13 @@ jobs:
           if [ -n "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
             aws elbv2 modify-target-group-attributes \
               --target-group-arn "$TG_ARN" \
-              --attributes Key=deregistration_delay.timeout_seconds,Value=30 \
+              --attributes \
+                Key=deregistration_delay.timeout_seconds,Value=30 \
+                Key=stickiness.enabled,Value=true \
+                Key=stickiness.type,Value=lb_cookie \
+                Key=stickiness.lb_cookie.duration_seconds,Value=3600 \
               --output text > /dev/null
-            echo "deregistration_delay set to 30s on $TG_ARN"
+            echo "TG attrs applied: dereg=30s, stickiness=lb_cookie/3600s on $TG_ARN"
           fi
 
       - name: Deploy (hard cutover)

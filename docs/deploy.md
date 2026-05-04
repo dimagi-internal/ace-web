@@ -122,14 +122,32 @@ immediately.
 
 ### ALB target-group stickiness
 
-The `/ace/auth/cli/*` endpoints spawn a long-lived `claude setup-token`
-PTY subprocess that must outlive one HTTP call (URL fetch) and pick up
-again on the next (code submit). The subprocess is module-global state
-on one ECS task, so both requests have to land on the same task or the
-second call returns "No active auth flow" instantly.
+**Auto-applied by `deploy-labs.yml` on every deploy** — see the
+"Configure ALB target-group attributes" step. Idempotent
+(`modify-target-group-attributes` is a set-not-merge call), so any
+manual change OR target-group recreation gets healed by the next
+deploy. You should not need to set this by hand; the section below
+documents *what* it does and *why* in case you ever need to debug it.
 
-To keep the service at `desiredCount > 1`, enable `lb_cookie`
-stickiness on the target group:
+Two surfaces depend on the AWSALB stickiness cookie:
+
+1. **Auth flow** — `/ace/auth/cli/*` spawns a long-lived
+   `claude setup-token` PTY subprocess that must outlive one HTTP call
+   (URL fetch) and pick up again on the next (code submit). The
+   subprocess is module-global state on one ECS task, so both requests
+   have to land on the same task or the second call returns
+   "No active auth flow" instantly.
+
+2. **Chat (Phase 1B long-lived subprocess pool)** — `apps/common/cli_backend.py`
+   keeps one `claude -p --input-format stream-json` subprocess per
+   Django Session in a per-task in-memory pool. Stickiness pins each
+   browser to one task so subsequent chat turns reuse the existing
+   subprocess (which has all 5 ACE MCPs already booted) instead of
+   paying the ~5–30s MCP-startup cost on every turn. Without
+   stickiness on a 2-task service, ~50% of consecutive turns hop tasks
+   and need a fresh spawn.
+
+The applied config (lb_cookie, 1h):
 
 ```bash
 aws elbv2 modify-target-group-attributes \
@@ -143,11 +161,18 @@ aws elbv2 modify-target-group-attributes \
     Key=stickiness.lb_cookie.duration_seconds,Value=3600
 ```
 
-Each browser gets an `AWSALB` cookie that pins it to one task for an
-hour. Chat traffic is multi-task safe (Redis channel layer), so if the
-pinned task dies the user's next request fails over cleanly. The only
-surface affected is the auth flow, and a 1-hour window comfortably
-covers a `claude setup-token` round-trip.
+Chat traffic is multi-task safe (Redis channel layer), so if the
+pinned task dies the user's next request fails over cleanly to a new
+task. The new task pays one cold spawn for that user's first chat
+turn, then reuses for the rest of the 1-hour window.
+
+**Failover caveat for Phase 1B**: the long-lived subprocess pool is
+in-memory per task, so a task replacement (deploy, OOM, hard kill)
+loses all live sessions on that task. Each affected user pays a
+cold-spawn on their next turn. The Phase 1B plan flagged this and
+deferred a cross-task pool (durable state + RPC fan-out) as out of
+scope; the 1-hour stickiness window keeps the pain bounded for normal
+operations.
 
 ## Deploy workflow
 
