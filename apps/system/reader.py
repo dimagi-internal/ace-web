@@ -422,6 +422,19 @@ def get_skill_phase_index(plugin_path: str | None = None) -> dict[str, dict[str,
             "phase_display": phase_display,
             "phase_ordinal": phase_ordinal,
         }
+    # Also index each phase's orchestrator agent by name. The cost aggregator's
+    # current_phase cursor advances on Skill *and* Agent dispatches; an Agent
+    # dispatch's subagent_type is the agent name (e.g. "ace:design-review"),
+    # not a skill, so it would otherwise miss the lookup.
+    for p in phases:
+        agent_name = p.get("agent")
+        if not agent_name or agent_name in result:
+            continue
+        result[agent_name] = {
+            "phase": p["name"],
+            "phase_display": p["display_name"],
+            "phase_ordinal": p["ordinal"],
+        }
     return result
 
 
