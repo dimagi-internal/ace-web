@@ -346,9 +346,13 @@ export default function OppListPage() {
                 </div>
               </div>
 
-              {opp.eval_score !== null && opp.eval_score !== undefined && (
+              {(opp.eval_score_pct ?? opp.eval_score) !== null &&
+               (opp.eval_score_pct ?? opp.eval_score) !== undefined && (
                 <div className="mt-2">
-                  <ScoreChip score={opp.eval_score} passed={opp.eval_passed} />
+                  <ScoreChip
+                    scorePct={opp.eval_score_pct ?? toPct(opp.eval_score)}
+                    passed={opp.eval_passed}
+                  />
                 </div>
               )}
 
@@ -360,7 +364,12 @@ export default function OppListPage() {
               {opp.current_step ? (
                 <div className="mt-3 text-sm">
                   <span className="text-muted-foreground">Last step:</span>{" "}
-                  <span className="font-mono text-foreground">{opp.current_step}</span>
+                  <span
+                    className="text-foreground"
+                    title={opp.current_step}
+                  >
+                    {opp.current_step_display || opp.current_step}
+                  </span>
                   {opp.current_phase && (
                     <span className="ml-2 text-xs text-muted-foreground">
                       ({opp.current_phase})
@@ -369,7 +378,7 @@ export default function OppListPage() {
                 </div>
               ) : opp.status === "no-state" ? (
                 <div className="mt-3 text-sm text-muted-foreground">
-                  No <span className="font-mono">state.yaml</span> in this folder yet.
+                  Cycle hasn't started yet.
                 </div>
               ) : null}
 
@@ -393,11 +402,17 @@ export default function OppListPage() {
                   <span className="min-w-0">
                     <span className="font-medium">
                       {(opp.pending_gates ?? []).length === 1
-                        ? "Gate without decision:"
-                        : "Gates without decisions:"}
+                        ? "Awaiting review:"
+                        : `${(opp.pending_gates ?? []).length} gates awaiting review:`}
                     </span>{" "}
-                    <span className="truncate font-mono text-amber-200">
-                      {(opp.pending_gates ?? []).join(", ")}
+                    <span
+                      className="truncate text-amber-200"
+                      title={(opp.pending_gates ?? []).join(", ")}
+                    >
+                      {((opp.pending_gates_display ?? []).length > 0
+                        ? opp.pending_gates_display
+                        : opp.pending_gates ?? []
+                      ).join(", ")}
                     </span>
                   </span>
                 </div>
@@ -474,10 +489,21 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function ScoreChip({ score, passed }: { score: number; passed: boolean | null }) {
-  // Match ScorecardPanel.tsx's convention: plugin scores are usually 0-100,
-  // some opps land 0-10 — branch on the value, never assume scale.
-  const scoreLabel = score > 10 ? `${score.toFixed(0)}/100` : `${score.toFixed(1)}/10`;
+// Local fallback for OppCards from old API payloads that pre-date
+// ``eval_score_pct``. Mirrors ``apps/opps/serializers.normalize_score_pct``.
+function toPct(score: number | null): number | null {
+  if (score === null || score === undefined) return null;
+  return score > 10 ? score : score * 10;
+}
+
+function ScoreChip({
+  scorePct,
+  passed,
+}: {
+  scorePct: number | null;
+  passed: boolean | null;
+}) {
+  if (scorePct === null) return null;
   const tone =
     passed === true
       ? "bg-emerald-900/60 text-emerald-200 border-emerald-700"
@@ -485,16 +511,14 @@ function ScoreChip({ score, passed }: { score: number; passed: boolean | null })
         ? "bg-red-900/60 text-red-200 border-red-700"
         : "bg-muted text-muted-foreground border-border";
   const glyph = passed === true ? "✓" : passed === false ? "✕" : "·";
-  const label =
-    passed === true ? "passed" : passed === false ? "failed" : "scored";
+  const verb = passed === true ? "passed" : passed === false ? "failed" : "scored";
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
-      title={`opp-eval ${label}: ${scoreLabel}`}
+      title={`opp-eval ${verb}: ${Math.round(scorePct)}/100`}
     >
       <span aria-hidden="true">{glyph}</span>
-      <span>{scoreLabel}</span>
-      <span className="opacity-70">opp-eval {label}</span>
+      <span>{Math.round(scorePct)}/100 {verb}</span>
     </span>
   );
 }

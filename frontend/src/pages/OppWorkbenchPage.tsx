@@ -112,9 +112,10 @@ export default function OppWorkbenchPage() {
                   slug={slug}
                   runId={snapshot.current_run.run_id}
                   skill={selectedStep.skill_name}
+                  skillDisplayName={selectedStep.display_name}
                 />
               ) : (
-                <EmptyState title="Select a step" description="Click a row to see its details." />
+                <EmptyState title="Select a step" description="Click a row in the lifecycle to see its details." />
               )}
             </section>
             <aside className="flex w-[400px] shrink-0 flex-col border-l border-border bg-card">
@@ -123,10 +124,11 @@ export default function OppWorkbenchPage() {
                   slug={slug}
                   runId={snapshot.current_run.run_id}
                   skill={selectedStep.skill_name}
+                  skillDisplayName={selectedStep.display_name}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
-                  Select a step to see its chats
+                  Select a step in the lifecycle to see its chats
                 </div>
               )}
             </aside>

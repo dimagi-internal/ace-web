@@ -11,6 +11,10 @@ interface Props {
   slug: string;
   runId: string;
   skill: string;
+  // Human-readable name for the selected skill (e.g. "Idea to PDD"). The
+  // chat-pane header used to show the bare slug ``idea-to-pdd``; this
+  // prop comes from the parent's selectedStep.display_name.
+  skillDisplayName?: string;
 }
 
 /**
@@ -27,7 +31,7 @@ interface Props {
  * "Start a chat about this step" CTA that calls the existing
  * /api/opps/<slug>/runs/<run>/steps/<skill>/discuss endpoint.
  */
-export function WorkbenchChatPane({ slug, runId, skill }: Props) {
+export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Props) {
   const { workspaceSlug = "" } = useParams<{ workspaceSlug?: string }>();
   const [chats, setChats] = useState<LinkedChat[] | null>(null);
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
@@ -90,7 +94,10 @@ export function WorkbenchChatPane({ slug, runId, skill }: Props) {
       <header className="flex items-center gap-2 border-b border-border bg-card px-3 py-2">
         <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-xs font-semibold text-foreground">
-          Chats about <span className="font-mono text-primary">{skill}</span>
+          Chats about{" "}
+          <span className="text-primary" title={skill}>
+            {skillDisplayName || skill}
+          </span>
         </span>
         <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
           {chats.length}

@@ -147,9 +147,19 @@ export interface OppCard {
   current_run_id: string | null;
   current_phase: string | null;
   current_step: string | null;
+  // Human label for ``current_step`` ("Idea to PDD" instead of
+  // ``idea-to-pdd``), resolved server-side from the plugin's SKILL.md
+  // metadata. Null when ``current_step`` is null or unknown.
+  current_step_display: string | null;
   status: string;
   pending_gates: string[];
+  // Parallel to ``pending_gates`` — same length and order, with each
+  // skill slug replaced by its display_name. Falls back to the slug
+  // for unknown skills. UI prefers this over ``pending_gates``.
+  pending_gates_display: string[];
   eval_score: number | null;
+  // Server-normalized 0-100. Same shape as Judge.score_pct.
+  eval_score_pct: number | null;
   eval_passed: boolean | null;
   last_activity_at: string | null;
   run_count: number;
@@ -164,11 +174,23 @@ export interface Artifact {
   path: string;
 }
 
+// Judge criteria entries can be a bare numeric score (legacy ``criteria``
+// shape) or an object with at least ``score`` (the plugin's ``dimensions``
+// shape with optional ``weight``, ``strength``, ``weakness``). Both flow
+// through the API unchanged — components must handle both.
+export type JudgeCriterionValue =
+  | number
+  | { score?: number; weight?: number; strength?: string; weakness?: string; [k: string]: unknown };
+
 export interface Judge {
   score: number | null;
+  // Server-normalized 0-100 score so the frontend never has to branch on
+  // scale. Null when ``score`` is null. See ``apps/opps/serializers.py``
+  // ``serialize_judge`` for the heuristic.
+  score_pct: number | null;
   passed: boolean | null;
   evaluated_at: string | null;
-  criteria: Record<string, number>;
+  criteria: Record<string, JudgeCriterionValue>;
   rationale: string;
 }
 
@@ -181,6 +203,10 @@ export interface Gate {
 
 export interface Step {
   skill_name: string;
+  // Human-readable name from the plugin's SKILL.md H1 (e.g. "Idea to PDD"
+  // for ``idea-to-pdd``). Falls back to ``skill_name`` server-side when
+  // the plugin has no display_name for this skill.
+  display_name: string;
   phase: string;
   phase_display: string;
   ordinal: number;

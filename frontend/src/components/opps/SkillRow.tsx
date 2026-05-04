@@ -8,11 +8,15 @@ interface Props {
 }
 
 export function SkillRow({ step, isSelected, priorRunStep, onClick }: Props) {
-  const judgeScore = step.judge?.score ?? null;
-  const priorScore = priorRunStep?.judge?.score ?? null;
+  // Use the server-normalized 0-100 score everywhere so width, label, and
+  // delta are on one consistent scale. Falls back to score for old API
+  // payloads that haven't deployed score_pct yet.
+  const judgeScorePct = step.judge?.score_pct ?? step.judge?.score ?? null;
+  const priorScorePct =
+    priorRunStep?.judge?.score_pct ?? priorRunStep?.judge?.score ?? null;
   const delta =
-    judgeScore !== null && priorScore !== null
-      ? judgeScore - priorScore
+    judgeScorePct !== null && priorScorePct !== null
+      ? judgeScorePct - priorScorePct
       : null;
 
   return (
@@ -26,14 +30,17 @@ export function SkillRow({ step, isSelected, priorRunStep, onClick }: Props) {
       }`}
     >
       <StatusDot status={step.status} />
-      <span className="w-[140px] shrink-0 font-semibold text-foreground">
-        {step.skill_name}
+      <span
+        className="w-[160px] shrink-0 truncate font-semibold text-foreground"
+        title={step.skill_name}
+      >
+        {step.display_name || step.skill_name}
       </span>
       {step.has_judge ? (
         <>
-          <JudgeBar score={judgeScore} />
-          <span className="w-[32px] shrink-0 text-[11px] text-green-400">
-            {judgeScore?.toFixed(1) ?? "—"}
+          <JudgeBar scorePct={judgeScorePct} />
+          <span className="w-[44px] shrink-0 text-[11px] text-green-400">
+            {judgeScorePct === null ? "—" : `${Math.round(judgeScorePct)}`}
           </span>
           <span className={`w-[48px] shrink-0 text-[10px] ${deltaTone(delta)}`}>
             {formatDelta(delta)}
@@ -45,11 +52,14 @@ export function SkillRow({ step, isSelected, priorRunStep, onClick }: Props) {
               rows, but drop the "no judge" label — it was internal-speak
               leaking into the UI. */}
           <span className="w-[54px] shrink-0" />
-          <span className="w-[32px] shrink-0" />
+          <span className="w-[44px] shrink-0" />
           <span className="w-[48px] shrink-0" />
         </>
       )}
-      <span className="flex-1 truncate text-[11px] text-muted-foreground">
+      <span
+        className="flex-1 truncate text-[11px] text-muted-foreground"
+        title={step.preview_text}
+      >
         {step.preview_text}
       </span>
     </button>
@@ -79,12 +89,12 @@ function statusColor(status: string): string {
   return "text-muted-foreground";
 }
 
-function JudgeBar({ score }: { score: number | null }) {
-  const pct = score !== null ? Math.min(100, Math.max(0, score * 10)) : 0;
+function JudgeBar({ scorePct }: { scorePct: number | null }) {
+  const pct = scorePct !== null ? Math.min(100, Math.max(0, scorePct)) : 0;
   const tone =
-    score === null ? "bg-muted"
-    : score >= 8 ? "bg-green-500"
-    : score >= 6 ? "bg-amber-500"
+    scorePct === null ? "bg-muted"
+    : scorePct >= 80 ? "bg-green-500"
+    : scorePct >= 60 ? "bg-amber-500"
     : "bg-red-500";
   return (
     <span className="relative block h-1.5 w-[54px] shrink-0 overflow-hidden rounded bg-card">
@@ -95,17 +105,17 @@ function JudgeBar({ score }: { score: number | null }) {
 
 function formatDelta(delta: number | null): string {
   if (delta === null) return "";
-  const rounded = Math.round(delta * 10) / 10;
-  if (rounded === 0) return "= 0";
+  const rounded = Math.round(delta);
+  if (rounded === 0) return "±0";
   const arrow = rounded > 0 ? "↑" : "↓";
   const sign = rounded > 0 ? "+" : "";
-  return `${arrow} ${sign}${rounded.toFixed(1)}`;
+  return `${arrow} ${sign}${rounded}`;
 }
 
 function deltaTone(delta: number | null): string {
   if (delta === null) return "text-muted-foreground";
-  if (delta > 0.05) return "text-green-400";
-  if (delta < -0.05) return "text-red-400";
+  if (delta > 0.5) return "text-green-400";
+  if (delta < -0.5) return "text-red-400";
   return "text-muted-foreground";
 }
 
