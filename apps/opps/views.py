@@ -859,6 +859,8 @@ def step_chats(request, slug: str, run_id: str, skill: str):
         .order_by("-updated_at")
     )[:20]
 
+    skill_display_lookup = _skill_display_name_lookup()
+
     def _row(c: Session, kind: str) -> dict:
         return {
             "slug": c.slug,
@@ -868,6 +870,14 @@ def step_chats(request, slug: str, run_id: str, skill: str):
             "source": c.source,            # "web" | "upload"
             "kind": kind,                  # "step" | "opp"
             "step_skill": c.opp_step_skill or None,
+            # Resolved display name for the step (e.g. "Idea to PDD" from
+            # ``idea-to-pdd``). Falls back to the slug when not in the
+            # plugin registry. Null only when step_skill is null.
+            "step_skill_display": (
+                skill_display_lookup.get(c.opp_step_skill, c.opp_step_skill)
+                if c.opp_step_skill
+                else None
+            ),
             "preview": _truncate_preview(getattr(c, "first_user_plaintext", "") or ""),
         }
 

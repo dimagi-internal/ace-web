@@ -38,6 +38,7 @@ class SessionSerializer(serializers.ModelSerializer):
     message_count = serializers.SerializerMethodField()
     preview = serializers.SerializerMethodField()
     opp_display_name = serializers.SerializerMethodField()
+    opp_step_skill_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Session
@@ -64,16 +65,45 @@ class SessionSerializer(serializers.ModelSerializer):
             # string when not opp-linked or when the OppWorkspace row
             # has been deleted; chat UI falls back to opp_slug.
             "opp_display_name",
+            # Human display name for opp_step_skill resolved from the
+            # plugin's SKILL.md metadata (e.g. "Idea to PDD" for
+            # ``idea-to-pdd``). Empty string when not step-linked or
+            # when the skill isn't in the registry.
+            "opp_step_skill_display",
         ]
         read_only_fields = [
             "slug", "cli_session_id", "created_at", "updated_at",
             "message_count", "preview",
             "opp_slug", "opp_run_id", "opp_step_skill",
-            "opp_display_name",
+            "opp_display_name", "opp_step_skill_display",
         ]
 
     def get_message_count(self, obj: Session) -> int:
         return obj.messages.count()
+
+    def get_opp_step_skill_display(self, obj: Session) -> str:
+        """Resolve opp_step_skill (e.g. ``idea-to-pdd``) to its human
+        display_name (``Idea to PDD``) via the plugin's SKILL.md
+        metadata. Falls back to the slug itself when the skill isn't
+        in the registry. Empty string when not step-linked.
+
+        Uses ``apps.system.reader.load_system_overview``, which has its
+        own per-process cache, so the per-skill lookup is O(skills) on
+        first call and O(1) after — fine for a per-row serializer call.
+        """
+        if not obj.opp_step_skill:
+            return ""
+        try:
+            from django.conf import settings
+
+            from apps.system.reader import load_system_overview
+            overview = load_system_overview(getattr(settings, "ACE_PLUGIN_PATH", "") or "")
+            for s in overview.get("skills") or []:
+                if s.get("name") == obj.opp_step_skill:
+                    return s.get("display_name") or obj.opp_step_skill
+        except Exception:
+            pass
+        return obj.opp_step_skill
 
     def get_opp_display_name(self, obj: Session) -> str:
         # The list view annotates this on the queryset to avoid N+1; if

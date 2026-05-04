@@ -30,6 +30,10 @@ export interface Session {
   // when not opp-linked or when the OppWorkspace row was deleted; UI
   // falls back to opp_slug.
   opp_display_name: string;
+  // Human display name for opp_step_skill (e.g. "Idea to PDD" from
+  // ``idea-to-pdd``). Empty when not step-linked; UI falls back to
+  // opp_step_skill.
+  opp_step_skill_display: string;
 }
 
 export interface SessionDetail extends Session {
@@ -276,6 +280,10 @@ export interface LinkedChat {
   source: SessionSource;
   kind: "step" | "opp";
   step_skill: string | null;
+  // Human display name parallel to step_skill. Falls back to the slug
+  // server-side when the skill isn't in the plugin registry; null only
+  // when step_skill is null.
+  step_skill_display: string | null;
   preview: string;
 }
 

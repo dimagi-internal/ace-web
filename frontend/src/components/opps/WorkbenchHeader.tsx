@@ -32,6 +32,15 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
     try {
       await Promise.resolve(onRefresh());
       toast.success("Refreshed from Drive");
+    } catch (err) {
+      // Surface refresh failures (Drive timeout, auth lapse, etc.) so
+      // the user knows the data on screen is stale, not fresh. Without
+      // this they'd think the spinner stopped → assume success.
+      toast.error("Refresh failed", {
+        description:
+          (err as Error)?.message ||
+          "Couldn't reach Drive. Try again in a moment.",
+      });
     } finally {
       // Brief artificial floor so the spinner is visible even when the
       // request returns instantly — without it the user can't tell the

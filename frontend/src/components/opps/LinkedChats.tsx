@@ -108,10 +108,10 @@ function ChatBadges({ chat }: { chat: LinkedChat }) {
       )}
       {chat.kind === "opp" && chat.step_skill && chat.step_skill !== "" && (
         <span
-          className="rounded bg-muted px-1 font-mono text-[8px] text-muted-foreground"
-          title={`Scoped to step: ${chat.step_skill}`}
+          className="rounded bg-muted px-1 text-[10px] text-muted-foreground"
+          title={`Scoped to step: ${chat.step_skill_display || chat.step_skill}`}
         >
-          {chat.step_skill}
+          {chat.step_skill_display || chat.step_skill}
         </span>
       )}
     </span>
