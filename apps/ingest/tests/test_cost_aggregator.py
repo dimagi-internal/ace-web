@@ -84,7 +84,7 @@ def test_aggregate_attributes_sidechain_to_agent_segment(no_registry):
     assert invoc["tokens"]["cache_read_tokens"] == 8700  # 2200+3000+3500
 
 
-def test_aggregate_orchestration_excludes_sidechain_tokens():
+def test_aggregate_orchestration_excludes_sidechain_tokens(no_registry):
     """Sidechain turns must NOT also land in orchestration."""
     from apps.ingest.cost_aggregator import aggregate
     breakdown = aggregate(_events())
