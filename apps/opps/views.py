@@ -14,6 +14,7 @@ from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
 from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
+    normalize_score_pct,
     serialize_opp_snapshot,
     serialize_scorecard,
     serialize_step_snapshot,
@@ -28,10 +29,26 @@ from apps.opps.sync import (
 )
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
+from apps.system.reader import load_system_overview as _load_system_overview
 from apps.workspaces.models import Workspace
 from apps.workspaces.permissions import is_member, user_workspaces
 
 log = logging.getLogger(__name__)
+
+
+def _skill_display_name_lookup() -> dict[str, str]:
+    """{skill_slug: display_name} resolved from the plugin's SKILL.md
+    metadata. Cached implicitly via apps.system.reader's per-process cache.
+
+    Used to render human labels for the opp list's ``current_step`` and
+    ``pending_gates`` fields without fetching a full snapshot per opp."""
+    from django.conf import settings as _s
+    overview = _load_system_overview(getattr(_s, "ACE_PLUGIN_PATH", "") or "")
+    return {
+        s["name"]: s.get("display_name") or s["name"]
+        for s in (overview.get("skills") or [])
+        if s.get("name")
+    }
 
 
 @api_view(["GET"])
@@ -196,6 +213,8 @@ def _opp_list_impl(request):
             _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
             if required_tags and not required_tags.issubset(set(card.opp.tags)):
                 continue
+            display_lookup = _skill_display_name_lookup()
+            pending_slugs = list(card.pending_gate_skills)
             cards.append({
                 "slug": card.opp.slug,
                 "display_name": card.opp.display_name,
@@ -206,9 +225,18 @@ def _opp_list_impl(request):
                 "current_run_id": card.opp.current_run_id,
                 "current_phase": card.current_phase,
                 "current_step": card.current_step,
+                "current_step_display": (
+                    display_lookup.get(card.current_step)
+                    if card.current_step
+                    else None
+                ),
                 "status": card.status,
-                "pending_gates": list(card.pending_gate_skills),
+                "pending_gates": pending_slugs,
+                "pending_gates_display": [
+                    display_lookup.get(s, s) for s in pending_slugs
+                ],
                 "eval_score": card.eval_score,
+                "eval_score_pct": normalize_score_pct(card.eval_score),
                 "eval_passed": card.eval_passed,
                 "last_activity_at": card.last_activity_at,
                 "run_count": card.run_count,
@@ -233,9 +261,12 @@ def _opp_list_impl(request):
                 "current_run_id": None,
                 "current_phase": None,
                 "current_step": None,
+                "current_step_display": None,
                 "status": "error",
                 "pending_gates": [],
+                "pending_gates_display": [],
                 "eval_score": None,
+                "eval_score_pct": None,
                 "eval_passed": None,
                 "last_activity_at": None,
                 "run_count": 1,

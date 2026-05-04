@@ -63,11 +63,31 @@ def serialize_artifact(a: ArtifactRef) -> dict:
     }
 
 
+def normalize_score_pct(score: float | None) -> float | None:
+    """Project an arbitrary judge score onto a 0-100 scale.
+
+    The plugin emits judge scores in two scales:
+      - 0-10 for per-skill -eval rubrics (idea-to-pdd-eval, app-deploy-eval, …)
+      - 0-100 for the umbrella opp-eval ``overall_score``
+
+    There's no machine-readable scale flag in the verdict YAML today, so
+    we use the same heuristic the UI used to do inline (score > 10 ⇒
+    already 0-100, else 0-10). Doing it once here means every reader gets
+    a normalized score and the frontend can drop its dual-scale branching.
+    """
+    if score is None:
+        return None
+    if score > 10:
+        return float(score)
+    return float(score) * 10.0
+
+
 def serialize_judge(j: JudgeVerdict | None) -> dict | None:
     if j is None:
         return None
     return {
         "score": j.score,
+        "score_pct": normalize_score_pct(j.score),
         "passed": j.passed,
         "evaluated_at": j.evaluated_at,
         "criteria": j.criteria,
@@ -100,8 +120,11 @@ def serialize_step_snapshot(
     has_judge = bool((skill_meta or {}).get("has_judge"))
     is_recurring = bool((skill_meta or {}).get("is_recurring"))
 
+    display_name = (skill_meta or {}).get("display_name") or step_snap.step.skill_name
+
     return {
         "skill_name": step_snap.step.skill_name,
+        "display_name": display_name,
         "phase": phase_name,
         "phase_display": phase_display,
         "ordinal": step_snap.step.ordinal,

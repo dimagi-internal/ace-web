@@ -3,6 +3,7 @@ import { ExternalLink } from "lucide-react";
 
 import { artifactBodyUrl } from "@/api/opps";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { PatientLoader } from "@/components/opps/LoadingStates";
 import { parseFrontmatter, type Frontmatter } from "@/lib/frontmatter";
 
 const URL_RE = /^https?:\/\/\S+$/;
@@ -74,10 +75,38 @@ export function ArtifactBody({ slug, runId, skill, artifactName, mimeType, webVi
   }, [slug, runId, skill, artifactName, mimeType]);
 
   if (state.kind === "loading") {
-    return <div className="p-3 text-xs text-muted-foreground">Loading…</div>;
+    return (
+      <PatientLoader
+        label="Loading…"
+        slowLabel="Drive is slow today — still fetching this artifact."
+        className="p-3 text-xs"
+      />
+    );
   }
   if (state.kind === "error") {
-    return <div className="p-3 text-xs text-destructive">Error: {state.message}</div>;
+    return (
+      <div className="p-3 text-xs text-destructive">
+        Couldn't load this artifact.
+        {webViewLink && (
+          <>
+            {" "}
+            <a
+              href={webViewLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline"
+            >
+              Open in Drive
+            </a>
+            .
+          </>
+        )}
+        <details className="mt-1 opacity-70">
+          <summary className="cursor-pointer">details</summary>
+          <pre className="mt-1 whitespace-pre-wrap break-all">{state.message}</pre>
+        </details>
+      </div>
+    );
   }
   if (state.kind === "too-large") {
     return (

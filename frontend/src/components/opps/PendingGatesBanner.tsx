@@ -28,8 +28,8 @@ export function PendingGatesBanner({ steps, onSelect }: Props) {
       <AlertTriangle className="h-3.5 w-3.5 text-amber-500" aria-hidden />
       <span className="font-medium text-amber-700 dark:text-amber-300">
         {pending.length === 1
-          ? "1 gate brief, no decision recorded"
-          : `${pending.length} gate briefs, no decisions recorded`}
+          ? "1 gate awaiting your review"
+          : `${pending.length} gates awaiting your review`}
       </span>
       <span className="flex flex-wrap gap-1.5">
         {pending.map((s) => (
@@ -37,10 +37,10 @@ export function PendingGatesBanner({ steps, onSelect }: Props) {
             key={s.skill_name}
             type="button"
             onClick={() => onSelect(s.skill_name)}
-            className="rounded bg-amber-500/20 px-2 py-0.5 font-mono text-[11px] text-amber-700 hover:bg-amber-500/30 dark:text-amber-200"
+            className="rounded bg-amber-500/20 px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-500/30 dark:text-amber-200"
             title={`Review gate for ${s.skill_name}`}
           >
-            {s.skill_name}
+            {s.display_name || s.skill_name}
           </button>
         ))}
       </span>

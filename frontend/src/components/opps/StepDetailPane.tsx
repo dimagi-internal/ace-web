@@ -10,15 +10,20 @@ import { DiscussInChatButton } from "./DiscussInChatButton";
 import { EditArtifactDialog } from "./EditArtifactDialog";
 import { GateHistory } from "./GateHistory";
 import { JudgeVerdict } from "./JudgeVerdict";
-import { LoadingSpinner } from "./LoadingStates";
+import { PatientLoader } from "./LoadingStates";
 
 interface Props {
   slug: string;
   runId: string;
   skill: string;
+  // Human label for the selected skill (e.g. "Idea to PDD"). When the
+  // detail payload arrives it carries its own display_name; this prop
+  // is just so the loading state shows the friendly name instead of
+  // the raw slug.
+  skillDisplayName?: string;
 }
 
-export function StepDetailPane({ slug, runId, skill }: Props) {
+export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) {
   const [detail, setDetail] = useState<StepDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null);
@@ -43,23 +48,32 @@ export function StepDetailPane({ slug, runId, skill }: Props) {
       .finally(() => setLoading(false));
   }, [slug, runId, skill]);
 
-  if (loading) return <LoadingSpinner label={`Loading ${skill}…`} />;
+  if (loading)
+    return (
+      <PatientLoader
+        label={`Loading ${skillDisplayName || skill}…`}
+        slowLabel="Drive is slow today — still fetching this step's artifacts."
+      />
+    );
   if (!detail)
     return (
-      <div className="p-4 text-xs text-muted-foreground">
-        Failed to load {skill}.
+      <div className="p-4 text-xs text-destructive">
+        Couldn't load {skillDisplayName || skill} — Drive may be slow or rate-limited.
       </div>
     );
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-4">
       <div>
-        <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
-          Selected step
+        <div
+          className="text-sm font-semibold text-foreground"
+          title={detail.skill_name}
+        >
+          {detail.display_name || detail.skill_name}
         </div>
-        <div className="text-sm font-semibold text-foreground">{detail.skill_name}</div>
-        <div className="text-[10px] text-muted-foreground">
-          {detail.phase_display} · status <span className="text-foreground">{detail.status}</span>
+        <div className="text-[11px] text-muted-foreground">
+          {detail.phase_display} · status{" "}
+          <span className="text-foreground">{detail.status}</span>
         </div>
       </div>
 

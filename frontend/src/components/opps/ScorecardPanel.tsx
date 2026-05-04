@@ -22,13 +22,11 @@ interface Props {
   slug: string;
 }
 
-function verdictColor(score: number | null | undefined, passed: boolean | null) {
+function verdictColor(scorePct: number | null | undefined, passed: boolean | null) {
   if (passed === false) return "text-destructive";
-  if (score === null || score === undefined) return "text-muted-foreground";
-  // The plugin's opp-eval scores 0-100; fall through for 0-10 scales just in case.
-  const normalized = score > 10 ? score : score * 10;
-  if (normalized >= 80) return "text-green-500";
-  if (normalized >= 60) return "text-amber-500";
+  if (scorePct === null || scorePct === undefined) return "text-muted-foreground";
+  if (scorePct >= 80) return "text-green-500";
+  if (scorePct >= 60) return "text-amber-500";
   return "text-destructive";
 }
 
@@ -69,14 +67,9 @@ export function ScorecardPanel({ slug }: Props) {
   }
 
   const judge = data.latest_verdict;
-  const score = judge.score;
+  const scorePct = judge.score_pct ?? (judge.score === null ? null : judge.score > 10 ? judge.score : judge.score * 10);
   const variant = data.latest_verdict_variant ?? "";
-  const scoreLabel =
-    score === null || score === undefined
-      ? "—"
-      : score > 10
-      ? `${score.toFixed(0)}/100`
-      : `${score.toFixed(1)}/10`;
+  const scoreLabel = scorePct === null ? "—" : `${Math.round(scorePct)}/100`;
 
   return (
     <>
@@ -90,7 +83,7 @@ export function ScorecardPanel({ slug }: Props) {
           opp-eval
           {variant && ` · ${variant}`}
         </span>
-        <span className={`font-semibold ${verdictColor(score, judge.passed)}`}>
+        <span className={`font-semibold ${verdictColor(scorePct, judge.passed)}`}>
           {scoreLabel}
         </span>
         <span className="text-[10px] text-muted-foreground">
@@ -111,7 +104,7 @@ export function ScorecardPanel({ slug }: Props) {
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex items-baseline gap-4 rounded border border-border bg-card p-3">
-              <div className={`text-3xl font-semibold ${verdictColor(score, judge.passed)}`}>
+              <div className={`text-3xl font-semibold ${verdictColor(scorePct, judge.passed)}`}>
                 {scoreLabel}
               </div>
               <div className="text-sm text-muted-foreground">
@@ -201,12 +194,16 @@ function DimensionRow({
     if (typeof obj.strength === "string") strength = obj.strength;
     if (typeof obj.weakness === "string") weakness = obj.weakness;
   }
+  // Dimensions are usually 0-10 — promote to a 0-100 scale just for color
+  // tone; keep the original value in the label so the user sees the
+  // dimension as the plugin emitted it.
+  const scorePct = score === null ? null : score > 10 ? score : score * 10;
   return (
     <div className="flex flex-col gap-0.5 rounded border border-border bg-card p-2">
       <div className="flex items-baseline justify-between">
         <span className="text-xs font-medium">{name}</span>
         <span
-          className={`text-sm font-semibold ${verdictColor(score, null)}`}
+          className={`text-sm font-semibold ${verdictColor(scorePct, null)}`}
         >
           {score === null ? "—" : score}
         </span>

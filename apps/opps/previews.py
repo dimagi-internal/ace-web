@@ -240,13 +240,16 @@ def _ocs_chatbot_qa(step: StepSnapshot, bodies: dict[str, str]) -> str:
 
 
 def _ocs_chatbot_eval(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    # The sync layer already surfaces the judge verdict from
-    # verdicts/*.yaml on the StepSnapshot. Prefer that.
+    # The skill list row already shows the judge bar + numeric score in
+    # its own column for has_judge skills. Don't duplicate the number
+    # here on a different scale (the previous "{score:.0f}/100" looked
+    # like 9/100 next to a green 8.5 bar). Just say pass / fail.
     judge = step.judge
-    if judge is not None and judge.score is not None:
-        status = "pass" if judge.passed else ("fail" if judge.passed is False else "—")
-        return f"⚖️ {judge.score:.0f}/100 · {status}"
-    return "⚖️ ocs-chatbot-eval"
+    if judge is not None and judge.passed is True:
+        return "⚖️ pass"
+    if judge is not None and judge.passed is False:
+        return "⚖️ fail"
+    return "⚖️ pending"
 
 
 def _opp_eval(step: StepSnapshot, bodies: dict[str, str]) -> str:
