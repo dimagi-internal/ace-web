@@ -21,8 +21,9 @@ export function SkillList({
 
   return (
     <div className="flex flex-col gap-3 p-4">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-        Lifecycle · {steps.length} skills
+      <div className="text-xs font-medium text-muted-foreground">
+        Lifecycle ·{" "}
+        <span className="text-foreground/80">{steps.length} skills</span>
       </div>
       {sortedPhases.map((phase) => {
         const phaseSteps = steps
@@ -33,9 +34,11 @@ export function SkillList({
           <section key={phase.name} className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <span className="h-0.5 w-2 bg-muted-foreground" />
-              <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Phase {phase.ordinal} · {phase.display_name} · {phaseSteps.length}{" "}
-                {phaseSteps.length === 1 ? "step" : "steps"}
+              <h3 className="text-xs font-semibold text-foreground/80">
+                Phase {phase.ordinal} · {phase.display_name}
+                <span className="ml-1.5 font-normal text-muted-foreground">
+                  · {phaseSteps.length} {phaseSteps.length === 1 ? "step" : "steps"}
+                </span>
               </h3>
               <span className="h-px flex-1 bg-border" />
             </div>
@@ -77,9 +80,12 @@ export function SkillList({
             <section key={`legacy-${phaseName}`} className="flex flex-col gap-1 opacity-75">
               <div className="flex items-center gap-2">
                 <span className="h-0.5 w-2 bg-amber-500/60" />
-                <h3 className="text-[10px] font-semibold uppercase tracking-wider text-amber-500/80">
-                  Legacy · {phaseName} · {phaseSteps.length}{" "}
-                  {phaseSteps.length === 1 ? "step" : "steps"}
+                <h3 className="text-xs font-semibold text-amber-500/80">
+                  Legacy · {phaseName}
+                  <span className="ml-1.5 font-normal text-amber-500/60">
+                    · {phaseSteps.length}{" "}
+                    {phaseSteps.length === 1 ? "step" : "steps"}
+                  </span>
                 </h3>
                 <span className="h-px flex-1 bg-border" />
               </div>

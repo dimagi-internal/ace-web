@@ -480,15 +480,21 @@ function StatusBadge({ status }: { status: string }) {
   if (status === "ok") return null;
   if (status === "no-state") {
     return (
-      <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-        no state.yaml
+      <span
+        className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+        title="No state.yaml file in this opp's Drive folder yet"
+      >
+        Not started yet
       </span>
     );
   }
   if (status === "error") {
     return (
-      <span className="rounded bg-red-900 px-2 py-0.5 text-xs text-red-300">
-        load error
+      <span
+        className="rounded bg-destructive/20 px-2 py-0.5 text-xs text-destructive"
+        title="ace-web couldn't read this opp's Drive folder"
+      >
+        Couldn't load
       </span>
     );
   }

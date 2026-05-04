@@ -92,47 +92,55 @@ export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) 
             Artifacts
           </div>
           <div className="flex flex-col gap-1">
-            {detail.artifacts.map((a) => (
-              <div
-                key={a.name}
-                className={cn(
-                  "flex items-center gap-2 rounded border px-2 py-1 text-[11px]",
-                  activeArtifact?.name === a.name
-                    ? "border-primary bg-primary/5"
-                    : "border-border bg-card hover:bg-accent",
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => setActiveArtifact(a)}
-                  className="flex-1 truncate text-left font-mono"
+            {detail.artifacts.map((a) => {
+              const isActive = activeArtifact?.name === a.name;
+              return (
+                <div
+                  key={a.name}
+                  className={cn(
+                    "flex items-center gap-2 rounded border px-2 py-1 text-[11px]",
+                    isActive
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-card hover:bg-accent",
+                  )}
                 >
-                  {a.name}
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditing(a);
-                  }}
-                  className="text-muted-foreground hover:text-foreground"
-                  title="Edit"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-                {a.drive_web_link && (
-                  <a
-                    href={a.drive_web_link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-muted-foreground hover:text-foreground"
-                    title="Open in Drive"
+                  <button
+                    type="button"
+                    onClick={() => setActiveArtifact(a)}
+                    className="flex-1 truncate text-left font-mono"
                   >
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-              </div>
-            ))}
+                    {a.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditing(a);
+                    }}
+                    className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label={`Edit ${a.name}`}
+                    title="Edit"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                  {/* Hide the row-level Drive link for the ACTIVE artifact —
+                      the viewer header below already shows "Open in Drive",
+                      and two identical links 30px apart is just clutter. */}
+                  {a.drive_web_link && !isActive && (
+                    <a
+                      href={a.drive_web_link}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label={`Open ${a.name} in Drive`}
+                      title="Open in Drive"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
