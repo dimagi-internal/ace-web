@@ -67,8 +67,11 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
               Phase · {run.current_phase}
             </span>
           )}
-          <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {run.mode} mode
+          <span
+            className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+            title={`Run mode: ${run.mode} (${modeExplanation(run.mode)})`}
+          >
+            {run.mode}
           </span>
           <TagEditor slug={opp.slug} initialTags={opp.tags ?? []} />
           {workspaceSlug ? (
@@ -115,4 +118,13 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
       />
     </>
   );
+}
+
+function modeExplanation(mode: string): string {
+  if (mode === "auto") return "ACE runs every step without pausing for review";
+  if (mode === "review") return "ACE pauses at gates for human approval";
+  if (mode === "default") return "Standard run mode";
+  if (mode === "dry-run") return "ACE simulates without writing changes";
+  if (mode === "sandbox") return "Isolated test run";
+  return mode;
 }

@@ -82,6 +82,25 @@ export default function OppWorkbenchPage() {
     if (skill) setSelectedSkill(skill);
   }, [skill]);
 
+  // First-load auto-select: if no step is selected (no `:skill` in URL),
+  // pick the first ``gate-pending`` step so a reviewing user lands on the
+  // action they came to do. We only run this on the initial snapshot
+  // load — never overwrite a later user selection. Falls back to leaving
+  // selectedSkill null when nothing is gate-pending, preserving the
+  // existing "Select a step" empty state.
+  useEffect(() => {
+    if (state.kind !== "loaded") return;
+    if (skill) return;          // explicit URL → respect it
+    if (selectedSkill) return;  // user already picked → don't overwrite
+    const pending = state.snapshot.current_run.steps.find(
+      (s) => s.status === "gate-pending",
+    );
+    if (pending) setSelectedSkill(pending.skill_name);
+    // Only depend on state.kind so this fires once when the snapshot
+    // first loads, not on every silent refresh that swaps the snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.kind]);
+
   if (state.kind === "loading")
     return <LoadingSpinner label={`Loading ${humanizeSlug(slug)}…`} />;
   if (state.kind === "error") return <ErrorState message={state.message} onRetry={() => load()} />;

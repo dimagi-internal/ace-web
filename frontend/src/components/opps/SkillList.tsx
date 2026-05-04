@@ -1,3 +1,6 @@
+import { useMemo, useState } from "react";
+import { Search, X } from "lucide-react";
+
 import type { PhaseInfo, Step } from "../../api/types";
 import { SkillRow } from "./SkillRow";
 
@@ -18,15 +21,61 @@ export function SkillList({
 }: Props) {
   const priorBySkill = new Map(priorRunSteps.map((s) => [s.skill_name, s] as const));
   const sortedPhases = [...phases].sort((a, b) => a.ordinal - b.ordinal);
+  const [filter, setFilter] = useState("");
+
+  // Filter steps by display_name OR skill_name OR phase display_name.
+  // Empty filter means everything passes.
+  const filteredSteps = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return steps;
+    return steps.filter((s) =>
+      (s.display_name || "").toLowerCase().includes(needle) ||
+      s.skill_name.toLowerCase().includes(needle) ||
+      (s.phase_display || "").toLowerCase().includes(needle),
+    );
+  }, [steps, filter]);
 
   return (
     <div className="flex flex-col gap-3 p-4">
-      <div className="text-xs font-medium text-muted-foreground">
-        Lifecycle ·{" "}
-        <span className="text-foreground/80">{steps.length} skills</span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-medium text-muted-foreground">
+          Lifecycle ·{" "}
+          <span className="text-foreground/80">
+            {filter
+              ? `${filteredSteps.length} of ${steps.length}`
+              : `${steps.length} skills`}
+          </span>
+        </div>
+        <div className="relative w-40">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter skills…"
+            aria-label="Filter lifecycle steps by name or phase"
+            className="w-full rounded border border-input bg-card px-7 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+          />
+          {filter && (
+            <button
+              type="button"
+              onClick={() => setFilter("")}
+              aria-label="Clear filter"
+              title="Clear filter"
+              className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
+      {filter && filteredSteps.length === 0 && (
+        <div className="rounded border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+          No skills match "<span className="font-medium text-foreground">{filter}</span>".
+        </div>
+      )}
       {sortedPhases.map((phase) => {
-        const phaseSteps = steps
+        const phaseSteps = filteredSteps
           .filter((s) => s.phase === phase.name)
           .sort((a, b) => a.ordinal - b.ordinal);
         if (phaseSteps.length === 0) return null;
@@ -61,7 +110,7 @@ export function SkillList({
         // grouped by raw phase name, so older Drive data still appears in the
         // workbench instead of silently disappearing.
         const knownPhaseNames = new Set(phases.map((p) => p.name));
-        const legacySteps = steps.filter((s) => !knownPhaseNames.has(s.phase));
+        const legacySteps = filteredSteps.filter((s) => !knownPhaseNames.has(s.phase));
         if (legacySteps.length === 0) return null;
 
         const grouped = new Map<string, Step[]>();

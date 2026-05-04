@@ -391,8 +391,11 @@ export default function OppListPage() {
                     {opp.current_step_display || opp.current_step}
                   </span>
                   {opp.current_phase && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      ({opp.current_phase})
+                    <span
+                      className="ml-2 text-xs text-muted-foreground"
+                      title={opp.current_phase}
+                    >
+                      ({opp.current_phase_display || opp.current_phase})
                     </span>
                   )}
                 </div>
