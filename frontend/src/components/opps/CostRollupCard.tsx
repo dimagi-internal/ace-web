@@ -28,15 +28,17 @@ export function CostRollupCard({ oppSlug, workspaceSlug }: Props) {
 
   if (data === null || data.session_count === 0) return null;
   const t = data.totals;
+  const sessionLabel = data.session_count === 1 ? "1 chat" : `${data.session_count} chats`;
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded border px-2 py-1 text-xs hover:bg-muted"
-        title="Per-phase cost & timing across all linked sessions"
+        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+        title={`Estimated Anthropic API cost + wall time across ${sessionLabel} linked to this opp. Click for per-phase breakdown.`}
       >
-        {formatUsd(t.estimated_cost_usd, t.cost_is_partial)} ·{" "}
+        {formatUsd(t.estimated_cost_usd, t.cost_is_partial)}{" "}
+        <span className="text-muted-foreground/70">est</span> ·{" "}
         {formatDuration(t.wall_time_seconds)}
       </button>
       <CostRollupDialog data={data} open={open} onOpenChange={setOpen} />

@@ -11,7 +11,10 @@ const WORKSPACE_NAV = [
   { label: "Chat", subPath: "chat" },
 ];
 
-const GLOBAL_NAV = [{ label: "System", path: "/system" }];
+// "System" sounded operational and was the only entry into the
+// "what is ACE?" surface for new users. "Overview" reads as a
+// destination instead of an admin-tools tab.
+const GLOBAL_NAV = [{ label: "Overview", path: "/system" }];
 
 export function TopNav() {
   const { pathname } = useLocation();
@@ -22,9 +25,21 @@ export function TopNav() {
   const slug = current?.slug ?? all[0]?.slug;
 
   return (
-    <nav className="flex items-center gap-6 border-b border-border bg-card px-4 py-2 text-sm">
-      <Link to={slug ? `/w/${slug}/opps` : "/welcome"} className="font-semibold text-foreground">
+    <nav className="flex items-center gap-4 border-b border-border bg-card px-4 py-2 text-sm">
+      <Link
+        to={slug ? `/w/${slug}/opps` : "/welcome"}
+        className="font-semibold text-foreground"
+        title="ACE — agentic CRISPR-Connect orchestration. Visit Overview for the full picture."
+      >
         ACE
+      </Link>
+      <Link
+        to="/system"
+        aria-label="What is ACE? — open the Overview"
+        title="What is ACE? — open the Overview"
+        className="rounded-full border border-border px-1.5 text-[10px] font-semibold leading-none text-muted-foreground hover:border-primary hover:text-primary"
+      >
+        ?
       </Link>
       <WorkspaceSwitcher />
       <div className="flex items-center gap-4">

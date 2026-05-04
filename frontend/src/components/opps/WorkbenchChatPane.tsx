@@ -141,10 +141,12 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
 
       {activeSlug && (
         <div className="flex min-h-0 flex-1 flex-col border-t border-border">
-          <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-1 text-[10px]">
-            <span className="text-muted-foreground">
+          <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-1 text-[11px]">
+            <span className="min-w-0 truncate text-muted-foreground" title={activeSlug}>
               Chatting in
-              <span className="ml-1 font-mono text-foreground">{activeSlug}</span>
+              <span className="ml-1 truncate text-foreground">
+                {chats.find((c) => c.slug === activeSlug)?.title || activeSlug}
+              </span>
             </span>
             <Link
               to={
@@ -152,7 +154,7 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
                   ? `/w/${workspaceSlug}/chat/${activeSlug}`
                   : `/chat/${activeSlug}`
               }
-              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+              className="inline-flex shrink-0 items-center gap-1 text-muted-foreground hover:text-foreground"
               title="Open in dedicated chat page"
             >
               Open full
