@@ -376,6 +376,55 @@ def load_skill_detail(plugin_path: str, skill_name: str) -> dict[str, Any] | Non
     return summary
 
 
+def get_skill_phase_index(plugin_path: str | None = None) -> dict[str, dict[str, Any]]:
+    """Return a mapping of skill_name → {phase, phase_display, phase_ordinal}.
+
+    Reads the ACE plugin's agent frontmatter to derive which phase each skill
+    belongs to. Falls back to an empty dict if the plugin path is unset or
+    invalid so callers can degrade gracefully.
+
+    ``plugin_path`` defaults to ``settings.ACE_PLUGIN_PATH`` when not provided.
+    The settings import is deferred to function-call time to avoid module
+    load-order issues (this module is imported by opps/skills.py which may
+    load before Django is fully configured in some test contexts).
+    """
+    if plugin_path is None:
+        # Lazy import to avoid load-order issues at module import time.
+        from django.conf import settings  # noqa: PLC0415
+
+        plugin_path = getattr(settings, "ACE_PLUGIN_PATH", "") or ""
+
+    if not plugin_path:
+        return {}
+
+    pp = Path(plugin_path)
+    if not pp.is_dir():
+        return {}
+
+    try:
+        agent_files = _load_agent_files(pp)
+        phases, skill_index = _phase_skill_entries(agent_files)
+    except Exception as exc:
+        log.warning("get_skill_phase_index: failed to read plugin at %s: %s", plugin_path, exc)
+        return {}
+
+    # Build a display_name + ordinal index from the phases list.
+    phase_meta: dict[str, tuple[str, int]] = {
+        p["name"]: (p["display_name"], p["ordinal"]) for p in phases
+    }
+
+    result: dict[str, dict[str, Any]] = {}
+    for skill_name, entry in skill_index.items():
+        phase_name = entry["phase"]
+        phase_display, phase_ordinal = phase_meta.get(phase_name, (phase_name, 999))
+        result[skill_name] = {
+            "phase": phase_name,
+            "phase_display": phase_display,
+            "phase_ordinal": phase_ordinal,
+        }
+    return result
+
+
 def load_agent_detail(plugin_path: str, agent_name: str) -> dict[str, Any] | None:
     """Load a single agent with full markdown body."""
     pp = Path(plugin_path)

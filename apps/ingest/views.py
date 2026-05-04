@@ -1,4 +1,5 @@
 """Upload endpoint for JSONL session files."""
+import logging
 import tempfile
 from pathlib import Path
 
@@ -10,9 +11,12 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
+from apps.ingest.cost_aggregator import aggregate
 from apps.sessions.models import IngestUpload, Message, Session
 
 from .parser import parse_session_file
+
+log = logging.getLogger(__name__)
 
 
 @api_view(["POST"])
@@ -69,9 +73,15 @@ def upload(request: Request) -> Response:
         tmp_path = Path(tmp.name)
 
     try:
-        parsed = parse_session_file(tmp_path)
+        parsed, cost_events = parse_session_file(tmp_path)
     finally:
         tmp_path.unlink(missing_ok=True)
+
+    try:
+        breakdown = aggregate(cost_events)
+    except Exception:
+        log.exception("cost aggregator failed for upload %s", file.name)
+        breakdown = {}
 
     if parsed.cli_session_id and IngestUpload.objects.filter(
         cli_session_id=parsed.cli_session_id
@@ -94,6 +104,7 @@ def upload(request: Request) -> Response:
         opp_run_id=opp_run_id,
         opp_step_skill=opp_step_skill,
         workspace=workspace,
+        cost_breakdown=breakdown,
     )
 
     messages = []

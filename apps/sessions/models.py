@@ -72,6 +72,7 @@ class Session(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    cost_breakdown = models.JSONField(default=dict, blank=True)
 
     class Meta:
         db_table = "sessions"

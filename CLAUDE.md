@@ -138,6 +138,7 @@ The `opps` module adds **no ORM tables** — it reads through to Google Drive.
   `docs/learnings/channels-ws-proxy-path.md` for the `/ace/ws/` proxy
   detail and `docs/learnings/channels-websocket-auth.md` for the handshake
   auth pattern.
+- **Per-session and per-opp cost & timing breakdown**: ace-web aggregates wall time and token costs from uploaded JSONL transcripts at ingest time, persists to `Session.cost_breakdown` (JSONField), and surfaces them as a Cost & Timing tab on session detail and a rollup chip on the Opp Workbench. Phase / skill labels reuse `apps/system/reader.py`'s plugin-derived registry. Aggregator logic in `apps/ingest/cost_aggregator.py`; pricing table in `apps/ingest/pricing.py` (refresh ~twice/year). Sidechain attribution gotcha: `docs/learnings/sidechain-attribution.md`.
 
 ## Learnings (read before touching the relevant area)
 
@@ -158,6 +159,9 @@ API conventions:
 Conversation engine (Phase 2):
 - [cli-stream-json-format](docs/learnings/cli-stream-json-format.md) — Claude CLI stream-json event shapes captured as fixtures; recapture if the CLI is upgraded.
 - [sse-django-async](docs/learnings/sse-django-async.md) — `Cache-Control`/`X-Accel-Buffering` headers, `sync_to_async` ORM access, async cleanup with `asyncio.shield`, and concurrent-write serialization with `select_for_update` are mandatory for SSE views. **Superseded by the Phase 3 WebSocket transport** — kept as historical context for the patterns.
+
+Cost & timing breakdown:
+- [sidechain-attribution](docs/learnings/sidechain-attribution.md) — `apps/ingest/cost_aggregator.py` rolls subagent assistant turns into the parent skill segment via `parentUuid` → containing-message uuid match. Without this, Phase totals under-report by the cost of every Agent dispatch.
 
 Frontend:
 - [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs that show wall-clock-driven transitions need explicit setTimeout-driven re-renders.

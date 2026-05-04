@@ -28,7 +28,7 @@ type LoadState =
   | { kind: "loaded"; snapshot: OppSnapshot };
 
 export default function OppWorkbenchPage() {
-  const { slug = "", runId: pathRunId, skill } = useParams();
+  const { slug = "", runId: pathRunId, skill, workspaceSlug } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   // ?run_id= query param takes precedence; fall back to :runId path segment
   // (kept for backwards-compat with existing /opps/:slug/runs/:runId routes).
@@ -87,6 +87,7 @@ export default function OppWorkbenchPage() {
         selectedRunId={snapshot.selected_run_id ?? null}
         onRunChange={(id) => setSearchParams({ run_id: id })}
         onRefresh={() => load()}
+        workspaceSlug={workspaceSlug}
       />
       <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
       {view === "workbench" && (

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import type { OppCard, Run, RunSummary } from "../../api/types";
 import { Button } from "@/components/ui/button";
+import { CostRollupCard } from "./CostRollupCard";
 import { DeleteOppDialog } from "./DeleteOppDialog";
 import { RunSelector } from "./RunSelector";
 import { ScorecardPanel } from "./ScorecardPanel";
@@ -16,9 +17,10 @@ interface Props {
   selectedRunId: string | null;
   onRunChange: (runId: string) => void;
   onRefresh: () => void;
+  workspaceSlug?: string;
 }
 
-export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, onRefresh }: Props) {
+export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, onRefresh, workspaceSlug }: Props) {
   const navigate = useNavigate();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -34,6 +36,9 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
           {run.mode} mode
         </span>
         <TagEditor slug={opp.slug} initialTags={opp.tags ?? []} />
+        {workspaceSlug ? (
+          <CostRollupCard oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
+        ) : null}
         <ScorecardPanel slug={opp.slug} />
         <span className="ml-auto flex items-center gap-3">
           <button

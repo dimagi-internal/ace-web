@@ -17,6 +17,7 @@ urlpatterns = [
         name="opps-working-session",
     ),
     path("<slug:slug>/runs", views.runs_list, name="opps-runs-list"),
+    path("<slug:slug>/cost-rollup", views.cost_rollup, name="opps-cost-rollup"),
     path("<slug:slug>", views.workbench, name="opps-workbench"),
     path("<slug:slug>/scorecard", views.scorecard, name="opps-scorecard"),
     path(

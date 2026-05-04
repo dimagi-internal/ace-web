@@ -4,7 +4,7 @@ import logging
 from django.db import models, transaction
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
@@ -954,4 +954,91 @@ def opp_action(request, slug: str, run_id: str, action: str):
     return Response(success_response({
         "message_id": message.id,
         "turn_index": message.turn_index,
+    }))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def cost_rollup(request, slug: str) -> Response:
+    """Aggregate cost_breakdown across every workspace-scoped session
+    whose opp_slug matches.
+
+    Phases are summed by phase_name. Sessions with empty breakdowns
+    (legacy uploads, aggregator failures) are counted but contribute
+    nothing — the UI surfaces ``sessions_without_breakdown`` so the user
+    can disclose under-counting.
+    """
+    workspace, err = _resolve_workspace(request)
+    if err is not None:
+        return err
+
+    sessions = Session.objects.filter(workspace=workspace, opp_slug=slug).only(
+        "slug", "cost_breakdown",
+    )
+
+    totals = {
+        "wall_time_seconds": 0, "input_tokens": 0, "output_tokens": 0,
+        "cache_creation_tokens": 0, "cache_read_tokens": 0,
+        "estimated_cost_usd": 0.0, "cost_is_partial": False,
+    }
+    by_phase: dict[str, dict] = {}
+    session_count = 0
+    sessions_without_breakdown = 0
+
+    for session in sessions:
+        session_count += 1
+        breakdown = session.cost_breakdown or {}
+        if not breakdown or "totals" not in breakdown:
+            sessions_without_breakdown += 1
+            continue
+
+        bt = breakdown["totals"]
+        totals["wall_time_seconds"] += bt.get("wall_time_seconds", 0)
+        totals["input_tokens"] += bt.get("input_tokens", 0)
+        totals["output_tokens"] += bt.get("output_tokens", 0)
+        totals["cache_creation_tokens"] += bt.get("cache_creation_tokens", 0)
+        totals["cache_read_tokens"] += bt.get("cache_read_tokens", 0)
+        totals["estimated_cost_usd"] += bt.get("estimated_cost_usd", 0.0)
+        if bt.get("cost_is_partial"):
+            totals["cost_is_partial"] = True
+
+        for phase in breakdown.get("phases", []):
+            name = phase["phase_name"]
+            row = by_phase.setdefault(name, {
+                "phase_name": name,
+                "phase_display": phase.get("phase_display", name),
+                "phase_ordinal": phase.get("phase_ordinal", 999),
+                "wall_time_seconds": 0,
+                "estimated_cost_usd": 0.0,
+                "cost_is_partial": False,
+                "tokens": {"input_tokens": 0, "output_tokens": 0,
+                           "cache_creation_tokens": 0, "cache_read_tokens": 0},
+                "session_slugs": [],
+            })
+            row["wall_time_seconds"] += phase.get("wall_time_seconds", 0)
+            row["estimated_cost_usd"] += phase.get("estimated_cost_usd", 0.0)
+            if phase.get("cost_is_partial"):
+                row["cost_is_partial"] = True
+            for k in row["tokens"]:
+                row["tokens"][k] += phase.get("tokens", {}).get(k, 0)
+            if session.slug not in row["session_slugs"]:
+                row["session_slugs"].append(session.slug)
+
+    cache_total = (
+        totals["cache_read_tokens"] + totals["cache_creation_tokens"] + totals["input_tokens"]
+    )
+    totals["cache_hit_ratio"] = (
+        round(totals["cache_read_tokens"] / cache_total, 4) if cache_total else 0.0
+    )
+    totals["estimated_cost_usd"] = round(totals["estimated_cost_usd"], 6)
+
+    phases = sorted(by_phase.values(), key=lambda p: p["phase_ordinal"])
+    for p in phases:
+        p["estimated_cost_usd"] = round(p["estimated_cost_usd"], 6)
+
+    return Response(success_response({
+        "totals": totals,
+        "phases": phases,
+        "session_count": session_count,
+        "sessions_without_breakdown": sessions_without_breakdown,
     }))
