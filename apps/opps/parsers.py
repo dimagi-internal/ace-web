@@ -5,10 +5,13 @@ state) and ``apps.opps.serializers`` (to emit the frontend JSON envelope).
 
 Before the drop-multi-run refactor, this module also housed YAML/JSONL
 parsers for the structured Drive layout (opp.yaml, run.yaml, step.yaml,
-judge.yaml, gates.jsonl). That layout is retired — the current flat
-layout stores only idea.md + state.yaml + artifact subfolders per opp.
-The parsers went with it; the dataclasses stay because the snapshot
-envelope shape is still the same.
+judge.yaml, gates.jsonl). That layout was retired then revived in
+0.11.0 (multi-run-per-opp). The current canonical layout is
+``ACE/<slug>/opp.yaml`` + ``ACE/<slug>/runs/<run-id>/run_state.yaml``
+(plus artifact subfolders). Older opps still carry ``state.yaml`` at
+the opp root or inside ``runs/<id>/``; sync.py reads either via
+``_find_state_file``. The parsers went with the original retirement;
+the dataclasses stay because the snapshot envelope shape is unchanged.
 
 Format reference: docs/plans/2026-04-20-drop-multi-run-simplify.md.
 """

@@ -171,9 +171,12 @@ def _opp_list_impl(request):
             continue
         opp_children = client.list_files(child.id)
 
-        # Minimum signal that this folder is an opp. We accept four shapes:
+        # Minimum signal that this folder is an opp. We accept five shapes:
         #   - idea.md at root (flat layout, the canonical pre-2026-05-02 shape)
-        #   - state.yaml at root (legacy flat opps where /ace:run owns state)
+        #   - state.yaml at root (legacy flat opps from before the
+        #     2026-05-03 rename to run_state.yaml)
+        #   - run_state.yaml at root (would only happen if a single-run
+        #     opp was migrated in place — supported for completeness)
         #   - opp.yaml at root (multi-run layout — current ACE plugin)
         #   - runs/ subfolder (multi-run layout, in case opp.yaml is missing)
         # Without one of these, the folder is not an opp (e.g. the
@@ -182,6 +185,7 @@ def _opp_list_impl(request):
         if not (
             "idea.md" in names
             or "state.yaml" in names
+            or "run_state.yaml" in names
             or "opp.yaml" in names
             or "runs" in names
         ):
