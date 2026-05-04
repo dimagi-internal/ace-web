@@ -16,6 +16,9 @@ export function CostPhaseRow({ phase, defaultOpen = false }: Props) {
   const cacheTotal =
     phase.tokens.cache_read_tokens + phase.tokens.cache_creation_tokens + phase.tokens.input_tokens;
   const hit = cacheTotal ? phase.tokens.cache_read_tokens / cacheTotal : 0;
+  // Lifecycle phases have ordinal 1+ (Phase 1: Design Review, ...). Pseudo-
+  // phases like _orchestration (0) and _other (999) skip the prefix.
+  const isLifecyclePhase = phase.phase_ordinal > 0 && phase.phase_ordinal < 100;
   return (
     <>
       <tr className="border-t">
@@ -31,6 +34,11 @@ export function CostPhaseRow({ phase, defaultOpen = false }: Props) {
             ) : (
               <span className="w-4" />
             )}
+            {isLifecyclePhase ? (
+              <span className="text-xs font-semibold text-muted-foreground tabular-nums">
+                Phase {phase.phase_ordinal}:
+              </span>
+            ) : null}
             <span>{phase.phase_display}</span>
           </button>
         </td>
