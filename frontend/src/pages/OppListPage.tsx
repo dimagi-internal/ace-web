@@ -316,31 +316,41 @@ export default function OppListPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {/* Trash sits LEFT of compare so the destructive action
+                      isn't the easy mis-click target at the row's right
+                      edge. Icons are always visible at low opacity (so
+                      they're keyboard- and touch-discoverable) and brighten
+                      on hover. */}
+                  <button
+                    type="button"
+                    aria-label={`Delete ${opp.slug}`}
+                    title="Delete this opp"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDeleteTarget(opp);
+                    }}
+                    className="rounded p-1 text-muted-foreground/40 transition hover:bg-destructive/10 hover:text-destructive group-hover:text-muted-foreground/80"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                   <button
                     type="button"
                     aria-label={`Compare ${opp.slug} with another opp`}
-                    title="Compare with another opp"
+                    title={
+                      allOpps.length < 2
+                        ? "Compare requires at least 2 opps"
+                        : "Compare with another opp"
+                    }
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       setCompareSource(opp);
                     }}
                     disabled={allOpps.length < 2}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30"
+                    className="rounded p-1 text-muted-foreground/40 transition hover:bg-primary/10 hover:text-primary group-hover:text-muted-foreground/80 disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     <GitCompareArrows className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Delete ${opp.slug}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setDeleteTarget(opp);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
                   </button>
                   <StatusBadge status={opp.status} />
                 </div>

@@ -14,17 +14,41 @@ interface RunSelectorProps {
   onChange: (runId: string) => void;
 }
 
+// The plugin uses YYYYMMDD-HHMM as the run id (e.g. "20260503-0835").
+// Render it as a friendly local datetime when we recognise the format,
+// fall back to the raw id otherwise.
+const RUN_ID_DATE_RE = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/;
+
+function formatRunId(runId: string): string {
+  const m = RUN_ID_DATE_RE.exec(runId);
+  if (!m) return runId;
+  const [, y, mo, d, hh, mm] = m;
+  const date = new Date(Number(y), Number(mo) - 1, Number(d), Number(hh), Number(mm));
+  if (Number.isNaN(date.getTime())) return runId;
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function RunSelector({ runs, selectedRunId, onChange }: RunSelectorProps) {
   if (runs.length === 0) {
-    return <span className="text-xs text-muted-foreground">no runs</span>;
+    return <span className="text-xs text-muted-foreground">No runs yet</span>;
   }
 
   const selected = runs.find((r) => r.run_id === selectedRunId) ?? runs[0];
+  const friendly = formatRunId(selected.run_id);
+  const labelPrefix = runs.length === 1 ? "Run · " : "";
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-1 rounded border px-2 py-0.5 text-xs hover:bg-accent">
-        <span className="font-mono">{selected.run_id}</span>
+      <DropdownMenuTrigger
+        className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent"
+        title={selected.run_id}
+      >
+        <span>{labelPrefix}{friendly}</span>
         {runs.length > 1 && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
       </DropdownMenuTrigger>
       {runs.length > 1 && (
@@ -35,8 +59,8 @@ export function RunSelector({ runs, selectedRunId, onChange }: RunSelectorProps)
               className={r.run_id === selected.run_id ? "bg-accent/50" : ""}
               onClick={() => onChange(r.run_id)}
             >
-              <div className="flex flex-col gap-0.5">
-                <span className="font-mono text-xs">{r.run_id}</span>
+              <div className="flex flex-col gap-0.5" title={r.run_id}>
+                <span className="text-xs">{formatRunId(r.run_id)}</span>
                 <span className="text-xs text-muted-foreground">
                   {r.current_phase ?? "?"} / {r.current_step ?? "?"} · {r.mode ?? "?"}
                 </span>
