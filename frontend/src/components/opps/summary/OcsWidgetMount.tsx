@@ -35,13 +35,26 @@ declare module "react" {
  * module load.
  */
 export function OcsWidgetMount({ chatbotId, embedKey }: Props) {
+  // The widget element itself has no intrinsic size or positioning —
+  // Connect wraps it in a `position: fixed` container in their base
+  // template (commcare_connect tailwind.css `.chat-widget-container`).
+  // We replicate that here so the launcher button shows in the corner.
   return (
-    <open-chat-studio-widget
-      chatbot-id={chatbotId}
-      embed-key={embedKey}
-      button-text="Need help?"
-      position="right"
-      visible="false"
-    />
+    <div
+      style={{
+        position: "fixed",
+        right: 20,
+        bottom: 20,
+        zIndex: 100,
+      }}
+    >
+      <open-chat-studio-widget
+        chatbot-id={chatbotId}
+        embed-key={embedKey}
+        button-text="Need help?"
+        position="right"
+        visible="false"
+      />
+    </div>
   );
 }
