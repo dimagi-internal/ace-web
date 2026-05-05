@@ -326,8 +326,14 @@ def _read_connect(
         opp_uuid = _extract_field_line(body, "Opportunity ID (UUID)")
         # Dates appear in a markdown table — `start_date` / `end_date` are
         # column-cell values. Fall back to bullet lookup just in case.
-        start_date = _extract_table_value(body, "start_date") or _extract_field_line(body, "start_date")
-        end_date = _extract_table_value(body, "end_date") or _extract_field_line(body, "end_date")
+        start_date = (
+            _extract_table_value(body, "start_date")
+            or _extract_field_line(body, "start_date")
+        )
+        end_date = (
+            _extract_table_value(body, "end_date")
+            or _extract_field_line(body, "end_date")
+        )
         if name or url or opp_uuid:
             opp_block = {
                 "name": name or "Connect opportunity",
