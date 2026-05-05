@@ -17,7 +17,6 @@
     "clsx": "^2.1.1",
     "dagre": "^0.8.5",
     "lucide-react": "^1.8.0",
-    "open-chat-studio-widget": "^0.5.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
