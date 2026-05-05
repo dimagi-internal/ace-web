@@ -215,7 +215,7 @@ export default function OppSummaryPage() {
       {/* Standard OCS widget popup, mounted only when the bot is configured. */}
       {assistant && (
         <OcsWidgetMount
-          publicId={assistant.public_id}
+          chatbotId={assistant.public_id}
           embedKey={assistant.embed_key}
         />
       )}
