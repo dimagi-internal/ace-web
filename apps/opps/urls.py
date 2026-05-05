@@ -50,4 +50,10 @@ urlpatterns = [
         "<slug:slug>/runs/<str:run_id>/actions/<str:action>",
         views.opp_action, name="opps-action",
     ),
+    # Public, unauthenticated per-run summary. Workspace slug is in the
+    # path because there's no auth context to resolve it from.
+    path(
+        "public/<slug:workspace>/<slug:slug>/runs/<str:run_id>/summary",
+        views.public_opp_summary, name="opps-public-summary",
+    ),
 ]

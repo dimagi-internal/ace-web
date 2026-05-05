@@ -19,6 +19,7 @@ from apps.opps.serializers import (
     serialize_scorecard,
     serialize_step_snapshot,
 )
+from apps.opps.summary import build_summary_payload
 from apps.opps.sync import (
     delete_opp_folder,
     list_opp_runs,
@@ -1124,3 +1125,66 @@ def cost_rollup(request, slug: str) -> Response:
         "session_count": session_count,
         "sessions_without_breakdown": sessions_without_breakdown,
     }))
+
+
+# ── Public per-run summary ──────────────────────────────────────────
+
+
+_SUMMARY_CACHE_TTL_SECONDS = 60
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def public_opp_summary(
+    request, workspace: str, slug: str, run_id: str,
+) -> Response:
+    """Public, unauthenticated per-run summary payload.
+
+    See ``docs/specs/2026-05-04-opp-summary-page-design.md``. Resolves
+    the workspace + opp + run from Drive, composes the JSON payload, and
+    returns it. 404s on any miss with the same envelope so the API
+    doesn't leak which segment was missing. Successful payloads are
+    cached for ~60 seconds; 404s are not cached.
+    """
+    from django.core.cache import cache as _cache
+
+    cache_key = f"opp-summary:v1:{workspace}:{slug}:{run_id}"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return Response(success_response(cached))
+
+    try:
+        ws = Workspace.objects.get(slug=workspace)
+    except Workspace.DoesNotExist:
+        return Response(
+            error_response("not found", code="not-found"),
+            status=404,
+        )
+
+    if not ws.drive_root_folder_id:
+        return Response(
+            error_response("not found", code="not-found"),
+            status=404,
+        )
+
+    try:
+        client = get_drive_client(workspace=ws)
+    except ServiceAccountNotFound as exc:
+        # Drive misconfiguration is a server problem, not a 404 —
+        # surface it explicitly so it can be diagnosed.
+        return Response(
+            error_response(str(exc), code="drive-not-configured"),
+            status=500,
+        )
+
+    payload = build_summary_payload(
+        client, workspace=ws, opp_slug=slug, run_id=run_id,
+    )
+    if payload is None:
+        return Response(
+            error_response("not found", code="not-found"),
+            status=404,
+        )
+
+    _cache.set(cache_key, payload, timeout=_SUMMARY_CACHE_TTL_SECONDS)
+    return Response(success_response(payload))

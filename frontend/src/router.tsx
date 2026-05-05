@@ -1,6 +1,7 @@
 import { Navigate, createBrowserRouter } from "react-router-dom";
 
 import { App } from "./App";
+import { PublicLayout } from "./components/PublicLayout";
 import { AuthCliPage } from "./pages/AuthCliPage";
 import { ChatPage } from "./pages/ChatPage";
 import { ChatRedirectPage } from "./pages/ChatRedirectPage";
@@ -9,6 +10,7 @@ import InviteAcceptPage from "./pages/InviteAcceptPage";
 import { NoWorkspaceRedirect } from "./pages/NoWorkspaceRedirect";
 import OppComparePage from "./pages/OppComparePage";
 import OppListPage from "./pages/OppListPage";
+import OppSummaryPage from "./pages/OppSummaryPage";
 import OppWorkbenchPage from "./pages/OppWorkbenchPage";
 import SessionsPage from "./pages/SessionsPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -19,6 +21,17 @@ import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
 
 export const router = createBrowserRouter(
   [
+    // Public, unauthenticated routes (no TopNav — those make authed API
+    // calls that would bounce anonymous viewers to /auth/login).
+    {
+      element: <PublicLayout />,
+      children: [
+        {
+          path: "/opps/:workspace/:slug/runs/:runId/summary",
+          element: <OppSummaryPage />,
+        },
+      ],
+    },
     {
       path: "/",
       element: <App />,

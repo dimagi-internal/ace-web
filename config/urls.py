@@ -39,6 +39,16 @@ urlpatterns = [
         name="spa_auth_cli",
     ),
     path("auth/", include("apps.auth.urls")),
+    # Public per-run opp summary page. SPA shell served WITHOUT
+    # login_required so anonymous viewers can hit the page directly
+    # (the React app then fetches /api/opps/public/... which is also
+    # AllowAny). Must be registered before the SPA catch-all so this
+    # specific pattern wins.
+    re_path(
+        r"^opps/(?P<workspace>[^/]+)/(?P<slug>[^/]+)/runs/(?P<run_id>[^/]+)/summary/?$",
+        TemplateView.as_view(template_name="index.html"),
+        name="public_opp_summary",
+    ),
     # SPA catch-all: any non-api/non-admin/non-auth/non-static/non-assets path serves
     # the React index.html. React Router handles client-side routing from there.
     # login_required ensures unauthenticated users are redirected to /auth/login/.
