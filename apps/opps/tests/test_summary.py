@@ -1,6 +1,7 @@
 """Tests for the public per-run summary payload builder.
 
-See ``docs/specs/2026-05-04-opp-summary-page-design.md``.
+The fixtures mirror the actual ACE Drive layout (May 2026) — see the
+module docstring in ``apps/opps/summary.py`` for the canonical map.
 """
 from __future__ import annotations
 
@@ -16,100 +17,140 @@ class _FakeWorkspace:
     slug: str = "test-team"
 
 
-def _completed_run_tree() -> dict:
-    """A run with every section populated — apps, connect, training,
-    OCS assistant, open questions doc, and a future end-date so status
-    resolves to 'active'."""
+# ── Fixture builders ───────────────────────────────────────────────
+
+
+_PDD_BODY = """\
+Intervention Design Document: Turmeric Market Survey
+
+Overview
+FLWs visit markets to photograph turmeric vendors[a][b], capturing a yellow MTN card in each photo as a visual reference. Each visit also records the GPS location of the vendor.
+
+Background
+Long technical context that should NOT be the description.
+"""
+
+
+_LEARN_SUMMARY = """\
+---
+nova_app_id: mFknxMlsoLlkR28R2qpE
+nova_app_url: https://commcare.app/apps/mFknxMlsoLlkR28R2qpE
+archetype: atomic-visit
+title: "Turmeric Market Survey — FLW Training"
+connect_type: learn
+validated: true
+---
+
+# Learn App Summary
+"""
+
+
+_DELIVER_SUMMARY = """\
+---
+nova_app_id: 5VI1WKCEOF5ugIenbu0i
+nova_app_url: https://commcare.app/apps/5VI1WKCEOF5ugIenbu0i
+archetype: atomic-visit
+title: "Turmeric Market Survey — Vendor Visit"
+connect_type: deliver
+validated: true
+---
+
+# Deliver App Summary
+"""
+
+
+_DEPLOY_SUMMARY = """\
+---
+hq_base_url: https://www.commcarehq.org
+hq_domain: connect-ace-prod
+learn_app_id: d29dbb77012e400f9a700a731319ea55
+learn_app_url: https://www.commcarehq.org/a/connect-ace-prod/apps/view/d29dbb77012e400f9a700a731319ea55/
+learn_build_status: success
+deliver_app_id: 91cf053ed8f149afb06284a65150debf
+deliver_app_url: https://www.commcarehq.org/a/connect-ace-prod/apps/view/91cf053ed8f149afb06284a65150debf/
+deliver_build_status: success
+---
+
+# Deployment Summary
+"""
+
+
+_OPP_BODY = """\
+# Connect Opportunity — turmeric
+
+## Identity
+- **Opportunity ID (UUID):** `8c46d744-eee4-48ff-9efb-9a8ab1520dc3`
+- **Name:** Turmeric Market Survey — turmeric (2026-05-03)
+- **URL:** https://connect.dimagi.com/a/ai-demo-space/opportunity/8c46d744-eee4-48ff-9efb-9a8ab1520dc3/
+- **Program:** `cc8ff997-46ac-4c79-a7dd-9563b3babbba`
+
+## Core configuration
+
+| Field | Value |
+|---|---|
+| `short_description` | Turmeric vendor photo+GPS+19-field survey |
+| `currency` | USD |
+| `start_date` | 2026-06-14 (placeholder — LLO sets concrete date in Phase 6) |
+| `end_date` | 2099-08-09 (placeholder) |
+"""
+
+
+_PROGRAM_BODY = """\
+# Connect Program
+
+## Identity
+- **Program ID (UUID):** `cc8ff997-46ac-4c79-a7dd-9563b3babbba`
+- **Name:** Turmeric Market Survey — turmeric (2026-05-03)
+- **URL:** https://connect.dimagi.com/a/ai-demo-space/program/cc8ff997-46ac-4c79-a7dd-9563b3babbba/
+"""
+
+
+_WIDGET_HANDOFF = """\
+---
+opp: turmeric
+status: pending-operator-paste-in
+---
+
+# OCS Widget Handoff
+
+## Credentials to paste
+
+| Connect field | Value |
+|---|---|
+| `chatbot_url` | `https://www.openchatstudio.com/chatbots/embed/1fcddd08-02cb-4b22-b482-181cb2f10dcb/` |
+| `chatbot_public_id` | `1fcddd08-02cb-4b22-b482-181cb2f10dcb` |
+| `chatbot_embed_key` | `wDwe70vquTLm4M0carkTHGaQgrb0NYKP` |
+"""
+
+
+def _full_tree() -> dict:
     return {
         "ACE": {
-            "open-questions.md": "# Open questions\n\nSee Drive for the full table.",
-            "turmeric-pilot": {
-                "opp.yaml": "display_name: Turmeric Supplementation\nslug: turmeric-pilot\n",
-                "open-questions.md": "# Open questions for turmeric-pilot",
+            "turmeric": {
+                "opp.yaml": "display_name: turmeric\nslug: turmeric\n",
+                "inputs": {"pdd.md": _PDD_BODY},
+                "connect-setup": {
+                    "opportunity.md": _OPP_BODY,
+                    "program.md": _PROGRAM_BODY,
+                },
+                "ocs-setup": {"widget-handoff.md": _WIDGET_HANDOFF},
+                "ocs-agent-config.md": "---\nopp: turmeric\nstatus: done\n---\n",
+                "training-materials": {
+                    "Turmeric Market Survey — Training Deck": "deck-stub",
+                    "llo-manager-guide.md": "# LLO guide\n",
+                    "flw-training-guide.md": "# FLW guide\n",
+                    "quick-reference.md": "# Quick ref\n",
+                    "faq.md": "# FAQ\n",
+                    "onboarding-email-body.md": "# Onboarding email\n",
+                },
                 "runs": {
-                    "20260415-1430": {
-                        "pdd.md": (
-                            "---\n"
-                            "archetype: atomic-visit\n"
-                            "---\n\n"
-                            "# Turmeric Supplementation Pilot\n\n"
-                            "A maternal-health pilot in two districts of Bihar.\n\n"
-                            "Three months of FLW-led visits.\n"
-                        ),
-                        "run_state.yaml": (
-                            "current_phase: ocs\n"
-                            "training_deck:\n"
-                            "  presentation_id: deck-abc\n"
-                            "  web_view_link: https://docs.google.com/presentation/d/deck-abc/\n"
-                            "  title: FLW Training · Turmeric Supplementation\n"
-                        ),
-                        "deployment-summary.md": (
-                            "# Deployment summary\n\n"
-                            "## Learn app\n"
-                            "Build at https://www.commcarehq.org/a/turmeric/apps/view/learn123/\n\n"
-                            "## Deliver app\n"
-                            "Build at https://www.commcarehq.org/a/turmeric/apps/view/deliver456/\n"
-                        ),
-                        "app-summaries": {
-                            "learn-app-summary.md": (
-                                "---\n"
-                                "nova_app_id: learn-nova-001\n"
-                                "nova_app_url: https://commcare.app/apps/learn-nova-001\n"
-                                "archetype: atomic-visit\n"
-                                "display_name: Turmeric Onboarding\n"
-                                "---\n\n"
-                                "# Turmeric Onboarding\n"
-                            ),
-                            "deliver-app-summary.md": (
-                                "---\n"
-                                "nova_app_id: deliver-nova-002\n"
-                                "nova_app_url: https://commcare.app/apps/deliver-nova-002\n"
-                                "archetype: atomic-visit\n"
-                                "display_name: Turmeric Visit\n"
-                                "---\n\n"
-                                "# Turmeric Visit\n"
-                            ),
-                        },
-                        "connect-setup": {
-                            "opportunity.md": (
-                                "---\n"
-                                "opportunity_id: 4f9c0001-aaaa-bbbb-cccc-000000000001\n"
-                                "name: Turmeric Supplementation · Bihar 2026\n"
-                                "start_date: '2026-04-15'\n"
-                                "end_date: '2099-06-15'\n"
-                                "---\n\n"
-                                "# Connect opportunity\n"
-                            ),
-                            "program.md": (
-                                "---\n"
-                                "program_id: prog-0001\n"
-                                "name: Maternal Supplementation 2026\n"
-                                "---\n\n"
-                                "# Program\n"
-                            ),
-                        },
-                        "training-materials": {
-                            "llo-manager-guide.md":   "# LLO manager guide\n",
-                            "flw-training-guide.md":  "# FLW training guide\n",
-                            "quick-reference.md":     "# Quick reference card\n",
-                            "faq.md":                 "# FAQ\n",
-                        },
-                        "ocs-agent-config.md": (
-                            "---\n"
-                            "experiment_id: 11792\n"
-                            "public_id: ocs-public-uuid-0001\n"
-                            "embed_key: ocs-embed-key-secret\n"
-                            "collection_id: 718\n"
-                            "---\n\n"
-                            "# OCS agent config\n"
-                        ),
-                        "ocs-setup": {
-                            "widget-handoff.md": (
-                                "---\n"
-                                "widget_url: https://chatbots.dimagi.com/c/ocs-public-uuid-0001/\n"
-                                "---\n\n"
-                                "# Widget handoff\n"
-                            ),
+                    "20260503-0835": {
+                        "run_state.yaml": "current_phase: ocs\n",
+                        "open-questions.md": "# Open questions\n",
+                        "2-commcare": {
+                            "pdd-to-learn-app_summary.md": _LEARN_SUMMARY,
+                            "pdd-to-deliver-app_summary.md": _DELIVER_SUMMARY,
+                            "app-deploy_summary.md": _DEPLOY_SUMMARY,
                         },
                     },
                 },
@@ -119,27 +160,19 @@ def _completed_run_tree() -> dict:
 
 
 def _phase2_only_tree() -> dict:
-    """A partial run that only has apps deployed — no Connect, OCS,
-    training, or open questions yet. Status resolves to in_progress."""
     return {
         "ACE": {
             "early-pilot": {
-                "opp.yaml": "display_name: Early Pilot\nslug: early-pilot\n",
+                "opp.yaml": "display_name: early-pilot\n",
                 "runs": {
                     "20260420-0900": {
-                        "pdd.md": "# Early Pilot\n\nJust getting started.\n",
-                        "deployment-summary.md": (
-                            "# Deployment summary\n"
-                            "## Learn app\n"
-                            "https://www.commcarehq.org/a/early/apps/view/abc/\n"
-                        ),
-                        "app-summaries": {
-                            "learn-app-summary.md": (
-                                "---\n"
-                                "nova_app_id: x\n"
-                                "nova_app_url: https://commcare.app/apps/x\n"
-                                "display_name: Early Learn\n"
-                                "---\n\n# Early Learn\n"
+                        "2-commcare": {
+                            "pdd-to-learn-app_summary.md": _LEARN_SUMMARY.replace(
+                                "Turmeric", "Early"
+                            ),
+                            "app-deploy_summary.md": _DEPLOY_SUMMARY.replace(
+                                "deliver_app_url:",
+                                "# (no deliver yet)\nplaceholder:",
                             ),
                         },
                     },
@@ -149,198 +182,203 @@ def _phase2_only_tree() -> dict:
     }
 
 
+def _set_drive_link(client: FakeDriveClient, path: str) -> str:
+    """Return what FakeDriveClient gives for web_view_link of a node at path."""
+    return f"https://fake/{client.file_id(path)}"
+
+
 # ─── Top-level shape ───────────────────────────────────────────────
 
 
+def _set_mime(drive: FakeDriveClient, path: str, mime: str) -> None:
+    """Test helper — Google Slides files have no extension and their
+    mime can't be guessed by the fake client. Set it manually."""
+    node = drive._nodes_by_id[drive.file_id(path)]
+    node.mime_type = mime
+
+
 def test_complete_run_returns_full_payload():
-    drive = FakeDriveClient.from_tree(_completed_run_tree())
+    drive = FakeDriveClient.from_tree(_full_tree())
+    _set_mime(
+        drive,
+        "ACE/turmeric/training-materials/Turmeric Market Survey — Training Deck",
+        "application/vnd.google-apps.presentation",
+    )
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
 
-    payload = build_summary_payload(
-        drive, workspace=ws, opp_slug="turmeric-pilot", run_id="20260415-1430",
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
     )
+    assert p is not None
 
-    assert payload is not None
-    assert payload["opp"]["display_name"] == "Turmeric Supplementation"
-    assert payload["opp"]["status"] == "active"
-    assert "Bihar" in payload["opp"]["description"]
-    assert payload["opp"]["end_date"] == "2099-06-15"
-    assert payload["opp"]["slug"] == "turmeric-pilot"
-    assert payload["opp"]["run_id"] == "20260415-1430"
+    # Hero
+    assert p["opp"]["display_name"] == "Turmeric Market Survey"
+    assert "FLWs visit markets" in p["opp"]["description"]
+    assert "[a]" not in p["opp"]["description"]   # docs comment markers stripped
+    assert "**" not in p["opp"]["description"]    # bold markdown stripped
+    assert p["opp"]["status"] == "active"
+    assert p["opp"]["end_date"] == "2099-08-09"
 
-    assert len(payload["apps"]) == 2
-    learn = next(a for a in payload["apps"] if a["kind"] == "Learn")
-    deliver = next(a for a in payload["apps"] if a["kind"] == "Deliver")
-    assert learn["name"] == "Turmeric Onboarding"
-    assert learn["nova_url"] == "https://commcare.app/apps/learn-nova-001"
-    assert "learn123" in learn["hq_url"]
-    assert deliver["nova_url"] == "https://commcare.app/apps/deliver-nova-002"
-    assert "deliver456" in deliver["hq_url"]
+    # Apps
+    assert len(p["apps"]) == 2
+    learn = next(a for a in p["apps"] if a["kind"] == "Learn")
+    deliver = next(a for a in p["apps"] if a["kind"] == "Deliver")
+    assert learn["name"] == "Turmeric Market Survey — FLW Training"
+    assert learn["nova_url"].startswith("https://commcare.app/apps/")
+    assert "d29dbb77" in learn["hq_url"]
+    assert deliver["name"] == "Turmeric Market Survey — Vendor Visit"
+    assert "91cf053e" in deliver["hq_url"]
 
-    assert payload["connect"]["opportunity"]["name"].startswith("Turmeric")
-    assert "/o/opportunities/" in payload["connect"]["opportunity"]["url"]
-    assert payload["connect"]["program"]["name"] == "Maternal Supplementation 2026"
-    assert "/o/programs/prog-0001/" in payload["connect"]["program"]["url"]
+    # Connect
+    assert p["connect"]["opportunity"]["name"].startswith("Turmeric Market Survey")
+    assert "/opportunity/8c46d744" in p["connect"]["opportunity"]["url"]
+    assert p["connect"]["opportunity"]["start_date"] == "2026-06-14"
+    assert p["connect"]["opportunity"]["end_date"] == "2099-08-09"
+    assert p["connect"]["program"]["name"].startswith("Turmeric Market Survey")
+    assert "/program/cc8ff997" in p["connect"]["program"]["url"]
 
-    assert payload["training"]["deck"]["url"].endswith("/deck-abc/")
-    titles = [d["title"] for d in payload["training"]["docs"]]
+    # Training
+    assert p["training"]["deck"]["title"].startswith("Turmeric Market Survey")
+    titles = [d["title"] for d in p["training"]["docs"]]
     assert titles == [
-        "LLO manager guide", "FLW training guide", "Quick reference card", "FAQ",
+        "LLO manager guide", "FLW training guide", "Quick reference card",
+        "FAQ", "Onboarding email",
     ]
 
-    assert payload["assistant"]["public_id"] == "ocs-public-uuid-0001"
-    assert payload["assistant"]["embed_key"] == "ocs-embed-key-secret"
-    assert payload["assistant"]["ocs_url"] == "https://chatbots.dimagi.com/c/ocs-public-uuid-0001/"
+    # Assistant
+    assert p["assistant"]["public_id"] == "1fcddd08-02cb-4b22-b482-181cb2f10dcb"
+    assert p["assistant"]["embed_key"] == "wDwe70vquTLm4M0carkTHGaQgrb0NYKP"
+    assert "openchatstudio.com" in p["assistant"]["ocs_url"]
 
-    assert payload["open_questions"] is not None
-    assert "fake/" in payload["open_questions"]["url"]
+    # Open questions
+    assert p["open_questions"]["url"].startswith("https://fake/")
 
-    assert payload["workbench_url"] == "/w/test-team/opps/turmeric-pilot/runs/20260415-1430"
+    # Workbench escape
+    assert p["workbench_url"] == "/w/test-team/opps/turmeric/runs/20260503-0835"
 
 
-def test_phase_2_only_run_omits_missing_sections():
+def test_phase2_only_omits_missing_sections():
     drive = FakeDriveClient.from_tree(_phase2_only_tree())
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-
-    payload = build_summary_payload(
+    p = build_summary_payload(
         drive, workspace=ws, opp_slug="early-pilot", run_id="20260420-0900",
     )
-
-    assert payload is not None
-    assert payload["opp"]["status"] == "in_progress"
-    assert payload["opp"]["end_date"] is None
-    assert len(payload["apps"]) == 1
-    assert payload["connect"] is None
-    assert payload["assistant"] is None
-    assert payload["open_questions"] is None
-    # training section may be present-but-empty if neither deck nor docs;
-    # spec says "render only if data exists" — assert None.
-    assert payload["training"] is None
+    assert p is not None
+    assert p["connect"] is None
+    assert p["training"] is None
+    assert p["assistant"] is None
+    assert p["open_questions"] is None
+    assert p["opp"]["status"] == "in_progress"
+    assert p["opp"]["end_date"] is None
+    # Apps still present (Learn only — deploy summary lacks deliver_app_url
+    # so it's still rendered as Learn).
+    assert any(a["kind"] == "Learn" for a in p["apps"])
 
 
 def test_missing_opp_returns_none():
-    drive = FakeDriveClient.from_tree({"ACE": {"other-opp": {"runs": {"r1": {}}}}})
+    drive = FakeDriveClient.from_tree({"ACE": {"other": {"runs": {"r1": {}}}}})
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-
-    payload = build_summary_payload(
-        drive, workspace=ws, opp_slug="does-not-exist", run_id="r1",
-    )
-    assert payload is None
+    assert build_summary_payload(
+        drive, workspace=ws, opp_slug="not-here", run_id="r1",
+    ) is None
 
 
 def test_missing_run_returns_none():
-    drive = FakeDriveClient.from_tree({
-        "ACE": {"the-opp": {"runs": {"20260101-1000": {}}}},
-    })
+    drive = FakeDriveClient.from_tree({"ACE": {"opp": {"runs": {"r1": {}}}}})
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-
-    payload = build_summary_payload(
-        drive, workspace=ws, opp_slug="the-opp", run_id="20260202-2222",
-    )
-    assert payload is None
+    assert build_summary_payload(
+        drive, workspace=ws, opp_slug="opp", run_id="never-existed",
+    ) is None
 
 
 def test_no_runs_folder_returns_none():
-    drive = FakeDriveClient.from_tree({
-        "ACE": {"flat-opp": {"opp.yaml": "display_name: Flat\nslug: flat-opp\n"}},
-    })
+    drive = FakeDriveClient.from_tree({"ACE": {"flat": {"opp.yaml": "x"}}})
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-
-    payload = build_summary_payload(
-        drive, workspace=ws, opp_slug="flat-opp", run_id="any",
-    )
-    assert payload is None
+    assert build_summary_payload(
+        drive, workspace=ws, opp_slug="flat", run_id="any",
+    ) is None
 
 
 # ─── Status derivation ─────────────────────────────────────────────
 
 
-def test_status_closed_when_cycle_grade_present():
-    tree = _completed_run_tree()
-    tree["ACE"]["turmeric-pilot"]["runs"]["20260415-1430"]["closeout"] = {
+def test_status_closed_when_cycle_grade_in_phase_folder():
+    tree = _full_tree()
+    tree["ACE"]["turmeric"]["runs"]["20260503-0835"]["7-closeout"] = {
         "cycle-grade.md": "# Cycle grade\n\nOverall: A-\n",
     }
     drive = FakeDriveClient.from_tree(tree)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-
-    payload = build_summary_payload(
-        drive, workspace=ws, opp_slug="turmeric-pilot", run_id="20260415-1430",
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
     )
-    assert payload["opp"]["status"] == "closed"
+    assert p["opp"]["status"] == "closed"
 
 
 def test_status_in_progress_when_end_date_past():
-    tree = _completed_run_tree()
-    tree["ACE"]["turmeric-pilot"]["runs"]["20260415-1430"]["connect-setup"]["opportunity.md"] = (
-        "---\n"
-        "opportunity_id: aaaa\n"
-        "name: Turmeric · Closed\n"
-        "end_date: '2020-01-01'\n"
-        "---\n"
+    tree = _full_tree()
+    tree["ACE"]["turmeric"]["connect-setup"]["opportunity.md"] = (
+        _OPP_BODY.replace("2099-08-09", "2020-01-01")
     )
     drive = FakeDriveClient.from_tree(tree)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-
-    payload = build_summary_payload(
-        drive, workspace=ws, opp_slug="turmeric-pilot", run_id="20260415-1430",
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
     )
-    assert payload["opp"]["status"] == "in_progress"
+    assert p["opp"]["status"] == "in_progress"
 
 
-# ─── Frontmatter / parsing edge cases ──────────────────────────────
+# ─── Hero parsing edge cases ───────────────────────────────────────
 
 
-def test_missing_frontmatter_falls_back_to_h1_for_app_name():
+def test_hero_name_falls_back_to_yaml_display_when_pdd_missing():
     tree = _phase2_only_tree()
-    tree["ACE"]["early-pilot"]["runs"]["20260420-0900"]["app-summaries"][
-        "learn-app-summary.md"
-    ] = "# A Different Title\n\nNo frontmatter here.\n"
+    tree["ACE"]["early-pilot"]["opp.yaml"] = "display_name: My Friendly Name\n"
     drive = FakeDriveClient.from_tree(tree)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-
-    payload = build_summary_payload(
+    p = build_summary_payload(
         drive, workspace=ws, opp_slug="early-pilot", run_id="20260420-0900",
     )
-    assert payload["apps"][0]["name"] == "A Different Title"
-    assert payload["apps"][0]["nova_url"] is None
+    assert p["opp"]["display_name"] == "My Friendly Name"
 
 
-def test_malformed_frontmatter_does_not_500():
+def test_hero_name_falls_back_to_slug_when_yaml_matches_slug():
     tree = _phase2_only_tree()
-    tree["ACE"]["early-pilot"]["runs"]["20260420-0900"]["app-summaries"][
-        "learn-app-summary.md"
-    ] = "---\nthis is: not: valid: yaml: at: all:\nbecause::: too: many: colons:\n---\n# Fine\n"
+    tree["ACE"]["early-pilot"]["opp.yaml"] = "display_name: early-pilot\n"
     drive = FakeDriveClient.from_tree(tree)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-
-    payload = build_summary_payload(
+    p = build_summary_payload(
         drive, workspace=ws, opp_slug="early-pilot", run_id="20260420-0900",
     )
-    # Falls back to H1; nova_url is None rather than crashing.
-    assert payload is not None
-    assert payload["apps"][0]["name"] in ("Fine", "Early Learn")  # tolerant
+    assert p["opp"]["display_name"] == "early-pilot"
 
 
-def test_widget_handoff_url_preferred_over_constructed():
-    tree = _completed_run_tree()
-    tree["ACE"]["turmeric-pilot"]["runs"]["20260415-1430"]["ocs-setup"]["widget-handoff.md"] = (
-        "---\n"
-        "widget_url: https://staging.example.com/c/some-other-id/\n"
-        "---\n# Handoff\n"
-    )
+def test_hero_description_uses_overview_section():
+    tree = _full_tree()
     drive = FakeDriveClient.from_tree(tree)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-
-    payload = build_summary_payload(
-        drive, workspace=ws, opp_slug="turmeric-pilot", run_id="20260415-1430",
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
     )
-    assert payload["assistant"]["ocs_url"] == "https://staging.example.com/c/some-other-id/"
+    desc = p["opp"]["description"]
+    assert desc.startswith("FLWs visit markets")
+    # Background paragraph should not be included.
+    assert "Long technical context" not in desc
 
 
-def test_no_workspace_root_returns_none():
-    drive = FakeDriveClient.from_tree({"ACE": {}})
-    ws = _FakeWorkspace(drive_root_folder_id="")  # empty
-    payload = build_summary_payload(
-        drive, workspace=ws, opp_slug="x", run_id="y",
+# ─── Markdown body extraction ──────────────────────────────────────
+
+
+def test_widget_handoff_table_parsing():
+    """Confirm the chatbot_url / public_id / embed_key are extracted from
+    the markdown table even when surrounded by backticks and pipes."""
+    tree = _full_tree()
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
     )
-    assert payload is None
+    a = p["assistant"]
+    assert a["public_id"] == "1fcddd08-02cb-4b22-b482-181cb2f10dcb"
+    assert a["embed_key"] == "wDwe70vquTLm4M0carkTHGaQgrb0NYKP"
+    assert a["ocs_url"].endswith("/embed/1fcddd08-02cb-4b22-b482-181cb2f10dcb/")

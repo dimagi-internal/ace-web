@@ -20,22 +20,23 @@ def _make_tree() -> dict:
         "ACE": {
             "smoke-pilot": {
                 "opp.yaml": "display_name: Smoke Pilot\nslug: smoke-pilot\n",
+                "inputs": {"pdd.md": "# Smoke Pilot\n\nA short description.\n"},
                 "runs": {
                     "20260415-1430": {
-                        "pdd.md": "# Smoke Pilot\n\nA short description.\n",
-                        "app-summaries": {
-                            "learn-app-summary.md": (
+                        "2-commcare": {
+                            "pdd-to-learn-app_summary.md": (
                                 "---\n"
                                 "nova_app_id: x\n"
                                 "nova_app_url: https://commcare.app/apps/x\n"
-                                "display_name: Smoke Learn\n"
+                                "title: Smoke Learn\n"
                                 "---\n# Smoke Learn\n"
                             ),
+                            "app-deploy_summary.md": (
+                                "---\n"
+                                "learn_app_url: https://www.commcarehq.org/a/smoke/apps/view/abc/\n"
+                                "---\n"
+                            ),
                         },
-                        "deployment-summary.md": (
-                            "# Deploy\n## Learn app\n"
-                            "https://www.commcarehq.org/a/smoke/apps/view/abc/\n"
-                        ),
                     },
                 },
             },
