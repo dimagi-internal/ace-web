@@ -342,6 +342,11 @@ def _read_connect(
         prog_url = _extract_field_line(body, "URL")
         prog_name = _extract_field_line(body, "Name")
         prog_uuid = _extract_field_line(body, "Program ID (UUID)")
+        # Older runs' program.md doesn't carry an explicit URL — construct
+        # it from the program UUID + the org slug we can pull out of the
+        # opportunity URL (e.g. .../a/<org_slug>/opportunity/<id>/).
+        if prog_url is None and prog_uuid and opp_block and opp_block.get("url"):
+            prog_url = _construct_program_url(opp_block["url"], prog_uuid)
         if prog_name or prog_url or prog_uuid:
             prog_block = {
                 "name": prog_name or "Program",
@@ -351,6 +356,20 @@ def _read_connect(
     if opp_block or prog_block:
         return {"opportunity": opp_block, "program": prog_block}, end_date
     return None, None
+
+
+def _construct_program_url(opp_url: str, program_uuid: str) -> str | None:
+    """Derive ``.../a/<org>/program/<uuid>/view`` from the opportunity URL.
+
+    Connect mounts the program app at ``/a/<org_slug>/program/`` (singular),
+    matching the upstream ``commcare-connect`` ``program/urls.py``. We
+    extract the org slug from the opportunity URL (which the plugin
+    already writes) rather than re-reading state.
+    """
+    m = re.search(r"^(https?://[^/]+/a/[^/]+)/", opp_url)
+    if m is None:
+        return None
+    return f"{m.group(1)}/program/{program_uuid}/view"
 
 
 def _extract_table_value(body: str, key: str) -> str | None:
@@ -381,7 +400,8 @@ _TRAINING_DOC_TITLES = {
     "quick-reference.md":       "Quick reference card",
     "faq.md":                   "FAQ",
     "onboarding-email-body.md": "Onboarding email",
-    "training-deck-outline.md": "Deck outline",
+    # ``training-deck-outline.md`` is an intermediate artifact (input to
+    # the deck builder), not a public deliverable — deliberately omitted.
 }
 
 

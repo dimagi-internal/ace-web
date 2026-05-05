@@ -1,56 +1,49 @@
 import { useEffect } from "react";
 
 interface Props {
-  publicId: string;
+  /** OCS chatbot's public_id (the "chatbot_public_id" field). */
+  chatbotId: string;
+  /** OCS embed key (the "chatbot_embed_key" field). */
   embedKey: string;
-  /** OCS host serving widget.js, e.g. "https://chatbots.dimagi.com". */
-  host?: string;
 }
 
 declare module "react" {
   namespace JSX {
     interface IntrinsicElements {
       "open-chat-studio-widget": {
-        "public-id"?: string;
+        "chatbot-id"?: string;
         "embed-key"?: string;
+        "button-text"?: string;
+        position?: "left" | "right";
+        visible?: "true" | "false";
       } & React.HTMLAttributes<HTMLElement>;
     }
   }
 }
 
-const SCRIPT_ATTR = "data-ocs-widget";
-
 /**
- * Mounts the standard OCS chatbot widget as a corner-bubble popup.
- * Loads widget.js from `host` once per page (idempotent) and renders the
- * `<open-chat-studio-widget>` web component bound to the bot's
- * public_id + embed_key. Failure to load the script silently no-ops —
- * the page's body-side "Open in OCS" link still works.
+ * Mounts the standard OCS chatbot as a corner-bubble popup.
+ *
+ * The widget is the npm-distributed ``open-chat-studio-widget`` web component
+ * (same package CommCare Connect uses in its base template). Importing it
+ * once registers the custom element globally; the JSX tag below mounts it.
  */
-export function OcsWidgetMount({
-  publicId,
-  embedKey,
-  host = "https://chatbots.dimagi.com",
-}: Props) {
+export function OcsWidgetMount({ chatbotId, embedKey }: Props) {
   useEffect(() => {
-    if (typeof document === "undefined") return;
-    if (document.querySelector(`script[${SCRIPT_ATTR}]`)) return;
-
-    const script = document.createElement("script");
-    script.src = `${host.replace(/\/$/, "")}/static/widget.js`;
-    script.async = true;
-    script.setAttribute(SCRIPT_ATTR, "1");
-    script.onerror = () => {
-      // Non-fatal — the body link to OCS is the fallback.
-      script.remove();
-    };
-    document.head.appendChild(script);
-  }, [host]);
+    // Side-effect import: the package self-registers the custom element on
+    // first import. Lazy so it only loads when this component is on screen.
+    // ts-expect-error: package's `exports` map doesn't expose its .d.ts; the
+    // import is for the side effect only (custom-element registration).
+    // @ts-expect-error: see comment above
+    void import("open-chat-studio-widget");
+  }, []);
 
   return (
     <open-chat-studio-widget
-      public-id={publicId}
+      chatbot-id={chatbotId}
       embed-key={embedKey}
+      button-text="Need help?"
+      position="right"
     />
   );
 }
