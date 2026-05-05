@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 
 import type { CostPhase } from "../../api/types";
 import { CostSkillRow } from "./CostSkillRow";
-import { formatDuration, formatTokens, formatUsd } from "./format";
+import { formatDuration, formatTokens, formatUsd, totalTokens } from "./format";
 
 interface Props {
   phase: CostPhase;
@@ -44,7 +44,12 @@ export function CostPhaseRow({ phase, defaultOpen = false }: Props) {
         </td>
         <td className="py-2">{formatDuration(phase.wall_time_seconds)}</td>
         <td className="py-2">{formatUsd(phase.estimated_cost_usd, phase.cost_is_partial)}</td>
-        <td className="py-2">{formatTokens(phase.tokens.output_tokens)}</td>
+        <td
+          className="py-2 tabular-nums"
+          title={`${phase.tokens.input_tokens.toLocaleString()} input · ${phase.tokens.output_tokens.toLocaleString()} output · ${phase.tokens.cache_creation_tokens.toLocaleString()} cache write · ${phase.tokens.cache_read_tokens.toLocaleString()} cache read`}
+        >
+          {formatTokens(totalTokens(phase.tokens))}
+        </td>
         <td className="py-2">{Math.round(hit * 100)}%</td>
       </tr>
       {open ? phase.skills.map((s) => <CostSkillRow key={s.skill_name} skill={s} />) : null}
