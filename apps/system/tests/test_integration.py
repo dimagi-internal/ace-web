@@ -46,8 +46,9 @@ def test_overview_endpoint_with_real_plugin(authed_client):
     assert pdd["ordinal"] == 1
     assert pdd["has_judge"] is True
     assert pdd["display_name"] == "Idea to PDD"
-    # Artifact relationships populated
-    assert any(a["path"] == "pdd.md" for a in pdd["artifacts_produced"])
+    # Artifact relationships populated. Plugin 0.13.0+ moved per-run
+    # artifacts under N-phase folders (`pdd.md` → `1-design/idea-to-pdd.md`).
+    assert any(a["path"] == "1-design/idea-to-pdd.md" for a in pdd["artifacts_produced"])
     # Version info present
     assert data["plugin_version"] is not None
 
