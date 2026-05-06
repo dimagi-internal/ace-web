@@ -359,17 +359,27 @@ def _read_connect(
 
 
 def _construct_program_url(opp_url: str, program_uuid: str) -> str | None:
-    """Derive ``.../a/<org>/program/<uuid>/view`` from the opportunity URL.
+    """Derive a working program link from the opportunity URL.
 
-    Connect mounts the program app at ``/a/<org_slug>/program/`` (singular),
-    matching the upstream ``commcare-connect`` ``program/urls.py``. We
-    extract the org slug from the opportunity URL (which the plugin
-    already writes) rather than re-reading state.
+    Connect mounts the program app at ``/a/<org_slug>/program/`` (the
+    program-list home). The per-program detail URL ``/program/<uuid>/view``
+    *exists* in upstream commcare-connect's program/urls.py (it points
+    at ``ManagedOpportunityList``) but renders an error page when hit
+    directly — the view's template assumes a wrapper context that the
+    standalone URL can't provide. The PM-side program management UI
+    only exposes the program via HTMX modals on the home page, never
+    as a top-level navigable URL.
+
+    So we link to the program-list home and let the viewer find the
+    program in context. ``program_uuid`` is unused but kept in the
+    signature so callers don't change shape if a real per-program URL
+    appears in the future.
     """
+    del program_uuid  # see docstring
     m = re.search(r"^(https?://[^/]+/a/[^/]+)/", opp_url)
     if m is None:
         return None
-    return f"{m.group(1)}/program/{program_uuid}/view"
+    return f"{m.group(1)}/program/"
 
 
 def _extract_table_value(body: str, key: str) -> str | None:
