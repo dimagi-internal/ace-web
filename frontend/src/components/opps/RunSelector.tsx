@@ -35,40 +35,45 @@ function formatRunId(runId: string): string {
 
 export function RunSelector({ runs, selectedRunId, onChange }: RunSelectorProps) {
   if (runs.length === 0) {
-    return <span className="text-xs text-muted-foreground">No runs yet</span>;
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="uppercase tracking-wide text-[10px]">Run</span>
+        <span>No runs yet</span>
+      </div>
+    );
   }
 
   const selected = runs.find((r) => r.run_id === selectedRunId) ?? runs[0];
   const friendly = formatRunId(selected.run_id);
-  const labelPrefix = runs.length === 1 ? "Run · " : "";
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent"
-        title={selected.run_id}
-      >
-        <span>{labelPrefix}{friendly}</span>
-        {runs.length > 1 && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
-      </DropdownMenuTrigger>
-      {runs.length > 1 && (
-        <DropdownMenuContent align="start" className="w-72 max-h-96 overflow-y-auto">
-          {runs.map((r) => (
-            <DropdownMenuItem
-              key={r.run_id}
-              className={r.run_id === selected.run_id ? "bg-accent/50" : ""}
-              onClick={() => onChange(r.run_id)}
-            >
-              <div className="flex flex-col gap-0.5" title={r.run_id}>
-                <span className="text-xs">{formatRunId(r.run_id)}</span>
-                <span className="text-xs text-muted-foreground">
-                  {r.current_phase ?? "?"} / {r.current_step ?? "?"} · {r.mode ?? "?"}
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Run</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent disabled:cursor-default disabled:opacity-100"
+          title={selected.run_id}
+          disabled={runs.length <= 1}
+        >
+          <span>{friendly}</span>
+          {runs.length > 1 && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+        </DropdownMenuTrigger>
+        {runs.length > 1 && (
+          <DropdownMenuContent align="start" className="w-64 max-h-96 overflow-y-auto">
+            {runs.map((r) => (
+              <DropdownMenuItem
+                key={r.run_id}
+                className={r.run_id === selected.run_id ? "bg-accent/50" : ""}
+                onClick={() => onChange(r.run_id)}
+              >
+                <span className="text-xs" title={r.run_id}>
+                  {formatRunId(r.run_id)}
                 </span>
-              </div>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      )}
-    </DropdownMenu>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        )}
+      </DropdownMenu>
+    </div>
   );
 }
