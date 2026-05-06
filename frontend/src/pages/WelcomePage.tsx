@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Check, Copy } from "lucide-react";
+import { ArrowRight, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -10,6 +10,7 @@ import {
   type VerifyResult,
 } from "../api/workspaces";
 import { Button } from "@/components/ui/button";
+import { useWorkspace } from "../hooks/useWorkspace";
 
 type Step = "name" | "folder" | "verifying" | "verified" | "creating";
 
@@ -17,6 +18,7 @@ export default function WelcomePage() {
   const [params] = useSearchParams();
   const inviteToken = params.get("invite");
   const navigate = useNavigate();
+  const { all: existingWorkspaces, loading: workspacesLoading } = useWorkspace();
 
   // If there's an invite param, redirect to the accept page.
   useEffect(() => {
@@ -78,14 +80,53 @@ export default function WelcomePage() {
 
   if (inviteToken) return null;
 
+  const hasExisting = !workspacesLoading && existingWorkspaces.length > 0;
+
   return (
     <div className="mx-auto max-w-2xl px-6 py-12">
       <h1 className="text-3xl font-semibold text-foreground">Welcome to ACE</h1>
       <p className="mt-2 text-muted-foreground">
-        Create a workspace to get started, or paste an invite link.
+        {hasExisting
+          ? "Pick a workspace below, or create another one."
+          : "Create a workspace to get started, or paste an invite link."}
       </p>
 
-      <div className="mt-8 rounded border border-border bg-card p-6">
+      {hasExisting && (
+        <div className="mt-8 rounded border border-border bg-card p-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Your workspaces
+          </h2>
+          <ul className="mt-3 divide-y divide-border">
+            {existingWorkspaces.map((ws) => (
+              <li key={ws.slug}>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/w/${ws.slug}/opps`)}
+                  className="group flex w-full items-center justify-between gap-3 rounded px-2 py-3 text-left hover:bg-accent"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {ws.display_name}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {ws.slug}
+                      {ws.role && <> · {ws.role}</>}
+                    </p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mt-6 rounded border border-border bg-card p-6">
+        {hasExisting && step === "name" && (
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Create another workspace
+          </h2>
+        )}
         {step === "name" && (
           <>
             <label className="block text-sm font-medium text-foreground">
