@@ -125,8 +125,13 @@ def _ts_to_json_array(text: str) -> str:
     # Strip multi-line comments
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
 
-    # Single quotes → double quotes
-    text = text.replace("'", '"')
+    # Convert single-quoted TS string literals to JSON double-quoted strings.
+    # The previous implementation did a global ``"'".replace`` which silently
+    # broke entries whose single-quoted descriptions contained literal
+    # double-quotes used as English quotation (e.g. `description: 'The "what
+    # shipped" doc.'`) — after the swap, the internal `"` terminated the
+    # string mid-flight and the entire array failed to JSON-parse.
+    text = re.sub(r"'((?:\\.|[^'\\])*)'", _ts_single_quoted_to_json, text)
 
     # Add quotes to bare keys: `  skillSlug:` → `  "skillSlug":`
     # Only match keys right after `{` or `,` (object-property syntax) so that
@@ -140,6 +145,26 @@ def _ts_to_json_array(text: str) -> str:
     text = re.sub(r",\s*$", "", text)
 
     return text
+
+
+def _ts_single_quoted_to_json(m: re.Match[str]) -> str:
+    """Re-escape the body of a TS single-quoted string literal as JSON.
+
+    Resolves TS-source escape sequences first (`\\'` → `'`, `\\"` → `"`),
+    then escapes JSON-unsafe chars in the body (`\\`, `"`, control chars).
+    """
+    inner = m.group(1)
+    # TS escapes inside the captured body
+    inner = inner.replace("\\'", "'").replace('\\"', '"')
+    # JSON escapes — order matters; backslash first
+    inner = (
+        inner.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return f'"{inner}"'
 
 
 # ---------------------------------------------------------------------------
