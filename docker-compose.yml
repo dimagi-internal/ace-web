@@ -53,8 +53,11 @@ services:
       # /ace/ path prefix for URL-path parity with production. Override to
       # empty in .env if you prefer to run at the bare root locally.
       FORCE_SCRIPT_NAME: ${FORCE_SCRIPT_NAME-/ace}
+    # Host port 8001 so ace-web can run alongside other Django dev servers
+    # (CommCare HQ, connect-labs, etc.) that conventionally bind 8000.
+    # Override with `ACE_WEB_HOST_PORT` in .env if 8001 is also in use.
     ports:
-      - "8000:8000"
+      - "${ACE_WEB_HOST_PORT:-8001}:8000"
     volumes:
       - ./apps:/app/apps
       - ./config:/app/config

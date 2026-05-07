@@ -55,7 +55,7 @@ directly to avoid submodule pointer churn.
 docker compose up
 ```
 
-Then open http://localhost:8000/ace/. Backend code edits under `apps/`
+Then open http://localhost:8001/ace/. Backend code edits under `apps/`
 and `config/` reload automatically (uvicorn `--reload` is wired into the
 dev compose `command`). Frontend changes require a rebuild — see below
 for the fast path.
@@ -75,9 +75,14 @@ cd frontend && bun run dev   # or `npm run dev`
 
 Then open http://localhost:5173/ace/. The Vite server proxies
 `/ace/api`, `/ace/auth`, `/ace/admin`, `/ace/share`, and `/ace/ws` to
-the docker-compose Django on `:8000` so cookies, auth, and WebSockets
-all work end-to-end. The bundled-into-Django path at `:8000` stays
+the docker-compose Django on `:8001` so cookies, auth, and WebSockets
+all work end-to-end. The bundled-into-Django path at `:8001` stays
 available for prod-parity smoke checks.
+
+Port 8001 (not the usual Django default of 8000) so ace-web coexists
+with CommCare HQ / connect-labs running locally on 8000. Override the
+host port with `ACE_WEB_HOST_PORT=<port>` in `.env` and tell Vite about
+it via `VITE_BACKEND_PORT=<port> bun run dev`.
 
 ### Trying it out — no credentials needed
 

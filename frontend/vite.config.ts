@@ -8,9 +8,15 @@ import tailwindcss from "@tailwindcss/vite"
 // FORCE_SCRIPT_NAME=/ace by default — so the Vite dev server uses the
 // same base path for prod parity. `bun run dev` lands you at
 // http://localhost:5173/ace/ and the proxy below forwards `/ace/api`,
-// `/ace/auth`, etc. through to the local Django on :8000 unchanged.
-const BACKEND = "http://127.0.0.1:8000"
-const BACKEND_WS = "ws://127.0.0.1:8000"
+// `/ace/auth`, etc. through to the local Django.
+//
+// Backend host port defaults to 8001 (not 8000) so ace-web's
+// docker-compose stack coexists with CommCare HQ / connect-labs / other
+// Django dev servers that conventionally bind 8000. Override with
+// `VITE_BACKEND_PORT` if a teammate runs ace-web on a different port.
+const BACKEND_PORT = process.env.VITE_BACKEND_PORT ?? "8001"
+const BACKEND = `http://127.0.0.1:${BACKEND_PORT}`
+const BACKEND_WS = `ws://127.0.0.1:${BACKEND_PORT}`
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
