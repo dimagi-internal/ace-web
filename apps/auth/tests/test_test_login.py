@@ -5,6 +5,7 @@ import pytest
 from django.test import Client
 
 from apps.auth.models import User
+from apps.workspaces.models import Workspace, WorkspaceMembership
 
 pytestmark = pytest.mark.django_db
 
@@ -130,3 +131,54 @@ def test_view_rejects_missing_email(settings):
     request._body = b"{}"
     response = test_login(request)
     assert response.status_code == 400
+
+
+def test_dev_bootstrap_creates_workspace_when_drive_root_set(settings):
+    """First test-login on a clean DB seeds a workspace anchored to
+    ACE_DRIVE_ROOT_FOLDER_ID and adds the user as Owner. Saves the
+    operator from walking the /welcome wizard every time the local DB
+    is blown away."""
+    from apps.auth.test_login_views import _ensure_dev_workspace_membership
+
+    settings.ACE_DRIVE_ROOT_FOLDER_ID = "1HThsA_test_folder_id"
+
+    user = User.objects.create(email="ace@dimagi-ai.com", display_name="ace")
+    _ensure_dev_workspace_membership(user)
+
+    ws = Workspace.objects.get(slug="dimagi-team")
+    assert ws.drive_root_folder_id == "1HThsA_test_folder_id"
+    assert ws.created_by_id == user.id
+    membership = WorkspaceMembership.objects.get(workspace=ws, user=user)
+    assert membership.role == "owner"
+
+
+def test_dev_bootstrap_adds_existing_users_as_editor(settings):
+    """When a workspace already exists (because someone else logged in
+    earlier or the seed migration ran), subsequent test-login users get
+    Editor membership so they can share the dev state."""
+    from apps.auth.test_login_views import _ensure_dev_workspace_membership
+
+    settings.ACE_DRIVE_ROOT_FOLDER_ID = "1HThsA_test_folder_id"
+    owner = User.objects.create(email="owner@dimagi.com", display_name="Owner")
+    _ensure_dev_workspace_membership(owner)
+
+    teammate = User.objects.create(email="teammate@dimagi.com", display_name="T")
+    _ensure_dev_workspace_membership(teammate)
+
+    ws = Workspace.objects.get(slug="dimagi-team")
+    assert WorkspaceMembership.objects.get(workspace=ws, user=teammate).role == "editor"
+    # Owner stays Owner — second call is idempotent on the original member.
+    assert WorkspaceMembership.objects.get(workspace=ws, user=owner).role == "owner"
+
+
+def test_dev_bootstrap_noops_when_drive_root_unset(settings):
+    """No ACE_DRIVE_ROOT_FOLDER_ID → no workspace; user falls back to the
+    /welcome wizard path normally."""
+    from apps.auth.test_login_views import _ensure_dev_workspace_membership
+
+    settings.ACE_DRIVE_ROOT_FOLDER_ID = ""
+    user = User.objects.create(email="ace@dimagi-ai.com", display_name="ace")
+    _ensure_dev_workspace_membership(user)
+
+    assert Workspace.objects.count() == 0
+    assert WorkspaceMembership.objects.count() == 0

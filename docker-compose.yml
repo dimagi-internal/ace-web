@@ -53,6 +53,16 @@ services:
       # /ace/ path prefix for URL-path parity with production. Override to
       # empty in .env if you prefer to run at the bare root locally.
       FORCE_SCRIPT_NAME: ${FORCE_SCRIPT_NAME-/ace}
+      # Drive root folder ID. Default = the shared Dimagi Team folder
+      # used in production (read-only via the SA), so a fresh local DB
+      # comes up with the same opps when ACE_DRIVE_SA_KEY_JSON is set.
+      # The folder ID is a Drive URL fragment, not a secret. Override
+      # if you want to point local dev at a different Drive folder.
+      ACE_DRIVE_ROOT_FOLDER_ID: ${ACE_DRIVE_ROOT_FOLDER_ID:-1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz}
+      # Service-account key JSON for Drive reads. Drop into .env to make
+      # the Workbench actually fetch opp data; without it the workspace
+      # exists but Drive lists 401. See README "Mirroring prod Drive".
+      ACE_DRIVE_SA_KEY_JSON: ${ACE_DRIVE_SA_KEY_JSON:-}
     # Host port 8001 so ace-web can run alongside other Django dev servers
     # (CommCare HQ, connect-labs, etc.) that conventionally bind 8000.
     # Override with `ACE_WEB_HOST_PORT` in .env if 8001 is also in use.

@@ -84,9 +84,72 @@ def test_login(request: HttpRequest) -> HttpResponse:
         defaults={"display_name": display_name},
     )
 
+    # Dev-only auto-onboarding: get every test-login user into a workable
+    # state so they don't have to walk the /welcome wizard every time the
+    # local DB gets blown away. Only runs in DEBUG+ACE_ALLOW_TEST_LOGIN
+    # (already gated above). Failures are non-fatal — the wizard remains
+    # available as the fallback.
+    try:
+        _ensure_dev_workspace_membership(user)
+    except Exception:  # noqa: BLE001
+        logger.warning("dev workspace bootstrap failed", exc_info=True)
+
     # Set the Django session cookie. login() writes to request.session
     # and django.contrib.sessions' middleware will emit the Set-Cookie
     # header on the response.
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
 
     return JsonResponse({"user_id": user.pk, "email": user.email})
+
+
+def _ensure_dev_workspace_membership(user) -> None:
+    """Idempotently put the user in a workspace for local-dev iteration.
+
+    Runs after every test-login. Three cases:
+
+    1. **A workspace already exists** (someone else logged in earlier and
+       set one up, or the seed migration created one) → add this user as
+       Editor to every existing workspace. Lets multiple test users
+       share the same dev state.
+    2. **No workspace yet AND ``ACE_DRIVE_ROOT_FOLDER_ID`` is set** →
+       create a "Dimagi Team" workspace tied to that folder, with this
+       user as Owner. Mirrors the prod seed.
+    3. **No workspace yet AND no Drive folder configured** → no-op. The
+       user goes through the /welcome wizard normally.
+
+    The whole helper is dev-only; production never reaches it because
+    test_login is gated on DEBUG and the URL isn't registered.
+    """
+    # Lazy imports — these apps load after settings have populated.
+    from apps.workspaces.models import Workspace, WorkspaceMembership
+
+    existing = list(Workspace.objects.all())
+    if existing:
+        for ws in existing:
+            WorkspaceMembership.objects.get_or_create(
+                workspace=ws,
+                user=user,
+                defaults={"role": "editor"},
+            )
+        return
+
+    folder_id = getattr(settings, "ACE_DRIVE_ROOT_FOLDER_ID", "") or ""
+    if not folder_id:
+        # Nothing to anchor a workspace on. The /welcome wizard prompts
+        # for a folder ID + verifies SA access, which is the right path
+        # for someone genuinely setting up new infra.
+        return
+
+    ws = Workspace.objects.create(
+        slug="dimagi-team",
+        display_name="Dimagi Team",
+        drive_root_folder_id=folder_id,
+        created_by=user,
+    )
+    WorkspaceMembership.objects.create(
+        workspace=ws, user=user, role="owner",
+    )
+    logger.info(
+        "dev bootstrap: created workspace %s anchored to Drive folder %s",
+        ws.slug, folder_id,
+    )
