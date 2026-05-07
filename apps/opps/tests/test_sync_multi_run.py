@@ -273,6 +273,91 @@ def test_load_opp_finds_nested_verdict_artifacts():
     assert idea_step.judge.score == 87.0
 
 
+def test_parse_verdict_normalizes_explicit_0_3_scale():
+    """Regression: ocs-chatbot-eval emits ``overall_score: 3.0`` with an
+    explicit ``scale: "0-3"`` annotation in ``dimensions``. The legacy
+    magnitude heuristic in ``normalize_score_pct`` would treat 3.0 as
+    a 0-10 score and project to 30/100, which contradicts the YAML's
+    own ``verdict: pass``. ``_parse_verdict_yaml`` now reads the
+    declared scale and pre-normalizes to 0-100 at parse time so
+    downstream sees a coherent score."""
+    from apps.opps.sync import _parse_verdict_yaml
+
+    body = (
+        "skill: ocs-chatbot-eval\n"
+        "overall_score: 3.0\n"
+        "verdict: pass\n"
+        "dimensions:\n"
+        "  overall_quality: { score: 3.0, weight: 1.0, scale: \"0-3\" }\n"
+    )
+    v = _parse_verdict_yaml(body)
+    assert v is not None
+    assert v.score == 100.0  # 3 of 3 → 100%
+    assert v.passed is True
+
+
+def test_parse_verdict_falls_back_to_heuristic_without_scale():
+    """When the verdict YAML has no explicit scale the parser leaves the
+    raw score alone; ``normalize_score_pct`` downstream applies the
+    >10/≤10 magnitude heuristic. Verifies the layered behaviour matches
+    the legacy contract for unannotated rubrics."""
+    from apps.opps.sync import _parse_verdict_yaml
+
+    v = _parse_verdict_yaml("score: 8.5\nverdict: pass\n")
+    assert v is not None
+    assert v.score == 8.5  # Untouched at parse time.
+
+
+def test_attribute_files_rescues_orphans_via_filename_prefix():
+    """Regression: the plugin sometimes writes files under
+    ``<N>-<phase>/`` that aren't declared in artifact-manifest.ts —
+    ``app-release_summary.md`` was the live offender. Without a
+    fallback, the manifest matcher drops them and the workbench shows
+    ``art=0`` even though the file is right there. The filename-prefix
+    fallback attributes ``<skill>_<role>.<ext>`` files to ``<skill>``
+    when ``<skill>`` is in the registered set."""
+    from apps.opps.drive_client import DriveFile
+    from apps.opps.sync import _attribute_files_to_skills
+
+    files = [
+        DriveFile(
+            id="orphan", name="app-release_summary.md",
+            mime_type="text/markdown",
+            path="2-commcare/app-release_summary.md",
+            web_view_link="",
+        ),
+    ]
+    # No manifest matcher entries → falls back to filename prefix.
+    out = _attribute_files_to_skills(
+        files, matchers=[], registered_skills={"app-release"},
+    )
+    assert "app-release" in out
+    assert out["app-release"][0].name == "app-release_summary.md"
+
+
+def test_attribute_files_filename_fallback_skips_unknown_skill():
+    """Filename-prefix attribution must only fire when the prefix
+    matches a registered skill — otherwise it'd hallucinate skill rows
+    from arbitrary files."""
+    from apps.opps.drive_client import DriveFile
+    from apps.opps.sync import _attribute_files_to_skills
+
+    files = [
+        DriveFile(
+            id="weird", name="totally-unknown_thing.md",
+            mime_type="text/markdown",
+            path="2-commcare/totally-unknown_thing.md",
+            web_view_link="",
+        ),
+    ]
+    out = _attribute_files_to_skills(
+        files, matchers=[], registered_skills={"app-release"},
+    )
+    # File is unattributed (key is ""), not invented under a phantom skill.
+    assert "totally-unknown" not in out
+    assert files[0] in out.get("", [])
+
+
 def test_load_opp_attaches_verdicts_at_phase_prefixed_paths():
     """Regression: plugin 0.13.0+ moved verdicts from `verdicts/<skill>.yaml`
     to `<N>-<phase>/<producer>[-eval]_verdict[-variant].yaml`. The reader

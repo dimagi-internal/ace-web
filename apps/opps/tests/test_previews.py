@@ -64,10 +64,16 @@ def test_cycle_grade_preview():
     assert "8.4" in preview
 
 
-def test_unknown_skill_falls_back_to_count():
+def test_unknown_skill_falls_back_to_primary_filename():
+    """The fallback when no extractor is registered shows the primary
+    artifact's filename (truthful) rather than a generic "N artifacts"
+    count (uninformative). +N indicates additional artifacts."""
     step = _step("unknown-skill-123", artifacts=["a.md", "b.md"])
     preview = build_preview(step, bodies={})
-    assert preview == "2 artifacts"
+    assert preview == "📄 a.md  +1"
+
+    step_one = _step("unknown-skill-456", artifacts=["solo.md"])
+    assert build_preview(step_one, bodies={}) == "📄 solo.md"
 
 
 def test_no_artifacts_falls_back_to_dash():

@@ -227,13 +227,31 @@ def _artifact_matchers(artifacts: list[dict[str, Any]]) -> list[tuple[re.Pattern
     return out
 
 
-def _attribute_files_to_skills(
-    files: list[DriveFile], matchers: list[tuple[re.Pattern[str], str]]
-) -> dict[str, list[DriveFile]]:
-    """Group Drive files by the skill that produces them (per manifest).
+_FILENAME_PREFIX_RE = re.compile(r"^([a-z0-9][a-z0-9-]*?)(?:_|-eval[_.]|\.)")
 
-    Files with no matching manifest entry are attributed to ``""`` so
-    callers can surface them as "unclassified" if desired.
+
+def _attribute_files_to_skills(
+    files: list[DriveFile],
+    matchers: list[tuple[re.Pattern[str], str]],
+    registered_skills: set[str] | None = None,
+) -> dict[str, list[DriveFile]]:
+    """Group Drive files by the skill that produces them.
+
+    Primary path: each file's ``.path`` is matched against the
+    plugin-declared manifest entries. The manifest is the source of
+    truth.
+
+    Fallback: when a file lives under a ``<N>-<phase>/`` folder and has
+    a kebab-cased filename prefix that matches a registered skill (the
+    plugin convention is ``<skill>_<role>.<ext>`` and
+    ``<skill>-eval_verdict.<ext>``), attribute it to that skill anyway.
+    This rescues files that the plugin writes but forgets to declare in
+    the manifest — like ``app-release_summary.md``, observed in the
+    wild — without dropping them silently.
+
+    Files with no manifest match and no recognizable filename prefix
+    are attributed to ``""`` so callers can surface them as
+    "unclassified" if desired.
     """
     by_skill: dict[str, list[DriveFile]] = {}
     for f in files:
@@ -244,9 +262,41 @@ def _attribute_files_to_skills(
             if pattern.match(f.path):
                 matched = producer
                 break
+        if matched is None and registered_skills:
+            matched = _filename_prefix_skill(f, registered_skills)
         key = matched or ""
         by_skill.setdefault(key, []).append(f)
     return by_skill
+
+
+def _filename_prefix_skill(
+    f: DriveFile, registered_skills: set[str]
+) -> str | None:
+    """Attribute a file via its ``<skill>_…`` or ``<skill>-eval_…`` prefix.
+
+    Only fires for files under a phase-prefixed folder
+    (``<N>-<phase>/…``) since that's where lifecycle skill outputs live;
+    avoids false positives at the opp root or in shared subdirs.
+    """
+    # f.path looks like "2-commcare/app-release_summary.md" — require the
+    # phase-prefixed parent.
+    parts = f.path.split("/")
+    if len(parts) < 2 or not re.match(r"^\d+-", parts[0]):
+        return None
+    name = parts[-1]
+    m = _FILENAME_PREFIX_RE.match(name)
+    if not m:
+        return None
+    candidate = m.group(1)
+    if candidate in registered_skills:
+        return candidate
+    # Also try stripping `-eval` for verdict-style names like
+    # `idea-to-pdd-eval_verdict.yaml` where the prefix is the eval skill.
+    if candidate.endswith("-eval"):
+        target = candidate[: -len("-eval")]
+        if target in registered_skills:
+            return target
+    return None
 
 
 def _drive_file_to_artifact_ref(f: DriveFile) -> ArtifactRef:
@@ -323,11 +373,56 @@ def _skill_from_verdict_producer(
     return None
 
 
+_SCALE_RE = re.compile(r"^\s*0\s*-\s*(\d+(?:\.\d+)?)\s*$")
+
+
+def _detect_score_scale(data: dict) -> float | None:
+    """Pull the highest declared ``scale: "0-N"`` from a verdict YAML.
+
+    Walks ``dimensions`` (the per-skill rubric output) and any top-level
+    ``scale`` field. Returns the upper bound ``N`` as a float, or None if
+    no explicit scale is present (callers fall back to a heuristic).
+    """
+    candidates: list[float] = []
+
+    def _consume(value):
+        if isinstance(value, str):
+            m = _SCALE_RE.match(value)
+            if m:
+                try:
+                    candidates.append(float(m.group(1)))
+                except ValueError:
+                    pass
+        elif isinstance(value, (int, float)):
+            candidates.append(float(value))
+
+    top = data.get("scale")
+    _consume(top)
+
+    dims = data.get("dimensions")
+    if isinstance(dims, dict):
+        for v in dims.values():
+            if isinstance(v, dict):
+                _consume(v.get("scale"))
+
+    if not candidates:
+        return None
+    return max(candidates)
+
+
 def _parse_verdict_yaml(body: str) -> JudgeVerdict | None:
     """Parse a verdict YAML body into a JudgeVerdict.
 
     Tolerant of both the old short shape ({score, passed, ...}) and the
     plugin's current eval shape ({overall_score, verdict, dimensions, ...}).
+
+    Score is normalized to a 0-100 scale at parse time. The plugin emits
+    scores on at least three scales (0-3 for ocs-chatbot-eval, 0-10 for
+    most per-skill rubrics, 0-100 for opp-eval). When the verdict YAML
+    declares an explicit scale (``dimensions.<key>.scale: "0-N"``) we use
+    that; otherwise we fall back to a magnitude heuristic that's right for
+    0-10 and 0-100 inputs but wrong for 0-3 — hence the explicit-scale
+    preference.
     """
     try:
         data = yaml.safe_load(body) or {}
@@ -344,6 +439,14 @@ def _parse_verdict_yaml(body: str) -> JudgeVerdict | None:
         score = float(score_raw) if score_raw is not None else None
     except (TypeError, ValueError):
         score = None
+
+    if score is not None:
+        scale_max = _detect_score_scale(data)
+        if scale_max is not None and scale_max > 0:
+            # Normalize to 0-100 here so downstream callers don't have to
+            # carry the scale around. score=3 on 0-3 → 100; score=8.5 on
+            # 0-10 → 85; score=87 on 0-100 → 87 (idempotent).
+            score = (score / scale_max) * 100.0
 
     # Passed: explicit boolean, or derived from ``verdict``/``gate``.
     passed_raw = data.get("passed")
@@ -967,7 +1070,10 @@ def _load_opp_flat(
     pdd_body = _read_text(client, pdd_file) if pdd_file else ""
 
     matchers = _artifact_matchers(overview.get("artifacts") or [])
-    files_by_skill = _attribute_files_to_skills(opp_tree, matchers)
+    files_by_skill = _attribute_files_to_skills(
+        opp_tree, matchers,
+        registered_skills={s.name for s in skill_registry},
+    )
 
     artifacts_by_skill: dict[str, list[ArtifactRef]] = {
         skill: [_drive_file_to_artifact_ref(f) for f in files]
@@ -1075,7 +1181,10 @@ def _load_opp_run(
     # "pending" even after a complete run.
     run_tree = client.list_files(run_folder_id, recursive=True)
     matchers = _artifact_matchers(overview.get("artifacts") or [])
-    files_by_skill = _attribute_files_to_skills(run_tree, matchers)
+    files_by_skill = _attribute_files_to_skills(
+        run_tree, matchers,
+        registered_skills={s.name for s in skill_registry},
+    )
 
     artifacts_by_skill: dict[str, list[ArtifactRef]] = {
         skill: [_drive_file_to_artifact_ref(f) for f in files]
