@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { listPendingReviews } from "@/api/workspaces";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { UserMenu } from "@/components/UserMenu";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { cn } from "@/lib/utils";
@@ -123,7 +123,7 @@ export function TopNav() {
           );
         })}
         <span aria-hidden className="h-5 w-px bg-border" />
-        <ThemeToggle />
+        <UserMenu />
       </div>
     </nav>
   );
