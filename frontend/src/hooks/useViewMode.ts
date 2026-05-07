@@ -6,6 +6,10 @@ const VALID: readonly ViewKind[] = [
   "flow",
   "timeline",
   "workbench",
+  "phase",
+  "heatmap",
+  "diff",
+  "story",
 ] as const;
 
 function parse(raw: string | null, fallback: ViewKind): ViewKind {
