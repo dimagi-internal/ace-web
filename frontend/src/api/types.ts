@@ -442,3 +442,55 @@ export interface CostRollup {
   session_count: number;
   sessions_without_breakdown: number;
 }
+
+// ── Cross-run views (Phase / Heatmap / Diff) ──
+
+export interface PerRunSummary {
+  run_id: string;
+  mode: string | null;
+  started_at: string | null;
+  last_actor_at: string | null;
+  current_phase: string | null;
+  current_step: string | null;
+  mean_score: number | null;
+  complete_count: number;
+  total_count: number;
+  gate_pending_count: number;
+  phase_scores: Record<
+    string,
+    { mean_score: number | null; complete: number; total: number }
+  >;
+  skill_scores: Record<string, number | null>;
+  skill_passed: Record<string, boolean | null>;
+  skill_status: Record<string, string>;
+}
+
+export interface SkillIndexEntry {
+  skill_name: string;
+  display_name: string;
+  phase: string;
+  phase_display: string;
+  phase_ordinal: number;
+  ordinal: number;
+  has_judge: boolean;
+}
+
+export interface MultiRunSummary {
+  per_run: PerRunSummary[];
+  skill_index: SkillIndexEntry[];
+}
+
+// ── Workspace-wide gate review queue ──
+
+export interface PendingReview {
+  opp_slug: string;
+  opp_display_name: string;
+  run_id: string;
+  skill_name: string;
+  phase: string;
+  ordinal: number;
+  score: number | null;
+  gate_decided_by: string | null;
+  gate_ts: string | null;
+  gate_note: string | null;
+}

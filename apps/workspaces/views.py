@@ -21,6 +21,7 @@ import json
 import re
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -463,6 +464,113 @@ def workspace_activity(request, slug):
         }
         for r in rows
     ]))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def pending_reviews(request, slug):
+    """GET /api/workspaces/<slug>/pending-reviews — every gate-pending
+    step across the workspace's opps, with the gate-brief inlined.
+
+    Powers the workspace-level Reviews queue page. Iterates the opp
+    list, fetches each opp's snapshot, and emits one row per
+    gate-pending step. The Drive cache makes this cheap on warm runs.
+    """
+    from django.core.cache import cache as _cache
+
+    ws, err = _require_member(request, slug)
+    if err is not None:
+        return err
+
+    if not ws.drive_root_folder_id:
+        return Response(success_response({"pending": []}))
+
+    force = request.GET.get("force") == "1"
+    cache_key = f"pending-reviews:v1:{ws.slug}"
+    if not force:
+        hit = _cache.get(cache_key)
+        if hit is not None:
+            return Response(success_response(hit))
+
+    # Local imports to avoid circular dependencies.
+    from apps.opps.drive_cache import CachedDriveClient
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.sync import list_opp_runs, load_opp
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+
+    try:
+        client = CachedDriveClient(get_drive_client(workspace=ws))
+    except ServiceAccountNotFound as exc:
+        return Response(
+            error_response(str(exc), code="drive-not-configured"),
+            status=500,
+        )
+
+    pending: list[dict] = []
+    try:
+        ace_root_children = client.list_files(ws.drive_root_folder_id)
+    except Exception as exc:  # noqa: BLE001
+        return Response(
+            error_response(
+                f"couldn't list ACE root: {exc}", code="drive-unavailable",
+            ),
+            status=503,
+        )
+
+    for child in ace_root_children:
+        if child.mime_type != "application/vnd.google-apps.folder":
+            continue
+        # Only walk folders that look like opps.
+        opp_children = client.list_files(child.id)
+        names = {f.name for f in opp_children}
+        if not (
+            "idea.md" in names or "state.yaml" in names
+            or "run_state.yaml" in names or "opp.yaml" in names
+            or "runs" in names
+        ):
+            continue
+
+        try:
+            runs = list_opp_runs(
+                client, ace_root_folder_id=ws.drive_root_folder_id,
+                opp_slug=child.name, opp_children=opp_children,
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        if not runs:
+            continue
+        # Most-recent run only — older runs' gates aren't actionable.
+        try:
+            snap = load_opp(
+                client, ace_root_folder_id=ws.drive_root_folder_id,
+                opp_slug=child.name, run_id=runs[0].run_id,
+            )
+        except FileNotFoundError:
+            continue
+
+        for step in snap.current_run.steps:
+            if step.step.status != "gate-pending":
+                continue
+            latest_gate = step.gates[-1] if step.gates else None
+            pending.append({
+                "opp_slug": child.name,
+                "opp_display_name": snap.opp.display_name or child.name,
+                "run_id": runs[0].run_id,
+                "skill_name": step.step.skill_name,
+                "phase": step.step.phase,
+                "ordinal": step.step.ordinal,
+                "score": step.judge.score if step.judge else None,
+                "gate_decided_by": latest_gate.decided_by if latest_gate else None,
+                "gate_ts": latest_gate.ts if latest_gate else None,
+                "gate_note": latest_gate.note if latest_gate else None,
+            })
+
+    payload = {"pending": pending}
+    _cache.set(
+        cache_key, payload,
+        timeout=getattr(settings, "OPPS_DRIVE_CACHE_SECONDS", 30),
+    )
+    return Response(success_response(payload))
 
 
 @api_view(["POST"])

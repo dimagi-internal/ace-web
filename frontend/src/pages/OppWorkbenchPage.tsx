@@ -4,6 +4,10 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { getOpp } from "../api/opps";
 import type { OppSnapshot, Step } from "../api/types";
 import { FlowView } from "../components/views/FlowView";
+import { HeatmapView } from "../components/views/HeatmapView";
+import { PhaseView } from "../components/views/PhaseView";
+import { RunDiffView } from "../components/views/RunDiffView";
+import { StoryboardView } from "../components/views/StoryboardView";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { PendingGatesBanner } from "../components/opps/PendingGatesBanner";
 import { SkillList } from "../components/opps/SkillList";
@@ -15,10 +19,15 @@ import { useOppSocket } from "../hooks/useOppSocket";
 import { useViewMode } from "../hooks/useViewMode";
 
 // Per-opp view tabs. "workbench" (the existing 3-pane) is the default.
-// "flow" ships the React Flow DAG. Hierarchy + Timeline don't appear
-// at the per-opp scale because they're workspace-wide concepts.
+// The four prototype views (phase/heatmap/diff/story) sit alongside
+// the legacy DAG flow view; we'll cull the losers once you've poked
+// at the winners.
 const VIEW_TABS: ViewTab[] = [
   { kind: "workbench", label: "Workbench" },
+  { kind: "phase", label: "Phases" },
+  { kind: "heatmap", label: "Heatmap" },
+  { kind: "diff", label: "Diff" },
+  { kind: "story", label: "Storyboard" },
   { kind: "flow", label: "Flow" },
 ];
 
@@ -192,6 +201,34 @@ export default function OppWorkbenchPage() {
       {view === "flow" && (
         <div className="min-h-0 flex-1">
           <FlowView oppSlug={slug} runId={snapshot.current_run.run_id} />
+        </div>
+      )}
+      {view === "phase" && workspaceSlug && (
+        <div className="min-h-0 flex-1">
+          <PhaseView
+            oppSlug={slug}
+            workspaceSlug={workspaceSlug}
+            selectedRunId={snapshot.current_run.run_id}
+          />
+        </div>
+      )}
+      {view === "heatmap" && workspaceSlug && (
+        <div className="min-h-0 flex-1">
+          <HeatmapView oppSlug={slug} workspaceSlug={workspaceSlug} />
+        </div>
+      )}
+      {view === "diff" && workspaceSlug && (
+        <div className="min-h-0 flex-1">
+          <RunDiffView oppSlug={slug} workspaceSlug={workspaceSlug} />
+        </div>
+      )}
+      {view === "story" && workspaceSlug && (
+        <div className="min-h-0 flex-1">
+          <StoryboardView
+            oppSlug={slug}
+            workspaceSlug={workspaceSlug}
+            runId={snapshot.current_run.run_id}
+          />
         </div>
       )}
     </div>

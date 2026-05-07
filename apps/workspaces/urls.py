@@ -21,4 +21,9 @@ urlpatterns = [
     ),
     path("<slug:slug>/leave/", views.leave_workspace, name="leave"),
     path("<slug:slug>/activity/", views.workspace_activity, name="activity"),
+    path(
+        "<slug:slug>/pending-reviews/",
+        views.pending_reviews,
+        name="pending-reviews",
+    ),
 ]

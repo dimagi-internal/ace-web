@@ -1,6 +1,7 @@
 """REST API views for the ACE opportunity Workbench."""
 import logging
 
+from django.conf import settings
 from django.db import models, transaction
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
@@ -533,6 +534,163 @@ def runs_list(request, slug: str):
             "last_actor_at": r.last_actor_at,
         } for r in runs
     ]))
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def multi_run_summary(request, slug: str):
+    """GET /api/opps/<slug>/multi-run-summary — per-run aggregates.
+
+    Powers the cross-run views (Phase, Heatmap, Diff). Loads up to the
+    most recent N runs (default 8) and returns:
+
+      - per_run: list of {run_id, started_at, status, mean_score,
+                          phase_scores: {phase: mean}, skill_scores:
+                          {skill: score}, gate_pending_count, ...}
+      - skill_index: ordered list of {skill_name, display_name, phase,
+                          phase_display, ordinal, has_judge}
+
+    First load is expensive (one full ``load_opp`` per run, ~5s each
+    cold); the Drive cache makes subsequent requests sub-second. The
+    response is also cached for OPPS_DRIVE_CACHE_SECONDS so consecutive
+    page loads of the cross-run views land in single-digit ms even
+    when the per-snapshot cache misses.
+    """
+    from django.core.cache import cache as _cache
+
+    ws, client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        limit = int(request.GET.get("limit", "8"))
+    except (TypeError, ValueError):
+        limit = 8
+    limit = max(1, min(limit, 20))
+    force = request.GET.get("force") == "1"
+
+    cache_key = f"opp-multi-run-summary:v1:{ws.slug}:{slug}:{limit}"
+    if not force:
+        hit = _cache.get(cache_key)
+        if hit is not None:
+            return Response(success_response(hit))
+
+    runs = list_opp_runs(client, ace_root_folder_id=ace_folder_id, opp_slug=slug)
+    if not runs:
+        return Response(success_response({"per_run": [], "skill_index": []}))
+    runs = runs[:limit]
+
+    from apps.opps.skills import SKILL_REGISTRY
+    from apps.system.reader import load_system_overview
+
+    overview = load_system_overview(getattr(settings, "ACE_PLUGIN_PATH", "") or "")
+    phase_lookup = {p["name"]: p for p in (overview.get("phases") or [])}
+    skill_phase_lookup = {
+        s["name"]: s.get("phase") for s in (overview.get("skills") or [])
+    }
+    skill_display_lookup = {
+        s["name"]: s.get("display_name") for s in (overview.get("skills") or [])
+    }
+    skill_has_judge = {
+        s["name"]: bool(s.get("has_judge")) for s in (overview.get("skills") or [])
+    }
+
+    skill_index = []
+    for s in SKILL_REGISTRY:
+        phase = skill_phase_lookup.get(s.name) or s.phase
+        phase_meta = phase_lookup.get(phase) or {}
+        skill_index.append({
+            "skill_name": s.name,
+            "display_name": skill_display_lookup.get(s.name) or s.name,
+            "phase": phase,
+            "phase_display": phase_meta.get("display_name") or phase,
+            "phase_ordinal": phase_meta.get("ordinal") or 0,
+            "ordinal": s.ordinal,
+            "has_judge": skill_has_judge.get(s.name, False),
+        })
+
+    per_run = []
+    for r in runs:
+        try:
+            snap = load_opp(
+                client, ace_root_folder_id=ace_folder_id,
+                opp_slug=slug, run_id=r.run_id,
+            )
+        except FileNotFoundError:
+            continue
+        run = snap.current_run
+        skill_scores: dict[str, float | None] = {}
+        skill_passed: dict[str, bool | None] = {}
+        skill_status: dict[str, str] = {}
+        gate_pending = 0
+        complete_count = 0
+        scored_values: list[float] = []
+        phase_scored: dict[str, list[float]] = {}
+        phase_complete: dict[str, int] = {}
+        phase_total: dict[str, int] = {}
+
+        for step in run.steps:
+            phase = skill_phase_lookup.get(step.step.skill_name) or step.step.phase
+            phase_total[phase] = phase_total.get(phase, 0) + 1
+            j = step.judge
+            score_pct = None
+            if j is not None and j.score is not None:
+                # Match serializer normalization (0-100).
+                score_pct = (
+                    j.score if j.score > 10 else j.score * 10.0
+                )
+                scored_values.append(score_pct)
+                phase_scored.setdefault(phase, []).append(score_pct)
+            skill_scores[step.step.skill_name] = score_pct
+            skill_passed[step.step.skill_name] = j.passed if j else None
+            skill_status[step.step.skill_name] = step.step.status
+            if step.step.status == "complete":
+                complete_count += 1
+                phase_complete[phase] = phase_complete.get(phase, 0) + 1
+            if step.step.status == "gate-pending":
+                gate_pending += 1
+
+        mean_score = (
+            sum(scored_values) / len(scored_values) if scored_values else None
+        )
+        phase_scores: dict[str, dict] = {}
+        for phase in phase_total:
+            scored = phase_scored.get(phase) or []
+            phase_scores[phase] = {
+                "mean_score": (sum(scored) / len(scored)) if scored else None,
+                "complete": phase_complete.get(phase, 0),
+                "total": phase_total[phase],
+            }
+
+        per_run.append({
+            "run_id": r.run_id,
+            "mode": r.mode,
+            "started_at": run.started_at,
+            "last_actor_at": r.last_actor_at,
+            "current_phase": r.current_phase,
+            "current_step": r.current_step,
+            "mean_score": mean_score,
+            "complete_count": complete_count,
+            "total_count": len(run.steps),
+            "gate_pending_count": gate_pending,
+            "phase_scores": phase_scores,
+            "skill_scores": skill_scores,
+            "skill_passed": skill_passed,
+            "skill_status": skill_status,
+        })
+
+    payload = {"per_run": per_run, "skill_index": skill_index}
+    _cache.set(
+        cache_key, payload,
+        timeout=getattr(settings, "OPPS_DRIVE_CACHE_SECONDS", 30),
+    )
+    return Response(success_response(payload))
 
 
 @api_view(["GET"])
