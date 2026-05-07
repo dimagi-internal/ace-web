@@ -134,7 +134,13 @@ def _full_tree() -> dict:
                     "program.md": _PROGRAM_BODY,
                 },
                 "ocs-setup": {"widget-handoff.md": _WIDGET_HANDOFF},
-                "ocs-agent-config.md": "---\nopp: turmeric\nstatus: done\n---\n",
+                "ocs-agent-config.md": (
+                    "---\n"
+                    "opp: turmeric\n"
+                    "status: done\n"
+                    "experiment_id: 12027\n"
+                    "---\n"
+                ),
                 "training-materials": {
                     "Turmeric Market Survey — Training Deck": "deck-stub",
                     "llo-manager-guide.md": "# LLO guide\n",
@@ -245,10 +251,13 @@ def test_complete_run_returns_full_payload():
         "FAQ", "Onboarding email",
     ]
 
-    # Assistant
+    # Assistant — admin URL `/a/<team>/chatbots/<experiment_id>/` so an
+    # operator can view/edit the bot in OCS. The widget-handoff
+    # `chatbot_url` (an embed-page URL) is NOT what we link to; that
+    # URL is a 404 on OCS.
     assert p["assistant"]["public_id"] == "1fcddd08-02cb-4b22-b482-181cb2f10dcb"
     assert p["assistant"]["embed_key"] == "wDwe70vquTLm4M0carkTHGaQgrb0NYKP"
-    assert "openchatstudio.com" in p["assistant"]["ocs_url"]
+    assert p["assistant"]["ocs_url"] == "https://www.openchatstudio.com/a/connect-ace/chatbots/12027/"
 
     # Open questions
     assert p["open_questions"]["url"].startswith("https://fake/")
@@ -370,8 +379,8 @@ def test_hero_description_uses_overview_section():
 
 
 def test_widget_handoff_table_parsing():
-    """Confirm the chatbot_url / public_id / embed_key are extracted from
-    the markdown table even when surrounded by backticks and pipes."""
+    """Confirm the chatbot_public_id / chatbot_embed_key are extracted
+    from the markdown table even when surrounded by backticks and pipes."""
     tree = _full_tree()
     drive = FakeDriveClient.from_tree(tree)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
@@ -381,4 +390,62 @@ def test_widget_handoff_table_parsing():
     a = p["assistant"]
     assert a["public_id"] == "1fcddd08-02cb-4b22-b482-181cb2f10dcb"
     assert a["embed_key"] == "wDwe70vquTLm4M0carkTHGaQgrb0NYKP"
-    assert a["ocs_url"].endswith("/embed/1fcddd08-02cb-4b22-b482-181cb2f10dcb/")
+
+
+def test_experiment_id_falls_back_to_resume_from():
+    """When ocs-agent-config.md doesn't carry experiment_id as a
+    frontmatter field but does have ``resume_from: existing-bot-experiment-N``,
+    the OCS admin URL should still resolve."""
+    tree = _full_tree()
+    tree["ACE"]["turmeric"]["ocs-agent-config.md"] = (
+        "---\n"
+        "opp: turmeric\n"
+        "status: done\n"
+        "resume_from: existing-bot-experiment-99999\n"
+        "---\n"
+    )
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["assistant"]["ocs_url"].endswith("/chatbots/99999/")
+
+
+def test_experiment_id_falls_back_to_handoff_body():
+    """As a last resort, scrape ``experiment N`` from widget-handoff.md
+    body prose."""
+    tree = _full_tree()
+    tree["ACE"]["turmeric"]["ocs-agent-config.md"] = (
+        "---\nopp: turmeric\nstatus: done\n---\n"
+    )
+    tree["ACE"]["turmeric"]["ocs-setup"]["widget-handoff.md"] = (
+        _WIDGET_HANDOFF
+        + "\n\nThese credentials belong to experiment 55555 (default version).\n"
+    )
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["assistant"]["ocs_url"].endswith("/chatbots/55555/")
+
+
+def test_no_experiment_id_yields_null_ocs_url():
+    """If experiment_id can't be found anywhere, ``ocs_url`` is None
+    (the widget still mounts; just no admin link)."""
+    tree = _full_tree()
+    tree["ACE"]["turmeric"]["ocs-agent-config.md"] = (
+        "---\nopp: turmeric\nstatus: done\n---\n"
+    )
+    # Strip the "experiment 12027" mention from the handoff body.
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    # The base _WIDGET_HANDOFF doesn't have "experiment N" prose either.
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["assistant"]["ocs_url"] is None
+    # Public id and embed key still present so the corner widget mounts.
+    assert p["assistant"]["public_id"]
+    assert p["assistant"]["embed_key"]

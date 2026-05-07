@@ -198,7 +198,11 @@ export default function OppSummaryPage() {
             <SummaryRow
               label="Bot"
               name="Trained on the design doc, training pack, and app guides for this opportunity. Use the chat in the corner ↘ to ask it a question."
-              links={[]}
+              links={
+                assistant.ocs_url
+                  ? [{ label: "View in OCS", href: assistant.ocs_url }]
+                  : []
+              }
             />
           </SummarySection>
         )}

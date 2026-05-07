@@ -466,6 +466,45 @@ def _read_training(
 # ─── Assistant (OCS) section ───────────────────────────────────────
 
 
+_OCS_BASE_URL = "https://www.openchatstudio.com"
+_OCS_TEAM_SLUG = "connect-ace"  # Override via Django setting if a different team ships ACE bots.
+
+
+def _construct_ocs_admin_url(experiment_id: str | None) -> str | None:
+    """Build the OCS chatbot admin URL.
+
+    Pattern: ``/a/<team>/chatbots/<experiment_id>/`` — the chatbot
+    home/edit page on OCS. Auth-gated (redirects to OCS login), but
+    that's expected: this is the "view/edit it on OCS" link, useful
+    for ACE-team operators who actually have OCS access.
+
+    The ``/chatbots/embed/<public_id>/`` URL the plugin writes to
+    ``widget-handoff.md`` is a 404 — there's no standalone embed page
+    on OCS; the corner widget is the only chat surface. We compute
+    the admin URL from ``experiment_id`` instead.
+    """
+    if not experiment_id:
+        return None
+    from django.conf import settings as _s
+    base = getattr(_s, "ACE_OCS_BASE_URL", _OCS_BASE_URL).rstrip("/")
+    team = getattr(_s, "ACE_OCS_TEAM_SLUG", _OCS_TEAM_SLUG)
+    return f"{base}/a/{team}/chatbots/{experiment_id}/"
+
+
+_EXPERIMENT_ID_RE = re.compile(r"experiment[- ](\d+)", re.IGNORECASE)
+
+
+def _extract_experiment_id(*texts: str) -> str | None:
+    """Best-effort extract of the OCS experiment_id (integer)."""
+    for t in texts:
+        if not t:
+            continue
+        m = _EXPERIMENT_ID_RE.search(t)
+        if m:
+            return m.group(1)
+    return None
+
+
 def _read_assistant(
     drive: DriveClient, opp_children: list[DriveFile]
 ) -> dict | None:
@@ -479,11 +518,30 @@ def _read_assistant(
     body = _read_text(drive, handoff)
     public_id = _extract_table_row(body, "chatbot_public_id")
     embed_key = _extract_table_row(body, "chatbot_embed_key")
-    chatbot_url = _extract_table_row(body, "chatbot_url")
     if not public_id or not embed_key:
         return None
+
+    # experiment_id sources, in order of preference:
+    #   1. ocs-agent-config.md frontmatter (canonical, per the
+    #      ocs-agent-setup SKILL spec)
+    #   2. ``resume_from: existing-bot-experiment-<N>`` in same frontmatter
+    #   3. "experiment <N>" prose in widget-handoff.md
+    cfg = _find(opp_children, "ocs-agent-config.md")
+    cfg_body = _read_text(drive, cfg) if cfg else ""
+    cfg_fm = _parse_frontmatter(cfg_body)
+    experiment_id: str | None = None
+    raw = cfg_fm.get("experiment_id")
+    if raw is not None:
+        experiment_id = str(raw)
+    if not experiment_id:
+        experiment_id = _extract_experiment_id(
+            cfg_fm.get("resume_from") or "",
+            cfg_body,
+            body,
+        )
+
     return {
-        "ocs_url": chatbot_url,
+        "ocs_url": _construct_ocs_admin_url(experiment_id),
         "public_id": public_id,
         "embed_key": embed_key,
     }
