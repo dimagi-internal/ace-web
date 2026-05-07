@@ -546,7 +546,10 @@ def _load_verdicts(
         if verdict is None:
             continue
         rank = _variant_rank(f.path)
-        ts = verdict.evaluated_at or ""
+        # PyYAML auto-parses ISO-8601 timestamps into datetime; older
+        # verdicts may carry strings instead. Coerce to str so the
+        # tiebreaker comparison below stays type-stable across the mix.
+        ts = str(verdict.evaluated_at) if verdict.evaluated_at else ""
         existing = candidates.get(skill)
         if existing is None or (rank, ts) > (existing[0], existing[1]):
             candidates[skill] = (rank, ts, verdict)

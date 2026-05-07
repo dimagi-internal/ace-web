@@ -10,6 +10,7 @@ import InviteAcceptPage from "./pages/InviteAcceptPage";
 import { NoWorkspaceRedirect } from "./pages/NoWorkspaceRedirect";
 import OppComparePage from "./pages/OppComparePage";
 import OppListPage from "./pages/OppListPage";
+import ReviewsPage from "./pages/ReviewsPage";
 import OppSummaryPage from "./pages/OppSummaryPage";
 import OppWorkbenchPage from "./pages/OppWorkbenchPage";
 import SessionsPage from "./pages/SessionsPage";
@@ -53,6 +54,7 @@ export const router = createBrowserRouter(
               element: <OppWorkbenchPage />,
             },
             { path: "sessions", element: <SessionsPage /> },
+            { path: "reviews", element: <ReviewsPage /> },
             { path: "chat", element: <ChatRedirectPage /> },
             { path: "chat/:slug", element: <ChatPage /> },
             { path: "workspace-settings", element: <WorkspaceSettingsPage /> },

@@ -4,6 +4,7 @@ import type {
   CreateOppResponse,
   DiscussResponse,
   LinkedChat,
+  MultiRunSummary,
   OppCard,
   OppCompare,
   OppSnapshot,
@@ -66,6 +67,19 @@ export function getOppCompare(slugA: string, slugB: string): Promise<OppCompare>
 
 export function getScorecard(slug: string): Promise<Scorecard> {
   return request<Scorecard>(`/opps/${encodeURIComponent(slug)}/scorecard`);
+}
+
+export function getMultiRunSummary(
+  slug: string,
+  opts?: { limit?: number; force?: boolean },
+): Promise<MultiRunSummary> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.force) params.set("force", "1");
+  const q = params.toString();
+  return request<MultiRunSummary>(
+    `/opps/${encodeURIComponent(slug)}/multi-run-summary${q ? `?${q}` : ""}`,
+  );
 }
 
 export function getStepDetail(

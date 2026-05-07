@@ -1,6 +1,23 @@
-import { Clock, GitBranch, LayoutGrid, ListTree } from "lucide-react";
+import {
+  BarChart3,
+  Clock,
+  Film,
+  GitBranch,
+  GitCompareArrows,
+  Layers,
+  LayoutGrid,
+  ListTree,
+} from "lucide-react";
 
-export type ViewKind = "hierarchy" | "flow" | "timeline" | "workbench";
+export type ViewKind =
+  | "hierarchy"
+  | "flow"
+  | "timeline"
+  | "workbench"
+  | "phase"
+  | "heatmap"
+  | "diff"
+  | "story";
 
 export interface ViewTab {
   kind: ViewKind;
@@ -21,6 +38,10 @@ const ICONS: Record<ViewKind, React.ComponentType<{ className?: string }>> = {
   flow: GitBranch,
   timeline: Clock,
   workbench: LayoutGrid,
+  phase: Layers,
+  heatmap: BarChart3,
+  diff: GitCompareArrows,
+  story: Film,
 };
 
 /**
