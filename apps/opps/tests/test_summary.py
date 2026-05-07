@@ -224,7 +224,7 @@ def test_complete_run_returns_full_payload():
     learn = next(a for a in p["apps"] if a["kind"] == "Learn")
     deliver = next(a for a in p["apps"] if a["kind"] == "Deliver")
     assert learn["name"] == "Turmeric Market Survey — FLW Training"
-    assert learn["nova_url"].startswith("https://commcare.app/apps/")
+    assert learn["nova_url"] == "https://commcare.app/build/mFknxMlsoLlkR28R2qpE"
     assert "d29dbb77" in learn["hq_url"]
     assert deliver["name"] == "Turmeric Market Survey — Vendor Visit"
     assert "91cf053e" in deliver["hq_url"]
