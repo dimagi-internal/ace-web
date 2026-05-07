@@ -263,11 +263,24 @@ def _drive_file_to_artifact_ref(f: DriveFile) -> ArtifactRef:
 # --- Verdict + gate extraction ---
 
 
-_VERDICT_PATH_RE = re.compile(r"^verdicts/(?P<stem>[^/]+)\.ya?ml$")
+# Two layouts are recognised because the plugin moved verdict files in
+# 0.13.0 and again in 0.13.6:
+#
+#   Old (pre-0.13.0):  verdicts/<skill>[-quick|-deep|-monitor].yaml
+#   New (0.13.0+):     <N>-<phase>/<producer>[-eval]_verdict[-<variant>]?.yaml
+#
+# `<producer>` is the producing skill from the manifest. For eval skills
+# (named `<target>-eval`) we strip the suffix to attach the verdict to
+# the target skill; for self-evaluating skills like `app-screenshot-capture`
+# the producer IS the target.
+_OLD_VERDICT_PATH_RE = re.compile(r"^verdicts/(?P<stem>[^/]+)\.ya?ml$")
+_NEW_VERDICT_PATH_RE = re.compile(
+    r"^[^/]+/(?P<producer>[^/]+?)_verdict(?P<variant>-[a-z]+)?\.ya?ml$"
+)
 
 
 def _skill_from_verdict_stem(stem: str) -> str:
-    """Derive skill name from a verdict filename stem.
+    """Derive skill name from an old-layout verdict filename stem.
 
     Examples:
       - "ocs-chatbot-eval-quick"   -> "ocs-chatbot-eval"
@@ -277,10 +290,37 @@ def _skill_from_verdict_stem(stem: str) -> str:
       - "opp-eval-monitor"         -> "opp-eval"
       - "idea-to-pdd"              -> "idea-to-pdd"
     """
-    for suffix in ("-quick", "-deep", "-monitor"):
+    for suffix in ("-quick", "-deep", "-monitor", "-shallow"):
         if stem.endswith(suffix):
             return stem[: -len(suffix)]
     return stem
+
+
+def _skill_from_verdict_producer(
+    producer: str, registered_skills: set[str]
+) -> str | None:
+    """Derive the target skill (lifecycle row) for a verdict-file producer.
+
+    The plugin uses two conventions side-by-side:
+
+      - Eval-suffix:  `<target>-eval` evaluates `<target>`. Strip the
+        suffix, attach the verdict to `<target>`. Most common case.
+      - Self-eval:    Some lifecycle skills (`ocs-chatbot-eval`,
+        `app-ux-eval`, `opp-eval`) are themselves the workbench row
+        and produce their own verdict files.
+
+    The registered-skill set disambiguates: prefer attaching the verdict
+    to whichever name is actually a row in the workbench. Returns None
+    when neither candidate matches a known skill (we'd rather drop the
+    verdict than attach it to a phantom row).
+    """
+    if producer in registered_skills:
+        return producer
+    if producer.endswith("-eval"):
+        trimmed = producer[: -len("-eval")]
+        if trimmed in registered_skills:
+            return trimmed
+    return None
 
 
 def _parse_verdict_yaml(body: str) -> JudgeVerdict | None:
@@ -341,15 +381,27 @@ def _parse_verdict_yaml(body: str) -> JudgeVerdict | None:
 
 
 def _load_verdicts(
-    client: DriveClient, opp_files: list[DriveFile]
+    client: DriveClient,
+    opp_files: list[DriveFile],
+    registered_skills: set[str] | None = None,
 ) -> dict[str, JudgeVerdict]:
-    """Read every ``verdicts/*.yaml`` and return {skill_name: JudgeVerdict}.
+    """Read every verdict YAML in the tree and return {skill_name: JudgeVerdict}.
 
-    When multiple verdicts exist for one skill (e.g. quick + deep + monitor
-    for ocs-chatbot-eval), keep the latest by evaluated_at, with deep
-    preferred over monitor preferred over quick as tiebreakers.
+    Two layouts are matched:
+
+      - Old (pre-0.13.0): ``verdicts/<skill>[-variant].yaml``
+      - New (0.13.0+):    ``<N>-<phase>/<producer>[-eval]_verdict[-variant].yaml``
+
+    When multiple verdicts exist for one skill (e.g. quick + deep +
+    monitor for ocs-chatbot-eval), keep the latest by ``evaluated_at``,
+    with deep > monitor > shallow > quick as tiebreakers.
+
+    ``registered_skills`` is the set of skill names that exist in the
+    workbench (the lifecycle rows). Used to disambiguate eval-suffix vs
+    self-eval producers; pass ``None`` to skip that check (every parsed
+    producer is taken at face value, matching the legacy behaviour).
     """
-    ranking = {"-deep": 3, "-monitor": 2, "-quick": 1}
+    ranking = {"-deep": 4, "-monitor": 3, "-shallow": 2, "-quick": 1}
 
     def _variant_rank(path: str) -> int:
         for suffix, score in ranking.items():
@@ -361,11 +413,27 @@ def _load_verdicts(
     for f in opp_files:
         if _is_folder(f):
             continue
-        m = _VERDICT_PATH_RE.match(f.path)
-        if not m:
+        skill: str | None = None
+        old = _OLD_VERDICT_PATH_RE.match(f.path)
+        if old is not None:
+            skill = _skill_from_verdict_stem(old.group("stem"))
+        else:
+            new = _NEW_VERDICT_PATH_RE.match(f.path)
+            if new is not None:
+                producer = new.group("producer")
+                if registered_skills is not None:
+                    skill = _skill_from_verdict_producer(
+                        producer, registered_skills
+                    )
+                else:
+                    # Best-effort fallback when registry isn't passed.
+                    skill = (
+                        producer[: -len("-eval")]
+                        if producer.endswith("-eval")
+                        else producer
+                    )
+        if skill is None:
             continue
-        stem = m.group("stem")
-        skill = _skill_from_verdict_stem(stem)
         try:
             body = _read_text(client, f)
         except Exception as exc:  # noqa: BLE001
@@ -914,7 +982,8 @@ def _load_opp_flat(
             _drive_file_to_artifact_ref(pdd_file)
         )
 
-    verdicts_by_skill = _load_verdicts(client, opp_tree)
+    registered_skills = {s.name for s in skill_registry}
+    verdicts_by_skill = _load_verdicts(client, opp_tree, registered_skills)
     gates_by_skill = _gates_from_state(state_data)
 
     steps = _build_steps(
@@ -1021,7 +1090,8 @@ def _load_opp_run(
             _drive_file_to_artifact_ref(pdd_file)
         )
 
-    verdicts_by_skill = _load_verdicts(client, run_tree)
+    registered_skills = {s.name for s in skill_registry}
+    verdicts_by_skill = _load_verdicts(client, run_tree, registered_skills)
     gates_by_skill = _gates_from_state(state_data)
 
     steps = _build_steps(

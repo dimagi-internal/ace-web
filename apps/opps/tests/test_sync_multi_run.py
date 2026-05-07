@@ -273,6 +273,113 @@ def test_load_opp_finds_nested_verdict_artifacts():
     assert idea_step.judge.score == 87.0
 
 
+def test_load_opp_attaches_verdicts_at_phase_prefixed_paths():
+    """Regression: plugin 0.13.0+ moved verdicts from `verdicts/<skill>.yaml`
+    to `<N>-<phase>/<producer>[-eval]_verdict[-variant].yaml`. The reader
+    must match both layouts and strip the `-eval` suffix to attach the
+    verdict to the target lifecycle skill row.
+    """
+    fake = FakeDrive(_build_phase_prefixed_layout())
+    snap = load_opp(fake, ace_root_folder_id="ACE", opp_slug="turmeric-new")
+
+    idea_step = next(
+        s for s in snap.current_run.steps if s.step.skill_name == "idea-to-pdd"
+    )
+    assert idea_step.judge is not None, (
+        "1-design/idea-to-pdd-eval_verdict.yaml didn't attach to idea-to-pdd"
+    )
+    assert idea_step.judge.score == 91.0
+    # ocs-chatbot-eval is itself a lifecycle skill (ends in -eval but isn't
+    # `-eval`-suffixed against another target). The verdict file name is
+    # `ocs-chatbot-eval_verdict-quick.yaml` — producer should resolve to
+    # `ocs-chatbot-eval`, not be stripped to `ocs-chatbot`.
+    ocs_eval_step = next(
+        s for s in snap.current_run.steps
+        if s.step.skill_name == "ocs-chatbot-eval"
+    )
+    assert ocs_eval_step.judge is not None, (
+        "self-evaluating ocs-chatbot-eval verdict didn't attach"
+    )
+
+
+def _build_phase_prefixed_layout() -> _Folder:
+    """Plugin 0.13.0+ layout: per-run artifacts under `<N>-<phase>/`."""
+    return _Folder(
+        id="ACE", name="ACE", parent="",
+        children=[
+            _Folder(
+                id="t2", name="turmeric-new", parent="ACE",
+                children=[
+                    _Folder(
+                        id="t2-runs", name="runs", parent="t2",
+                        children=[
+                            _Folder(
+                                id="t2-r1", name="20260506-1304", parent="t2-runs",
+                                children=[
+                                    _File(
+                                        id="t2-state",
+                                        name="run_state.yaml",
+                                        parent="t2-r1",
+                                        body=(
+                                            "mode: default\n"
+                                            "phase: ocs\n"
+                                            "step: ocs-chatbot-eval\n"
+                                            "gates: {}\n"
+                                        ),
+                                        mime_type="text/yaml",
+                                    ),
+                                    _Folder(
+                                        id="t2-design", name="1-design",
+                                        parent="t2-r1",
+                                        children=[
+                                            _File(
+                                                id="t2-pdd",
+                                                name="idea-to-pdd.md",
+                                                parent="t2-design",
+                                                body="# PDD\n\nFirst sentence.",
+                                                mime_type="text/markdown",
+                                            ),
+                                            _File(
+                                                id="t2-pdd-verdict",
+                                                name="idea-to-pdd-eval_verdict.yaml",
+                                                parent="t2-design",
+                                                body=(
+                                                    "verdict: pass\n"
+                                                    "overall_score: 91\n"
+                                                    "evaluated_at: "
+                                                    "2026-05-06T13:10:00Z\n"
+                                                ),
+                                                mime_type="text/yaml",
+                                            ),
+                                        ],
+                                    ),
+                                    _Folder(
+                                        id="t2-ocs", name="4-ocs", parent="t2-r1",
+                                        children=[
+                                            _File(
+                                                id="t2-ocs-verdict",
+                                                name="ocs-chatbot-eval_verdict-quick.yaml",
+                                                parent="t2-ocs",
+                                                body=(
+                                                    "verdict: pass\n"
+                                                    "overall_score: 84\n"
+                                                    "evaluated_at: "
+                                                    "2026-05-06T13:20:00Z\n"
+                                                ),
+                                                mime_type="text/yaml",
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
 def test_list_opp_events_lean_descends_into_latest_run():
     """For multi-run-layout opps, state.yaml + verdicts/ live under
     runs/<latest>/, not at the opp root. The lean event aggregator (used
