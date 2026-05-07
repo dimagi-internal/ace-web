@@ -71,16 +71,18 @@ def serialize_artifact(a: ArtifactRef) -> dict:
 
 
 def normalize_score_pct(score: float | None) -> float | None:
-    """Project an arbitrary judge score onto a 0-100 scale.
+    """Project a judge score onto a 0-100 scale.
 
-    The plugin emits judge scores in two scales:
-      - 0-10 for per-skill -eval rubrics (idea-to-pdd-eval, app-deploy-eval, …)
-      - 0-100 for the umbrella opp-eval ``overall_score``
+    ``apps.opps.sync._parse_verdict_yaml`` already normalizes scores to
+    0-100 at parse time when the verdict YAML declares an explicit
+    ``scale:`` annotation (covers 0-3, 0-10, 0-100 and any custom
+    rubric). For verdicts without that annotation we fall back to a
+    magnitude heuristic — same shape as the legacy inline branching.
 
-    There's no machine-readable scale flag in the verdict YAML today, so
-    we use the same heuristic the UI used to do inline (score > 10 ⇒
-    already 0-100, else 0-10). Doing it once here means every reader gets
-    a normalized score and the frontend can drop its dual-scale branching.
+    The heuristic is right for 0-10 and 0-100 inputs but is necessarily
+    wrong for 0-3 unannotated rubrics (score=3 reads as already-100, but
+    looks like 30/100 if normalized as 0-10). Plugin convention is to
+    declare the scale explicitly; this is the floor when it doesn't.
     """
     if score is None:
         return None

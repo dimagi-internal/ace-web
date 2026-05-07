@@ -341,5 +341,8 @@ def build_preview(step: StepSnapshot, bodies: dict[str, str]) -> str:
             pass
     if not step.artifacts:
         return "—"
-    n = len(step.artifacts)
-    return f"{n} artifact{'s' if n != 1 else ''}"
+    primary = _primary_name(step)
+    extra = len(step.artifacts) - 1
+    if extra > 0:
+        return f"📄 {primary}  +{extra}"
+    return f"📄 {primary}"
