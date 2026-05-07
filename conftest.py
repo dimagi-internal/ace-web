@@ -6,6 +6,7 @@ to apply to `apps/*/tests/` as well must live at the repo root.
 from pathlib import Path
 
 import pytest
+from django.core.cache import cache
 
 # pyproject.toml sets `python_files = "test_*.py"`, which causes pytest to
 # collect `apps/auth/test_login_views.py` as a test module. That file is the
@@ -13,6 +14,17 @@ import pytest
 # not a pytest module. Its `test_login` function is a Django view and has
 # no pytest-compatible signature. Skip collection for it explicitly.
 collect_ignore_glob = ["apps/auth/test_login_views.py"]
+
+
+@pytest.fixture(autouse=True)
+def _flush_default_cache():
+    """Django's LocMem cache is process-wide and survives transaction
+    rollback, so without this the apps/opps drive_cache TTL entries
+    leak across tests — yielding stale Drive listings from a previous
+    test fixture and unstable inner-call counts on cache assertions."""
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture(scope="session", autouse=True)

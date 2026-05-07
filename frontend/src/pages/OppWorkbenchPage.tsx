@@ -50,11 +50,11 @@ export default function OppWorkbenchPage() {
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
 
   const load = useCallback(
-    (opts: { silent?: boolean } = {}) => {
+    (opts: { silent?: boolean; force?: boolean } = {}) => {
       if (!opts.silent) {
         setState({ kind: "loading" });
       }
-      getOpp(slug, runId ?? undefined)
+      getOpp(slug, runId ?? undefined, { force: opts.force })
         .then((snapshot) => {
           setState({ kind: "loaded", snapshot });
         })
@@ -76,7 +76,13 @@ export default function OppWorkbenchPage() {
   // Subscribe to per-opp WebSocket so the workbench auto-refetches when
   // the chat produces Drive side-effects (see apps/sessions/opp_broadcast).
   // Silent refresh: don't flash the loading spinner on incremental updates.
-  useOppSocket({ slug, runId, onOppUpdated: () => load({ silent: true }) });
+  // Force-bypass the Drive cache so chat-driven Drive writes show up
+  // immediately, not after the TTL window.
+  useOppSocket({
+    slug,
+    runId,
+    onOppUpdated: () => load({ silent: true, force: true }),
+  });
 
   useEffect(() => {
     if (skill) setSelectedSkill(skill);

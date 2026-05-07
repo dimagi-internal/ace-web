@@ -111,6 +111,39 @@ CHANNEL_LAYERS = {
     },
 }
 
+# --- Cache ---
+# Use the same Redis the Channel layer uses, namespaced under db=1 so a
+# cache flush doesn't blow away pub/sub state. Backing the Drive cache
+# (apps/opps/drive_cache.py) with Redis (vs Django's default LocMem)
+# means consecutive page loads survive uvicorn `--reload` in dev and
+# any future multi-worker prod deploy.
+#
+# Falls back to LocMem when REDIS_URL is empty (test envs override this
+# in config/settings/test.py anyway).
+if REDIS_URL:
+    _cache_url = REDIS_URL
+    if "?db=" not in _cache_url and "/0" in _cache_url:
+        _cache_url = _cache_url.replace("/0", "/1", 1)
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": _cache_url,
+            "TIMEOUT": 30,
+        },
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        },
+    }
+
+# Drive cache TTL — short enough that operator edits in Drive show up
+# within ~30 s without a hard refresh, long enough that consecutive page
+# loads land in single-digit ms. Pass ``?force=1`` on any opps endpoint
+# to bypass and rebuild from Drive.
+OPPS_DRIVE_CACHE_SECONDS = env.int("OPPS_DRIVE_CACHE_SECONDS", default=30)
+
 # --- Static files (WhiteNoise) ---
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
