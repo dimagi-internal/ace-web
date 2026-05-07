@@ -12,11 +12,15 @@ import type {
   WorkingSessionResponse,
 } from "./types";
 
-export function listOpps(tags?: string[]): Promise<OppCard[]> {
-  const q = tags && tags.length > 0
-    ? `?tags=${encodeURIComponent(tags.join(","))}`
-    : "";
-  return request<OppCard[]>(`/opps/${q}`);
+export function listOpps(
+  tags?: string[],
+  opts?: { force?: boolean },
+): Promise<OppCard[]> {
+  const params = new URLSearchParams();
+  if (tags && tags.length > 0) params.set("tags", tags.join(","));
+  if (opts?.force) params.set("force", "1");
+  const q = params.toString();
+  return request<OppCard[]>(`/opps/${q ? `?${q}` : ""}`);
 }
 
 export function createOpp(payload: CreateOppPayload): Promise<CreateOppResponse> {
@@ -39,10 +43,20 @@ export function updateOppTags(slug: string, tags: string[]): Promise<{ slug: str
   );
 }
 
-export function getOpp(slug: string, runId?: string): Promise<OppSnapshot> {
-  const q = runId ? `?run_id=${encodeURIComponent(runId)}` : "";
-  return request<OppSnapshot>(`/opps/${encodeURIComponent(slug)}${q}`);
+export function getOpp(
+  slug: string,
+  runId?: string,
+  opts?: { force?: boolean },
+): Promise<OppSnapshot> {
+  const params = new URLSearchParams();
+  if (runId) params.set("run_id", runId);
+  if (opts?.force) params.set("force", "1");
+  const q = params.toString();
+  return request<OppSnapshot>(
+    `/opps/${encodeURIComponent(slug)}${q ? `?${q}` : ""}`,
+  );
 }
+
 
 export function getOppCompare(slugA: string, slugB: string): Promise<OppCompare> {
   return request<OppCompare>(

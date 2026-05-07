@@ -28,6 +28,17 @@ CHANNEL_LAYERS = {
     },
 }
 
+# Cache: LocMem during tests so each pytest worker gets its own clean
+# cache. base.py wires Redis when REDIS_URL is set; we override to make
+# tests self-contained and avoid the cross-test pollution that Redis
+# would introduce (django.test's TransactionTestCase doesn't roll back
+# Redis state).
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    },
+}
+
 # Tests that exercise presence.py patch apps.common.redis_client.get_redis
 # with a fakeredis instance. ACE_REDIS_URL is unused in that path but kept
 # valid so redis_client.get_redis() without the patch still constructs.

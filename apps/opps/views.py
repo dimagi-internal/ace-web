@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
 from apps.opps.actions import ActionError, ActionPayload, inject_action
+from apps.opps.drive_cache import CachedDriveClient
 from apps.opps.drive_client import get_drive_client
 from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
@@ -132,17 +133,24 @@ def _resolve_workspace(request):
 def _require_drive(request):
     """Return (workspace, drive_client, error_response). On error, the first
     two are None.
+
+    The returned client is wrapped in :class:`CachedDriveClient` so repeated
+    list/content reads within the cache TTL hit Redis instead of Drive.
+    Pass ``?force=1`` on the request to bypass the cache for a hard refresh
+    (writes still populate the cache so subsequent reads get the fresh data).
     """
     ws, err = _resolve_workspace(request)
     if err is not None:
         return None, None, err
     try:
-        return ws, get_drive_client(workspace=ws), None
+        inner = get_drive_client(workspace=ws)
     except ServiceAccountNotFound as exc:
         return ws, None, Response(
             error_response(str(exc), code="drive-not-configured"),
             status=500,
         )
+    bypass = request.GET.get("force") == "1"
+    return ws, CachedDriveClient(inner, bypass=bypass), None
 
 
 def _overlay_workspace_display_name(manifest, slug: str, workspace=None) -> None:
@@ -1168,7 +1176,10 @@ def public_opp_summary(
         )
 
     try:
-        client = get_drive_client(workspace=ws)
+        client = CachedDriveClient(
+            get_drive_client(workspace=ws),
+            bypass=request.GET.get("force") == "1",
+        )
     except ServiceAccountNotFound as exc:
         # Drive misconfiguration is a server problem, not a 404 —
         # surface it explicitly so it can be diagnosed.
