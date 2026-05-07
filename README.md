@@ -55,7 +55,29 @@ directly to avoid submodule pointer churn.
 docker compose up
 ```
 
-Then open http://localhost:8000.
+Then open http://localhost:8000/ace/. Backend code edits under `apps/`
+and `config/` reload automatically (uvicorn `--reload` is wired into the
+dev compose `command`). Frontend changes require a rebuild — see below
+for the fast path.
+
+### Fast frontend iteration
+
+For UI work, run the Vite dev server alongside docker compose so HMR
+gives you sub-second reloads:
+
+```bash
+# terminal 1 — backend + db + redis
+docker compose up
+
+# terminal 2 — Vite dev server with hot module replacement
+cd frontend && bun run dev   # or `npm run dev`
+```
+
+Then open http://localhost:5173/ace/. The Vite server proxies
+`/ace/api`, `/ace/auth`, `/ace/admin`, `/ace/share`, and `/ace/ws` to
+the docker-compose Django on `:8000` so cookies, auth, and WebSockets
+all work end-to-end. The bundled-into-Django path at `:8000` stays
+available for prod-parity smoke checks.
 
 ### Trying it out — no credentials needed
 
