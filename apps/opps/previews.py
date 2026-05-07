@@ -6,6 +6,13 @@ row. The mapping from skill name to extractor lives in `PREVIEW_EXTRACTORS`.
 
 Extractors are pure — they take (StepSnapshot, bodies: dict[str, str]) and
 return a string. They never call Drive.
+
+Body keys are full Drive-relative paths (e.g. ``2-commcare/pdd-to-learn-app_summary.md``)
+since the plugin's 0.13.0 manifest moved everything under ``<N>-<phase>/``
+subfolders. Extractors look up bodies via ``_primary_body(step, bodies)``
+rather than hardcoded basenames; fallback strings use the real artifact
+filename via ``_primary_name(step)`` so the preview never lies about what
+file's behind the row.
 """
 from __future__ import annotations
 
@@ -19,7 +26,7 @@ from apps.opps.sync import StepSnapshot
 PreviewFn = Callable[[StepSnapshot, dict[str, str]], str]
 
 
-# --- Individual extractors ---
+# --- Helpers ---
 
 def _first_nonblank_line(body: str) -> str:
     for line in body.splitlines():
@@ -29,19 +36,44 @@ def _first_nonblank_line(body: str) -> str:
     return ""
 
 
+def _primary_body(step: StepSnapshot, bodies: dict[str, str]) -> str:
+    """Return the body of this step's first attributed artifact (or '')."""
+    if not step.artifacts:
+        return ""
+    # Try the artifact's full Drive-relative path first (plugin 0.13.0+
+    # convention) and the basename second so step-detail views that pre-
+    # 0.13.0 keyed bodies by basename still resolve.
+    primary = step.artifacts[0]
+    return bodies.get(primary.path) or bodies.get(primary.name) or ""
+
+
+def _primary_name(step: StepSnapshot) -> str:
+    """Return the first attributed artifact's filename, or '' if none."""
+    if not step.artifacts:
+        return ""
+    return step.artifacts[0].name
+
+
+# Each extractor first checks the body of the step's primary attributed
+# artifact. When the body is empty or doesn't contain extractable signal,
+# the fallback uses the real filename (`_primary_name(step)`) so the row
+# can't lie about what's behind it. The list-view serializer ships
+# bodies={} for performance, so the filename-only fallback is the common
+# case there; bodies populate on step-detail views.
+
+
 def _idea_to_idd(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    # IDD→PDD rename transition: accept either primary-doc filename.
-    body = bodies.get("pdd.md") or bodies.get("idd.md", "")
-    # Try to skip the heading and grab the first sentence of the body.
+    body = _primary_body(step, bodies)
+    name = _primary_name(step) or "pdd.md"
     after_heading = body.split("\n\n", 1)[-1] if "\n\n" in body else body
     first_sentence = after_heading.strip().split(". ")[0].strip()
     if not first_sentence:
-        return "📄 pdd.md"
-    return f"📄 pdd.md — \"{first_sentence[:140]}\""
+        return f"📄 {name}"
+    return f'📄 {name} — "{first_sentence[:140]}"'
 
 
 def _idd_to_learn_app(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("learn-app-brief.md", "")
+    body = _primary_body(step, bodies)
     forms_match = re.search(r"(\d+)\s*forms?", body)
     questions_match = re.search(r"(\d+)\s*questions?", body)
     cases_match = re.search(r"(\d+)\s*case\s*types?", body)
@@ -53,12 +85,12 @@ def _idd_to_learn_app(step: StepSnapshot, bodies: dict[str, str]) -> str:
     if cases_match:
         parts.append(f"{cases_match.group(1)} case types")
     if not parts:
-        return "📦 learn-app-brief.md"
+        return f"📦 {_primary_name(step)}"
     return "📦 " + " · ".join(parts)
 
 
 def _idd_to_deliver_app(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("deliver-app-brief.md", "")
+    body = _primary_body(step, bodies)
     flows = re.search(r"(\d+)\s*(?:service\s*)?workflows?", body)
     triggers = re.search(r"(\d+)\s*payment\s*triggers?", body)
     parts = []
@@ -67,12 +99,12 @@ def _idd_to_deliver_app(step: StepSnapshot, bodies: dict[str, str]) -> str:
     if triggers:
         parts.append(f"{triggers.group(1)} payment triggers")
     if not parts:
-        return "📦 deliver-app-brief.md"
+        return f"📦 {_primary_name(step)}"
     return "📦 " + " · ".join(parts)
 
 
 def _app_deploy(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("deploy-summary.md", "")
+    body = _primary_body(step, bodies)
     apps = re.search(r"(\d+)\s*apps?\s*packaged", body)
     status_line = ""
     for line in body.splitlines():
@@ -81,11 +113,11 @@ def _app_deploy(step: StepSnapshot, bodies: dict[str, str]) -> str:
             break
     if apps:
         return f"📄 {apps.group(1)} apps packaged · {status_line or 'see summary'}"
-    return "📄 deploy-summary.md"
+    return f"📄 {_primary_name(step)}"
 
 
 def _app_test(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("test-results.yaml", "")
+    body = _primary_body(step, bodies)
     try:
         data = yaml.safe_load(body) or {}
     except yaml.YAMLError:
@@ -96,7 +128,7 @@ def _app_test(step: StepSnapshot, bodies: dict[str, str]) -> str:
     if passed is not None and total is not None:
         fail_str = f" · {failed} fail" if failed else ""
         return f"🧪 {passed}/{total} pass{fail_str}"
-    return "🧪 test-results"
+    return f"🧪 {_primary_name(step) or 'test-results'}"
 
 
 def _training_materials(step: StepSnapshot, bodies: dict[str, str]) -> str:
@@ -105,13 +137,13 @@ def _training_materials(step: StepSnapshot, bodies: dict[str, str]) -> str:
 
 
 def _connect_program_setup(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("program-config.md", "")
+    body = _primary_body(step, bodies)
     first = _first_nonblank_line(body)
-    return f"🔧 {first[:100]}" if first else "🔧 program-config.md"
+    return f"🔧 {first[:100]}" if first else f"🔧 {_primary_name(step)}"
 
 
 def _connect_opp_setup(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("opp-config.md", "")
+    body = _primary_body(step, bodies)
     rules = re.search(r"(\d+)\s*(?:verification\s*)?rules?", body)
     units = re.search(r"(\d+)\s*(?:delivery\s*)?units?", body)
     parts = []
@@ -120,17 +152,16 @@ def _connect_opp_setup(step: StepSnapshot, bodies: dict[str, str]) -> str:
     if units:
         parts.append(f"{units.group(1)} units")
     if not parts:
-        return "🔧 opp-config.md"
+        return f"🔧 {_primary_name(step)}"
     return "🔧 " + " · ".join(parts)
 
 
 def _llo_invite(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("invite-list.md", "")
-    # Count bullet-point lines as LLO candidates.
+    body = _primary_body(step, bodies)
     count = sum(1 for line in body.splitlines() if line.strip().startswith(("-", "*")))
     if count:
         return f"📧 {count} candidate LLO{'s' if count != 1 else ''}"
-    return "📧 invite-list.md"
+    return f"📧 {_primary_name(step) or 'invite-list'}"
 
 
 def _llo_onboarding(step: StepSnapshot, bodies: dict[str, str]) -> str:
@@ -147,55 +178,55 @@ def _llo_launch(step: StepSnapshot, bodies: dict[str, str]) -> str:
 
 
 def _ocs_agent_setup(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("ocs-context.md", "")
+    body = _primary_body(step, bodies)
     n_lines = len([line for line in body.splitlines() if line.strip()])
     if n_lines:
         return f"🤖 OCS agent · {n_lines}-line context"
-    return "🤖 ocs-context.md"
+    return f"🤖 {_primary_name(step) or 'ocs-context'}"
 
 
 def _timeline_monitor(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("timeline-report.md", "")
+    body = _primary_body(step, bodies)
     first = _first_nonblank_line(body)
-    return f"📅 {first[:100]}" if first else "📅 timeline-report.md"
+    return f"📅 {first[:100]}" if first else f"📅 {_primary_name(step)}"
 
 
 def _flw_data_review(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("flw-review.md", "")
+    body = _primary_body(step, bodies)
     subs = re.search(r"(\d+)\s*submissions?", body)
     if subs:
         return f"📊 {subs.group(1)} submissions reviewed"
-    return "📊 flw-review.md"
+    return f"📊 {_primary_name(step) or 'flw-review'}"
 
 
 def _opp_closeout(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("invoice-summary.md", "")
+    body = _primary_body(step, bodies)
     amount = re.search(r"\$[\d,]+(?:\.\d{2})?", body)
     if amount:
         return f"💰 invoice: {amount.group(0)}"
-    return "💰 invoice-summary.md"
+    return f"💰 {_primary_name(step) or 'invoice-summary'}"
 
 
 def _llo_feedback(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("feedback-report.md", "")
+    body = _primary_body(step, bodies)
     responses = re.search(r"(\d+)/(\d+)\s*responses?", body)
     if responses:
         return f"📝 {responses.group(0)} collected"
-    return "📝 feedback-report.md"
+    return f"📝 {_primary_name(step) or 'feedback-report'}"
 
 
 def _learnings_summary(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("learnings.md", "")
+    body = _primary_body(step, bodies)
     n_items = sum(
         1 for line in body.splitlines() if line.strip().startswith(("-", "*"))
     )
     if n_items:
         return f"💡 {n_items} learning{'s' if n_items != 1 else ''}"
-    return "💡 learnings.md"
+    return f"💡 {_primary_name(step) or 'learnings'}"
 
 
 def _cycle_grade(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("grade-report.md") or bodies.get("closeout/cycle-grade.md", "")
+    body = _primary_body(step, bodies)
     try:
         data = yaml.safe_load(body) or {}
     except yaml.YAMLError:
@@ -206,19 +237,18 @@ def _cycle_grade(step: StepSnapshot, bodies: dict[str, str]) -> str:
     match = re.search(r"(\d+\.?\d*)\s*/\s*10", body)
     if match:
         return f"🏆 {match.group(1)}/10"
-    return "🏆 grade-report.md"
+    return f"🏆 {_primary_name(step) or 'grade-report'}"
 
 
 # --- New extractors for skills the plugin added post-0.3.5 ---
 
 
 def _pdd_to_test_prompts(step: StepSnapshot, bodies: dict[str, str]) -> str:
-    body = bodies.get("test-prompts.md", "")
-    # Q&A pairs are usually headings starting with "## Q" or bullets with "Q:".
+    body = _primary_body(step, bodies)
     count = len(re.findall(r"(?:^##\s+Q|^\s*-\s*\*\*Q)", body, re.MULTILINE))
     if count:
         return f"❓ {count} test prompt{'s' if count != 1 else ''}"
-    return "❓ test-prompts.md"
+    return f"❓ {_primary_name(step) or 'test-prompts'}"
 
 
 def _ocs_chatbot_qa(step: StepSnapshot, bodies: dict[str, str]) -> str:
