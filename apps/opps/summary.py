@@ -267,6 +267,22 @@ def _extract_hero_description(pdd_body: str) -> str:
 # ─── Apps section ──────────────────────────────────────────────────
 
 
+_NOVA_BASE_URL = "https://commcare.app"
+
+
+def _construct_nova_url(nova_app_id: str | None) -> str | None:
+    """Build the Nova preview URL for an app id.
+
+    The plugin writes ``nova_app_url: https://commcare.app/apps/<id>`` to
+    each app summary's frontmatter, but Nova's actual route is
+    ``/build/<id>`` — ``/apps/<id>`` is a 404. We construct from the
+    ``nova_app_id`` directly and ignore the (wrong) URL field.
+    """
+    if not nova_app_id:
+        return None
+    return f"{_NOVA_BASE_URL}/build/{nova_app_id}"
+
+
 def _read_apps(
     drive: DriveClient, run_children: list[DriveFile]
 ) -> list[dict]:
@@ -292,7 +308,7 @@ def _read_apps(
         out.append({
             "kind": kind,
             "name": str(name),
-            "nova_url": fm.get("nova_app_url"),
+            "nova_url": _construct_nova_url(fm.get("nova_app_id")),
             "hq_url": deploy_fm.get(hq_url_key),
         })
     return out
