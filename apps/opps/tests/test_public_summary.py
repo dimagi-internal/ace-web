@@ -83,7 +83,6 @@ def _clear_cache():
 def _patch_drive(fake_drive: FakeDriveClient):
     """Make get_drive_client return our fake AND make the workspace's
     drive_root_folder_id resolve to the fake's ACE folder id."""
-    fake_root = fake_drive.folder_id("ACE")
     return patch.multiple(
         "apps.opps.views",
         get_drive_client=lambda **kw: fake_drive,

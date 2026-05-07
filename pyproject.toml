@@ -58,3 +58,9 @@ extend-exclude = ["**/migrations/*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures embed wide markdown tables and intervention prose verbatim
+# inside triple-quoted Python strings; splitting changes the fixture content
+# and breaks the parser assertions the tests are designed to verify.
+"apps/opps/tests/test_summary.py" = ["E501"]

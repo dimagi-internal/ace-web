@@ -49,6 +49,10 @@ export function useSessionSocket(slug: string): UseSessionSocketResult {
   const draftDebounceRef = useRef<number | null>(null);
   const pendingDraftBodyRef = useRef<string | null>(null);
   const closedByUserRef = useRef(false);
+  // Control frames that must not be lost across a reconnect (currently
+  // only chat.stop). The WS-world analogue of open-agents'
+  // AbortableChatTransport. See docs/learnings/stream-resume-vercel-open-agents.md.
+  const pendingFramesRef = useRef<{ action: string; data: unknown }[]>([]);
 
   useEffect(() => {
     stateRef.current = state;
@@ -58,6 +62,14 @@ export function useSessionSocket(slug: string): UseSessionSocketResult {
     const ws = socketRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(frame));
+      return;
+    }
+    // Queue chat.stop so a stop clicked while the socket is reconnecting
+    // is delivered on next OPEN instead of silently dropped. Draft updates
+    // are intentionally NOT queued — they have a version guard and the
+    // user's next keystroke will refresh the body anyway.
+    if (frame.action === "chat.stop") {
+      pendingFramesRef.current.push(frame);
     }
   }, []);
 
@@ -299,6 +311,13 @@ export function useSessionSocket(slug: string): UseSessionSocketResult {
     ws.onopen = () => {
       setConnected(true);
       reconnectAttemptRef.current = 0;
+      // Flush any control frames that were queued while the socket was
+      // closed. See `send` above.
+      const queued = pendingFramesRef.current;
+      pendingFramesRef.current = [];
+      for (const frame of queued) {
+        ws.send(JSON.stringify(frame));
+      }
       if (heartbeatTimerRef.current != null) {
         window.clearInterval(heartbeatTimerRef.current);
       }

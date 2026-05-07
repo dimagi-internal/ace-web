@@ -177,6 +177,28 @@ class TestParseArtifactManifest:
         assert len(result) == 1
         assert result[0]["description"] == "Thing with colon: in the middle"
 
+    def test_single_quoted_string_with_internal_double_quotes(self):
+        """Regression: a single-quoted description using `"`-as-English-quotes
+        used to terminate the JSON string mid-flight after the parser's
+        global single→double quote swap, dropping the entire array silently."""
+        ts = """
+            export const ARTIFACT_MANIFEST = [
+              {
+                path: '8-closeout/closeout_summary.md',
+                producedBy: 'closeout',
+                consumedBy: [],
+                phase: 'closeout',
+                required: true,
+                description: 'Canonical "what shipped" doc for the opp.',
+              },
+            ] as const;
+        """
+        result = parse_artifact_manifest(ts)
+        assert len(result) == 1
+        assert result[0]["path"] == "8-closeout/closeout_summary.md"
+        assert result[0]["produced_by"] == "closeout"
+        assert '"what shipped"' in result[0]["description"]
+
     def test_real_ace_plugin_manifest_parses(self):
         """Regression: the real artifact-manifest.ts from the ACE plugin must parse."""
         import os
@@ -186,12 +208,27 @@ class TestParseArtifactManifest:
             pytest.skip("ACE plugin not available in this environment")
         text = open(real_path).read()
         result = parse_artifact_manifest(text)
-        # Should parse many entries (30+ in current manifest)
+        # Should parse many entries (90+ in current manifest)
         assert len(result) > 20
-        # The entry that previously broke parsing: state.yaml with "state:" in description
-        state_yaml = next((e for e in result if e["path"] == "state.yaml"), None)
-        assert state_yaml is not None
-        assert "state:" in state_yaml["description"]
+        # Plugin 0.13.3 renamed state.yaml → run_state.yaml. Either name
+        # being present indicates the run-level metadata entry parsed.
+        run_state = next(
+            (e for e in result if e["path"] in ("run_state.yaml", "state.yaml")),
+            None,
+        )
+        assert run_state is not None
+        # Internal-quote regression: the closeout entry's description embeds
+        # double-quote characters used as English quotation marks. The naive
+        # 0.12 parser silently dropped the entire array on this; current
+        # parser handles it via _ts_single_quoted_to_json.
+        closeout = next(
+            (
+                e for e in result
+                if e.get("path", "").endswith("closeout/closeout_summary.md")
+            ),
+            None,
+        )
+        assert closeout is not None
 
 
 # ---------------------------------------------------------------------------

@@ -82,6 +82,22 @@ export default function OppWorkbenchPage() {
     if (skill) setSelectedSkill(skill);
   }, [skill]);
 
+  // Pin the resolved run id into the URL on first load when the user
+  // arrived without one (e.g. /opps/<slug> from the list page). The
+  // backend already picks the latest run, but the URL stayed bare —
+  // making bookmarks / shares ambiguous and the run selector look
+  // unselected. `replace: true` so we don't pollute the back stack.
+  useEffect(() => {
+    if (state.kind !== "loaded") return;
+    if (runId) return;
+    const resolved =
+      state.snapshot.selected_run_id ?? state.snapshot.current_run.run_id;
+    if (resolved) {
+      setSearchParams({ run_id: resolved }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.kind]);
+
   // First-load auto-select: if no step is selected (no `:skill` in URL),
   // pick the first ``gate-pending`` step so a reviewing user lands on the
   // action they came to do. We only run this on the initial snapshot
