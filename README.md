@@ -84,6 +84,30 @@ with CommCare HQ / connect-labs running locally on 8000. Override the
 host port with `ACE_WEB_HOST_PORT=<port>` in `.env` and tell Vite about
 it via `VITE_BACKEND_PORT=<port> bun run dev`.
 
+### Iterating on the ACE plugin alongside ace-web
+
+The container reads the plugin from `/app/vendor/ace`, which is a
+snapshot baked into the image at build time. To pick up plugin edits
+(skill renames, manifest path moves, agent frontmatter changes) without
+a rebuild, copy the tracked override template:
+
+```bash
+cp docker-compose.override.yml.example docker-compose.override.yml
+# edit docker-compose.override.yml — point the volume at your host
+# plugin checkout (replace /Users/CHANGEME/...)
+docker compose up
+```
+
+Compose auto-merges `docker-compose.override.yml` (which is gitignored).
+The override bind-mounts your host plugin path over `/app/vendor/ace`
+and adds it to uvicorn's `--reload-dir`, so a save in the plugin repo
+triggers a uvicorn restart and the next request reads the fresh
+manifest / skill registry.
+
+This is local-only by design — production keeps its baked, immutable
+plugin snapshot, and `build-backend.yml` clones the latest plugin SHA
+on every backend image build so deploys always pick up `main`.
+
 ### Trying it out — no credentials needed
 
 The dev container ships with two escape hatches enabled

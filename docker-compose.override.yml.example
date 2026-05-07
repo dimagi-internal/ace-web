@@ -1,0 +1,51 @@
+# docker-compose override — per-developer local dev tweaks.
+#
+# Compose auto-loads `docker-compose.override.yml` (no flag needed) and
+# merges it with the base `docker-compose.yml`. The override file is
+# gitignored so each developer can opt into the snippets here without
+# polluting the shared compose.
+#
+# To use: copy this file to `docker-compose.override.yml`, edit, then
+#   docker compose up
+#
+# ───────────────────────────────────────────────────────────────────
+# Live-mount the ACE plugin checkout
+# ───────────────────────────────────────────────────────────────────
+# By default the container reads the plugin from `/app/vendor/ace`,
+# which is a snapshot baked into the image at build time. To pick up
+# plugin changes without rebuilding, bind-mount your host checkout
+# over that path AND add `/app/vendor/ace` to uvicorn's --reload-dir
+# so file edits trigger a process restart (which wipes the
+# `@functools.cache` on `apps/system/reader.load_system_overview`).
+#
+# Tradeoff: the host checkout's `node_modules/` (or lack thereof)
+# overlays the image's vendored deps — fine when running with
+# ACE_USE_FAKE_CLI_BACKEND=True (default in dev) since no MCP server
+# is spawned. If you need to talk to real MCP servers locally, also
+# `npm install` inside the host plugin dir.
+
+services:
+  app:
+    volumes:
+      # ABSOLUTE path on the host. Replace with your checkout location.
+      - /Users/CHANGEME/emdash/repositories/ace:/app/vendor/ace
+    environment:
+      # Docker Desktop on macOS doesn't propagate inotify events from the
+      # host into the container for bind-mounted volumes — file CONTENT is
+      # consistent (the read sees the latest bytes) but the kernel events
+      # aren't fired. Force watchfiles to fall back to polling so plugin
+      # edits actually trigger uvicorn's --reload. Polling cadence is ~1s
+      # by default, which is fine for an interactive dev loop.
+      WATCHFILES_FORCE_POLLING: "true"
+    command: >
+      uvicorn config.asgi:application
+      --host 0.0.0.0 --port 8000
+      --reload
+      --reload-dir /app/apps
+      --reload-dir /app/config
+      --reload-dir /app/vendor/ace
+      --reload-include "*.py"
+      --reload-include "*.md"
+      --reload-include "*.ts"
+      --reload-include "*.yaml"
+      --reload-include "*.yml"

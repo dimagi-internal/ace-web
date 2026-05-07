@@ -54,3 +54,8 @@ e2e-test.sqlite3
 frontend/bun.lock
 .gstack/
 .claude/settings.local.json
+
+# docker-compose.override.yml is the standard escape hatch for per-developer
+# local dev tweaks (plugin live-mount, custom port mappings, etc.). A
+# tracked template lives at docker-compose.override.yml.example.
+docker-compose.override.yml
