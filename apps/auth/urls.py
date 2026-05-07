@@ -10,6 +10,7 @@ urlpatterns = [
     path("initiate/", oauth_views.oauth_initiate, name="initiate"),
     path("callback/", oauth_views.oauth_callback, name="callback"),
     path("logout/", oauth_views.oauth_logout, name="logout"),
+    path("me/", oauth_views.me, name="me"),
     path("nova/initiate/", nova_oauth_views.nova_oauth_initiate, name="nova_initiate"),
     path("nova/callback/", nova_oauth_views.nova_oauth_callback, name="nova_callback"),
 ]

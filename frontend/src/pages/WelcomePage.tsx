@@ -9,6 +9,7 @@ import {
   verifyDriveAccess,
   type VerifyResult,
 } from "../api/workspaces";
+import { getCurrentUser, type CurrentUser } from "../api/auth";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "../hooks/useWorkspace";
 
@@ -45,6 +46,16 @@ export default function WelcomePage() {
       toast.error("Couldn't copy — select and copy manually");
     }
   }
+
+  // Show "Logged in as <email>" so a user with zero memberships can
+  // self-diagnose ("oh, I'm on the wrong account") instead of staring
+  // at the empty wizard.
+  const [me, setMe] = useState<CurrentUser | null>(null);
+  useEffect(() => {
+    getCurrentUser()
+      .then(setMe)
+      .catch(() => setMe(null));
+  }, []);
 
   // Fetch SA email up-front so we can show "share this folder with X".
   useEffect(() => {
@@ -90,6 +101,34 @@ export default function WelcomePage() {
           ? "Pick a workspace below, or create another one."
           : "Create a workspace to get started, or paste an invite link."}
       </p>
+
+      {me && (
+        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+          <span>Logged in as</span>
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
+            {me.email}
+          </span>
+          <a
+            href="/ace/auth/logout/"
+            className="ml-auto text-primary hover:underline"
+          >
+            Sign out
+          </a>
+        </div>
+      )}
+
+      {!hasExisting && !workspacesLoading && me && (
+        <div className="mt-4 rounded border border-amber-500/30 bg-amber-500/5 p-4
+          text-xs text-foreground">
+          <p className="font-medium">No workspaces yet for {me.email}.</p>
+          <p className="mt-1 text-muted-foreground">
+            If you expected to see an existing team here, you may be signed in
+            with the wrong account — sign out above and try again. Otherwise,
+            create one below or ask an owner of an existing workspace for an
+            invite link.
+          </p>
+        </div>
+      )}
 
       {hasExisting && (
         <div className="mt-8 rounded border border-border bg-card p-6">

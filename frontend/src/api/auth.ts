@@ -16,3 +16,12 @@ export const disconnectNova = () =>
   apiFetch<{ disconnected: boolean }>("/api/auth/nova/disconnect", {
     method: "POST",
   });
+
+export interface CurrentUser {
+  user_id: number;
+  email: string;
+  display_name: string;
+}
+
+export const getCurrentUser = () =>
+  apiFetch<CurrentUser>("/auth/me/");

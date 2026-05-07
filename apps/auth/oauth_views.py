@@ -286,3 +286,30 @@ def oauth_logout(request: HttpRequest) -> HttpResponse:
     logout(request)
     logger.info("User logged out")
     return redirect("auth:login")
+
+
+def me(request: HttpRequest) -> HttpResponse:
+    """GET /auth/me — return the current authenticated user's identity.
+
+    Used by the SPA on /welcome to show "Logged in as <email>" so a
+    user with zero workspace memberships can self-diagnose ("oh, I'm
+    on the wrong account") instead of staring at the empty wizard.
+
+    Returns 401 when not authenticated rather than redirecting, since
+    the SPA renders this off an XHR.
+    """
+    from django.http import JsonResponse
+
+    from apps.common.envelope import error_response, success_response
+
+    if not request.user.is_authenticated:
+        return JsonResponse(
+            error_response("not authenticated", code="auth-required"),
+            status=401,
+        )
+    user = request.user
+    return JsonResponse(success_response({
+        "user_id": user.pk,
+        "email": user.email,
+        "display_name": getattr(user, "display_name", "") or user.email,
+    }))
