@@ -27,7 +27,15 @@ services:
 
   app:
     build: .
-    # CMD from Dockerfile runs uvicorn directly on port 8000.
+    # Override the Dockerfile's prod CMD with uvicorn --reload so backend
+    # source edits picked up via the bind mounts below trigger an
+    # automatic reload — no `docker compose restart app` needed.
+    # `--reload-dir` is scoped to the mounted code directories so we
+    # don't watch site-packages / vendored plugins (large, noisy).
+    command: >
+      uvicorn config.asgi:application
+      --host 0.0.0.0 --port 8000
+      --reload --reload-dir /app/apps --reload-dir /app/config
     # Run migrations separately: docker compose exec app python manage.py migrate
     #
     # docker-compose automatically loads .env from the repo root for variable
