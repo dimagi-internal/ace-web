@@ -56,17 +56,6 @@ export function TopNav() {
       >
         ACE
       </Link>
-      <Link
-        to="/system"
-        aria-label="What is ACE? — open the Overview"
-        title={
-          "ACE = Autonomous CRISPR-Connect Engine.\n" +
-          "Click for the full overview: phases, skills, and how a cycle runs."
-        }
-        className="rounded-full border border-border px-1.5 text-[10px] font-semibold leading-none text-muted-foreground transition hover:border-primary hover:text-primary"
-      >
-        ?
-      </Link>
       <WorkspaceSwitcher />
 
       {/* Workspace-scoped nav: lives next to the workspace switcher,
