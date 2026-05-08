@@ -63,3 +63,44 @@ class GateDecision:
     decided_by: str = ""
     note: str = ""
     payload: dict = field(default_factory=dict)
+
+
+@dataclass
+class QAFailure:
+    """One failed structural QA check.
+
+    Mirrors the shape declared in ACE's ``lib/qa-types.ts`` (PR #146):
+    every QA failure is severity=blocker and carries an ``auto_fix_hint``
+    the orchestrator passes to the producer for regeneration.
+    """
+
+    check: str
+    type: str  # static | llm
+    detail: str
+    auto_fix_hint: str
+
+
+@dataclass
+class QAResult:
+    """Structural QA verdict on a producer artifact.
+
+    Distinct from ``JudgeVerdict``: QA is binary (pass / fail / incomplete)
+    and gates eval. If QA fails irrecoverably, the corresponding eval is
+    skipped and JudgeVerdict.passed will be None / verdict 'incomplete'.
+
+    See ACE PR #146 (``skills/_qa-template.md``) for the canonical
+    contract; ``lib/qa-types.ts`` is the source-of-truth schema.
+    """
+
+    skill: str  # the QA skill that produced this (e.g. "idea-to-pdd-qa")
+    target_skill: str  # the producer skill being checked (e.g. "idea-to-pdd")
+    verdict: str  # pass | fail | incomplete
+    ran_at: str | None = None
+    capture_path: str | None = None
+    checks_run: int = 0
+    checks_passed: int = 0
+    checks_failed: int = 0
+    failures: list[QAFailure] = field(default_factory=list)
+    auto_fix_attempted: bool | None = None
+    auto_fix_attempts: int | None = None
+    auto_fix_succeeded: bool | None = None

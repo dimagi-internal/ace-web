@@ -35,7 +35,14 @@ import yaml
 from django.conf import settings
 
 from apps.opps.drive_client import DriveClient, DriveFile
-from apps.opps.parsers import GateDecision, JudgeVerdict, OppManifest, StepManifest
+from apps.opps.parsers import (
+    GateDecision,
+    JudgeVerdict,
+    OppManifest,
+    QAFailure,
+    QAResult,
+    StepManifest,
+)
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +66,7 @@ class StepSnapshot:
     gates: list[GateDecision]
     artifacts: list[ArtifactRef]
     folder_id: str
+    qa_result: QAResult | None = None  # added in PR #146 (QA/Eval split)
 
 
 @dataclass
@@ -328,6 +336,17 @@ _NEW_VERDICT_PATH_RE = re.compile(
     r"^[^/]+/(?P<producer>[^/]+?)_verdict(?P<variant>-[a-z]+)?\.ya?ml$"
 )
 
+# QA result files (added by ACE PR #146 / 0.13.88 — first migration is
+# idea-to-pdd-qa). Filename convention: ``<phase>/<producer>-qa_result.yaml``
+# where ``<producer>`` is the QA skill name (e.g. ``idea-to-pdd-qa``).
+# QA is binary and structurally distinct from eval verdicts:
+#   - No score / dimensions
+#   - Verdict tier is pass | fail | incomplete
+#   - Failures carry auto_fix_hints the orchestrator passes to producer
+_QA_RESULT_PATH_RE = re.compile(
+    r"^[^/]+/(?P<qa_skill>[^/]+?-qa)_result\.ya?ml$"
+)
+
 
 def _skill_from_verdict_stem(stem: str) -> str:
     """Derive skill name from an old-layout verdict filename stem.
@@ -408,6 +427,99 @@ def _detect_score_scale(data: dict) -> float | None:
     if not candidates:
         return None
     return max(candidates)
+
+
+def _parse_qa_result_yaml(body: str, qa_skill: str) -> QAResult | None:
+    """Parse a QA result YAML body into a ``QAResult``.
+
+    Schema canonical at ACE's ``lib/qa-types.ts`` (PR #146). Filename
+    convention: ``<phase>/<producer>-qa_result.yaml`` where ``<producer>``
+    is the QA skill (e.g. ``idea-to-pdd-qa``). The target lifecycle skill
+    (``idea-to-pdd``) is the QA skill name with the ``-qa`` suffix stripped.
+    """
+    try:
+        data = yaml.safe_load(body) or {}
+    except yaml.YAMLError:
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    verdict = str(data.get("verdict") or "").lower()
+    if verdict not in ("pass", "fail", "incomplete"):
+        return None
+
+    target_skill = qa_skill[: -len("-qa")] if qa_skill.endswith("-qa") else qa_skill
+
+    failures: list[QAFailure] = []
+    raw_failures = data.get("failures") or []
+    if isinstance(raw_failures, list):
+        for entry in raw_failures:
+            if not isinstance(entry, dict):
+                continue
+            failures.append(
+                QAFailure(
+                    check=str(entry.get("check") or ""),
+                    type=str(entry.get("type") or "static"),
+                    detail=str(entry.get("detail") or ""),
+                    auto_fix_hint=str(entry.get("auto_fix_hint") or ""),
+                )
+            )
+
+    stats = data.get("stats") or {}
+    auto_fix = data.get("auto_fix") or {}
+
+    return QAResult(
+        skill=qa_skill,
+        target_skill=target_skill,
+        verdict=verdict,
+        ran_at=str(data.get("ran_at")) if data.get("ran_at") else None,
+        capture_path=str(data.get("capture_path")) if data.get("capture_path") else None,
+        checks_run=int(stats.get("checks_run") or 0) if isinstance(stats, dict) else 0,
+        checks_passed=int(stats.get("checks_passed") or 0) if isinstance(stats, dict) else 0,
+        checks_failed=int(stats.get("checks_failed") or 0) if isinstance(stats, dict) else 0,
+        failures=failures,
+        auto_fix_attempted=auto_fix.get("attempted") if isinstance(auto_fix, dict) else None,
+        auto_fix_attempts=auto_fix.get("attempts") if isinstance(auto_fix, dict) else None,
+        auto_fix_succeeded=auto_fix.get("succeeded") if isinstance(auto_fix, dict) else None,
+    )
+
+
+def _load_qa_results(
+    client: DriveClient,
+    opp_files: list[DriveFile],
+) -> dict[str, QAResult]:
+    """Walk the file tree for ``<phase>/<producer>-qa_result.yaml`` and
+    return ``{target_skill: QAResult}``.
+
+    Mirrors ``_load_verdicts`` but for QA results. Keyed on the *target*
+    lifecycle skill (e.g. ``idea-to-pdd``), not the QA skill itself, so
+    consumers can attach the QA result alongside the matching judge
+    verdict on the same StepSnapshot.
+
+    Multiple QA results per skill (re-runs after auto-fix) are coalesced
+    by ``ran_at``: latest wins.
+    """
+    candidates: dict[str, tuple[str, QAResult]] = {}
+    for f in opp_files:
+        if _is_folder(f):
+            continue
+        match = _QA_RESULT_PATH_RE.match(f.path)
+        if match is None:
+            continue
+        qa_skill = match.group("qa_skill")
+        try:
+            body = _read_text(client, f)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Failed to read QA result %s: %s", f.path, exc)
+            continue
+        result = _parse_qa_result_yaml(body, qa_skill)
+        if result is None:
+            continue
+        ts = result.ran_at or ""
+        existing = candidates.get(result.target_skill)
+        if existing is None or ts > existing[0]:
+            candidates[result.target_skill] = (ts, result)
+    return {skill: r for skill, (_, r) in candidates.items()}
 
 
 def _parse_verdict_yaml(body: str) -> JudgeVerdict | None:
@@ -1093,6 +1205,7 @@ def _load_opp_flat(
 
     registered_skills = {s.name for s in skill_registry}
     verdicts_by_skill = _load_verdicts(client, opp_tree, registered_skills)
+    qa_results_by_skill = _load_qa_results(client, opp_tree)
     gates_by_skill = _gates_from_state(state_data)
 
     steps = _build_steps(
@@ -1101,6 +1214,7 @@ def _load_opp_flat(
         verdicts_by_skill,
         gates_by_skill,
         opp_folder.id,
+        qa_results_by_skill=qa_results_by_skill,
     )
 
     run_detail = RunDetail(
@@ -1204,6 +1318,7 @@ def _load_opp_run(
 
     registered_skills = {s.name for s in skill_registry}
     verdicts_by_skill = _load_verdicts(client, run_tree, registered_skills)
+    qa_results_by_skill = _load_qa_results(client, run_tree)
     gates_by_skill = _gates_from_state(state_data)
 
     steps = _build_steps(
@@ -1212,6 +1327,7 @@ def _load_opp_run(
         verdicts_by_skill,
         gates_by_skill,
         run_folder_id,
+        qa_results_by_skill=qa_results_by_skill,
     )
 
     # Read opp.yaml for display_name; fall back to state.yaml then slug.
@@ -1256,16 +1372,24 @@ def _build_steps(
     verdicts_by_skill: dict[str, JudgeVerdict],
     gates_by_skill: dict[str, list[GateDecision]],
     folder_id: str,
+    qa_results_by_skill: dict[str, QAResult] | None = None,
 ) -> list[StepSnapshot]:
     """Synthesize StepSnapshot rows from the skill registry + Drive data."""
+    qa_results_by_skill = qa_results_by_skill or {}
     steps: list[StepSnapshot] = []
     for skill_meta in skill_registry:
         artifacts = artifacts_by_skill.get(skill_meta.name, [])
         gate_entries = gates_by_skill.get(skill_meta.name, [])
+        qa_result = qa_results_by_skill.get(skill_meta.name)
         if gate_entries and gate_entries[-1].decision == "rejected":
             status = "gate-rejected"
         elif gate_entries and gate_entries[-1].decision == "pending":
             status = "gate-pending"
+        elif qa_result is not None and qa_result.verdict == "fail":
+            # QA failed irrecoverably; eval was skipped.
+            # Surface as a distinct status so the UI can show the
+            # auto-fix attempts + remaining failures.
+            status = "qa-failed"
         elif artifacts:
             status = "complete"
         else:
@@ -1284,6 +1408,7 @@ def _build_steps(
                 gates=gate_entries,
                 artifacts=artifacts,
                 folder_id=folder_id,
+                qa_result=qa_result,
             )
         )
     return steps
