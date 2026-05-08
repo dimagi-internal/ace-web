@@ -19,7 +19,7 @@ from typing import Any
 
 from django.conf import settings
 
-from apps.opps.parsers import GateDecision, JudgeVerdict, OppManifest
+from apps.opps.parsers import GateDecision, JudgeVerdict, OppManifest, QAResult
 from apps.opps.previews import build_preview
 from apps.opps.sync import (
     ArtifactRef,
@@ -113,6 +113,47 @@ def serialize_gate(g: GateDecision) -> dict:
     }
 
 
+def serialize_qa_result(qa: QAResult | None) -> dict | None:
+    """Serialize a QAResult for the API.
+
+    QA is binary (no scores) and structurally distinct from eval verdicts.
+    Front-end renders it as green check / red X with the failed-checks
+    list (vs the eval's score donut). The ``failures`` array preserves
+    each ``auto_fix_hint`` so operators can see exactly what the
+    orchestrator tried (or would try) to remediate.
+    """
+    if qa is None:
+        return None
+    return {
+        "skill": qa.skill,
+        "target_skill": qa.target_skill,
+        "verdict": qa.verdict,
+        "ran_at": qa.ran_at,
+        "capture_path": qa.capture_path,
+        "stats": {
+            "checks_run": qa.checks_run,
+            "checks_passed": qa.checks_passed,
+            "checks_failed": qa.checks_failed,
+        },
+        "failures": [
+            {
+                "check": f.check,
+                "type": f.type,
+                "detail": f.detail,
+                "auto_fix_hint": f.auto_fix_hint,
+            }
+            for f in qa.failures
+        ],
+        "auto_fix": {
+            "attempted": qa.auto_fix_attempted,
+            "attempts": qa.auto_fix_attempts,
+            "succeeded": qa.auto_fix_succeeded,
+        }
+        if qa.auto_fix_attempted is not None
+        else None,
+    }
+
+
 def serialize_step_snapshot(
     step_snap: StepSnapshot, bodies: dict[str, str] | None = None
 ) -> dict:
@@ -145,6 +186,7 @@ def serialize_step_snapshot(
         "is_recurring": is_recurring,
         "preview_text": build_preview(step_snap, bodies),
         "judge": serialize_judge(step_snap.judge),
+        "qa_result": serialize_qa_result(step_snap.qa_result),
         "gates": [serialize_gate(g) for g in step_snap.gates],
         "artifacts": [serialize_artifact(a) for a in step_snap.artifacts],
     }
