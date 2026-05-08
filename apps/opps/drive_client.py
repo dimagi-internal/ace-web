@@ -87,6 +87,7 @@ class DriveFile:
     size_bytes: int | None = None
     modified_time: str | None = None                # ISO-8601 string, as returned by Drive
     parent_id: str | None = None                    # immediate parent folder id (optional)
+    drive_id: str | None = None                     # shared-drive id; None for My Drive
 
 
 @dataclass
@@ -218,7 +219,7 @@ class GoogleDriveClient(DriveClient):
                 q=f"'{folder_id}' in parents and trashed = false",
                 fields=(
                     "nextPageToken, "
-                    "files(id, name, mimeType, webViewLink, size, modifiedTime)"
+                    "files(id, name, mimeType, webViewLink, size, modifiedTime, driveId)"
                 ),
                 pageSize=page_size,
                 pageToken=page_token,
@@ -251,13 +252,14 @@ class GoogleDriveClient(DriveClient):
             path=path,
             size_bytes=int(size) if size is not None else None,
             modified_time=f.get("modifiedTime"),
+            drive_id=f.get("driveId") or None,
         )
 
     @_drive_retry
     def get_file(self, file_id: str) -> DriveFile:
         f = self._service.files().get(
             fileId=file_id,
-            fields="id, name, mimeType, webViewLink, size, modifiedTime",
+            fields="id, name, mimeType, webViewLink, size, modifiedTime, driveId",
             supportsAllDrives=True,
         ).execute()
         return self._to_drive_file(f, path=f["name"])
