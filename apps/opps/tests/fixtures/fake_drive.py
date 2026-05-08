@@ -214,6 +214,14 @@ class FakeDriveClient(DriveClient):
             self._nodes_by_id.pop(n.id, None)
         _drop(node)
 
+    # --- Changes feed stubs (Task 2 will implement these properly) ---
+
+    def get_changes_start_page_token(self, drive_id=None) -> str:
+        raise NotImplementedError("FakeDriveClient.get_changes_start_page_token not yet implemented")
+
+    def list_changes(self, page_token, *, drive_id=None):
+        raise NotImplementedError("FakeDriveClient.list_changes not yet implemented")
+
 
 # --- Realistic fixture builders ---
 

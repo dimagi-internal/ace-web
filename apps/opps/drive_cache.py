@@ -36,7 +36,7 @@ from collections.abc import Iterable
 from django.conf import settings
 from django.core.cache import cache
 
-from apps.opps.drive_client import DriveClient, DriveFile, FileContent
+from apps.opps.drive_client import ChangesPage, DriveClient, DriveFile, FileContent
 
 log = logging.getLogger(__name__)
 
@@ -159,3 +159,13 @@ class CachedDriveClient(DriveClient):
         # we can't reach the parent's listing key here, but the parent's
         # TTL will expire shortly. Trashing is rare enough that this is fine.
         _invalidate_folder_listings(folder_id)
+
+    # --- Changes feed (pass-through; caching layer doesn't buffer these) ---
+
+    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
+        return self._inner.get_changes_start_page_token(drive_id)
+
+    def list_changes(
+        self, page_token: str, *, drive_id: str | None = None
+    ) -> ChangesPage:
+        return self._inner.list_changes(page_token, drive_id=drive_id)

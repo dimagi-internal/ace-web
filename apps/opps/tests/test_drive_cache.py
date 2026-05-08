@@ -90,6 +90,13 @@ class _FakeDriveClient(DriveClient):
     def trash_folder(self, folder_id):
         pass
 
+    # Changes feed stubs — implemented properly in the real client; not needed here.
+    def get_changes_start_page_token(self, drive_id=None):
+        raise NotImplementedError
+
+    def list_changes(self, page_token, *, drive_id=None):
+        raise NotImplementedError
+
 
 @pytest.fixture
 def inner():
