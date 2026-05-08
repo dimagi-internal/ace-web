@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from itertools import count
 
-from apps.opps.drive_client import DriveClient, DriveFile, FileContent
+from apps.opps.drive_client import ChangesPage, DriveClient, DriveFile, FileContent
 
 
 @dataclass
@@ -216,10 +216,10 @@ class FakeDriveClient(DriveClient):
 
     # --- Changes feed stubs (Task 2 will implement these properly) ---
 
-    def get_changes_start_page_token(self, drive_id=None) -> str:
+    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
         raise NotImplementedError("FakeDriveClient.get_changes_start_page_token not yet implemented")
 
-    def list_changes(self, page_token, *, drive_id=None):
+    def list_changes(self, page_token: str, *, drive_id: str | None = None) -> ChangesPage:
         raise NotImplementedError("FakeDriveClient.list_changes not yet implemented")
 
 

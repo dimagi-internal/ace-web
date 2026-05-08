@@ -362,13 +362,10 @@ class GoogleDriveClient(DriveClient):
                     "supportsAllDrives": True,
                     "includeItemsFromAllDrives": True,
                     "pageSize": 1000,
+                    "spaces": "drive",
                 }
                 if drive_id:
                     kwargs["driveId"] = drive_id
-                    kwargs["includeItemsFromAllDrives"] = True
-                    kwargs["spaces"] = "drive"
-                else:
-                    kwargs["spaces"] = "drive"
                 resp = self._service.changes().list(**kwargs).execute()
                 for c in resp.get("changes", []):
                     fid = c.get("fileId")
@@ -386,7 +383,7 @@ class GoogleDriveClient(DriveClient):
                 )
         except HttpError as exc:
             status = getattr(getattr(exc, "resp", None), "status", None)
-            if status == 410:
+            if status in (410, "410"):
                 return ChangesPage(
                     changed_file_ids=set(), next_page_token="", expired=True,
                 )
