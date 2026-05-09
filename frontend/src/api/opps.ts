@@ -140,6 +140,13 @@ export function listOppRuns(slug: string): Promise<RunSummary[]> {
   return request<RunSummary[]>(`/opps/${encodeURIComponent(slug)}/runs`);
 }
 
+export function deleteOppRun(slug: string, runId: string): Promise<void> {
+  return request<void>(
+    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export function forkOpp(
   slug: string,
   payload: { new_slug: string; fork_at_phase: string },
