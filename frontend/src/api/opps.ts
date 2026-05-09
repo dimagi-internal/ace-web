@@ -135,6 +135,20 @@ export function discussStep(
   );
 }
 
+export function forkOpp(
+  slug: string,
+  payload: { new_slug: string; fork_at_phase: string },
+): Promise<{ slug: string; working_session_slug: string }> {
+  return request<{ slug: string; working_session_slug: string }>(
+    `/opps/${encodeURIComponent(slug)}/fork`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 export function getWorkingSession(slug: string): Promise<WorkingSessionResponse> {
   return request<WorkingSessionResponse>(
     `/opps/${encodeURIComponent(slug)}/working-session`,
