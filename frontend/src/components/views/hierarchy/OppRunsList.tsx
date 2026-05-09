@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, Play, Workflow } from "lucide-react";
 
-import { listOppRuns } from "@/api/opps";
 import type { RunSummary } from "@/api/types";
+import { useOppRuns } from "@/hooks/useOppRuns";
 import { relativeTime } from "@/lib/relativeTime";
 
 interface Props {
@@ -17,35 +16,14 @@ interface Props {
  * quick scan of each run's state.yaml (no full snapshot load). Click a
  * row to jump to that run's workbench.
  *
- * Fetches lazily on first expand. Shares the lifecycle pattern with
- * OppChatChildren so the parent can render both side-by-side without
- * coordinating state.
+ * Shares the useOppRuns hook with OppCardRunsStrip — the strip renders
+ * inline on every card, this list renders only on expand. Both reading
+ * from one hook means one network call per opp navigation regardless of
+ * how many surfaces consume it.
  */
 export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
-  const [runs, setRuns] = useState<RunSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const runs = useOppRuns(oppSlug);
 
-  useEffect(() => {
-    let cancelled = false;
-    listOppRuns(oppSlug)
-      .then((rs) => {
-        if (!cancelled) setRuns(rs);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(String(e?.message ?? e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [oppSlug]);
-
-  if (error) {
-    return (
-      <div className="px-4 py-2 text-xs text-destructive">
-        Couldn't load runs: {error}
-      </div>
-    );
-  }
   if (runs === null) {
     return (
       <div className="px-4 py-2 text-xs text-muted-foreground">
