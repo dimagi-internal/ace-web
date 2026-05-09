@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pytest
-
 from apps.opps.drive_client import DriveFile, FileContent
 from apps.opps.parsers import QAFailure, QAResult
 from apps.opps.serializers import serialize_qa_result
@@ -21,9 +19,7 @@ from apps.opps.sync import (
     _build_steps,
     _load_qa_results,
     _parse_qa_result_yaml,
-    StepSnapshot,
 )
-
 
 PASS_YAML = """
 skill: idea-to-pdd-qa
@@ -144,7 +140,15 @@ class TestParseQAResultYaml:
         assert _parse_qa_result_yaml("not: [valid: yaml: at all", qa_skill="idea-to-pdd-qa") is None
 
     def test_handles_incomplete_verdict(self):
-        body = "skill: idea-to-pdd-qa\nverdict: incomplete\nstats:\n  checks_run: 0\n  checks_passed: 0\n  checks_failed: 0\nfailures: []\n"
+        body = (
+            "skill: idea-to-pdd-qa\n"
+            "verdict: incomplete\n"
+            "stats:\n"
+            "  checks_run: 0\n"
+            "  checks_passed: 0\n"
+            "  checks_failed: 0\n"
+            "failures: []\n"
+        )
         r = _parse_qa_result_yaml(body, qa_skill="idea-to-pdd-qa")
         assert r is not None
         assert r.verdict == "incomplete"
@@ -176,9 +180,19 @@ def _file(*, id: str, name: str, path: str, mime_type: str = "text/yaml") -> Dri
 class TestLoadQAResults:
     def test_walks_qa_result_files(self):
         files = [
-            _file(id="f1", name="idea-to-pdd-qa_result.yaml", path="1-design/idea-to-pdd-qa_result.yaml"),
-            _file(id="f2", name="idea-to-pdd.md", path="1-design/idea-to-pdd.md"),  # not a QA file
-            _file(id="f3", name="idea-to-pdd-eval_verdict.yaml", path="1-design/idea-to-pdd-eval_verdict.yaml"),  # eval, not QA
+            _file(
+                id="f1",
+                name="idea-to-pdd-qa_result.yaml",
+                path="1-design/idea-to-pdd-qa_result.yaml",
+            ),
+            # not a QA file
+            _file(id="f2", name="idea-to-pdd.md", path="1-design/idea-to-pdd.md"),
+            # eval, not QA
+            _file(
+                id="f3",
+                name="idea-to-pdd-eval_verdict.yaml",
+                path="1-design/idea-to-pdd-eval_verdict.yaml",
+            ),
         ]
         client = _Client({"f1": PASS_YAML})
         results = _load_qa_results(client, files)
@@ -188,11 +202,23 @@ class TestLoadQAResults:
 
     def test_keeps_latest_when_multiple_runs(self):
         # Two QA results for the same target — latest ran_at wins.
-        later = PASS_YAML.replace("19:00:00Z", "20:00:00Z").replace("verdict: pass", "verdict: fail").replace("checks_failed: 0", "checks_failed: 1")
+        later = (
+            PASS_YAML
+            .replace("19:00:00Z", "20:00:00Z")
+            .replace("verdict: pass", "verdict: fail")
+            .replace("checks_failed: 0", "checks_failed: 1")
+        )
         # Make later valid by adding a failure entry.
         later = later.replace(
             "failures: []",
-            "failures:\n  - check: x\n    type: static\n    severity: blocker\n    detail: bad\n    auto_fix_hint: fix\n"
+            (
+                "failures:\n"
+                "  - check: x\n"
+                "    type: static\n"
+                "    severity: blocker\n"
+                "    detail: bad\n"
+                "    auto_fix_hint: fix\n"
+            ),
         )
         files = [
             _file(id="early", name="x.yaml", path="1-design/idea-to-pdd-qa_result.yaml"),
