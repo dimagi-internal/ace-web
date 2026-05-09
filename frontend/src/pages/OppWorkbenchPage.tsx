@@ -4,13 +4,11 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { getOpp } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
 import type { OppSnapshot, Step } from "../api/types";
-import { FlowView } from "../components/views/FlowView";
 import { HeatmapView } from "../components/views/HeatmapView";
 import { PhaseView } from "../components/views/PhaseView";
 import { RunDiffView } from "../components/views/RunDiffView";
 import { StoryboardView } from "../components/views/StoryboardView";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
-import { PendingGatesBanner } from "../components/opps/PendingGatesBanner";
 import { SkillList } from "../components/opps/SkillList";
 import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
@@ -20,16 +18,12 @@ import { useOppSocket } from "../hooks/useOppSocket";
 import { useViewMode } from "../hooks/useViewMode";
 
 // Per-opp view tabs. "workbench" (the existing 3-pane) is the default.
-// The four prototype views (phase/heatmap/diff/story) sit alongside
-// the legacy DAG flow view; we'll cull the losers once you've poked
-// at the winners.
 const VIEW_TABS: ViewTab[] = [
   { kind: "workbench", label: "Workbench" },
   { kind: "phase", label: "Phases" },
   { kind: "heatmap", label: "Heatmap" },
   { kind: "diff", label: "Diff" },
   { kind: "story", label: "Storyboard" },
-  { kind: "flow", label: "Flow" },
 ];
 
 // Cheap human form for the initial loading label, before the API
@@ -117,25 +111,6 @@ export default function OppWorkbenchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.kind]);
 
-  // First-load auto-select: if no step is selected (no `:skill` in URL),
-  // pick the first ``gate-pending`` step so a reviewing user lands on the
-  // action they came to do. We only run this on the initial snapshot
-  // load — never overwrite a later user selection. Falls back to leaving
-  // selectedSkill null when nothing is gate-pending, preserving the
-  // existing "Select a step" empty state.
-  useEffect(() => {
-    if (state.kind !== "loaded") return;
-    if (skill) return;          // explicit URL → respect it
-    if (selectedSkill) return;  // user already picked → don't overwrite
-    const pending = state.snapshot.current_run.steps.find(
-      (s) => s.status === "gate-pending",
-    );
-    if (pending) setSelectedSkill(pending.skill_name);
-    // Only depend on state.kind so this fires once when the snapshot
-    // first loads, not on every silent refresh that swaps the snapshot.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.kind]);
-
   if (state.kind === "loading")
     return <LoadingSpinner label={`Loading ${humanizeSlug(slug)}…`} />;
   if (state.kind === "error") return <ErrorState message={state.message} onRetry={() => load()} />;
@@ -159,10 +134,6 @@ export default function OppWorkbenchPage() {
       <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
       {view === "workbench" && (
         <>
-          <PendingGatesBanner
-            steps={snapshot.current_run.steps}
-            onSelect={setSelectedSkill}
-          />
           <div className="flex flex-1 overflow-hidden">
             <main className="flex-1 overflow-y-auto">
               <SkillList
@@ -202,18 +173,9 @@ export default function OppWorkbenchPage() {
           </div>
         </>
       )}
-      {view === "flow" && (
+      {view === "phase" && (
         <div className="min-h-0 flex-1">
-          <FlowView oppSlug={slug} runId={snapshot.current_run.run_id} />
-        </div>
-      )}
-      {view === "phase" && workspaceSlug && (
-        <div className="min-h-0 flex-1">
-          <PhaseView
-            oppSlug={slug}
-            workspaceSlug={workspaceSlug}
-            selectedRunId={snapshot.current_run.run_id}
-          />
+          <PhaseView snapshot={snapshot} oppSlug={slug} />
         </div>
       )}
       {view === "heatmap" && workspaceSlug && (

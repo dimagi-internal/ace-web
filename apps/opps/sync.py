@@ -36,6 +36,7 @@ from django.conf import settings
 
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.opps.parsers import (
+    Decision,
     GateDecision,
     JudgeVerdict,
     OppManifest,
@@ -82,6 +83,11 @@ class RunDetail:
     notes: str
     steps: list[StepSnapshot]
     folder_id: str
+    # Per-run decisions log (added with the decisions-log framework, May
+    # 2026). Each row carries its own ``phase`` tag; the UI groups them
+    # per phase. Empty list when the run predates the framework or hasn't
+    # written ``decisions.yaml`` yet.
+    decisions: list[Decision] = field(default_factory=list)
 
 
 @dataclass
@@ -482,6 +488,60 @@ def _parse_qa_result_yaml(body: str, qa_skill: str) -> QAResult | None:
         auto_fix_attempts=auto_fix.get("attempts") if isinstance(auto_fix, dict) else None,
         auto_fix_succeeded=auto_fix.get("succeeded") if isinstance(auto_fix, dict) else None,
     )
+
+
+def _load_decisions(
+    client: DriveClient,
+    run_files: list[DriveFile],
+) -> list[Decision]:
+    """Read ``decisions.yaml`` from the run-folder root and return rows.
+
+    Single file at the run root (``ACE/<opp>/runs/<run-id>/decisions.yaml``);
+    no per-phase split — each row carries its own ``phase`` tag. Schema
+    canonical at ACE ``lib/decisions-schema.ts``. Returns an empty list
+    when the file is missing or unparseable; consumers should treat
+    "no decisions log" as a normal state for legacy runs that predate
+    the framework.
+    """
+    file = _find_child(run_files, "decisions.yaml") or _find_child(run_files, "decisions.yml")
+    if file is None or _is_folder(file):
+        return []
+    try:
+        body = _read_text(client, file)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Failed to read decisions.yaml: %s", exc)
+        return []
+    try:
+        data = yaml.safe_load(body) or {}
+    except yaml.YAMLError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    raw_rows = data.get("decisions") or []
+    if not isinstance(raw_rows, list):
+        return []
+    out: list[Decision] = []
+    for row in raw_rows:
+        if not isinstance(row, dict):
+            continue
+        rid = str(row.get("id") or "").strip()
+        if not rid:
+            continue
+        opts = row.get("options_considered") or []
+        out.append(
+            Decision(
+                id=rid,
+                phase=str(row.get("phase") or "").strip(),
+                skill=str(row.get("skill") or "").strip(),
+                question=str(row.get("question") or "").strip(),
+                default=str(row.get("default") or "").strip(),
+                options_considered=[str(o) for o in opts] if isinstance(opts, list) else [],
+                source=str(row.get("source") or "").strip(),
+                status=str(row.get("status") or "applied").strip().lower(),
+                notes=str(row.get("notes") or "").strip(),
+            )
+        )
+    return out
 
 
 def _load_qa_results(
@@ -1207,6 +1267,7 @@ def _load_opp_flat(
     verdicts_by_skill = _load_verdicts(client, opp_tree, registered_skills)
     qa_results_by_skill = _load_qa_results(client, opp_tree)
     gates_by_skill = _gates_from_state(state_data)
+    decisions = _load_decisions(client, opp_tree)
 
     steps = _build_steps(
         skill_registry,
@@ -1229,6 +1290,7 @@ def _load_opp_flat(
         notes="",
         steps=steps,
         folder_id=opp_folder.id,
+        decisions=decisions,
     )
 
     opp_manifest = OppManifest(
@@ -1320,6 +1382,7 @@ def _load_opp_run(
     verdicts_by_skill = _load_verdicts(client, run_tree, registered_skills)
     qa_results_by_skill = _load_qa_results(client, run_tree)
     gates_by_skill = _gates_from_state(state_data)
+    decisions = _load_decisions(client, run_tree)
 
     steps = _build_steps(
         skill_registry,
@@ -1346,6 +1409,7 @@ def _load_opp_run(
         notes="",
         steps=steps,
         folder_id=run_folder_id,
+        decisions=decisions,
     )
 
     opp_manifest = OppManifest(

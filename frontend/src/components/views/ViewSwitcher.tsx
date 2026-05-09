@@ -2,7 +2,6 @@ import {
   BarChart3,
   Clock,
   Film,
-  GitBranch,
   GitCompareArrows,
   Layers,
   LayoutGrid,
@@ -11,7 +10,6 @@ import {
 
 export type ViewKind =
   | "hierarchy"
-  | "flow"
   | "timeline"
   | "workbench"
   | "phase"
@@ -35,7 +33,6 @@ interface Props {
 
 const ICONS: Record<ViewKind, React.ComponentType<{ className?: string }>> = {
   hierarchy: ListTree,
-  flow: GitBranch,
   timeline: Clock,
   workbench: LayoutGrid,
   phase: Layers,

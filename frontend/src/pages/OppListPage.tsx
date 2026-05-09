@@ -9,7 +9,6 @@ import { CompareWithDialog } from "../components/opps/CompareWithDialog";
 import { DeleteOppDialog } from "../components/opps/DeleteOppDialog";
 import { NewOppDialog } from "../components/opps/NewOppDialog";
 import { OppChatChildren } from "../components/views/hierarchy/OppChatChildren";
-import { PlaceholderView } from "../components/views/PlaceholderView";
 import { TimelineView } from "../components/views/TimelineView";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
 import { useViewMode } from "../hooks/useViewMode";
@@ -44,18 +43,10 @@ const STATUS_RANK: Record<string, number> = {
   ok: 2,
 };
 
-// Workspace-wide view tabs. Flow is disabled at this scope — it's per-opp
-// only — but rendered so users can SEE that other modes exist; clicking
-// it shows a tooltip explaining why it's not active here. Hierarchy is
-// the default; Timeline ships in a follow-up sprint.
+// Workspace-wide view tabs. Hierarchy is the default; Timeline ships
+// in a follow-up sprint.
 const VIEW_TABS: ViewTab[] = [
   { kind: "hierarchy", label: "Hierarchy" },
-  {
-    kind: "flow",
-    label: "Flow",
-    disabled: true,
-    disabledReason: "Open an opp to see its flow view",
-  },
   { kind: "timeline", label: "Timeline" },
 ];
 
@@ -258,7 +249,6 @@ export default function OppListPage() {
           <TimelineView />
         </div>
       )}
-      {view === "flow" && <PlaceholderView kind="flow" />}
       {view === "hierarchy" && (visibleOpps.length === 0 ? (
         filter || needsReviewOnly ? (
           <EmptyState
