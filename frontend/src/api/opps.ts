@@ -9,6 +9,7 @@ import type {
   OppCard,
   OppCompare,
   OppSnapshot,
+  RunSummary,
   Scorecard,
   StepDetail,
   WorkingSessionResponse,
@@ -133,6 +134,10 @@ export function discussStep(
     `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(skill)}/discuss`,
     { method: "POST" },
   );
+}
+
+export function listOppRuns(slug: string): Promise<RunSummary[]> {
+  return request<RunSummary[]>(`/opps/${encodeURIComponent(slug)}/runs`);
 }
 
 export function forkOpp(

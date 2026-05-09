@@ -10,6 +10,7 @@ import { CompareWithDialog } from "../components/opps/CompareWithDialog";
 import { DeleteOppDialog } from "../components/opps/DeleteOppDialog";
 import { NewOppDialog } from "../components/opps/NewOppDialog";
 import { OppChatChildren } from "../components/views/hierarchy/OppChatChildren";
+import { OppRunsList } from "../components/views/hierarchy/OppRunsList";
 import { TimelineView } from "../components/views/TimelineView";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
 import { useViewMode } from "../hooks/useViewMode";
@@ -421,7 +422,10 @@ export default function OppListPage() {
               )}
             </Link>
             {isExpanded && workspaceSlug && (
-              <OppChatChildren oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
+              <>
+                <OppRunsList oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
+                <OppChatChildren oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
+              </>
             )}
             </div>
             );

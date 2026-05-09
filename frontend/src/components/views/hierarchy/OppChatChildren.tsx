@@ -57,8 +57,13 @@ export function OppChatChildren({ oppSlug, workspaceSlug }: Props) {
   }
 
   return (
-    <ul className="divide-y divide-border/60 border-t border-border/60 bg-muted/20">
-      {chats.map((c) => (
+    <div className="border-t border-border/60 bg-muted/20">
+      <header className="flex items-center gap-2 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <MessageSquare className="h-3 w-3" />
+        Chats <span className="font-normal text-muted-foreground/70">· {chats.length}</span>
+      </header>
+      <ul className="divide-y divide-border/40">
+        {chats.map((c) => (
         <li key={c.slug} className="flex items-center gap-2 px-4 py-1.5 text-xs">
           <MessageSquare className="h-3 w-3 shrink-0 text-muted-foreground/70" />
           <Link
@@ -80,7 +85,8 @@ export function OppChatChildren({ oppSlug, workspaceSlug }: Props) {
             {relativeTime(c.updated_at)}
           </span>
         </li>
-      ))}
-    </ul>
+        ))}
+      </ul>
+    </div>
   );
 }

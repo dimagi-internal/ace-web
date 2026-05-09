@@ -83,6 +83,11 @@ def test_runs_list_includes_all_fields(authed_client):
     assert row["mode"] == "review"
     assert row["last_actor"] == "ace@dimagi.com"
     assert row["last_actor_at"] == "2026-05-02T18:42:00Z"
+    # Display-name fields are present in the response shape (value may be
+    # null when the slug isn't in the plugin registry — the inline runs
+    # list on /opps falls back to the slug in that case).
+    assert "current_phase_display" in row
+    assert "current_step_display" in row
 
 
 @pytest.mark.django_db
