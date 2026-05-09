@@ -125,7 +125,13 @@ export function WorkbenchHeader({
             informational — no destructive or primary actions in this
             cluster. */}
         <div className="flex flex-wrap items-center gap-2">
-          <RunSelector runs={runs} selectedRunId={selectedRunId} onChange={onRunChange} />
+          <RunSelector
+            oppSlug={opp.slug}
+            runs={runs}
+            selectedRunId={selectedRunId}
+            onChange={onRunChange}
+            onRunDeleted={onRefresh}
+          />
           {multiRun && (
             <RunHistoryStrip
               runs={multiRun.per_run}

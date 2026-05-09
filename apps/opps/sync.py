@@ -1529,3 +1529,33 @@ def delete_opp_folder(client: DriveClient, *, ace_folder_id: str, slug: str) -> 
             client.trash_folder(child.id)
             return
     raise FileNotFoundError(f"no opp folder named {slug!r} under ACE root")
+
+
+def delete_run_folder(
+    client: DriveClient,
+    *,
+    ace_folder_id: str,
+    opp_slug: str,
+    run_id: str,
+) -> None:
+    """Trash a single run subfolder at ``ACE/<opp_slug>/runs/<run_id>/``.
+
+    Lets operators clean up old / failed / experimental runs without
+    nuking the whole opp. Drive trash is 30-day recoverable.
+
+    Raises FileNotFoundError if the opp folder, runs/ subfolder, or the
+    specific run subfolder doesn't exist. The caller decides whether to
+    surface that as 404 (run never existed) or treat it as already-deleted.
+    """
+    opp_folder = _find_child_folder(client.list_files(ace_folder_id), opp_slug)
+    if opp_folder is None:
+        raise FileNotFoundError(f"no opp folder named {opp_slug!r}")
+    runs_folder = _find_child_folder(client.list_files(opp_folder.id), "runs")
+    if runs_folder is None:
+        raise FileNotFoundError(f"opp {opp_slug!r} has no runs/ subfolder")
+    run_folder = _find_child_folder(client.list_files(runs_folder.id), run_id)
+    if run_folder is None:
+        raise FileNotFoundError(
+            f"no run named {run_id!r} under {opp_slug!r}"
+        )
+    client.trash_folder(run_folder.id)

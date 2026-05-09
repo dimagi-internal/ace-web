@@ -26,6 +26,7 @@ from apps.opps.serializers import (
 from apps.opps.summary import build_summary_payload
 from apps.opps.sync import (
     delete_opp_folder,
+    delete_run_folder,
     list_opp_runs,
     load_opp,
     load_opp_card,
@@ -501,6 +502,52 @@ def opp_fork(request, slug: str):
         }),
         status=201,
     )
+
+
+@api_view(["DELETE"])
+@permission_classes([AllowAny])
+def delete_run(request, slug: str, run_id: str):
+    """DELETE /api/opps/<slug>/runs/<run_id> — trash a single run subfolder.
+
+    Drive trash is 30-day recoverable. The opp folder itself stays
+    intact; only the named run subfolder is moved to trash. Linked
+    chat sessions are NOT cascade-deleted (a chat seeded from a step
+    of this run is still useful as transcript history).
+
+    Returns 204 on success, 404 if the run doesn't exist.
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            error_response("authentication required", code="auth-required"),
+            status=401,
+        )
+    ws, client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        delete_run_folder(
+            client, ace_folder_id=ace_folder_id, opp_slug=slug, run_id=run_id,
+        )
+    except FileNotFoundError as exc:
+        return Response(
+            error_response(str(exc), code="run-not-found"),
+            status=404,
+        )
+
+    # Drop any cached snapshots/cards for this workspace — the
+    # run-folder trash isn't always reflected in the Drive Changes
+    # pageToken before the next list, and a stale snapshot would still
+    # surface the deleted run in the strip / runs list.
+    snapshot_cache.clear_workspace(ws.pk)
+
+    return Response(status=204)
 
 
 @api_view(["GET", "POST"])
