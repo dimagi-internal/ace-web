@@ -246,6 +246,12 @@ def _opp_list_impl(request):
             status=503,
         )
 
+    use_cache = getattr(settings, "OPPS_USE_CHANGES_API", False)
+    if use_cache:
+        changed = drive_changes.observe(ws, client)
+        if changed:
+            snapshot_cache.invalidate(changed)
+
     cards: list[dict] = []
     for child in root_children:
         if child.mime_type != "application/vnd.google-apps.folder":
@@ -272,75 +278,109 @@ def _opp_list_impl(request):
         ):
             continue
 
-        try:
-            card = load_opp_card(client, opp_folder=child, opp_children=opp_children)
-            _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
-            if required_tags and not required_tags.issubset(set(card.opp.tags)):
+        # Fast path: cached OppCard.
+        card = None
+        if use_cache and not request.GET.get("force") == "1":
+            card = snapshot_cache.get_card(ws.pk, child.name)
+
+        if card is None:
+            try:
+                # Use a bypass=True client on the cold-load path to defeat
+                # the underlying Drive TTL cache (Task 7 learning).
+                inner = client._inner if isinstance(client, CachedDriveClient) else client
+                cold_client = CachedDriveClient(inner, bypass=True) if use_cache else client
+                with TouchedFileTracker() as tracker:
+                    card = load_opp_card(cold_client, opp_folder=child, opp_children=opp_children)
+                _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
+                if use_cache:
+                    snapshot_cache.set_card(
+                        workspace_id=ws.pk,
+                        slug=child.name,
+                        card=card,
+                        file_ids=tracker.file_ids,
+                    )
+            except Exception as exc:
+                # A malformed state.yaml or a Drive blip on one opp shouldn't
+                # erase the whole list — but it shouldn't vanish silently
+                # either. Log loudly and surface a placeholder card so the UI
+                # can show "couldn't load" instead of pretending the opp
+                # doesn't exist.
+                log.warning(
+                    "opp_list: failed to load card for %r: %s",
+                    child.name, exc, exc_info=True,
+                )
+                cards.append({
+                    "slug": child.name,
+                    "display_name": child.name,
+                    "labels": [],
+                    "tags": [],
+                    "created_at": None,
+                    "created_by": None,
+                    "current_run_id": None,
+                    "current_phase": None,
+                    "current_phase_display": None,
+                    "current_step": None,
+                    "current_step_display": None,
+                    "status": "error",
+                    "pending_gates": [],
+                    "pending_gates_display": [],
+                    "eval_score": None,
+                    "eval_score_pct": None,
+                    "eval_passed": None,
+                    "last_activity_at": None,
+                    "run_count": 1,
+                    "error": {"message": str(exc) or exc.__class__.__name__},
+                })
                 continue
-            pending_slugs = list(card.pending_gate_skills)
-            cards.append({
-                "slug": card.opp.slug,
-                "display_name": card.opp.display_name,
-                "labels": card.opp.labels,
-                "tags": list(card.opp.tags),
-                "created_at": card.opp.created_at,
-                "created_by": card.opp.created_by,
-                "current_run_id": card.opp.current_run_id,
-                "current_phase": card.current_phase,
-                "current_phase_display": (
-                    phase_lookup.get(card.current_phase)
-                    if card.current_phase
-                    else None
-                ),
-                "current_step": card.current_step,
-                "current_step_display": (
-                    display_lookup.get(card.current_step)
-                    if card.current_step
-                    else None
-                ),
-                "status": card.status,
-                "pending_gates": pending_slugs,
-                "pending_gates_display": [
-                    display_lookup.get(s, s) for s in pending_slugs
-                ],
-                "eval_score": card.eval_score,
-                "eval_score_pct": normalize_score_pct(card.eval_score),
-                "eval_passed": card.eval_passed,
-                "last_activity_at": card.last_activity_at,
-                "run_count": card.run_count,
-            })
-        except Exception as exc:
-            # A malformed state.yaml or a Drive blip on one opp shouldn't
-            # erase the whole list — but it shouldn't vanish silently
-            # either. Log loudly and surface a placeholder card so the UI
-            # can show "couldn't load" instead of pretending the opp
-            # doesn't exist.
-            log.warning(
-                "opp_list: failed to load card for %r: %s",
-                child.name, exc, exc_info=True,
-            )
-            cards.append({
-                "slug": child.name,
-                "display_name": child.name,
-                "labels": [],
-                "tags": [],
-                "created_at": None,
-                "created_by": None,
-                "current_run_id": None,
-                "current_phase": None,
-                "current_phase_display": None,
-                "current_step": None,
-                "current_step_display": None,
-                "status": "error",
-                "pending_gates": [],
-                "pending_gates_display": [],
-                "eval_score": None,
-                "eval_score_pct": None,
-                "eval_passed": None,
-                "last_activity_at": None,
-                "run_count": 1,
-                "error": {"message": str(exc) or exc.__class__.__name__},
-            })
+        else:
+            _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
+
+        if required_tags and not required_tags.issubset(set(card.opp.tags)):
+            continue
+
+        pending_slugs = list(card.pending_gate_skills)
+        cards.append({
+            "slug": card.opp.slug,
+            "display_name": card.opp.display_name,
+            "labels": card.opp.labels,
+            "tags": list(card.opp.tags),
+            "created_at": card.opp.created_at,
+            "created_by": card.opp.created_by,
+            "current_run_id": card.opp.current_run_id,
+            "current_phase": card.current_phase,
+            "current_phase_display": (
+                phase_lookup.get(card.current_phase)
+                if card.current_phase
+                else None
+            ),
+            "current_step": card.current_step,
+            "current_step_display": (
+                display_lookup.get(card.current_step)
+                if card.current_step
+                else None
+            ),
+            "status": card.status,
+            "pending_gates": pending_slugs,
+            "pending_gates_display": [
+                display_lookup.get(s, s) for s in pending_slugs
+            ],
+            "eval_score": card.eval_score,
+            "eval_score_pct": normalize_score_pct(card.eval_score),
+            "eval_passed": card.eval_passed,
+            "last_activity_at": card.last_activity_at,
+            "run_count": card.run_count,
+        })
+
+    if use_cache:
+        import hashlib
+        import json
+        body = json.dumps(cards, sort_keys=True, default=str)
+        list_etag = f"sha256:{hashlib.sha256(body.encode('utf-8')).hexdigest()}"
+        if request.headers.get("If-None-Match") == list_etag:
+            return HttpResponse(status=304, headers={"ETag": list_etag})
+        resp = Response(success_response(cards))
+        resp["ETag"] = list_etag
+        return resp
 
     return Response(success_response(cards))
 

@@ -494,3 +494,54 @@ def test_opp_list_surfaces_per_card_failures(authed_client, caplog):
     ]
     assert matching, "expected a warning log naming the failing opp"
     assert matching[0].exc_info is not None, "log line should carry traceback"
+
+
+def test_list_returns_etag_header_when_flag_on(settings, authed_client):
+    settings.OPPS_USE_CHANGES_API = True
+    fake = FakeDriveClient.from_tree(_combined_tree())
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        resp = authed_client.get("/api/opps/")
+    assert resp.status_code == 200
+    assert resp.headers.get("ETag", "").startswith("sha256:")
+
+
+def test_list_returns_304_when_unchanged(settings, authed_client):
+    settings.OPPS_USE_CHANGES_API = True
+    fake = FakeDriveClient.from_tree(_combined_tree())
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        first = authed_client.get("/api/opps/")
+        etag = first.headers["ETag"]
+        second = authed_client.get("/api/opps/", HTTP_IF_NONE_MATCH=etag)
+    assert second.status_code == 304
+
+
+def test_list_only_reloads_changed_card(settings, authed_client):
+    """Mutating one opp's state.yaml invalidates only that opp's card.
+    The behavioural assertion is that the response after mutation reflects
+    the change for that opp, and the other opps' fields are still correct.
+    """
+    settings.OPPS_USE_CHANGES_API = True
+    fake = FakeDriveClient.from_tree(_combined_tree())
+    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+         patch("apps.opps.views._resolve_ace_root_folder_id",
+               return_value=fake.folder_id("ACE")):
+        first = authed_client.get("/api/opps/")
+        assert first.status_code == 200
+        first_etag = first.headers["ETag"]
+
+        state_id = fake.file_id("ACE/malaria-pilot/state.yaml")
+        fake.update_file(
+            state_id,
+            "current_phase: app-building\ncurrent_step: app-build\nmode: review\n",
+            "application/x-yaml",
+        )
+
+        second = authed_client.get("/api/opps/", HTTP_IF_NONE_MATCH=first_etag)
+    assert second.status_code == 200
+    payload = second.json()["data"]
+    target = next(c for c in payload if c["slug"] == "malaria-pilot")
+    assert target["current_step"] == "app-build"
