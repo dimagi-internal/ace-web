@@ -35,6 +35,13 @@ interface Props {
    */
   onJumpToPhases?: () => void;
   /**
+   * Called after a run is trashed via the RunSelector's per-row trash
+   * icon. Distinct from ``onRefresh`` because the page also needs to
+   * clear the ``?run_id=`` URL param when the active run gets deleted —
+   * otherwise the next snapshot fetch 404s on the now-gone run.
+   */
+  onRunDeleted?: () => void;
+  /**
    * Caller-fetched cost rollup. Lifted from inside CostRollupCard so the
    * lifecycle phase rows can share the same fetch via ``useOppCostRollup``
    * — see OppWorkbenchPage.
@@ -57,6 +64,7 @@ export function WorkbenchHeader({
   onRunChange,
   onRefresh,
   onJumpToPhases,
+  onRunDeleted,
   costRollup,
   multiRun,
   workspaceSlug,
@@ -130,7 +138,7 @@ export function WorkbenchHeader({
             runs={runs}
             selectedRunId={selectedRunId}
             onChange={onRunChange}
-            onRunDeleted={onRefresh}
+            onRunDeleted={onRunDeleted}
           />
           {multiRun && (
             <RunHistoryStrip
