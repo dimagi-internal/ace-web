@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.urls import path
 
-from . import nova_oauth_views, oauth_views, token_views
+from . import cli_authorize_views, nova_oauth_views, oauth_views, token_views
 
 app_name = "auth"
 
@@ -13,6 +13,7 @@ urlpatterns = [
     path("me/", oauth_views.me, name="me"),
     path("nova/initiate/", nova_oauth_views.nova_oauth_initiate, name="nova_initiate"),
     path("nova/callback/", nova_oauth_views.nova_oauth_callback, name="nova_callback"),
+    path("cli/authorize/", cli_authorize_views.cli_authorize, name="cli_authorize"),
 ]
 
 token_urlpatterns = [
