@@ -142,6 +142,102 @@ export const api = {
   health: () => apiFetch<{ status: string }>("/api/health"),
 };
 
+export interface FetchWithEtagResult<T> {
+  status: number;
+  /** Present on 200; undefined on 304. */
+  data?: T;
+  /** Always present (empty string if the server didn't set one). */
+  etag: string;
+}
+
+/**
+ * Lower-level fetch helper for ETag-aware callers.
+ *
+ * Behaves like apiFetch (envelope unwrapping, auth-error redirect, CSRF
+ * + workspace headers) but exposes the raw response status + ETag header
+ * so callers can implement If-None-Match round-trips.
+ *
+ * 304 responses resolve with `{status: 304, data: undefined, etag}` —
+ * the caller is expected to substitute its cached body.
+ */
+export async function apiFetchWithEtag<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<FetchWithEtagResult<T>> {
+  const url = buildUrl(path);
+  const headers = new Headers(init.headers);
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const method = (init.method ?? "GET").toUpperCase();
+  if (UNSAFE_METHODS.has(method) && !headers.has("X-CSRFToken")) {
+    const token = getCsrfToken();
+    if (token) headers.set("X-CSRFToken", token);
+  }
+  if (!headers.has("X-ACE-Workspace")) {
+    const slug = getActiveWorkspaceSlug();
+    if (slug) headers.set("X-ACE-Workspace", slug);
+  }
+  const resp = await fetch(url, { ...init, headers });
+
+  if (resp.status === 401 || resp.status === 403) {
+    const body = await resp.json().catch(() => ({})) as { detail?: string };
+    const isAuthError =
+      body.detail?.includes("credentials were not provided") ||
+      body.detail?.includes("CSRF") ||
+      body.detail?.includes("not authenticated");
+    if (isAuthError) {
+      const loginUrl = `${API_PREFIX}/auth/login/?next=${encodeURIComponent(window.location.pathname)}`;
+      window.location.href = loginUrl;
+      return new Promise<FetchWithEtagResult<T>>(() => {});
+    }
+  }
+
+  const etag = resp.headers.get("ETag") ?? "";
+
+  if (resp.status === 304) {
+    return { status: 304, etag };
+  }
+
+  if (resp.status === 204) {
+    return { status: 204, data: undefined, etag };
+  }
+
+  let envelope: ApiEnvelope<T>;
+  try {
+    envelope = await resp.json();
+  } catch {
+    throw new ApiError("invalid_response", `${resp.status} ${resp.statusText}`);
+  }
+  if (!resp.ok && (!envelope || typeof envelope !== "object")) {
+    throw new ApiError(`http_${resp.status}`, `${resp.status} ${resp.statusText}`);
+  }
+  if (envelope && envelope.error) {
+    throw new ApiError(envelope.error.code, envelope.error.message);
+  }
+  if (!envelope || !("data" in envelope)) {
+    const detail =
+      (envelope as unknown as { detail?: string })?.detail ??
+      `${resp.status} ${resp.statusText}`;
+    throw new ApiError(`http_${resp.status}`, detail);
+  }
+  if (envelope.data === null || envelope.data === undefined) {
+    throw new ApiError("empty_response", "no data in envelope");
+  }
+  return { status: resp.status, data: envelope.data, etag };
+}
+
+/**
+ * `request` variant for ETag-aware callers. Mirrors `request()` by
+ * prefixing the path with `/api`.
+ */
+export function requestWithEtag<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<FetchWithEtagResult<T>> {
+  return apiFetchWithEtag<T>(`/api${path}`, init);
+}
+
 /**
  * Lower-level fetch helper used by the opps API client.
  * Thin wrapper around apiFetch that prefixes the path with /api so
