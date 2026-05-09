@@ -1,0 +1,231 @@
+# Drive CommCare PersonalID from the post-Continue state through to
+# account creation, end-to-end automated.
+#
+# This recipe assumes the +7426 demo-bypass prefix is in use (Connect-id
+# special-cases that range to skip OTP entirely). The non-demo OTP path is
+# not maintained — see CHANGELOG 0.10.x. ACE has no use case for testing
+# real-OTP delivery on a managed test phone.
+#
+# Selectors verified live on CommCare 2.62.0 on 2026-04-29.
+# Registration steps 1–28 verified against ACE_Pixel_API_34_PS (Play
+# Store image) registering +74260000100 from a fresh install. The final
+# photo-capture step (29–30) requires a non-GMS AVD — see the photo
+# section below and the Face-capture gotcha in
+# playbook/integrations/mobile-integration.md.
+#
+# Variables:
+#   ${NAME}         — display name (e.g., "ACE Test User")
+#   ${BACKUP_CODE}  — 6-digit numeric (e.g., "123456")
+#   ${PIN}          — 4-digit PIN for the device App Lock (defaults to "1234")
+#
+# AVD prerequisites:
+#   - hw.camera.front=emulated (auto-patched by mobile_ensure_avd_running
+#     in 0.10.18+; pre-0.10.18 AVDs need a manual edit).
+#   - GMS disabled at runtime via
+#       adb shell pm disable-user --user 0 com.google.android.gms
+#     Both google_apis and google_apis_playstore system images on macOS
+#     ship with functional GMS, so the choice of system image doesn't
+#     matter — the runtime disable is what flips MicroImageActivity into
+#     ManualMode (manual camera_shutter_button visible). Without this
+#     step the recipe stalls waiting for ML Kit to detect a face that
+#     the emulated front camera can never supply. See § Face-capture
+#     gate in playbook/integrations/mobile-integration.md.
+#   - CAMERA permission pre-granted to org.commcare.dalvik via
+#       adb shell pm grant org.commcare.dalvik android.permission.CAMERA
+#     so MicroImageActivity doesn't bail on first launch.
+#   commands/mobile-bootstrap.md step 9 runs both adb commands.
+
+appId: org.commcare.dalvik
+---
+
+# Demo-user snackbar ("I see you're a demo user, so we'll skip the OTP").
+# Auto-fades after ~5s, so this is best-effort: dismiss if still up,
+# otherwise the App Lock screen wait below will catch us up.
+- runFlow:
+    when:
+      visible:
+        id: "org.commcare.dalvik:id/snackbar_action"
+    commands:
+      - tapOn:
+          id: "org.commcare.dalvik:id/snackbar_action"
+
+# App Lock screen offers Configure Fingerprint
+# and Configure PIN; AVD has no fingerprint enrolled so we use PIN.
+- extendedWaitUntil:
+    visible:
+      id: "org.commcare.dalvik:id/connect_verify_pin_button"
+    timeout: 15000
+- tapOn:
+    id: "org.commcare.dalvik:id/connect_verify_pin_button"
+
+# Two branches here:
+#
+#   A) Device has no screen lock yet → CommCare hands off to
+#      com.android.settings/.password.ChooseLockPassword. We pick PIN, set
+#      it, confirm it, dismiss the lock-screen redaction interstitial, then
+#      come back to the App Lock screen and tap AGREE & CONTINUE.
+#   B) Device already has a screen lock (e.g., a prior registration set the
+#      PIN globally) → Configure-PIN immediately surfaces the system unlock
+#      prompt without going through the chooser. Skip A, go straight to the
+#      unlock step further down.
+- runFlow:
+    when:
+      visible:
+        id: "com.android.settings:id/lock_pin"
+    commands:
+      - tapOn:
+          id: "com.android.settings:id/lock_pin"
+      - extendedWaitUntil:
+          visible:
+            id: "com.android.settings:id/password_entry"
+          timeout: 5000
+      - inputText: ${PIN}
+      - tapOn: "NEXT"
+      - waitForAnimationToEnd:
+          timeout: 2000
+      - inputText: ${PIN}
+      - tapOn: "CONFIRM"
+      - extendedWaitUntil:
+          visible:
+            text: "Lock screen"
+          timeout: 5000
+      - tapOn: "DONE"
+      - extendedWaitUntil:
+          visible:
+            text: "AGREE & CONTINUE"
+          timeout: 10000
+      - tapOn: "AGREE & CONTINUE"
+
+# System biometric prompt: "Unlock PersonalID" / "Please unlock to continue".
+# Enter the PIN we just set.
+- extendedWaitUntil:
+    visible:
+      id: "com.android.systemui:id/lockPassword"
+    timeout: 8000
+- tapOn:
+    id: "com.android.systemui:id/lockPassword"
+- inputText: ${PIN}
+- pressKey: Enter
+
+# Second snackbar after successful unlock (same demo-user message). Some
+# CommCare builds re-show it post-unlock; runFlow.when keeps the recipe
+# working whether it appears or not.
+- runFlow:
+    when:
+      visible:
+        id: "org.commcare.dalvik:id/snackbar_action"
+    commands:
+      - tapOn:
+          id: "org.commcare.dalvik:id/snackbar_action"
+
+# Three flow paths to handle (CommCare 2.62.0):
+#
+#   Fresh user, never seen server-side:
+#     Name → Backup Code → Photo capture → home
+#
+#   Server account, no local data (post `-wipe-data` cold boot):
+#     Name (transient) → Backup Code → "Welcome Back" + re-enter Backup
+#     Code → "Account Recovered" → home
+#
+#   Server account + local data (e.g., snapshot reload, demo-bypass phone):
+#     Skip Name → "Welcome Back" + Backup Code → "Account Recovered" → home
+#
+# CommCare 2.62.0 removed the `connect_backup_code_repeat_input` field that
+# older recipes relied on. Both flows now share a single
+# `connect_backup_code_input` + `connect_backup_code_button` widget pair;
+# the differentiator is whether the "Welcome back ACE Test" header
+# (`welcome_back`) appears as a re-confirmation step. We sequence
+# `runFlow.when` checks so each path matches at most one branch and the
+# others skip cleanly. Live-verified 2026-05-01.
+
+# Optional Name screen (skipped on snapshot-reload + already-registered).
+- runFlow:
+    when:
+      visible:
+        id: "org.commcare.dalvik:id/nameTextValue"
+    commands:
+      - tapOn:
+          id: "org.commcare.dalvik:id/nameTextValue"
+      - inputText: ${NAME}
+      - hideKeyboard
+      - tapOn:
+          id: "org.commcare.dalvik:id/personalid_name_continue_button"
+
+# Backup Code screen — single field, both fresh and recovery enter here at
+# least once. erase a generous 12 chars so a pre-filled value doesn't get
+# concatenated.
+- extendedWaitUntil:
+    visible:
+      id: "org.commcare.dalvik:id/connect_backup_code_input"
+    timeout: 15000
+- tapOn:
+    id: "org.commcare.dalvik:id/connect_backup_code_input"
+- eraseText: 12
+- inputText: ${BACKUP_CODE}
+- hideKeyboard
+- tapOn:
+    id: "org.commcare.dalvik:id/connect_backup_code_button"
+
+# Some recovery flows re-prompt with "Welcome back" + the same backup-code
+# field as a confirmation step. Animation latency between screens means
+# the next check needs a beat to settle.
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible:
+        id: "org.commcare.dalvik:id/welcome_back"
+    commands:
+      - tapOn:
+          id: "org.commcare.dalvik:id/connect_backup_code_input"
+      - eraseText: 12
+      - inputText: ${BACKUP_CODE}
+      - hideKeyboard
+      - tapOn:
+          id: "org.commcare.dalvik:id/connect_backup_code_button"
+
+# "Account Recovered" success dialog (every recovery path lands here).
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible:
+        id: "org.commcare.dalvik:id/connect_message_button"
+    commands:
+      - tapOn:
+          id: "org.commcare.dalvik:id/connect_message_button"
+
+# Photo capture (only truly-fresh registration reaches this — server has
+# no prior account, so neither welcome_back nor connect_message_button
+# fired above). Two modes depending on Google Play Services:
+#
+#   * GMS-enabled: MicroImageActivity uses ML Kit face detection to
+#     auto-trigger the shutter when a face stabilizes in the viewfinder.
+#     The AVD's emulated front camera shows a gray test pattern, never a
+#     real face, so this mode hangs forever.
+#   * GMS-disabled: falls back to FaceCaptureView.CaptureMode.ManualMode
+#     and exposes a manual `camera_shutter_button`. Maestro can tap it.
+#
+# 0.10.68 moved GMS toggling to `MobileClient.registerTestUser` —
+# enabled before part A so CommCare's launch check passes, disabled
+# between parts so face-capture in part B picks ManualMode. See the
+# Face-capture gotcha in playbook/integrations/mobile-integration.md.
+- runFlow:
+    when:
+      visible:
+        id: "org.commcare.dalvik:id/take_photo_button"
+    commands:
+      - tapOn:
+          id: "org.commcare.dalvik:id/take_photo_button"
+      - extendedWaitUntil:
+          visible:
+            id: "org.commcare.dalvik:id/camera_shutter_button"
+          timeout: 8000
+      - tapOn:
+          id: "org.commcare.dalvik:id/camera_shutter_button"
+      - extendedWaitUntil:
+          visible:
+            id: "org.commcare.dalvik:id/save_photo_button"
+          timeout: 15000
+      - tapOn:
+          id: "org.commcare.dalvik:id/save_photo_button"

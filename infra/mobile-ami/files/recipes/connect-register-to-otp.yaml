@@ -1,0 +1,108 @@
+# Drive CommCare Android (which integrates Connect/PersonalID as of 2.62.0)
+# from a fresh install through to the post-Continue server response.
+#
+# Flow:
+#   1. Launch CommCare → "Welcome to CommCare" setup screen
+#   2. Open nav drawer (burger icon at ~73,209) → Sign In / Register
+#   3. PersonalIdActivity opens with phone entry form
+#   4. Fill country code, phone, accept consent, continue
+#
+# Selectors verified against CommCare 2.62.0 on 2026-04-29 via uiautomator
+# dump on ACE_Pixel_API_34_PS (google_apis_playstore arm64). The composite
+# caller continues with connect-register-from-otp.yaml from the next screen.
+#
+# Post-Continue: ACE uses the +7426 demo-user bypass prefix exclusively, so
+# the flow lands on the demo snackbar "I see you're a demo user, so we'll
+# skip the OTP" (id snackbar_action / OK button), advancing directly to the
+# App Lock / Unlock Options screen. Real-user OTP entry is intentionally
+# out of scope — ACE deploys against demo phones throughout, and the OTP
+# scrape via /users/connect_user_otp/ is the bootstrap path for those.
+#
+# Critical pre-flight (server-side): ${PHONE} must be pre-invited to a
+# Connect opportunity. Otherwise Connect-id's start_configuration crashes
+# with SystemExit (Sentry CONNECT-ID-3F, filed as CI-643), and CommCare
+# in turn force-stops with NPE (CI-644).
+#
+# Google Play Services phone-hint bottom sheet pops on focus of the
+# AutoCompleteTextView fields (countryCode, connect_primary_phone_input).
+# Dismiss by tapping com.google.android.gms:id/cancel — the sheet IS
+# visible to Maestro's view tree once shown, so runFlow.when works.
+appId: org.commcare.dalvik
+---
+- launchApp:
+    appId: org.commcare.dalvik
+    clearState: true
+
+- extendedWaitUntil:
+    visible:
+      id: "org.commcare.dalvik:id/str_setup_message"
+    timeout: 30000
+
+# Open the navigation drawer (top-left burger icon at this resolution)
+# and tap Sign In / Register.
+- tapOn:
+    point: "73,209"
+- extendedWaitUntil:
+    visible:
+      id: "org.commcare.dalvik:id/nav_drawer_sign_in_button"
+    timeout: 5000
+- tapOn:
+    id: "org.commcare.dalvik:id/nav_drawer_sign_in_button"
+
+- extendedWaitUntil:
+    visible:
+      id: "org.commcare.dalvik:id/countryCode"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Country code: tap → dismiss any phone-hint sheet → tap again → type
+- tapOn:
+    id: "org.commcare.dalvik:id/countryCode"
+- runFlow:
+    when:
+      visible:
+        id: "com.google.android.gms:id/cancel"
+    commands:
+      - tapOn:
+          id: "com.google.android.gms:id/cancel"
+- tapOn:
+    id: "org.commcare.dalvik:id/countryCode"
+- eraseText: 5
+- inputText: ${COUNTRY_CODE}
+
+# Phone: same dance — sheet WILL appear on first focus
+- tapOn:
+    id: "org.commcare.dalvik:id/connect_primary_phone_input"
+- runFlow:
+    when:
+      visible:
+        id: "com.google.android.gms:id/cancel"
+    commands:
+      - tapOn:
+          id: "com.google.android.gms:id/cancel"
+- tapOn:
+    id: "org.commcare.dalvik:id/connect_primary_phone_input"
+- eraseText: 15
+- inputText: ${PHONE_LOCAL}
+
+# Consent + Continue
+- tapOn:
+    id: "org.commcare.dalvik:id/connect_consent_check"
+
+# If the phone is already registered, surface a sentinel for the composite caller.
+- runFlow:
+    when:
+      visible:
+        text: "already registered"
+    commands:
+      - evalScript: ${output.stdout = 'PHONE_ALREADY_REGISTERED'}
+      - stopApp
+
+- tapOn:
+    id: "org.commcare.dalvik:id/personalid_phone_continue_button"
+
+# Wait for the demo-user snackbar (+7426 bypass). Caller
+# (connect-register-from-otp.yaml) handles the rest of the demo flow.
+- waitForAnimationToEnd:
+    timeout: 8000

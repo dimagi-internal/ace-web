@@ -1,0 +1,14 @@
+[Unit]
+Description=Fire ace-idle-shutdown.service every minute
+Documentation=https://github.com/dimagi/ace-web/tree/main/infra/mobile-ami
+
+[Timer]
+# Fire 60s after boot so the emulator has time to come up first, then
+# every 60s thereafter.
+OnBootSec=60s
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit=ace-idle-shutdown.service
+
+[Install]
+WantedBy=timers.target

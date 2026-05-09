@@ -1,0 +1,11 @@
+[Unit]
+Description=ACE mobile emulator idle-shutdown probe (oneshot, fired by .timer)
+Documentation=https://github.com/dimagi/ace-web/tree/main/infra/mobile-ami
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/usr/local/bin/ace-idle-shutdown
+StandardOutput=append:/var/log/ace-mobile/idle-shutdown.log
+StandardError=append:/var/log/ace-mobile/idle-shutdown.log
