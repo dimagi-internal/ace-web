@@ -106,6 +106,13 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
                 phase={selectedPhaseInfo}
                 steps={selectedPhaseSteps}
                 oppSlug={oppSlug}
+                sourceLastActorAt={
+                  // The active run's last_actor_at lives in runs[] (RunSummary)
+                  // — Run itself only has started_at / completed_at.
+                  snapshot.runs.find(
+                    (r) => r.run_id === snapshot.current_run.run_id,
+                  )?.last_actor_at ?? null
+                }
               />
               <div className="flex-1 overflow-y-auto px-4 pb-6">
                 <DecisionsPanel
@@ -242,9 +249,15 @@ interface PhasePanelHeaderProps {
   phase: PhaseInfo;
   steps: Step[];
   oppSlug: string;
+  sourceLastActorAt: string | null;
 }
 
-function PhasePanelHeader({ phase, steps, oppSlug }: PhasePanelHeaderProps) {
+function PhasePanelHeader({
+  phase,
+  steps,
+  oppSlug,
+  sourceLastActorAt,
+}: PhasePanelHeaderProps) {
   const [forkOpen, setForkOpen] = useState(false);
   const total = steps.length;
   const complete = steps.filter((s) => s.status === "complete").length;
@@ -314,6 +327,7 @@ function PhasePanelHeader({ phase, steps, oppSlug }: PhasePanelHeaderProps) {
         sourceSlug={oppSlug}
         forkAtPhase={phase.name}
         forkAtPhaseDisplay={phase.display_name}
+        sourceLastActorAt={sourceLastActorAt}
       />
     </header>
   );

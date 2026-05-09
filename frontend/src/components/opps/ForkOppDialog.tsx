@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { GitFork } from "lucide-react";
+import { AlertTriangle, GitFork, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { forkOpp } from "@/api/opps";
@@ -15,6 +15,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+// After this many ms of "Forking…", show a "still copying" hint so the
+// user knows the dialog hasn't frozen on a large-opp Drive copy.
+const SLOW_AFTER_MS = 10_000;
+// last_actor_at within this many minutes = "opp may still be running".
+// We don't block the fork; just warn so the user doesn't accidentally
+// fork a half-baked state.
+const RECENT_ACTIVITY_MIN = 10;
+
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -24,6 +32,12 @@ interface Props {
   forkAtPhase: string;
   /** Human label for the phase (e.g. ``Design Review``). Used in copy. */
   forkAtPhaseDisplay: string;
+  /**
+   * ISO-8601 timestamp of the source run's last actor activity (from
+   * state.yaml). When within the last RECENT_ACTIVITY_MIN minutes, the
+   * dialog surfaces a warning that the opp may still be running.
+   */
+  sourceLastActorAt?: string | null;
 }
 
 /**
@@ -43,9 +57,11 @@ export function ForkOppDialog({
   sourceSlug,
   forkAtPhase,
   forkAtPhaseDisplay,
+  sourceLastActorAt,
 }: Props) {
   const [slug, setSlug] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [slow, setSlow] = useState(false);
   const navigate = useNavigate();
   const { workspaceSlug } = useParams<{ workspaceSlug?: string }>();
 
@@ -55,9 +71,19 @@ export function ForkOppDialog({
   useEffect(() => {
     if (!open) return;
     setSlug(defaultForkSlug(sourceSlug));
+    setSlow(false);
   }, [open, sourceSlug]);
 
+  // Promote to "still copying…" after SLOW_AFTER_MS so the dialog
+  // doesn't look frozen during a 30-60s Drive copy.
+  useEffect(() => {
+    if (!submitting) return;
+    const t = setTimeout(() => setSlow(true), SLOW_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [submitting]);
+
   const validSlug = SLUG_RE.test(slug) && slug !== sourceSlug;
+  const recentlyActive = isRecentlyActive(sourceLastActorAt);
 
   async function handleFork() {
     if (!validSlug) return;
@@ -100,6 +126,19 @@ export function ForkOppDialog({
             {" "}<strong>The Drive copy is recursive and may take 30–60 seconds.</strong>
           </DialogDescription>
         </DialogHeader>
+        {recentlyActive && !submitting && (
+          <div
+            className="flex items-start gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+            role="alert"
+          >
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              The source opp had activity in the last {RECENT_ACTIVITY_MIN} minutes —
+              forking now copies a possibly-mid-flight state. If a run is
+              actively in progress, wait for it to settle first.
+            </span>
+          </div>
+        )}
         <div className="flex flex-col gap-1.5">
           <label
             htmlFor="fork-new-slug"
@@ -136,12 +175,32 @@ export function ForkOppDialog({
             onClick={handleFork}
             disabled={submitting || !validSlug}
           >
-            {submitting ? "Forking…" : "Fork"}
+            {submitting ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                {slow ? "Still copying…" : "Forking…"}
+              </>
+            ) : (
+              "Fork"
+            )}
           </Button>
         </DialogFooter>
+        {submitting && slow && (
+          <p className="-mt-2 text-[11px] text-muted-foreground">
+            Drive recursive copy in progress. Large opps can take up to a
+            minute. Don't close this tab.
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   );
+}
+
+function isRecentlyActive(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t < RECENT_ACTIVITY_MIN * 60 * 1000;
 }
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;
