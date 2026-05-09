@@ -2,7 +2,7 @@ name: Build Frontend Image
 
 # Auto-builds and pushes the ace-web frontend (nginx sidecar with the Vite
 # bundle baked in) to ECR whenever any frontend file changes on main. The
-# manual deploy workflow (deploy-labs.yml) then assembles the final task
+# manual deploy workflow (deploy-ace-web-labs.yml) then assembles the final task
 # definition using the already-built :latest image, so deploys are fast.
 
 on:

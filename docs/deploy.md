@@ -22,7 +22,7 @@ ALB on AWS ECS Fargate, reusing the shared connect-labs infrastructure
 - **Secrets:** AWS Secrets Manager under the `ace-web/` prefix
 - **Logs:** CloudWatch Logs group `/ecs/labs-jj-ace-web`, 30-day retention
 - **Auth:** CommCare Connect OAuth with PKCE, `@dimagi.com` email filter
-- **Deploy:** GitHub Actions `.github/workflows/deploy-labs.yml` (manual
+- **Deploy:** GitHub Actions `.github/workflows/deploy-ace-web-labs.yml` (manual
   `workflow_dispatch` trigger)
 
 ## First-time setup
@@ -122,7 +122,7 @@ immediately.
 
 ### ALB target-group stickiness
 
-**Auto-applied by `deploy-labs.yml` on every deploy** — see the
+**Auto-applied by `deploy-ace-web-labs.yml` on every deploy** — see the
 "Configure ALB target-group attributes" step. Idempotent
 (`modify-target-group-attributes` is a set-not-merge call), so any
 manual change OR target-group recreation gets healed by the next

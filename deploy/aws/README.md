@@ -10,7 +10,7 @@ AWS deployment artifacts for ace-web.
 ## Deploy flow
 
 1. Developer pushes to `main` (or triggers workflow_dispatch).
-2. `.github/workflows/deploy-labs.yml` runs:
+2. `.github/workflows/deploy-ace-web-labs.yml` runs:
    - Authenticates to AWS via OIDC (AWS_ROLE_ARN secret)
    - Builds backend and frontend images in parallel
    - Pushes both to ECR with tags `:latest` and `:$GITHUB_SHA`
