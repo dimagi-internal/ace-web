@@ -39,7 +39,7 @@ class StepManifest:
     skill_name: str
     phase: str
     ordinal: int
-    # pending | running | complete | judge-fail | gate-pending | gate-rejected | error | skipped
+    # pending | running | complete | judge-fail | qa-failed | error | skipped
     status: str
     started_at: str | None = None
     completed_at: str | None = None
@@ -54,15 +54,6 @@ class JudgeVerdict:
     evaluated_at: str | None
     criteria: dict = field(default_factory=dict)
     rationale: str = ""
-
-
-@dataclass
-class GateDecision:
-    ts: str
-    decision: str  # pending | approved | rejected
-    decided_by: str = ""
-    note: str = ""
-    payload: dict = field(default_factory=dict)
 
 
 @dataclass

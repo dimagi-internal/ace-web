@@ -55,15 +55,15 @@ def test_serialize_opp_snapshot_current_run_has_all_steps(snap):
     assert len(skills) >= 19
 
 
-def test_serialize_step_snapshot_no_judge_no_gates(snap):
-    """When no verdicts/ files and no state.yaml gates: are present, the
-    step payload contains null judge and empty gates for frontend compat."""
+def test_serialize_step_snapshot_no_judge(snap):
+    """When no verdicts/ files are present, the step payload contains a
+    null judge for frontend compat."""
     step_snap = next(
         s for s in snap.current_run.steps if s.step.skill_name == "idea-to-pdd"
     )
     data = serialize_step_snapshot(step_snap)
     assert data["judge"] is None
-    assert data["gates"] == []
+    assert "gates" not in data
 
 
 def test_serialize_step_snapshot_artifacts(snap):

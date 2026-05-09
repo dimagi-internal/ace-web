@@ -4,8 +4,7 @@ Aggregates events from two sources:
 
   1. Postgres — chats (Session creation timestamps; opp linkage carried
      via Session.opp_slug / opp_step_skill).
-  2. Drive — per-opp verdict YAMLs (judge.evaluated_at) and gate
-     decisions (state.yaml gates: ts).
+  2. Drive — per-opp verdict YAMLs (judge.evaluated_at).
 
 Drive aggregation is the hot path: a workspace-wide call iterates every
 opp in the workspace and calls ``load_opp`` for each. We rely on the
@@ -44,7 +43,7 @@ MAX_LIMIT = 500
 # Drive aggregation across a full workspace takes 30-60s the first
 # time (one load_opp call per opp). Cache the result for 60s so
 # subsequent loads — including the chat-only frontend that hits
-# /api/activity/?type=chat first and then /api/activity/?type=verdict,gate
+# /api/activity/?type=chat first and then /api/activity/?type=verdict
 # — return instantly from the warm cache.
 DRIVE_CACHE_SECONDS = 60
 
@@ -52,19 +51,19 @@ DRIVE_CACHE_SECONDS = 60
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def activity_feed(request: Request) -> Response:
-    """Aggregate chats + verdicts + gates as a single timeline.
+    """Aggregate chats + verdicts as a single timeline.
 
     Query params:
       - ``opp``: limit to one opp slug (else all opps in the workspace
         the user is currently scoped to via X-ACE-Workspace).
       - ``type``: comma-separated list of event kinds to include.
-        Default: all (``chat,verdict,gate``).
+        Default: all (``chat,verdict``).
       - ``limit``: max events to return (default 200, max 500).
     """
     opp_slug = request.query_params.get("opp", "").strip() or None
     requested_types = {
         t.strip()
-        for t in request.query_params.get("type", "chat,verdict,gate").split(",")
+        for t in request.query_params.get("type", "chat,verdict").split(",")
         if t.strip()
     }
     try:
@@ -72,11 +71,11 @@ def activity_feed(request: Request) -> Response:
     except ValueError:
         limit = DEFAULT_LIMIT
 
-    needs_drive = "verdict" in requested_types or "gate" in requested_types
+    needs_drive = "verdict" in requested_types
 
     # Workspace resolution is always required (membership gate); Drive
-    # client creation only fires when verdicts/gates are requested. This
-    # lets the chat-only path work in environments where Drive isn't
+    # client creation only fires when verdicts are requested. This lets
+    # the chat-only path work in environments where Drive isn't
     # configured (e.g. dev sandboxes, the test harness without
     # service-account fixtures).
     if needs_drive:
@@ -95,7 +94,7 @@ def activity_feed(request: Request) -> Response:
     if "chat" in requested_types:
         events.extend(_chat_events(request, ws.slug, opp_slug))
 
-    # 2. Verdicts + gates from Drive. Iterate the opp set in scope.
+    # 2. Verdicts from Drive. Iterate the opp set in scope.
     if needs_drive:
         ace_folder_id = _resolve_ace_root_folder_id(ws)
         if ace_folder_id is not None and client is not None:
@@ -104,7 +103,6 @@ def activity_feed(request: Request) -> Response:
                 ace_folder_id,
                 opp_slug,
                 client,
-                requested_types,
             )
             events.extend(drive_events)
 
@@ -159,31 +157,6 @@ def _verdict_events_from_dict(verdicts_by_skill: dict, opp_slug: str) -> list[di
     return out
 
 
-def _gate_events_from_dict(gates_by_skill: dict, opp_slug: str) -> list[dict]:
-    out: list[dict] = []
-    for skill, gates in gates_by_skill.items():
-        for gate in gates:
-            if not gate.ts or gate.decision == "pending":
-                # Skip gates that have no decision yet — those are the
-                # subject of the PendingGatesBanner, not the activity feed.
-                continue
-            out.append(
-                {
-                    "kind": "gate",
-                    "ts": gate.ts,
-                    "opp_slug": opp_slug,
-                    "step_skill": skill,
-                    "title": _gate_title(gate, skill),
-                    "meta": {
-                        "decision": gate.decision,
-                        "decided_by": gate.decided_by,
-                        "note": gate.note,
-                    },
-                }
-            )
-    return out
-
-
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 
 
@@ -192,28 +165,21 @@ def _drive_events_cached(
     ace_folder_id: str,
     opp_slug: str | None,
     client,
-    requested_types: set[str],
 ) -> list[dict]:
-    """Aggregate verdict + gate events for the requested opp scope, with
-    a 60-second cache keyed by (workspace, opp). The cache holds the
-    raw event lists for both kinds; the caller filters by which kinds
-    are actually wanted in the response.
-
-    Cache key intentionally excludes ``requested_types`` — verdict and
-    gate aggregation share the same load_opp() call, so caching the
-    union is strictly more efficient than caching subsets.
+    """Aggregate verdict events for the requested opp scope, with a
+    60-second cache keyed by (workspace, opp).
     """
     key = f"activity:drive:{workspace_slug}:{opp_slug or '*'}"
     cached = cache.get(key)
     if cached is None:
-        cached = {"verdict": [], "gate": []}
+        cached = []
         opp_slugs_in_scope = _opp_scope(client, ace_folder_id, opp_slug)
         for slug in opp_slugs_in_scope:
             try:
-                # Lean per-opp scan — verdicts + gates only, no
-                # recursive walk, no pdd.md read, no manifest match.
+                # Lean per-opp scan — verdicts only, no recursive walk,
+                # no pdd.md read, no manifest match.
                 # See apps/opps/sync.py:list_opp_events_lean.
-                verdicts, gates = list_opp_events_lean(
+                verdicts = list_opp_events_lean(
                     client, ace_folder_id=ace_folder_id, slug=slug,
                 )
             except Exception:
@@ -221,18 +187,9 @@ def _drive_events_cached(
                 # the timeline degrades to "this opp's events are
                 # missing" rather than 500.
                 continue
-            cached["verdict"].extend(
-                _verdict_events_from_dict(verdicts, slug)
-            )
-            cached["gate"].extend(_gate_events_from_dict(gates, slug))
+            cached.extend(_verdict_events_from_dict(verdicts, slug))
         cache.set(key, cached, timeout=DRIVE_CACHE_SECONDS)
-
-    out: list[dict] = []
-    if "verdict" in requested_types:
-        out.extend(cached["verdict"])
-    if "gate" in requested_types:
-        out.extend(cached["gate"])
-    return out
+    return list(cached)
 
 
 def _opp_scope(client, ace_folder_id: str, opp_slug: str | None) -> list[str]:
@@ -255,7 +212,3 @@ def _verdict_title(v, skill: str) -> str:
     if v.score is not None:
         score_str = f" {v.score:g}/100" if v.score > 10 else f" {v.score:.1f}/10"
     return f"{outcome}{score_str} — {skill}"
-
-
-def _gate_title(gate, skill: str) -> str:
-    return f"Gate {gate.decision} — {skill}"

@@ -287,70 +287,6 @@ def test_opp_list_drive_call_budget(authed_client):
     )
 
 
-def test_opp_list_surfaces_pending_gates(authed_client):
-    """An opp whose state.yaml has a ``gates:`` map with a ``pending``
-    decision must show that skill in the card's ``pending_gates`` field.
-    The /opps page uses this to surface a "needs review" badge without
-    needing to drill into the opp.
-    """
-    tree = {
-        "ACE": {
-            "needs-review-opp": {
-                "idea.md": "Idea body",
-                "state.yaml": """current_phase: design-review
-current_step: idea-to-pdd
-gates:
-  idea-to-pdd:
-    decision: pending
-    decided_by: ""
-    decided_at: ""
-    note: ""
-  ocs-agent-setup:
-    decision: pending
-    decided_by: ""
-""",
-            }
-        }
-    }
-    fake = FakeDriveClient.from_tree(tree)
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
-               return_value=fake.folder_id("ACE")):
-        response = authed_client.get("/api/opps/")
-    cards = response.json()["data"]
-    card = next(c for c in cards if c["slug"] == "needs-review-opp")
-    # Sorted alphabetically (deterministic across runs).
-    assert card["pending_gates"] == ["idea-to-pdd", "ocs-agent-setup"]
-
-
-def test_opp_list_omits_approved_gates_from_pending(authed_client):
-    """Approved or rejected gates must NOT appear in pending_gates — only
-    ``decision: pending`` qualifies. Otherwise the "needs review" badge
-    would never clear once a gate had been touched."""
-    tree = {
-        "ACE": {
-            "mixed-gates-opp": {
-                "idea.md": "Idea body",
-                "state.yaml": """gates:
-  idea-to-pdd:
-    decision: approved
-    decided_by: neal@dimagi.com
-  ocs-agent-setup:
-    decision: pending
-""",
-            }
-        }
-    }
-    fake = FakeDriveClient.from_tree(tree)
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
-               return_value=fake.folder_id("ACE")):
-        response = authed_client.get("/api/opps/")
-    cards = response.json()["data"]
-    card = next(c for c in cards if c["slug"] == "mixed-gates-opp")
-    assert card["pending_gates"] == ["ocs-agent-setup"]
-
-
 def test_opp_list_surfaces_opp_eval_score(authed_client):
     """An opp with verdicts/opp-eval-deep.yaml must surface eval_score +
     eval_passed on its card payload. Lets the /opps page render a score
@@ -384,7 +320,6 @@ def test_opp_list_eval_score_blank_for_unjudged_opp(authed_client):
     for card in cards:
         assert card["eval_score"] is None
         assert card["eval_passed"] is None
-        assert card["pending_gates"] == []
 
 
 def test_opp_list_eval_score_prefers_deep_over_monitor_over_quick(authed_client):

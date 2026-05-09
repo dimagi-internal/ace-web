@@ -12,7 +12,6 @@ Folder shape (the one the ACE plugin writes today):
     ACE/<slug>/state.yaml                        (legacy flat layout, pre-0.11.3 rename)
     ACE/<slug>/<subfolder>/*                     (per skill, per manifest)
     ACE/<slug>/verdicts/<skill>-*.yaml           (LLM-as-Judge verdicts)
-    ACE/<slug>/gate-briefs/<skill>.md            (review-mode gate briefs)
 
 Per-opp step rows are synthesized from the dynamic skill registry in
 ``apps.opps.skills`` (loaded from plugin agent frontmatter). The
@@ -37,7 +36,6 @@ from django.conf import settings
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.opps.parsers import (
     Decision,
-    GateDecision,
     JudgeVerdict,
     OppManifest,
     QAFailure,
@@ -64,7 +62,6 @@ class ArtifactRef:
 class StepSnapshot:
     step: StepManifest
     judge: JudgeVerdict | None
-    gates: list[GateDecision]
     artifacts: list[ArtifactRef]
     folder_id: str
     qa_result: QAResult | None = None  # added in PR #146 (QA/Eval split)
@@ -324,7 +321,7 @@ def _drive_file_to_artifact_ref(f: DriveFile) -> ArtifactRef:
     )
 
 
-# --- Verdict + gate extraction ---
+# --- Verdict extraction ---
 
 
 # Two layouts are recognised because the plugin moved verdict files in
@@ -729,47 +726,6 @@ def _load_verdicts(
     return {skill: v for skill, (_, _, v) in candidates.items()}
 
 
-def _gates_from_state(state_data: dict) -> dict[str, list[GateDecision]]:
-    """Derive per-skill gate history from ``state.yaml``'s ``gates:`` map.
-
-    Plugin 0.3.3+ writes::
-
-        gates:
-          idea-to-pdd:
-            decision: approved|pending|rejected
-            decided_by: <email>
-            decided_at: <ISO-8601>
-            note: <string>
-
-    Older opps may just have ``gates: {idea-to-pdd: approved}``. Both
-    shapes are accepted.
-    """
-    out: dict[str, list[GateDecision]] = {}
-    raw = state_data.get("gates") or {}
-    if not isinstance(raw, dict):
-        return out
-    for skill, entry in raw.items():
-        if isinstance(entry, str):
-            out[skill] = [
-                GateDecision(
-                    ts=state_data.get("last_actor_at") or "",
-                    decision=entry,
-                    decided_by=state_data.get("last_actor") or "",
-                    note="",
-                )
-            ]
-        elif isinstance(entry, dict):
-            out[skill] = [
-                GateDecision(
-                    ts=entry.get("decided_at") or "",
-                    decision=entry.get("decision") or "pending",
-                    decided_by=entry.get("decided_by") or "",
-                    note=entry.get("note") or "",
-                )
-            ]
-    return out
-
-
 # --- Lean event aggregation (for the activity feed) ---
 
 
@@ -778,8 +734,8 @@ def list_opp_events_lean(
     *,
     ace_folder_id: str,
     slug: str,
-) -> tuple[dict[str, JudgeVerdict], dict[str, list[GateDecision]]]:
-    """Fast verdict + gate aggregation for the activity feed.
+) -> dict[str, JudgeVerdict]:
+    """Fast verdict aggregation for the activity feed.
 
     Skips the expensive parts of ``load_opp``:
       - No recursive walk of the whole opp folder (saves the bulk of
@@ -792,36 +748,34 @@ def list_opp_events_lean(
       1. List ACE root (typically already done by caller; we re-list
          here for safety because the caller may pass a stale cache).
       2. List opp folder top-level (1 call).
-      3. Read state.yaml (1 call) → gates.
-      4. List ``verdicts/`` if present (1 call).
-      5. Read each verdict YAML in that folder (N calls).
+      3. List ``verdicts/`` if present (1 call).
+      4. Read each verdict YAML in that folder (N calls).
 
-    Total: 4 + N. Compare with load_opp's ~30+ calls (the recursive
+    Total: 3 + N. Compare with load_opp's ~30+ calls (the recursive
     walk dominates at depth-2+ trees).
 
-    Returns ``({skill: JudgeVerdict}, {skill: [GateDecision, ...]})`` —
-    same shape the activity feed already consumes via _verdict_events
-    and _gate_events.
+    Returns ``{skill: JudgeVerdict}`` — same shape the activity feed
+    consumes via ``_verdict_events_from_dict``.
 
     Multi-run aware: when the opp has a ``runs/`` subfolder (current
-    ACE-plugin shape), reads ``state.yaml`` and ``verdicts/`` from the
-    latest run instead of the opp root. Without this, new-layout opps
-    silently produce empty timelines.
+    ACE-plugin shape), reads ``verdicts/`` from the latest run instead
+    of the opp root. Without this, new-layout opps silently produce
+    empty timelines.
     """
     # 1. Locate the opp folder
     ace_children = client.list_files(ace_folder_id)
     opp_folder = _find_child_folder(ace_children, slug)
     if opp_folder is None:
-        return {}, {}
+        return {}
 
     # 2. List opp folder top-level (NOT recursive)
     opp_children = client.list_files(opp_folder.id)
 
-    # Multi-run layout: state.yaml and verdicts/ live under runs/<latest>/.
-    # Pick the newest run-folder by name (sorts as string — timestamp run-IDs
-    # are lexicographically newest-first when reversed). Fall through to the
+    # Multi-run layout: verdicts/ lives under runs/<latest>/. Pick the
+    # newest run-folder by name (sorts as string — timestamp run-IDs are
+    # lexicographically newest-first when reversed). Fall through to the
     # opp root if no usable run is found, matching the flat-layout behaviour.
-    state_source_children: list[DriveFile] = opp_children
+    verdict_source_children: list[DriveFile] = opp_children
     runs_folder = _find_child_folder(opp_children, "runs")
     if runs_folder is not None:
         run_children = client.list_files(runs_folder.id)
@@ -832,22 +786,11 @@ def list_opp_events_lean(
         for rf in run_folders:
             run_inner = client.list_files(rf.id)
             if _find_state_file(run_inner) is not None:
-                state_source_children = run_inner
+                verdict_source_children = run_inner
                 break
 
-    # 3. Read state.yaml → gates
-    state_file = _find_state_file(state_source_children)
-    state_data: dict = {}
-    if state_file is not None:
-        try:
-            raw = _read_text(client, state_file)
-            state_data = yaml.safe_load(raw) or {}
-        except (yaml.YAMLError, Exception):  # noqa: BLE001
-            state_data = {}
-    gates_by_skill = _gates_from_state(state_data)
-
-    # 4. Find verdicts/ folder + list its contents
-    verdicts_folder = _find_child_folder(state_source_children, "verdicts")
+    # 3. Find verdicts/ folder + list its contents
+    verdicts_folder = _find_child_folder(verdict_source_children, "verdicts")
     verdict_files: list[DriveFile] = []
     if verdicts_folder is not None:
         # Set path on each so _load_verdicts' regex matches "verdicts/<stem>.yaml"
@@ -856,9 +799,8 @@ def list_opp_events_lean(
             f.path = f"verdicts/{f.name}"
             verdict_files.append(f)
 
-    # 5. Reuse existing _load_verdicts (parses + dedupes by skill).
-    verdicts_by_skill = _load_verdicts(client, verdict_files)
-    return verdicts_by_skill, gates_by_skill
+    # 4. Reuse existing _load_verdicts (parses + dedupes by skill).
+    return _load_verdicts(client, verdict_files)
 
 
 # --- opp.yaml helper ---
@@ -909,7 +851,6 @@ class OppCard:
     current_phase: str | None
     current_step: str | None
     status: str
-    pending_gate_skills: list[str]      # skills with gate decision == "pending"
     eval_score: float | None            # latest opp-eval overall_score (0-100), if any
     eval_passed: bool | None            # latest opp-eval verdict pass/fail, if any
     last_activity_at: str | None        # state.yaml modifiedTime (ISO-8601), if present
@@ -1018,14 +959,6 @@ def load_opp_card(
         current_run_id=current_run_id,
     )
 
-    # Gates come for free from state.yaml — no extra Drive call.
-    gates_by_skill = _gates_from_state(state_data)
-    pending = sorted(
-        skill
-        for skill, history in gates_by_skill.items()
-        if history and history[-1].decision == "pending"
-    )
-
     # opp-eval verdict — only fetched when the run/opp has a verdicts/
     # subfolder AND it contains an opp-eval-*.yaml.
     eval_score, eval_passed = _load_opp_eval_summary(client, state_source_children)
@@ -1039,7 +972,6 @@ def load_opp_card(
         current_phase=state_data.get("current_phase") or state_data.get("phase"),
         current_step=state_data.get("current_step") or state_data.get("step"),
         status="ok" if state_file is not None else "no-state",
-        pending_gate_skills=pending,
         eval_score=eval_score,
         eval_passed=eval_passed,
         last_activity_at=state_file.modified_time if state_file is not None else None,
@@ -1266,14 +1198,12 @@ def _load_opp_flat(
     registered_skills = {s.name for s in skill_registry}
     verdicts_by_skill = _load_verdicts(client, opp_tree, registered_skills)
     qa_results_by_skill = _load_qa_results(client, opp_tree)
-    gates_by_skill = _gates_from_state(state_data)
     decisions = _load_decisions(client, opp_tree)
 
     steps = _build_steps(
         skill_registry,
         artifacts_by_skill,
         verdicts_by_skill,
-        gates_by_skill,
         opp_folder.id,
         qa_results_by_skill=qa_results_by_skill,
     )
@@ -1381,14 +1311,12 @@ def _load_opp_run(
     registered_skills = {s.name for s in skill_registry}
     verdicts_by_skill = _load_verdicts(client, run_tree, registered_skills)
     qa_results_by_skill = _load_qa_results(client, run_tree)
-    gates_by_skill = _gates_from_state(state_data)
     decisions = _load_decisions(client, run_tree)
 
     steps = _build_steps(
         skill_registry,
         artifacts_by_skill,
         verdicts_by_skill,
-        gates_by_skill,
         run_folder_id,
         qa_results_by_skill=qa_results_by_skill,
     )
@@ -1434,7 +1362,6 @@ def _build_steps(
     skill_registry,
     artifacts_by_skill: dict[str, list[ArtifactRef]],
     verdicts_by_skill: dict[str, JudgeVerdict],
-    gates_by_skill: dict[str, list[GateDecision]],
     folder_id: str,
     qa_results_by_skill: dict[str, QAResult] | None = None,
 ) -> list[StepSnapshot]:
@@ -1443,13 +1370,8 @@ def _build_steps(
     steps: list[StepSnapshot] = []
     for skill_meta in skill_registry:
         artifacts = artifacts_by_skill.get(skill_meta.name, [])
-        gate_entries = gates_by_skill.get(skill_meta.name, [])
         qa_result = qa_results_by_skill.get(skill_meta.name)
-        if gate_entries and gate_entries[-1].decision == "rejected":
-            status = "gate-rejected"
-        elif gate_entries and gate_entries[-1].decision == "pending":
-            status = "gate-pending"
-        elif qa_result is not None and qa_result.verdict == "fail":
+        if qa_result is not None and qa_result.verdict == "fail":
             # QA failed irrecoverably; eval was skipped.
             # Surface as a distinct status so the UI can show the
             # auto-fix attempts + remaining failures.
@@ -1469,7 +1391,6 @@ def _build_steps(
             StepSnapshot(
                 step=step_manifest,
                 judge=verdicts_by_skill.get(skill_meta.name),
-                gates=gate_entries,
                 artifacts=artifacts,
                 folder_id=folder_id,
                 qa_result=qa_result,

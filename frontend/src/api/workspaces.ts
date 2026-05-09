@@ -148,15 +148,3 @@ export interface ActivityRow {
 export function listActivity(slug: string): Promise<ActivityRow[]> {
   return apiFetch<ActivityRow[]>(`/api/workspaces/${slug}/activity/`);
 }
-
-import type { PendingReview } from "./types";
-
-export function listPendingReviews(
-  slug: string,
-  opts?: { force?: boolean },
-): Promise<{ pending: PendingReview[] }> {
-  const q = opts?.force ? "?force=1" : "";
-  return apiFetch<{ pending: PendingReview[] }>(
-    `/api/workspaces/${slug}/pending-reviews/${q}`,
-  );
-}

@@ -19,7 +19,7 @@ from typing import Any
 
 from django.conf import settings
 
-from apps.opps.parsers import Decision, GateDecision, JudgeVerdict, OppManifest, QAResult
+from apps.opps.parsers import Decision, JudgeVerdict, OppManifest, QAResult
 from apps.opps.previews import build_preview
 from apps.opps.sync import (
     ArtifactRef,
@@ -104,15 +104,6 @@ def serialize_judge(j: JudgeVerdict | None) -> dict | None:
     }
 
 
-def serialize_gate(g: GateDecision) -> dict:
-    return {
-        "ts": g.ts,
-        "decision": g.decision,
-        "decided_by": g.decided_by,
-        "note": g.note,
-    }
-
-
 def serialize_qa_result(qa: QAResult | None) -> dict | None:
     """Serialize a QAResult for the API.
 
@@ -187,7 +178,6 @@ def serialize_step_snapshot(
         "preview_text": build_preview(step_snap, bodies),
         "judge": serialize_judge(step_snap.judge),
         "qa_result": serialize_qa_result(step_snap.qa_result),
-        "gates": [serialize_gate(g) for g in step_snap.gates],
         "artifacts": [serialize_artifact(a) for a in step_snap.artifacts],
     }
 

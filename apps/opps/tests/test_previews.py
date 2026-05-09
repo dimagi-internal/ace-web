@@ -8,7 +8,6 @@ def _step(skill: str, artifacts: list[str] | None = None) -> StepSnapshot:
     return StepSnapshot(
         step=StepManifest(skill_name=skill, phase="", ordinal=0, status="complete"),
         judge=None,
-        gates=[],
         artifacts=[
             ArtifactRef(
                 name=a, drive_file_id=f"fake-{a}", drive_web_link="",

@@ -160,11 +160,6 @@ export interface OppCard {
   // metadata. Null when ``current_step`` is null or unknown.
   current_step_display: string | null;
   status: string;
-  pending_gates: string[];
-  // Parallel to ``pending_gates`` — same length and order, with each
-  // skill slug replaced by its display_name. Falls back to the slug
-  // for unknown skills. UI prefers this over ``pending_gates``.
-  pending_gates_display: string[];
   eval_score: number | null;
   // Server-normalized 0-100. Same shape as Judge.score_pct.
   eval_score_pct: number | null;
@@ -200,13 +195,6 @@ export interface Judge {
   evaluated_at: string | null;
   criteria: Record<string, JudgeCriterionValue>;
   rationale: string;
-}
-
-export interface Gate {
-  ts: string;
-  decision: "pending" | "approved" | "rejected";
-  decided_by: string;
-  note: string;
 }
 
 // Structural QA verdict on a producer artifact (added by ACE PR #146 +
@@ -248,7 +236,6 @@ export interface Step {
   preview_text: string;
   judge: Judge | null;
   qa_result: QAResult | null;
-  gates: Gate[];
   artifacts: Artifact[];
 }
 
@@ -339,9 +326,6 @@ export interface OppCompareSummary {
   score_b: number | null;
   passed_b: boolean | null;
   score_delta: number | null;
-  pending_gates_a: number;
-  pending_gates_b: number;
-  pending_gates_delta: number;
 }
 
 export interface OppCompare {
@@ -497,7 +481,6 @@ export interface PerRunSummary {
   mean_score: number | null;
   complete_count: number;
   total_count: number;
-  gate_pending_count: number;
   phase_scores: Record<
     string,
     { mean_score: number | null; complete: number; total: number }
@@ -522,17 +505,3 @@ export interface MultiRunSummary {
   skill_index: SkillIndexEntry[];
 }
 
-// ── Workspace-wide gate review queue ──
-
-export interface PendingReview {
-  opp_slug: string;
-  opp_display_name: string;
-  run_id: string;
-  skill_name: string;
-  phase: string;
-  ordinal: number;
-  score: number | null;
-  gate_decided_by: string | null;
-  gate_ts: string | null;
-  gate_note: string | null;
-}

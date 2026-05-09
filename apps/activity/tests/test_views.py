@@ -1,10 +1,9 @@
 """Activity-feed endpoint tests.
 
-The Drive-aggregation paths (verdict + gate events) require the full
-Workbench fixture stack (stub plugin, fake Drive, OppWorkspace rows).
-Those paths are exercised end-to-end by the existing opps tests; this
-file scopes to the Postgres-only chat aggregation, which has no Drive
-dependency."""
+The Drive-aggregation path (verdict events) requires the full Workbench
+fixture stack (stub plugin, fake Drive, OppWorkspace rows). That path
+is exercised end-to-end by the existing opps tests; this file scopes
+to the Postgres-only chat aggregation, which has no Drive dependency."""
 from __future__ import annotations
 
 import pytest

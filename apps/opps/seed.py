@@ -8,7 +8,6 @@ The seed is rendered as markdown and includes:
 - The target step's artifacts, with their bodies inlined (each capped to
   ARTIFACT_MAX_CHARS).
 - The latest judge verdict (score, criteria, rationale) if present.
-- The gate history if present.
 - A pointer to the SKILL.md file in the ace plugin repo.
 
 This is a pure function — it takes a DriveClient so it can fetch artifact
@@ -102,16 +101,5 @@ def build_chat_seed(
         if j.rationale:
             sections.append("**rationale:**")
             sections.append(f"> {j.rationale}")
-
-    # Gate history
-    if step_snap.gates:
-        sections.append("## Gate history")
-        for gate in step_snap.gates:
-            line = f"- `{gate.ts}` — **{gate.decision}**"
-            if gate.decided_by:
-                line += f" by `{gate.decided_by}`"
-            if gate.note:
-                line += f" — {gate.note}"
-            sections.append(line)
 
     return "\n\n".join(sections)
