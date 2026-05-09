@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 
 import { getOpp } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
+import { ApiError } from "../api/client";
 import type { OppSnapshot, Step } from "../api/types";
 import { HeatmapView } from "../components/views/HeatmapView";
 import { PhaseView } from "../components/views/PhaseView";
@@ -40,7 +41,7 @@ function humanizeSlug(slug: string): string {
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "error"; message: string }
+  | { kind: "error"; message: string; code: string | null }
   | { kind: "loaded"; snapshot: OppSnapshot };
 
 export default function OppWorkbenchPage() {
@@ -66,7 +67,11 @@ export default function OppWorkbenchPage() {
           // On silent refresh failure, keep the current state so the UI
           // doesn't flip from "loaded" to "error" on a transient network blip.
           if (!opts.silent) {
-            setState({ kind: "error", message: String(err?.message ?? err) });
+            setState({
+              kind: "error",
+              message: String(err?.message ?? err),
+              code: err instanceof ApiError ? err.code : null,
+            });
           }
         });
     },
@@ -113,7 +118,7 @@ export default function OppWorkbenchPage() {
 
   if (state.kind === "loading")
     return <LoadingSpinner label={`Loading ${humanizeSlug(slug)}…`} />;
-  if (state.kind === "error") return <ErrorState message={state.message} onRetry={() => load()} />;
+  if (state.kind === "error") return <ErrorState message={state.message} code={state.code} onRetry={() => load()} />;
 
   const { snapshot } = state;
   const selectedStep: Step | null = selectedSkill
