@@ -178,6 +178,7 @@ through to Google Drive.
   auth pattern. Stream-resume hazards documented in
   `docs/learnings/stream-resume-vercel-open-agents.md`.
 - **Per-session and per-opp cost & timing breakdown**: ace-web aggregates wall time and token costs from uploaded JSONL transcripts at ingest time, persists to `Session.cost_breakdown` (JSONField), and surfaces them as a Cost & Timing tab on session detail and a rollup chip on the Opp Workbench. Phase / skill labels reuse `apps/system/reader.py`'s plugin-derived registry. Aggregator logic in `apps/ingest/cost_aggregator.py`; pricing table in `apps/ingest/pricing.py` (refresh ~twice/year). Sidechain attribution gotcha: `docs/learnings/sidechain-attribution.md`.
+- **Opp Workbench cache (Drive Changes API)**: opp data is read-through to Drive but cached long-lived. Each request polls `drive.changes.list` once (~150 ms) with a Redis-stored pageToken; only file_ids reported as changed invalidate matching `OppSnapshot` / `OppCard` cache entries. Backend serves cached snapshots with an ETag header derived from `sha256(json.dumps(payload, sort_keys=True))`; `If-None-Match` round-trips return 304. Frontend keeps a per-tab `Map<key, {data, etag}>` cache that survives route mounts. Net effect: load any opp once, navigations back are sub-second indefinitely until something in that opp's tree actually changes in Drive (~46-55× speedup on a real opp). Spec: `docs/specs/2026-05-08-opp-cache-redesign.md`. Implementation gotchas: `docs/learnings/opp-cache-architecture.md` (load-bearing details: `workspace.pk` is a slug, cold-load needs `bypass=True`, ETag must hash serialized body not file fingerprints).
 
 ## Learnings (read before touching the relevant area)
 
@@ -203,6 +204,9 @@ Conversation engine (Phase 2):
 
 Cost & timing breakdown:
 - [sidechain-attribution](docs/learnings/sidechain-attribution.md) — `apps/ingest/cost_aggregator.py` rolls subagent assistant turns into the parent skill segment via `parentUuid` → containing-message uuid match. Without this, Phase totals under-report by the cost of every Agent dispatch.
+
+Opp Workbench cache (`apps/opps/`):
+- [opp-cache-architecture](docs/learnings/opp-cache-architecture.md) — Drive Changes API per-request poll + long-lived `OppSnapshot` / `OppCard` cache + ETag round-trip. `workspace.pk` is a slug not an int; cold-load needs `bypass=True` to defeat the inner per-call TTL; ETag is `sha256` of the serialized payload (cold and warm paths must agree); 410 on `pageToken` clears the workspace cache; `_KEY_VERSION` must bump when `OppSnapshot` shape changes.
 
 Frontend:
 - [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs that show wall-clock-driven transitions need explicit setTimeout-driven re-renders.
