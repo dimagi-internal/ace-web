@@ -12,7 +12,7 @@ interface Props {
 
 /**
  * Run-vs-prior-run diff: pick the latest two runs and show
- * per-skill score deltas, gates that landed, and a one-line headline.
+ * per-skill score deltas and a one-line headline.
  *
  * Built for the "I iterated on the plugin, did anything actually
  * improve?" workflow. Defaults to (newest, second-newest) but lets
@@ -131,7 +131,7 @@ export function RunDiffView({ oppSlug, workspaceSlug }: Props) {
         </div>
         <div className="mt-1 text-sm text-foreground">{headline}</div>
 
-        <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+        <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
           <Stat
             label="Mean score Δ"
             a={a.mean_score}
@@ -143,11 +143,6 @@ export function RunDiffView({ oppSlug, workspaceSlug }: Props) {
             a={a.complete_count}
             b={b.complete_count}
             unit={` / ${a.total_count}`}
-          />
-          <Stat
-            label="Pending gates Δ"
-            a={a.gate_pending_count}
-            b={b.gate_pending_count}
           />
         </div>
       </div>

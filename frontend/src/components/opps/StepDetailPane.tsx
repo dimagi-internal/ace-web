@@ -4,11 +4,9 @@ import { ExternalLink, Pencil } from "lucide-react";
 import { getStepDetail } from "../../api/opps";
 import type { Artifact, StepDetail } from "../../api/types";
 import { cn } from "@/lib/utils";
-import { ActionButtons } from "./ActionButtons";
 import { ArtifactBody } from "./ArtifactBody";
 import { DiscussInChatButton } from "./DiscussInChatButton";
 import { EditArtifactDialog } from "./EditArtifactDialog";
-import { GateHistory } from "./GateHistory";
 import { JudgeVerdict } from "./JudgeVerdict";
 import { PatientLoader } from "./LoadingStates";
 
@@ -34,15 +32,7 @@ export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) 
     getStepDetail(slug, runId, skill)
       .then((d) => {
         setDetail(d);
-        // When the step is blocked on a review-mode gate, prefer the
-        // gate-brief artifact as the initial active one so the admin
-        // sees the checklist first. The plugin writes these at
-        // ``gate-briefs/<skill>.md``.
-        const gateBrief =
-          d.status === "gate-pending" || d.status === "gate-rejected"
-            ? d.artifacts.find((a) => a.path.startsWith("gate-briefs/"))
-            : undefined;
-        setActiveArtifact(gateBrief ?? d.artifacts[0] ?? null);
+        setActiveArtifact(d.artifacts[0] ?? null);
       })
       .catch(() => setDetail(null))
       .finally(() => setLoading(false));
@@ -77,20 +67,6 @@ export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) 
           <StatusPill status={detail.status} />
         </div>
       </div>
-
-      {/* Primary actions for THIS step (Run/Rerun, Approve/Reject)
-          come first because they're the per-status decisions a user
-          makes after reading the artifacts. The "Discuss in chat"
-          escape-hatch comes AFTER the artifacts/judge/gate so users
-          read the context before they jump to chat — it was previously
-          stacked above the artifacts and pulled the eye away from
-          the content the user needs to read first. */}
-      <ActionButtons
-        slug={slug}
-        runId={runId}
-        skillName={detail.skill_name}
-        status={detail.status}
-      />
 
       {detail.artifacts.length > 0 && (
         <div>
@@ -180,7 +156,6 @@ export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) 
       )}
 
       <JudgeVerdict judge={detail.judge} />
-      {detail.gates.length > 0 && <GateHistory gates={detail.gates} />}
 
       <DiscussInChatButton slug={slug} runId={runId} skill={skill} />
 
@@ -206,14 +181,11 @@ function StatusPill({ status }: { status: string }) {
     status === "complete" ? "border-green-500/40 bg-green-500/10 text-green-500"
     : status === "running" ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
     : status === "judge-fail" || status === "error" ? "border-destructive/40 bg-destructive/10 text-destructive"
-    : status === "gate-pending" || status === "gate-rejected" ? "border-amber-500/40 bg-amber-500/10 text-amber-500"
     : "border-border bg-muted text-muted-foreground";
   const label =
     status === "complete" ? "complete"
     : status === "running" ? "running"
     : status === "judge-fail" ? "judge failed"
-    : status === "gate-pending" ? "gate awaiting review"
-    : status === "gate-rejected" ? "gate rejected"
     : status === "error" ? "error"
     : status === "skipped" ? "skipped"
     : status === "pending" ? "not started"

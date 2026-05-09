@@ -40,9 +40,7 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
 
   // Auto-select on first load. Priority: phase with a qa-failed step
   // (most urgent system signal) → phase with an open decision (most
-  // actionable for a reviewer) → first phase with steps. The gates
-  // concept was retired in favor of QA / decisions, so we don't fall
-  // back on gate-pending here.
+  // actionable for a reviewer) → first phase with steps.
   useEffect(() => {
     if (selectedPhase) return;
     const decisions = snapshot.current_run.decisions ?? [];

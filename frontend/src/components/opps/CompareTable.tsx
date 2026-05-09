@@ -99,9 +99,6 @@ function StepCell({ step }: { step: Step }) {
           </span>
         )}
       </div>
-      {gateBadge(step) && (
-        <div className="mt-1 text-[10px] font-medium">{gateBadge(step)}</div>
-      )}
       {step.preview_text && (
         <div className="mt-1 line-clamp-2 text-[10px] text-muted-foreground">
           {step.preview_text}
@@ -109,15 +106,6 @@ function StepCell({ step }: { step: Step }) {
       )}
     </div>
   );
-}
-
-function gateBadge(step: Step): string | null {
-  if (!step.gates || step.gates.length === 0) return null;
-  const last = step.gates[step.gates.length - 1];
-  if (last.decision === "pending") return "● no decision";
-  if (last.decision === "approved") return "✓ approved";
-  if (last.decision === "rejected") return "✕ rejected";
-  return null;
 }
 
 function formatScore(s: number): string {

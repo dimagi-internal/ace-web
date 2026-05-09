@@ -166,11 +166,8 @@ function cellBg(
   // Empty / never-ran: very dim.
   if (status === undefined || status === "pending") return "rgba(120,120,120,0.08)";
   if (status === "skipped") return "rgba(120,120,120,0.05)";
-  if (passed === false || status === "judge-fail" || status === "gate-rejected") {
+  if (passed === false || status === "judge-fail") {
     return "rgba(244,63,94,0.55)"; // rose-500 @ alpha
-  }
-  if (status === "gate-pending") {
-    return "rgba(245,158,11,0.45)"; // amber-500 @ alpha
   }
   if (score === null || score === undefined) {
     return "rgba(120,120,120,0.18)";
@@ -188,8 +185,7 @@ function cellLabel(
 ): string {
   if (score !== null && score !== undefined) return String(Math.round(score));
   if (status === "complete") return "✓";
-  if (status === "gate-pending") return "⚠";
-  if (status === "gate-rejected" || status === "judge-fail") return "✗";
+  if (status === "judge-fail") return "✗";
   return "·";
 }
 
@@ -218,7 +214,6 @@ function Legend() {
         { label: "75-89", bg: "rgba(132,204,22,0.45)" },
         { label: "60-74", bg: "rgba(245,158,11,0.45)" },
         { label: "<60", bg: "rgba(244,63,94,0.45)" },
-        { label: "gate", bg: "rgba(245,158,11,0.45)" },
         { label: "fail", bg: "rgba(244,63,94,0.55)" },
         { label: "didn't run", bg: "rgba(120,120,120,0.08)" },
       ].map((s) => (
