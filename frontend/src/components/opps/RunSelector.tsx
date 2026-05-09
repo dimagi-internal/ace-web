@@ -64,15 +64,13 @@ export function RunSelector({
       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Run</span>
       <DropdownMenu>
         <DropdownMenuTrigger
-          className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent disabled:cursor-default disabled:opacity-100"
+          className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent"
           title={selected.run_id}
-          disabled={runs.length <= 1}
         >
           <span>{friendly}</span>
-          {runs.length > 1 && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+          <ChevronDown className="h-3 w-3 text-muted-foreground" />
         </DropdownMenuTrigger>
-        {runs.length > 1 && (
-          <DropdownMenuContent align="start" className="w-64 max-h-96 overflow-y-auto">
+        <DropdownMenuContent align="start" className="w-64 max-h-96 overflow-y-auto">
             {runs.map((r) => (
               <DropdownMenuItem
                 key={r.run_id}
@@ -108,7 +106,6 @@ export function RunSelector({
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
-        )}
       </DropdownMenu>
       {deleteTarget && (
         <DeleteRunDialog
