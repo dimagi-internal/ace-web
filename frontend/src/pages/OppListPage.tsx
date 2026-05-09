@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowDownUp, ChevronDown, ChevronRight, GitCompareArrows, Plus, Trash2, X } from "lucide-react";
 
 import { listOpps } from "../api/opps";
+import { ApiError } from "../api/client";
 import type { OppCard } from "../api/types";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { CompareWithDialog } from "../components/opps/CompareWithDialog";
@@ -17,7 +18,7 @@ import { Button } from "@/components/ui/button";
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "error"; message: string }
+  | { kind: "error"; message: string; code: string | null }
   | { kind: "loaded"; opps: OppCard[] };
 
 type SortKey = "recent" | "score" | "status" | "slug";
@@ -77,7 +78,13 @@ export default function OppListPage() {
     setState({ kind: "loading" });
     listOpps(tagFilter.length > 0 ? tagFilter : undefined)
       .then((opps) => setState({ kind: "loaded", opps }))
-      .catch((err) => setState({ kind: "error", message: String(err?.message ?? err) }));
+      .catch((err) =>
+        setState({
+          kind: "error",
+          message: String(err?.message ?? err),
+          code: err instanceof ApiError ? err.code : null,
+        }),
+      );
   }, [tagFilter]);
 
   useEffect(load, [load]);
@@ -114,7 +121,7 @@ export default function OppListPage() {
     if (state.kind === "loading")
       return <LoadingSpinner label="Loading opportunities…" />;
     if (state.kind === "error")
-      return <ErrorState message={state.message} onRetry={load} />;
+      return <ErrorState message={state.message} code={state.code} onRetry={load} />;
   }
   // For non-hierarchy views, error state still surfaces (so the user
   // sees something is wrong) but loading state is silent — the view's

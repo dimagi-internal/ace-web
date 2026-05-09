@@ -71,21 +71,30 @@ export function EmptyState({
 interface ErrorStateProps {
   title?: string;
   message: string;
+  /**
+   * Structured error code from the backend envelope (e.g. ``drive-not-configured``).
+   * When present, takes precedence over the message-prose heuristic for picking
+   * a friendly explanation. Plumb this from ``ApiError.code`` in callers'
+   * ``.catch`` handlers so the friendly copy reflects the real cause instead
+   * of guessing from substrings ("not found" can mean a 404 OR an SA-not-found
+   * config error — only the code disambiguates).
+   */
+  code?: string | null;
   onRetry?: () => void;
 }
 
 /**
- * Theme-aware error panel. Previously hard-coded ``bg-red-50 text-red-800``
- * which lit up bright pink in dark mode. Maps common API status codes to
- * a friendly explanation; the raw message hides behind a ``details``
- * disclosure for power users.
+ * Theme-aware error panel. Maps the structured error code (or, lacking that,
+ * the message prose) to a friendly explanation; the raw message hides behind
+ * a ``details`` disclosure for power users.
  */
 export function ErrorState({
   title = "Something went wrong",
   message,
+  code,
   onRetry,
 }: ErrorStateProps) {
-  const friendly = friendlyExplanation(message);
+  const friendly = friendlyExplanation(message, code);
   return (
     <div className="m-4 rounded border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
       <div className="font-semibold">{title}</div>
@@ -101,13 +110,34 @@ export function ErrorState({
       )}
       <details className="mt-3 opacity-70">
         <summary className="cursor-pointer text-xs">details</summary>
-        <pre className="mt-1 whitespace-pre-wrap break-all text-xs">{message}</pre>
+        <pre className="mt-1 whitespace-pre-wrap break-all text-xs">
+          {code ? `[${code}] ` : ""}{message}
+        </pre>
       </details>
     </div>
   );
 }
 
-function friendlyExplanation(message: string): string {
+// Known backend error codes → friendly user-facing copy. Add entries here
+// when the backend introduces a new ``code`` in error_response(). Codes are
+// matched as exact strings; the backend is the source of truth (grep
+// ``error_response\(.*code=`` in apps/).
+const CODE_EXPLANATIONS: Record<string, string> = {
+  "drive-not-configured":
+    "Google Drive isn't reachable for this workspace — the ace-drive service account isn't configured in this environment. " +
+    "In local dev, run `/ace:setup` to pull the key from 1Password. " +
+    "In a deployed environment this means a deploy-config drift; check ACE_DRIVE_SA_KEY_JSON in AWS Secrets Manager.",
+};
+
+export function friendlyExplanation(message: string, code?: string | null): string {
+  // Code-first: if the backend told us specifically what went wrong, trust
+  // that over a regex against the prose. Without this, a message like
+  // "Service account 'ace-drive' not found or inactive" matches the generic
+  // /not found/ branch and surfaces a misleading "this was deleted" copy.
+  if (code && CODE_EXPLANATIONS[code]) {
+    return CODE_EXPLANATIONS[code];
+  }
+
   const m = message.trim();
   if (/\b5\d\d\b/.test(m) || /server\s*error/i.test(m)) {
     return "We couldn't load this from Drive — the service may be slow or rate-limited. Wait a moment and try again.";

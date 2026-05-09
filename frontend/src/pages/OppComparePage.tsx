@@ -3,14 +3,23 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowRight, ChevronLeft } from "lucide-react";
 
 import { getOppCompare } from "../api/opps";
+import { ApiError } from "../api/client";
 import type { OppCompare, OppCompareSummary } from "../api/types";
 import { CompareTable } from "../components/opps/CompareTable";
 import { ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "error"; message: string }
+  | { kind: "error"; message: string; code: string | null }
   | { kind: "loaded"; payload: OppCompare };
+
+function errorState(err: unknown): LoadState {
+  return {
+    kind: "error",
+    message: String((err as { message?: string })?.message ?? err),
+    code: err instanceof ApiError ? err.code : null,
+  };
+}
 
 export default function OppComparePage() {
   const { slugA, slugB, workspaceSlug } = useParams<{
@@ -25,9 +34,7 @@ export default function OppComparePage() {
     setState({ kind: "loading" });
     getOppCompare(slugA, slugB)
       .then((payload) => setState({ kind: "loaded", payload }))
-      .catch((err) =>
-        setState({ kind: "error", message: String(err?.message ?? err) }),
-      );
+      .catch((err) => setState(errorState(err)));
   }, [slugA, slugB]);
 
   const wsBase = workspaceSlug ? `/w/${workspaceSlug}` : "";
@@ -37,14 +44,13 @@ export default function OppComparePage() {
     return (
       <ErrorState
         message={state.message}
+        code={state.code}
         onRetry={() => {
           if (!slugA || !slugB) return;
           setState({ kind: "loading" });
           getOppCompare(slugA, slugB)
             .then((payload) => setState({ kind: "loaded", payload }))
-            .catch((err) =>
-              setState({ kind: "error", message: String(err?.message ?? err) }),
-            );
+            .catch((err) => setState(errorState(err)));
         }}
       />
     );

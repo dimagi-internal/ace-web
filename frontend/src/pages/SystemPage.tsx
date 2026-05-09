@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { getSystemOverview } from "../api/system";
+import { ApiError } from "../api/client";
 import type { SystemSnapshot } from "../components/system/types";
 import { SystemHeader } from "../components/system/SystemHeader";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
@@ -10,7 +11,7 @@ import { McpsView } from "../components/system/McpsView";
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "error"; message: string }
+  | { kind: "error"; message: string; code: string | null }
   | { kind: "loaded"; snapshot: SystemSnapshot };
 
 type ViewMode = "pipeline" | "agents" | "mcps";
@@ -24,13 +25,19 @@ export default function SystemPage() {
     setState({ kind: "loading" });
     getSystemOverview()
       .then((snapshot) => setState({ kind: "loaded", snapshot }))
-      .catch((err) => setState({ kind: "error", message: String(err?.message ?? err) }));
+      .catch((err) =>
+        setState({
+          kind: "error",
+          message: String(err?.message ?? err),
+          code: err instanceof ApiError ? err.code : null,
+        }),
+      );
   }, []);
 
   useEffect(load, [load]);
 
   if (state.kind === "loading") return <LoadingSpinner label="Loading system overview…" />;
-  if (state.kind === "error") return <ErrorState message={state.message} onRetry={load} />;
+  if (state.kind === "error") return <ErrorState message={state.message} code={state.code} onRetry={load} />;
 
   const { snapshot } = state;
 
