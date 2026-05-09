@@ -15,6 +15,7 @@ import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
+import { useMultiRunSummary } from "../hooks/useMultiRunSummary";
 import { useOppCostRollup } from "../hooks/useOppCostRollup";
 import { useOppSocket } from "../hooks/useOppSocket";
 import { useViewMode } from "../hooks/useViewMode";
@@ -55,6 +56,7 @@ export default function OppWorkbenchPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
   const costRollup = useOppCostRollup(slug, workspaceSlug);
+  const multiRun = useMultiRunSummary(slug);
 
   const load = useCallback(
     (opts: { silent?: boolean; force?: boolean } = {}) => {
@@ -138,6 +140,7 @@ export default function OppWorkbenchPage() {
         onRefresh={() => load()}
         onJumpToPhases={() => setView("phase")}
         costRollup={costRollup}
+        multiRun={multiRun}
         workspaceSlug={workspaceSlug}
       />
       <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
@@ -152,6 +155,8 @@ export default function OppWorkbenchPage() {
                 selectedSkill={selectedSkill}
                 onSelect={setSelectedSkill}
                 costRollup={costRollup}
+                multiRun={multiRun}
+                currentRunId={snapshot.current_run.run_id}
               />
             </main>
             <section className="w-[560px] shrink-0 overflow-y-auto border-l border-border bg-background">
