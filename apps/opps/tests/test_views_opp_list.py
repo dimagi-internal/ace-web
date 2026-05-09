@@ -497,7 +497,6 @@ def test_opp_list_surfaces_per_card_failures(authed_client, caplog):
 
 
 def test_list_returns_etag_header_when_flag_on(settings, authed_client):
-    settings.OPPS_USE_CHANGES_API = True
     fake = FakeDriveClient.from_tree(_combined_tree())
     with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id",
@@ -508,7 +507,6 @@ def test_list_returns_etag_header_when_flag_on(settings, authed_client):
 
 
 def test_list_returns_304_when_unchanged(settings, authed_client):
-    settings.OPPS_USE_CHANGES_API = True
     fake = FakeDriveClient.from_tree(_combined_tree())
     with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id",
@@ -524,7 +522,6 @@ def test_list_only_reloads_changed_card(settings, authed_client):
     The behavioural assertion is that the response after mutation reflects
     the change for that opp, and the other opps' fields are still correct.
     """
-    settings.OPPS_USE_CHANGES_API = True
     fake = FakeDriveClient.from_tree(_combined_tree())
     with patch("apps.opps.views.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id",

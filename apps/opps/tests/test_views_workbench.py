@@ -68,11 +68,10 @@ def test_workbench_includes_pdd_body(authed_client):
     assert "Malaria Pilot IDD" in data["pdd_body"]
 
 
-# ── ETag / 304 tests (OPPS_USE_CHANGES_API=True) ────────────────────────────
+# ── ETag / 304 tests ──────────────────────────────────────────────────────
 
 
 def test_workbench_returns_etag_header_when_flag_on(settings, authed_client):
-    settings.OPPS_USE_CHANGES_API = True
     fake = FakeDriveClient.from_tree(malaria_pilot_tree())
     resp = _with_fake_drive(authed_client, fake, "/api/opps/malaria-pilot")
     assert resp.status_code == 200
@@ -80,7 +79,6 @@ def test_workbench_returns_etag_header_when_flag_on(settings, authed_client):
 
 
 def test_workbench_returns_304_when_if_none_match_matches(settings, authed_client):
-    settings.OPPS_USE_CHANGES_API = True
     fake = FakeDriveClient.from_tree(malaria_pilot_tree())
     first = _with_fake_drive(authed_client, fake, "/api/opps/malaria-pilot")
     etag = first.headers["ETag"]
@@ -94,7 +92,6 @@ def test_workbench_returns_304_when_if_none_match_matches(settings, authed_clien
 
 
 def test_workbench_returns_200_after_drive_mutation(settings, authed_client):
-    settings.OPPS_USE_CHANGES_API = True
     fake = FakeDriveClient.from_tree(malaria_pilot_tree())
     first = _with_fake_drive(authed_client, fake, "/api/opps/malaria-pilot")
     etag1 = first.headers["ETag"]
@@ -113,7 +110,6 @@ def test_workbench_returns_200_after_drive_mutation(settings, authed_client):
 
 
 def test_workbench_force_param_bypasses_cache(settings, authed_client):
-    settings.OPPS_USE_CHANGES_API = True
     fake = FakeDriveClient.from_tree(malaria_pilot_tree())
     first = _with_fake_drive(authed_client, fake, "/api/opps/malaria-pilot")
     etag = first.headers["ETag"]
