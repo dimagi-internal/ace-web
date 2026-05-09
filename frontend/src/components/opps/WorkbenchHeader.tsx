@@ -3,7 +3,7 @@ import { HelpCircle, RefreshCw, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-import type { Decision, OppCard, Run, RunSummary } from "../../api/types";
+import type { CostRollup, Decision, OppCard, Run, RunSummary } from "../../api/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CostRollupCard } from "./CostRollupCard";
@@ -26,6 +26,12 @@ interface Props {
    * chip falls back to a tooltip with the same info.
    */
   onJumpToPhases?: () => void;
+  /**
+   * Caller-fetched cost rollup. Lifted from inside CostRollupCard so the
+   * lifecycle phase rows can share the same fetch via ``useOppCostRollup``
+   * — see OppWorkbenchPage.
+   */
+  costRollup: CostRollup | null;
   workspaceSlug?: string;
 }
 
@@ -37,6 +43,7 @@ export function WorkbenchHeader({
   onRunChange,
   onRefresh,
   onJumpToPhases,
+  costRollup,
   workspaceSlug,
 }: Props) {
   const navigate = useNavigate();
@@ -138,9 +145,7 @@ export function WorkbenchHeader({
             </button>
           )}
           <TagEditor slug={opp.slug} initialTags={opp.tags ?? []} />
-          {workspaceSlug ? (
-            <CostRollupCard oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
-          ) : null}
+          {workspaceSlug ? <CostRollupCard data={costRollup} /> : null}
           <ScorecardPanel slug={opp.slug} />
         </div>
 
