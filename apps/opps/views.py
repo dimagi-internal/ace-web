@@ -15,6 +15,7 @@ from apps.opps.drive_cache import CachedDriveClient
 from apps.opps.drive_client import get_drive_client
 from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
+from apps.opps.opp_forker import ForkOppError, fork_opp
 from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
     normalize_score_pct,
@@ -425,6 +426,76 @@ def opp_create(request):
     return Response(
         success_response({
             "slug": result.slug,
+            "working_session_slug": result.working_session.slug,
+        }),
+        status=201,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def opp_fork(request, slug: str):
+    """POST /api/opps/<slug>/fork — fork this opp into a new one at the
+    given phase boundary.
+
+    Body: ``{new_slug: <str>, fork_at_phase: <phase-name>}``
+
+    Synchronous Drive-recursive copy; can take 30-60s on large opps.
+    Frontend should show a loading state. Returns the new slug on
+    success; the caller navigates to its workbench.
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            error_response("authentication required", code="auth-required"),
+            status=401,
+        )
+    payload = request.data if isinstance(request.data, dict) else {}
+    new_slug = (payload.get("new_slug") or "").strip()
+    fork_at_phase = (payload.get("fork_at_phase") or "").strip()
+    if not new_slug:
+        return Response(
+            error_response("new_slug is required", code="invalid-slug"),
+            status=400,
+        )
+    if not fork_at_phase:
+        return Response(
+            error_response(
+                "fork_at_phase is required", code="invalid-phase",
+            ),
+            status=400,
+        )
+
+    ws, client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        result = fork_opp(
+            drive=client,
+            ace_root_folder_id=ace_folder_id,
+            owner=request.user,
+            source_slug=slug,
+            new_slug=new_slug,
+            fork_at_phase=fork_at_phase,
+            workspace=ws,
+        )
+    except ForkOppError as exc:
+        status = (
+            409 if exc.code == "slug-taken"
+            else 404 if exc.code == "source-not-found"
+            else 400
+        )
+        return Response(error_response(str(exc), code=exc.code), status=status)
+
+    return Response(
+        success_response({
+            "slug": result.new_slug,
             "working_session_slug": result.working_session.slug,
         }),
         status=201,
