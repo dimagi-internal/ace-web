@@ -7,7 +7,6 @@ from django.core.cache import cache
 from apps.opps.drive_changes import observe
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
 
-
 pytestmark = pytest.mark.django_db
 
 

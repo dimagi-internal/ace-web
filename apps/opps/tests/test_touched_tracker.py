@@ -5,9 +5,8 @@ import pytest
 from django.core.cache import cache
 
 from apps.opps.drive_cache import CachedDriveClient
-from apps.opps.touched_tracker import TouchedFileTracker, current_tracker
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
-
+from apps.opps.touched_tracker import TouchedFileTracker, current_tracker
 
 pytestmark = pytest.mark.django_db
 
