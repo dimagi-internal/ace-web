@@ -87,6 +87,7 @@ class DriveFile:
     size_bytes: int | None = None
     modified_time: str | None = None                # ISO-8601 string, as returned by Drive
     parent_id: str | None = None                    # immediate parent folder id (optional)
+    drive_id: str | None = None                     # shared-drive id; None for My Drive
 
 
 @dataclass
@@ -94,6 +95,24 @@ class FileContent:
     content: str                                    # UTF-8 for text files; base64 for binary
     content_type: str = "text/plain"               # e.g. "text/markdown", "application/json"
     encoding: str | None = None                     # "base64" for binary files
+
+
+@dataclass
+class ChangesPage:
+    """One page of `drive.changes.list` results.
+
+    `changed_file_ids` is the set of file IDs whose state changed (created,
+    modified, removed) since the input page token. `next_page_token` is the
+    token to use on the next `list_changes` call to fetch only what changed
+    after this page; it is durable across calls and process restarts.
+
+    `expired` is True when Drive returned 410 Gone on the input token —
+    callers should treat all caches scoped to this drive as invalid and
+    re-seed via `get_changes_start_page_token`.
+    """
+    changed_file_ids: set[str]
+    next_page_token: str
+    expired: bool = False
 
 
 class DriveClient(ABC):
@@ -146,6 +165,32 @@ class DriveClient(ABC):
         Drive's native trash is 30-day recoverable. We do NOT permanently
         delete — that would defeat accidental-deletion recovery."""
 
+    # --- Changes feed (for cache invalidation) ---
+
+    @abstractmethod
+    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
+        """Return a fresh `pageToken` for `list_changes` from this point in time.
+
+        Used when no token is stored yet, or after a 410 Gone reply forces a
+        full re-seed. Pass `drive_id` for a shared drive; pass None for the
+        SA's My Drive (the `corpora=user` scope).
+        """
+
+    @abstractmethod
+    def list_changes(
+        self, page_token: str, *, drive_id: str | None = None
+    ) -> ChangesPage:
+        """Return one page of changes since `page_token`.
+
+        On 410 Gone (token expired), returns a `ChangesPage` with
+        `expired=True`, `changed_file_ids=set()`, and `next_page_token=""` —
+        callers should re-seed via `get_changes_start_page_token`.
+
+        Drains pagination internally — the caller gets one logical page of
+        all changes since `page_token`, with `next_page_token` ready for
+        the next call.
+        """
+
 
 class GoogleDriveClient(DriveClient):
     """Real Google Drive implementation. Requires authenticated credentials."""
@@ -174,7 +219,7 @@ class GoogleDriveClient(DriveClient):
                 q=f"'{folder_id}' in parents and trashed = false",
                 fields=(
                     "nextPageToken, "
-                    "files(id, name, mimeType, webViewLink, size, modifiedTime)"
+                    "files(id, name, mimeType, webViewLink, size, modifiedTime, driveId)"
                 ),
                 pageSize=page_size,
                 pageToken=page_token,
@@ -207,13 +252,14 @@ class GoogleDriveClient(DriveClient):
             path=path,
             size_bytes=int(size) if size is not None else None,
             modified_time=f.get("modifiedTime"),
+            drive_id=f.get("driveId") or None,
         )
 
     @_drive_retry
     def get_file(self, file_id: str) -> DriveFile:
         f = self._service.files().get(
             fileId=file_id,
-            fields="id, name, mimeType, webViewLink, size, modifiedTime",
+            fields="id, name, mimeType, webViewLink, size, modifiedTime, driveId",
             supportsAllDrives=True,
         ).execute()
         return self._to_drive_file(f, path=f["name"])
@@ -293,6 +339,57 @@ class GoogleDriveClient(DriveClient):
             body={"trashed": True},
             supportsAllDrives=True,
         ).execute()
+
+    @_drive_retry
+    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
+        kwargs: dict = {"supportsAllDrives": True}
+        if drive_id:
+            kwargs["driveId"] = drive_id
+        resp = self._service.changes().getStartPageToken(**kwargs).execute()
+        return resp["startPageToken"]
+
+    @_drive_retry
+    def list_changes(
+        self, page_token: str, *, drive_id: str | None = None
+    ) -> ChangesPage:
+        from googleapiclient.errors import HttpError  # noqa: PLC0415
+
+        changed: set[str] = set()
+        token = page_token
+        try:
+            while True:
+                kwargs: dict = {
+                    "pageToken": token,
+                    "fields": "newStartPageToken,nextPageToken,changes(fileId,removed)",
+                    "supportsAllDrives": True,
+                    "includeItemsFromAllDrives": True,
+                    "pageSize": 1000,
+                    "spaces": "drive",
+                }
+                if drive_id:
+                    kwargs["driveId"] = drive_id
+                resp = self._service.changes().list(**kwargs).execute()
+                for c in resp.get("changes", []):
+                    fid = c.get("fileId")
+                    if fid:
+                        changed.add(fid)
+                next_token = resp.get("nextPageToken")
+                if next_token:
+                    token = next_token
+                    continue
+                # End of pagination: capture newStartPageToken for next observe.
+                return ChangesPage(
+                    changed_file_ids=changed,
+                    next_page_token=resp.get("newStartPageToken", token),
+                    expired=False,
+                )
+        except HttpError as exc:
+            status = getattr(getattr(exc, "resp", None), "status", None)
+            if status in (410, "410"):
+                return ChangesPage(
+                    changed_file_ids=set(), next_page_token="", expired=True,
+                )
+            raise
 
 
 class DriveServiceAccountNotConfigured(RuntimeError):

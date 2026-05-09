@@ -36,7 +36,8 @@ from collections.abc import Iterable
 from django.conf import settings
 from django.core.cache import cache
 
-from apps.opps.drive_client import DriveClient, DriveFile, FileContent
+from apps.opps.drive_client import ChangesPage, DriveClient, DriveFile, FileContent
+from apps.opps.touched_tracker import current_tracker
 
 log = logging.getLogger(__name__)
 
@@ -99,9 +100,17 @@ class CachedDriveClient(DriveClient):
         if not self._bypass:
             hit = cache.get(key)
             if hit is not None:
+                tracker = current_tracker()
+                if tracker is not None:
+                    for f in hit:
+                        tracker.record(f.id, f.modified_time)
                 return hit
         result = self._inner.list_files(folder_id, recursive=recursive, page_size=page_size)
         cache.set(key, result, timeout=self._ttl)
+        tracker = current_tracker()
+        if tracker is not None:
+            for f in result:
+                tracker.record(f.id, f.modified_time)
         return result
 
     def list_folder(self, folder_id: str) -> list[DriveFile]:
@@ -112,9 +121,15 @@ class CachedDriveClient(DriveClient):
         if not self._bypass:
             hit = cache.get(key)
             if hit is not None:
+                tracker = current_tracker()
+                if tracker is not None:
+                    tracker.record(hit.id, hit.modified_time)
                 return hit
         result = self._inner.get_file(file_id)
         cache.set(key, result, timeout=self._ttl)
+        tracker = current_tracker()
+        if tracker is not None:
+            tracker.record(result.id, result.modified_time)
         return result
 
     def get_content(self, file_id: str, mime_type: str) -> FileContent:
@@ -122,9 +137,15 @@ class CachedDriveClient(DriveClient):
         if not self._bypass:
             hit = cache.get(key)
             if hit is not None:
+                tracker = current_tracker()
+                if tracker is not None:
+                    tracker.record(file_id)
                 return hit
         result = self._inner.get_content(file_id, mime_type)
         cache.set(key, result, timeout=self._ttl)
+        tracker = current_tracker()
+        if tracker is not None:
+            tracker.record(file_id)
         return result
 
     # --- Writes (pass-through + invalidate) ---
@@ -159,3 +180,13 @@ class CachedDriveClient(DriveClient):
         # we can't reach the parent's listing key here, but the parent's
         # TTL will expire shortly. Trashing is rare enough that this is fine.
         _invalidate_folder_listings(folder_id)
+
+    # --- Changes feed (pass-through; caching layer doesn't buffer these) ---
+
+    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
+        return self._inner.get_changes_start_page_token(drive_id)
+
+    def list_changes(
+        self, page_token: str, *, drive_id: str | None = None
+    ) -> ChangesPage:
+        return self._inner.list_changes(page_token, drive_id=drive_id)

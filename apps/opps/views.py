@@ -9,9 +9,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
+from apps.opps import drive_changes, snapshot_cache
 from apps.opps.actions import ActionError, ActionPayload, inject_action
 from apps.opps.drive_cache import CachedDriveClient
 from apps.opps.drive_client import get_drive_client
+from apps.opps.touched_tracker import TouchedFileTracker
 from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
 from apps.opps.seed import build_chat_seed
@@ -181,6 +183,22 @@ def _overlay_workspace_display_name(manifest, slug: str, workspace=None) -> None
     manifest.tags = list(opp_ws.tags or [])
 
 
+def _snapshot_etag(snap, *, pairs=None) -> str:
+    """Compute the ETag for an OppSnapshot.
+
+    Always hashes the serialized JSON payload so the ETag is stable
+    across the cold-load and cached-hit paths. The ``pairs`` argument
+    is accepted for forward-compat with any caller that supplies it, but
+    is not used — json-body hashing is simpler and produces a
+    consistent ETag regardless of which Drive modified_time values the
+    client happened to see.
+    """
+    import hashlib
+    import json
+    body = json.dumps(serialize_opp_snapshot(snap), sort_keys=True, default=str)
+    return f"sha256:{hashlib.sha256(body.encode('utf-8')).hexdigest()}"
+
+
 def _opp_list_impl(request):
     """Plain function form of the opp-list handler. Called directly by
     opp_collection (GET) to avoid double-wrapping with @api_view.
@@ -228,6 +246,12 @@ def _opp_list_impl(request):
             status=503,
         )
 
+    use_cache = getattr(settings, "OPPS_USE_CHANGES_API", False)
+    if use_cache:
+        changed = drive_changes.observe(ws, client)
+        if changed:
+            snapshot_cache.invalidate(changed)
+
     cards: list[dict] = []
     for child in root_children:
         if child.mime_type != "application/vnd.google-apps.folder":
@@ -254,75 +278,109 @@ def _opp_list_impl(request):
         ):
             continue
 
-        try:
-            card = load_opp_card(client, opp_folder=child, opp_children=opp_children)
-            _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
-            if required_tags and not required_tags.issubset(set(card.opp.tags)):
+        # Fast path: cached OppCard.
+        card = None
+        if use_cache and not request.GET.get("force") == "1":
+            card = snapshot_cache.get_card(ws.pk, child.name)
+
+        if card is None:
+            try:
+                # Use a bypass=True client on the cold-load path to defeat
+                # the underlying Drive TTL cache (Task 7 learning).
+                inner = client._inner if isinstance(client, CachedDriveClient) else client
+                cold_client = CachedDriveClient(inner, bypass=True) if use_cache else client
+                with TouchedFileTracker() as tracker:
+                    card = load_opp_card(cold_client, opp_folder=child, opp_children=opp_children)
+                _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
+                if use_cache:
+                    snapshot_cache.set_card(
+                        workspace_id=ws.pk,
+                        slug=child.name,
+                        card=card,
+                        file_ids=tracker.file_ids,
+                    )
+            except Exception as exc:
+                # A malformed state.yaml or a Drive blip on one opp shouldn't
+                # erase the whole list — but it shouldn't vanish silently
+                # either. Log loudly and surface a placeholder card so the UI
+                # can show "couldn't load" instead of pretending the opp
+                # doesn't exist.
+                log.warning(
+                    "opp_list: failed to load card for %r: %s",
+                    child.name, exc, exc_info=True,
+                )
+                cards.append({
+                    "slug": child.name,
+                    "display_name": child.name,
+                    "labels": [],
+                    "tags": [],
+                    "created_at": None,
+                    "created_by": None,
+                    "current_run_id": None,
+                    "current_phase": None,
+                    "current_phase_display": None,
+                    "current_step": None,
+                    "current_step_display": None,
+                    "status": "error",
+                    "pending_gates": [],
+                    "pending_gates_display": [],
+                    "eval_score": None,
+                    "eval_score_pct": None,
+                    "eval_passed": None,
+                    "last_activity_at": None,
+                    "run_count": 1,
+                    "error": {"message": str(exc) or exc.__class__.__name__},
+                })
                 continue
-            pending_slugs = list(card.pending_gate_skills)
-            cards.append({
-                "slug": card.opp.slug,
-                "display_name": card.opp.display_name,
-                "labels": card.opp.labels,
-                "tags": list(card.opp.tags),
-                "created_at": card.opp.created_at,
-                "created_by": card.opp.created_by,
-                "current_run_id": card.opp.current_run_id,
-                "current_phase": card.current_phase,
-                "current_phase_display": (
-                    phase_lookup.get(card.current_phase)
-                    if card.current_phase
-                    else None
-                ),
-                "current_step": card.current_step,
-                "current_step_display": (
-                    display_lookup.get(card.current_step)
-                    if card.current_step
-                    else None
-                ),
-                "status": card.status,
-                "pending_gates": pending_slugs,
-                "pending_gates_display": [
-                    display_lookup.get(s, s) for s in pending_slugs
-                ],
-                "eval_score": card.eval_score,
-                "eval_score_pct": normalize_score_pct(card.eval_score),
-                "eval_passed": card.eval_passed,
-                "last_activity_at": card.last_activity_at,
-                "run_count": card.run_count,
-            })
-        except Exception as exc:
-            # A malformed state.yaml or a Drive blip on one opp shouldn't
-            # erase the whole list — but it shouldn't vanish silently
-            # either. Log loudly and surface a placeholder card so the UI
-            # can show "couldn't load" instead of pretending the opp
-            # doesn't exist.
-            log.warning(
-                "opp_list: failed to load card for %r: %s",
-                child.name, exc, exc_info=True,
-            )
-            cards.append({
-                "slug": child.name,
-                "display_name": child.name,
-                "labels": [],
-                "tags": [],
-                "created_at": None,
-                "created_by": None,
-                "current_run_id": None,
-                "current_phase": None,
-                "current_phase_display": None,
-                "current_step": None,
-                "current_step_display": None,
-                "status": "error",
-                "pending_gates": [],
-                "pending_gates_display": [],
-                "eval_score": None,
-                "eval_score_pct": None,
-                "eval_passed": None,
-                "last_activity_at": None,
-                "run_count": 1,
-                "error": {"message": str(exc) or exc.__class__.__name__},
-            })
+        else:
+            _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
+
+        if required_tags and not required_tags.issubset(set(card.opp.tags)):
+            continue
+
+        pending_slugs = list(card.pending_gate_skills)
+        cards.append({
+            "slug": card.opp.slug,
+            "display_name": card.opp.display_name,
+            "labels": card.opp.labels,
+            "tags": list(card.opp.tags),
+            "created_at": card.opp.created_at,
+            "created_by": card.opp.created_by,
+            "current_run_id": card.opp.current_run_id,
+            "current_phase": card.current_phase,
+            "current_phase_display": (
+                phase_lookup.get(card.current_phase)
+                if card.current_phase
+                else None
+            ),
+            "current_step": card.current_step,
+            "current_step_display": (
+                display_lookup.get(card.current_step)
+                if card.current_step
+                else None
+            ),
+            "status": card.status,
+            "pending_gates": pending_slugs,
+            "pending_gates_display": [
+                display_lookup.get(s, s) for s in pending_slugs
+            ],
+            "eval_score": card.eval_score,
+            "eval_score_pct": normalize_score_pct(card.eval_score),
+            "eval_passed": card.eval_passed,
+            "last_activity_at": card.last_activity_at,
+            "run_count": card.run_count,
+        })
+
+    if use_cache:
+        import hashlib
+        import json
+        body = json.dumps(cards, sort_keys=True, default=str)
+        list_etag = f"sha256:{hashlib.sha256(body.encode('utf-8')).hexdigest()}"
+        if request.headers.get("If-None-Match") == list_etag:
+            return HttpResponse(status=304, headers={"ETag": list_etag})
+        resp = Response(success_response(cards))
+        resp["ETag"] = list_etag
+        return resp
 
     return Response(success_response(cards))
 
@@ -492,17 +550,61 @@ def workbench(request, slug: str):
         )
 
     run_id = request.GET.get("run_id") or None
+    force = request.GET.get("force") == "1"
+
+    if not getattr(settings, "OPPS_USE_CHANGES_API", False):
+        # Legacy path — preserved for the rollout window.
+        try:
+            snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
+        except FileNotFoundError:
+            return Response(
+                error_response(f"no opp named {slug!r}", code="opp-not-found"),
+                status=404,
+            )
+        _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
+        return Response(success_response(serialize_opp_snapshot(snap)))
+
+    # New path: validate against Drive Changes API, serve cached if valid.
+    changed = drive_changes.observe(ws, client)
+    if changed:
+        snapshot_cache.invalidate(changed)
+
+    if not force:
+        cached = snapshot_cache.get(workspace_id=ws.pk, slug=slug, run_id=run_id)
+        if cached is not None:
+            _overlay_workspace_display_name(cached.opp, slug, workspace=ws)
+            etag = _snapshot_etag(cached)
+            if request.headers.get("If-None-Match") == etag:
+                return HttpResponse(status=304, headers={"ETag": etag})
+            resp = Response(success_response(serialize_opp_snapshot(cached)))
+            resp["ETag"] = etag
+            return resp
+
+    # Cold-load path: bypass the drive-level TTL cache so we always read
+    # fresh content after a cache miss or force=1. The CachedDriveClient
+    # wrapping was done in _require_drive with bypass keyed to ?force; here
+    # we need bypass=True unconditionally so changed-file content isn't
+    # served from a stale TTL entry. We reconstruct from the inner client.
+    inner = client._inner if isinstance(client, CachedDriveClient) else client
+    bypass_client = CachedDriveClient(inner, bypass=True)
 
     try:
-        snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
+        with TouchedFileTracker() as tracker:
+            snap = load_opp(bypass_client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
     except FileNotFoundError:
         return Response(
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
     _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
-
-    return Response(success_response(serialize_opp_snapshot(snap)))
+    snapshot_cache.set(
+        workspace_id=ws.pk, slug=slug, run_id=run_id,
+        snap=snap, file_ids=tracker.file_ids,
+    )
+    etag = _snapshot_etag(snap)
+    resp = Response(success_response(serialize_opp_snapshot(snap)))
+    resp["ETag"] = etag
+    return resp
 
 
 @api_view(["GET"])

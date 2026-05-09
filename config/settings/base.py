@@ -144,6 +144,19 @@ else:
 # to bypass and rebuild from Drive.
 OPPS_DRIVE_CACHE_SECONDS = env.int("OPPS_DRIVE_CACHE_SECONDS", default=30)
 
+# Phase out the 30-second TTL Drive cache in favour of a Drive-Changes-API
+# driven snapshot cache. See docs/specs/2026-05-08-opp-cache-redesign.md.
+# When False (default), views.workbench / _opp_list_impl behave as before
+# — relying on the per-call CachedDriveClient TTL.
+# When True, requests:
+#   1. Call drive_changes.observe to learn which file_ids changed in this
+#      workspace's drive since the last poll.
+#   2. Invalidate matching keys in apps.opps.snapshot_cache.
+#   3. Serve the cached OppSnapshot / OppCard if still valid (with ETag
+#      304 responses when the client's If-None-Match matches).
+#   4. Otherwise re-walk Drive once and cache the result with no TTL.
+OPPS_USE_CHANGES_API = env.bool("OPPS_USE_CHANGES_API", default=False)
+
 # --- Static files (WhiteNoise) ---
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

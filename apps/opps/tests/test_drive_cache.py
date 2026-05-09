@@ -22,7 +22,7 @@ import pytest
 from django.core.cache import cache
 
 from apps.opps.drive_cache import CachedDriveClient
-from apps.opps.drive_client import DriveClient, DriveFile, FileContent
+from apps.opps.drive_client import ChangesPage, DriveClient, DriveFile, FileContent
 
 pytestmark = pytest.mark.django_db
 
@@ -89,6 +89,13 @@ class _FakeDriveClient(DriveClient):
 
     def trash_folder(self, folder_id):
         pass
+
+    # Changes feed stubs — implemented properly in the real client; not needed here.
+    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
+        raise NotImplementedError
+
+    def list_changes(self, page_token: str, *, drive_id: str | None = None) -> ChangesPage:
+        raise NotImplementedError
 
 
 @pytest.fixture

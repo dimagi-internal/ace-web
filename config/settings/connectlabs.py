@@ -39,3 +39,10 @@ CSRF_TRUSTED_ORIGINS = ["https://labs.connect.dimagi.com"]
 # tenants (scout, connect-labs) on the same labs.connect.dimagi.com hostname.
 SESSION_COOKIE_PATH = "/ace/"
 CSRF_COOKIE_PATH = "/ace/"
+
+# 2026-05-08: Drive Changes API + snapshot cache redesign.
+# Spec: docs/specs/2026-05-08-opp-cache-redesign.md
+# Plan: docs/plans/2026-05-08-opp-cache-redesign.md
+# Smoke tested locally; 46x speedup on warm-200, 55x on 304.
+# Force-disable via OPPS_USE_CHANGES_API=false on the ECS task if needed.
+OPPS_USE_CHANGES_API = env.bool("OPPS_USE_CHANGES_API", default=True)  # noqa: F405

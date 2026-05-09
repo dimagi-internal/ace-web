@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
 import { getOpp } from "../api/opps";
+import { dropOpp } from "../api/oppCache";
 import type { OppSnapshot, Step } from "../api/types";
 import { FlowView } from "../components/views/FlowView";
 import { HeatmapView } from "../components/views/HeatmapView";
@@ -90,7 +91,10 @@ export default function OppWorkbenchPage() {
   useOppSocket({
     slug,
     runId,
-    onOppUpdated: () => load({ silent: true, force: true }),
+    onOppUpdated: () => {
+      dropOpp(slug);
+      load({ silent: true });
+    },
   });
 
   useEffect(() => {

@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from itertools import count
 
-from apps.opps.drive_client import DriveClient, DriveFile, FileContent
+from apps.opps.drive_client import ChangesPage, DriveClient, DriveFile, FileContent
 
 
 @dataclass
@@ -50,6 +50,12 @@ class FakeDriveClient(DriveClient):
         self._root = _Node(id="fake-root", name="", parent_id=None, mime_type=self.FOLDER_MIME)
         self._nodes_by_id: dict[str, _Node] = {"fake-root": self._root}
         self._counter = count(1)
+        # Append-only log of (sequence, file_id) pairs. Each mutating
+        # operation calls _record_mutation to add an entry. list_changes
+        # consumes the log, returning ids whose sequence >= the input
+        # token (treated as a decimal sequence number).
+        self._mutation_log: list[tuple[int, str]] = []
+        self._seq = count(1)
 
     @classmethod
     def from_tree(cls, tree: dict) -> FakeDriveClient:
@@ -103,6 +109,9 @@ class FakeDriveClient(DriveClient):
         """Set modified_time on a file-by-path, for test ordering setups."""
         node = self._nodes_by_id[self.folder_id(path)]
         node.modified_time = iso_timestamp
+
+    def _record_mutation(self, file_id: str) -> None:
+        self._mutation_log.append((next(self._seq), file_id))
 
     # --- DriveClient interface ---
 
@@ -159,6 +168,7 @@ class FakeDriveClient(DriveClient):
         )
         parent.children[name] = node
         self._nodes_by_id[nid] = node
+        self._record_mutation(nid)
         return nid
 
     def upload_file(
@@ -173,6 +183,7 @@ class FakeDriveClient(DriveClient):
         )
         parent.children[name] = node
         self._nodes_by_id[nid] = node
+        self._record_mutation(nid)
         return nid
 
     def update_file(self, file_id: str, content: str, mime_type: str) -> None:
@@ -181,6 +192,7 @@ class FakeDriveClient(DriveClient):
             raise ValueError(f"{node.name} is a folder, not a file")
         node.body = content
         node.mime_type = mime_type
+        self._record_mutation(file_id)
 
     def copy_file(
         self, file_id: str, new_parent_id: str, new_name: str | None = None
@@ -199,6 +211,7 @@ class FakeDriveClient(DriveClient):
         )
         parent.children[name] = node
         self._nodes_by_id[nid] = node
+        self._record_mutation(nid)
         return nid
 
     def trash_folder(self, folder_id: str) -> None:
@@ -209,10 +222,44 @@ class FakeDriveClient(DriveClient):
         parent.children.pop(node.name, None)
         # Recursively drop descendants from the id index so get_file 404s.
         def _drop(n):
+            self._record_mutation(n.id)
             for child in list(n.children.values()):
                 _drop(child)
             self._nodes_by_id.pop(n.id, None)
         _drop(node)
+
+    # --- Changes feed (for cache invalidation; matches DriveClient ABC) ---
+
+    def get_changes_start_page_token(self, drive_id: str | None = None) -> str:
+        # Return a token that says "consider only mutations after this one".
+        # We peek without advancing the counter so observers race-free.
+        return str(self._peek_seq())
+
+    def list_changes(
+        self, page_token: str, *, drive_id: str | None = None
+    ) -> ChangesPage:
+        try:
+            since = int(page_token)
+        except ValueError:
+            return ChangesPage(set(), str(self._peek_seq()), expired=False)
+        changed: set[str] = set()
+        max_seen = since
+        for seq, fid in self._mutation_log:
+            if seq >= since:
+                changed.add(fid)
+                max_seen = max(max_seen, seq)
+        return ChangesPage(
+            changed_file_ids=changed,
+            next_page_token=str(max_seen + 1),
+            expired=False,
+        )
+
+    def _peek_seq(self) -> int:
+        # `count` doesn't expose its current value; use the log's max + 1
+        # if any entries exist, else 1 (the first value the counter would emit).
+        if not self._mutation_log:
+            return 1
+        return self._mutation_log[-1][0] + 1
 
 
 # --- Realistic fixture builders ---
