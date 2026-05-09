@@ -88,7 +88,6 @@ function statusGlyph(status: string): string {
   if (status === "complete") return "✓";
   if (status === "running") return "▶";
   if (status === "judge-fail") return "✗";
-  if (status === "gate-pending" || status === "gate-rejected") return "⚠";
   if (status === "error") return "✗";
   if (status === "skipped") return "—";
   return "○";
@@ -98,8 +97,6 @@ function statusLabel(status: string): string {
   if (status === "complete") return "complete";
   if (status === "running") return "running";
   if (status === "judge-fail") return "judge failed";
-  if (status === "gate-pending") return "gate awaiting review";
-  if (status === "gate-rejected") return "gate rejected";
   if (status === "error") return "error";
   if (status === "skipped") return "skipped";
   if (status === "pending") return "pending";
@@ -110,7 +107,6 @@ function statusColor(status: string): string {
   if (status === "complete") return "text-green-500";
   if (status === "running") return "text-blue-400";
   if (status === "judge-fail" || status === "error") return "text-red-500";
-  if (status === "gate-pending" || status === "gate-rejected") return "text-amber-500";
   return "text-muted-foreground";
 }
 

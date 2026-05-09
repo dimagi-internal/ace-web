@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AlertCircle, ArrowDownUp, ChevronDown, ChevronRight, GitCompareArrows, Plus, Trash2, X } from "lucide-react";
+import { ArrowDownUp, ChevronDown, ChevronRight, GitCompareArrows, Plus, Trash2, X } from "lucide-react";
 
 import { listOpps } from "../api/opps";
 import type { OppCard } from "../api/types";
@@ -30,13 +30,12 @@ type SortKey = "recent" | "score" | "status" | "slug";
 const SORT_OPTIONS: { key: SortKey; label: string; title: string }[] = [
   { key: "recent", label: "Last activity", title: "Most recently active opps first" },
   { key: "score", label: "Score (high → low)", title: "Highest opp-eval scores first; opps without a score sink to the bottom" },
-  { key: "status", label: "Needs attention", title: "Load failures and undecided gates first, then everything else" },
+  { key: "status", label: "Needs attention", title: "Load failures first, then opps without state, then everything else" },
   { key: "slug", label: "ID (A → Z)", title: "Alphabetical by opp identifier" },
 ];
 
 // We rank opps the user is most likely to need to look at first:
-// load failures, then opps with no state.yaml, then opps with undecided gates,
-// then everything else.
+// load failures, then opps with no state.yaml, then everything else.
 const STATUS_RANK: Record<string, number> = {
   error: 0,
   "no-state": 1,
@@ -56,7 +55,6 @@ export default function OppListPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [filter, setFilter] = useState("");
   const [tagFilter, setTagFilter] = useState<string[]>([]);
-  const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("recent");
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<OppCard | null>(null);
@@ -85,17 +83,10 @@ export default function OppListPage() {
   useEffect(load, [load]);
 
   const allOpps = state.kind === "loaded" ? state.opps : [];
-  const needsReviewCount = useMemo(
-    () => allOpps.filter((o) => (o.pending_gates ?? []).length > 0).length,
-    [allOpps],
-  );
 
   const visibleOpps = useMemo(() => {
     if (state.kind !== "loaded") return [];
     let out = state.opps;
-    if (needsReviewOnly) {
-      out = out.filter((o) => (o.pending_gates ?? []).length > 0);
-    }
     const needle = filter.trim().toLowerCase();
     if (needle) {
       out = out.filter(
@@ -107,7 +98,7 @@ export default function OppListPage() {
       );
     }
     return sortOpps(out, sortKey);
-  }, [state, filter, sortKey, needsReviewOnly]);
+  }, [state, filter, sortKey]);
 
   const toggleTagFilter = (tag: string) => {
     setTagFilter((prev) =>
@@ -140,29 +131,6 @@ export default function OppListPage() {
         <span className="text-sm text-muted-foreground">
           {state.kind === "loaded" ? `${state.opps.length} total` : "loading…"}
         </span>
-
-        {needsReviewCount > 0 && (
-          <button
-            type="button"
-            aria-pressed={needsReviewOnly}
-            onClick={() => setNeedsReviewOnly((v) => !v)}
-            className={
-              "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition " +
-              (needsReviewOnly
-                ? "bg-amber-500 text-amber-950 hover:bg-amber-400"
-                : "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25")
-            }
-            title={
-              needsReviewOnly
-                ? "Clear filter — show all opps"
-                : "Show only opps with at least one gate awaiting your review"
-            }
-          >
-            <AlertCircle className="h-3.5 w-3.5" />
-            Awaiting review ({needsReviewCount})
-            {needsReviewOnly && <X className="h-3 w-3" />}
-          </button>
-        )}
 
         {tagFilter.length > 0 && (
           <div className="flex items-center gap-1 text-xs">
@@ -250,18 +218,10 @@ export default function OppListPage() {
         </div>
       )}
       {view === "hierarchy" && (visibleOpps.length === 0 ? (
-        filter || needsReviewOnly ? (
+        filter ? (
           <EmptyState
-            title={
-              needsReviewOnly
-                ? "Nothing awaiting review"
-                : "No opps match your filter"
-            }
-            description={
-              needsReviewOnly
-                ? "Every gate has a decision recorded — you're caught up."
-                : "Try a different name or tag."
-            }
+            title="No opps match your filter"
+            description="Try a different name or tag."
           />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center">
@@ -420,31 +380,6 @@ export default function OppListPage() {
                 )}
               </div>
 
-              {/* "Gate brief written, no decision recorded in state.yaml's
-                  gates: map." We deliberately don't say "awaiting review" —
-                  we don't know whether a human looked already and just
-                  didn't record a decision. */}
-              {(opp.pending_gates ?? []).length > 0 && (
-                <div className="mt-2 flex items-start gap-1.5 text-xs text-amber-300">
-                  <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-amber-400" />
-                  <span className="min-w-0">
-                    <span className="font-medium">
-                      {(opp.pending_gates ?? []).length === 1
-                        ? "Awaiting review:"
-                        : `${(opp.pending_gates ?? []).length} gates awaiting review:`}
-                    </span>{" "}
-                    <span
-                      className="truncate text-amber-200"
-                      title={(opp.pending_gates ?? []).join(", ")}
-                    >
-                      {((opp.pending_gates_display ?? []).length > 0
-                        ? opp.pending_gates_display
-                        : opp.pending_gates ?? []
-                      ).join(", ")}
-                    </span>
-                  </span>
-                </div>
-              )}
               {(opp.tags.length > 0 || opp.labels.length > 0) && (
                 <div className="mt-3 flex flex-wrap gap-1">
                   {opp.tags.map((tag) => (

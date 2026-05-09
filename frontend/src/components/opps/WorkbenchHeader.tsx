@@ -88,9 +88,9 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
             </span>
           )}
           {/* Only show the mode pill for "review" — that's the only mode
-              that requires user attention (gates pause for approval).
-              "default" / "auto" / "dry-run" / "sandbox" are passive
-              status info that just adds noise to the header. */}
+              that requires user attention (the plugin pauses for human
+              review at decision points). "default" / "auto" / "dry-run"
+              / "sandbox" are passive status info that just adds noise. */}
           {run.mode === "review" && (
             <span
               className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-500"
@@ -167,7 +167,7 @@ function secondsAgoLabel(when: number): string {
 
 function modeExplanation(mode: string): string {
   if (mode === "auto") return "ACE runs every step without pausing for review";
-  if (mode === "review") return "ACE pauses at gates for human approval";
+  if (mode === "review") return "ACE pauses at decision points for human review";
   if (mode === "default") return "Standard run mode";
   if (mode === "dry-run") return "ACE simulates without writing changes";
   if (mode === "sandbox") return "Isolated test run";

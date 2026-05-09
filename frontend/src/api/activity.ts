@@ -1,6 +1,6 @@
 import { apiFetch } from "./client";
 
-export type ActivityKind = "chat" | "verdict" | "gate";
+export type ActivityKind = "chat" | "verdict";
 
 export interface ActivityEvent {
   kind: ActivityKind;
@@ -22,7 +22,7 @@ export interface ActivityFeedPage {
 export interface ActivityFeedParams {
   /** Limit to one opp slug. Omit for workspace-wide. */
   opp?: string;
-  /** Comma-separated kinds. Omit to include all three. */
+  /** Comma-separated kinds. Omit to include all. */
   type?: ActivityKind | ActivityKind[];
   limit?: number;
 }

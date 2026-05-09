@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { MessageSquare, Scale, ShieldCheck } from "lucide-react";
+import { MessageSquare, Scale } from "lucide-react";
 
 import {
   fetchActivityFeed,
@@ -18,16 +18,15 @@ interface Props {
 const KIND_LABEL: Record<ActivityKind, string> = {
   chat: "Chats",
   verdict: "Verdicts",
-  gate: "Gates",
 };
 
-const ALL_KINDS: ActivityKind[] = ["chat", "verdict", "gate"];
+const ALL_KINDS: ActivityKind[] = ["chat", "verdict"];
 
 /**
  * Workspace-wide (or per-opp when ``oppSlug`` is set) activity feed.
  *
  * Two-column layout:
- *   - Left rail: kind filters (chat / verdict / gate) and an opp filter
+ *   - Left rail: kind filters (chat / verdict) and an opp filter
  *     populated from the events themselves (so the rail reflects what's
  *     actually in the feed, not the full opp catalog).
  *   - Canvas: events grouped by day, marker styled by kind.
@@ -44,7 +43,7 @@ export function TimelineView({ oppSlug }: Props) {
   );
   const [oppFilter, setOppFilter] = useState<string | null>(null);
   // Two independent event streams. Chats come from Postgres (fast,
-  // <500ms); verdicts + gates come from Drive aggregation (cold cache
+  // <500ms); verdicts come from Drive aggregation (cold cache
   // 30-60s, warm cache <100ms). Issuing them in parallel and rendering
   // chats the moment they arrive makes the page usable while the slow
   // path resolves. Phase 3 originally bundled both into one request,
@@ -56,10 +55,8 @@ export function TimelineView({ oppSlug }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const wantChat = enabledKinds.has("chat");
-  const wantDrive = enabledKinds.has("verdict") || enabledKinds.has("gate");
-  const driveTypesArg = (
-    ["verdict", "gate"] as ActivityKind[]
-  ).filter((k) => enabledKinds.has(k));
+  const wantDrive = enabledKinds.has("verdict");
+  const driveTypesArg: ActivityKind[] = wantDrive ? ["verdict"] : [];
 
   const load = useCallback(() => {
     setError(null);
@@ -119,8 +116,10 @@ export function TimelineView({ oppSlug }: Props) {
   }, [events]);
 
   const kindCounts = useMemo(() => {
-    const m: Record<ActivityKind, number> = { chat: 0, verdict: 0, gate: 0 };
-    for (const e of events ?? []) m[e.kind] += 1;
+    const m: Record<ActivityKind, number> = { chat: 0, verdict: 0 };
+    for (const e of events ?? []) {
+      if (e.kind in m) m[e.kind] += 1;
+    }
     return m;
   }, [events]);
 
@@ -223,7 +222,7 @@ export function TimelineView({ oppSlug }: Props) {
           <>
             {driveLoading && (
               <p className="mb-3 text-xs text-muted-foreground/80">
-                Loading verdicts + gates… (chats already shown below)
+                Loading verdicts… (chats already shown below)
               </p>
             )}
             {visibleEvents.length === 0 ? (
@@ -329,10 +328,6 @@ function EventSubline({ event }: { event: ActivityEvent }) {
     }
     if (m.source && m.source !== "web") parts.push(m.source);
   }
-  if (event.kind === "gate") {
-    const m = event.meta as { decided_by?: string };
-    if (m.decided_by) parts.push(`decided by ${m.decided_by}`);
-  }
   parts.push(relativeTime(event.ts));
   return (
     <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -349,8 +344,6 @@ function KindIcon({ kind, className }: { kind: ActivityKind; className?: string 
       // Color-tinted at the icon level so the marker carries the
       // pass/fail signal at a glance.
       return <Scale className={(className ?? "") + " text-purple-400"} />;
-    case "gate":
-      return <ShieldCheck className={(className ?? "") + " text-amber-400"} />;
   }
 }
 

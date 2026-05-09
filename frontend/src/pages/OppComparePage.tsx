@@ -105,14 +105,12 @@ function CompareSummaryBanner({
           label={aSlug}
           score={summary.score_a}
           passed={summary.passed_a}
-          pending={summary.pending_gates_a}
         />
         <DeltaCard summary={summary} />
         <ScoreCard
           label={bSlug}
           score={summary.score_b}
           passed={summary.passed_b}
-          pending={summary.pending_gates_b}
         />
       </div>
     </div>
@@ -124,60 +122,31 @@ function buildHeadline(
   _aSlug: string,
   bSlug: string,
 ): string {
-  const parts: string[] = [];
-
   if (summary.score_delta != null) {
     if (Math.abs(summary.score_delta) < 0.05) {
-      parts.push("opp-eval score is unchanged");
-    } else if (summary.score_delta > 0) {
-      parts.push(
-        `${bSlug} improved by +${summary.score_delta.toFixed(0)} (${formatScore(
-          summary.score_a,
-        )} → ${formatScore(summary.score_b)})`,
-      );
-    } else {
-      parts.push(
-        `${bSlug} regressed by ${summary.score_delta.toFixed(0)} (${formatScore(
-          summary.score_a,
-        )} → ${formatScore(summary.score_b)})`,
-      );
+      return "opp-eval score is unchanged";
     }
-  } else if (summary.score_a != null || summary.score_b != null) {
-    parts.push("opp-eval score available on only one opp");
-  } else {
-    parts.push("Neither opp has been judged by opp-eval yet");
+    if (summary.score_delta > 0) {
+      return `${bSlug} improved by +${summary.score_delta.toFixed(0)} (${formatScore(
+        summary.score_a,
+      )} → ${formatScore(summary.score_b)})`;
+    }
+    return `${bSlug} regressed by ${summary.score_delta.toFixed(0)} (${formatScore(
+      summary.score_a,
+    )} → ${formatScore(summary.score_b)})`;
   }
-
-  if (summary.pending_gates_delta < 0) {
-    parts.push(
-      `${Math.abs(summary.pending_gates_delta)} fewer pending gate${
-        Math.abs(summary.pending_gates_delta) === 1 ? "" : "s"
-      }`,
-    );
-  } else if (summary.pending_gates_delta > 0) {
-    parts.push(
-      `${summary.pending_gates_delta} more pending gate${
-        summary.pending_gates_delta === 1 ? "" : "s"
-      }`,
-    );
+  if (summary.score_a != null || summary.score_b != null) {
+    return "opp-eval score available on only one opp";
   }
-
-  return parts.join(" · ");
+  return "Neither opp has been judged by opp-eval yet";
 }
 
 function headlineTone(summary: OppCompareSummary): { fg: string; bg: string } {
-  // Bias by score_delta first, fall back to pending_gates_delta.
   if (summary.score_delta != null && summary.score_delta > 0.05) {
     return { fg: "text-emerald-200", bg: "bg-emerald-950/30" };
   }
   if (summary.score_delta != null && summary.score_delta < -0.05) {
     return { fg: "text-red-200", bg: "bg-red-950/30" };
-  }
-  if (summary.pending_gates_delta < 0) {
-    return { fg: "text-emerald-200", bg: "bg-emerald-950/30" };
-  }
-  if (summary.pending_gates_delta > 0) {
-    return { fg: "text-amber-200", bg: "bg-amber-950/30" };
   }
   return { fg: "text-foreground", bg: "bg-muted/30" };
 }
@@ -186,12 +155,10 @@ function ScoreCard({
   label,
   score,
   passed,
-  pending,
 }: {
   label: string;
   score: number | null;
   passed: boolean | null;
-  pending: number;
 }) {
   return (
     <div className="rounded border border-border bg-card p-3">
@@ -213,18 +180,12 @@ function ScoreCard({
           {passed === true ? "passed" : passed === false ? "failed" : "unscored"}
         </span>
       </div>
-      <div className="mt-1 text-xs text-muted-foreground">
-        {pending > 0
-          ? `${pending} pending gate${pending === 1 ? "" : "s"}`
-          : "no pending gates"}
-      </div>
     </div>
   );
 }
 
 function DeltaCard({ summary }: { summary: OppCompareSummary }) {
   const sd = summary.score_delta;
-  const gd = summary.pending_gates_delta;
   return (
     <div className="rounded border border-border bg-muted/30 p-3 text-center">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -247,11 +208,6 @@ function DeltaCard({ summary }: { summary: OppCompareSummary }) {
             {sd.toFixed(0)}
           </span>
         )}
-      </div>
-      <div className="text-xs text-muted-foreground">
-        {gd === 0
-          ? "same gate count"
-          : `${gd > 0 ? "+" : ""}${gd} gate${Math.abs(gd) === 1 ? "" : "s"}`}
       </div>
     </div>
   );
