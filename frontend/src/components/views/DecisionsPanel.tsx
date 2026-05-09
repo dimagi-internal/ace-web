@@ -25,9 +25,28 @@ interface Props {
  * notes. The "open" status is the most actionable — they appear in
  * amber and are expanded by default.
  */
+// Status order surfaces the most actionable rows first:
+//   open       — needs a human decision; default is just a guess
+//   overridden — human said "no" to the default; usually rare and worth reading
+//   applied    — default was kept; usually fine to glance past
+const STATUS_RANK: Record<Decision["status"], number> = {
+  open: 0,
+  overridden: 1,
+  applied: 2,
+};
+
 export function DecisionsPanel({ phase, decisions }: Props) {
   const phaseRows = useMemo(
-    () => decisions.filter((d) => d.phase === phase),
+    () =>
+      decisions
+        .filter((d) => d.phase === phase)
+        // Stable sort: status first, then preserve YAML order within status.
+        .map((d, i) => ({ d, i }))
+        .sort((a, b) => {
+          const r = STATUS_RANK[a.d.status] - STATUS_RANK[b.d.status];
+          return r !== 0 ? r : a.i - b.i;
+        })
+        .map((x) => x.d),
     [decisions, phase],
   );
 
