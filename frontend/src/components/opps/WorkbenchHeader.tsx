@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { HelpCircle, RefreshCw, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-import type { OppCard, Run, RunSummary } from "../../api/types";
+import type { Decision, OppCard, Run, RunSummary } from "../../api/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CostRollupCard } from "./CostRollupCard";
@@ -19,15 +19,37 @@ interface Props {
   selectedRunId: string | null;
   onRunChange: (runId: string) => void;
   onRefresh: () => void;
+  /**
+   * Jump to the Phases view tab. Used by the open-decisions chip so a
+   * reviewer who lands on the Workbench tab can one-click into the place
+   * where they actually triage decisions. Optional — when omitted, the
+   * chip falls back to a tooltip with the same info.
+   */
+  onJumpToPhases?: () => void;
   workspaceSlug?: string;
 }
 
-export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, onRefresh, workspaceSlug }: Props) {
+export function WorkbenchHeader({
+  opp,
+  run,
+  runs,
+  selectedRunId,
+  onRunChange,
+  onRefresh,
+  onJumpToPhases,
+  workspaceSlug,
+}: Props) {
   const navigate = useNavigate();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<number>(() => Date.now());
   const [staleTick, setStaleTick] = useState(0);
+
+  // Open + overridden are the actionable rows. Applied is the "default
+  // was kept" pile — high count is fine. Build a breakdown for the chip
+  // tooltip so a hover tells you which phases need attention without a
+  // tab-switch.
+  const decisionsSummary = useMemo(() => summarizeDecisions(run.decisions ?? []), [run.decisions]);
 
   // Bump every 30s so the relative "X ago" label stays current without
   // having to wait for an explicit re-render. setInterval is safe here
@@ -99,6 +121,22 @@ export function WorkbenchHeader({ opp, run, runs, selectedRunId, onRunChange, on
               review
             </span>
           )}
+          {decisionsSummary.open > 0 && (
+            <button
+              type="button"
+              onClick={onJumpToPhases}
+              disabled={!onJumpToPhases}
+              title={decisionsSummary.tooltip}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500",
+                onJumpToPhases ? "transition hover:bg-amber-500/20" : "cursor-default",
+              )}
+              aria-label={`${decisionsSummary.open} open decisions — jump to Phases`}
+            >
+              <HelpCircle className="h-3 w-3" />
+              {decisionsSummary.open} open
+            </button>
+          )}
           <TagEditor slug={opp.slug} initialTags={opp.tags ?? []} />
           {workspaceSlug ? (
             <CostRollupCard oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
@@ -163,6 +201,48 @@ function secondsAgoLabel(when: number): string {
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   return `${h}h ago`;
+}
+
+interface DecisionsSummary {
+  open: number;
+  overridden: number;
+  applied: number;
+  tooltip: string;
+}
+
+function summarizeDecisions(decisions: Decision[]): DecisionsSummary {
+  let open = 0;
+  let overridden = 0;
+  let applied = 0;
+  // Per-phase open counts so the tooltip can say "design: 2 · qa: 1"
+  // — the actionable signal a reviewer wants at a glance. We only break
+  // down "open" because that's the status that drives action; counting
+  // applied per-phase would be noise.
+  const openByPhase = new Map<string, number>();
+  for (const d of decisions) {
+    if (d.status === "open") {
+      open += 1;
+      openByPhase.set(d.phase, (openByPhase.get(d.phase) ?? 0) + 1);
+    } else if (d.status === "overridden") {
+      overridden += 1;
+    } else if (d.status === "applied") {
+      applied += 1;
+    }
+  }
+  const breakdown = [...openByPhase.entries()]
+    .map(([phase, count]) => `${phase}: ${count}`)
+    .join(" · ");
+  const summary = [
+    `${open} open`,
+    overridden > 0 && `${overridden} overridden`,
+    applied > 0 && `${applied} applied`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const tooltip = breakdown
+    ? `Decisions — ${summary}\nOpen by phase: ${breakdown}\nClick to jump to Phases.`
+    : `Decisions — ${summary}\nClick to jump to Phases.`;
+  return { open, overridden, applied, tooltip };
 }
 
 function modeExplanation(mode: string): string {

@@ -134,6 +134,7 @@ export default function OppWorkbenchPage() {
         selectedRunId={snapshot.selected_run_id ?? null}
         onRunChange={(id) => setSearchParams({ run_id: id })}
         onRefresh={() => load()}
+        onJumpToPhases={() => setView("phase")}
         workspaceSlug={workspaceSlug}
       />
       <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
