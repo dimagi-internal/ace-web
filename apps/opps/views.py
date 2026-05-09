@@ -9,9 +9,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
+from apps.opps import drive_changes, snapshot_cache
 from apps.opps.actions import ActionError, ActionPayload, inject_action
 from apps.opps.drive_cache import CachedDriveClient
 from apps.opps.drive_client import get_drive_client
+from apps.opps.touched_tracker import TouchedFileTracker
 from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
 from apps.opps.seed import build_chat_seed
@@ -179,6 +181,22 @@ def _overlay_workspace_display_name(manifest, slug: str, workspace=None) -> None
     if opp_ws.display_name and opp_ws.display_name != slug:
         manifest.display_name = opp_ws.display_name
     manifest.tags = list(opp_ws.tags or [])
+
+
+def _snapshot_etag(snap, *, pairs=None) -> str:
+    """Compute the ETag for an OppSnapshot.
+
+    Always hashes the serialized JSON payload so the ETag is stable
+    across the cold-load and cached-hit paths. The ``pairs`` argument
+    is accepted for forward-compat with any caller that supplies it, but
+    is not used — json-body hashing is simpler and produces a
+    consistent ETag regardless of which Drive modified_time values the
+    client happened to see.
+    """
+    import hashlib
+    import json
+    body = json.dumps(serialize_opp_snapshot(snap), sort_keys=True, default=str)
+    return f"sha256:{hashlib.sha256(body.encode('utf-8')).hexdigest()}"
 
 
 def _opp_list_impl(request):
@@ -492,17 +510,61 @@ def workbench(request, slug: str):
         )
 
     run_id = request.GET.get("run_id") or None
+    force = request.GET.get("force") == "1"
+
+    if not getattr(settings, "OPPS_USE_CHANGES_API", False):
+        # Legacy path — preserved for the rollout window.
+        try:
+            snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
+        except FileNotFoundError:
+            return Response(
+                error_response(f"no opp named {slug!r}", code="opp-not-found"),
+                status=404,
+            )
+        _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
+        return Response(success_response(serialize_opp_snapshot(snap)))
+
+    # New path: validate against Drive Changes API, serve cached if valid.
+    changed = drive_changes.observe(ws, client)
+    if changed:
+        snapshot_cache.invalidate(changed)
+
+    if not force:
+        cached = snapshot_cache.get(workspace_id=ws.pk, slug=slug, run_id=run_id)
+        if cached is not None:
+            _overlay_workspace_display_name(cached.opp, slug, workspace=ws)
+            etag = _snapshot_etag(cached)
+            if request.headers.get("If-None-Match") == etag:
+                return HttpResponse(status=304, headers={"ETag": etag})
+            resp = Response(success_response(serialize_opp_snapshot(cached)))
+            resp["ETag"] = etag
+            return resp
+
+    # Cold-load path: bypass the drive-level TTL cache so we always read
+    # fresh content after a cache miss or force=1. The CachedDriveClient
+    # wrapping was done in _require_drive with bypass keyed to ?force; here
+    # we need bypass=True unconditionally so changed-file content isn't
+    # served from a stale TTL entry. We reconstruct from the inner client.
+    inner = client._inner if isinstance(client, CachedDriveClient) else client
+    bypass_client = CachedDriveClient(inner, bypass=True)
 
     try:
-        snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
+        with TouchedFileTracker() as tracker:
+            snap = load_opp(bypass_client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
     except FileNotFoundError:
         return Response(
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
     _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
-
-    return Response(success_response(serialize_opp_snapshot(snap)))
+    snapshot_cache.set(
+        workspace_id=ws.pk, slug=slug, run_id=run_id,
+        snap=snap, file_ids=tracker.file_ids,
+    )
+    etag = _snapshot_etag(snap)
+    resp = Response(success_response(serialize_opp_snapshot(snap)))
+    resp["ETag"] = etag
+    return resp
 
 
 @api_view(["GET"])

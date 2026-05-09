@@ -27,11 +27,11 @@ log = logging.getLogger(__name__)
 _KEY_VERSION = "v1"
 
 
-def _token_key(workspace_id: int) -> str:
+def _token_key(workspace_id: str) -> str:
     return f"drive:changes:{_KEY_VERSION}:token:ws:{workspace_id}"
 
 
-def _drive_id_key(workspace_id: int) -> str:
+def _drive_id_key(workspace_id: str) -> str:
     return f"drive:changes:{_KEY_VERSION}:driveid:ws:{workspace_id}"
 
 
@@ -42,7 +42,7 @@ def _resolve_drive_id(workspace, client: DriveClient) -> str | None:
     cache survives forever because the answer doesn't change for a given
     folder id.
     """
-    key = _drive_id_key(workspace.id)
+    key = _drive_id_key(workspace.pk)
     sentinel = object()
     cached = cache.get(key, sentinel)
     if cached is not sentinel:
@@ -55,7 +55,7 @@ def _resolve_drive_id(workspace, client: DriveClient) -> str | None:
     except Exception as exc:  # noqa: BLE001
         log.warning(
             "drive_changes: failed to resolve drive_id for workspace %s: %s",
-            workspace.id, exc,
+            workspace.pk, exc,
         )
         return None
     cache.set(key, drive_id or "", timeout=None)
@@ -72,7 +72,7 @@ def observe(workspace, client: DriveClient) -> set[str]:
     """
     from apps.opps import snapshot_cache  # noqa: PLC0415  (avoid circular import)
 
-    token_key = _token_key(workspace.id)
+    token_key = _token_key(workspace.pk)
     drive_id = _resolve_drive_id(workspace, client)
 
     token = cache.get(token_key)
@@ -83,7 +83,7 @@ def observe(workspace, client: DriveClient) -> set[str]:
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "drive_changes: failed to seed start page token for ws=%s: %s",
-                workspace.id, exc,
+                workspace.pk, exc,
             )
             return set()
         cache.set(token_key, new_token, timeout=None)
@@ -94,26 +94,26 @@ def observe(workspace, client: DriveClient) -> set[str]:
     except Exception as exc:  # noqa: BLE001
         log.warning(
             "drive_changes: list_changes failed for ws=%s: %s",
-            workspace.id, exc,
+            workspace.pk, exc,
         )
         return set()
 
     if page.expired:
         log.info(
             "drive_changes: pageToken expired for ws=%s; re-seeding",
-            workspace.id,
+            workspace.pk,
         )
         try:
             new_token = client.get_changes_start_page_token(drive_id=drive_id)
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "drive_changes: failed to re-seed for ws=%s after 410: %s",
-                workspace.id, exc,
+                workspace.pk, exc,
             )
             cache.delete(token_key)
             return set()
         cache.set(token_key, new_token, timeout=None)
-        snapshot_cache.clear_workspace(workspace.id)
+        snapshot_cache.clear_workspace(workspace.pk)
         return set()
 
     if page.next_page_token:

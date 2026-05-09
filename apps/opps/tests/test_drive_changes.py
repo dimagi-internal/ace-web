@@ -12,9 +12,10 @@ pytestmark = pytest.mark.django_db
 
 
 class _StubWorkspace:
-    """Minimal stand-in — observe() only reads .id and .drive_root_folder_id."""
+    """Minimal stand-in — observe() reads .pk and .drive_root_folder_id."""
     def __init__(self, id: int, drive_root_folder_id: str):
         self.id = id
+        self.pk = id  # observe() uses workspace.pk (Workspace uses slug as PK)
         self.drive_root_folder_id = drive_root_folder_id
 
 

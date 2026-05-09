@@ -35,12 +35,12 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 _KEY_VERSION = "v1"
 
 
-def _snap_key(workspace_id: int, slug: str, run_id: str | None) -> str:
+def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:
     rid = run_id or "-"
     return f"opp:snap:{_KEY_VERSION}:{workspace_id}:{slug}:{rid}"
 
 
-def _card_key(workspace_id: int, slug: str) -> str:
+def _card_key(workspace_id: str, slug: str) -> str:
     return f"opp:card:{_KEY_VERSION}:{workspace_id}:{slug}"
 
 
@@ -48,7 +48,7 @@ def _idx_key(file_id: str) -> str:
     return f"opp:idx:{_KEY_VERSION}:{file_id}"
 
 
-def _ws_key(workspace_id: int) -> str:
+def _ws_key(workspace_id: str) -> str:
     return f"opp:ws:{_KEY_VERSION}:{workspace_id}"
 
 
@@ -78,7 +78,7 @@ def _remove_set_entries(cache_key: str, members_to_remove: _set[str]) -> None:
         cache.delete(cache_key)
 
 
-def get(*, workspace_id: int, slug: str, run_id: str | None) -> Any | None:
+def get(*, workspace_id: str, slug: str, run_id: str | None) -> Any | None:
     env = cache.get(_snap_key(workspace_id, slug, run_id))
     if not env:
         return None
@@ -87,7 +87,7 @@ def get(*, workspace_id: int, slug: str, run_id: str | None) -> Any | None:
 
 def set(  # noqa: A001  (shadows builtin; namespace via module is fine)
     *,
-    workspace_id: int,
+    workspace_id: str,
     slug: str,
     run_id: str | None,
     snap: Any,
@@ -100,7 +100,7 @@ def set(  # noqa: A001  (shadows builtin; namespace via module is fine)
     _add_to_set(_ws_key(workspace_id), key)
 
 
-def get_card(workspace_id: int, slug: str) -> Any | None:
+def get_card(workspace_id: str, slug: str) -> Any | None:
     env = cache.get(_card_key(workspace_id, slug))
     if not env:
         return None
@@ -108,7 +108,7 @@ def get_card(workspace_id: int, slug: str) -> Any | None:
 
 
 def set_card(
-    *, workspace_id: int, slug: str, card: Any, file_ids: _set[str],
+    *, workspace_id: str, slug: str, card: Any, file_ids: _set[str],
 ) -> None:
     key = _card_key(workspace_id, slug)
     cache.set(key, {"value": card, "file_ids": _set(file_ids)}, timeout=None)
@@ -146,7 +146,7 @@ def invalidate(file_ids: Iterable[str]) -> None:
             _remove_set_entries(_idx_key(fid), keys_to_drop)
 
 
-def clear_workspace(workspace_id: int) -> None:
+def clear_workspace(workspace_id: str) -> None:
     """Drop every cached snapshot/card for the workspace."""
     ws_key = _ws_key(workspace_id)
     keys = cache.get(ws_key) or _set()
