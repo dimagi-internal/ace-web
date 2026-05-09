@@ -246,11 +246,9 @@ def _opp_list_impl(request):
             status=503,
         )
 
-    use_cache = getattr(settings, "OPPS_USE_CHANGES_API", False)
-    if use_cache:
-        changed = drive_changes.observe(ws, client)
-        if changed:
-            snapshot_cache.invalidate(changed)
+    changed = drive_changes.observe(ws, client)
+    if changed:
+        snapshot_cache.invalidate(changed)
 
     cards: list[dict] = []
     for child in root_children:
@@ -280,25 +278,26 @@ def _opp_list_impl(request):
 
         # Fast path: cached OppCard.
         card = None
-        if use_cache and not request.GET.get("force") == "1":
+        if not request.GET.get("force") == "1":
             card = snapshot_cache.get_card(ws.pk, child.name)
 
         if card is None:
             try:
                 # Use a bypass=True client on the cold-load path to defeat
-                # the underlying Drive TTL cache (Task 7 learning).
+                # the underlying Drive TTL cache: changed-file content
+                # mustn't be served from a stale per-call entry that was
+                # written before the snapshot cache was invalidated.
                 inner = client._inner if isinstance(client, CachedDriveClient) else client
-                cold_client = CachedDriveClient(inner, bypass=True) if use_cache else client
+                cold_client = CachedDriveClient(inner, bypass=True)
                 with TouchedFileTracker() as tracker:
                     card = load_opp_card(cold_client, opp_folder=child, opp_children=opp_children)
                 _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
-                if use_cache:
-                    snapshot_cache.set_card(
-                        workspace_id=ws.pk,
-                        slug=child.name,
-                        card=card,
-                        file_ids=tracker.file_ids,
-                    )
+                snapshot_cache.set_card(
+                    workspace_id=ws.pk,
+                    slug=child.name,
+                    card=card,
+                    file_ids=tracker.file_ids,
+                )
             except Exception as exc:
                 # A malformed state.yaml or a Drive blip on one opp shouldn't
                 # erase the whole list — but it shouldn't vanish silently
@@ -371,18 +370,15 @@ def _opp_list_impl(request):
             "run_count": card.run_count,
         })
 
-    if use_cache:
-        import hashlib
-        import json
-        body = json.dumps(cards, sort_keys=True, default=str)
-        list_etag = f"sha256:{hashlib.sha256(body.encode('utf-8')).hexdigest()}"
-        if request.headers.get("If-None-Match") == list_etag:
-            return HttpResponse(status=304, headers={"ETag": list_etag})
-        resp = Response(success_response(cards))
-        resp["ETag"] = list_etag
-        return resp
-
-    return Response(success_response(cards))
+    import hashlib
+    import json
+    body = json.dumps(cards, sort_keys=True, default=str)
+    list_etag = f"sha256:{hashlib.sha256(body.encode('utf-8')).hexdigest()}"
+    if request.headers.get("If-None-Match") == list_etag:
+        return HttpResponse(status=304, headers={"ETag": list_etag})
+    resp = Response(success_response(cards))
+    resp["ETag"] = list_etag
+    return resp
 
 
 def opp_create(request):
@@ -552,19 +548,7 @@ def workbench(request, slug: str):
     run_id = request.GET.get("run_id") or None
     force = request.GET.get("force") == "1"
 
-    if not getattr(settings, "OPPS_USE_CHANGES_API", False):
-        # Legacy path — preserved for the rollout window.
-        try:
-            snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
-        except FileNotFoundError:
-            return Response(
-                error_response(f"no opp named {slug!r}", code="opp-not-found"),
-                status=404,
-            )
-        _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
-        return Response(success_response(serialize_opp_snapshot(snap)))
-
-    # New path: validate against Drive Changes API, serve cached if valid.
+    # Validate cache against Drive Changes API, serve cached if valid.
     changed = drive_changes.observe(ws, client)
     if changed:
         snapshot_cache.invalidate(changed)

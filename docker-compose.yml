@@ -63,10 +63,6 @@ services:
       # the Workbench actually fetch opp data; without it the workspace
       # exists but Drive lists 401. See README "Mirroring prod Drive".
       ACE_DRIVE_SA_KEY_JSON: ${ACE_DRIVE_SA_KEY_JSON:-}
-      # Opt-in flag for the Drive-Changes-API + snapshot cache redesign
-      # (see docs/specs/2026-05-08-opp-cache-redesign.md). Default off;
-      # set OPPS_USE_CHANGES_API=true in the host shell to flip on locally.
-      OPPS_USE_CHANGES_API: ${OPPS_USE_CHANGES_API:-false}
       # Dev-only test-login endpoint (POST /auth/test-login/) for scripted
       # smoke tests + Playwright. Requires DEBUG=True (already set above).
       ACE_ALLOW_TEST_LOGIN: ${ACE_ALLOW_TEST_LOGIN:-false}
