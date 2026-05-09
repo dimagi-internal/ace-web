@@ -9,6 +9,7 @@ import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/Loadi
 import { CompareWithDialog } from "../components/opps/CompareWithDialog";
 import { DeleteOppDialog } from "../components/opps/DeleteOppDialog";
 import { NewOppDialog } from "../components/opps/NewOppDialog";
+import { OppCardRunsStrip } from "../components/views/hierarchy/OppCardRunsStrip";
 import { OppChatChildren } from "../components/views/hierarchy/OppChatChildren";
 import { OppRunsList } from "../components/views/hierarchy/OppRunsList";
 import { TimelineView } from "../components/views/TimelineView";
@@ -387,6 +388,13 @@ export default function OppListPage() {
                   </>
                 )}
               </div>
+
+              {workspaceSlug && (
+                <OppCardRunsStrip
+                  oppSlug={opp.slug}
+                  workspaceSlug={workspaceSlug}
+                />
+              )}
 
               {(opp.tags.length > 0 || opp.labels.length > 0) && (
                 <div className="mt-3 flex flex-wrap gap-1">

@@ -36,6 +36,7 @@ from apps.opps.touched_tracker import TouchedFileTracker
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
 from apps.system.reader import (
+    load_system_overview,
     phase_display_names as _phase_display_names,
 )
 from apps.system.reader import (
@@ -673,11 +674,18 @@ def runs_list(request, slug: str):
             status=404,
         )
     runs = list_opp_runs(client, ace_root_folder_id=ace_folder_id, opp_slug=slug)
-    # Surface display names alongside the slugs so the inline runs list on
-    # /opps doesn't render `design-review` / `idea-to-pdd` raw — the
-    # display lookups are process-cached so this is essentially free.
+    # Surface display names + phase ordinal alongside the slugs so the
+    # inline runs UI on /opps can render "P3 · Idea to PDD" without
+    # re-fetching the system overview. Lookups are process-cached so this
+    # is essentially free.
     skill_lookup = _skill_display_name_lookup()
     phase_lookup = _phase_display_name_lookup()
+    overview = load_system_overview(getattr(settings, "ACE_PLUGIN_PATH", "") or "")
+    phase_ordinals = {
+        p["name"]: p["ordinal"]
+        for p in (overview.get("phases") or [])
+        if isinstance(p.get("ordinal"), int)
+    }
     return Response(success_response([
         {
             "run_id": r.run_id,
@@ -685,6 +693,9 @@ def runs_list(request, slug: str):
             "current_phase": r.current_phase,
             "current_phase_display": (
                 phase_lookup.get(r.current_phase) if r.current_phase else None
+            ),
+            "current_phase_ordinal": (
+                phase_ordinals.get(r.current_phase) if r.current_phase else None
             ),
             "current_step": r.current_step,
             "current_step_display": (
@@ -748,7 +759,6 @@ def multi_run_summary(request, slug: str):
     runs = runs[:limit]
 
     from apps.opps.skills import SKILL_REGISTRY
-    from apps.system.reader import load_system_overview
 
     overview = load_system_overview(getattr(settings, "ACE_PLUGIN_PATH", "") or "")
     phase_lookup = {p["name"]: p for p in (overview.get("phases") or [])}

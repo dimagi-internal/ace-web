@@ -287,6 +287,9 @@ export interface RunSummary {
   // apps.system.reader.phase_display_names. Null when current_phase is null
   // or unknown to the registry. Same shape as OppCard.current_phase_display.
   current_phase_display?: string | null;
+  // Phase ordinal (1..N) — lets the inline runs strip on /opps render
+  // "P3" without having to fetch the system overview separately.
+  current_phase_ordinal?: number | null;
   current_step: string | null;
   current_step_display?: string | null;
   mode: string | null;
