@@ -1,266 +1,289 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ChevronRight, AlertTriangle } from "lucide-react";
+import { ChevronRight, Workflow } from "lucide-react";
 
-import { getMultiRunSummary } from "@/api/opps";
-import type { MultiRunSummary } from "@/api/types";
+import type { OppSnapshot, PhaseInfo, Step } from "@/api/types";
+import { DecisionsPanel } from "@/components/views/DecisionsPanel";
+import { PhaseSkillRow } from "@/components/views/PhaseSkillRow";
+import { cn } from "@/lib/utils";
 
 interface Props {
+  snapshot: OppSnapshot;
   oppSlug: string;
-  workspaceSlug: string;
-  selectedRunId: string;
 }
 
 /**
- * Phase-stack view: 8 cards (one per phase) with skill counts, mean
- * judge score, sparkline of run-over-run trend, and a pending-gates
- * badge. Each card expands into the per-skill row list (compact form
- * of the workbench).
+ * Vertical phase list on the left; click a phase to expand a detail
+ * panel on the right showing the skills in that phase. Click a skill
+ * to drill into the same StepDetailPane the Workbench uses.
  *
- * Replaces the "34 skills in one linear flat list" complaint with
- * 8 chunks, each summarized.
+ * Pure snapshot-driven — no extra API calls. Replaces both the broken
+ * React-Flow DAG and the earlier 8-card phase grid.
  */
-export function PhaseView({ oppSlug, workspaceSlug, selectedRunId }: Props) {
-  const navigate = useNavigate();
-  const [data, setData] = useState<MultiRunSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
+export function PhaseView({ snapshot, oppSlug }: Props) {
+  const phases = useMemo(
+    () => [...snapshot.phases].sort((a, b) => a.ordinal - b.ordinal),
+    [snapshot.phases],
+  );
 
-  useEffect(() => {
-    getMultiRunSummary(oppSlug, { limit: 8 })
-      .then(setData)
-      .catch((e) => setError(String(e?.message ?? e)));
-  }, [oppSlug]);
-
-  const phases = useMemo(() => {
-    if (!data) return [];
-    const phaseMap = new Map<
-      string,
-      {
-        name: string;
-        display: string;
-        ordinal: number;
-        skills: typeof data.skill_index;
-      }
-    >();
-    for (const s of data.skill_index) {
-      const existing = phaseMap.get(s.phase);
-      if (existing) {
-        existing.skills.push(s);
-      } else {
-        phaseMap.set(s.phase, {
-          name: s.phase,
-          display: s.phase_display,
-          ordinal: s.phase_ordinal,
-          skills: [s],
-        });
-      }
+  const stepsByPhase = useMemo(() => {
+    const m = new Map<string, Step[]>();
+    for (const s of snapshot.current_run.steps) {
+      const arr = m.get(s.phase);
+      if (arr) arr.push(s);
+      else m.set(s.phase, [s]);
     }
-    return Array.from(phaseMap.values()).sort((a, b) => a.ordinal - b.ordinal);
-  }, [data]);
+    for (const arr of m.values()) arr.sort((a, b) => a.ordinal - b.ordinal);
+    return m;
+  }, [snapshot.current_run.steps]);
 
-  const selectedRun =
-    data?.per_run.find((r) => r.run_id === selectedRunId) ?? data?.per_run[0];
+  const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
 
-  if (error) {
-    return (
-      <div className="p-6 text-sm text-destructive">
-        Couldn't load multi-run summary: {error}
-      </div>
+  // Auto-select on first load. Priority: phase with a qa-failed step
+  // (most urgent system signal) → phase with an open decision (most
+  // actionable for a reviewer) → first phase with steps. The gates
+  // concept was retired in favor of QA / decisions, so we don't fall
+  // back on gate-pending here.
+  useEffect(() => {
+    if (selectedPhase) return;
+    const decisions = snapshot.current_run.decisions ?? [];
+    const qaFailedPhase = phases.find((p) =>
+      (stepsByPhase.get(p.name) ?? []).some((s) => s.status === "qa-failed"),
     );
-  }
-  if (!data || !selectedRun) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
-  }
+    if (qaFailedPhase) {
+      setSelectedPhase(qaFailedPhase.name);
+      return;
+    }
+    const openDecisionPhase = phases.find((p) =>
+      decisions.some((d) => d.phase === p.name && d.status === "open"),
+    );
+    if (openDecisionPhase) {
+      setSelectedPhase(openDecisionPhase.name);
+      return;
+    }
+    const firstWithSteps = phases.find(
+      (p) => (stepsByPhase.get(p.name) ?? []).length > 0,
+    );
+    if (firstWithSteps) setSelectedPhase(firstWithSteps.name);
+  }, [phases, stepsByPhase, selectedPhase, snapshot.current_run.decisions]);
+
+  const selectedPhaseInfo = selectedPhase
+    ? phases.find((p) => p.name === selectedPhase) ?? null
+    : null;
+  const selectedPhaseSteps = selectedPhase
+    ? stepsByPhase.get(selectedPhase) ?? []
+    : [];
 
   return (
-    <div className="overflow-y-auto px-6 py-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {phases.map((phase) => {
-          const stats = selectedRun.phase_scores[phase.name] ?? {
-            mean_score: null,
-            complete: 0,
-            total: phase.skills.length,
-          };
-          const trend = data.per_run
-            .slice()
-            .reverse()
-            .map((r) => r.phase_scores[phase.name]?.mean_score ?? null);
-          const pendingCount = phase.skills.filter(
-            (s) => selectedRun.skill_status[s.skill_name] === "gate-pending",
-          ).length;
-          const isExpanded = expanded === phase.name;
+    <div className="flex h-full overflow-hidden">
+      <aside className="w-[340px] shrink-0 overflow-y-auto border-r border-border bg-background p-4">
+        <ul className="flex flex-col gap-2">
+          {phases.map((phase) => {
+            const phaseDecisions = (snapshot.current_run.decisions ?? []).filter(
+              (d) => d.phase === phase.name,
+            );
+            return (
+              <li key={phase.name}>
+                <PhaseTile
+                  phase={phase}
+                  steps={stepsByPhase.get(phase.name) ?? []}
+                  decisions={phaseDecisions}
+                  isSelected={selectedPhase === phase.name}
+                  onClick={() => setSelectedPhase(phase.name)}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      </aside>
 
-          return (
+      <section className="relative flex-1 overflow-hidden">
+        {selectedPhaseInfo ? (
             <div
-              key={phase.name}
-              className="rounded-lg border border-border bg-card p-4 shadow-sm"
+              key={selectedPhaseInfo.name}
+              className="flex h-full animate-in fade-in slide-in-from-right-2 flex-col duration-200"
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Phase {phase.ordinal}
+              <PhasePanelHeader phase={selectedPhaseInfo} steps={selectedPhaseSteps} />
+              <div className="flex-1 overflow-y-auto px-4 pb-6">
+                <DecisionsPanel
+                  phase={selectedPhaseInfo.name}
+                  decisions={snapshot.current_run.decisions ?? []}
+                />
+                {selectedPhaseSteps.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
+                    No steps recorded for this phase yet.
                   </div>
-                  <div className="truncate text-sm font-semibold text-foreground">
-                    {phase.display}
-                  </div>
-                </div>
-                {pendingCount > 0 && (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-full
-                      border border-amber-500/40 bg-amber-500/10 px-2 py-0.5
-                      text-[10px] text-amber-500"
-                    title={`${pendingCount} gate${pendingCount === 1 ? "" : "s"} awaiting review`}
-                  >
-                    <AlertTriangle className="h-3 w-3" />
-                    {pendingCount}
-                  </span>
+                ) : (
+                  <section className="mt-4">
+                    <header className="mb-2 flex items-center gap-2.5">
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                        <Workflow className="h-3 w-3" />
+                        Skills
+                      </span>
+                      <span className="text-xs font-medium text-foreground">
+                        {selectedPhaseSteps.length}
+                      </span>
+                    </header>
+                    <ul className="flex flex-col gap-1.5">
+                      {selectedPhaseSteps.map((step) => (
+                        <li key={step.skill_name}>
+                          <PhaseSkillRow
+                            step={step}
+                            oppSlug={oppSlug}
+                            runId={snapshot.current_run.run_id}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
                 )}
               </div>
-
-              <div className="mt-3 flex items-baseline justify-between">
-                <div className="text-2xl font-semibold tabular-nums text-foreground">
-                  {stats.mean_score !== null
-                    ? Math.round(stats.mean_score)
-                    : "—"}
-                  <span className="ml-1 text-xs font-normal text-muted-foreground">
-                    /100
-                  </span>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {stats.complete}/{stats.total} done
-                </div>
-              </div>
-
-              <div className="mt-3">
-                <Sparkline values={trend} />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setExpanded(isExpanded ? null : phase.name)}
-                className="mt-3 flex w-full items-center justify-between
-                  rounded border border-border/60 px-2 py-1 text-xs
-                  text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <span>
-                  {isExpanded ? "Hide" : "Show"} {phase.skills.length} skill
-                  {phase.skills.length === 1 ? "" : "s"}
-                </span>
-                <ChevronRight
-                  className={
-                    "h-3 w-3 transition-transform " +
-                    (isExpanded ? "rotate-90" : "")
-                  }
-                />
-              </button>
-
-              {isExpanded && (
-                <ul className="mt-2 divide-y divide-border/50">
-                  {phase.skills.map((s) => {
-                    const score = selectedRun.skill_scores[s.skill_name];
-                    const status = selectedRun.skill_status[s.skill_name];
-                    return (
-                      <li key={s.skill_name}>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            navigate(
-                              `/w/${workspaceSlug}/opps/${oppSlug}/runs/${selectedRun.run_id}/steps/${s.skill_name}`,
-                            )
-                          }
-                          className="flex w-full items-center justify-between
-                            gap-2 px-1 py-1.5 text-left text-xs
-                            hover:bg-accent"
-                        >
-                          <span className="truncate text-foreground">
-                            {s.display_name}
-                          </span>
-                          <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
-                            <StatusGlyph status={status} />
-                            <span className="w-7 text-right tabular-nums">
-                              {score !== null && score !== undefined
-                                ? Math.round(score)
-                                : "—"}
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
             </div>
-          );
-        })}
-      </div>
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            Select a phase to see its skills.
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-function Sparkline({ values }: { values: (number | null)[] }) {
-  // Inline SVG; small (full width × 24h). Null values plot as gaps.
-  const width = 100;
-  const height = 24;
-  const valid = values.filter((v): v is number => v !== null);
-  if (valid.length < 2) {
-    return (
-      <div className="text-[10px] text-muted-foreground/70">
-        Run trend: {valid.length === 1 ? `${Math.round(valid[0])}` : "—"}
-      </div>
-    );
-  }
-  const max = 100;
-  const min = 0;
-  const stepX = width / (values.length - 1);
-  const points = values
-    .map((v, i) => {
-      if (v === null) return null;
-      const x = i * stepX;
-      const y = height - ((v - min) / (max - min)) * height;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .filter((p): p is string => p !== null)
-    .join(" ");
-  const last = valid[valid.length - 1];
-  const first = valid[0];
-  const delta = last - first;
-  const tone =
-    delta > 1
-      ? "text-emerald-500"
-      : delta < -1
-        ? "text-rose-500"
-        : "text-muted-foreground";
+interface PhaseTileProps {
+  phase: PhaseInfo;
+  steps: Step[];
+  decisions: { status: string }[];
+  isSelected: boolean;
+  onClick: () => void;
+}
+
+function PhaseTile({ phase, steps, decisions, isSelected, onClick }: PhaseTileProps) {
+  const total = steps.length;
+  const complete = steps.filter((s) => s.status === "complete").length;
+  const qaFailed = steps.filter((s) => s.status === "qa-failed").length;
+  const openDecisions = decisions.filter((d) => d.status === "open").length;
+  const judged = steps
+    .map((s) => s.judge?.score_pct ?? s.judge?.score ?? null)
+    .filter((v): v is number => v !== null);
+  const meanScore =
+    judged.length > 0 ? judged.reduce((a, b) => a + b, 0) / judged.length : null;
+  const completionPct = total === 0 ? 0 : (complete / total) * 100;
+
   return (
-    <div className="flex items-center gap-2">
-      <svg
-        width={width}
-        height={height}
-        viewBox={`0 0 ${width} ${height}`}
-        className="text-primary/70"
-      >
-        <polyline
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          points={points}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={isSelected}
+      className={cn(
+        "group flex w-full flex-col gap-2 rounded-lg border p-3 text-left transition-all",
+        isSelected
+          ? "border-primary bg-primary/5 shadow-sm"
+          : "border-border bg-card hover:border-border/80 hover:bg-accent/40",
+      )}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Phase {phase.ordinal}
+        </span>
+        <span className="ml-auto" />
+        {openDecisions > 0 && (
+          <span
+            className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-500"
+            title={`${openDecisions} open decision${openDecisions === 1 ? "" : "s"}`}
+          >
+            ? {openDecisions}
+          </span>
+        )}
+        {qaFailed > 0 && (
+          <span
+            className="inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-500"
+            title={`${qaFailed} step${qaFailed === 1 ? "" : "s"} blocked by QA failures`}
+          >
+            ✗ {qaFailed}
+          </span>
+        )}
+        <ChevronRight
+          className={cn(
+            "h-4 w-4 shrink-0 transition-transform",
+            isSelected
+              ? "rotate-90 text-foreground"
+              : "text-muted-foreground/60 group-hover:text-foreground",
+          )}
         />
-      </svg>
-      <span className={`text-[10px] tabular-nums ${tone}`}>
-        {delta > 0 ? "↑" : delta < 0 ? "↓" : "·"}{" "}
-        {delta === 0 ? "0" : Math.round(delta) > 0 ? `+${Math.round(delta)}` : Math.round(delta)}
-      </span>
-    </div>
+      </div>
+      <div className="truncate text-sm font-semibold text-foreground" title={phase.display_name}>
+        {phase.display_name}
+      </div>
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <span className="tabular-nums">
+          {complete}/{total} done
+        </span>
+        <span className="tabular-nums">
+          {meanScore !== null ? `${Math.round(meanScore)}/100` : "—"}
+        </span>
+      </div>
+      <div className="h-1 w-full overflow-hidden rounded bg-muted">
+        <span
+          className={cn(
+            "block h-full transition-all",
+            completionPct === 0 ? "" : "bg-primary",
+          )}
+          style={{ width: `${completionPct}%` }}
+        />
+      </div>
+    </button>
   );
 }
 
-function StatusGlyph({ status }: { status: string }) {
-  if (status === "complete") return <span className="text-emerald-500">●</span>;
-  if (status === "gate-pending") return <span className="text-amber-500">⚠</span>;
-  if (status === "gate-rejected") return <span className="text-rose-500">✗</span>;
-  if (status === "judge-fail") return <span className="text-rose-500">✗</span>;
-  if (status === "running") return <span className="text-blue-400">▶</span>;
-  return <span className="text-muted-foreground/40">○</span>;
+interface PhasePanelHeaderProps {
+  phase: PhaseInfo;
+  steps: Step[];
+}
+
+function PhasePanelHeader({ phase, steps }: PhasePanelHeaderProps) {
+  const total = steps.length;
+  const complete = steps.filter((s) => s.status === "complete").length;
+  const qaFailed = steps.filter((s) => s.status === "qa-failed").length;
+  const failed = steps.filter(
+    (s) => s.status === "judge-fail" || s.status === "error",
+  ).length;
+  const judged = steps
+    .map((s) => s.judge?.score_pct ?? s.judge?.score ?? null)
+    .filter((v): v is number => v !== null);
+  const meanScore =
+    judged.length > 0 ? judged.reduce((a, b) => a + b, 0) / judged.length : null;
+
+  return (
+    <header className="shrink-0 border-b border-border bg-card/30 px-6 py-4">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Phase {phase.ordinal} · {phase.agent}
+      </div>
+      <h2 className="mt-1 text-xl font-semibold text-foreground">
+        {phase.display_name}
+      </h2>
+      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+        <span>
+          <span className="font-medium tabular-nums text-foreground">{complete}</span>
+          <span className="text-muted-foreground">/{total} done</span>
+        </span>
+        {qaFailed > 0 && (
+          <span className="text-rose-500">
+            <span className="font-medium tabular-nums">{qaFailed}</span> qa-failed
+          </span>
+        )}
+        {failed > 0 && (
+          <span className="text-rose-500">
+            <span className="font-medium tabular-nums">{failed}</span> failed
+          </span>
+        )}
+        {meanScore !== null && (
+          <span>
+            mean{" "}
+            <span className="font-medium tabular-nums text-foreground">
+              {Math.round(meanScore)}/100
+            </span>
+          </span>
+        )}
+      </div>
+    </header>
+  );
 }

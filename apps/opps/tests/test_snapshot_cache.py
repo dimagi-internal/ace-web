@@ -8,7 +8,6 @@ from django.core.cache import cache
 
 from apps.opps import snapshot_cache
 
-
 pytestmark = pytest.mark.django_db
 
 
@@ -65,7 +64,9 @@ def test_invalidate_drops_matching_snapshot():
 def test_invalidate_only_drops_intersecting_keys():
     snap_a = _MockSnapshot("alpha", "a", _files(("f1", "t1")))
     snap_b = _MockSnapshot("beta", "b", _files(("f3", "t3")))
-    snapshot_cache.set(workspace_id=1, slug="alpha", run_id="r1", snap=snap_a, file_ids={"f1", "f2"})
+    snapshot_cache.set(
+        workspace_id=1, slug="alpha", run_id="r1", snap=snap_a, file_ids={"f1", "f2"}
+    )
     snapshot_cache.set(workspace_id=1, slug="beta", run_id="r1", snap=snap_b, file_ids={"f3"})
 
     snapshot_cache.invalidate({"f2"})

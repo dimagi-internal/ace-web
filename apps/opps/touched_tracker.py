@@ -14,13 +14,12 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 
-
-_current: ContextVar["TouchedFileTracker | None"] = ContextVar(
+_current: ContextVar[TouchedFileTracker | None] = ContextVar(
     "ace_touched_file_tracker", default=None,
 )
 
 
-def current_tracker() -> "TouchedFileTracker | None":
+def current_tracker() -> TouchedFileTracker | None:
     return _current.get()
 
 
@@ -45,7 +44,7 @@ class TouchedFileTracker:
     def pairs(self) -> list[tuple[str, str | None]]:
         return [(fid, self._mod_times.get(fid)) for fid in self.file_ids]
 
-    def __enter__(self) -> "TouchedFileTracker":
+    def __enter__(self) -> TouchedFileTracker:
         self._token = _current.set(self)
         return self
 

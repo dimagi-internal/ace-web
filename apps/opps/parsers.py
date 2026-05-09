@@ -104,3 +104,28 @@ class QAResult:
     auto_fix_attempted: bool | None = None
     auto_fix_attempts: int | None = None
     auto_fix_succeeded: bool | None = None
+
+
+@dataclass
+class Decision:
+    """One row from the per-run decisions log.
+
+    Mirrors the schema in ACE's ``lib/decisions-schema.ts`` (decisions-log
+    framework, May 2026). Each row records a load-bearing default a phase
+    skill applied — what was asked, what was picked, what alternatives
+    were on the table, and whether the human reviewer overrode the default.
+
+    See ACE ``docs/superpowers/specs/2026-05-08-decisions-log-design.md``
+    for canonical field semantics. Lives at the run-folder root in
+    ``decisions.yaml``, alongside ``run_state.yaml``.
+    """
+
+    id: str
+    phase: str
+    skill: str
+    question: str
+    default: str
+    options_considered: list[str] = field(default_factory=list)
+    source: str = ""
+    status: str = "applied"  # applied | overridden | open
+    notes: str = ""

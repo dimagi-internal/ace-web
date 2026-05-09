@@ -13,7 +13,6 @@ from apps.opps import drive_changes, snapshot_cache
 from apps.opps.actions import ActionError, ActionPayload, inject_action
 from apps.opps.drive_cache import CachedDriveClient
 from apps.opps.drive_client import get_drive_client
-from apps.opps.touched_tracker import TouchedFileTracker
 from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
 from apps.opps.seed import build_chat_seed
@@ -32,6 +31,7 @@ from apps.opps.sync import (
     load_opp_card_by_slug,
     load_scorecard,
 )
+from apps.opps.touched_tracker import TouchedFileTracker
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
 from apps.system.reader import (

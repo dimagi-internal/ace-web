@@ -3,7 +3,6 @@ import type { ViewKind } from "../components/views/ViewSwitcher";
 
 const VALID: readonly ViewKind[] = [
   "hierarchy",
-  "flow",
   "timeline",
   "workbench",
   "phase",

@@ -209,6 +209,27 @@ export interface Gate {
   note: string;
 }
 
+// Structural QA verdict on a producer artifact (added by ACE PR #146 +
+// ace-web PR #249). Distinct from ``Judge``: QA is binary (pass/fail/
+// incomplete) and gates eval — when QA fails, eval is skipped.
+export interface QAFailure {
+  check: string;
+  type: string; // "static" | "llm"
+  detail: string;
+  auto_fix_hint: string;
+}
+
+export interface QAResult {
+  skill: string;          // the QA skill that produced this (e.g. "idea-to-pdd-qa")
+  target_skill: string;   // the producer skill being checked (e.g. "idea-to-pdd")
+  verdict: "pass" | "fail" | "incomplete";
+  ran_at: string | null;
+  capture_path: string | null;
+  stats: { checks_run: number; checks_passed: number; checks_failed: number };
+  failures: QAFailure[];
+  auto_fix: { attempted: boolean | null; attempts: number | null; succeeded: boolean | null } | null;
+}
+
 export interface Step {
   skill_name: string;
   // Human-readable name from the plugin's SKILL.md H1 (e.g. "Idea to PDD"
@@ -226,6 +247,7 @@ export interface Step {
   is_recurring: boolean;
   preview_text: string;
   judge: Judge | null;
+  qa_result: QAResult | null;
   gates: Gate[];
   artifacts: Artifact[];
 }
@@ -235,6 +257,25 @@ export interface PhaseInfo {
   display_name: string;
   ordinal: number;
   agent: string;
+}
+
+// One row from the per-run decisions log. Each row records a load-bearing
+// default a phase skill applied. See ACE PR #160-#164 (decisions-log
+// framework) and `lib/decisions-schema.ts`.
+export interface Decision {
+  id: string;
+  // Server-projected to match `PhaseInfo.name` (e.g. "design-review")
+  // so the frontend can group naively. Original tag from the YAML is
+  // preserved as `phase_raw` (e.g. "1-design") for debugging.
+  phase: string;
+  phase_raw: string;
+  skill: string;            // which skill raised the question
+  question: string;
+  default: string;
+  options_considered: string[];
+  source: string;
+  status: "applied" | "overridden" | "open";
+  notes: string;
 }
 
 export interface Run {
@@ -248,6 +289,7 @@ export interface Run {
   skill_versions: Record<string, string>;
   notes: string;
   steps: Step[];
+  decisions: Decision[];
 }
 
 export interface RunSummary {

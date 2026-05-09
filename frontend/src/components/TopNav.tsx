@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
-import { listPendingReviews } from "@/api/workspaces";
 import { UserMenu } from "@/components/UserMenu";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { useWorkspace } from "@/hooks/useWorkspace";
@@ -9,7 +7,6 @@ import { cn } from "@/lib/utils";
 
 const WORKSPACE_NAV = [
   { label: "Opps", subPath: "opps" },
-  { label: "Reviews", subPath: "reviews" },
   { label: "Sessions", subPath: "sessions" },
   { label: "Chat", subPath: "chat" },
 ];
@@ -26,26 +23,6 @@ export function TopNav() {
   // Prefer the URL's workspace; fall back to the user's first one for
   // legacy paths (so the nav links remain useful even on /settings etc.).
   const slug = current?.slug ?? all[0]?.slug;
-
-  // Pending-review count badge on the Reviews link. Polls every 60s
-  // so a reviewer who leaves the tab open eventually sees new gates
-  // without a manual refresh. Quiet when zero (no badge rendered).
-  const [pendingCount, setPendingCount] = useState<number | null>(null);
-  useEffect(() => {
-    if (!slug) return;
-    let cancelled = false;
-    const tick = () => {
-      listPendingReviews(slug)
-        .then((d) => !cancelled && setPendingCount(d.pending.length))
-        .catch(() => !cancelled && setPendingCount(null));
-    };
-    tick();
-    const id = setInterval(tick, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [slug]);
 
   return (
     <nav className="flex items-center gap-3 border-b border-border bg-card px-4 py-2 text-sm">
@@ -64,10 +41,6 @@ export function TopNav() {
         {WORKSPACE_NAV.map((item) => {
           const target = slug ? `/w/${slug}/${item.subPath}` : `/${item.subPath}`;
           const isActive = pathname.includes(`/${item.subPath}`);
-          const showBadge =
-            item.subPath === "reviews" &&
-            pendingCount !== null &&
-            pendingCount > 0;
           return (
             <Link
               key={item.subPath}
@@ -78,16 +51,6 @@ export function TopNav() {
               )}
             >
               <span>{item.label}</span>
-              {showBadge && (
-                <span
-                  className="rounded-full border border-amber-500/40
-                    bg-amber-500/10 px-1.5 text-[10px] font-medium leading-tight
-                    text-amber-500"
-                  title={`${pendingCount} gate${pendingCount === 1 ? "" : "s"} awaiting review`}
-                >
-                  {pendingCount}
-                </span>
-              )}
             </Link>
           );
         })}

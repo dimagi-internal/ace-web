@@ -19,7 +19,7 @@ from typing import Any
 
 from django.conf import settings
 
-from apps.opps.parsers import GateDecision, JudgeVerdict, OppManifest, QAResult
+from apps.opps.parsers import Decision, GateDecision, JudgeVerdict, OppManifest, QAResult
 from apps.opps.previews import build_preview
 from apps.opps.sync import (
     ArtifactRef,
@@ -192,6 +192,58 @@ def serialize_step_snapshot(
     }
 
 
+def _phase_name_by_ordinal() -> dict[int, str]:
+    """Map phase ordinal → phase name (e.g. 1 → "design-review").
+
+    The decisions log tags rows with the artifact-manifest folder
+    convention (``1-design``, ``2-commcare``, …) — short, ordinal-prefixed.
+    The system overview uses the agent-name form (``design-review``,
+    ``commcare-setup``, …). Front-end groups decisions by phase, so we
+    project decisions onto the snapshot's phase taxonomy here.
+    """
+    overview = _system_overview()
+    out: dict[int, str] = {}
+    for p in overview.get("phases") or []:
+        ordinal = p.get("ordinal")
+        name = p.get("name")
+        if isinstance(ordinal, int) and isinstance(name, str):
+            out[ordinal] = name
+    return out
+
+
+def _project_decision_phase(raw: str) -> str:
+    """Project a decision row's ``phase`` tag onto the canonical phase
+    name used by the snapshot. ``"1-design"`` → ``"design-review"``.
+
+    Returns the raw tag unchanged when we can't parse an ordinal — this
+    keeps unknown phases visible (just unfilterable) rather than dropping
+    rows silently.
+    """
+    if not raw:
+        return raw
+    head = raw.split("-", 1)[0]
+    try:
+        ordinal = int(head)
+    except ValueError:
+        return raw
+    return _phase_name_by_ordinal().get(ordinal, raw)
+
+
+def serialize_decision(d: Decision) -> dict:
+    return {
+        "id": d.id,
+        "phase": _project_decision_phase(d.phase),
+        "phase_raw": d.phase,
+        "skill": d.skill,
+        "question": d.question,
+        "default": d.default,
+        "options_considered": list(d.options_considered),
+        "source": d.source,
+        "status": d.status,
+        "notes": d.notes,
+    }
+
+
 def serialize_run_detail(run: RunDetail) -> dict:
     return {
         "run_id": run.run_id,
@@ -204,6 +256,7 @@ def serialize_run_detail(run: RunDetail) -> dict:
         "skill_versions": run.skill_versions,
         "notes": run.notes,
         "steps": [serialize_step_snapshot(s) for s in run.steps],
+        "decisions": [serialize_decision(d) for d in run.decisions],
     }
 
 
