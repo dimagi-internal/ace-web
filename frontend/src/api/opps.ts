@@ -1,4 +1,5 @@
-import { request } from "./client";
+import { request, requestWithEtag } from "./client";
+import { getCachedSnapshot, setCachedSnapshot, getCachedList, setCachedList } from "./oppCache";
 import type {
   CreateOppPayload,
   CreateOppResponse,
@@ -13,7 +14,7 @@ import type {
   WorkingSessionResponse,
 } from "./types";
 
-export function listOpps(
+export async function listOpps(
   tags?: string[],
   opts?: { force?: boolean },
 ): Promise<OppCard[]> {
@@ -21,7 +22,19 @@ export function listOpps(
   if (tags && tags.length > 0) params.set("tags", tags.join(","));
   if (opts?.force) params.set("force", "1");
   const q = params.toString();
-  return request<OppCard[]>(`/opps/${q ? `?${q}` : ""}`);
+  const path = `/opps/${q ? `?${q}` : ""}`;
+
+  const cacheKey = `tags=${(tags ?? []).join(",")}`;
+  const cached = !opts?.force ? getCachedList(cacheKey) : undefined;
+  const headers: HeadersInit = cached ? { "If-None-Match": cached.etag } : {};
+
+  const res = await requestWithEtag<OppCard[]>(path, { headers });
+  if (res.status === 304 && cached) return cached.data;
+  if (res.data) {
+    setCachedList(cacheKey, { data: res.data, etag: res.etag });
+    return res.data;
+  }
+  throw new Error("listOpps: unexpected empty response without cache");
 }
 
 export function createOpp(payload: CreateOppPayload): Promise<CreateOppResponse> {
@@ -44,7 +57,7 @@ export function updateOppTags(slug: string, tags: string[]): Promise<{ slug: str
   );
 }
 
-export function getOpp(
+export async function getOpp(
   slug: string,
   runId?: string,
   opts?: { force?: boolean },
@@ -53,9 +66,18 @@ export function getOpp(
   if (runId) params.set("run_id", runId);
   if (opts?.force) params.set("force", "1");
   const q = params.toString();
-  return request<OppSnapshot>(
-    `/opps/${encodeURIComponent(slug)}${q ? `?${q}` : ""}`,
-  );
+  const path = `/opps/${encodeURIComponent(slug)}${q ? `?${q}` : ""}`;
+
+  const cached = !opts?.force ? getCachedSnapshot(slug, runId ?? null) : undefined;
+  const headers: HeadersInit = cached ? { "If-None-Match": cached.etag } : {};
+
+  const res = await requestWithEtag<OppSnapshot>(path, { headers });
+  if (res.status === 304 && cached) return cached.data;
+  if (res.data) {
+    setCachedSnapshot(slug, runId ?? null, { data: res.data, etag: res.etag });
+    return res.data;
+  }
+  throw new Error("getOpp: unexpected empty response without cache");
 }
 
 
