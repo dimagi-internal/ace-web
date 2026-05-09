@@ -64,18 +64,6 @@ def test_compare_summary_score_delta(authed_client):
     assert summary["passed_b"] is True
 
 
-def test_compare_summary_pending_gates_delta(authed_client):
-    fake = FakeDriveClient.from_tree(compare_pair_tree())
-    response = _with_fake_drive(
-        authed_client, fake, "/api/opps/compare/idea-v1/idea-v2"
-    )
-    summary = response.json()["data"]["summary"]
-    # v1 has 2 pending gates; v2 has 1 pending and 1 approved.
-    assert summary["pending_gates_a"] == 2
-    assert summary["pending_gates_b"] == 1
-    assert summary["pending_gates_delta"] == -1
-
-
 def test_compare_score_delta_is_null_when_one_opp_unscored(authed_client):
     """Compare should not 500 when one opp has no opp-eval verdict."""
     tree = compare_pair_tree()

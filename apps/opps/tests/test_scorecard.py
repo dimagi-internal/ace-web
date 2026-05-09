@@ -128,20 +128,6 @@ def test_step_verdict_surfaced_from_verdicts_yaml():
     assert ocs_eval.judge.passed is True
 
 
-def test_gate_decisions_surfaced_from_state_yaml():
-    """The ``gates:`` map in state.yaml populates step.gates history."""
-    client = FakeDriveClient.from_tree(opp_with_scorecard_tree())
-    ace_id = client.folder_id("ACE")
-    snap = load_opp(client, ace_folder_id=ace_id, slug="cholera-smoketest")
-
-    idea = next(
-        s for s in snap.current_run.steps if s.step.skill_name == "idea-to-pdd"
-    )
-    assert len(idea.gates) == 1
-    assert idea.gates[0].decision == "approved"
-    assert idea.gates[0].decided_by == "neal@dimagi.com"
-
-
 def test_gate_brief_artifact_attributed_to_producing_skill():
     """``gate-briefs/idea-to-pdd.md`` is produced_by idea-to-pdd in the
     manifest, so it surfaces as that step's artifact — which the UI uses

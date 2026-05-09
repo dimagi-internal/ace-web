@@ -321,8 +321,6 @@ def _opp_list_impl(request):
                     "current_step": None,
                     "current_step_display": None,
                     "status": "error",
-                    "pending_gates": [],
-                    "pending_gates_display": [],
                     "eval_score": None,
                     "eval_score_pct": None,
                     "eval_passed": None,
@@ -337,7 +335,6 @@ def _opp_list_impl(request):
         if required_tags and not required_tags.issubset(set(card.opp.tags)):
             continue
 
-        pending_slugs = list(card.pending_gate_skills)
         cards.append({
             "slug": card.opp.slug,
             "display_name": card.opp.display_name,
@@ -359,10 +356,6 @@ def _opp_list_impl(request):
                 else None
             ),
             "status": card.status,
-            "pending_gates": pending_slugs,
-            "pending_gates_display": [
-                display_lookup.get(s, s) for s in pending_slugs
-            ],
             "eval_score": card.eval_score,
             "eval_score_pct": normalize_score_pct(card.eval_score),
             "eval_passed": card.eval_passed,
@@ -632,7 +625,7 @@ def multi_run_summary(request, slug: str):
 
       - per_run: list of {run_id, started_at, status, mean_score,
                           phase_scores: {phase: mean}, skill_scores:
-                          {skill: score}, gate_pending_count, ...}
+                          {skill: score}, ...}
       - skill_index: ordered list of {skill_name, display_name, phase,
                           phase_display, ordinal, has_judge}
 
@@ -714,7 +707,6 @@ def multi_run_summary(request, slug: str):
         skill_scores: dict[str, float | None] = {}
         skill_passed: dict[str, bool | None] = {}
         skill_status: dict[str, str] = {}
-        gate_pending = 0
         complete_count = 0
         scored_values: list[float] = []
         phase_scored: dict[str, list[float]] = {}
@@ -739,8 +731,6 @@ def multi_run_summary(request, slug: str):
             if step.step.status == "complete":
                 complete_count += 1
                 phase_complete[phase] = phase_complete.get(phase, 0) + 1
-            if step.step.status == "gate-pending":
-                gate_pending += 1
 
         mean_score = (
             sum(scored_values) / len(scored_values) if scored_values else None
@@ -764,7 +754,6 @@ def multi_run_summary(request, slug: str):
             "mean_score": mean_score,
             "complete_count": complete_count,
             "total_count": len(run.steps),
-            "gate_pending_count": gate_pending,
             "phase_scores": phase_scores,
             "skill_scores": skill_scores,
             "skill_passed": skill_passed,
@@ -912,24 +901,15 @@ def scorecard(request, slug: str):
     return Response(success_response(serialize_scorecard(sc)))
 
 
-def _count_pending_gates(snap) -> int:
-    """Count gates whose latest decision is 'pending' on a step snapshot."""
-    return sum(
-        1
-        for s in snap.current_run.steps
-        if s.gates and s.gates[-1].decision == "pending"
-    )
-
-
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def opp_compare(request, slug_a: str, slug_b: str):
     """Side-by-side comparison of two opps in the same workspace.
 
     Loads both OppSnapshots plus an opp-eval summary for each, and
-    returns a small `summary` block with score / pending-gate deltas
-    so the frontend can render the "did the new run improve?" banner
-    without re-deriving anything.
+    returns a small `summary` block with the score delta so the
+    frontend can render the "did the new run improve?" banner without
+    re-deriving anything.
     """
     if slug_a == slug_b:
         return Response(
@@ -983,9 +963,6 @@ def opp_compare(request, slug_a: str, slug_b: str):
         log.warning("compare: failed to load card for %r: %s", slug_b, exc)
         score_b, passed_b = None, None
 
-    pending_a = _count_pending_gates(snap_a)
-    pending_b = _count_pending_gates(snap_b)
-
     score_delta = (
         score_b - score_a if score_a is not None and score_b is not None else None
     )
@@ -999,9 +976,6 @@ def opp_compare(request, slug_a: str, slug_b: str):
             "score_b": score_b,
             "passed_b": passed_b,
             "score_delta": score_delta,
-            "pending_gates_a": pending_a,
-            "pending_gates_b": pending_b,
-            "pending_gates_delta": pending_b - pending_a,
         },
     }))
 

@@ -340,7 +340,6 @@ class TestBuildStepsQAStatus:
             skill_registry,
             artifacts_by_skill={"idea-to-pdd": []},
             verdicts_by_skill={},
-            gates_by_skill={},
             folder_id="folder",
             qa_results_by_skill=qa_results,
         )
@@ -366,7 +365,6 @@ class TestBuildStepsQAStatus:
             skill_registry,
             artifacts_by_skill={"idea-to-pdd": [object()]},  # has artifacts
             verdicts_by_skill={},
-            gates_by_skill={},
             folder_id="folder",
             qa_results_by_skill=qa_results,
         )
@@ -380,7 +378,6 @@ class TestBuildStepsQAStatus:
             skill_registry,
             artifacts_by_skill={"idea-to-pdd": []},
             verdicts_by_skill={},
-            gates_by_skill={},
             folder_id="folder",
         )
         assert steps[0].step.status == "pending"
