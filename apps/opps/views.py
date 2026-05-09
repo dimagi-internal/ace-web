@@ -673,12 +673,23 @@ def runs_list(request, slug: str):
             status=404,
         )
     runs = list_opp_runs(client, ace_root_folder_id=ace_folder_id, opp_slug=slug)
+    # Surface display names alongside the slugs so the inline runs list on
+    # /opps doesn't render `design-review` / `idea-to-pdd` raw — the
+    # display lookups are process-cached so this is essentially free.
+    skill_lookup = _skill_display_name_lookup()
+    phase_lookup = _phase_display_name_lookup()
     return Response(success_response([
         {
             "run_id": r.run_id,
             "folder_id": r.folder_id,
             "current_phase": r.current_phase,
+            "current_phase_display": (
+                phase_lookup.get(r.current_phase) if r.current_phase else None
+            ),
             "current_step": r.current_step,
+            "current_step_display": (
+                skill_lookup.get(r.current_step) if r.current_step else None
+            ),
             "mode": r.mode,
             "last_actor": r.last_actor,
             "last_actor_at": r.last_actor_at,

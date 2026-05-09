@@ -282,7 +282,13 @@ export interface Run {
 export interface RunSummary {
   run_id: string;
   current_phase: string | null;
+  // Server-projected display name for ``current_phase`` (e.g. "Design Review"
+  // for ``design-review``). Pulled from the plugin's agent frontmatter via
+  // apps.system.reader.phase_display_names. Null when current_phase is null
+  // or unknown to the registry. Same shape as OppCard.current_phase_display.
+  current_phase_display?: string | null;
   current_step: string | null;
+  current_step_display?: string | null;
   mode: string | null;
   last_actor: string | null;
   last_actor_at: string | null;
