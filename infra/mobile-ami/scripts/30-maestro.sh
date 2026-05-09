@@ -4,10 +4,11 @@
 # AVD.
 set -euo pipefail
 
-MAESTRO_VERSION="${MAESTRO_VERSION:-1.39.0}"
-# NOTE: Maestro versioning swung back from "2.5.x" pre-releases to a
-# stable 1.x line in 2025. Pin to 1.39 (latest as of 2026-05) — the
-# CommCare recipes were verified against this release.
+MAESTRO_VERSION="${MAESTRO_VERSION:-2.5.1}"
+# Pin to 2.5.1 (latest stable as of 2026-05). The ACE plugin's
+# mobile-integration playbook documents recipes verified against
+# Maestro 2.3.0-2.5.1 (the dadb 1.2.10 line); pinning to 2.5.1 stays
+# inside that verified window.
 INSTALL_DIR=/opt/maestro
 
 mkdir -p "$INSTALL_DIR"

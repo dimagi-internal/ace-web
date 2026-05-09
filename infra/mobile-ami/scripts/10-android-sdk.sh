@@ -25,8 +25,14 @@ chmod 0644 /etc/profile.d/android-sdk.sh
 # shellcheck disable=SC1091
 source /etc/profile.d/android-sdk.sh
 
-# Accept all licenses up-front (otherwise sdkmanager prompts).
+# Accept all licenses up-front (otherwise sdkmanager prompts). `yes`
+# gets SIGPIPE'd (exit 141) when sdkmanager closes its stdin after
+# the last license is accepted; with set -o pipefail that aborts the
+# script. Disable pipefail for this one command — the only exit code
+# we care about is sdkmanager's.
+set +o pipefail
 yes | sdkmanager --licenses >/dev/null
+set -o pipefail
 
 sdkmanager \
   "platform-tools" \

@@ -5,7 +5,10 @@
 set -euo pipefail
 
 COMMCARE_VERSION="${COMMCARE_VERSION:-2.62.0}"
-COMMCARE_APK_URL="${COMMCARE_APK_URL:-https://github.com/dimagi/commcare-android/releases/download/commcare_${COMMCARE_VERSION}/commcare-${COMMCARE_VERSION}.apk}"
+# GitHub Releases asset name: dimagi/commcare-android publishes the
+# release APK as `app-commcare-release.apk` under the tag
+# `commcare_${VERSION}`. Verified against 2.62.0 on 2026-05-09.
+COMMCARE_APK_URL="${COMMCARE_APK_URL:-https://github.com/dimagi/commcare-android/releases/download/commcare_${COMMCARE_VERSION}/app-commcare-release.apk}"
 
 APK_DIR=/opt/ace/apks
 APK_PATH="$APK_DIR/commcare.apk"

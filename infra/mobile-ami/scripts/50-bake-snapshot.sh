@@ -58,16 +58,34 @@ export PATH=\$PATH:\$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:\$ANDROID_SDK_ROO
 
 # Start emulator in background. -no-snapshot-save means we won't accidentally
 # overwrite the default-boot snapshot; we save the named one explicitly below.
+EMULATOR_LOG=/var/log/ace-mobile/bake-emulator.log
 nohup emulator -avd $AVD_NAME \
-  -no-window -no-audio \
+  -no-window -no-audio -no-metrics \
   -gpu swiftshader_indirect \
   -no-snapshot-save \
   -no-boot-anim \
-  > /var/log/ace-mobile/bake-emulator.log 2>&1 &
+  > "\$EMULATOR_LOG" 2>&1 &
+EMULATOR_PID=\$!
+echo "emulator launched, pid=\$EMULATOR_PID, log=\$EMULATOR_LOG"
 
-# Wait for boot.
-echo "Waiting for adb to see the emulator..."
-adb wait-for-device
+# Give the emulator a few seconds to either crash or open the adb port.
+# If it crashes, the log tail will tell us why; if it's alive, adb
+# wait-for-device will pick it up below.
+sleep 5
+if ! kill -0 \$EMULATOR_PID 2>/dev/null; then
+  echo "ERROR: emulator died before adb saw it. Last 40 lines of log:" >&2
+  tail -40 "\$EMULATOR_LOG" >&2 || echo "  (log unreadable)" >&2
+  exit 1
+fi
+
+# Wait for boot. Cap adb wait-for-device at 180s so we don't hang
+# forever if the emulator silently stops responding.
+echo "Waiting for adb to see the emulator (max 180s)..."
+if ! timeout 180 adb wait-for-device; then
+  echo "ERROR: adb wait-for-device timed out. Emulator log tail:" >&2
+  tail -60 "\$EMULATOR_LOG" >&2 || true
+  exit 1
+fi
 
 echo "Waiting for sys.boot_completed..."
 boot_complete=""

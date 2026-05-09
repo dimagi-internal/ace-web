@@ -19,12 +19,20 @@ variable "source_ami_owner" {
 variable "instance_type" {
   description = <<-EOT
     Instance type for the bake. Must expose nested virtualization for KVM
-    (the `00-base.sh` script runs `kvm-ok`). m8i.xlarge is the cheapest
-    member of the m8i family that supports it. If KVM fails on bake,
-    fallbacks are `c8i.xlarge` (cheaper) or `m7i.metal-24xl` (bare metal).
+    (the `00-base.sh` script runs `kvm-ok`).
+
+    Default `c5n.metal` (~$3.89/hr) is the cheapest x86 bare-metal type
+    in us-east-1; bare metal always exposes nested virt. We don't use a
+    smaller virtualized type (m8i.xlarge / c8i.xlarge with the
+    `cpu_options.nested_virtualization=enabled` flag) for the bake
+    because Packer's amazon-ebs builder doesn't expose `cpu_options`.
+
+    Bake is ~25 min one-time per AMI rebuild (~$1.62). The *runtime*
+    instance the Terraform stack creates is m8i.xlarge with nested
+    virt enabled, so per-run cost is unaffected.
   EOT
   type        = string
-  default     = "m8i.xlarge"
+  default     = "c5n.metal"
 }
 
 variable "ami_name_prefix" {

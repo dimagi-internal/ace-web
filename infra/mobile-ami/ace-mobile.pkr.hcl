@@ -31,6 +31,16 @@ source "amazon-ebs" "ace_mobile" {
   instance_type = var.instance_type
   ssh_username  = "ubuntu"
 
+  # c5n.metal is slower to stop than non-metal types (regularly 12-15
+  # minutes vs the default 10-minute waiter). Without this block, packer
+  # times out waiting for `instance-stopped` AFTER all provisioning has
+  # succeeded — including the snapshot bake — and discards the work.
+  # 30s × 60 attempts = 30 minutes, well above observed worst case.
+  aws_polling {
+    delay_seconds = 30
+    max_attempts  = 60
+  }
+
   # Need ample headroom for the Android SDK + emulator system image + APK +
   # AVD snapshot on the bake instance. The resulting AMI block-device
   # mapping inherits this size.
@@ -99,9 +109,14 @@ build {
   }
 
   # Stage Maestro recipes, systemd units, idle script.
+  # `source = "files/recipes"` (no trailing slash) + `destination =
+  # "/tmp"` uploads the directory itself, so the recipes land at
+  # /tmp/recipes/{connect-register-to-otp,connect-register-from-otp}.yaml.
+  # The trailing-slash variant requires the destination dir to already
+  # exist on the remote — which it doesn't on a fresh bake instance.
   provisioner "file" {
-    source      = "files/recipes/"
-    destination = "/tmp/recipes/"
+    source      = "files/recipes"
+    destination = "/tmp"
   }
 
   provisioner "file" {
@@ -126,9 +141,15 @@ build {
 
   # 50 — boot AVD, register demo user via the +7426 demo-bypass flow,
   # save snapshot. Test creds injected as env vars.
+  #
+  # `{{ .Vars }}` in the execute_command is required for environment_vars
+  # to actually reach the script — without it, packer doesn't inject the
+  # `KEY='value'` assignments at all, and `sudo -E` has nothing to
+  # preserve. Other scripts in this build don't reference env vars so
+  # they ran fine without it.
   provisioner "shell" {
     script          = "scripts/50-bake-snapshot.sh"
-    execute_command = "sudo -E bash '{{ .Path }}'"
+    execute_command = "{{ .Vars }} sudo -E bash '{{ .Path }}'"
     environment_vars = [
       "TEST_PHONE_LOCAL=${var.test_phone_local}",
       "TEST_COUNTRY_CODE=${var.test_country_code}",

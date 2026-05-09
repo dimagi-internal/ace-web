@@ -73,6 +73,13 @@ resource "aws_launch_template" "mobile" {
     http_put_response_hop_limit = 2
   }
 
+  # Nested virt is required for the Android emulator's KVM path on
+  # virtualized m8i/c8i/r8i (Feb 2026 AWS feature, default-off). The
+  # AWS provider doesn't expose `cpu_options.nested_virtualization`
+  # yet (5.100.0); we set it via the AWS CLI in a post-create
+  # null_resource against the running instance (stopped first by
+  # null_resource.stop_on_create). Hacky but provider-version-independent.
+
   tag_specifications {
     resource_type = "instance"
     tags = merge(local.common_tags, {
@@ -127,12 +134,38 @@ resource "null_resource" "stop_on_create" {
 
   provisioner "local-exec" {
     command = <<-EOT
+      set -e
       aws ec2 stop-instances \
         --region ${var.region} \
         --instance-ids ${aws_instance.mobile.id} \
         > /dev/null
+      aws ec2 wait instance-stopped \
+        --region ${var.region} \
+        --instance-ids ${aws_instance.mobile.id}
     EOT
   }
 
   depends_on = [aws_instance.mobile]
+}
+
+# Enable nested virtualization on the stopped instance. The AWS provider
+# 5.100.0 doesn't expose this attribute yet; we set it via the CLI.
+# Required for the Android emulator's KVM path on m8i/c8i/r8i (Feb 2026
+# AWS feature, default-off). Re-runs are no-ops (modify-instance-attribute
+# is idempotent).
+resource "null_resource" "enable_nested_virt" {
+  triggers = {
+    instance_id = aws_instance.mobile.id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws ec2 modify-instance-cpu-options \
+        --region ${var.region} \
+        --instance-id ${aws_instance.mobile.id} \
+        --nested-virtualization enabled
+    EOT
+  }
+
+  depends_on = [null_resource.stop_on_create]
 }
