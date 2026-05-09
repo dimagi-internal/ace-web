@@ -138,6 +138,15 @@ export default function OppWorkbenchPage() {
         selectedRunId={snapshot.selected_run_id ?? null}
         onRunChange={(id) => setSearchParams({ run_id: id })}
         onRefresh={() => load()}
+        onRunDeleted={() => {
+          // The just-trashed run is gone from Drive but ?run_id=<deleted>
+          // is still in the URL — re-fetching with that id 404s and
+          // surfaces a confusing error. Clear the param so the page
+          // resolves to the new latest run (or to "Cycle hasn't
+          // started yet" if no runs remain).
+          setSearchParams({}, { replace: true });
+          load();
+        }}
         onJumpToPhases={() => setView("phase")}
         costRollup={costRollup}
         multiRun={multiRun}
