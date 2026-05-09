@@ -76,6 +76,9 @@ def test_nested_with_blocks_track_independently(client):
         outer_count = len(outer.file_ids)
         with TouchedFileTracker() as inner:
             client.list_files(alpha_id)
+            assert current_tracker() is inner  # while in inner block
         assert inner.file_ids == outer.file_ids
+        assert current_tracker() is outer  # outer restored after inner exit
+    assert current_tracker() is None  # both blocks exited
     # outer didn't double-count its work
     assert len(outer.file_ids) == outer_count
