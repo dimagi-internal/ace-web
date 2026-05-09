@@ -15,6 +15,7 @@ import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
+import { useOppCostRollup } from "../hooks/useOppCostRollup";
 import { useOppSocket } from "../hooks/useOppSocket";
 import { useViewMode } from "../hooks/useViewMode";
 
@@ -53,6 +54,7 @@ export default function OppWorkbenchPage() {
   const { view, setView } = useViewMode("workbench");
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
+  const costRollup = useOppCostRollup(slug, workspaceSlug);
 
   const load = useCallback(
     (opts: { silent?: boolean; force?: boolean } = {}) => {
@@ -135,6 +137,7 @@ export default function OppWorkbenchPage() {
         onRunChange={(id) => setSearchParams({ run_id: id })}
         onRefresh={() => load()}
         onJumpToPhases={() => setView("phase")}
+        costRollup={costRollup}
         workspaceSlug={workspaceSlug}
       />
       <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
@@ -148,6 +151,7 @@ export default function OppWorkbenchPage() {
                 phases={snapshot.phases}
                 selectedSkill={selectedSkill}
                 onSelect={setSelectedSkill}
+                costRollup={costRollup}
               />
             </main>
             <section className="w-[560px] shrink-0 overflow-y-auto border-l border-border bg-background">
