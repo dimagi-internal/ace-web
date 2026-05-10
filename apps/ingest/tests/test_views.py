@@ -221,6 +221,94 @@ def test_upload_simple_session_has_breakdown_with_zero_or_minimal_costs(client):
     assert session.cost_breakdown["totals"]["input_tokens"] == 0
 
 
+def test_upload_honors_explicit_opp_run_id_verbatim(client):
+    """The form-supplied opp_run_id must round-trip unchanged. Issue #274
+    Bug 1: the response was reportedly returning a different run-id
+    than the form sent. Code review showed no override logic, but lock
+    the contract with a regression test."""
+    content = (FIXTURES / "interactive_session.jsonl").read_bytes()
+    file = BytesIO(content)
+    file.name = "session.jsonl"
+    resp = client.post(
+        "/api/ingest/upload",
+        {
+            "file": file,
+            "opp_slug": "leep-paint-collection",
+            "opp_run_id": "20260509-1448",
+        },
+        format="multipart",
+    )
+    assert resp.status_code == 201
+    body = resp.json()["data"]
+    assert body["opp_run_id"] == "20260509-1448"
+    session = Session.objects.get(slug=body["session_slug"])
+    assert session.opp_run_id == "20260509-1448"
+
+
+def test_upload_rejects_malformed_opp_run_id(client):
+    """Hardening for issue #274 Bug 1: reject anything outside the
+    [A-Za-z0-9_.-]{1,64} alphabet rather than storing it silently. The
+    operator gets a 422 with a `validation_error` envelope so a typo
+    surfaces immediately instead of producing a silently-misattributed
+    Session."""
+    content = (FIXTURES / "simple_session.jsonl").read_bytes()
+    file = BytesIO(content)
+    file.name = "simple_session.jsonl"
+    resp = client.post(
+        "/api/ingest/upload",
+        {"file": file, "opp_slug": "x", "opp_run_id": "not a run id"},
+        format="multipart",
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "validation_error"
+
+
+def test_upload_logs_opp_linkage_fields(client, caplog):
+    """Issue #274 Bug 1 instrumentation: every upload logs the form-supplied
+    opp linkage and the resulting stored values so prod regressions are
+    visible in CloudWatch."""
+    import logging
+    caplog.set_level(logging.INFO, logger="apps.ingest.views")
+    content = (FIXTURES / "simple_session.jsonl").read_bytes()
+    file = BytesIO(content)
+    file.name = "simple_session.jsonl"
+    resp = client.post(
+        "/api/ingest/upload",
+        {
+            "file": file,
+            "opp_slug": "malaria-pilot",
+            "opp_run_id": "r1",
+            "opp_step_skill": "idea-to-pdd",
+        },
+        format="multipart",
+    )
+    assert resp.status_code == 201
+    matches = [r for r in caplog.records if "ingest upload" in r.getMessage()]
+    assert matches, "expected an INFO log line about the ingest upload"
+    msg = matches[0].getMessage()
+    assert "malaria-pilot" in msg
+    assert "r1" in msg
+    assert "idea-to-pdd" in msg
+
+
+def test_upload_dedups_on_content_hash_when_no_cli_session_id(client):
+    """Hardening for issue #274 Bug 2: even after the parser learns the
+    Claude Code interactive envelope, transcripts that lack any session-id
+    field must still dedup on raw-byte hash so re-uploads don't produce
+    duplicate Session rows."""
+    raw = b'{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"hi"}]}}\n'
+    f1 = BytesIO(raw)
+    f1.name = "x.jsonl"
+    resp1 = client.post("/api/ingest/upload", {"file": f1}, format="multipart")
+    assert resp1.status_code == 201
+    assert resp1.json()["data"]["cli_session_id"] == ""
+    f2 = BytesIO(raw)
+    f2.name = "x.jsonl"
+    resp2 = client.post("/api/ingest/upload", {"file": f2}, format="multipart")
+    assert resp2.status_code == 409
+    assert resp2.json()["error"]["code"] == "duplicate"
+
+
 def test_upload_aggregator_failure_does_not_block_ingest(client, monkeypatch):
     """If the aggregator raises, the session is still created with empty breakdown."""
     from apps.ingest import views as ingest_views
