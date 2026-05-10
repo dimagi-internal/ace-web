@@ -8,7 +8,7 @@ import type {
   PhaseInfo,
   Step,
 } from "../../api/types";
-import { formatDuration, formatTokens, formatUsd, totalTokens } from "../cost/format";
+import { formatDuration, formatTokens, formatUsd, totalTokens } from "../../lib/format";
 import { SkillRow } from "./SkillRow";
 
 interface Props {

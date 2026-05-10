@@ -309,6 +309,36 @@ def test_upload_dedups_on_content_hash_when_no_cli_session_id(client):
     assert resp2.json()["error"]["code"] == "duplicate"
 
 
+def test_upload_persists_raw_jsonl_gz(client):
+    """Uploaded transcripts retain a gzipped copy of the raw bytes so the
+    on-demand session structure view can re-parse without a transcript-shaped
+    intermediate. Verifies both the raw round-trip and the read_raw_jsonl()
+    convenience method."""
+    import gzip
+
+    raw = (FIXTURES / "tool_use_session.jsonl").read_bytes()
+    file = BytesIO(raw)
+    file.name = "tool_use_session.jsonl"
+    resp = client.post("/api/ingest/upload", {"file": file}, format="multipart")
+    assert resp.status_code == 201
+    upload = IngestUpload.objects.latest("created_at")
+    assert upload.raw_jsonl_gz, "blob should be populated"
+    assert gzip.decompress(bytes(upload.raw_jsonl_gz)) == raw
+    assert upload.read_raw_jsonl() == raw.decode("utf-8")
+
+
+def test_ingest_upload_read_raw_jsonl_returns_none_when_blob_absent(client):
+    """Older IngestUpload rows (pre-this-PR) have NULL raw_jsonl_gz;
+    read_raw_jsonl() must return None rather than raising."""
+    resp = _upload_fixture(client)
+    assert resp.status_code == 201
+    upload = IngestUpload.objects.latest("created_at")
+    upload.raw_jsonl_gz = None
+    upload.save(update_fields=["raw_jsonl_gz"])
+    upload.refresh_from_db()
+    assert upload.read_raw_jsonl() is None
+
+
 def test_upload_aggregator_failure_does_not_block_ingest(client, monkeypatch):
     """If the aggregator raises, the session is still created with empty breakdown."""
     from apps.ingest import views as ingest_views

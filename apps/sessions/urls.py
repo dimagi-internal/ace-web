@@ -21,6 +21,11 @@ urlpatterns = [
         name="session_cost_breakdown",
     ),
     path(
+        "sessions/<slug:slug>/structure",
+        views.session_structure,
+        name="session_structure",
+    ),
+    path(
         "sessions/<slug:slug>/share",
         share_views.share_token_collection,
         name="share_token_collection",

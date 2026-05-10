@@ -1,4 +1,5 @@
 """Upload endpoint for JSONL session files."""
+import gzip
 import logging
 import re
 import tempfile
@@ -89,9 +90,9 @@ def upload(request: Request) -> Response:
         if err is not None:
             return err
 
+    raw_bytes_data = b"".join(file.chunks())
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
-        for chunk in file.chunks():
-            tmp.write(chunk)
+        tmp.write(raw_bytes_data)
         tmp_path = Path(tmp.name)
 
     try:
@@ -166,6 +167,7 @@ def upload(request: Request) -> Response:
         cli_session_id=parsed.cli_session_id or "",
         content_sha256=parsed.content_sha256 or "",
         workspace=workspace,
+        raw_jsonl_gz=gzip.compress(raw_bytes_data),
     )
 
     log.info(

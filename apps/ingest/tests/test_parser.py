@@ -133,3 +133,44 @@ def test_extract_cost_events_marks_sidechain_with_parent_uuid():
     assert len(sidechain) == 2
     assert sidechain[0].parent_uuid == "u-5"
     assert sidechain[1].parent_uuid == "u-6"
+
+
+def test_cost_event_captures_tool_result_is_error(tmp_path):
+    from apps.ingest.parser import parse_session_file
+
+    jsonl = tmp_path / "errors.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"false"}}]}}\n'
+        '{"type":"user","uuid":"u2","timestamp":"2026-05-10T14:00:01Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1",'
+        '"is_error":true,"content":"exit code 1"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    results = [e for e in events if e.kind == "tool_result"]
+    assert len(results) == 1
+    assert results[0].is_error is True
+    assert results[0].content_preview == "exit code 1"
+
+
+def test_cost_event_content_preview_truncates_long_results(tmp_path):
+    from apps.ingest.parser import parse_session_file
+
+    long_body = "x" * 500
+    jsonl = tmp_path / "long.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"toolu_1","name":"Read","input":{}}]}}\n'
+        '{"type":"user","uuid":"u2","timestamp":"2026-05-10T14:00:01Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1",'
+        f'"content":"{long_body}"' + "}]}}\n"
+    )
+    _session, events = parse_session_file(jsonl)
+    result = next(e for e in events if e.kind == "tool_result")
+    assert result.is_error is False
+    assert result.content_preview == long_body[:200]
+    assert len(result.content_preview) == 200

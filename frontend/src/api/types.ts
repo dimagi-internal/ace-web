@@ -492,6 +492,85 @@ export interface CostRollup {
   sessions_without_breakdown: number;
 }
 
+// --- Structure tree (GET /api/sessions/<slug>/structure) ---
+// Tree shape documented in docs/plans/2026-05-10-session-structure-view.md.
+// schema_version=1 = real tree; schema_version=0 = unavailable
+// (no_raw_jsonl: pre-2026-05-10 upload, or parse-failed: corrupt blob).
+
+export type StructureStatus = "ok" | "error" | "incomplete";
+
+export interface StructureTokens {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+}
+
+export interface StructureToolNode {
+  kind: "tool";
+  tool_use_id: string;
+  tool_name: string;
+  label: string;
+  started_at: string | null;
+  wall_time_seconds: number;
+  status: StructureStatus;
+}
+
+export interface StructureParallelGroup {
+  kind: "parallel_group";
+  started_at: string | null;
+  wall_time_seconds: number;
+  children: StructureToolNode[];
+}
+
+export interface StructureSkillNode {
+  kind: "skill";
+  name: string;
+  display: string;
+  is_subagent: boolean;
+  started_at: string | null;
+  wall_time_seconds: number;
+  estimated_cost_usd: number;
+  cost_is_partial: boolean;
+  tokens: StructureTokens;
+  status: StructureStatus;
+  children: StructureChild[];
+}
+
+export type StructureChild =
+  | StructureToolNode
+  | StructureParallelGroup
+  | StructureSkillNode;
+
+export interface StructurePhase {
+  kind: "phase";
+  name: string;
+  display: string;
+  ordinal: number;
+  wall_time_seconds: number;
+  estimated_cost_usd: number;
+  cost_is_partial: boolean;
+  tokens: StructureTokens;
+  status: StructureStatus;
+  children: StructureChild[];
+}
+
+export interface StructureSession {
+  wall_time_seconds: number;
+  estimated_cost_usd: number;
+  cost_is_partial: boolean;
+  tokens: StructureTokens;
+  status: StructureStatus;
+}
+
+export interface StructureTree {
+  schema_version: number;          // 1 = real tree, 0 = unavailable
+  computed_at?: string;            // present when schema_version=1
+  session: StructureSession | null; // null when schema_version=0
+  phases: StructurePhase[];
+  unavailable_reason?: "no-raw-jsonl" | "parse-failed";
+}
+
 // ── Cross-run views (Phase / Heatmap / Diff) ──
 
 export interface PerRunSummary {

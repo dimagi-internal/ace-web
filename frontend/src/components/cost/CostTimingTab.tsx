@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { getSessionCostBreakdown } from "../../api/costs";
 import type { CostBreakdown } from "../../api/types";
 import { CostPhaseRow } from "./CostPhaseRow";
-import { formatCacheHitRatio, formatDuration, formatTokens, formatUsd, totalTokens } from "./format";
+import { formatCacheHitRatio, formatDuration, formatTokens, formatUsd, totalTokens } from "../../lib/format";
 
 interface Props {
   slug: string;
