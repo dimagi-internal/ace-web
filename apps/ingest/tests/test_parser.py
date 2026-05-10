@@ -172,4 +172,5 @@ def test_cost_event_content_preview_truncates_long_results(tmp_path):
     _session, events = parse_session_file(jsonl)
     result = next(e for e in events if e.kind == "tool_result")
     assert result.is_error is False
+    assert result.content_preview == long_body[:200]
     assert len(result.content_preview) == 200

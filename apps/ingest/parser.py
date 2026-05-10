@@ -51,6 +51,8 @@ class CostEvent:
     tool_input: dict[str, Any] | None = None
 
     # tool_result fields
+    # content_preview: first 200 chars of the result body — for list-typed
+    # content, the first text block (no concatenation); None if empty.
     matched_tool_use_id: str | None = None
     is_error: bool = False
     content_preview: str | None = None
