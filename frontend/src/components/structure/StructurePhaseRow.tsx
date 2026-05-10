@@ -26,6 +26,7 @@ export function StructurePhaseRow({ phase, defaultOpen = false }: Props) {
           type="button"
           disabled={!expandable}
           onClick={() => setOpen(!open)}
+          aria-expanded={open}
           className="flex-1 flex items-center gap-1 pl-2 text-left disabled:opacity-50"
         >
           {expandable ? (

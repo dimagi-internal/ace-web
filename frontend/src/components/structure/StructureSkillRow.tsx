@@ -26,6 +26,7 @@ export function StructureSkillRow({ node, depth }: Props) {
           type="button"
           disabled={!expandable}
           onClick={() => setOpen(!open)}
+          aria-expanded={open}
           className="flex-1 flex items-center gap-1 text-left disabled:opacity-50"
         >
           {expandable ? (
