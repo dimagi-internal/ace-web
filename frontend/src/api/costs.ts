@@ -1,9 +1,5 @@
 import { apiFetch } from "./client";
-import type { CostBreakdown, CostRollup } from "./types";
-
-export async function getSessionCostBreakdown(slug: string): Promise<CostBreakdown> {
-  return apiFetch<CostBreakdown>(`/api/sessions/${slug}/cost-breakdown`);
-}
+import type { CostRollup } from "./types";
 
 export async function getOppCostRollup(
   oppSlug: string,
