@@ -59,3 +59,4 @@ frontend/bun.lock
 # local dev tweaks (plugin live-mount, custom port mappings, etc.). A
 # tracked template lives at docker-compose.override.yml.example.
 docker-compose.override.yml
+.claude/scheduled_tasks.lock
