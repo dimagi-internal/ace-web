@@ -6,7 +6,7 @@
 // (which carry all the conditional verdict / rationale / criterion
 // logic) can be edited or unit-tested without scrolling past the
 // chip helpers.
-import { AlertTriangle, ExternalLink, FileText, RotateCcw } from "lucide-react";
+import { AlertTriangle, ExternalLink, RotateCcw } from "lucide-react";
 
 import type { JudgeCriterionValue, Step } from "@/api/types";
 import { cn } from "@/lib/utils";
@@ -38,7 +38,6 @@ export function ProducerSection({ step }: { step: Step }) {
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-[11px] text-foreground hover:text-primary"
               >
-                <FileText className="h-3 w-3 text-muted-foreground" />
                 <span className="font-mono">{a.path}</span>
                 <ExternalLink className="h-2.5 w-2.5 opacity-60" />
               </a>
