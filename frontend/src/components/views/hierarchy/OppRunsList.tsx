@@ -87,9 +87,13 @@ function ProgressLabel({ run }: { run: RunSummary }) {
     );
   }
 
-  // In-progress: pick the most informative label we have data for.
-  //  1. Live cursor → show phase · step (matches the workbench's view).
-  //  2. Some phase done but no cursor → "after <last done> · X/N".
+  // In-progress: show the deepest phase the run reached. No "after"
+  // preamble — that read like a temporal preposition ("we're past it")
+  // and confused readers. The label is now just the phase name + the
+  // proportion done; column position implies "this is what the run
+  // got to."
+  //  1. Live cursor → "<phase> · <step>" (matches the workbench's view).
+  //  2. Some phase done but no cursor → "<last done> · X/N".
   //  3. Nothing done yet → "queued".
   if (run.current_phase || run.current_step) {
     const phaseLabel = run.current_phase_display ?? run.current_phase;
@@ -116,7 +120,7 @@ function ProgressLabel({ run }: { run: RunSummary }) {
         className="min-w-0 flex-1 truncate text-foreground"
         title={`Last completed phase: ${run.latest_phase_done}`}
       >
-        after {lastDone}
+        {lastDone}
         {total > 0 && (
           <span className="text-muted-foreground"> · {done}/{total}</span>
         )}
