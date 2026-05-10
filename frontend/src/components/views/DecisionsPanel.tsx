@@ -55,9 +55,35 @@ export function DecisionsPanel({ phase, decisions }: Props) {
   const open = phaseRows.filter((d) => d.status === "open").length;
   const overridden = phaseRows.filter((d) => d.status === "overridden").length;
 
+  return <DecisionsPanelInner phaseRows={phaseRows} open={open} overridden={overridden} />;
+}
+
+function DecisionsPanelInner({
+  phaseRows,
+  open,
+  overridden,
+}: {
+  phaseRows: Decision[];
+  open: number;
+  overridden: number;
+}) {
+  // Section starts collapsed. Earlier versions auto-opened the whole
+  // panel and every "open" row inside it, which made the phase-detail
+  // view land on a wall of decision text before the user had a chance
+  // to scan the skills list. Master-toggle here, individual rows
+  // collapse separately in DecisionRow.
+  const [expanded, setExpanded] = useState(false);
   return (
     <section className="mt-3 rounded-lg border border-border bg-card/30">
-      <header className="flex items-center gap-2.5 border-b border-border/70 px-4 py-2.5">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className={cn(
+          "flex w-full items-center gap-2.5 px-4 py-2.5 text-left",
+          expanded ? "border-b border-border/70" : "",
+        )}
+      >
         <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400">
           <HelpCircle className="h-3 w-3" />
           Decisions
@@ -76,14 +102,22 @@ export function DecisionsPanel({ phase, decisions }: Props) {
             </span>
           )}
         </span>
-      </header>
-      <ul className="divide-y divide-border/60">
-        {phaseRows.map((d) => (
-          <li key={d.id}>
-            <DecisionRow decision={d} />
-          </li>
-        ))}
-      </ul>
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            expanded ? "rotate-90 text-foreground" : "",
+          )}
+        />
+      </button>
+      {expanded && (
+        <ul className="divide-y divide-border/60">
+          {phaseRows.map((d) => (
+            <li key={d.id}>
+              <DecisionRow decision={d} />
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
