@@ -80,23 +80,6 @@ def _clear_cache():
     cache.clear()
 
 
-def _patch_drive(fake_drive: FakeDriveClient):
-    """Make get_drive_client return our fake AND make the workspace's
-    drive_root_folder_id resolve to the fake's ACE folder id."""
-    return patch.multiple(
-        "apps.opps.views",
-        get_drive_client=lambda **kw: fake_drive,
-    ), patch(
-        "apps.opps.summary.build_summary_payload",
-        side_effect=lambda drive, *, workspace, opp_slug, run_id: (
-            __import__("apps.opps.summary", fromlist=["build_summary_payload"])
-            .build_summary_payload.__wrapped__(drive, workspace=workspace,
-                                              opp_slug=opp_slug, run_id=run_id)
-            if False else None
-        ),
-    )
-
-
 def test_anonymous_request_succeeds(fake_drive, workspace):
     """A Client with no login can hit the public summary endpoint and
     receive the JSON envelope (no auth redirect)."""

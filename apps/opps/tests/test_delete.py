@@ -39,7 +39,7 @@ def test_delete_opp_success_returns_204(authed_client, authed_user):
         display_name="Malaria Pilot",
         created_by=authed_user,
     )
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
         response = authed_client.delete("/api/opps/malaria-pilot")
 
@@ -55,7 +55,7 @@ def test_delete_opp_success_returns_204(authed_client, authed_user):
 def test_delete_opp_missing_returns_404(authed_client):
     fake = FakeDriveClient.from_tree({"ACE": {}})
     ace_id = fake.folder_id("ACE")
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
          patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
         response = authed_client.delete("/api/opps/ghost")
     assert response.status_code == 404

@@ -4,6 +4,7 @@ Exercises the full flow from the opp list → workbench → step detail → disc
 using the FakeDriveClient fixture. Proves the modules from Tasks 1–21
 compose correctly.
 """
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -30,12 +31,13 @@ def fake_drive():
     return FakeDriveClient.from_tree(malaria_pilot_tree())
 
 
+@contextmanager
 def _patch_drive(fake):
-    return patch.multiple(
-        "apps.opps.views",
-        get_drive_client=lambda *a, **kw: fake,
-        _resolve_ace_root_folder_id=lambda *a, **kw: fake.folder_id("ACE"),
-    )
+    with patch("apps.opps.access.get_drive_client", lambda *a, **kw: fake), patch(
+        "apps.opps.views._resolve_ace_root_folder_id",
+        lambda *a, **kw: fake.folder_id("ACE"),
+    ):
+        yield
 
 
 def test_full_workflow_list_to_discuss(authed_client, fake_drive):

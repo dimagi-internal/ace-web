@@ -3,6 +3,7 @@ PATCH /api/opps/<slug> to update tags.
 
 See docs/plans/2026-04-20-drop-multi-run-simplify.md § Tag UI.
 """
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -35,12 +36,13 @@ def _tree_with_three_opps() -> dict:
     }
 
 
+@contextmanager
 def _patch_drive(fake):
-    return patch.multiple(
-        "apps.opps.views",
-        get_drive_client=lambda *a, **kw: fake,
-        _resolve_ace_root_folder_id=lambda *a, **kw: fake.folder_id("ACE"),
-    )
+    with patch("apps.opps.access.get_drive_client", lambda *a, **kw: fake), patch(
+        "apps.opps.views._resolve_ace_root_folder_id",
+        lambda *a, **kw: fake.folder_id("ACE"),
+    ):
+        yield
 
 
 # --- GET /api/opps/?tags=X,Y filter ---
