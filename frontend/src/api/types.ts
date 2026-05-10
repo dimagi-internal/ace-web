@@ -457,18 +457,6 @@ export interface CostPhase {
   skills: CostSkill[];
 }
 
-export interface CostBreakdown {
-  schema_version: number;  // 0 = no data; 1 = populated
-  computed_at?: string;
-  totals: (CostTokens & {
-    wall_time_seconds: number;
-    estimated_cost_usd: number;
-    cost_is_partial: boolean;
-    cache_hit_ratio: number;
-  }) | null;
-  phases: CostPhase[];
-}
-
 export interface CostRollupPhase {
   phase_name: string;
   phase_display: string;
