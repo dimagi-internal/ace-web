@@ -151,17 +151,26 @@ class RunSummary:
     mode: str | None
     last_actor: str | None
     last_actor_at: str | None
-    # "init" — run_state.yaml exists but no phase or step has progressed
-    #   beyond pending. Shows up immediately after /ace:run is kicked off,
-    #   before any work has executed. The ✓-complete heuristic on the
-    #   frontend wrongly classified these as complete — the absence of a
-    #   top-level ``phase`` cursor used to be the only signal, and that's
-    #   absent for both "just initialized" and "lifecycle wrapped".
-    # "running" — top-level ``phase`` cursor is set, the plugin is mid-run.
-    # "complete" — no cursor + at least one phase or step has progressed.
-    # None — no recognizable phases map (legacy / malformed); the frontend
-    #   falls back to the older `!current_phase && last_actor_at` heuristic.
+    # Two-state model: a run is either in progress or complete. There's
+    # no proactive "pause" — when the plugin stops between phases, halts
+    # at a HITL gate, or sits idle after kickoff, it's all the same
+    # conceptual state ("in_progress, just not actively executing right
+    # now"). The frontend uses the phase-count fields below to render an
+    # accurate "where is it?" label without needing more enum values.
+    #
+    # "in_progress" — anything that isn't fully complete (init, mid-step,
+    #                 between phases, or halted-at-HITL).
+    # "complete"    — every phase carries a done/complete status.
+    # None          — no recognizable phases map (legacy / malformed);
+    #                 the frontend falls back to the older
+    #                 `!current_phase && last_actor_at` heuristic.
     lifecycle_status: str | None = None
+    # Phase-level progress, derived from the phases map. Lets the
+    # Hierarchy view render a "where is this run?" label like
+    # "after design-review · 1/9" without re-fetching per-step state.
+    phases_total: int = 0
+    phases_done: int = 0
+    latest_phase_done: str | None = None
 
 
 def list_opp_runs(
@@ -204,6 +213,7 @@ def list_opp_runs(
             log.warning("list_opp_runs: failed to read %s: %s", state_file.id, exc)
             continue
         current_phase = state.get("phase") or state.get("current_phase")
+        progress = _derive_phase_progress(state, current_phase)
         out.append(
             RunSummary(
                 run_id=child.name,
@@ -213,7 +223,10 @@ def list_opp_runs(
                 mode=state.get("mode"),
                 last_actor=state.get("last_actor"),
                 last_actor_at=state.get("last_actor_at"),
-                lifecycle_status=_derive_lifecycle_status(state, current_phase),
+                lifecycle_status=progress["status"],
+                phases_total=progress["phases_total"],
+                phases_done=progress["phases_done"],
+                latest_phase_done=progress["latest_phase_done"],
             )
         )
 
@@ -221,44 +234,78 @@ def list_opp_runs(
     return out
 
 
-def _derive_lifecycle_status(state: dict, current_phase: str | None) -> str | None:
-    """Classify a run as ``init`` / ``running`` / ``complete`` / ``None``.
+# Status values the plugin uses for "this phase finished." Both shapes
+# coexist across run_state.yaml versions: 1448 used "done", 2204 uses
+# "complete". Treat both as terminal so we don't over-classify a run as
+# "paused" just because the plugin upgraded its vocabulary.
+_PHASE_DONE_STATUSES = frozenset({"done", "complete"})
 
-    The plugin's run_state.yaml doesn't carry an explicit run-level status;
-    we derive it from the ``phases:`` map. A just-kicked-off run has every
-    phase ``status: pending`` and every step as a bare ``pending`` string,
-    which used to look identical (on the frontend) to a completed run that
-    cleared its cursor — both had no ``phase`` field. This routine breaks
-    that tie so the UI can show ▶ for queued runs and ✓ only for runs that
-    actually ran.
+
+def _derive_phase_progress(
+    state: dict, current_phase: str | None,
+) -> dict:
+    """Compute lifecycle_status + phase counts + latest-done-phase.
+
+    Two-state lifecycle: the run is either in_progress or complete.
+    "Complete" requires every phase in the map to carry a done/complete
+    status; anything else (no cursor + 0 phases done, mid-step with
+    cursor, between phases, halted at a HITL gate) is in_progress.
+
+    Returns a dict (not a dataclass) to keep the caller's construction
+    simple. Phase order is taken from the YAML's insertion order, which
+    is the plugin's authored phase order.
     """
-    if current_phase:
-        return "running"
+    result = {
+        "status": None,
+        "phases_total": 0,
+        "phases_done": 0,
+        "latest_phase_done": None,
+    }
 
     phases = state.get("phases")
     if not isinstance(phases, dict):
-        return None  # legacy / malformed — let the caller fall back
+        # Legacy / malformed — the frontend falls back to its older
+        # "no cursor + has activity" heuristic. We still report
+        # "in_progress" if a top-level cursor is set, since that signal
+        # is independent of the phases map.
+        if current_phase:
+            result["status"] = "in_progress"
+        return result
 
-    any_progress = False
-    for phase_value in phases.values():
+    phases_total = 0
+    phases_done = 0
+    latest_phase_done: str | None = None
+    has_pending = False
+
+    for phase_name, phase_value in phases.items():
         if not isinstance(phase_value, dict):
+            # Legacy shape: phase entry is a flat step-name → string map
+            # (e.g. ``execution-management: {llo-onboarding: pending}``).
+            # Treat those as pending phases so a run halted at the
+            # phase-7-to-8 boundary isn't mis-flagged as complete.
+            phases_total += 1
+            has_pending = True
             continue
-        phase_status = phase_value.get("status")
-        if phase_status and phase_status != "pending":
-            any_progress = True
-            break
-        steps = phase_value.get("steps")
-        if isinstance(steps, dict):
-            for step_value in steps.values():
-                if isinstance(step_value, dict):
-                    step_status = step_value.get("status")
-                    if step_status and step_status != "pending":
-                        any_progress = True
-                        break
-            if any_progress:
-                break
 
-    return "complete" if any_progress else "init"
+        phases_total += 1
+        phase_status = phase_value.get("status")
+        if phase_status in _PHASE_DONE_STATUSES:
+            phases_done += 1
+            latest_phase_done = phase_name
+        else:
+            # No status, "pending", or any other value: treat as not-done.
+            has_pending = True
+
+    result["phases_total"] = phases_total
+    result["phases_done"] = phases_done
+    result["latest_phase_done"] = latest_phase_done
+
+    if phases_total > 0 and not has_pending:
+        result["status"] = "complete"
+    else:
+        result["status"] = "in_progress"
+
+    return result
 
 
 # --- Manifest-driven skill attribution ---

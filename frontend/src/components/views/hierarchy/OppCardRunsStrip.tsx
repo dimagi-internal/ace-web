@@ -60,40 +60,56 @@ function RunChip({
   oppSlug: string;
   workspaceSlug: string;
 }) {
-  // Prefer the server-derived lifecycle_status; fall back to the older
-  // "no cursor + has activity" heuristic for legacy state.yaml shapes.
-  // The fallback alone misclassifies just-initialized runs (all phases
-  // pending, no cursor yet) as ✓ complete — see ProgressIcon in OppRunsList.
-  const ordinal = run.current_phase_ordinal ?? null;
-  const justInitialized = run.lifecycle_status === "init";
-  const looksComplete =
+  // Two-state lifecycle: ✓ only when the run is actually complete.
+  // Everything else is in-progress; the chip's depth color shows how
+  // far the run got. Phase ordinal we display = either the live cursor
+  // position, or, when there's no cursor, the deepest completed phase
+  // (so a run between phases still reads as "P3 done" not "—").
+  const ordinal =
+    run.current_phase_ordinal ??
+    run.latest_phase_done_ordinal ??
+    null;
+  const isComplete =
     run.lifecycle_status === "complete" ||
     (run.lifecycle_status == null && !run.current_phase && !!run.last_actor_at);
+  const noProgress =
+    !isComplete &&
+    !run.current_phase &&
+    (run.phases_done ?? 0) === 0;
 
-  // Tone: green for complete, muted for init, gradient by depth otherwise.
-  const tone = looksComplete
+  const tone = isComplete
     ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-    : justInitialized
+    : noProgress
     ? "border-border bg-muted/40 text-muted-foreground"
     : depthTone(ordinal);
 
-  const label = looksComplete
+  const label = isComplete
     ? "✓"
-    : justInitialized
+    : noProgress
     ? "▸"
     : ordinal !== null
     ? `P${ordinal}`
     : "—";
 
   const tooltipParts: string[] = [`Run ${run.run_id}`];
-  if (looksComplete) {
-    tooltipParts.push("Cursor cleared (looks complete)");
-  } else if (justInitialized) {
-    tooltipParts.push("Queued — kicked off, no work yet");
-  } else if (ordinal !== null) {
-    tooltipParts.push(`Got to phase ${ordinal}`);
+  if (isComplete) {
+    tooltipParts.push("Complete");
+  } else if (noProgress) {
+    tooltipParts.push("In progress — no work yet");
+  } else if (run.current_phase) {
+    tooltipParts.push(
+      `In progress · ${run.current_phase_display ?? run.current_phase}`,
+    );
+  } else if (run.latest_phase_done) {
+    const lastDone = run.latest_phase_done_display ?? run.latest_phase_done;
+    const total = run.phases_total ?? 0;
+    const done = run.phases_done ?? 0;
+    tooltipParts.push(
+      `In progress · after ${lastDone}` +
+        (total > 0 ? ` (${done}/${total})` : ""),
+    );
   } else {
-    tooltipParts.push("Phase not recorded");
+    tooltipParts.push("In progress");
   }
   if (run.current_phase_display ?? run.current_phase) {
     tooltipParts.push(
