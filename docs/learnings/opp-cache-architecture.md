@@ -43,7 +43,7 @@ Per-card cache for `_opp_list_impl` follows the same pattern — only the affect
 
 **Cross-task cache coordination is automatic.** All ECS tasks share the labs Redis (`REDIS_URL` from AWS Secrets Manager) and share the same `drive:changes:v1:token:ws:<id>` key. Each Drive change is processed exactly once across the fleet. No application-level synchronization needed — `drive.changes.list` returns the same delta to concurrent callers with the same token, and the `snapshot_cache.invalidate` is idempotent.
 
-**Pickled `OppSnapshot` / `OppCard` are shared cross-task.** Mid-deploy, old and new ECS tasks may read each other's pickled cache values. The cache key carries `_KEY_VERSION = "v1"` (in both `snapshot_cache.py` and `drive_changes.py`). When you change `OppSnapshot` field shape, bump that to `v2` in the same commit so the deploy invalidates everything cleanly.
+**Pickled `OppSnapshot` / `OppCard` are shared cross-task.** Mid-deploy, old and new ECS tasks may read each other's pickled cache values. The cache key carries `_KEY_VERSION` (in both `snapshot_cache.py` and `drive_changes.py`). **Bump it in the same commit that changes any cached dataclass shape** so the deploy invalidates everything cleanly. Skipping this bumped #260 (gates rip changed StepSnapshot/OppCard shapes without bumping) and produced intermittent 500s on labs from stale unpickled entries — fixed in #268 by bumping v1 → v2. Lesson: any PR that touches `StepSnapshot`, `OppSnapshot`, `OppCard`, or `RunDetail` field lists MUST bump `_KEY_VERSION` in the same commit.
 
 ## What stayed
 
