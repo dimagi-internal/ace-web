@@ -41,6 +41,12 @@ _EMULATOR_READY_TIMEOUT_SEC = 120
 _SSM_PROBE_TIMEOUT_SEC = 30
 _SSM_OP_TIMEOUT_SEC = 300
 _SSM_RECIPE_TIMEOUT_SEC = 1800  # 30 min — Maestro flows can be long.
+# Absolute paths to in-VM tools. SSM's /bin/sh (dash) doesn't source
+# /etc/profile.d/android-sdk.sh so PATH-relative invocations of `adb`
+# fail with "adb: not found". Use the symlink target the bake's
+# 10-android-sdk.sh installs to.
+_ADB = "/opt/android-sdk/platform-tools/adb"
+_MAESTRO = "/usr/local/bin/maestro"
 # In-VM idle marker — must agree with files/idle-shutdown.sh in the AMI.
 _IDLE_MARKER_PATH = "/var/run/ace-mobile/last-activity"
 # Catalog of states (one per CommCare APK version) baked into the AMI.
@@ -277,7 +283,7 @@ class EmulatorController:
             "set -eu",
             f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
             f"curl -fsSL -o {shlex.quote(local)} {shlex.quote(apk_url)}",
-            f"adb install -r {shlex.quote(local)}",
+            f"{_ADB} install -r {shlex.quote(local)}",
             "PKG=$(aapt dump badging "
             f"{shlex.quote(local)} | awk -F\"'\" '/package: name=/{{print $2; exit}}')",
             "VER=$(aapt dump badging "
@@ -370,7 +376,7 @@ class EmulatorController:
         commands = [
             "set -eu",
             f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
-            f"adb emu avd snapshot save {shlex.quote(name)}",
+            f"{_ADB} emu avd snapshot save {shlex.quote(name)}",
         ]
         ssm.run_command(
             self.ssm,
@@ -385,7 +391,7 @@ class EmulatorController:
         commands = [
             "set -eu",
             f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
-            f"adb emu avd snapshot load {shlex.quote(name)}",
+            f"{_ADB} emu avd snapshot load {shlex.quote(name)}",
         ]
         ssm.run_command(
             self.ssm,
@@ -440,8 +446,8 @@ class EmulatorController:
         commands = [
             "set -eu",
             f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
-            "adb shell uiautomator dump /sdcard/ui-dump.xml >/dev/null",
-            "adb shell cat /sdcard/ui-dump.xml",
+            f"{_ADB} shell uiautomator dump /sdcard/ui-dump.xml >/dev/null",
+            f"{_ADB} shell cat /sdcard/ui-dump.xml",
         ]
         result = ssm.run_command(
             self.ssm,
@@ -516,9 +522,9 @@ class EmulatorController:
         """
         commands = [
             "set -eu",
-            "adb wait-for-device",
-            "for i in $(seq 1 60); do "
-            "  ready=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\\r'); "
+            f"{_ADB} wait-for-device",
+            f"for i in $(seq 1 60); do "
+            f"  ready=$({_ADB} shell getprop sys.boot_completed 2>/dev/null | tr -d '\\r'); "
             "  if [ \"$ready\" = \"1\" ]; then echo READY; exit 0; fi; "
             "  sleep 2; "
             "done; "
