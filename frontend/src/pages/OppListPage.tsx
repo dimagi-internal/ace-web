@@ -250,7 +250,7 @@ export default function OppListPage() {
           </div>
         )
       ) : (
-        <div className="grid grid-cols-1 gap-3 p-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 items-start gap-3 p-6 md:grid-cols-2 xl:grid-cols-3">
           {visibleOpps.map((opp) => {
             const isExpanded = expandedOpps.has(opp.slug);
             return (
