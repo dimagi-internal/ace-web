@@ -45,8 +45,15 @@ def test_list_files_records_visited_file_ids(client):
     with TouchedFileTracker() as tracker:
         client.list_files(alpha_id)
 
+    # Children get tracked …
     assert state_id in tracker.file_ids
     assert idea_id in tracker.file_ids
+    # … and so does the parent folder itself, so that adding a NEW child
+    # under it (which bumps the parent's modifiedTime in Drive's changes
+    # feed) invalidates anything cached against this listing. Without
+    # this, freshly-created run folders never invalidated the OppCard
+    # cache and run_count / last_activity_at went stale forever.
+    assert alpha_id in tracker.file_ids
 
 
 def test_get_content_records_file_id(client):

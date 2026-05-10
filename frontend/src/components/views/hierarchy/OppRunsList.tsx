@@ -77,10 +77,29 @@ export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
 }
 
 function ProgressIcon({ run }: { run: RunSummary }) {
-  // Treat "no current_phase + last_actor_at present" as a heuristic for
-  // "completed" — the plugin clears the cursor when the lifecycle
-  // wraps. It's a rough signal (could also mean a malformed state.yaml)
-  // but it's the best we have without a structured ``status`` field.
+  // Prefer the server-derived lifecycle_status when present — it inspects
+  // the run_state.yaml phases map and distinguishes "init" (just kicked
+  // off, all phases pending) from "complete" (cursor cleared because the
+  // run actually finished). The fallback heuristic below collapses both
+  // into ✓ which is wrong for fresh runs.
+  if (run.lifecycle_status === "complete") {
+    return (
+      <CheckCircle2
+        className="h-3 w-3 shrink-0 text-emerald-400"
+        aria-label="run looks complete"
+      />
+    );
+  }
+  if (run.lifecycle_status === "init" || run.lifecycle_status === "running") {
+    return (
+      <Play
+        className="h-3 w-3 shrink-0 text-muted-foreground/70"
+        aria-label="run cursor"
+      />
+    );
+  }
+  // lifecycle_status missing (legacy run_state.yaml shape): fall back to
+  // the older "no cursor + has activity" heuristic.
   const looksComplete = !run.current_phase && !!run.last_actor_at;
   if (looksComplete) {
     return (
@@ -99,6 +118,13 @@ function ProgressIcon({ run }: { run: RunSummary }) {
 }
 
 function ProgressLabel({ run }: { run: RunSummary }) {
+  if (run.lifecycle_status === "init") {
+    return (
+      <span className="min-w-0 flex-1 truncate text-muted-foreground">
+        queued (no work yet)
+      </span>
+    );
+  }
   if (!run.current_phase && !run.current_step) {
     return (
       <span className="min-w-0 flex-1 truncate text-muted-foreground">

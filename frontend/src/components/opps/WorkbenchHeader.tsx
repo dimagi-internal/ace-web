@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import type {
   CostRollup,
   Decision,
-  MultiRunSummary,
   OppCard,
   Run,
   RunSummary,
@@ -15,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CostRollupCard } from "./CostRollupCard";
 import { DeleteOppDialog } from "./DeleteOppDialog";
-import { RunHistoryStrip } from "./RunHistoryStrip";
 import { RunSelector } from "./RunSelector";
 import { ScorecardPanel } from "./ScorecardPanel";
 import { TagEditor } from "./TagEditor";
@@ -47,12 +45,6 @@ interface Props {
    * — see OppWorkbenchPage.
    */
   costRollup: CostRollup | null;
-  /**
-   * Per-run aggregates. Powers the run-history strip beside the run
-   * selector. Optional / null while the fetch is in flight; the strip
-   * just hides until data lands.
-   */
-  multiRun: MultiRunSummary | null;
   workspaceSlug?: string;
 }
 
@@ -66,7 +58,6 @@ export function WorkbenchHeader({
   onJumpToPhases,
   onRunDeleted,
   costRollup,
-  multiRun,
   workspaceSlug,
 }: Props) {
   const navigate = useNavigate();
@@ -140,13 +131,6 @@ export function WorkbenchHeader({
             onChange={onRunChange}
             onRunDeleted={onRunDeleted}
           />
-          {multiRun && (
-            <RunHistoryStrip
-              runs={multiRun.per_run}
-              selectedRunId={selectedRunId}
-              onChange={onRunChange}
-            />
-          )}
           {run.current_phase && (
             <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
               Phase · {run.current_phase}
