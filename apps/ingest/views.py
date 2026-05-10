@@ -1,5 +1,6 @@
 """Upload endpoint for JSONL session files."""
 import logging
+import re
 import tempfile
 from pathlib import Path
 
@@ -17,6 +18,12 @@ from apps.sessions.models import IngestUpload, Message, Session
 from .parser import parse_session_file
 
 log = logging.getLogger(__name__)
+
+# Permissive run-id alphabet — covers `r1`, `run-001`, `2026-04-06-002`,
+# `20260502-1830`. Rejects whitespace, slashes, and any other surprise
+# input that would silently misattribute a transcript. Same alphabet is
+# applied to opp_slug and opp_step_skill for symmetry.
+_OPP_FIELD_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 
 @api_view(["POST"])
@@ -37,6 +44,23 @@ def upload(request: Request) -> Response:
     opp_slug = (request.data.get("opp_slug") or "").strip()
     opp_run_id = (request.data.get("opp_run_id") or "").strip()
     opp_step_skill = (request.data.get("opp_step_skill") or "").strip()
+
+    for field_name, value in (
+        ("opp_slug", opp_slug),
+        ("opp_run_id", opp_run_id),
+        ("opp_step_skill", opp_step_skill),
+    ):
+        if value and not _OPP_FIELD_RE.match(value):
+            return Response(
+                error_response(
+                    message=(
+                        f"{field_name} must match [A-Za-z0-9_.-]{{1,64}} "
+                        f"(got {value!r})"
+                    ),
+                    code="validation_error",
+                ),
+                status=422,
+            )
 
     # Optional workspace resolution via Drive folder id (added in the
     # multi-tenancy Phase A). The plugin's upload-transcript skill is
@@ -94,6 +118,20 @@ def upload(request: Request) -> Response:
             status=409,
         )
 
+    # Content-hash dedup — fires when cli_session_id is empty (e.g. a
+    # malformed transcript with no session-id envelope) so re-uploads
+    # of identical bytes still 409 instead of producing duplicate rows.
+    if parsed.content_sha256 and IngestUpload.objects.filter(
+        content_sha256=parsed.content_sha256
+    ).exists():
+        return Response(
+            error_response(
+                message="Transcript with identical content already uploaded",
+                code="duplicate",
+            ),
+            status=409,
+        )
+
     session = Session.create_with_owner(
         owner=request.user,
         source="upload",
@@ -128,7 +166,21 @@ def upload(request: Request) -> Response:
         raw_bytes=parsed.raw_bytes,
         line_count=parsed.line_count,
         cli_session_id=parsed.cli_session_id or "",
+        content_sha256=parsed.content_sha256 or "",
         workspace=workspace,
+    )
+
+    log.info(
+        "ingest upload: user=%s file=%s session=%s "
+        "form opp_slug=%r opp_run_id=%r opp_step_skill=%r ace_root_folder_id=%r "
+        "stored opp_slug=%r opp_run_id=%r opp_step_skill=%r workspace=%s "
+        "cli_session_id=%r content_sha256=%s",
+        request.user.pk, file.name, session.slug,
+        opp_slug, opp_run_id, opp_step_skill, ace_root_folder_id,
+        session.opp_slug, session.opp_run_id, session.opp_step_skill,
+        workspace.slug if workspace else None,
+        parsed.cli_session_id or "",
+        (parsed.content_sha256 or "")[:16],
     )
 
     return Response(

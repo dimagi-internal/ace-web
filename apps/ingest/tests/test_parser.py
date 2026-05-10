@@ -102,6 +102,30 @@ def test_extract_cost_events_pairs_tool_results_with_tool_use_id():
     assert matched_ids == {"tu-skill-1", "tu-agent-1", "tu-skill-2"}
 
 
+def test_parse_claude_code_interactive_session_extracts_session_id():
+    """Claude Code interactive transcripts (~/.claude/projects/<slug>/<uuid>.jsonl)
+    don't emit a `system/init` envelope — instead, every line carries a
+    top-level camelCase `sessionId`. The parser must fall back to that
+    so the dedup branch in views.upload (cli_session_id-keyed) actually
+    fires for re-uploads of interactive transcripts. See issue #274 Bug 2."""
+    from apps.ingest.parser import parse_session_file
+    result, _events = parse_session_file(FIXTURES / "interactive_session.jsonl")
+    assert result.cli_session_id == "7c2be22b-5630-40f7-a201-f53fe2daeb64"
+
+
+def test_parse_session_returns_content_sha256():
+    """Every parse returns a sha256 of the raw file bytes so views.upload
+    can dedup on content hash when no cli_session_id is available
+    (issue #274 hardening)."""
+    from apps.ingest.parser import parse_session_file
+    result, _events = parse_session_file(FIXTURES / "simple_session.jsonl")
+    assert result.content_sha256
+    assert len(result.content_sha256) == 64
+    # Stable across re-parses of the same file.
+    again, _ = parse_session_file(FIXTURES / "simple_session.jsonl")
+    assert again.content_sha256 == result.content_sha256
+
+
 def test_extract_cost_events_marks_sidechain_with_parent_uuid():
     from apps.ingest.parser import parse_session_file
     _session, events = parse_session_file(FIXTURES / "cost_session.jsonl")

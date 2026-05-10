@@ -1,0 +1,3 @@
+{"type":"summary","summary":"first session","leafUuid":"u-leaf-1"}
+{"type":"user","sessionId":"7c2be22b-5630-40f7-a201-f53fe2daeb64","cwd":"/tmp","timestamp":"2026-05-09T12:00:00.000Z","uuid":"u-1","parentUuid":null,"isSidechain":false,"userType":"external","version":"1.5.0","gitBranch":"main","message":{"role":"user","content":"hi"}}
+{"type":"assistant","sessionId":"7c2be22b-5630-40f7-a201-f53fe2daeb64","timestamp":"2026-05-09T12:00:01.000Z","uuid":"u-2","parentUuid":"u-1","isSidechain":false,"message":{"id":"msg_a1","model":"claude-opus-4-7","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":10,"output_tokens":5}}}
