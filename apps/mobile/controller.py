@@ -32,11 +32,15 @@ from .exceptions import EmulatorBootTimeout, MobileError, SSMFailure
 # How long to wait for the EC2 instance + SSM agent to come ready
 # after a cold ``StartInstances`` call.
 _BOOT_HARD_TIMEOUT_SEC = 180
-# How long to wait for the in-VM Android emulator (already-running EC2
-# instance) to report ``sys.boot_completed=1``. The emulator is launched
-# by the systemd unit baked into the AMI; first boot after a cold
-# instance start can take ~60 s.
-_EMULATOR_READY_TIMEOUT_SEC = 120
+# How long to wait for the in-VM Android emulator + cold-boot
+# registration to complete. ``ace-emulator-launch`` writes
+# ``/run/ace-mobile/ready`` once the +7426 demo registration recipes
+# finish — that's the signal we wait for. Budget: AVD boot ~60-90s,
+# adb install ~10s, two registration recipes ~60s, total ~3 min.
+# 5-min ceiling gives headroom for transient slowness without masking
+# real failures.
+_EMULATOR_READY_TIMEOUT_SEC = 300
+_EMULATOR_READY_MARKER = "/run/ace-mobile/ready"
 # Per-call SSM timeouts. Tuned for the typical command class.
 _SSM_PROBE_TIMEOUT_SEC = 30
 _SSM_OP_TIMEOUT_SEC = 300
@@ -513,20 +517,24 @@ class EmulatorController:
         )
 
     def _wait_for_emulator(self) -> None:
-        """Probe the in-VM Android emulator until ``sys.boot_completed``.
+        """Probe the in-VM AVD until cold-boot registration completes.
 
-        Issues a single SSM command that itself blocks for up to
-        ``_EMULATOR_READY_TIMEOUT_SEC`` — that's cheaper than polling
-        SSM repeatedly and the in-VM ``adb wait-for-device`` is the
-        thing we actually need to wait for.
+        ``ace-emulator-launch`` writes ``_EMULATOR_READY_MARKER`` after:
+          1. AVD boots (sys.boot_completed=1)
+          2. CommCare APK is installed
+          3. Both +7426 demo registration recipes succeed
+
+        We poll for that marker rather than just ``sys.boot_completed``
+        — the latter fires before registration, so callers would see
+        "running" while the launcher is still typing into PersonalID.
+        Budget: ~3 min on a cold instance start.
         """
+        marker = _EMULATOR_READY_MARKER
         commands = [
             "set -eu",
-            f"{_ADB} wait-for-device",
-            f"for i in $(seq 1 60); do "
-            f"  ready=$({_ADB} shell getprop sys.boot_completed 2>/dev/null | tr -d '\\r'); "
-            "  if [ \"$ready\" = \"1\" ]; then echo READY; exit 0; fi; "
-            "  sleep 2; "
+            f"for i in $(seq 1 {_EMULATOR_READY_TIMEOUT_SEC // 5}); do "
+            f"  if [ -f {shlex.quote(marker)} ]; then echo READY; exit 0; fi; "
+            "  sleep 5; "
             "done; "
             "echo NOT_READY; exit 1",
         ]
