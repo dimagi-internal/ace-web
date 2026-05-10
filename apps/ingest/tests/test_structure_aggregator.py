@@ -86,3 +86,72 @@ def test_tool_error_propagates_status_up_to_session(tmp_path):
     _session, events = parse_session_file(jsonl)
     tree = aggregate(events)
     assert tree["session"]["status"] == "error"
+
+
+def test_nested_skill_dispatch_marked_is_subagent(tmp_path):
+    """A Skill issued from inside another open frame is is_subagent=True;
+    the outer Skill stays is_subagent=False."""
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+
+    jsonl = tmp_path / "nested.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        # Outer Skill dispatch (top-level)
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tOuter","name":"Skill","input":{"skill":"outer-skill"}}]}}\n'
+        # Inner Agent dispatch (sidechain — child of outer)
+        '{"type":"assistant","uuid":"u2","parentUuid":"u1","isSidechain":true,'
+        '"timestamp":"2026-05-10T14:00:01Z",'
+        '"message":{"id":"m2","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tInner","name":"Agent","input":{"subagent_type":"inner-agent"}}]}}\n'
+        # Inner result first (LIFO close)
+        '{"type":"user","uuid":"u3","timestamp":"2026-05-10T14:00:02Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tInner","content":"inner done"}]}}\n'
+        # Outer result
+        '{"type":"user","uuid":"u4","timestamp":"2026-05-10T14:00:03Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tOuter","content":"outer done"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+    # Outer skill should appear under some phase (registry-less → _other)
+    outer_phase = next(
+        (p for p in tree["phases"] if any(c["kind"] == "skill" for c in p["children"])),
+        None,
+    )
+    assert outer_phase is not None, f"got phases {[p['name'] for p in tree['phases']]}"
+    outer = next(c for c in outer_phase["children"] if c["kind"] == "skill")
+    assert outer["is_subagent"] is False, "outer top-level dispatch is not a subagent"
+    # The inner Agent dispatch nests under the outer skill
+    inner_skills = [c for c in outer["children"] if c["kind"] == "skill"]
+    assert len(inner_skills) == 1
+    assert inner_skills[0]["is_subagent"] is True
+    # Agent dispatches name themselves by subagent_type
+    assert inner_skills[0]["name"] == "inner-agent"
+
+
+def test_open_frame_at_end_of_stream_is_incomplete(tmp_path):
+    """A Skill tool_use without a matching tool_result becomes
+    status='incomplete' and propagates to the session."""
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+
+    jsonl = tmp_path / "interrupted.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tA","name":"Skill","input":{"skill":"some-skill"}}]}}\n'
+        # No tool_result for tA — stream ends with the frame open.
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+    assert tree["session"]["status"] == "incomplete"
+    # The skill node still appears under a phase, marked incomplete
+    phase = next(
+        p for p in tree["phases"]
+        if any(c["kind"] == "skill" for c in p["children"])
+    )
+    skill = next(c for c in phase["children"] if c["kind"] == "skill")
+    assert skill["status"] == "incomplete"

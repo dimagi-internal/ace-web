@@ -60,13 +60,16 @@ def _find_tool_node(nodes: list[dict], tool_use_id: str | None) -> dict | None:
 
 
 def _iter_descendants(nodes: Iterable[dict]) -> Iterable[dict]:
-    """Yield every descendant node in nodes (used for status propagation)."""
+    """Yield every descendant node (used for status propagation).
+
+    Uniformly recursive across all wrapper kinds so adding new container
+    kinds in the future doesn't silently break error propagation.
+    """
     for node in nodes:
         yield node
-        if node["kind"] == "parallel_group":
-            yield from node["children"]
-        elif node["kind"] == "skill":
-            yield from _iter_descendants(node.get("children", []))
+        children = node.get("children")
+        if children:
+            yield from _iter_descendants(children)
 
 
 @dataclass
