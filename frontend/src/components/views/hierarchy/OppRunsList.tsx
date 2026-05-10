@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { CheckCircle2, Play, Workflow } from "lucide-react";
+import { Workflow } from "lucide-react";
 
 import type { RunSummary } from "@/api/types";
 import { useOppRuns } from "@/hooks/useOppRuns";
@@ -53,7 +53,6 @@ export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
               className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 text-xs hover:bg-accent/40"
               onClick={(e) => e.stopPropagation()}
             >
-              <ProgressIcon run={r} />
               <span className="shrink-0 font-mono text-[11px] text-foreground">
                 {r.run_id}
               </span>
@@ -73,32 +72,6 @@ export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
         ))}
       </ul>
     </div>
-  );
-}
-
-function ProgressIcon({ run }: { run: RunSummary }) {
-  // Two-state world: only ✓ green when the lifecycle is actually done.
-  // Everything else (queued, mid-step, between phases, halted-at-HITL)
-  // is ▶ in-progress.
-  const isComplete =
-    run.lifecycle_status === "complete" ||
-    // Legacy fallback for run_state.yaml shapes the server couldn't
-    // classify: same heuristic the frontend used before lifecycle_status
-    // shipped. Keeps long-merged opps from regressing visually.
-    (run.lifecycle_status == null && !run.current_phase && !!run.last_actor_at);
-  if (isComplete) {
-    return (
-      <CheckCircle2
-        className="h-3 w-3 shrink-0 text-emerald-400"
-        aria-label="run complete"
-      />
-    );
-  }
-  return (
-    <Play
-      className="h-3 w-3 shrink-0 text-muted-foreground/70"
-      aria-label="run in progress"
-    />
   );
 }
 

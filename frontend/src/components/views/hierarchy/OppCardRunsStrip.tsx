@@ -60,43 +60,20 @@ function RunChip({
   oppSlug: string;
   workspaceSlug: string;
 }) {
-  // Two-state lifecycle: ✓ only when the run is actually complete.
-  // Everything else is in-progress; the chip's depth color shows how
-  // far the run got. Phase ordinal we display = either the live cursor
-  // position, or, when there's no cursor, the deepest completed phase
-  // (so a run between phases still reads as "P3 done" not "—").
+  // The chip just shows the deepest phase the run reached — current
+  // cursor if active, else last completed phase. No ✓ or ▸ glyphs:
+  // those didn't carry meaningful info and the user found them noisy.
+  // Color still tracks depth so a quick scan reads "how far did this
+  // get?" without reading every chip's text.
   const ordinal =
     run.current_phase_ordinal ??
     run.latest_phase_done_ordinal ??
     null;
-  const isComplete =
-    run.lifecycle_status === "complete" ||
-    (run.lifecycle_status == null && !run.current_phase && !!run.last_actor_at);
-  const noProgress =
-    !isComplete &&
-    !run.current_phase &&
-    (run.phases_done ?? 0) === 0;
-
-  const tone = isComplete
-    ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-    : noProgress
-    ? "border-border bg-muted/40 text-muted-foreground"
-    : depthTone(ordinal);
-
-  const label = isComplete
-    ? "✓"
-    : noProgress
-    ? "▸"
-    : ordinal !== null
-    ? `P${ordinal}`
-    : "—";
+  const tone = depthTone(ordinal);
+  const label = ordinal !== null ? `P${ordinal}` : "—";
 
   const tooltipParts: string[] = [`Run ${run.run_id}`];
-  if (isComplete) {
-    tooltipParts.push("Complete");
-  } else if (noProgress) {
-    tooltipParts.push("In progress — no work yet");
-  } else if (run.current_phase) {
+  if (run.current_phase) {
     tooltipParts.push(
       `In progress · ${run.current_phase_display ?? run.current_phase}`,
     );
@@ -105,11 +82,10 @@ function RunChip({
     const total = run.phases_total ?? 0;
     const done = run.phases_done ?? 0;
     tooltipParts.push(
-      `In progress · after ${lastDone}` +
-        (total > 0 ? ` (${done}/${total})` : ""),
+      `Reached ${lastDone}` + (total > 0 ? ` (${done}/${total})` : ""),
     );
   } else {
-    tooltipParts.push("In progress");
+    tooltipParts.push("No progress yet");
   }
   if (run.current_phase_display ?? run.current_phase) {
     tooltipParts.push(

@@ -234,11 +234,15 @@ def list_opp_runs(
     return out
 
 
-# Status values the plugin uses for "this phase finished." Both shapes
-# coexist across run_state.yaml versions: 1448 used "done", 2204 uses
-# "complete". Treat both as terminal so we don't over-classify a run as
-# "paused" just because the plugin upgraded its vocabulary.
-_PHASE_DONE_STATUSES = frozenset({"done", "complete"})
+# What the plugin considers a "still pending" phase or step. Anything
+# NOT in this set (and not absent / empty) counts as "done enough" — we
+# accept the variety of terminal status strings the plugin emits across
+# versions: "done", "complete", "pass", "skipped", "skipped-by-design",
+# "proceed-with-warn", etc. Whitelisting "done" alone made 2128 (which
+# uses bare per-step strings like ``idea-to-pdd: done`` directly under
+# the phase, no ``status:`` key) read as zero progress and label every
+# completed older run as "queued".
+_PENDING_STATUSES = frozenset({"pending", "", None})
 
 
 def _derive_phase_progress(
@@ -279,21 +283,48 @@ def _derive_phase_progress(
 
     for phase_name, phase_value in phases.items():
         if not isinstance(phase_value, dict):
-            # Legacy shape: phase entry is a flat step-name → string map
-            # (e.g. ``execution-management: {llo-onboarding: pending}``).
-            # Treat those as pending phases so a run halted at the
-            # phase-7-to-8 boundary isn't mis-flagged as complete.
+            # Phase entry is a non-dict (e.g. a bare string). Treat as
+            # pending so we don't false-positive a missing-data row as
+            # complete.
             phases_total += 1
             has_pending = True
             continue
 
         phases_total += 1
-        phase_status = phase_value.get("status")
-        if phase_status in _PHASE_DONE_STATUSES:
-            phases_done += 1
-            latest_phase_done = phase_name
+
+        # Phase shape A — current plugin: explicit ``status:`` field.
+        #   design-review:
+        #     status: complete
+        #     steps: {...}
+        explicit_status = phase_value.get("status")
+        if explicit_status is not None:
+            if explicit_status in _PENDING_STATUSES:
+                has_pending = True
+            else:
+                phases_done += 1
+                latest_phase_done = phase_name
+            continue
+
+        # Phase shape B — older plugin: bare step-name → status-string
+        # under the phase (no ``status:`` field, no ``steps:`` wrapper).
+        #   design-review:
+        #     idea-to-pdd: done
+        #     pdd-to-test-prompts: done
+        # Or shape C — newer-plugin variant where ``status:`` is omitted
+        # but ``steps:`` is present. Treat steps the same way: phase is
+        # done iff every step has a non-pending status.
+        steps_map = phase_value.get("steps") if "steps" in phase_value else phase_value
+        if isinstance(steps_map, dict) and steps_map:
+            any_pending_step = any(
+                _is_pending_step(v) for v in steps_map.values()
+            )
+            if any_pending_step:
+                has_pending = True
+            else:
+                phases_done += 1
+                latest_phase_done = phase_name
         else:
-            # No status, "pending", or any other value: treat as not-done.
+            # Empty / unparseable phase block — conservatively pending.
             has_pending = True
 
     result["phases_total"] = phases_total
@@ -306,6 +337,22 @@ def _derive_phase_progress(
         result["status"] = "in_progress"
 
     return result
+
+
+def _is_pending_step(step_value) -> bool:
+    """Return True iff this step value reads as not-yet-done.
+
+    Step shapes vary: a bare string (``idea-to-pdd: done``) or a dict
+    with ``status:`` (``idea-to-pdd: {status: done, verdict: pass}``).
+    A step with no recognizable status is considered pending so we
+    don't over-claim progress on malformed entries.
+    """
+    if isinstance(step_value, str):
+        return step_value in _PENDING_STATUSES
+    if isinstance(step_value, dict):
+        status = step_value.get("status")
+        return status in _PENDING_STATUSES
+    return True
 
 
 # --- Manifest-driven skill attribution ---
