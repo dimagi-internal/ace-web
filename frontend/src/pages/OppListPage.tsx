@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { ArrowDownUp, ChevronDown, ChevronRight, GitCompareArrows, Plus, Trash2, X } from "lucide-react";
+import { useParams } from "react-router-dom";
+import { ArrowDownUp, Plus, X } from "lucide-react";
 
 import { listOpps } from "../api/opps";
 import { ApiError } from "../api/client";
@@ -9,41 +9,17 @@ import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/Loadi
 import { CompareWithDialog } from "../components/opps/CompareWithDialog";
 import { DeleteOppDialog } from "../components/opps/DeleteOppDialog";
 import { NewOppDialog } from "../components/opps/NewOppDialog";
-import { OppCardRunsStrip } from "../components/views/hierarchy/OppCardRunsStrip";
-import { OppChatChildren } from "../components/views/hierarchy/OppChatChildren";
-import { OppRunsList } from "../components/views/hierarchy/OppRunsList";
+import { OppCardItem } from "../components/opps/OppCard";
 import { TimelineView } from "../components/views/TimelineView";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
 import { useViewMode } from "../hooks/useViewMode";
-import { relativeTime } from "../lib/relativeTime";
+import { sortOpps, SORT_OPTIONS, type SortKey } from "../lib/sortOpps";
 import { Button } from "@/components/ui/button";
 
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string; code: string | null }
   | { kind: "loaded"; opps: OppCard[] };
-
-type SortKey = "recent" | "score" | "status" | "slug";
-
-// Each option: short label that fits the dropdown width + a longer
-// title attribute explaining the sort key, so a new user can hover to
-// see what "Status" actually orders by. Avoid the word "slug" in the
-// option label itself — name it "ID" since users see the slug as the
-// stable identifier.
-const SORT_OPTIONS: { key: SortKey; label: string; title: string }[] = [
-  { key: "recent", label: "Last activity", title: "Most recently active opps first" },
-  { key: "score", label: "Score (high → low)", title: "Highest opp-eval scores first; opps without a score sink to the bottom" },
-  { key: "status", label: "Needs attention", title: "Load failures first, then opps without state, then everything else" },
-  { key: "slug", label: "ID (A → Z)", title: "Alphabetical by opp identifier" },
-];
-
-// We rank opps the user is most likely to need to look at first:
-// load failures, then opps with no state.yaml, then everything else.
-const STATUS_RANK: Record<string, number> = {
-  error: 0,
-  "no-state": 1,
-  ok: 2,
-};
 
 // Workspace-wide view tabs. Hierarchy is the default; Timeline ships
 // in a follow-up sprint.
@@ -54,7 +30,6 @@ const VIEW_TABS: ViewTab[] = [
 
 export default function OppListPage() {
   const { workspaceSlug = "" } = useParams<{ workspaceSlug?: string }>();
-  const navigate = useNavigate();
   const { view, setView } = useViewMode("hierarchy");
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [filter, setFilter] = useState("");
@@ -125,13 +100,6 @@ export default function OppListPage() {
       return <LoadingSpinner label="Loading opportunities…" />;
     if (state.kind === "error")
       return <ErrorState message={state.message} code={state.code} onRetry={load} />;
-  }
-  // For non-hierarchy views, error state still surfaces (so the user
-  // sees something is wrong) but loading state is silent — the view's
-  // own loading indicator covers it.
-  if (state.kind === "error" && view !== "hierarchy") {
-    // Show the error inline above the view, not full-page, so the
-    // switcher stays usable.
   }
 
   return (
@@ -251,308 +219,22 @@ export default function OppListPage() {
         )
       ) : (
         <div className="grid grid-cols-1 items-start gap-3 p-6 md:grid-cols-2 xl:grid-cols-3">
-          {visibleOpps.map((opp) => {
-            const isExpanded = expandedOpps.has(opp.slug);
-            return (
-            <div
+          {visibleOpps.map((opp) => (
+            <OppCardItem
               key={opp.slug}
-              className="group overflow-hidden rounded border border-border bg-card transition hover:border-primary"
-              role="button"
-              tabIndex={0}
-              onClick={(e) => {
-                // Card-level click navigates. Buttons / links inside
-                // call stopPropagation so they don't trigger this. We
-                // use a div + onClick (not <Link> wrapping) because
-                // nesting <button> inside <a> is invalid HTML and
-                // browsers handle the click ambiguously — clicking a
-                // chevron could fire either the button or the anchor
-                // first, which manifested as "I clicked leep's chevron
-                // but turmeric expanded."
-                if ((e.target as HTMLElement).closest("button, a")) return;
-                navigate(`/opps/${opp.slug}`);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  if ((e.target as HTMLElement).closest("button, a")) return;
-                  e.preventDefault();
-                  navigate(`/opps/${opp.slug}`);
-                }
-              }}
-            >
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex min-w-0 items-start gap-1.5">
-                    <button
-                      type="button"
-                      aria-label={isExpanded ? `Collapse ${opp.slug} chats` : `Show chats linked to ${opp.slug}`}
-                      title={isExpanded ? "Hide linked chats" : "Show linked chats"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleExpanded(opp.slug);
-                      }}
-                      className="-ml-1 mt-0.5 shrink-0 rounded p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4" />
-                      )}
-                    </button>
-                    <div className="min-w-0">
-                      <h2
-                        className="truncate font-semibold text-foreground group-hover:text-primary"
-                        title={
-                          opp.created_at
-                            ? `${opp.display_name || opp.slug}\nCreated ${new Date(opp.created_at).toLocaleString()}${opp.created_by ? " by " + opp.created_by : ""}`
-                            : opp.display_name || opp.slug
-                        }
-                      >
-                        {opp.display_name || opp.slug}
-                      </h2>
-                      <div className="truncate text-xs text-muted-foreground" title={opp.slug}>
-                        {opp.slug}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {/* Trash sits LEFT of compare so the destructive action
-                        isn't the easy mis-click target at the row's right
-                        edge. */}
-                    <button
-                      type="button"
-                      aria-label={`Delete ${opp.slug}`}
-                      title="Delete this opp"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteTarget(opp);
-                      }}
-                      className="rounded p-1 text-muted-foreground/40 transition hover:bg-destructive/10 hover:text-destructive group-hover:text-muted-foreground/80"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Compare ${opp.slug} with another opp`}
-                      title={
-                        allOpps.length < 2
-                          ? "Compare requires at least 2 opps"
-                          : "Compare with another opp"
-                      }
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCompareSource(opp);
-                      }}
-                      disabled={allOpps.length < 2}
-                      className="rounded p-1 text-muted-foreground/40 transition hover:bg-primary/10 hover:text-primary group-hover:text-muted-foreground/80 disabled:cursor-not-allowed disabled:opacity-30"
-                    >
-                      <GitCompareArrows className="h-4 w-4" />
-                    </button>
-                    <StatusBadge status={opp.status} />
-                  </div>
-                </div>
-
-                {(opp.eval_score_pct ?? opp.eval_score) !== null &&
-                 (opp.eval_score_pct ?? opp.eval_score) !== undefined && (
-                  <div className="mt-2">
-                    <ScoreChip
-                      scorePct={opp.eval_score_pct ?? toPct(opp.eval_score)}
-                      passed={opp.eval_passed}
-                    />
-                  </div>
-                )}
-
-                {opp.current_step ? (
-                  <div className="mt-3 text-sm">
-                    <span className="text-muted-foreground">Last step:</span>{" "}
-                    <span
-                      className="text-foreground"
-                      title={opp.current_step}
-                    >
-                      {opp.current_step_display || opp.current_step}
-                    </span>
-                    {opp.current_phase && (
-                      <span
-                        className="ml-2 text-xs text-muted-foreground"
-                        title={opp.current_phase}
-                      >
-                        ({opp.current_phase_display || opp.current_phase})
-                      </span>
-                    )}
-                  </div>
-                ) : opp.status === "no-state" ? (
-                  <div className="mt-3 text-sm text-muted-foreground">
-                    Cycle hasn't started yet.
-                  </div>
-                ) : null}
-
-                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span title="Each run is one execution of /ace:run for this opp.">
-                    {opp.run_count === 1 ? "1 run" : `${opp.run_count} runs`}
-                  </span>
-                  {opp.last_activity_at && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span title={new Date(opp.last_activity_at).toLocaleString()}>
-                        last {relativeTime(opp.last_activity_at)}
-                      </span>
-                    </>
-                  )}
-                </div>
-
-                {workspaceSlug && (
-                  <OppCardRunsStrip
-                    oppSlug={opp.slug}
-                    workspaceSlug={workspaceSlug}
-                  />
-                )}
-
-                {(opp.tags.length > 0 || opp.labels.length > 0) && (
-                  <div className="mt-3 flex flex-wrap gap-1">
-                    {opp.tags.map((tag) => (
-                      <button
-                        key={`tag-${tag}`}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleTagFilter(tag);
-                        }}
-                        className={
-                          "rounded-full px-2 py-0.5 text-xs transition " +
-                          (tagFilter.includes(tag)
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-primary/10 text-primary hover:bg-primary/20")
-                        }
-                        title={tagFilter.includes(tag) ? "Remove tag filter" : "Filter by this tag"}
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                    {opp.labels.map((label) => (
-                      <span
-                        key={`label-${label}`}
-                        className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {isExpanded && workspaceSlug && (
-                <>
-                  <OppRunsList oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
-                  <OppChatChildren oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
-                </>
-              )}
-            </div>
-            );
-          })}
+              opp={opp}
+              workspaceSlug={workspaceSlug}
+              isExpanded={expandedOpps.has(opp.slug)}
+              tagFilter={tagFilter}
+              canCompare={allOpps.length >= 2}
+              onToggleExpanded={toggleExpanded}
+              onToggleTag={toggleTagFilter}
+              onRequestDelete={setDeleteTarget}
+              onRequestCompare={setCompareSource}
+            />
+          ))}
         </div>
       ))}
     </div>
   );
-}
-
-// Only the unhappy paths get a pill. The common case (state.yaml present
-// and parsable) is silent — we used to render a blue "running" pill here,
-// but ace-web has no live process signal, so claiming the cycle is
-// running was wishful thinking. Better to show nothing than to lie.
-function StatusBadge({ status }: { status: string }) {
-  if (status === "ok") return null;
-  if (status === "no-state") {
-    return (
-      <span
-        className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-        title="No state.yaml file in this opp's Drive folder yet"
-      >
-        Not started yet
-      </span>
-    );
-  }
-  if (status === "error") {
-    return (
-      <span
-        className="rounded bg-destructive/20 px-2 py-0.5 text-xs text-destructive"
-        title="ace-web couldn't read this opp's Drive folder"
-      >
-        Couldn't load
-      </span>
-    );
-  }
-  return (
-    <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-      {status}
-    </span>
-  );
-}
-
-// Local fallback for OppCards from old API payloads that pre-date
-// ``eval_score_pct``. Mirrors ``apps/opps/serializers.normalize_score_pct``.
-function toPct(score: number | null): number | null {
-  if (score === null || score === undefined) return null;
-  return score > 10 ? score : score * 10;
-}
-
-function ScoreChip({
-  scorePct,
-  passed,
-}: {
-  scorePct: number | null;
-  passed: boolean | null;
-}) {
-  if (scorePct === null) return null;
-  const tone =
-    passed === true
-      ? "bg-emerald-900/60 text-emerald-200 border-emerald-700"
-      : passed === false
-        ? "bg-red-900/60 text-red-200 border-red-700"
-        : "bg-muted text-muted-foreground border-border";
-  const glyph = passed === true ? "✓" : passed === false ? "✕" : "·";
-  const verb = passed === true ? "passed" : passed === false ? "failed" : "scored";
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
-      title={`opp-eval ${verb}: ${Math.round(scorePct)}/100`}
-    >
-      <span aria-hidden="true">{glyph}</span>
-      <span>{Math.round(scorePct)}/100</span>
-    </span>
-  );
-}
-
-function sortOpps(opps: OppCard[], key: SortKey): OppCard[] {
-  const out = [...opps];
-  switch (key) {
-    case "recent":
-      // "Last activity" = state.yaml's Drive modifiedTime (best cheap proxy
-      // for "anything moved here"). Falls back to created_at when the opp
-      // has no state.yaml yet.
-      out.sort((a, b) => {
-        const at = a.last_activity_at ?? a.created_at ?? "";
-        const bt = b.last_activity_at ?? b.created_at ?? "";
-        if (at === bt) return a.slug.localeCompare(b.slug);
-        return bt.localeCompare(at);
-      });
-      break;
-    case "score":
-      out.sort((a, b) => {
-        const av = a.eval_score ?? -1;
-        const bv = b.eval_score ?? -1;
-        if (av === bv) return a.slug.localeCompare(b.slug);
-        return bv - av;
-      });
-      break;
-    case "status":
-      out.sort((a, b) => {
-        const ar = STATUS_RANK[a.status] ?? 99;
-        const br = STATUS_RANK[b.status] ?? 99;
-        if (ar === br) return a.slug.localeCompare(b.slug);
-        return ar - br;
-      });
-      break;
-    case "slug":
-      out.sort((a, b) => a.slug.localeCompare(b.slug));
-      break;
-  }
-  return out;
 }

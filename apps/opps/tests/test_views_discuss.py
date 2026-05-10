@@ -1,5 +1,6 @@
 """Tests for POST /api/opps/<slug>/runs/<run_id>/steps/<skill>/discuss
 and GET /api/opps/<slug>/runs/<run_id>/steps/<skill>/chats."""
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -21,12 +22,14 @@ def authed_client(db):
     return c
 
 
+@contextmanager
 def _with_fake(authed_client, fake):
-    return patch.multiple(
-        "apps.opps.views",
-        get_drive_client=lambda *a, **kw: fake,
-        _resolve_ace_root_folder_id=lambda client: fake.folder_id("ACE"),
-    )
+    folder_id = fake.folder_id("ACE")
+    with (
+        patch("apps.opps.access.get_drive_client", lambda *a, **kw: fake),
+        patch("apps.opps.access.resolve_ace_root_folder_id", lambda *a, **kw: folder_id),
+    ):
+        yield
 
 
 def test_discuss_creates_session_with_pointer_fields(authed_client):

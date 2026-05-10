@@ -1,4 +1,4 @@
-"""Tests for _resolve_ace_root_folder_id in apps/opps/views.py.
+"""Tests for resolve_ace_root_folder_id in apps/opps/access.py.
 
 After multi-tenancy (Phase A, 2026-04-27), the resolver reads from a
 Workspace's `drive_root_folder_id` instead of `settings.ACE_DRIVE_ROOT_FOLDER_ID`.
@@ -6,7 +6,7 @@ The settings value is now a migration-only seed, not a runtime value.
 """
 from types import SimpleNamespace
 
-from apps.opps.views import _resolve_ace_root_folder_id
+from apps.opps.access import resolve_ace_root_folder_id as _resolve_ace_root_folder_id
 
 
 def test_returns_workspace_drive_root_folder_id():

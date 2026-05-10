@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
-
 import { getMultiRunSummary } from "../api/opps";
 import type { MultiRunSummary } from "../api/types";
+import { useApi } from "./useApi";
 
 /**
  * Fetch the per-run aggregates for an opp once per (oppSlug) change.
@@ -20,19 +19,9 @@ export function useMultiRunSummary(
   oppSlug: string,
   limit = 8,
 ): MultiRunSummary | null {
-  const [data, setData] = useState<MultiRunSummary | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getMultiRunSummary(oppSlug, { limit })
-      .then((d) => !cancelled && setData(d))
-      .catch(() => {
-        if (!cancelled) setData(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [oppSlug, limit]);
-
+  const { data } = useApi(
+    () => getMultiRunSummary(oppSlug, { limit }),
+    [oppSlug, limit],
+  );
   return data;
 }

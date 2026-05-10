@@ -70,8 +70,8 @@ def upload(request: Request) -> Response:
     ace_root_folder_id = (request.data.get("ace_root_folder_id") or "").strip()
     workspace = None
     if ace_root_folder_id:
+        from apps.common.access import gate_membership
         from apps.workspaces.models import Workspace
-        from apps.workspaces.permissions import is_member
         try:
             workspace = Workspace.objects.get(drive_root_folder_id=ace_root_folder_id)
         except Workspace.DoesNotExist:
@@ -82,14 +82,12 @@ def upload(request: Request) -> Response:
                 ),
                 status=404,
             )
-        if not is_member(request.user, workspace):
-            return Response(
-                error_response(
-                    message="you are not a member of this workspace",
-                    code="not-a-member",
-                ),
-                status=403,
-            )
+        # The caller already supplied the drive_root_folder_id, so existence
+        # is not a secret — surface 403 ("not a member") rather than
+        # 404 ("not found") on membership failure.
+        err = gate_membership(request.user, workspace, hidden_existence=False)
+        if err is not None:
+            return err
 
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
         for chunk in file.chunks():

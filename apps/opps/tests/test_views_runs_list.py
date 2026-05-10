@@ -45,8 +45,8 @@ def test_runs_list_returns_runs_newest_first(authed_client):
     ]
 
     with patch("apps.opps.views.list_opp_runs", return_value=fake_runs), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value="ACE"), \
-         patch("apps.opps.views.get_drive_client", return_value=object()):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value="ACE"), \
+         patch("apps.opps.access.get_drive_client", return_value=object()):
         resp = authed_client.get("/api/opps/turmeric/runs")
 
     assert resp.status_code == 200
@@ -70,8 +70,8 @@ def test_runs_list_includes_all_fields(authed_client):
     ]
 
     with patch("apps.opps.views.list_opp_runs", return_value=fake_runs), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value="ACE"), \
-         patch("apps.opps.views.get_drive_client", return_value=object()):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value="ACE"), \
+         patch("apps.opps.access.get_drive_client", return_value=object()):
         resp = authed_client.get("/api/opps/turmeric/runs")
 
     assert resp.status_code == 200
@@ -94,8 +94,8 @@ def test_runs_list_includes_all_fields(authed_client):
 @pytest.mark.django_db
 def test_runs_list_empty_when_no_runs(authed_client):
     with patch("apps.opps.views.list_opp_runs", return_value=[]), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value="ACE"), \
-         patch("apps.opps.views.get_drive_client", return_value=object()):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value="ACE"), \
+         patch("apps.opps.access.get_drive_client", return_value=object()):
         resp = authed_client.get("/api/opps/turmeric/runs")
 
     assert resp.status_code == 200
@@ -114,8 +114,8 @@ def test_workbench_with_run_id_forwards_to_load_opp(authed_client):
         raise FileNotFoundError("no opp")
 
     with patch("apps.opps.views.load_opp", side_effect=fake_load_opp), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value="ACE"), \
-         patch("apps.opps.views.get_drive_client", return_value=object()):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value="ACE"), \
+         patch("apps.opps.access.get_drive_client", return_value=object()):
         authed_client.get("/api/opps/turmeric?run_id=20260502-1430")
 
     assert captured["run_id"] == "20260502-1430"
@@ -132,8 +132,8 @@ def test_workbench_without_run_id_passes_none(authed_client):
         raise FileNotFoundError("no opp")
 
     with patch("apps.opps.views.load_opp", side_effect=fake_load_opp), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value="ACE"), \
-         patch("apps.opps.views.get_drive_client", return_value=object()):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value="ACE"), \
+         patch("apps.opps.access.get_drive_client", return_value=object()):
         authed_client.get("/api/opps/turmeric")
 
     assert captured["run_id"] is None
