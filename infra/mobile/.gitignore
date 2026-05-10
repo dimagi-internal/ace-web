@@ -1,0 +1,16 @@
+# Terraform state — never commit. Backend should be remote (S3) for shared use,
+# but the POC stack is single-operator and state stays local until promoted.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Plan files (may contain secrets)
+*.tfplan
+
+# Local provider cache, lock files for plugins
+.terraform/
+.terraform.lock.hcl
+
+# Var files — only keep the example checked in.
+*.tfvars
+!example.tfvars

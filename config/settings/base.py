@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "apps.system.apps.SystemConfig",
     "apps.workspaces.apps.WorkspacesConfig",
     "apps.activity.apps.ActivityConfig",
+    "apps.mobile.apps.MobileConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -228,6 +229,20 @@ REST_FRAMEWORK = {
 # first use. Sourced from AWS Secrets Manager in prod, .env in dev.
 # Empty default: opps views return a 500 with code="drive-not-configured".
 ACE_DRIVE_SA_KEY_JSON = env("ACE_DRIVE_SA_KEY_JSON", default="")
+
+# --- Mobile cloud runner (POC) ---
+# Single EC2 instance + S3 bucket provisioned by infra/mobile/ Terraform.
+# The EmulatorController in apps.mobile.controller drives them via boto3
+# (SSM Session Manager for in-VM exec, no SSH). Empty defaults so a
+# deploy without these env vars 503s with a clear "not-configured" error
+# rather than failing mid-call.
+#
+# Set in deploy/aws/task-definition.json after `terraform apply` emits
+# the values from infra/mobile/outputs.tf.
+ACE_MOBILE_AWS_REGION = env("ACE_MOBILE_AWS_REGION", default="us-east-1")
+ACE_MOBILE_INSTANCE_ID = env("ACE_MOBILE_INSTANCE_ID", default="")
+ACE_MOBILE_S3_BUCKET = env("ACE_MOBILE_S3_BUCKET", default="")
+ACE_MOBILE_AMI_VERSION = env("ACE_MOBILE_AMI_VERSION", default="")
 
 # --- Phase 3 dev-only test hooks ---
 # Both settings default to False and are only True in development.py.
