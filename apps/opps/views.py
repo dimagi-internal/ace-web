@@ -176,12 +176,7 @@ def _opp_list_impl(request):
 
         if card is None:
             try:
-                # Use a bypass=True client on the cold-load path to defeat
-                # the underlying Drive TTL cache: changed-file content
-                # mustn't be served from a stale per-call entry that was
-                # written before the snapshot cache was invalidated.
-                inner = client._inner if isinstance(client, CachedDriveClient) else client
-                cold_client = CachedDriveClient(inner, bypass=True)
+                cold_client = snapshot_cache.cold_load_client(client)
                 with TouchedFileTracker() as tracker:
                     # opp_children was listed above (outside the tracker) for
                     # the "is this an opp folder?" check; replay both the
@@ -269,11 +264,9 @@ def _opp_list_impl(request):
     import json
     body = json.dumps(cards, sort_keys=True, default=str)
     list_etag = f"sha256:{hashlib.sha256(body.encode('utf-8')).hexdigest()}"
-    if request.headers.get("If-None-Match") == list_etag:
-        return HttpResponse(status=304, headers={"ETag": list_etag})
-    resp = Response(success_response(cards))
-    resp["ETag"] = list_etag
-    return resp
+    return snapshot_cache.etag_or_304(
+        request, list_etag, lambda: Response(success_response(cards)),
+    )
 
 
 def opp_create(request):
@@ -569,19 +562,12 @@ def workbench(request, slug: str):
         if cached is not None:
             _overlay_workspace_display_name(cached.opp, slug, workspace=ws)
             etag = _snapshot_etag(cached)
-            if request.headers.get("If-None-Match") == etag:
-                return HttpResponse(status=304, headers={"ETag": etag})
-            resp = Response(success_response(serialize_opp_snapshot(cached)))
-            resp["ETag"] = etag
-            return resp
+            return snapshot_cache.etag_or_304(
+                request, etag,
+                lambda: Response(success_response(serialize_opp_snapshot(cached))),
+            )
 
-    # Cold-load path: bypass the drive-level TTL cache so we always read
-    # fresh content after a cache miss or force=1. The CachedDriveClient
-    # wrapping was done in _require_drive with bypass keyed to ?force; here
-    # we need bypass=True unconditionally so changed-file content isn't
-    # served from a stale TTL entry. We reconstruct from the inner client.
-    inner = client._inner if isinstance(client, CachedDriveClient) else client
-    bypass_client = CachedDriveClient(inner, bypass=True)
+    bypass_client = snapshot_cache.cold_load_client(client)
 
     try:
         with TouchedFileTracker() as tracker:
@@ -596,6 +582,9 @@ def workbench(request, slug: str):
         workspace_id=ws.pk, slug=slug, run_id=run_id,
         snap=snap, file_ids=tracker.file_ids,
     )
+    # Cold-load always returns 200 with ETag, even if the request happened to
+    # carry a matching If-None-Match — ?force=1 callers (or genuine cache
+    # misses) want fresh content, not a 304.
     etag = _snapshot_etag(snap)
     resp = Response(success_response(serialize_opp_snapshot(snap)))
     resp["ETag"] = etag
