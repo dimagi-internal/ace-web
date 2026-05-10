@@ -9,8 +9,6 @@ from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
 from apps.opps import access, drive_changes, snapshot_cache
-from apps.opps.drive_cache import CachedDriveClient
-from apps.opps.models import OppWorkspace
 from apps.opps.serializers import (
     normalize_score_pct,
     serialize_opp_snapshot,
@@ -763,7 +761,6 @@ from apps.opps.views_session import (  # noqa: E402,F401
     opp_working_session,
     step_chats,
 )
-
 
 # opp_artifact_write and opp_action moved to views_write.py (re-exported above).
 
