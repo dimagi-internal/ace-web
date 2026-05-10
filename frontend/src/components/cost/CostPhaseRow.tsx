@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 
 import type { CostPhase } from "../../api/types";
 import { CostSkillRow } from "./CostSkillRow";
-import { formatDuration, formatTokens, formatUsd, totalTokens } from "./format";
+import { formatDuration, formatTokens, formatUsd, totalTokens } from "../../lib/format";
 
 interface Props {
   phase: CostPhase;

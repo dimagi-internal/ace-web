@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import type { CostRollup } from "../../api/types";
-import { formatDuration, formatUsd } from "../cost/format";
+import { formatDuration, formatUsd } from "../../lib/format";
 import { CostRollupDialog } from "./CostRollupDialog";
 
 interface Props {
