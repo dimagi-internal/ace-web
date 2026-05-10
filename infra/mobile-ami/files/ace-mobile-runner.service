@@ -12,17 +12,12 @@ Environment=ANDROID_SDK_ROOT=/opt/android-sdk
 Environment=ANDROID_HOME=/opt/android-sdk
 Environment=PATH=/usr/local/bin:/usr/bin:/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:/opt/android-sdk/cmdline-tools/latest/bin
 
-# Boot from the registered-test-user snapshot. -no-snapshot-save means
-# the snapshot is read-only — process state during a session never
-# leaks into the AMI baseline.
-ExecStart=/opt/android-sdk/emulator/emulator \
-  -avd ACE_Pixel_API_34 \
-  -no-window \
-  -no-audio \
-  -no-boot-anim \
-  -gpu swiftshader_indirect \
-  -no-snapshot-save \
-  -snapshot registered-test-user
+# Launch via the wrapper script which reads /opt/ace/states.yaml for the
+# default state, exec's the emulator with the matching snapshot, and
+# kicks off a self-heal probe in the background that installs CommCare
+# if it's somehow missing post-boot. ace-web can stop this unit and
+# restart it with a different state via SSM (see EmulatorController.select_state).
+ExecStart=/usr/local/bin/ace-emulator-launch
 
 # After ExecStart exits we're done — no automatic restart. ace-web's
 # /api/mobile/ensure-running will start the EC2 instance afresh, which

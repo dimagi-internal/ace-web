@@ -102,10 +102,13 @@ build {
     execute_command = "sudo -E bash '{{ .Path }}'"
   }
 
-  # 40 — CommCare APK to /opt/ace/apks/.
+  # 40 — CommCare APKs (one or more versions) to /opt/ace/apks/<ver>/.
   provisioner "shell" {
     script          = "scripts/40-commcare-apk.sh"
-    execute_command = "sudo -E bash '{{ .Path }}'"
+    execute_command = "{{ .Vars }} sudo -E bash '{{ .Path }}'"
+    environment_vars = [
+      "COMMCARE_VERSIONS=${join(",", var.commcare_versions)}",
+    ]
   }
 
   # Stage Maestro recipes, systemd units, idle script.
@@ -139,6 +142,11 @@ build {
     destination = "/tmp/ace-idle-shutdown.sh"
   }
 
+  provisioner "file" {
+    source      = "files/ace-emulator-launch"
+    destination = "/tmp/ace-emulator-launch"
+  }
+
   # 50 — boot AVD, register demo user via the +7426 demo-bypass flow,
   # save snapshot. Test creds injected as env vars.
   #
@@ -151,6 +159,7 @@ build {
     script          = "scripts/50-bake-snapshot.sh"
     execute_command = "{{ .Vars }} sudo -E bash '{{ .Path }}'"
     environment_vars = [
+      "COMMCARE_VERSIONS=${join(",", var.commcare_versions)}",
       "TEST_PHONE_LOCAL=${var.test_phone_local}",
       "TEST_COUNTRY_CODE=${var.test_country_code}",
       "TEST_PIN=${var.test_pin}",

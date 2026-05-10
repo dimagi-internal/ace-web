@@ -43,6 +43,14 @@ _SSM_OP_TIMEOUT_SEC = 300
 _SSM_RECIPE_TIMEOUT_SEC = 1800  # 30 min — Maestro flows can be long.
 # In-VM idle marker — must agree with files/idle-shutdown.sh in the AMI.
 _IDLE_MARKER_PATH = "/var/run/ace-mobile/last-activity"
+# Catalog of states (one per CommCare APK version) baked into the AMI.
+# Written by ``infra/mobile-ami/scripts/50-bake-snapshot.sh``.
+_STATES_YAML_PATH = "/opt/ace/states.yaml"
+# Active-state marker, written by ``ace-emulator-launch`` on each
+# emulator launch. Used by /api/mobile/states to surface which state is
+# currently running. Best-effort: if the file is missing, ``active``
+# defaults to ``default``.
+_ACTIVE_STATE_PATH = "/run/ace-mobile/active-state"
 # S3 presigned URL TTL — 1 hour matches the spec contract.
 _PRESIGN_TTL_SEC = 3600
 
@@ -102,6 +110,23 @@ class SnapshotResult:
     loaded_at: str | None = None
 
 
+@dataclass
+class State:
+    """One named state baked into the AMI (1:1 with a CommCare APK version)."""
+
+    name: str
+    snapshot: str
+    commcare_version: str
+    description: str = ""
+
+
+@dataclass
+class StatesCatalog:
+    default: str
+    states: list[State]
+    active: str | None = None  # which state's emulator is currently loaded
+
+
 # ── Controller ────────────────────────────────────────────────────────
 
 
@@ -144,12 +169,22 @@ class EmulatorController:
 
     # ── Lifecycle ───────────────────────────────────────────────
 
-    def ensure_running(self) -> RunningState:
-        info = self._describe_instance()
-        state = info["state"]
+    def ensure_running(self, state_name: str | None = None) -> RunningState:
+        """Ensure the EC2 instance is running and the emulator is booted.
 
-        if state == "running":
+        ``state_name`` selects which named state (CommCare version) to
+        load. ``None`` keeps whatever's already active (or the AMI's
+        default on a cold start). Switching to a different state on a
+        running instance kills the current emulator and relaunches it
+        with the requested snapshot — adds ~30-60 s.
+        """
+        info = self._describe_instance()
+        ec2_state = info["state"]
+
+        if ec2_state == "running":
             self._wait_for_emulator()
+            if state_name and state_name != self._read_active_state():
+                self._switch_state(state_name)
             return RunningState(
                 instance_id=self.instance_id,
                 state="running",
@@ -157,18 +192,20 @@ class EmulatorController:
                 started_at=_iso_now(),
             )
 
-        if state in ("pending", "stopping"):
+        if ec2_state in ("pending", "stopping"):
             # Caller raced us; treat it like a cold start.
             self._wait_for_ec2_ok(_BOOT_HARD_TIMEOUT_SEC)
-        elif state == "stopped":
+        elif ec2_state == "stopped":
             self._start_instance()
             self._wait_for_ec2_ok(_BOOT_HARD_TIMEOUT_SEC)
         else:
             raise MobileError(
-                f"instance {self.instance_id} is in unexpected state {state!r}"
+                f"instance {self.instance_id} is in unexpected state {ec2_state!r}"
             )
 
         self._wait_for_emulator()
+        if state_name and state_name != self._read_active_state():
+            self._switch_state(state_name)
         info = self._describe_instance()
         return RunningState(
             instance_id=self.instance_id,
@@ -358,6 +395,46 @@ class EmulatorController:
         )
         return SnapshotResult(name=name, loaded_at=_iso_now())
 
+    def list_states(self) -> StatesCatalog:
+        """Read the AMI's baked-in states catalog via SSM.
+
+        Cheap probe (~1 s) — we re-read on every call rather than
+        cache, so an AMI rebake without ace-web restart picks up
+        immediately. The instance must be running.
+        """
+        self._assert_running()
+        commands = [
+            "set +e",
+            f"cat {shlex.quote(_STATES_YAML_PATH)} 2>/dev/null",
+            "echo '---ACTIVE---'",
+            f"cat {shlex.quote(_ACTIVE_STATE_PATH)} 2>/dev/null || true",
+        ]
+        result = ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=commands,
+            timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
+        )
+        return _parse_states_yaml(result.stdout)
+
+    def select_state(self, state_name: str) -> RunningState:
+        """Switch to a different baked state on a running instance.
+
+        Stops the current emulator and relaunches it with the requested
+        snapshot. ``ensure_running(state_name=...)`` is the typical path
+        in; this method is the explicit op for callers that want to
+        switch without rolling through ensure-running's other checks.
+        """
+        self._assert_running()
+        self._switch_state(state_name)
+        info = self._describe_instance()
+        return RunningState(
+            instance_id=self.instance_id,
+            state=info["state"],
+            public_dns=info.get("public_dns"),
+            started_at=_iso_now(),
+        )
+
     def capture_ui_dump(self) -> str:
         self._assert_running()
         commands = [
@@ -459,6 +536,54 @@ class EmulatorController:
                 f"emulator on {self.instance_id} did not reach boot_completed: {e.message}"
             ) from e
 
+    def _switch_state(self, state_name: str) -> None:
+        """Stop ace-mobile-runner, restart with the requested state, wait for boot."""
+        # The runner unit's ExecStart is /usr/local/bin/ace-emulator-launch
+        # (no args, picks default). To switch, we override the unit's
+        # exec by running the launch script directly via systemd-run with
+        # the requested state, after stopping the existing unit.
+        commands = [
+            "set +e",
+            f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+            "sudo systemctl stop ace-mobile-runner.service || true",
+            "for i in $(seq 1 30); do "
+            "  if ! pgrep -f 'emulator -avd' >/dev/null; then break; fi; "
+            "  sleep 1; "
+            "done",
+            f"echo {shlex.quote(state_name)} | "
+            f"sudo tee {shlex.quote(_ACTIVE_STATE_PATH)} >/dev/null",
+            "sudo systemd-run --unit=ace-mobile-runner-override "
+            "--collect --uid=ubuntu --gid=ubuntu "
+            "--setenv=ANDROID_SDK_ROOT=/opt/android-sdk "
+            "--setenv=ANDROID_HOME=/opt/android-sdk "
+            f"/usr/local/bin/ace-emulator-launch {shlex.quote(state_name)}",
+        ]
+        try:
+            ssm.run_command(
+                self.ssm,
+                self.instance_id,
+                commands=commands,
+                timeout_seconds=_SSM_OP_TIMEOUT_SEC,
+            )
+        except SSMFailure as e:
+            raise MobileError(f"select_state({state_name}) failed: {e.message}") from e
+        # Now wait for the emulator to come back up.
+        self._wait_for_emulator()
+
+    def _read_active_state(self) -> str | None:
+        """Read /run/ace-mobile/active-state via SSM. Best-effort."""
+        try:
+            result = ssm.run_command(
+                self.ssm,
+                self.instance_id,
+                commands=[f"cat {shlex.quote(_ACTIVE_STATE_PATH)} 2>/dev/null || true"],
+                timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
+            )
+            text = (result.stdout or "").strip()
+            return text or None
+        except MobileError:
+            return None
+
     def _assert_running(self) -> None:
         info = self._describe_instance()
         if info["state"] != "running":
@@ -532,3 +657,56 @@ _CONTENT_TYPES = {
 def _guess_content_type(key: str) -> str:
     ext = key.rsplit(".", 1)[-1].lower() if "." in key else ""
     return _CONTENT_TYPES.get(ext, "application/octet-stream")
+
+
+def _parse_states_yaml(stdout: str) -> StatesCatalog:
+    """Parse the SSM probe output that contains states.yaml + active-state marker.
+
+    Avoids a hard dependency on PyYAML by handling our own simple
+    structure (plus, the AMI's bake script is the only writer).
+    """
+    text = stdout or ""
+    if "---ACTIVE---" in text:
+        yaml_part, _, tail = text.partition("---ACTIVE---")
+        active = tail.strip().splitlines()[0].strip() if tail.strip() else None
+    else:
+        yaml_part = text
+        active = None
+
+    default = ""
+    states: list[State] = []
+    current: dict[str, str] = {}
+
+    def flush() -> None:
+        nonlocal current
+        if current.get("name"):
+            states.append(
+                State(
+                    name=current.get("name", ""),
+                    snapshot=current.get("snapshot", ""),
+                    commcare_version=current.get("commcare_version", ""),
+                    description=current.get("description", ""),
+                )
+            )
+        current = {}
+
+    for raw in yaml_part.splitlines():
+        line = raw.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        stripped = line.lstrip()
+        if line.startswith("default:"):
+            default = line.split(":", 1)[1].strip().strip('"')
+            continue
+        if line.startswith("states:"):
+            continue
+        if stripped.startswith("- name:"):
+            flush()
+            current["name"] = stripped.split(":", 1)[1].strip().strip('"')
+            continue
+        if ":" in stripped and current:
+            k, _, v = stripped.partition(":")
+            current[k.strip()] = v.strip().strip('"')
+    flush()
+
+    return StatesCatalog(default=default, states=states, active=active or default or None)

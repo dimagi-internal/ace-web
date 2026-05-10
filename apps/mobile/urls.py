@@ -4,7 +4,9 @@ from . import views
 
 urlpatterns = [
     path("status", views.status, name="mobile_status"),
+    path("states", views.states, name="mobile_states"),
     path("ensure-running", views.ensure_running, name="mobile_ensure_running"),
+    path("select-state", views.select_state, name="mobile_select_state"),
     path("install-apk", views.install_apk, name="mobile_install_apk"),
     path("run-recipe", views.run_recipe, name="mobile_run_recipe"),
     path("save-snapshot", views.save_snapshot, name="mobile_save_snapshot"),

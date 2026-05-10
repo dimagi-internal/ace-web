@@ -7,6 +7,7 @@ install -m 0644 /tmp/ace-mobile-runner.service   /etc/systemd/system/ace-mobile-
 install -m 0644 /tmp/ace-idle-shutdown.service   /etc/systemd/system/ace-idle-shutdown.service
 install -m 0644 /tmp/ace-idle-shutdown.timer     /etc/systemd/system/ace-idle-shutdown.timer
 install -m 0755 /tmp/ace-idle-shutdown.sh        /usr/local/bin/ace-idle-shutdown
+install -m 0755 /tmp/ace-emulator-launch         /usr/local/bin/ace-emulator-launch
 
 # sudoers entry: the idle script needs to call /sbin/shutdown without a
 # password. Scoped to the exact command.

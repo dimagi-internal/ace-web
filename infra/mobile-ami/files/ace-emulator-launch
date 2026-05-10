@@ -1,0 +1,82 @@
+#!/bin/bash
+# Launch the Android emulator from a named state snapshot. Reads
+# /opt/ace/states.yaml for the catalog of states baked into the AMI.
+#
+# Usage:
+#   ace-emulator-launch              # uses `default` from states.yaml
+#   ace-emulator-launch cc-2.62.0    # uses a specific named state
+#
+# After the emulator boots, this script self-heals: if CommCare isn't
+# installed for some reason (e.g., a partial snapshot), it installs the
+# matching APK from /opt/ace/apks/<version>/commcare.apk. This is
+# defensive — the snapshot save in step 50 + sync should normally
+# preserve the install — but it makes the runtime resilient to AMI
+# capture quirks.
+#
+# This script execs the emulator (it does NOT exit), so systemd
+# considers the unit alive while the emulator runs.
+set -euo pipefail
+
+STATES_YAML=/opt/ace/states.yaml
+APK_ROOT=/opt/ace/apks
+ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-/opt/android-sdk}
+ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
+
+REQUESTED_STATE="${1:-}"
+if [[ -z "$REQUESTED_STATE" ]]; then
+  REQUESTED_STATE=$(awk '/^default:/ {print $2; exit}' "$STATES_YAML")
+fi
+
+# Pull this state's snapshot name, commcare version, and apk path from
+# states.yaml. Use awk because we don't want to hard-depend on yq.
+read -r SNAPSHOT_NAME COMMCARE_VERSION APK_PATH < <(
+  awk -v target="$REQUESTED_STATE" '
+    $1 == "-" && $2 == "name:" && $3 == target { found = 1; next }
+    found && $1 == "snapshot:" { snap = $2 }
+    found && $1 == "commcare_version:" { gsub(/"/, "", $2); ver = $2 }
+    found && $1 == "apk_path:" { apk = $2 }
+    found && $1 == "-" { exit }  # next state begins
+    END { print snap, ver, apk }
+  ' "$STATES_YAML"
+)
+
+if [[ -z "$SNAPSHOT_NAME" ]]; then
+  echo "ERROR: state '$REQUESTED_STATE' not in $STATES_YAML" >&2
+  exit 1
+fi
+
+echo "[ace-emulator-launch] state=$REQUESTED_STATE snapshot=$SNAPSHOT_NAME commcare=$COMMCARE_VERSION"
+
+# Self-heal probe: launch a child shell that waits for boot and installs
+# the APK if not present. Runs in background so the emulator exec below
+# doesn't get blocked. The probe touches the idle marker periodically
+# so the watchdog doesn't kill us during boot.
+(
+  set +e
+  for i in $(seq 1 120); do
+    bc=$($ADB shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+    if [[ "$bc" == "1" ]]; then break; fi
+    touch /run/ace-mobile/last-activity 2>/dev/null
+    sleep 5
+  done
+  if [[ "$bc" != "1" ]]; then
+    echo "[ace-emulator-launch] self-heal: boot never completed" >&2
+    exit 0
+  fi
+  if ! $ADB shell pm list packages | grep -q '^package:org.commcare.dalvik$'; then
+    if [[ -f "$APK_PATH" ]]; then
+      echo "[ace-emulator-launch] self-heal: installing $APK_PATH"
+      $ADB install -r "$APK_PATH" || true
+    else
+      echo "[ace-emulator-launch] self-heal: APK missing at $APK_PATH" >&2
+    fi
+  fi
+  touch /run/ace-mobile/last-activity 2>/dev/null
+) &
+
+exec "$ANDROID_SDK_ROOT/emulator/emulator" \
+  -avd ACE_Pixel_API_34 \
+  -no-window -no-audio -no-boot-anim -no-metrics \
+  -gpu swiftshader_indirect \
+  -no-snapshot-save \
+  -snapshot "$SNAPSHOT_NAME"

@@ -49,9 +49,14 @@ mkdir -p /opt/ace /opt/ace/apks /opt/ace/recipes /var/log/ace-mobile
 # the bake script and runtime service don't hit Permission denied.
 chown ubuntu:ubuntu /var/log/ace-mobile
 
-# Tmpfile config so /var/run/ace-mobile/ exists on every boot for the
-# idle-marker file the SSM commands touch.
+# Tmpfile config so /var/run/ace-mobile/ exists on every boot, AND so the
+# idle marker file exists at boot with current mtime. Without the second
+# entry, the in-VM idle watchdog (ace-idle-shutdown.timer) sees stat=0
+# at boot+60s and halts the host before any caller has a chance to bump
+# the marker. The `f+` directive creates the file (idempotent re-create
+# on boot) so its mtime is "now-on-boot".
 cat >/etc/tmpfiles.d/ace-mobile.conf <<'EOF'
 d /var/run/ace-mobile 0755 ubuntu ubuntu -
+f+ /var/run/ace-mobile/last-activity 0644 ubuntu ubuntu - -
 EOF
 systemd-tmpfiles --create /etc/tmpfiles.d/ace-mobile.conf

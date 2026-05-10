@@ -29,9 +29,11 @@ from . import singleton
 from .controller import EmulatorController
 from .exceptions import MobileError, NotConfigured, SingletonBusy
 from .serializers import (
+    EnsureRunningSerializer,
     InstallApkSerializer,
     RunRecipeSerializer,
     SnapshotSerializer,
+    StateSerializer,
 )
 
 
@@ -96,7 +98,63 @@ def status(request: Request) -> Response:
 def ensure_running(request: Request) -> Response:
     try:
         _assert_configured()
-        result = _make_controller().ensure_running()
+    except MobileError as e:
+        return _mobile_error_response(e)
+
+    serializer = EnsureRunningSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return Response(
+            error_response(
+                message=f"invalid request: {serializer.errors}",
+                code="invalid-request",
+            ),
+            status=400,
+        )
+    try:
+        result = _make_controller().ensure_running(
+            state_name=serializer.validated_data.get("state")
+        )
+    except MobileError as e:
+        return _mobile_error_response(e)
+    return Response(success_response(_to_payload(result)))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def states(request: Request) -> Response:
+    """List the named states (one per CommCare APK version) baked into
+    the AMI, plus which one is currently active on the instance."""
+    try:
+        _assert_configured()
+        catalog = _make_controller().list_states()
+    except MobileError as e:
+        return _mobile_error_response(e)
+    return Response(success_response(_to_payload(catalog)))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def select_state(request: Request) -> Response:
+    """Switch the active state on a running instance. Stops the
+    emulator and relaunches it with the requested baked snapshot."""
+    try:
+        _assert_configured()
+    except MobileError as e:
+        return _mobile_error_response(e)
+
+    serializer = StateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(
+            error_response(
+                message=f"invalid request: {serializer.errors}",
+                code="invalid-request",
+            ),
+            status=400,
+        )
+    try:
+        result = _make_controller().select_state(
+            state_name=serializer.validated_data["state"]
+        )
     except MobileError as e:
         return _mobile_error_response(e)
     return Response(success_response(_to_payload(result)))
@@ -156,7 +214,12 @@ def run_recipe(request: Request) -> Response:
 
     try:
         try:
-            result = _make_controller().run_recipe(
+            controller = _make_controller()
+            requested_state = serializer.validated_data.get("state")
+            if requested_state:
+                # Switch state if needed — no-op if already active.
+                controller.ensure_running(state_name=requested_state)
+            result = controller.run_recipe(
                 recipe_yaml=serializer.validated_data["recipe_yaml"],
                 env=serializer.validated_data.get("env") or {},
                 screenshot_prefix=serializer.validated_data.get("screenshot_prefix"),

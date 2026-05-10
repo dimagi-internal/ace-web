@@ -98,6 +98,7 @@ def test_status_reports_configured_when_env_set(bearer_client, configured):
     "path",
     [
         "/api/mobile/ensure-running",
+        "/api/mobile/select-state",
         "/api/mobile/install-apk",
         "/api/mobile/run-recipe",
         "/api/mobile/save-snapshot",
@@ -112,6 +113,12 @@ def test_lifecycle_endpoints_require_auth(path):
     assert resp.status_code in (401, 403)
 
 
+def test_states_requires_auth():
+    c = APIClient()
+    resp = c.get("/api/mobile/states")
+    assert resp.status_code in (401, 403)
+
+
 # ── 503 when not configured ─────────────────────────────────────────
 
 
@@ -119,6 +126,7 @@ def test_lifecycle_endpoints_require_auth(path):
     "path,body",
     [
         ("/api/mobile/ensure-running", {}),
+        ("/api/mobile/select-state", {"state": "cc-2.62.0"}),
         ("/api/mobile/install-apk", {"apk_url": "https://x/c.apk"}),
         ("/api/mobile/run-recipe", {"recipe_yaml": "x"}),
         ("/api/mobile/save-snapshot", {"name": "snap"}),
@@ -133,6 +141,85 @@ def test_lifecycle_endpoints_503_when_unconfigured(bearer_client, settings, path
     resp = bearer_client.post(path, body, format="json")
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "not-configured"
+
+
+def test_states_503_when_unconfigured(bearer_client, settings):
+    settings.ACE_MOBILE_INSTANCE_ID = ""
+    settings.ACE_MOBILE_S3_BUCKET = ""
+    resp = bearer_client.get("/api/mobile/states")
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "not-configured"
+
+
+def test_states_returns_catalog(bearer_client, configured):
+    from apps.mobile.controller import State, StatesCatalog
+
+    fake = MagicMock()
+    fake.list_states.return_value = StatesCatalog(
+        default="cc-2.62.0",
+        states=[
+            State(
+                name="cc-2.62.0",
+                snapshot="cc-2.62.0-registered",
+                commcare_version="2.62.0",
+                description="CommCare 2.62.0",
+            ),
+            State(
+                name="cc-2.63.0",
+                snapshot="cc-2.63.0-registered",
+                commcare_version="2.63.0",
+                description="CommCare 2.63.0",
+            ),
+        ],
+        active="cc-2.62.0",
+    )
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.get("/api/mobile/states")
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert body["default"] == "cc-2.62.0"
+    assert body["active"] == "cc-2.62.0"
+    assert len(body["states"]) == 2
+    assert body["states"][0]["commcare_version"] == "2.62.0"
+
+
+def test_select_state_validates_name(bearer_client, configured):
+    resp = bearer_client.post(
+        "/api/mobile/select-state", {"state": "../../etc/passwd"}, format="json"
+    )
+    assert resp.status_code == 400
+
+
+def test_select_state_dispatches_to_controller(bearer_client, configured):
+    fake = MagicMock()
+    fake.select_state.return_value = RunningState(
+        instance_id="i-0123",
+        state="running",
+        public_dns="ec2-1.example.com",
+        started_at="2026-05-09T00:00:00+00:00",
+    )
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post(
+            "/api/mobile/select-state", {"state": "cc-2.63.0"}, format="json"
+        )
+    assert resp.status_code == 200
+    fake.select_state.assert_called_once_with(state_name="cc-2.63.0")
+
+
+def test_ensure_running_passes_state_to_controller(bearer_client, configured):
+    fake = MagicMock()
+    fake.ensure_running.return_value = RunningState(
+        instance_id="i-0123",
+        state="running",
+        public_dns=None,
+        started_at="2026-05-09T00:00:00+00:00",
+    )
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post(
+            "/api/mobile/ensure-running", {"state": "cc-2.63.0"}, format="json"
+        )
+    assert resp.status_code == 200
+    fake.ensure_running.assert_called_once_with(state_name="cc-2.63.0")
 
 
 # ── ensure_running ─────────────────────────────────────────────────

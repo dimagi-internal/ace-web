@@ -40,6 +40,25 @@ variable "ami_name_prefix" {
   default = "ace-mobile-emulator"
 }
 
+variable "commcare_versions" {
+  description = <<-EOT
+    Ordered list of CommCare APK versions to bake into this AMI. The first
+    entry becomes the AMI's `default` state (loaded by the systemd runner
+    on boot). Each entry produces:
+      - /opt/ace/apks/<version>/commcare.apk
+      - an AVD snapshot named `cc-<version>-registered` with the demo
+        user pre-registered via the +7426 bypass
+      - an entry in /opt/ace/states.yaml
+    ace-web's /api/mobile/states reads states.yaml to surface available
+    runtime states; ace-web's /api/mobile/ensure-running with
+    `state="cc-<version>"` switches to a different one.
+    Bake time grows roughly linearly with the list length (~5 min per
+    version on c5n.metal).
+  EOT
+  type        = list(string)
+  default     = ["2.62.0"]
+}
+
 # ---------------------------------------------------------------------------
 # Test-user credentials. Sourced from 1Password by the operator before
 # `packer build`. NEVER set defaults to real values — the README shows
