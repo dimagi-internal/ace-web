@@ -274,7 +274,7 @@ class EmulatorController:
         self._assert_running()
         local = f"/tmp/install-{uuid.uuid4().hex}.apk"
         commands = [
-            "set -euo pipefail",
+            "set -eu",
             f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
             f"curl -fsSL -o {shlex.quote(local)} {shlex.quote(apk_url)}",
             f"adb install -r {shlex.quote(local)}",
@@ -320,12 +320,12 @@ class EmulatorController:
 
         try:
             commands = [
-                "set -euo pipefail",
+                "set -eu",
                 f"mkdir -p {shlex.quote(run_dir)}",
                 f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
                 f"echo {shlex.quote(recipe_b64)} | base64 -d > {shlex.quote(recipe_path)}",
-                f"/opt/maestro/bin/maestro test --format junit "
-                f"--output {shlex.quote(run_dir)} "
+                f"sudo -u ubuntu /usr/local/bin/maestro test "
+                f"--debug-output {shlex.quote(run_dir)} "
                 f"{env_flags} {shlex.quote(recipe_path)}",
                 f"aws s3 cp {shlex.quote(run_dir)}/ "
                 f"s3://{self.s3_bucket}/{s3_prefix}/ --recursive",
@@ -368,7 +368,7 @@ class EmulatorController:
     def save_snapshot(self, name: str) -> SnapshotResult:
         self._assert_running()
         commands = [
-            "set -euo pipefail",
+            "set -eu",
             f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
             f"adb emu avd snapshot save {shlex.quote(name)}",
         ]
@@ -383,7 +383,7 @@ class EmulatorController:
     def load_snapshot(self, name: str) -> SnapshotResult:
         self._assert_running()
         commands = [
-            "set -euo pipefail",
+            "set -eu",
             f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
             f"adb emu avd snapshot load {shlex.quote(name)}",
         ]
@@ -438,7 +438,7 @@ class EmulatorController:
     def capture_ui_dump(self) -> str:
         self._assert_running()
         commands = [
-            "set -euo pipefail",
+            "set -eu",
             f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
             "adb shell uiautomator dump /sdcard/ui-dump.xml >/dev/null",
             "adb shell cat /sdcard/ui-dump.xml",
@@ -515,7 +515,7 @@ class EmulatorController:
         thing we actually need to wait for.
         """
         commands = [
-            "set -euo pipefail",
+            "set -eu",
             "adb wait-for-device",
             "for i in $(seq 1 60); do "
             "  ready=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\\r'); "
