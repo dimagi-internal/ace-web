@@ -83,11 +83,26 @@ export PATH=\$PATH:\$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:\$ANDROID_SDK_ROO
 
 # Cold boot — don't load any prior snapshot. Each version gets a fresh
 # device state so we don't carry stale data across versions.
+#
+# Critical: do NOT pass -no-snapshot-save here. The 2026-05-09 bake
+# investigation found that combining -no-snapshot-save with an explicit
+# `adb emu avd snapshot save NAME` discards the userdata-qemu.img.qcow2
+# overlay on emulator exit (kept in /tmp during the run, deleted on
+# clean shutdown when -no-snapshot-save is set). The named snapshot's
+# snapshot.pb references the now-missing qcow2, so only the 11-byte
+# metadata file survives the AMI capture.
+#
+# Without -no-snapshot-save, QEMU folds the qcow2 back into the named
+# snapshot's data files (ram.bin + disk delta) before exit, and the
+# 3.4 GB snapshot dir survives the AMI capture intact. This is purely
+# a bake-time concern; the runtime emulator (ace-emulator-launch)
+# still uses -no-snapshot-save to keep each session read-only against
+# the snapshot.
 EMULATOR_LOG=/var/log/ace-mobile/bake-${VERSION}-emulator.log
 nohup emulator -avd $AVD_NAME \
   -no-window -no-audio -no-metrics \
   -gpu swiftshader_indirect \
-  -no-snapshot-save -no-snapshot-load \
+  -no-snapshot-load \
   -no-boot-anim \
   -wipe-data \
   > "\$EMULATOR_LOG" 2>&1 &
