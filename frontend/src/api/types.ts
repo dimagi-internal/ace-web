@@ -295,6 +295,13 @@ export interface RunSummary {
   mode: string | null;
   last_actor: string | null;
   last_actor_at: string | null;
+  // Server-derived run state from the run_state.yaml phases map.
+  //   "init"     — kicked off, no phase or step has progressed yet
+  //   "running"  — top-level phase cursor is set
+  //   "complete" — no cursor, but at least one phase/step has progressed
+  //   null       — legacy/malformed state.yaml; client falls back to the
+  //                older `!current_phase && last_actor_at` heuristic.
+  lifecycle_status?: "init" | "running" | "complete" | null;
 }
 
 export interface OppSnapshot {

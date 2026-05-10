@@ -151,6 +151,17 @@ class RunSummary:
     mode: str | None
     last_actor: str | None
     last_actor_at: str | None
+    # "init" — run_state.yaml exists but no phase or step has progressed
+    #   beyond pending. Shows up immediately after /ace:run is kicked off,
+    #   before any work has executed. The ✓-complete heuristic on the
+    #   frontend wrongly classified these as complete — the absence of a
+    #   top-level ``phase`` cursor used to be the only signal, and that's
+    #   absent for both "just initialized" and "lifecycle wrapped".
+    # "running" — top-level ``phase`` cursor is set, the plugin is mid-run.
+    # "complete" — no cursor + at least one phase or step has progressed.
+    # None — no recognizable phases map (legacy / malformed); the frontend
+    #   falls back to the older `!current_phase && last_actor_at` heuristic.
+    lifecycle_status: str | None = None
 
 
 def list_opp_runs(
@@ -192,20 +203,62 @@ def list_opp_runs(
         except (yaml.YAMLError, OSError) as exc:
             log.warning("list_opp_runs: failed to read %s: %s", state_file.id, exc)
             continue
+        current_phase = state.get("phase") or state.get("current_phase")
         out.append(
             RunSummary(
                 run_id=child.name,
                 folder_id=child.id,
-                current_phase=state.get("phase"),
-                current_step=state.get("step"),
+                current_phase=current_phase,
+                current_step=state.get("step") or state.get("current_step"),
                 mode=state.get("mode"),
                 last_actor=state.get("last_actor"),
                 last_actor_at=state.get("last_actor_at"),
+                lifecycle_status=_derive_lifecycle_status(state, current_phase),
             )
         )
 
     out.sort(key=lambda r: r.run_id, reverse=True)
     return out
+
+
+def _derive_lifecycle_status(state: dict, current_phase: str | None) -> str | None:
+    """Classify a run as ``init`` / ``running`` / ``complete`` / ``None``.
+
+    The plugin's run_state.yaml doesn't carry an explicit run-level status;
+    we derive it from the ``phases:`` map. A just-kicked-off run has every
+    phase ``status: pending`` and every step as a bare ``pending`` string,
+    which used to look identical (on the frontend) to a completed run that
+    cleared its cursor — both had no ``phase`` field. This routine breaks
+    that tie so the UI can show ▶ for queued runs and ✓ only for runs that
+    actually ran.
+    """
+    if current_phase:
+        return "running"
+
+    phases = state.get("phases")
+    if not isinstance(phases, dict):
+        return None  # legacy / malformed — let the caller fall back
+
+    any_progress = False
+    for phase_value in phases.values():
+        if not isinstance(phase_value, dict):
+            continue
+        phase_status = phase_value.get("status")
+        if phase_status and phase_status != "pending":
+            any_progress = True
+            break
+        steps = phase_value.get("steps")
+        if isinstance(steps, dict):
+            for step_value in steps.values():
+                if isinstance(step_value, dict):
+                    step_status = step_value.get("status")
+                    if step_status and step_status != "pending":
+                        any_progress = True
+                        break
+            if any_progress:
+                break
+
+    return "complete" if any_progress else "init"
 
 
 # --- Manifest-driven skill attribution ---

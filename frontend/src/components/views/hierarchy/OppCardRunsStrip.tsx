@@ -60,24 +60,36 @@ function RunChip({
   oppSlug: string;
   workspaceSlug: string;
 }) {
-  // "Looks complete" = the plugin cleared the cursor when the lifecycle
-  // wrapped. Same heuristic as OppRunsList's ProgressIcon — rough but
-  // best signal we have without a structured status field.
-  const looksComplete = !run.current_phase && !!run.last_actor_at;
+  // Prefer the server-derived lifecycle_status; fall back to the older
+  // "no cursor + has activity" heuristic for legacy state.yaml shapes.
+  // The fallback alone misclassifies just-initialized runs (all phases
+  // pending, no cursor yet) as ✓ complete — see ProgressIcon in OppRunsList.
   const ordinal = run.current_phase_ordinal ?? null;
+  const justInitialized = run.lifecycle_status === "init";
+  const looksComplete =
+    run.lifecycle_status === "complete" ||
+    (run.lifecycle_status == null && !run.current_phase && !!run.last_actor_at);
 
-  // Tone: green for complete, gradient by depth otherwise. Depth tone
-  // intentionally caps at green so a run that reached the last phase
-  // (whether or not the plugin cleared the cursor) reads as "made it".
+  // Tone: green for complete, muted for init, gradient by depth otherwise.
   const tone = looksComplete
     ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+    : justInitialized
+    ? "border-border bg-muted/40 text-muted-foreground"
     : depthTone(ordinal);
 
-  const label = looksComplete ? "✓" : ordinal !== null ? `P${ordinal}` : "—";
+  const label = looksComplete
+    ? "✓"
+    : justInitialized
+    ? "▸"
+    : ordinal !== null
+    ? `P${ordinal}`
+    : "—";
 
   const tooltipParts: string[] = [`Run ${run.run_id}`];
   if (looksComplete) {
     tooltipParts.push("Cursor cleared (looks complete)");
+  } else if (justInitialized) {
+    tooltipParts.push("Queued — kicked off, no work yet");
   } else if (ordinal !== null) {
     tooltipParts.push(`Got to phase ${ordinal}`);
   } else {
