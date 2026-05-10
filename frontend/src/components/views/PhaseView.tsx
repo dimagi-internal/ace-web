@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronRight, GitFork, Workflow } from "lucide-react";
 
 import type { OppSnapshot, PhaseInfo, Step } from "@/api/types";
@@ -38,33 +38,12 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
     return m;
   }, [snapshot.current_run.steps]);
 
+  // No auto-select on mount: the user has to pick a phase. Earlier
+  // versions auto-landed them on the most-urgent phase (qa-failed →
+  // open-decision → first-with-steps), but that hijacked the entry
+  // experience and made it hard to scan the full list before drilling
+  // in. Start everything collapsed.
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
-
-  // Auto-select on first load. Priority: phase with a qa-failed step
-  // (most urgent system signal) → phase with an open decision (most
-  // actionable for a reviewer) → first phase with steps.
-  useEffect(() => {
-    if (selectedPhase) return;
-    const decisions = snapshot.current_run.decisions ?? [];
-    const qaFailedPhase = phases.find((p) =>
-      (stepsByPhase.get(p.name) ?? []).some((s) => s.status === "qa-failed"),
-    );
-    if (qaFailedPhase) {
-      setSelectedPhase(qaFailedPhase.name);
-      return;
-    }
-    const openDecisionPhase = phases.find((p) =>
-      decisions.some((d) => d.phase === p.name && d.status === "open"),
-    );
-    if (openDecisionPhase) {
-      setSelectedPhase(openDecisionPhase.name);
-      return;
-    }
-    const firstWithSteps = phases.find(
-      (p) => (stepsByPhase.get(p.name) ?? []).length > 0,
-    );
-    if (firstWithSteps) setSelectedPhase(firstWithSteps.name);
-  }, [phases, stepsByPhase, selectedPhase, snapshot.current_run.decisions]);
 
   const selectedPhaseInfo = selectedPhase
     ? phases.find((p) => p.name === selectedPhase) ?? null

@@ -89,7 +89,12 @@ export function DecisionsPanel({ phase, decisions }: Props) {
 }
 
 function DecisionRow({ decision }: { decision: Decision }) {
-  const [open, setOpen] = useState(decision.status === "open");
+  // Start collapsed regardless of status. We used to auto-expand "open"
+  // rows on the theory that they're the most actionable, but it meant
+  // the panel was already mostly-expanded on first paint and the user
+  // had no chance to scan titles before reading bodies. Everything
+  // starts compact; user clicks a row to drill in.
+  const [open, setOpen] = useState(false);
   const tone =
     decision.status === "open"
       ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
