@@ -60,28 +60,32 @@ function RunChip({
   oppSlug: string;
   workspaceSlug: string;
 }) {
-  // "Looks complete" = the plugin cleared the cursor when the lifecycle
-  // wrapped. Same heuristic as OppRunsList's ProgressIcon — rough but
-  // best signal we have without a structured status field.
-  const looksComplete = !run.current_phase && !!run.last_actor_at;
-  const ordinal = run.current_phase_ordinal ?? null;
-
-  // Tone: green for complete, gradient by depth otherwise. Depth tone
-  // intentionally caps at green so a run that reached the last phase
-  // (whether or not the plugin cleared the cursor) reads as "made it".
-  const tone = looksComplete
-    ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-    : depthTone(ordinal);
-
-  const label = looksComplete ? "✓" : ordinal !== null ? `P${ordinal}` : "—";
+  // The chip just shows the deepest phase the run reached — current
+  // cursor if active, else last completed phase. No ✓ or ▸ glyphs:
+  // those didn't carry meaningful info and the user found them noisy.
+  // Color still tracks depth so a quick scan reads "how far did this
+  // get?" without reading every chip's text.
+  const ordinal =
+    run.current_phase_ordinal ??
+    run.latest_phase_done_ordinal ??
+    null;
+  const tone = depthTone(ordinal);
+  const label = ordinal !== null ? `P${ordinal}` : "—";
 
   const tooltipParts: string[] = [`Run ${run.run_id}`];
-  if (looksComplete) {
-    tooltipParts.push("Cursor cleared (looks complete)");
-  } else if (ordinal !== null) {
-    tooltipParts.push(`Got to phase ${ordinal}`);
+  if (run.current_phase) {
+    tooltipParts.push(
+      `In progress · ${run.current_phase_display ?? run.current_phase}`,
+    );
+  } else if (run.latest_phase_done) {
+    const lastDone = run.latest_phase_done_display ?? run.latest_phase_done;
+    const total = run.phases_total ?? 0;
+    const done = run.phases_done ?? 0;
+    tooltipParts.push(
+      `Reached ${lastDone}` + (total > 0 ? ` (${done}/${total})` : ""),
+    );
   } else {
-    tooltipParts.push("Phase not recorded");
+    tooltipParts.push("No progress yet");
   }
   if (run.current_phase_display ?? run.current_phase) {
     tooltipParts.push(

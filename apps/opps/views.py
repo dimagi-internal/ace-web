@@ -295,6 +295,15 @@ def _opp_list_impl(request):
                 inner = client._inner if isinstance(client, CachedDriveClient) else client
                 cold_client = CachedDriveClient(inner, bypass=True)
                 with TouchedFileTracker() as tracker:
+                    # opp_children was listed above (outside the tracker) for
+                    # the "is this an opp folder?" check; replay both the
+                    # opp folder id and its children into the tracker so a
+                    # change to either (e.g. the runs/ folder appearing for
+                    # the first time, or state.yaml moving up to root)
+                    # invalidates this OppCard.
+                    tracker.record(child.id, child.modified_time)
+                    for f in opp_children:
+                        tracker.record(f.id, f.modified_time)
                     card = load_opp_card(cold_client, opp_folder=child, opp_children=opp_children)
                 _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
                 snapshot_cache.set_card(
@@ -753,6 +762,20 @@ def runs_list(request, slug: str):
             "mode": r.mode,
             "last_actor": r.last_actor,
             "last_actor_at": r.last_actor_at,
+            "lifecycle_status": r.lifecycle_status,
+            "phases_total": r.phases_total,
+            "phases_done": r.phases_done,
+            "latest_phase_done": r.latest_phase_done,
+            "latest_phase_done_display": (
+                phase_lookup.get(r.latest_phase_done)
+                if r.latest_phase_done
+                else None
+            ),
+            "latest_phase_done_ordinal": (
+                phase_ordinals.get(r.latest_phase_done)
+                if r.latest_phase_done
+                else None
+            ),
         } for r in runs
     ]))
 

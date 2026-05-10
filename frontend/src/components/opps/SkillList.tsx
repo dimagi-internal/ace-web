@@ -5,7 +5,6 @@ import { HelpCircle, Search, X } from "lucide-react";
 import type {
   CostRollup,
   CostRollupPhase,
-  MultiRunSummary,
   PhaseInfo,
   Step,
 } from "../../api/types";
@@ -25,14 +24,6 @@ interface Props {
    * "hide on empty" rationale we're matching here).
    */
   costRollup?: CostRollup | null;
-  /**
-   * Per-run aggregates. Powers the per-skill score sparkline on each
-   * row (a 4-8 dot trend so a viewer can see "this skill regressed
-   * in the latest run" without leaving the Workbench).
-   */
-  multiRun?: MultiRunSummary | null;
-  /** Highlights the matching dot in the per-skill sparkline. */
-  currentRunId?: string;
 }
 
 export function SkillList({
@@ -42,8 +33,6 @@ export function SkillList({
   selectedSkill,
   onSelect,
   costRollup,
-  multiRun,
-  currentRunId,
 }: Props) {
   const priorBySkill = new Map(priorRunSteps.map((s) => [s.skill_name, s] as const));
   const sortedPhases = [...phases].sort((a, b) => a.ordinal - b.ordinal);
@@ -151,8 +140,6 @@ export function SkillList({
                   priorRunStep={priorBySkill.get(step.skill_name) ?? null}
                   isSelected={step.skill_name === selectedSkill}
                   onClick={() => onSelect(step.skill_name)}
-                  runHistory={multiRun?.per_run}
-                  currentRunId={currentRunId}
                 />
               ))}
             </div>

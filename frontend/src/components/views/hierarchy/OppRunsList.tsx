@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { CheckCircle2, Play, Workflow } from "lucide-react";
+import { Workflow } from "lucide-react";
 
 import type { RunSummary } from "@/api/types";
 import { useOppRuns } from "@/hooks/useOppRuns";
@@ -53,7 +53,6 @@ export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
               className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 text-xs hover:bg-accent/40"
               onClick={(e) => e.stopPropagation()}
             >
-              <ProgressIcon run={r} />
               <span className="shrink-0 font-mono text-[11px] text-foreground">
                 {r.run_id}
               </span>
@@ -76,47 +75,58 @@ export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
   );
 }
 
-function ProgressIcon({ run }: { run: RunSummary }) {
-  // Treat "no current_phase + last_actor_at present" as a heuristic for
-  // "completed" — the plugin clears the cursor when the lifecycle
-  // wraps. It's a rough signal (could also mean a malformed state.yaml)
-  // but it's the best we have without a structured ``status`` field.
-  const looksComplete = !run.current_phase && !!run.last_actor_at;
-  if (looksComplete) {
-    return (
-      <CheckCircle2
-        className="h-3 w-3 shrink-0 text-emerald-400"
-        aria-label="run looks complete"
-      />
-    );
-  }
-  return (
-    <Play
-      className="h-3 w-3 shrink-0 text-muted-foreground/70"
-      aria-label="run cursor"
-    />
-  );
-}
-
 function ProgressLabel({ run }: { run: RunSummary }) {
-  if (!run.current_phase && !run.current_step) {
+  const isComplete =
+    run.lifecycle_status === "complete" ||
+    (run.lifecycle_status == null && !run.current_phase && !!run.last_actor_at);
+  if (isComplete) {
     return (
       <span className="min-w-0 flex-1 truncate text-muted-foreground">
-        complete (no cursor)
+        complete
       </span>
     );
   }
-  const phaseLabel = run.current_phase_display ?? run.current_phase;
-  const stepLabel = run.current_step_display ?? run.current_step;
+
+  // In-progress: pick the most informative label we have data for.
+  //  1. Live cursor → show phase · step (matches the workbench's view).
+  //  2. Some phase done but no cursor → "after <last done> · X/N".
+  //  3. Nothing done yet → "queued".
+  if (run.current_phase || run.current_step) {
+    const phaseLabel = run.current_phase_display ?? run.current_phase;
+    const stepLabel = run.current_step_display ?? run.current_step;
+    return (
+      <span
+        className="min-w-0 flex-1 truncate text-foreground"
+        title={`current_phase: ${run.current_phase ?? "—"}\ncurrent_step: ${run.current_step ?? "—"}`}
+      >
+        {phaseLabel ?? "—"}
+        {stepLabel && (
+          <span className="text-muted-foreground"> · {stepLabel}</span>
+        )}
+      </span>
+    );
+  }
+
+  const done = run.phases_done ?? 0;
+  const total = run.phases_total ?? 0;
+  if (done > 0 && run.latest_phase_done) {
+    const lastDone = run.latest_phase_done_display ?? run.latest_phase_done;
+    return (
+      <span
+        className="min-w-0 flex-1 truncate text-foreground"
+        title={`Last completed phase: ${run.latest_phase_done}`}
+      >
+        after {lastDone}
+        {total > 0 && (
+          <span className="text-muted-foreground"> · {done}/{total}</span>
+        )}
+      </span>
+    );
+  }
+
   return (
-    <span
-      className="min-w-0 flex-1 truncate text-foreground"
-      title={`current_phase: ${run.current_phase ?? "—"}\ncurrent_step: ${run.current_step ?? "—"}`}
-    >
-      {phaseLabel ?? "—"}
-      {stepLabel && (
-        <span className="text-muted-foreground"> · {stepLabel}</span>
-      )}
+    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+      queued
     </span>
   );
 }

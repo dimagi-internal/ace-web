@@ -151,6 +151,26 @@ class RunSummary:
     mode: str | None
     last_actor: str | None
     last_actor_at: str | None
+    # Two-state model: a run is either in progress or complete. There's
+    # no proactive "pause" — when the plugin stops between phases, halts
+    # at a HITL gate, or sits idle after kickoff, it's all the same
+    # conceptual state ("in_progress, just not actively executing right
+    # now"). The frontend uses the phase-count fields below to render an
+    # accurate "where is it?" label without needing more enum values.
+    #
+    # "in_progress" — anything that isn't fully complete (init, mid-step,
+    #                 between phases, or halted-at-HITL).
+    # "complete"    — every phase carries a done/complete status.
+    # None          — no recognizable phases map (legacy / malformed);
+    #                 the frontend falls back to the older
+    #                 `!current_phase && last_actor_at` heuristic.
+    lifecycle_status: str | None = None
+    # Phase-level progress, derived from the phases map. Lets the
+    # Hierarchy view render a "where is this run?" label like
+    # "after design-review · 1/9" without re-fetching per-step state.
+    phases_total: int = 0
+    phases_done: int = 0
+    latest_phase_done: str | None = None
 
 
 def list_opp_runs(
@@ -192,20 +212,147 @@ def list_opp_runs(
         except (yaml.YAMLError, OSError) as exc:
             log.warning("list_opp_runs: failed to read %s: %s", state_file.id, exc)
             continue
+        current_phase = state.get("phase") or state.get("current_phase")
+        progress = _derive_phase_progress(state, current_phase)
         out.append(
             RunSummary(
                 run_id=child.name,
                 folder_id=child.id,
-                current_phase=state.get("phase"),
-                current_step=state.get("step"),
+                current_phase=current_phase,
+                current_step=state.get("step") or state.get("current_step"),
                 mode=state.get("mode"),
                 last_actor=state.get("last_actor"),
                 last_actor_at=state.get("last_actor_at"),
+                lifecycle_status=progress["status"],
+                phases_total=progress["phases_total"],
+                phases_done=progress["phases_done"],
+                latest_phase_done=progress["latest_phase_done"],
             )
         )
 
     out.sort(key=lambda r: r.run_id, reverse=True)
     return out
+
+
+# What the plugin considers a "still pending" phase or step. Anything
+# NOT in this set (and not absent / empty) counts as "done enough" — we
+# accept the variety of terminal status strings the plugin emits across
+# versions: "done", "complete", "pass", "skipped", "skipped-by-design",
+# "proceed-with-warn", etc. Whitelisting "done" alone made 2128 (which
+# uses bare per-step strings like ``idea-to-pdd: done`` directly under
+# the phase, no ``status:`` key) read as zero progress and label every
+# completed older run as "queued".
+_PENDING_STATUSES = frozenset({"pending", "", None})
+
+
+def _derive_phase_progress(
+    state: dict, current_phase: str | None,
+) -> dict:
+    """Compute lifecycle_status + phase counts + latest-done-phase.
+
+    Two-state lifecycle: the run is either in_progress or complete.
+    "Complete" requires every phase in the map to carry a done/complete
+    status; anything else (no cursor + 0 phases done, mid-step with
+    cursor, between phases, halted at a HITL gate) is in_progress.
+
+    Returns a dict (not a dataclass) to keep the caller's construction
+    simple. Phase order is taken from the YAML's insertion order, which
+    is the plugin's authored phase order.
+    """
+    result = {
+        "status": None,
+        "phases_total": 0,
+        "phases_done": 0,
+        "latest_phase_done": None,
+    }
+
+    phases = state.get("phases")
+    if not isinstance(phases, dict):
+        # Legacy / malformed — the frontend falls back to its older
+        # "no cursor + has activity" heuristic. We still report
+        # "in_progress" if a top-level cursor is set, since that signal
+        # is independent of the phases map.
+        if current_phase:
+            result["status"] = "in_progress"
+        return result
+
+    phases_total = 0
+    phases_done = 0
+    latest_phase_done: str | None = None
+    has_pending = False
+
+    for phase_name, phase_value in phases.items():
+        if not isinstance(phase_value, dict):
+            # Phase entry is a non-dict (e.g. a bare string). Treat as
+            # pending so we don't false-positive a missing-data row as
+            # complete.
+            phases_total += 1
+            has_pending = True
+            continue
+
+        phases_total += 1
+
+        # Phase shape A — current plugin: explicit ``status:`` field.
+        #   design-review:
+        #     status: complete
+        #     steps: {...}
+        explicit_status = phase_value.get("status")
+        if explicit_status is not None:
+            if explicit_status in _PENDING_STATUSES:
+                has_pending = True
+            else:
+                phases_done += 1
+                latest_phase_done = phase_name
+            continue
+
+        # Phase shape B — older plugin: bare step-name → status-string
+        # under the phase (no ``status:`` field, no ``steps:`` wrapper).
+        #   design-review:
+        #     idea-to-pdd: done
+        #     pdd-to-test-prompts: done
+        # Or shape C — newer-plugin variant where ``status:`` is omitted
+        # but ``steps:`` is present. Treat steps the same way: phase is
+        # done iff every step has a non-pending status.
+        steps_map = phase_value.get("steps") if "steps" in phase_value else phase_value
+        if isinstance(steps_map, dict) and steps_map:
+            any_pending_step = any(
+                _is_pending_step(v) for v in steps_map.values()
+            )
+            if any_pending_step:
+                has_pending = True
+            else:
+                phases_done += 1
+                latest_phase_done = phase_name
+        else:
+            # Empty / unparseable phase block — conservatively pending.
+            has_pending = True
+
+    result["phases_total"] = phases_total
+    result["phases_done"] = phases_done
+    result["latest_phase_done"] = latest_phase_done
+
+    if phases_total > 0 and not has_pending:
+        result["status"] = "complete"
+    else:
+        result["status"] = "in_progress"
+
+    return result
+
+
+def _is_pending_step(step_value) -> bool:
+    """Return True iff this step value reads as not-yet-done.
+
+    Step shapes vary: a bare string (``idea-to-pdd: done``) or a dict
+    with ``status:`` (``idea-to-pdd: {status: done, verdict: pass}``).
+    A step with no recognizable status is considered pending so we
+    don't over-claim progress on malformed entries.
+    """
+    if isinstance(step_value, str):
+        return step_value in _PENDING_STATUSES
+    if isinstance(step_value, dict):
+        status = step_value.get("status")
+        return status in _PENDING_STATUSES
+    return True
 
 
 # --- Manifest-driven skill attribution ---

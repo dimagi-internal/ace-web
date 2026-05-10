@@ -229,6 +229,255 @@ def test_list_opp_runs_returns_runs_newest_first():
     assert [r.run_id for r in runs] == ["20260502-1830", "20260502-1430"]
 
 
+def test_list_opp_runs_lifecycle_status_in_progress_when_cursor_set():
+    fake = FakeDrive(_build_turmeric_layout())
+    runs = list_opp_runs(fake, ace_root_folder_id="ACE", opp_slug="turmeric")
+    # Both fixture runs have a top-level `phase` cursor → in_progress.
+    assert all(r.lifecycle_status == "in_progress" for r in runs)
+
+
+def test_list_opp_runs_lifecycle_status_in_progress_when_all_phases_pending():
+    """Just-kicked-off runs (no cursor, all phases pending) classify as in_progress.
+
+    Reproduces the leep-paint-collection 2026-05-09T22:04 bug where the run
+    showed ✓ complete in the Hierarchy view immediately after `/ace:run`
+    fired. The frontend used to infer "complete" from "no current_phase +
+    has last_actor_at"; that's the same shape a freshly-initialized run
+    has, so we now derive an explicit lifecycle_status server-side. With
+    the two-state model these still report in_progress — the frontend
+    distinguishes "queued (no work yet)" via phases_done==0.
+    """
+    just_kicked_off_yaml = (
+        "opportunity: leep-paint-collection\n"
+        "run_id: 20260509-2204\n"
+        "mode: default\n"
+        "created: 2026-05-10T04:04:35Z\n"
+        "last_actor: jjackson@dimagi.com\n"
+        "last_actor_at: 2026-05-10T04:04:35Z\n"
+        "phases:\n"
+        "  design-review:\n"
+        "    status: pending\n"
+        "    steps:\n"
+        "      idea-to-pdd: pending\n"
+        "      pdd-to-test-prompts: pending\n"
+        "  commcare-setup:\n"
+        "    status: pending\n"
+        "    steps:\n"
+        "      pdd-to-learn-app: pending\n"
+    )
+    layout = _Folder(
+        id="ACE", name="ACE", parent="root",
+        children=[
+            _Folder(
+                id="leep", name="leep-paint-collection", parent="ACE",
+                children=[
+                    _Folder(
+                        id="leep-runs", name="runs", parent="leep",
+                        children=[
+                            _Folder(
+                                id="run-2204", name="20260509-2204", parent="leep-runs",
+                                children=[
+                                    _File(
+                                        id="state-2204", name="run_state.yaml",
+                                        parent="run-2204",
+                                        body=just_kicked_off_yaml,
+                                        mime_type="text/yaml",
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+    fake = FakeDrive(layout)
+    runs = list_opp_runs(
+        fake, ace_root_folder_id="ACE", opp_slug="leep-paint-collection",
+    )
+    assert len(runs) == 1
+    r = runs[0]
+    assert r.lifecycle_status == "in_progress"
+    assert r.phases_done == 0
+    assert r.phases_total == 2
+    assert r.latest_phase_done is None
+    assert r.current_phase is None
+    assert r.last_actor_at is not None
+
+
+def test_list_opp_runs_lifecycle_status_in_progress_between_phases():
+    """A run with one phase done and others pending stays in_progress.
+
+    Two-state model: until every phase is done/complete, the run is
+    in_progress (no proactive "pause" state). The phase counts +
+    latest_phase_done let the UI render "after design-review · 1/2".
+    """
+    in_progress_yaml = (
+        "opportunity: leep-paint-collection\n"
+        "run_id: 20260509-1448\n"
+        "mode: default\n"
+        "last_actor: jjackson@dimagi.com\n"
+        "last_actor_at: 2026-05-10T01:35:00Z\n"
+        "phases:\n"
+        "  design-review:\n"
+        "    status: done\n"
+        "    completed_at: 2026-05-09T20:56:00Z\n"
+        "  commcare-setup:\n"
+        "    status: pending\n"
+    )
+    layout = _Folder(
+        id="ACE", name="ACE", parent="root",
+        children=[
+            _Folder(
+                id="leep", name="leep-paint-collection", parent="ACE",
+                children=[
+                    _Folder(
+                        id="leep-runs", name="runs", parent="leep",
+                        children=[
+                            _Folder(
+                                id="run-1448", name="20260509-1448", parent="leep-runs",
+                                children=[
+                                    _File(
+                                        id="state-1448", name="run_state.yaml",
+                                        parent="run-1448",
+                                        body=in_progress_yaml,
+                                        mime_type="text/yaml",
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+    fake = FakeDrive(layout)
+    runs = list_opp_runs(
+        fake, ace_root_folder_id="ACE", opp_slug="leep-paint-collection",
+    )
+    assert len(runs) == 1
+    r = runs[0]
+    assert r.lifecycle_status == "in_progress"
+    assert r.phases_done == 1
+    assert r.phases_total == 2
+    assert r.latest_phase_done == "design-review"
+
+
+def test_list_opp_runs_lifecycle_status_complete_when_all_phases_done():
+    """All phases done/complete → lifecycle_status == "complete"."""
+    fully_done_yaml = (
+        "opportunity: leep-paint-collection\n"
+        "run_id: 20260503-2128\n"
+        "mode: default\n"
+        "last_actor: jjackson@dimagi.com\n"
+        "last_actor_at: 2026-05-04T03:28:00Z\n"
+        "phases:\n"
+        "  design-review:\n"
+        "    status: complete\n"
+        "  commcare-setup:\n"
+        "    status: done\n"
+    )
+    layout = _Folder(
+        id="ACE", name="ACE", parent="root",
+        children=[
+            _Folder(
+                id="leep", name="leep-paint-collection", parent="ACE",
+                children=[
+                    _Folder(
+                        id="leep-runs", name="runs", parent="leep",
+                        children=[
+                            _Folder(
+                                id="run-2128", name="20260503-2128", parent="leep-runs",
+                                children=[
+                                    _File(
+                                        id="state-2128", name="run_state.yaml",
+                                        parent="run-2128",
+                                        body=fully_done_yaml,
+                                        mime_type="text/yaml",
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+    fake = FakeDrive(layout)
+    runs = list_opp_runs(
+        fake, ace_root_folder_id="ACE", opp_slug="leep-paint-collection",
+    )
+    assert len(runs) == 1
+    r = runs[0]
+    assert r.lifecycle_status == "complete"
+    assert r.phases_done == 2
+    assert r.phases_total == 2
+    assert r.latest_phase_done == "commcare-setup"
+
+
+def test_list_opp_runs_handles_flat_step_shape_without_phase_status():
+    """Older run_state.yaml uses ``phase: {step: status, ...}`` directly,
+    no ``status:`` field on the phase. We have to derive done-ness from
+    step values or otherwise-completed runs (e.g. leep 20260503-2128) read
+    as zero-progress and the UI labels them "queued" forever.
+    """
+    flat_yaml = (
+        "opportunity: leep-paint-collection\n"
+        "run_id: 20260503-2128\n"
+        "mode: default\n"
+        "last_actor: jjackson@dimagi.com\n"
+        "last_actor_at: 2026-05-04T05:30:00Z\n"
+        "phases:\n"
+        "  design-review:\n"
+        "    idea-to-pdd: done\n"
+        "    pdd-to-test-prompts: done\n"
+        "  commcare-setup:\n"
+        "    pdd-to-learn-app: done\n"
+        "    app-screenshot-capture: skipped\n"
+        "  llo-management:\n"
+        "    llo-invite: pending\n"
+        "    llo-onboarding: pending\n"
+    )
+    layout = _Folder(
+        id="ACE", name="ACE", parent="root",
+        children=[
+            _Folder(
+                id="leep", name="leep-paint-collection", parent="ACE",
+                children=[
+                    _Folder(
+                        id="leep-runs", name="runs", parent="leep",
+                        children=[
+                            _Folder(
+                                id="run-2128", name="20260503-2128", parent="leep-runs",
+                                children=[
+                                    _File(
+                                        id="state-2128", name="run_state.yaml",
+                                        parent="run-2128",
+                                        body=flat_yaml,
+                                        mime_type="text/yaml",
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+    fake = FakeDrive(layout)
+    runs = list_opp_runs(
+        fake, ace_root_folder_id="ACE", opp_slug="leep-paint-collection",
+    )
+    assert len(runs) == 1
+    r = runs[0]
+    # design-review and commcare-setup are fully done (every step done /
+    # skipped); llo-management still has pending steps.
+    assert r.phases_total == 3
+    assert r.phases_done == 2
+    assert r.latest_phase_done == "commcare-setup"
+    assert r.lifecycle_status == "in_progress"
+
+
 def test_load_opp_card_uses_opp_yaml_display_name():
     fake = FakeDrive(_build_turmeric_layout())
     card = load_opp_card_by_slug(fake, ace_folder_id="ACE", slug="turmeric")

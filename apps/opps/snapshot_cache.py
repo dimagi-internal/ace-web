@@ -32,12 +32,18 @@ log = logging.getLogger(__name__)
 
 _set = set  # preserve builtin before our module-level `set` shadows it
 
-# Bump when the cached dataclass shape changes — stale entries from
-# before the bump deserialize into the new dataclass with leftover
-# attributes (or missing required ones), and downstream serialization
-# can choke on the mismatch. v2 = post #260 (StepSnapshot dropped the
-# gates field; OppCard dropped pending_gate_skills).
-_KEY_VERSION = "v2"
+# Bump when the cached dataclass shape *or* the file_id-tracking
+# semantics change — stale entries from before the bump deserialize into
+# the new dataclass with leftover attributes (or missing required ones),
+# and tracking-semantic bumps similarly orphan entries written with the
+# old set of dependencies (they can't receive the new invalidation
+# signals). Without the bump, the changes-feed pipeline silently serves
+# stale data forever for those entries.
+#   v2 — post #260 (StepSnapshot dropped gates; OppCard dropped pending_gate_skills)
+#   v3 — post #277 (CachedDriveClient.list_files now records parent
+#        folder_id; old entries don't track parent IDs so a new run
+#        folder appearing under runs/ never invalidated their cards)
+_KEY_VERSION = "v3"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

@@ -102,6 +102,14 @@ class CachedDriveClient(DriveClient):
             if hit is not None:
                 tracker = current_tracker()
                 if tracker is not None:
+                    # Record the parent folder itself, not just children.
+                    # Drive bumps a folder's modifiedTime when its children
+                    # change (added / removed / renamed), so the parent ID
+                    # showing up in the changes feed is what tells us a new
+                    # run folder appeared under runs/. Without this, adding
+                    # a new run never invalidates the OppCard cache because
+                    # the new run folder's own ID was never tracked.
+                    tracker.record(folder_id)
                     for f in hit:
                         tracker.record(f.id, f.modified_time)
                 return hit
@@ -109,6 +117,7 @@ class CachedDriveClient(DriveClient):
         cache.set(key, result, timeout=self._ttl)
         tracker = current_tracker()
         if tracker is not None:
+            tracker.record(folder_id)
             for f in result:
                 tracker.record(f.id, f.modified_time)
         return result

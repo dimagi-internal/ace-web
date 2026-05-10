@@ -295,6 +295,20 @@ export interface RunSummary {
   mode: string | null;
   last_actor: string | null;
   last_actor_at: string | null;
+  // Two-state lifecycle (no proactive "pause" — the plugin just stops
+  // where it stops). Use the phase counts + current_phase + latest_phase_done
+  // below to render the right "in progress" sub-label.
+  //   "in_progress" — anything not fully complete (init, mid-step, between
+  //                   phases, or halted at a HITL gate)
+  //   "complete"    — every phase carries a done/complete status
+  //   null          — legacy/malformed state.yaml; client falls back to
+  //                   the older `!current_phase && last_actor_at` heuristic.
+  lifecycle_status?: "in_progress" | "complete" | null;
+  phases_total?: number;
+  phases_done?: number;
+  latest_phase_done?: string | null;
+  latest_phase_done_display?: string | null;
+  latest_phase_done_ordinal?: number | null;
 }
 
 export interface OppSnapshot {

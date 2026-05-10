@@ -239,15 +239,14 @@ skill owns which file is declared in the plugin's
 `lib/artifact-manifest.ts` — ace-web parses that manifest and uses it for
 file-to-skill attribution (see `apps/system/parsers.py`).
 
-**Single-run per opp (as of 2026-04-20):** The opps Workbench reads one
-run per opp. Multi-run support (`runs/run-001/`, `runs/run-002/`, …) was
-removed in commits 289ee20–a8ef3d8 to match the ACE plugin's current
-convention, where `/ace:run` writes `state.yaml` at the opp root. The
-improvement loop is "run → inspect → upgrade plugin → rerun (overwriting)
-→ compare". If we bring back multi-run, the plan lives in
-`docs/plans/2026-04-20-drop-multi-run-simplify.md § deferred work` — don't
-re-derive from scratch. (Note: a multi-run revival reader landed in PR #193
-to support legacy folders; the canonical layout is still single-run.)
+**Multi-run per opp (canonical):** Each opp is expected to have multiple
+runs under `runs/run-001/`, `runs/run-002/`, … The Workbench reads them
+through the multi-run reader (revived in PR #193) and the run selector +
+URL `?run_id=…` choose which one is active. The improvement loop is
+"run → inspect → chat → upgrade skill → rerun (new run folder) → compare
+across runs". A 2026-04-20 simplification briefly collapsed to single-run
+(commits 289ee20–a8ef3d8) before being reversed; the historical context
+lives in `docs/plans/2026-04-20-drop-multi-run-simplify.md`.
 
 **Skill registry is dynamic, loaded from the plugin:** `apps/opps/skills.py`
 imports agent frontmatter + the artifact manifest from `ACE_PLUGIN_PATH`
