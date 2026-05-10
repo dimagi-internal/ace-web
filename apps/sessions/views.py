@@ -7,6 +7,8 @@ lives in the consumer's _handle_chat_send → _activate_imported_session.
 """
 from __future__ import annotations
 
+import logging
+
 from django.db import IntegrityError
 from django.db.models import OuterRef, Q, Subquery
 from rest_framework import status
@@ -20,6 +22,8 @@ from apps.common.envelope import error_response, success_response
 from apps.workspaces.permissions import user_workspaces
 
 from .models import Message, Session, SessionParticipant
+
+log = logging.getLogger(__name__)
 from .serializers import (
     MessageSerializer,
     ParticipantSerializer,
@@ -385,9 +389,18 @@ def session_structure(request: Request, slug: str) -> Response:
         tmp.write(raw_text)
         tmp_path = Path(tmp.name)
     try:
-        _parsed, events = parse_session_file(tmp_path)
+        try:
+            _parsed, events = parse_session_file(tmp_path)
+            tree = aggregate(events)
+        except Exception:
+            log.exception("structure aggregation failed for session %s", session.slug)
+            return Response(success_response({
+                "schema_version": 0,
+                "session": None,
+                "phases": [],
+                "unavailable_reason": "parse-failed",
+            }))
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    tree = aggregate(events)
     return Response(success_response(tree))

@@ -109,3 +109,30 @@ def test_structure_endpoint_404_for_other_users_session(other_user):
     c.force_authenticate(user=me)
     response = c.get(f"/api/sessions/{s.slug}/structure")
     assert response.status_code == 404
+
+
+def test_structure_endpoint_returns_parse_failed_for_corrupt_blob(
+    client, session_with_blob, monkeypatch
+):
+    """A persisted blob that the parser/aggregator can't handle returns the
+    parse-failed envelope instead of bubbling a 500.
+
+    parse_session_file is forgiving (it skips invalid lines) so plain garbage
+    bytes don't reliably raise. Monkeypatch the parser at its source module
+    (the view imports it locally inside the function) to raise unconditionally
+    — that's the load-bearing branch we need to prove returns the documented
+    empty-envelope shape rather than 500.
+    """
+    def _boom(_path):
+        raise ValueError("simulated parser failure")
+
+    monkeypatch.setattr("apps.ingest.parser.parse_session_file", _boom)
+
+    response = client.get(f"/api/sessions/{session_with_blob.slug}/structure")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    assert body["data"]["schema_version"] == 0
+    assert body["data"]["session"] is None
+    assert body["data"]["phases"] == []
+    assert body["data"]["unavailable_reason"] == "parse-failed"
