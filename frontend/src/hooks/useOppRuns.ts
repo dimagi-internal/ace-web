@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
-
 import { listOppRuns } from "../api/opps";
 import type { RunSummary } from "../api/types";
+import { useApi } from "./useApi";
 
 /**
  * Fetch the runs list for an opp once per (oppSlug) change. Used by
@@ -14,21 +13,6 @@ import type { RunSummary } from "../api/types";
  * not a broken state).
  */
 export function useOppRuns(oppSlug: string): RunSummary[] | null {
-  const [runs, setRuns] = useState<RunSummary[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    listOppRuns(oppSlug)
-      .then((rs) => {
-        if (!cancelled) setRuns(rs);
-      })
-      .catch(() => {
-        if (!cancelled) setRuns(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [oppSlug]);
-
-  return runs;
+  const { data } = useApi(() => listOppRuns(oppSlug), [oppSlug]);
+  return data;
 }
