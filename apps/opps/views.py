@@ -763,6 +763,19 @@ def runs_list(request, slug: str):
             "last_actor": r.last_actor,
             "last_actor_at": r.last_actor_at,
             "lifecycle_status": r.lifecycle_status,
+            "phases_total": r.phases_total,
+            "phases_done": r.phases_done,
+            "latest_phase_done": r.latest_phase_done,
+            "latest_phase_done_display": (
+                phase_lookup.get(r.latest_phase_done)
+                if r.latest_phase_done
+                else None
+            ),
+            "latest_phase_done_ordinal": (
+                phase_ordinals.get(r.latest_phase_done)
+                if r.latest_phase_done
+                else None
+            ),
         } for r in runs
     ]))
 

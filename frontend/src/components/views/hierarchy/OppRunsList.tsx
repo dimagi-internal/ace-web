@@ -77,72 +77,83 @@ export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
 }
 
 function ProgressIcon({ run }: { run: RunSummary }) {
-  // Prefer the server-derived lifecycle_status when present — it inspects
-  // the run_state.yaml phases map and distinguishes "init" (just kicked
-  // off, all phases pending) from "complete" (cursor cleared because the
-  // run actually finished). The fallback heuristic below collapses both
-  // into ✓ which is wrong for fresh runs.
-  if (run.lifecycle_status === "complete") {
+  // Two-state world: only ✓ green when the lifecycle is actually done.
+  // Everything else (queued, mid-step, between phases, halted-at-HITL)
+  // is ▶ in-progress.
+  const isComplete =
+    run.lifecycle_status === "complete" ||
+    // Legacy fallback for run_state.yaml shapes the server couldn't
+    // classify: same heuristic the frontend used before lifecycle_status
+    // shipped. Keeps long-merged opps from regressing visually.
+    (run.lifecycle_status == null && !run.current_phase && !!run.last_actor_at);
+  if (isComplete) {
     return (
       <CheckCircle2
         className="h-3 w-3 shrink-0 text-emerald-400"
-        aria-label="run looks complete"
-      />
-    );
-  }
-  if (run.lifecycle_status === "init" || run.lifecycle_status === "running") {
-    return (
-      <Play
-        className="h-3 w-3 shrink-0 text-muted-foreground/70"
-        aria-label="run cursor"
-      />
-    );
-  }
-  // lifecycle_status missing (legacy run_state.yaml shape): fall back to
-  // the older "no cursor + has activity" heuristic.
-  const looksComplete = !run.current_phase && !!run.last_actor_at;
-  if (looksComplete) {
-    return (
-      <CheckCircle2
-        className="h-3 w-3 shrink-0 text-emerald-400"
-        aria-label="run looks complete"
+        aria-label="run complete"
       />
     );
   }
   return (
     <Play
       className="h-3 w-3 shrink-0 text-muted-foreground/70"
-      aria-label="run cursor"
+      aria-label="run in progress"
     />
   );
 }
 
 function ProgressLabel({ run }: { run: RunSummary }) {
-  if (run.lifecycle_status === "init") {
+  const isComplete =
+    run.lifecycle_status === "complete" ||
+    (run.lifecycle_status == null && !run.current_phase && !!run.last_actor_at);
+  if (isComplete) {
     return (
       <span className="min-w-0 flex-1 truncate text-muted-foreground">
-        queued (no work yet)
+        complete
       </span>
     );
   }
-  if (!run.current_phase && !run.current_step) {
+
+  // In-progress: pick the most informative label we have data for.
+  //  1. Live cursor → show phase · step (matches the workbench's view).
+  //  2. Some phase done but no cursor → "after <last done> · X/N".
+  //  3. Nothing done yet → "queued".
+  if (run.current_phase || run.current_step) {
+    const phaseLabel = run.current_phase_display ?? run.current_phase;
+    const stepLabel = run.current_step_display ?? run.current_step;
     return (
-      <span className="min-w-0 flex-1 truncate text-muted-foreground">
-        complete (no cursor)
+      <span
+        className="min-w-0 flex-1 truncate text-foreground"
+        title={`current_phase: ${run.current_phase ?? "—"}\ncurrent_step: ${run.current_step ?? "—"}`}
+      >
+        {phaseLabel ?? "—"}
+        {stepLabel && (
+          <span className="text-muted-foreground"> · {stepLabel}</span>
+        )}
       </span>
     );
   }
-  const phaseLabel = run.current_phase_display ?? run.current_phase;
-  const stepLabel = run.current_step_display ?? run.current_step;
+
+  const done = run.phases_done ?? 0;
+  const total = run.phases_total ?? 0;
+  if (done > 0 && run.latest_phase_done) {
+    const lastDone = run.latest_phase_done_display ?? run.latest_phase_done;
+    return (
+      <span
+        className="min-w-0 flex-1 truncate text-foreground"
+        title={`Last completed phase: ${run.latest_phase_done}`}
+      >
+        after {lastDone}
+        {total > 0 && (
+          <span className="text-muted-foreground"> · {done}/{total}</span>
+        )}
+      </span>
+    );
+  }
+
   return (
-    <span
-      className="min-w-0 flex-1 truncate text-foreground"
-      title={`current_phase: ${run.current_phase ?? "—"}\ncurrent_step: ${run.current_step ?? "—"}`}
-    >
-      {phaseLabel ?? "—"}
-      {stepLabel && (
-        <span className="text-muted-foreground"> · {stepLabel}</span>
-      )}
+    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+      queued
     </span>
   );
 }
