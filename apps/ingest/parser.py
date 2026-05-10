@@ -1,6 +1,7 @@
 """Parse a Claude CLI .jsonl session file into structured turn data."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -24,6 +25,7 @@ class ParsedSession:
     turns: list[ParsedTurn] = field(default_factory=list)
     raw_bytes: int = 0
     line_count: int = 0
+    content_sha256: str = ""
 
 
 @dataclass
@@ -154,6 +156,7 @@ def parse_session_file(path: Path) -> tuple[ParsedSession, list[CostEvent]]:
         cli_session_id="",
         raw_bytes=len(raw),
         line_count=len(lines),
+        content_sha256=hashlib.sha256(raw).hexdigest(),
     )
 
     current_assistant_text: list[str] = []
@@ -174,6 +177,15 @@ def parse_session_file(path: Path) -> tuple[ParsedSession, list[CostEvent]]:
         if kind == "system" and payload.get("subtype") == "init":
             session.cli_session_id = payload.get("session_id", "")
             continue
+
+        # Claude Code interactive transcripts (~/.claude/projects/<slug>/*.jsonl)
+        # don't emit a `system/init` envelope. Every line carries a
+        # camelCase `sessionId` at the top level; fall back to the first
+        # one we see so the dedup branch in views.upload still fires.
+        if not session.cli_session_id:
+            interactive_id = payload.get("sessionId")
+            if isinstance(interactive_id, str) and interactive_id:
+                session.cli_session_id = interactive_id
 
         if kind == "assistant":
             msg_id = payload.get("message", {}).get("id")
