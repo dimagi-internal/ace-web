@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { CostTimingTab } from "../components/cost/CostTimingTab";
+import { StructureTab } from "../components/structure/StructureTab";
 
 import { Button } from "@/components/ui/button";
 import { createSession, getSession, updateSession } from "../api/sessions";
@@ -20,7 +20,7 @@ import {
 export function ChatPage() {
   const { slug = "" } = useParams();
   const [meta, setMeta] = useState<Session | null>(null);
-  const [showCosts, setShowCosts] = useState(false);
+  const [showStructure, setShowStructure] = useState(false);
   // Distinct from `meta == null` (loading) so the "session not found"
   // branch is reachable. Previously this page caught fetch errors with
   // setMeta(null), which collided with the initial loading state and
@@ -96,11 +96,11 @@ export function ChatPage() {
         <details className="border-t">
           <summary
             className="cursor-pointer px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-            onClick={() => setShowCosts(true)}
+            onClick={() => setShowStructure(true)}
           >
-            Cost &amp; timing
+            Structure
           </summary>
-          {showCosts ? <CostTimingTab slug={slug} /> : null}
+          {showStructure ? <StructureTab slug={slug} /> : null}
         </details>
       </div>
     </div>
