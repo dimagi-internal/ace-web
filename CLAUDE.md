@@ -252,6 +252,7 @@ Opp Workbench cache (`apps/opps/`):
 
 Frontend:
 - [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs that show wall-clock-driven transitions need explicit setTimeout-driven re-renders.
+- [card-click-and-grid-stretch](docs/learnings/card-click-and-grid-stretch.md) — two layout traps that masquerade as React state bugs in card-grid UIs: (1) `<button>` nested inside `<a>` / `<Link>` routes clicks ambiguously across cards; (2) CSS Grid's default `align-items: stretch` makes collapsed neighbors visually appear to also expand. Both took a real-browser repro to catch.
 
 Deploy & infrastructure:
 - [alb-nginx-django-https](docs/learnings/alb-nginx-django-https.md) — `SECURE_PROXY_SSL_HEADER` + nginx `$real_scheme` map preserve the ALB's `https`, and every `proxy_pass` must rewrite `Host` so ALB health checks don't trip `ALLOWED_HOSTS`. Silent until triggered in real infra.
