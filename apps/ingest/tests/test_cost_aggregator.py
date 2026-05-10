@@ -143,13 +143,13 @@ def test_aggregate_unknown_skill_name_still_appears(no_registry):
 
 @pytest.fixture
 def no_registry(monkeypatch):
-    """Monkeypatch _skill_phase_index to return an empty dict.
+    """Monkeypatch skill_phase_index to return an empty dict.
 
     Apply to any test that asserts _other phase content so the test is
     independent of the real ACE plugin being installed.
     """
     from apps.ingest import cost_aggregator
-    monkeypatch.setattr(cost_aggregator, "_skill_phase_index", lambda: {})
+    monkeypatch.setattr(cost_aggregator, "skill_phase_index", lambda: {})
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ def test_aggregate_labels_known_skills_with_phase_from_registry(monkeypatch):
             "phase_ordinal": 1,
         },
     }
-    monkeypatch.setattr(cost_aggregator, "_skill_phase_index", lambda: fake_registry)
+    monkeypatch.setattr(cost_aggregator, "skill_phase_index", lambda: fake_registry)
 
     breakdown = cost_aggregator.aggregate(_events())
 
@@ -215,7 +215,7 @@ def test_aggregate_attributes_post_dispatch_orchestration_to_current_phase(monke
             "phase_ordinal": 1,
         },
     }
-    monkeypatch.setattr(cost_aggregator, "_skill_phase_index", lambda: fake_registry)
+    monkeypatch.setattr(cost_aggregator, "skill_phase_index", lambda: fake_registry)
 
     breakdown = cost_aggregator.aggregate(_events())
 
@@ -251,7 +251,7 @@ def test_aggregate_unknown_skill_falls_back_to_other(monkeypatch):
     """With an empty registry, all skills land in _other."""
     from apps.ingest import cost_aggregator
 
-    monkeypatch.setattr(cost_aggregator, "_skill_phase_index", lambda: {})
+    monkeypatch.setattr(cost_aggregator, "skill_phase_index", lambda: {})
 
     breakdown = cost_aggregator.aggregate(_events())
     other = next((p for p in breakdown["phases"] if p["phase_name"] == "_other"), None)
