@@ -15,6 +15,7 @@ from apps.opps.drive_cache import CachedDriveClient
 from apps.opps.drive_client import get_drive_client
 from apps.opps.models import OppWorkspace
 from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
+from apps.opps.opp_forker import ForkOppError, fork_opp
 from apps.opps.seed import build_chat_seed
 from apps.opps.serializers import (
     normalize_score_pct,
@@ -25,6 +26,7 @@ from apps.opps.serializers import (
 from apps.opps.summary import build_summary_payload
 from apps.opps.sync import (
     delete_opp_folder,
+    delete_run_folder,
     list_opp_runs,
     load_opp,
     load_opp_card,
@@ -35,6 +37,7 @@ from apps.opps.touched_tracker import TouchedFileTracker
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.sessions.models import Message, Session
 from apps.system.reader import (
+    load_system_overview,
     phase_display_names as _phase_display_names,
 )
 from apps.system.reader import (
@@ -431,6 +434,122 @@ def opp_create(request):
     )
 
 
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def opp_fork(request, slug: str):
+    """POST /api/opps/<slug>/fork — fork this opp into a new one at the
+    given phase boundary.
+
+    Body: ``{new_slug: <str>, fork_at_phase: <phase-name>}``
+
+    Synchronous Drive-recursive copy; can take 30-60s on large opps.
+    Frontend should show a loading state. Returns the new slug on
+    success; the caller navigates to its workbench.
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            error_response("authentication required", code="auth-required"),
+            status=401,
+        )
+    payload = request.data if isinstance(request.data, dict) else {}
+    new_slug = (payload.get("new_slug") or "").strip()
+    fork_at_phase = (payload.get("fork_at_phase") or "").strip()
+    if not new_slug:
+        return Response(
+            error_response("new_slug is required", code="invalid-slug"),
+            status=400,
+        )
+    if not fork_at_phase:
+        return Response(
+            error_response(
+                "fork_at_phase is required", code="invalid-phase",
+            ),
+            status=400,
+        )
+
+    ws, client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        result = fork_opp(
+            drive=client,
+            ace_root_folder_id=ace_folder_id,
+            owner=request.user,
+            source_slug=slug,
+            new_slug=new_slug,
+            fork_at_phase=fork_at_phase,
+            workspace=ws,
+        )
+    except ForkOppError as exc:
+        status = (
+            409 if exc.code == "slug-taken"
+            else 404 if exc.code == "source-not-found"
+            else 400
+        )
+        return Response(error_response(str(exc), code=exc.code), status=status)
+
+    return Response(
+        success_response({
+            "slug": result.new_slug,
+            "working_session_slug": result.working_session.slug,
+        }),
+        status=201,
+    )
+
+
+@api_view(["DELETE"])
+@permission_classes([AllowAny])
+def delete_run(request, slug: str, run_id: str):
+    """DELETE /api/opps/<slug>/runs/<run_id> — trash a single run subfolder.
+
+    Drive trash is 30-day recoverable. The opp folder itself stays
+    intact; only the named run subfolder is moved to trash. Linked
+    chat sessions are NOT cascade-deleted (a chat seeded from a step
+    of this run is still useful as transcript history).
+
+    Returns 204 on success, 404 if the run doesn't exist.
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            error_response("authentication required", code="auth-required"),
+            status=401,
+        )
+    ws, client, err = _require_drive(request)
+    if err is not None:
+        return err
+    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    if ace_folder_id is None:
+        return Response(
+            error_response("ACE root folder not found", code="ace-root-not-found"),
+            status=404,
+        )
+
+    try:
+        delete_run_folder(
+            client, ace_folder_id=ace_folder_id, opp_slug=slug, run_id=run_id,
+        )
+    except FileNotFoundError as exc:
+        return Response(
+            error_response(str(exc), code="run-not-found"),
+            status=404,
+        )
+
+    # Drop any cached snapshots/cards for this workspace — the
+    # run-folder trash isn't always reflected in the Drive Changes
+    # pageToken before the next list, and a stale snapshot would still
+    # surface the deleted run in the strip / runs list.
+    snapshot_cache.clear_workspace(ws.pk)
+
+    return Response(status=204)
+
+
 @api_view(["GET", "POST"])
 @permission_classes([AllowAny])
 def opp_collection(request):
@@ -602,12 +721,33 @@ def runs_list(request, slug: str):
             status=404,
         )
     runs = list_opp_runs(client, ace_root_folder_id=ace_folder_id, opp_slug=slug)
+    # Surface display names + phase ordinal alongside the slugs so the
+    # inline runs UI on /opps can render "P3 · Idea to PDD" without
+    # re-fetching the system overview. Lookups are process-cached so this
+    # is essentially free.
+    skill_lookup = _skill_display_name_lookup()
+    phase_lookup = _phase_display_name_lookup()
+    overview = load_system_overview(getattr(settings, "ACE_PLUGIN_PATH", "") or "")
+    phase_ordinals = {
+        p["name"]: p["ordinal"]
+        for p in (overview.get("phases") or [])
+        if isinstance(p.get("ordinal"), int)
+    }
     return Response(success_response([
         {
             "run_id": r.run_id,
             "folder_id": r.folder_id,
             "current_phase": r.current_phase,
+            "current_phase_display": (
+                phase_lookup.get(r.current_phase) if r.current_phase else None
+            ),
+            "current_phase_ordinal": (
+                phase_ordinals.get(r.current_phase) if r.current_phase else None
+            ),
             "current_step": r.current_step,
+            "current_step_display": (
+                skill_lookup.get(r.current_step) if r.current_step else None
+            ),
             "mode": r.mode,
             "last_actor": r.last_actor,
             "last_actor_at": r.last_actor_at,
@@ -666,7 +806,6 @@ def multi_run_summary(request, slug: str):
     runs = runs[:limit]
 
     from apps.opps.skills import SKILL_REGISTRY
-    from apps.system.reader import load_system_overview
 
     overview = load_system_overview(getattr(settings, "ACE_PLUGIN_PATH", "") or "")
     phase_lookup = {p["name"]: p for p in (overview.get("phases") or [])}

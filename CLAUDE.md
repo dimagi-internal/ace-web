@@ -105,7 +105,7 @@ start by `docker-entrypoint.sh` from the `ACE_DRIVE_SA_KEY_JSON` env var
 that have bitten us).
 
 **To pick up a new ACE plugin release:** rebuild the ace-web image (any
-push to main triggers `build-backend.yml`), then run `deploy-labs.yml`.
+push to main triggers `build-backend.yml`), then run `deploy-ace-web-labs.yml`.
 The System tab's update banner compares local `VERSION` against GitHub's
 remote `VERSION` and will tell you when the snapshot has drifted.
 
@@ -145,7 +145,7 @@ ace-web/
 ├── Dockerfile, Dockerfile.frontend, docker-compose.yml, docker-entrypoint.sh
 ├── frontend/nginx.prod.conf   # nginx sidecar config for the prod container
 ├── deploy/aws/                # task-definition.json + one-time-setup.sh
-├── .github/workflows/         # build-backend, build-frontend, deploy-labs, ci
+├── .github/workflows/         # build-backend, build-frontend, deploy-ace-web-labs, ci
 └── pyproject.toml, VERSION
 ```
 
@@ -310,7 +310,7 @@ Workbench's linked-chats panel. Orphan uploads (no opp fields) still work.
 - **Local dev**: `docker compose up`. App at `http://localhost:8000`, Postgres at `localhost:5434`. Backend hot-reload + working Vite dev server landed in PR #235.
 - **Tests**: `pytest -v` from repo root. Uses in-memory SQLite; fast hashers.
 - **Lint**: `ruff check .` — `line-length=100`, `target=py311`, rules `E,F,W,I,UP,B`.
-- **Deploy**: GitHub Actions workflow `.github/workflows/deploy-labs.yml`. Manual trigger (Actions → Deploy to Labs (AWS) → Run workflow). Set `run_migrations: true` on schema-changing deploys. First-time setup: `deploy/aws/one-time-setup.sh`. See `docs/deploy.md` for the full runbook.
+- **Deploy**: GitHub Actions workflow `.github/workflows/deploy-ace-web-labs.yml`. Manual trigger (Actions → Deploy to Labs (AWS) → Run workflow). Set `run_migrations: true` on schema-changing deploys. First-time setup: `deploy/aws/one-time-setup.sh`. See `docs/deploy.md` for the full runbook.
 - **Plans-driven work**: Implementation follows the per-phase plan file in `docs/plans/`.
   Each phase plan is generated from the design spec via the `writing-plans` skill.
   Use the superpowers `subagent-driven-development` or `executing-plans` sub-skill

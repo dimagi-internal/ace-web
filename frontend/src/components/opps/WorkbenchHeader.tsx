@@ -3,11 +3,19 @@ import { HelpCircle, RefreshCw, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-import type { Decision, OppCard, Run, RunSummary } from "../../api/types";
+import type {
+  CostRollup,
+  Decision,
+  MultiRunSummary,
+  OppCard,
+  Run,
+  RunSummary,
+} from "../../api/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CostRollupCard } from "./CostRollupCard";
 import { DeleteOppDialog } from "./DeleteOppDialog";
+import { RunHistoryStrip } from "./RunHistoryStrip";
 import { RunSelector } from "./RunSelector";
 import { ScorecardPanel } from "./ScorecardPanel";
 import { TagEditor } from "./TagEditor";
@@ -26,6 +34,25 @@ interface Props {
    * chip falls back to a tooltip with the same info.
    */
   onJumpToPhases?: () => void;
+  /**
+   * Called after a run is trashed via the RunSelector's per-row trash
+   * icon. Distinct from ``onRefresh`` because the page also needs to
+   * clear the ``?run_id=`` URL param when the active run gets deleted —
+   * otherwise the next snapshot fetch 404s on the now-gone run.
+   */
+  onRunDeleted?: () => void;
+  /**
+   * Caller-fetched cost rollup. Lifted from inside CostRollupCard so the
+   * lifecycle phase rows can share the same fetch via ``useOppCostRollup``
+   * — see OppWorkbenchPage.
+   */
+  costRollup: CostRollup | null;
+  /**
+   * Per-run aggregates. Powers the run-history strip beside the run
+   * selector. Optional / null while the fetch is in flight; the strip
+   * just hides until data lands.
+   */
+  multiRun: MultiRunSummary | null;
   workspaceSlug?: string;
 }
 
@@ -37,6 +64,9 @@ export function WorkbenchHeader({
   onRunChange,
   onRefresh,
   onJumpToPhases,
+  onRunDeleted,
+  costRollup,
+  multiRun,
   workspaceSlug,
 }: Props) {
   const navigate = useNavigate();
@@ -103,7 +133,20 @@ export function WorkbenchHeader({
             informational — no destructive or primary actions in this
             cluster. */}
         <div className="flex flex-wrap items-center gap-2">
-          <RunSelector runs={runs} selectedRunId={selectedRunId} onChange={onRunChange} />
+          <RunSelector
+            oppSlug={opp.slug}
+            runs={runs}
+            selectedRunId={selectedRunId}
+            onChange={onRunChange}
+            onRunDeleted={onRunDeleted}
+          />
+          {multiRun && (
+            <RunHistoryStrip
+              runs={multiRun.per_run}
+              selectedRunId={selectedRunId}
+              onChange={onRunChange}
+            />
+          )}
           {run.current_phase && (
             <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
               Phase · {run.current_phase}
@@ -138,9 +181,7 @@ export function WorkbenchHeader({
             </button>
           )}
           <TagEditor slug={opp.slug} initialTags={opp.tags ?? []} />
-          {workspaceSlug ? (
-            <CostRollupCard oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
-          ) : null}
+          {workspaceSlug ? <CostRollupCard data={costRollup} /> : null}
           <ScorecardPanel slug={opp.slug} />
         </div>
 

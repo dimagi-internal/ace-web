@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Workflow } from "lucide-react";
+import { ChevronRight, GitFork, Workflow } from "lucide-react";
 
 import type { OppSnapshot, PhaseInfo, Step } from "@/api/types";
+import { ForkOppDialog } from "@/components/opps/ForkOppDialog";
+import { Button } from "@/components/ui/button";
 import { DecisionsPanel } from "@/components/views/DecisionsPanel";
 import { PhaseSkillRow } from "@/components/views/PhaseSkillRow";
 import { cn } from "@/lib/utils";
@@ -100,7 +102,18 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
               key={selectedPhaseInfo.name}
               className="flex h-full animate-in fade-in slide-in-from-right-2 flex-col duration-200"
             >
-              <PhasePanelHeader phase={selectedPhaseInfo} steps={selectedPhaseSteps} />
+              <PhasePanelHeader
+                phase={selectedPhaseInfo}
+                steps={selectedPhaseSteps}
+                oppSlug={oppSlug}
+                sourceLastActorAt={
+                  // The active run's last_actor_at lives in runs[] (RunSummary)
+                  // — Run itself only has started_at / completed_at.
+                  snapshot.runs.find(
+                    (r) => r.run_id === snapshot.current_run.run_id,
+                  )?.last_actor_at ?? null
+                }
+              />
               <div className="flex-1 overflow-y-auto px-4 pb-6">
                 <DecisionsPanel
                   phase={selectedPhaseInfo.name}
@@ -235,9 +248,17 @@ function PhaseTile({ phase, steps, decisions, isSelected, onClick }: PhaseTilePr
 interface PhasePanelHeaderProps {
   phase: PhaseInfo;
   steps: Step[];
+  oppSlug: string;
+  sourceLastActorAt: string | null;
 }
 
-function PhasePanelHeader({ phase, steps }: PhasePanelHeaderProps) {
+function PhasePanelHeader({
+  phase,
+  steps,
+  oppSlug,
+  sourceLastActorAt,
+}: PhasePanelHeaderProps) {
+  const [forkOpen, setForkOpen] = useState(false);
   const total = steps.length;
   const complete = steps.filter((s) => s.status === "complete").length;
   const qaFailed = steps.filter((s) => s.status === "qa-failed").length;
@@ -252,12 +273,30 @@ function PhasePanelHeader({ phase, steps }: PhasePanelHeaderProps) {
 
   return (
     <header className="shrink-0 border-b border-border bg-card/30 px-6 py-4">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Phase {phase.ordinal} · {phase.agent}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Phase {phase.ordinal} · {phase.agent}
+          </div>
+          <h2 className="mt-1 text-xl font-semibold text-foreground">
+            {phase.display_name}
+          </h2>
+        </div>
+        {/* Fork CTA: lets a viewer branch the run from this phase boundary
+            so they can re-run the rest of the lifecycle as a separate
+            opp without losing the source. The Drive copy is recursive
+            and can take 30-60s — see ForkOppDialog for the wait state. */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setForkOpen(true)}
+          className="shrink-0 text-xs"
+          title={`Fork this opp into a new one starting at ${phase.display_name}`}
+        >
+          <GitFork className="mr-1.5 h-3.5 w-3.5" />
+          Fork from here
+        </Button>
       </div>
-      <h2 className="mt-1 text-xl font-semibold text-foreground">
-        {phase.display_name}
-      </h2>
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
         <span>
           <span className="font-medium tabular-nums text-foreground">{complete}</span>
@@ -282,6 +321,14 @@ function PhasePanelHeader({ phase, steps }: PhasePanelHeaderProps) {
           </span>
         )}
       </div>
+      <ForkOppDialog
+        open={forkOpen}
+        onOpenChange={setForkOpen}
+        sourceSlug={oppSlug}
+        forkAtPhase={phase.name}
+        forkAtPhaseDisplay={phase.display_name}
+        sourceLastActorAt={sourceLastActorAt}
+      />
     </header>
   );
 }

@@ -95,7 +95,7 @@ If a non-admin passes `--global`, the server returns 403.
 | `rc=1 "no local credentials found"` | User never ran `claude setup-token` locally | Have them run it, complete browser auth, retry. |
 | `rc=2 "live check failed"` | Token stored, but `claude -p` on server 401s. Either (a) the blob's accessToken expired and the server's network can't reach Anthropic for refresh, or (b) Anthropic revoked the token. | Re-run `claude setup-token` locally (fresh tokens), then re-upload. If that also fails, check network egress from ECS to api.anthropic.com. |
 | `rc=3 HTTP 401` | Bearer token wrong, expired, or revoked | Mint a new one at `<ACE_URL>/settings`. |
-| `rc=3 HTTP 404` | Endpoint not deployed (old image) | Check that the deploy landed: `gh run list --workflow=deploy-labs.yml --limit=1`. |
+| `rc=3 HTTP 404` | Endpoint not deployed (old image) | Check that the deploy landed: `gh run list --workflow=deploy-ace-web-labs.yml --limit=1`. |
 
 ## Do NOT
 

@@ -2,7 +2,7 @@ name: Build Backend Image
 
 # Auto-builds and pushes the ace-web backend Docker image to ECR whenever
 # any backend-relevant file changes on main. The manual deploy workflow
-# (deploy-labs.yml) then assembles the final task definition using the
+# (deploy-ace-web-labs.yml) then assembles the final task definition using the
 # already-built :latest image, so deploys are fast.
 
 on:

@@ -149,7 +149,7 @@ infrastructure (cluster `labs-jj-cluster`, ALB path prefix `/ace/*`).
 Manual deploy:
 
 ```bash
-gh workflow run deploy-labs.yml --ref main -f run_migrations=true
+gh workflow run deploy-ace-web-labs.yml --ref main -f run_migrations=true
 ```
 
 See [`docs/deploy.md`](./docs/deploy.md) for the full runbook (image

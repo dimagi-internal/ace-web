@@ -9,6 +9,7 @@ import type {
   OppCard,
   OppCompare,
   OppSnapshot,
+  RunSummary,
   Scorecard,
   StepDetail,
   WorkingSessionResponse,
@@ -132,6 +133,31 @@ export function discussStep(
   return request<DiscussResponse>(
     `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(skill)}/discuss`,
     { method: "POST" },
+  );
+}
+
+export function listOppRuns(slug: string): Promise<RunSummary[]> {
+  return request<RunSummary[]>(`/opps/${encodeURIComponent(slug)}/runs`);
+}
+
+export function deleteOppRun(slug: string, runId: string): Promise<void> {
+  return request<void>(
+    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function forkOpp(
+  slug: string,
+  payload: { new_slug: string; fork_at_phase: string },
+): Promise<{ slug: string; working_session_slug: string }> {
+  return request<{ slug: string; working_session_slug: string }>(
+    `/opps/${encodeURIComponent(slug)}/fork`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
   );
 }
 

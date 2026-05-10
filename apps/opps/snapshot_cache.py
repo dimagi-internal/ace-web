@@ -32,7 +32,12 @@ log = logging.getLogger(__name__)
 
 _set = set  # preserve builtin before our module-level `set` shadows it
 
-_KEY_VERSION = "v1"
+# Bump when the cached dataclass shape changes — stale entries from
+# before the bump deserialize into the new dataclass with leftover
+# attributes (or missing required ones), and downstream serialization
+# can choke on the mismatch. v2 = post #260 (StepSnapshot dropped the
+# gates field; OppCard dropped pending_gate_skills).
+_KEY_VERSION = "v2"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

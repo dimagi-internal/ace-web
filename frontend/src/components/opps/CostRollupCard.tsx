@@ -1,48 +1,31 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { getOppCostRollup } from "../../api/costs";
 import type { CostRollup } from "../../api/types";
 import { formatDuration, formatUsd } from "../cost/format";
 import { CostRollupDialog } from "./CostRollupDialog";
 
 interface Props {
-  oppSlug: string;
-  workspaceSlug: string;
+  /**
+   * Caller-fetched cost rollup. ``null`` while in flight (component renders
+   * nothing); object with ``session_count: 0`` after the fetch resolves
+   * with no linked sessions — we render nothing in that case too. Passing
+   * the data in (rather than fetching here) lets the lifecycle phase
+   * chips share the same fetch via ``useOppCostRollup``.
+   */
+  data: CostRollup | null;
 }
 
-export function CostRollupCard({ oppSlug, workspaceSlug }: Props) {
-  const [data, setData] = useState<CostRollup | null>(null);
+export function CostRollupCard({ data }: Props) {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    getOppCostRollup(oppSlug, workspaceSlug)
-      .then((d) => !cancelled && setData(d))
-      .catch(() => {
-        if (!cancelled) setData(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [oppSlug, workspaceSlug]);
+  // Hide entirely while loading OR when no chats with cost data are linked
+  // to this opp. The previous "$— · —" placeholder read as a broken state
+  // — opps without ingested transcripts are the common case in dev/local
+  // and looking at the header it's not obvious the chip is "data pending"
+  // vs "data busted." Better to surface nothing and let the user discover
+  // the cost view once data is available.
+  if (data === null || data.session_count === 0) return null;
 
-  // Stay invisible while the API call is in flight (don't render a
-  // placeholder, which would jump-cut to the real value on load and
-  // jitter the header layout). Once the API returns, render even the
-  // empty state — that way users know cost data WILL appear once chats
-  // accumulate, instead of wondering why the chip is missing on this
-  // opp but present on another.
-  if (data === null) return null;
-  if (data.session_count === 0) {
-    return (
-      <span
-        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground/60"
-        title="No chats with cost data linked to this opp yet. Costs accumulate as ACE runs."
-      >
-        $— · —
-      </span>
-    );
-  }
   const t = data.totals;
   const sessionLabel = data.session_count === 1 ? "1 chat" : `${data.session_count} chats`;
   return (

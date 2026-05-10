@@ -1,4 +1,5 @@
-import { ChevronDown } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Trash2 } from "lucide-react";
 
 import type { RunSummary } from "../../api/types";
 import {
@@ -7,11 +8,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DeleteRunDialog } from "./DeleteRunDialog";
 
 interface RunSelectorProps {
+  oppSlug: string;
   runs: RunSummary[];
   selectedRunId: string | null;
   onChange: (runId: string) => void;
+  /** Called after a run is trashed so the parent can refetch the snapshot. */
+  onRunDeleted?: () => void;
 }
 
 // The plugin uses YYYYMMDD-HHMM as the run id (e.g. "20260503-0835").
@@ -33,7 +38,15 @@ function formatRunId(runId: string): string {
   });
 }
 
-export function RunSelector({ runs, selectedRunId, onChange }: RunSelectorProps) {
+export function RunSelector({
+  oppSlug,
+  runs,
+  selectedRunId,
+  onChange,
+  onRunDeleted,
+}: RunSelectorProps) {
+  const [deleteTarget, setDeleteTarget] = useState<RunSummary | null>(null);
+
   if (runs.length === 0) {
     return (
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -51,29 +64,64 @@ export function RunSelector({ runs, selectedRunId, onChange }: RunSelectorProps)
       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Run</span>
       <DropdownMenu>
         <DropdownMenuTrigger
-          className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent disabled:cursor-default disabled:opacity-100"
+          className="flex items-center gap-1 rounded border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent"
           title={selected.run_id}
-          disabled={runs.length <= 1}
         >
           <span>{friendly}</span>
-          {runs.length > 1 && <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+          <ChevronDown className="h-3 w-3 text-muted-foreground" />
         </DropdownMenuTrigger>
-        {runs.length > 1 && (
-          <DropdownMenuContent align="start" className="w-64 max-h-96 overflow-y-auto">
+        <DropdownMenuContent align="start" className="w-64 max-h-96 overflow-y-auto">
             {runs.map((r) => (
               <DropdownMenuItem
                 key={r.run_id}
-                className={r.run_id === selected.run_id ? "bg-accent/50" : ""}
-                onClick={() => onChange(r.run_id)}
+                className={
+                  "flex items-center gap-2 " +
+                  (r.run_id === selected.run_id ? "bg-accent/50" : "")
+                }
+                // Don't auto-close the menu when the user clicks the trash
+                // icon (we want the confirm dialog to render on top of the
+                // open menu, then the menu can close after).
+                onSelect={(e) => e.preventDefault()}
               >
-                <span className="text-xs" title={r.run_id}>
+                <button
+                  type="button"
+                  onClick={() => onChange(r.run_id)}
+                  className="flex-1 text-left text-xs"
+                  title={r.run_id}
+                >
                   {formatRunId(r.run_id)}
-                </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteTarget(r);
+                  }}
+                  className="rounded p-0.5 text-muted-foreground/60 hover:bg-destructive/15 hover:text-destructive"
+                  aria-label={`Trash run ${r.run_id}`}
+                  title="Trash this run (30-day Drive-recoverable)"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
-        )}
       </DropdownMenu>
+      {deleteTarget && (
+        <DeleteRunDialog
+          open={true}
+          onOpenChange={(v) => {
+            if (!v) setDeleteTarget(null);
+          }}
+          oppSlug={oppSlug}
+          runId={deleteTarget.run_id}
+          runLabel={formatRunId(deleteTarget.run_id)}
+          onDeleted={() => {
+            setDeleteTarget(null);
+            onRunDeleted?.();
+          }}
+        />
+      )}
     </div>
   );
 }

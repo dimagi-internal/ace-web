@@ -15,6 +15,8 @@ import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
+import { useMultiRunSummary } from "../hooks/useMultiRunSummary";
+import { useOppCostRollup } from "../hooks/useOppCostRollup";
 import { useOppSocket } from "../hooks/useOppSocket";
 import { useViewMode } from "../hooks/useViewMode";
 
@@ -53,6 +55,8 @@ export default function OppWorkbenchPage() {
   const { view, setView } = useViewMode("workbench");
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
+  const costRollup = useOppCostRollup(slug, workspaceSlug);
+  const multiRun = useMultiRunSummary(slug);
 
   const load = useCallback(
     (opts: { silent?: boolean; force?: boolean } = {}) => {
@@ -134,7 +138,18 @@ export default function OppWorkbenchPage() {
         selectedRunId={snapshot.selected_run_id ?? null}
         onRunChange={(id) => setSearchParams({ run_id: id })}
         onRefresh={() => load()}
+        onRunDeleted={() => {
+          // The just-trashed run is gone from Drive but ?run_id=<deleted>
+          // is still in the URL — re-fetching with that id 404s and
+          // surfaces a confusing error. Clear the param so the page
+          // resolves to the new latest run (or to "Cycle hasn't
+          // started yet" if no runs remain).
+          setSearchParams({}, { replace: true });
+          load();
+        }}
         onJumpToPhases={() => setView("phase")}
+        costRollup={costRollup}
+        multiRun={multiRun}
         workspaceSlug={workspaceSlug}
       />
       <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
@@ -148,6 +163,9 @@ export default function OppWorkbenchPage() {
                 phases={snapshot.phases}
                 selectedSkill={selectedSkill}
                 onSelect={setSelectedSkill}
+                costRollup={costRollup}
+                multiRun={multiRun}
+                currentRunId={snapshot.current_run.run_id}
               />
             </main>
             <section className="w-[560px] shrink-0 overflow-y-auto border-l border-border bg-background">

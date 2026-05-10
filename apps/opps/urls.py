@@ -24,6 +24,12 @@ urlpatterns = [
     path("<slug:slug>/cost-rollup", views.cost_rollup, name="opps-cost-rollup"),
     path("<slug:slug>", views.workbench, name="opps-workbench"),
     path("<slug:slug>/scorecard", views.scorecard, name="opps-scorecard"),
+    path("<slug:slug>/fork", views.opp_fork, name="opps-fork"),
+    path(
+        "<slug:slug>/runs/<str:run_id>",
+        views.delete_run,
+        name="opps-delete-run",
+    ),
     path(
         "<slug:slug>/runs/<str:run_id>/steps/<str:skill>",
         views.step_detail,

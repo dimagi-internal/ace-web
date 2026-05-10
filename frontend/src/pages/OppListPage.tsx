@@ -9,7 +9,9 @@ import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/Loadi
 import { CompareWithDialog } from "../components/opps/CompareWithDialog";
 import { DeleteOppDialog } from "../components/opps/DeleteOppDialog";
 import { NewOppDialog } from "../components/opps/NewOppDialog";
+import { OppCardRunsStrip } from "../components/views/hierarchy/OppCardRunsStrip";
 import { OppChatChildren } from "../components/views/hierarchy/OppChatChildren";
+import { OppRunsList } from "../components/views/hierarchy/OppRunsList";
 import { TimelineView } from "../components/views/TimelineView";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
 import { useViewMode } from "../hooks/useViewMode";
@@ -387,6 +389,13 @@ export default function OppListPage() {
                 )}
               </div>
 
+              {workspaceSlug && (
+                <OppCardRunsStrip
+                  oppSlug={opp.slug}
+                  workspaceSlug={workspaceSlug}
+                />
+              )}
+
               {(opp.tags.length > 0 || opp.labels.length > 0) && (
                 <div className="mt-3 flex flex-wrap gap-1">
                   {opp.tags.map((tag) => (
@@ -421,7 +430,10 @@ export default function OppListPage() {
               )}
             </Link>
             {isExpanded && workspaceSlug && (
-              <OppChatChildren oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
+              <>
+                <OppRunsList oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
+                <OppChatChildren oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
+              </>
             )}
             </div>
             );

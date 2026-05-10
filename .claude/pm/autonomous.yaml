@@ -8,8 +8,8 @@ shipping:
   branch_prefix: ace-web/auto/
   pr_label: autonomous
   merge: squash
-  deploy_command: gh workflow run deploy-labs.yml --ref main -f run_migrations=false
-  deploy_workflow: deploy-labs.yml
+  deploy_command: gh workflow run deploy-ace-web-labs.yml --ref main -f run_migrations=false
+  deploy_workflow: deploy-ace-web-labs.yml
   post_deploy_health:
     - https://labs.connect.dimagi.com/ace/api/health
 
