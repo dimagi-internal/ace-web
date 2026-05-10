@@ -7,6 +7,7 @@ These models are designed to be:
 - Multi-player native (many-to-many user-session via SessionParticipant)
 - Extensible to future modules via nullable opportunity_id, ocs_agent_id, idd_ref
 """
+import gzip
 import secrets
 
 from django.conf import settings
@@ -287,6 +288,11 @@ class IngestUpload(models.Model):
     # Claude Code interactive transcripts). Indexed for the existence
     # check in apps/ingest/views.upload. See issue #274.
     content_sha256 = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    # Gzipped raw JSONL bytes — feeds the on-demand session structure view
+    # (apps/sessions/views.py::session_structure). Nullable so older uploads
+    # (pre-this-PR) and tests that don't care can omit it. Postgres TOAST
+    # transparently out-of-lines large values.
+    raw_jsonl_gz = models.BinaryField(null=True, blank=True)
     workspace = models.ForeignKey(
         "ace_workspaces.Workspace",
         on_delete=models.SET_NULL,
@@ -297,6 +303,15 @@ class IngestUpload(models.Model):
 
     def __str__(self):
         return f"Upload {self.id} to session {self.session_id}"
+
+    def read_raw_jsonl(self) -> str | None:
+        """Decompress and decode the persisted JSONL bytes.
+
+        Returns None for rows uploaded before raw_jsonl_gz was added.
+        """
+        if not self.raw_jsonl_gz:
+            return None
+        return gzip.decompress(bytes(self.raw_jsonl_gz)).decode("utf-8")
 
     class Meta:
         db_table = "ingest_uploads"
