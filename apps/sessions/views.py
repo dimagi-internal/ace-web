@@ -343,3 +343,51 @@ def session_cost_breakdown(request: Request, slug: str) -> Response:
             "phases": [],
         }))
     return Response(success_response(breakdown))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def session_structure(request: Request, slug: str) -> Response:
+    """Compute the hierarchical structure tree for a session, on demand.
+
+    Reads the most recent IngestUpload's raw_jsonl_gz, re-parses it through
+    apps.ingest.parser, and runs apps.ingest.structure_aggregator. Nothing
+    is persisted; the tree is computed fresh per request.
+
+    Returns schema_version=0 + null session + empty phases (matching the
+    cost-breakdown empty shape) when the session has no persisted raw JSONL
+    — the frontend dispatches on schema_version to render a re-upload hint.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+
+    session = _load_session_for_participant(slug, request.user)
+    if session is None:
+        return _not_found()
+
+    upload = session.ingest_records.order_by("-created_at").first()
+    if upload is None or not upload.raw_jsonl_gz:
+        return Response(success_response({
+            "schema_version": 0,
+            "session": None,
+            "phases": [],
+            "unavailable_reason": "no-raw-jsonl",
+        }))
+
+    raw_text = upload.read_raw_jsonl()
+    # parse_session_file takes a Path. Write to a temp file rather than
+    # refactoring the parser to accept bytes/text — short-lived, deleted
+    # in finally.
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as tmp:
+        tmp.write(raw_text)
+        tmp_path = Path(tmp.name)
+    try:
+        _parsed, events = parse_session_file(tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    tree = aggregate(events)
+    return Response(success_response(tree))
