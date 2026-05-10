@@ -86,7 +86,7 @@ def test_anonymous_request_succeeds(fake_drive, workspace):
     workspace.drive_root_folder_id = fake_drive.folder_id("ACE")
     workspace.save()
     c = Client()
-    with patch("apps.opps.views.get_drive_client", return_value=fake_drive):
+    with patch("apps.opps.views_summary.get_drive_client", return_value=fake_drive):
         response = c.get(
             "/api/opps/public/smoke-team/smoke-pilot/runs/20260415-1430/summary"
         )
@@ -103,7 +103,7 @@ def test_unknown_run_returns_404(fake_drive, workspace):
     workspace.drive_root_folder_id = fake_drive.folder_id("ACE")
     workspace.save()
     c = Client()
-    with patch("apps.opps.views.get_drive_client", return_value=fake_drive):
+    with patch("apps.opps.views_summary.get_drive_client", return_value=fake_drive):
         response = c.get(
             "/api/opps/public/smoke-team/smoke-pilot/runs/does-not-exist/summary"
         )
@@ -125,7 +125,7 @@ def test_unknown_opp_returns_404(fake_drive, workspace):
     workspace.drive_root_folder_id = fake_drive.folder_id("ACE")
     workspace.save()
     c = Client()
-    with patch("apps.opps.views.get_drive_client", return_value=fake_drive):
+    with patch("apps.opps.views_summary.get_drive_client", return_value=fake_drive):
         response = c.get(
             "/api/opps/public/smoke-team/no-such-opp/runs/r1/summary"
         )
@@ -143,7 +143,7 @@ def test_response_is_cached(fake_drive, workspace):
         call_count["n"] += 1
         return fake_drive
 
-    with patch("apps.opps.views.get_drive_client", side_effect=_track):
+    with patch("apps.opps.views_summary.get_drive_client", side_effect=_track):
         r1 = c.get(
             "/api/opps/public/smoke-team/smoke-pilot/runs/20260415-1430/summary"
         )
@@ -168,7 +168,7 @@ def test_404_is_not_cached(fake_drive, workspace):
         call_count["n"] += 1
         return fake_drive
 
-    with patch("apps.opps.views.get_drive_client", side_effect=_track):
+    with patch("apps.opps.views_summary.get_drive_client", side_effect=_track):
         c.get("/api/opps/public/smoke-team/smoke-pilot/runs/missing/summary")
         c.get("/api/opps/public/smoke-team/smoke-pilot/runs/missing/summary")
 

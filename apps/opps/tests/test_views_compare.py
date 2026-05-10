@@ -31,7 +31,7 @@ def authed_client(authed_user):
 
 def _with_fake_drive(authed_client, fake, url):
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         return authed_client.get(url)
 
@@ -114,7 +114,7 @@ def test_compare_unauthenticated_returns_401():
     fake = FakeDriveClient.from_tree(compare_pair_tree())
     c = Client()
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         r = c.get("/api/opps/compare/idea-v1/idea-v2")
     assert r.status_code == 401

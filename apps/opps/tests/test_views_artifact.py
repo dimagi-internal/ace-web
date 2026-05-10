@@ -21,7 +21,7 @@ def authed_client(db):
 
 def _with_fake(authed_client, fake, url):
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         return authed_client.get(url)
 

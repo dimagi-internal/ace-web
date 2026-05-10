@@ -42,7 +42,7 @@ def _combined_tree() -> dict:
 def test_opp_list_returns_both_opps(authed_client):
     fake = FakeDriveClient.from_tree(_combined_tree())
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     assert response.status_code == 200
@@ -56,7 +56,7 @@ def test_opp_list_returns_both_opps(authed_client):
 def test_opp_list_malaria_card_fields(authed_client):
     fake = FakeDriveClient.from_tree(_combined_tree())
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     cards = response.json()["data"]
@@ -91,7 +91,7 @@ def test_opp_list_includes_web_created_opps(authed_client):
     layout check accepts (idea.md + runs/) too."""
     fake = FakeDriveClient.from_tree(web_created_opp_tree())
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     assert response.status_code == 200
@@ -113,7 +113,7 @@ def test_opp_list_skips_non_opp_folders(authed_client):
     }
     fake = FakeDriveClient.from_tree(tree)
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     cards = response.json()["data"]
@@ -130,7 +130,7 @@ def test_opp_list_includes_flat_idea_only_opp(authed_client):
     tree = {"ACE": {"flat-only": {"idea.md": "the idea body"}}}
     fake = FakeDriveClient.from_tree(tree)
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     assert response.status_code == 200
@@ -155,7 +155,7 @@ def test_opp_list_overlays_workspace_display_name(authed_client, authed_user):
     tree = {"ACE": {"flat-only": {"idea.md": "idea"}}}
     fake = FakeDriveClient.from_tree(tree)
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     cards = response.json()["data"]
@@ -171,7 +171,7 @@ def test_opp_list_includes_multi_run_layout_opp(authed_client):
     """
     fake = FakeDriveClient.from_tree(turmeric_multi_run_tree())
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     assert response.status_code == 200
@@ -200,7 +200,7 @@ def test_opp_list_returns_empty_when_no_ace_root_configured(authed_client):
     """
     fake = FakeDriveClient.from_tree({})
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=None):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=None):
         response = authed_client.get("/api/opps/")
     assert response.status_code == 200
     body = response.json()
@@ -267,7 +267,7 @@ def test_opp_list_drive_call_budget(authed_client):
     fake = FakeDriveClient.from_tree(_combined_tree())
     counting = _CountingDriveClient(fake)
     with patch("apps.opps.access.get_drive_client", return_value=counting), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     assert response.status_code == 200
@@ -298,7 +298,7 @@ def test_opp_list_surfaces_opp_eval_score(authed_client):
     """
     fake = FakeDriveClient.from_tree(opp_with_scorecard_tree())
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     cards = response.json()["data"]
@@ -313,7 +313,7 @@ def test_opp_list_eval_score_blank_for_unjudged_opp(authed_client):
     spurious Drive call."""
     fake = FakeDriveClient.from_tree(_combined_tree())
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     cards = response.json()["data"]
@@ -346,7 +346,7 @@ def test_opp_list_eval_score_prefers_deep_over_monitor_over_quick(authed_client)
     }
     fake = FakeDriveClient.from_tree(tree)
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     cards = response.json()["data"]
@@ -374,7 +374,7 @@ def test_opp_list_eval_score_tolerates_malformed_verdict(authed_client, caplog):
     }
     fake = FakeDriveClient.from_tree(tree)
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         response = authed_client.get("/api/opps/")
     assert response.status_code == 200
@@ -402,7 +402,7 @@ def test_opp_list_surfaces_per_card_failures(authed_client, caplog):
         return real_load(client, opp_folder=opp_folder, opp_children=opp_children)
 
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")), \
          patch("apps.opps.views.load_opp_card", side_effect=_selectively_broken), \
          caplog.at_level(logging.WARNING, logger="apps.opps.views"):
@@ -434,7 +434,7 @@ def test_opp_list_surfaces_per_card_failures(authed_client, caplog):
 def test_list_returns_etag_header_when_flag_on(settings, authed_client):
     fake = FakeDriveClient.from_tree(_combined_tree())
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         resp = authed_client.get("/api/opps/")
     assert resp.status_code == 200
@@ -444,7 +444,7 @@ def test_list_returns_etag_header_when_flag_on(settings, authed_client):
 def test_list_returns_304_when_unchanged(settings, authed_client):
     fake = FakeDriveClient.from_tree(_combined_tree())
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         first = authed_client.get("/api/opps/")
         etag = first.headers["ETag"]
@@ -459,7 +459,7 @@ def test_list_only_reloads_changed_card(settings, authed_client):
     """
     fake = FakeDriveClient.from_tree(_combined_tree())
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         first = authed_client.get("/api/opps/")
         assert first.status_code == 200

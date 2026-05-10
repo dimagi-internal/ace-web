@@ -81,7 +81,7 @@ def test_fork_clones_drive_subtree(authed_client, db):
     fake = FakeDriveClient.from_tree(_source_tree())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/source-opp/fork",
             data={"new_slug": "fork-opp", "fork_at_phase": "design-review"},
@@ -114,7 +114,7 @@ def test_fork_rewrites_opp_yaml_with_forked_from(authed_client, db):
     fake = FakeDriveClient.from_tree(_source_tree())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/source-opp/fork",
             data={"new_slug": "fork-opp", "fork_at_phase": "design-review"},
@@ -138,7 +138,7 @@ def test_fork_resets_state_yaml_to_target_phase(authed_client, db):
     fake = FakeDriveClient.from_tree(_source_tree())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/source-opp/fork",
             data={"new_slug": "fork-opp", "fork_at_phase": "design-review"},
@@ -160,7 +160,7 @@ def test_fork_creates_workspace_row_and_session(authed_client, db):
     fake = FakeDriveClient.from_tree(_source_tree())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/source-opp/fork",
             data={"new_slug": "fork-opp", "fork_at_phase": "design-review"},
@@ -185,7 +185,7 @@ def test_fork_rejects_existing_slug(authed_client, db):
         created_by=User.objects.get(email="jon@dimagi.com"),
     )
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/source-opp/fork",
             data={"new_slug": "taken", "fork_at_phase": "design-review"},
@@ -199,7 +199,7 @@ def test_fork_rejects_same_slug(authed_client, db):
     fake = FakeDriveClient.from_tree(_source_tree())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/source-opp/fork",
             data={"new_slug": "source-opp", "fork_at_phase": "design-review"},
@@ -213,7 +213,7 @@ def test_fork_rejects_unknown_source(authed_client, db):
     fake = FakeDriveClient.from_tree({"ACE": {}})
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/no-such/fork",
             data={"new_slug": "fork-x", "fork_at_phase": "design-review"},
@@ -227,7 +227,7 @@ def test_fork_rejects_invalid_slug_format(authed_client, db):
     fake = FakeDriveClient.from_tree(_source_tree())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/source-opp/fork",
             data={"new_slug": "Bad Slug", "fork_at_phase": "design-review"},

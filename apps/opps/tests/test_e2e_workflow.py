@@ -33,9 +33,17 @@ def fake_drive():
 
 @contextmanager
 def _patch_drive(fake):
-    with patch("apps.opps.access.get_drive_client", lambda *a, **kw: fake), patch(
-        "apps.opps.views._resolve_ace_root_folder_id",
-        lambda *a, **kw: fake.folder_id("ACE"),
+    """Patch the canonical Drive entry points on apps.opps.access.
+
+    All views (in views.py and the views_*.py split modules) call
+    ``access.get_drive_client`` and ``access.resolve_ace_root_folder_id``
+    via attribute lookup at call time, so a single patch on access
+    intercepts every caller.
+    """
+    folder_id = fake.folder_id("ACE")
+    with (
+        patch("apps.opps.access.get_drive_client", lambda *a, **kw: fake),
+        patch("apps.opps.access.resolve_ace_root_folder_id", lambda *a, **kw: folder_id),
     ):
         yield
 

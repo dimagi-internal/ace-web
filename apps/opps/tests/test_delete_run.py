@@ -48,7 +48,7 @@ def test_delete_run_trashes_only_named_run(authed_client):
     fake = FakeDriveClient.from_tree(_opp_with_two_runs())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.delete(
             "/api/opps/stale-opp/runs/20260501-1200",
         )
@@ -65,7 +65,7 @@ def test_delete_run_404_on_unknown_run(authed_client):
     fake = FakeDriveClient.from_tree(_opp_with_two_runs())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.delete(
             "/api/opps/stale-opp/runs/no-such-run",
         )
@@ -77,7 +77,7 @@ def test_delete_run_404_on_unknown_opp(authed_client):
     fake = FakeDriveClient.from_tree(_opp_with_two_runs())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.delete(
             "/api/opps/no-such-opp/runs/20260501-1200",
         )
@@ -90,6 +90,6 @@ def test_delete_run_unauthenticated_returns_401(db):
     ace_id = fake.folder_id("ACE")
     c = Client()
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = c.delete("/api/opps/stale-opp/runs/20260501-1200")
     assert resp.status_code == 401

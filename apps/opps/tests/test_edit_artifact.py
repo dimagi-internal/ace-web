@@ -26,7 +26,7 @@ def test_write_artifact(authed_client):
     ace_id = fake.folder_id("ACE")
 
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         # Discover the actual run/skill/artifact via the workbench endpoint.
         resp = authed_client.get("/api/opps/malaria-pilot")
         assert resp.status_code == 200
@@ -54,7 +54,7 @@ def test_unknown_opp_returns_404(authed_client):
     fake = FakeDriveClient.from_tree({"ACE": {}})
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.put(
             "/api/opps/no-such-opp/runs/run-001/steps/idea-to-pdd"
             "/artifacts/pdd.md/write",
@@ -68,7 +68,7 @@ def test_missing_content_returns_400(authed_client):
     fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.get("/api/opps/malaria-pilot")
         snap = resp.json()["data"]
         run_id = snap["current_run"]["run_id"]
@@ -90,7 +90,7 @@ def test_unknown_step_returns_404(authed_client):
     fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.get("/api/opps/malaria-pilot")
         run_id = resp.json()["data"]["current_run"]["run_id"]
         resp = authed_client.put(
@@ -107,7 +107,7 @@ def test_unknown_artifact_returns_404(authed_client):
     fake = FakeDriveClient.from_tree(malaria_pilot_structured_tree())
     ace_id = fake.folder_id("ACE")
     with patch("apps.opps.access.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.get("/api/opps/malaria-pilot")
         snap = resp.json()["data"]
         run_id = snap["current_run"]["run_id"]
