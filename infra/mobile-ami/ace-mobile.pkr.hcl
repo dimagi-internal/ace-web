@@ -147,24 +147,15 @@ build {
     destination = "/tmp/ace-emulator-launch"
   }
 
-  # 50 — boot AVD, register demo user via the +7426 demo-bypass flow,
-  # save snapshot. Test creds injected as env vars.
-  #
-  # `{{ .Vars }}` in the execute_command is required for environment_vars
-  # to actually reach the script — without it, packer doesn't inject the
-  # `KEY='value'` assignments at all, and `sudo -E` has nothing to
-  # preserve. Other scripts in this build don't reference env vars so
-  # they ran fine without it.
+  # 50 — write /opt/ace/states.yaml manifest. No emulator boot, no
+  # snapshot bake — the runtime cold-boots + registers per state on
+  # every instance launch. See docs/specs/2026-05-10-phase5-cloud-mobile-integration-design.md
+  # for the design rationale.
   provisioner "shell" {
     script          = "scripts/50-bake-snapshot.sh"
     execute_command = "{{ .Vars }} sudo -E bash '{{ .Path }}'"
     environment_vars = [
       "COMMCARE_VERSIONS=${join(",", var.commcare_versions)}",
-      "TEST_PHONE_LOCAL=${var.test_phone_local}",
-      "TEST_COUNTRY_CODE=${var.test_country_code}",
-      "TEST_PIN=${var.test_pin}",
-      "TEST_BACKUP_CODE=${var.test_backup_code}",
-      "TEST_NAME=${var.test_name}",
     ]
   }
 
