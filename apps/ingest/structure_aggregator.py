@@ -7,9 +7,10 @@ Pure: no Django, no IO. Tested against fixture-derived event lists.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Iterable
+from typing import Any
 
 from apps.ingest._common import (
     add_usage,

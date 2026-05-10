@@ -22,14 +22,14 @@ from apps.common.envelope import error_response, success_response
 from apps.workspaces.permissions import user_workspaces
 
 from .models import Message, Session, SessionParticipant
-
-log = logging.getLogger(__name__)
 from .serializers import (
     MessageSerializer,
     ParticipantSerializer,
     SessionDetailSerializer,
     SessionSerializer,
 )
+
+log = logging.getLogger(__name__)
 
 
 def _annotate_first_user_plaintext(qs):

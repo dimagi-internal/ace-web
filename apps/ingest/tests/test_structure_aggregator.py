@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -108,10 +106,12 @@ def test_nested_skill_dispatch_marked_is_subagent(tmp_path):
         '{"type":"tool_use","id":"tInner","name":"Agent","input":{"subagent_type":"inner-agent"}}]}}\n'
         # Inner result first (LIFO close)
         '{"type":"user","uuid":"u3","timestamp":"2026-05-10T14:00:02Z",'
-        '"message":{"content":[{"type":"tool_result","tool_use_id":"tInner","content":"inner done"}]}}\n'
+        '"message":{"content":[{"type":"tool_result",'
+        '"tool_use_id":"tInner","content":"inner done"}]}}\n'
         # Outer result
         '{"type":"user","uuid":"u4","timestamp":"2026-05-10T14:00:03Z",'
-        '"message":{"content":[{"type":"tool_result","tool_use_id":"tOuter","content":"outer done"}]}}\n'
+        '"message":{"content":[{"type":"tool_result",'
+        '"tool_use_id":"tOuter","content":"outer done"}]}}\n'
     )
     _session, events = parse_session_file(jsonl)
     tree = aggregate(events)
