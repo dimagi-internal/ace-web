@@ -147,11 +147,20 @@ if [[ "$boot_complete" != "1" ]]; then
 fi
 echo "[ace-emulator-launch] boot complete"
 
-# ── Pre-install setup, install, register ─────────────────────────────
-mark_active
-echo "[ace-emulator-launch] disabling GMS so face-capture takes ManualMode..."
-"$ADB" shell pm disable-user --user 0 com.google.android.gms || true
+# ── Install + register ───────────────────────────────────────────────
+# IMPORTANT: keep GMS ENABLED while running connect-register-to-otp.yaml.
+# Disabling GMS causes Android to surface a heads-up notification
+# ("Enable Google Play services - Messages won't work…") that overlays
+# the CommCare burger-menu icon at point (73,209), and the recipe's
+# coordinate-based tap hits the notification instead of the menu.
+# Discovered 2026-05-10 — see the launcher's runner.log + the
+# diag/ S3 prefix for the failure screenshot.
+#
+# We DO need GMS disabled for connect-register-from-otp.yaml's
+# face-capture step (so MicroImageActivity falls back to ManualMode).
+# So: disable BETWEEN the two recipes.
 
+mark_active
 echo "[ace-emulator-launch] installing CommCare $COMMCARE_VERSION..."
 "$ADB" install -r "$APK_PATH"
 
@@ -161,13 +170,16 @@ echo "[ace-emulator-launch] granting CAMERA to org.commcare.dalvik..."
 mark_active
 cd "$RECIPE_DIR"
 
-echo "[ace-emulator-launch] running connect-register-to-otp.yaml..."
+echo "[ace-emulator-launch] running connect-register-to-otp.yaml (GMS enabled)..."
 "$MAESTRO" test connect-register-to-otp.yaml \
   --env "COUNTRY_CODE=$COUNTRY_CODE" \
   --env "PHONE_LOCAL=$PHONE_LOCAL" \
   --env "PHONE=$PHONE"
 
 mark_active
+echo "[ace-emulator-launch] disabling GMS for face-capture ManualMode..."
+"$ADB" shell pm disable-user --user 0 com.google.android.gms || true
+
 echo "[ace-emulator-launch] running connect-register-from-otp.yaml..."
 "$MAESTRO" test connect-register-from-otp.yaml \
   --env "NAME=$NAME" \

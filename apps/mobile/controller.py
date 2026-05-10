@@ -461,6 +461,50 @@ class EmulatorController:
         )
         return result.stdout
 
+    def capture_screenshot(self) -> Artifact:
+        """Take a screenshot of the running AVD and return a presigned URL.
+
+        Useful for "what's on screen right now" debug probes from
+        skills, the API, or `/tmp/get-screenshot`. The PNG is uploaded
+        to S3 with a timestamped key under ``screenshots/adhoc/``;
+        S3's 7-day lifecycle cleans it up.
+        """
+        self._assert_running()
+        run_id = uuid.uuid4().hex[:12]
+        ts = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
+        local_path = f"/tmp/screen-{run_id}.png"
+        s3_key = f"screenshots/adhoc/{ts}-{run_id}.png"
+        commands = [
+            "set -eu",
+            f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+            f"sudo -u ubuntu {_ADB} shell screencap -p /sdcard/now.png",
+            f"sudo -u ubuntu {_ADB} pull /sdcard/now.png {shlex.quote(local_path)} >/dev/null",
+            f"aws s3 cp {shlex.quote(local_path)} "
+            f"s3://{self.s3_bucket}/{shlex.quote(s3_key)} --quiet",
+            f"rm -f {shlex.quote(local_path)}",
+        ]
+        ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=commands,
+            timeout_seconds=_SSM_OP_TIMEOUT_SEC,
+        )
+        try:
+            url = self.s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.s3_bucket, "Key": s3_key},
+                ExpiresIn=_PRESIGN_TTL_SEC,
+            )
+        except ClientError as e:
+            raise MobileError(
+                f"s3.generate_presigned_url failed for {s3_key}: {e}"
+            ) from e
+        return Artifact(
+            name=f"{ts}-{run_id}.png",
+            presigned_url=url,
+            content_type="image/png",
+        )
+
     # ── Internals ────────────────────────────────────────────────
 
     def _describe_instance(self) -> dict[str, Any]:
