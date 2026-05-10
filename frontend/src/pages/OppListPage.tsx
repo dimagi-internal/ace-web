@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ArrowDownUp, ChevronDown, ChevronRight, GitCompareArrows, Plus, Trash2, X } from "lucide-react";
 
 import { listOpps } from "../api/opps";
@@ -54,6 +54,7 @@ const VIEW_TABS: ViewTab[] = [
 
 export default function OppListPage() {
   const { workspaceSlug = "" } = useParams<{ workspaceSlug?: string }>();
+  const navigate = useNavigate();
   const { view, setView } = useViewMode("hierarchy");
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [filter, setFilter] = useState("");
@@ -253,188 +254,196 @@ export default function OppListPage() {
           {visibleOpps.map((opp) => {
             const isExpanded = expandedOpps.has(opp.slug);
             return (
-            <div key={opp.slug} className="overflow-hidden rounded border border-border bg-card transition hover:border-primary">
-            <Link
-              to={`/opps/${opp.slug}`}
-              className="group block p-4"
+            <div
+              key={opp.slug}
+              className="group overflow-hidden rounded border border-border bg-card transition hover:border-primary"
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                // Card-level click navigates. Buttons / links inside
+                // call stopPropagation so they don't trigger this. We
+                // use a div + onClick (not <Link> wrapping) because
+                // nesting <button> inside <a> is invalid HTML and
+                // browsers handle the click ambiguously — clicking a
+                // chevron could fire either the button or the anchor
+                // first, which manifested as "I clicked leep's chevron
+                // but turmeric expanded."
+                if ((e.target as HTMLElement).closest("button, a")) return;
+                navigate(`/opps/${opp.slug}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  if ((e.target as HTMLElement).closest("button, a")) return;
+                  e.preventDefault();
+                  navigate(`/opps/${opp.slug}`);
+                }
+              }}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex min-w-0 items-start gap-1.5">
-                  <button
-                    type="button"
-                    aria-label={isExpanded ? `Collapse ${opp.slug} chats` : `Show chats linked to ${opp.slug}`}
-                    title={isExpanded ? "Hide linked chats" : "Show linked chats"}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleExpanded(opp.slug);
-                    }}
-                    className="-ml-1 mt-0.5 shrink-0 rounded p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                  </button>
-                  <div className="min-w-0">
-                    <h2
-                      className="truncate font-semibold text-foreground group-hover:text-primary"
-                      title={
-                        opp.created_at
-                          ? `${opp.display_name || opp.slug}\nCreated ${new Date(opp.created_at).toLocaleString()}${opp.created_by ? " by " + opp.created_by : ""}`
-                          : opp.display_name || opp.slug
-                      }
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-start gap-1.5">
+                    <button
+                      type="button"
+                      aria-label={isExpanded ? `Collapse ${opp.slug} chats` : `Show chats linked to ${opp.slug}`}
+                      title={isExpanded ? "Hide linked chats" : "Show linked chats"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleExpanded(opp.slug);
+                      }}
+                      className="-ml-1 mt-0.5 shrink-0 rounded p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
                     >
-                      {opp.display_name || opp.slug}
-                    </h2>
-                    <div className="truncate text-xs text-muted-foreground" title={opp.slug}>
-                      {opp.slug}
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </button>
+                    <div className="min-w-0">
+                      <h2
+                        className="truncate font-semibold text-foreground group-hover:text-primary"
+                        title={
+                          opp.created_at
+                            ? `${opp.display_name || opp.slug}\nCreated ${new Date(opp.created_at).toLocaleString()}${opp.created_by ? " by " + opp.created_by : ""}`
+                            : opp.display_name || opp.slug
+                        }
+                      >
+                        {opp.display_name || opp.slug}
+                      </h2>
+                      <div className="truncate text-xs text-muted-foreground" title={opp.slug}>
+                        {opp.slug}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {/* Trash sits LEFT of compare so the destructive action
-                      isn't the easy mis-click target at the row's right
-                      edge. Icons are always visible at low opacity (so
-                      they're keyboard- and touch-discoverable) and brighten
-                      on hover. */}
-                  <button
-                    type="button"
-                    aria-label={`Delete ${opp.slug}`}
-                    title="Delete this opp"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setDeleteTarget(opp);
-                    }}
-                    className="rounded p-1 text-muted-foreground/40 transition hover:bg-destructive/10 hover:text-destructive group-hover:text-muted-foreground/80"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Compare ${opp.slug} with another opp`}
-                    title={
-                      allOpps.length < 2
-                        ? "Compare requires at least 2 opps"
-                        : "Compare with another opp"
-                    }
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setCompareSource(opp);
-                    }}
-                    disabled={allOpps.length < 2}
-                    className="rounded p-1 text-muted-foreground/40 transition hover:bg-primary/10 hover:text-primary group-hover:text-muted-foreground/80 disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    <GitCompareArrows className="h-4 w-4" />
-                  </button>
-                  <StatusBadge status={opp.status} />
-                </div>
-              </div>
-
-              {(opp.eval_score_pct ?? opp.eval_score) !== null &&
-               (opp.eval_score_pct ?? opp.eval_score) !== undefined && (
-                <div className="mt-2">
-                  <ScoreChip
-                    scorePct={opp.eval_score_pct ?? toPct(opp.eval_score)}
-                    passed={opp.eval_passed}
-                  />
-                </div>
-              )}
-
-              {/* Last observed position in the cycle, per state.yaml.
-                  The plugin writes current_phase / current_step on every
-                  step transition; we don't claim "running" because we
-                  have no live process signal — the plugin may have
-                  exited hours ago. */}
-              {opp.current_step ? (
-                <div className="mt-3 text-sm">
-                  <span className="text-muted-foreground">Last step:</span>{" "}
-                  <span
-                    className="text-foreground"
-                    title={opp.current_step}
-                  >
-                    {opp.current_step_display || opp.current_step}
-                  </span>
-                  {opp.current_phase && (
-                    <span
-                      className="ml-2 text-xs text-muted-foreground"
-                      title={opp.current_phase}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {/* Trash sits LEFT of compare so the destructive action
+                        isn't the easy mis-click target at the row's right
+                        edge. */}
+                    <button
+                      type="button"
+                      aria-label={`Delete ${opp.slug}`}
+                      title="Delete this opp"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(opp);
+                      }}
+                      className="rounded p-1 text-muted-foreground/40 transition hover:bg-destructive/10 hover:text-destructive group-hover:text-muted-foreground/80"
                     >
-                      ({opp.current_phase_display || opp.current_phase})
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Compare ${opp.slug} with another opp`}
+                      title={
+                        allOpps.length < 2
+                          ? "Compare requires at least 2 opps"
+                          : "Compare with another opp"
+                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCompareSource(opp);
+                      }}
+                      disabled={allOpps.length < 2}
+                      className="rounded p-1 text-muted-foreground/40 transition hover:bg-primary/10 hover:text-primary group-hover:text-muted-foreground/80 disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      <GitCompareArrows className="h-4 w-4" />
+                    </button>
+                    <StatusBadge status={opp.status} />
+                  </div>
+                </div>
+
+                {(opp.eval_score_pct ?? opp.eval_score) !== null &&
+                 (opp.eval_score_pct ?? opp.eval_score) !== undefined && (
+                  <div className="mt-2">
+                    <ScoreChip
+                      scorePct={opp.eval_score_pct ?? toPct(opp.eval_score)}
+                      passed={opp.eval_passed}
+                    />
+                  </div>
+                )}
+
+                {opp.current_step ? (
+                  <div className="mt-3 text-sm">
+                    <span className="text-muted-foreground">Last step:</span>{" "}
+                    <span
+                      className="text-foreground"
+                      title={opp.current_step}
+                    >
+                      {opp.current_step_display || opp.current_step}
                     </span>
+                    {opp.current_phase && (
+                      <span
+                        className="ml-2 text-xs text-muted-foreground"
+                        title={opp.current_phase}
+                      >
+                        ({opp.current_phase_display || opp.current_phase})
+                      </span>
+                    )}
+                  </div>
+                ) : opp.status === "no-state" ? (
+                  <div className="mt-3 text-sm text-muted-foreground">
+                    Cycle hasn't started yet.
+                  </div>
+                ) : null}
+
+                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                  <span title="Each run is one execution of /ace:run for this opp.">
+                    {opp.run_count === 1 ? "1 run" : `${opp.run_count} runs`}
+                  </span>
+                  {opp.last_activity_at && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span title={new Date(opp.last_activity_at).toLocaleString()}>
+                        last {relativeTime(opp.last_activity_at)}
+                      </span>
+                    </>
                   )}
                 </div>
-              ) : opp.status === "no-state" ? (
-                <div className="mt-3 text-sm text-muted-foreground">
-                  Cycle hasn't started yet.
-                </div>
-              ) : null}
 
-              <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                <span
-                  title="Each run is one execution of /ace:run for this opp. Reruns iterate on the same opp by overwriting state.yaml."
-                >
-                  {opp.run_count === 1 ? "1 run" : `${opp.run_count} runs`}
-                </span>
-                {opp.last_activity_at && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span title={new Date(opp.last_activity_at).toLocaleString()}>
-                      last {relativeTime(opp.last_activity_at)}
-                    </span>
-                  </>
+                {workspaceSlug && (
+                  <OppCardRunsStrip
+                    oppSlug={opp.slug}
+                    workspaceSlug={workspaceSlug}
+                  />
+                )}
+
+                {(opp.tags.length > 0 || opp.labels.length > 0) && (
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {opp.tags.map((tag) => (
+                      <button
+                        key={`tag-${tag}`}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleTagFilter(tag);
+                        }}
+                        className={
+                          "rounded-full px-2 py-0.5 text-xs transition " +
+                          (tagFilter.includes(tag)
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-primary/10 text-primary hover:bg-primary/20")
+                        }
+                        title={tagFilter.includes(tag) ? "Remove tag filter" : "Filter by this tag"}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                    {opp.labels.map((label) => (
+                      <span
+                        key={`label-${label}`}
+                        className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
-
-              {workspaceSlug && (
-                <OppCardRunsStrip
-                  oppSlug={opp.slug}
-                  workspaceSlug={workspaceSlug}
-                />
+              {isExpanded && workspaceSlug && (
+                <>
+                  <OppRunsList oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
+                  <OppChatChildren oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
+                </>
               )}
-
-              {(opp.tags.length > 0 || opp.labels.length > 0) && (
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {opp.tags.map((tag) => (
-                    <button
-                      key={`tag-${tag}`}
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        toggleTagFilter(tag);
-                      }}
-                      className={
-                        "rounded-full px-2 py-0.5 text-xs transition " +
-                        (tagFilter.includes(tag)
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-primary/10 text-primary hover:bg-primary/20")
-                      }
-                      title={tagFilter.includes(tag) ? "Remove tag filter" : "Filter by this tag"}
-                    >
-                      {tag}
-                    </button>
-                  ))}
-                  {opp.labels.map((label) => (
-                    <span
-                      key={`label-${label}`}
-                      className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                    >
-                      {label}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </Link>
-            {isExpanded && workspaceSlug && (
-              <>
-                <OppRunsList oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
-                <OppChatChildren oppSlug={opp.slug} workspaceSlug={workspaceSlug} />
-              </>
-            )}
             </div>
             );
           })}
