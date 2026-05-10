@@ -22,6 +22,7 @@ import json
 
 from rest_framework.response import Response
 
+from apps.common.access import gate_membership
 from apps.common.envelope import error_response
 from apps.opps.drive_cache import CachedDriveClient
 from apps.opps.drive_client import get_drive_client
@@ -29,7 +30,7 @@ from apps.opps.models import OppWorkspace
 from apps.opps.serializers import serialize_opp_snapshot
 from apps.service_accounts.exceptions import ServiceAccountNotFound
 from apps.workspaces.models import Workspace
-from apps.workspaces.permissions import is_member, user_workspaces
+from apps.workspaces.permissions import user_workspaces
 
 
 def resolve_ace_root_folder_id(workspace) -> str | None:
@@ -70,11 +71,9 @@ def resolve_workspace(request):
                 error_response("workspace not found", code="not-found"),
                 status=404,
             )
-        if not is_member(request.user, ws):
-            return None, Response(
-                error_response("workspace not found", code="not-found"),
-                status=404,
-            )
+        err = gate_membership(request.user, ws, hidden_existence=True)
+        if err is not None:
+            return None, err
         return ws, None
 
     # Legacy fallback: bare /api/opps/ paths default to the user's most-recent

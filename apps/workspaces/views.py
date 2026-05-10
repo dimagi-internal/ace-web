@@ -28,13 +28,14 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from apps.common.access import gate_membership
 from apps.common.envelope import error_response, success_response
 from apps.workspaces.models import (
     Workspace,
     WorkspaceInvite,
     WorkspaceMembership,
 )
-from apps.workspaces.permissions import is_member, role_for, user_workspaces
+from apps.workspaces.permissions import role_for, user_workspaces
 from apps.workspaces.serializers import (
     WorkspaceDetailSerializer,
     WorkspaceMemberSerializer,
@@ -59,10 +60,9 @@ def _require_member(request, slug):
         return None, Response(
             error_response("workspace not found", code="not-found"), status=404
         )
-    if not is_member(request.user, ws):
-        return None, Response(
-            error_response("workspace not found", code="not-found"), status=404
-        )
+    err = gate_membership(request.user, ws, hidden_existence=True)
+    if err is not None:
+        return None, err
     return ws, None
 
 
