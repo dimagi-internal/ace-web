@@ -115,7 +115,7 @@ remote `VERSION` and will tell you when the snapshot has drifted.
 - **Frontend**: React 19, Vite 5, TypeScript 5, Tailwind 3.4, react-router-dom 6. Served via nginx sidecar container in prod, built with bun.
 - **DB**: PostgreSQL (shared AWS RDS `labs-*` instance, database `ace_web`; local Postgres via `docker compose`).
 - **Infra**: AWS ECS Fargate (cluster `labs-jj-cluster`, us-east-1) behind the shared connect-labs ALB (path prefix `/ace/*`). GitHub Actions with OIDC for deploys. AWS Secrets Manager for secrets. ECR for images.
-- **Tests**: pytest + pytest-django + pytest-asyncio, in-memory SQLite for unit tests.
+- **Tests**: pytest + pytest-django + pytest-asyncio, in-memory SQLite for unit tests. Frontend tests run on vitest + @testing-library/react + jsdom (`bun run test` / `bun run test:watch`); shipped 2026-05-10 alongside the `sessionReducer` extraction.
 - **Pattern sources**: `../connect-labs/` (CommCare Connect OAuth pattern), `../canopy-web/` (CLI backend + PTY auth flow), `../connect-search/` (DriveClient ABC pattern for `apps/opps/`). The two-container ECS deploy pattern lives in this repo's own `Dockerfile` + `Dockerfile.frontend` + `frontend/nginx.prod.conf`.
 
 ## Project structure
@@ -139,18 +139,59 @@ ace-web/
 ├── docs/
 │   ├── deploy.md
 │   ├── architecture/    # cli-credentials.md
-│   ├── learnings/       # 16 load-bearing gotchas (see below)
+│   ├── learnings/       # 17 load-bearing gotchas (see below)
 │   ├── plans/           # Phase plans + scoped initiatives (18 files)
 │   └── specs/           # Design specs (15 files)
 ├── Dockerfile, Dockerfile.frontend, docker-compose.yml, docker-entrypoint.sh
 ├── frontend/nginx.prod.conf   # nginx sidecar config for the prod container
+├── frontend/vitest.config.ts  # vitest harness (jsdom + RTL)
 ├── deploy/aws/                # task-definition.json + one-time-setup.sh
 ├── .github/workflows/         # build-backend, build-frontend, deploy-ace-web-labs, ci
 └── pyproject.toml, VERSION
 ```
 
-207 source Python files under `apps/` (excluding migrations and `__pycache__`),
-91 `test_*.py` files, 127 frontend TS/TSX files, as of 2026-05-06.
+241 source Python files under `apps/` (excluding migrations and `__pycache__`),
+103 `test_*.py` files, 144 frontend TS/TSX files (3 `*.test.ts`), as of 2026-05-10.
+
+**Notable internal modules to know about** (introduced in PR #286, 2026-05-10):
+- `apps/opps/access.py` — public workspace + Drive helpers (`resolve_workspace`,
+  `require_drive`, `resolve_ace_root_folder_id`, `overlay_workspace_display_name`,
+  `snapshot_etag`). All views call `access.X(...)` via attribute lookup so a
+  single `mock.patch("apps.opps.access.X")` intercepts every caller. See
+  `docs/learnings/opps-access-module.md`.
+- `apps/opps/views_{read,write,session,summary}.py` — views.py was 1,583 lines;
+  split into focused modules. `views.py` keeps the read views and the GET/POST
+  + GET/PATCH/DELETE dispatchers (`opp_collection`, `workbench`); other files
+  are imported into views.py for back-compat with code that imports from
+  `apps.opps.views`.
+- `apps/opps/snapshot_cache.cold_load_client` + `etag_or_304` — collapsed the
+  two near-identical cache-flow blocks in `_opp_list_impl` and `workbench`.
+- `apps/common/access.gate_membership(user, workspace, hidden_existence=)` —
+  shared 404-vs-403 decision used by `apps/opps/access`,
+  `apps/workspaces/views`, and `apps/ingest/views`. Lookup logic stays per-app
+  (each surface uses a different key — slug, drive_root_folder_id, header).
+- `apps/common/cli_backend.py` defers `Session`/`Message` ORM imports via
+  `TYPE_CHECKING` + function-local imports; breaks the static
+  `common ↔ sessions` cycle (turn_driver imports back from common).
+
+**Frontend modules introduced 2026-05-10**:
+- `frontend/src/hooks/sessionReducer.ts` — pure 14-branch WS reducer extracted
+  from `useSessionSocket` (which dropped 447 → 210 lines). Side-effect events
+  (`session.title_updated`, `session.error`) stay impure in the hook. Covered
+  by 17 vitest cases.
+- `frontend/src/hooks/useApi.ts` — generic fetch+state hook with cancellation;
+  replaces the open-coded `useState + useEffect + cancelled` triple in
+  `useOppCostRollup`, `useMultiRunSummary`, `useOppRuns`, and elsewhere.
+- `frontend/src/lib/wsUrl.ts` — single WS URL builder shared by
+  `useSessionSocket` and `useOppSocket`.
+- `frontend/src/lib/sortOpps.ts` + `frontend/src/components/opps/OppCard.tsx` —
+  `OppListPage` 558 → 240 lines after extracting the inline card.
+- `frontend/src/components/opps/ConfirmDialog.tsx` — destructive-confirm
+  primitive (Dialog shell + submitting state + toast translation). Used by
+  `DeleteOppDialog` and `DeleteRunDialog`.
+- `frontend/src/components/views/phase-skill/sections.tsx` — Producer / QA /
+  Eval drawer sections moved out of `PhaseSkillRow.tsx` (which dropped
+  487 → 218 lines).
 
 The sessions data model has 7 core tables: `users`, `sessions`,
 `session_participants`, `messages`, `drafts`, `share_tokens`, `ingest_uploads`.
@@ -207,6 +248,7 @@ Cost & timing breakdown:
 
 Opp Workbench cache (`apps/opps/`):
 - [opp-cache-architecture](docs/learnings/opp-cache-architecture.md) — Drive Changes API per-request poll + long-lived `OppSnapshot` / `OppCard` cache + ETag round-trip. `workspace.pk` is a slug not an int; cold-load needs `bypass=True` to defeat the inner per-call TTL; ETag is `sha256` of the serialized payload (cold and warm paths must agree); 410 on `pageToken` clears the workspace cache; `_KEY_VERSION` must bump when `OppSnapshot` shape changes.
+- [opps-access-module](docs/learnings/opps-access-module.md) — patch on `apps.opps.access.X`, not `apps.opps.views.X`. Views call `access.X(...)` via attribute lookup so a single patch intercepts every caller across the `views_{read,write,session,summary}.py` split. Patching `apps.opps.views._resolve_*` only works for views still in views.py; views moved out won't see the patch and silently use the real function.
 
 Frontend:
 - [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs that show wall-clock-driven transitions need explicit setTimeout-driven re-renders.
