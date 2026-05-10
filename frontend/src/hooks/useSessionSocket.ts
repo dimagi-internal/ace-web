@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { SessionState, WsEvent } from "../api/types";
+import { wsUrl } from "../lib/wsUrl";
 import { sessionReducer } from "./sessionReducer";
 import { notifySessionsUpdated } from "./useRecentSessions";
 
@@ -17,9 +18,7 @@ const INITIAL_STATE: SessionState = {
 };
 
 function wsUrlFor(slug: string): string {
-  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}${base}/ws/sessions/${slug}/`;
+  return wsUrl(`ws/sessions/${slug}/`);
 }
 
 export interface UseSessionSocketResult {
