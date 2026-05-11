@@ -26,9 +26,9 @@
         {"name": "ACE_ALLOWED_EMAIL_DOMAINS", "value": "dimagi.com,dimagi-ai.com"},
         {"name": "AWS_REGION", "value": "us-east-1"},
         {"name": "ACE_MOBILE_AWS_REGION", "value": "us-east-1"},
-        {"name": "ACE_MOBILE_INSTANCE_ID", "value": "i-0e4fc79fa1c55902a"},
+        {"name": "ACE_MOBILE_INSTANCE_ID", "value": "i-07e488c07b6d19fcb"},
         {"name": "ACE_MOBILE_S3_BUCKET", "value": "ace-mobile-artifacts-labs"},
-        {"name": "ACE_MOBILE_AMI_VERSION", "value": "2026-05-10-3"}
+        {"name": "ACE_MOBILE_AMI_VERSION", "value": "2026-05-11-0449"}
       ],
       "secrets": [
         {"name": "DJANGO_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-django-secret-key-2XSt10"},
