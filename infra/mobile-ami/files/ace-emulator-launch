@@ -180,6 +180,19 @@ mark_active
 echo "[ace-emulator-launch] disabling GMS for face-capture ManualMode..."
 "$ADB" shell pm disable-user --user 0 com.google.android.gms || true
 
+# Wait for pm to settle. Disabling a system package briefly knocks the
+# package manager service out of step — Maestro's next invocation tries
+# to install its driver APK and hits "cmd: Failure calling service
+# package: Broken pipe (32)" if pm is mid-flap. Probe `pm list` until it
+# responds; 15-tries × 1 s ceiling — in practice it recovers in 2-4 s.
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  if "$ADB" shell pm list packages org.commcare.dalvik 2>/dev/null | grep -q .; then
+    echo "[ace-emulator-launch] pm responsive after $i tries"
+    break
+  fi
+  sleep 1
+done
+
 echo "[ace-emulator-launch] running connect-register-2-app-lock.yaml..."
 "$MAESTRO" test connect-register-2-app-lock.yaml \
   --env "NAME=$NAME" \
