@@ -340,9 +340,15 @@ class EmulatorController:
                 f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
                 f"echo {shlex.quote(recipe_b64)} | base64 -d > {shlex.quote(recipe_path)}",
                 f"chown ubuntu:ubuntu {shlex.quote(recipe_path)}",
-                f"sudo -u ubuntu /usr/local/bin/maestro test "
+                # `cd run_dir` so Maestro's `takeScreenshot: "name"` (no
+                # absolute path) lands inside run_dir alongside the
+                # --debug-output artifacts, instead of relative to SSM's
+                # cwd of `/` (which fails with Permission denied). Wrap
+                # in `(...)` so the cwd change doesn't leak to the next
+                # SSM step (the `aws s3 cp` below uses the absolute path).
+                f"(cd {shlex.quote(run_dir)} && sudo -u ubuntu /usr/local/bin/maestro test "
                 f"--debug-output {shlex.quote(run_dir)} "
-                f"{env_flags} {shlex.quote(recipe_path)}",
+                f"{env_flags} {shlex.quote(recipe_path)})",
                 f"aws s3 cp {shlex.quote(run_dir)}/ "
                 f"s3://{self.s3_bucket}/{s3_prefix}/ --recursive",
                 f"rm -f {shlex.quote(recipe_path)}",
