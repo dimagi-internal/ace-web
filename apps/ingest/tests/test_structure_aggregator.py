@@ -155,3 +155,44 @@ def test_open_frame_at_end_of_stream_is_incomplete(tmp_path):
     )
     skill = next(c for c in phase["children"] if c["kind"] == "skill")
     assert skill["status"] == "incomplete"
+
+
+def test_tool_content_preview_propagates_from_tool_result(tmp_path):
+    """The content_preview captured on tool_result events lands on the tool node."""
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+
+    jsonl = tmp_path / "preview.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tA","name":"Bash","input":{"command":"ls"}}]}}\n'
+        '{"type":"user","uuid":"u2","timestamp":"2026-05-10T14:00:01Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tA",'
+        '"content":"file1.txt\\nfile2.txt"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+    orch = next(p for p in tree["phases"] if p["name"] == "_orchestration")
+    tool = next(c for c in orch["children"] if c["kind"] == "tool")
+    assert tool["content_preview"] == "file1.txt\nfile2.txt"
+
+
+def test_tool_without_result_has_null_content_preview(tmp_path):
+    """A tool_use without a matching tool_result leaves content_preview=None."""
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+
+    jsonl = tmp_path / "no_result.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tA","name":"Bash","input":{"command":"ls"}}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+    orch = next(p for p in tree["phases"] if p["name"] == "_orchestration")
+    tool = next(c for c in orch["children"] if c["kind"] == "tool")
+    assert tool["content_preview"] is None

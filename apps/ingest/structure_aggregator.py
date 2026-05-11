@@ -265,6 +265,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 "started_at": event.timestamp.isoformat() if event.timestamp else None,
                 "wall_time_seconds": 0,
                 "status": "ok",
+                "content_preview": None,  # filled in by the matching tool_result
             }
             if open_frames:
                 _attach(tool_node, frame=open_frames[-1], phase_name=None, turn_uuid=event.uuid)
@@ -324,6 +325,8 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     tool_node["wall_time_seconds"] = wall_time_seconds(start, event.timestamp)
                 if event.is_error:
                     tool_node["status"] = "error"
+                if event.content_preview is not None:
+                    tool_node["content_preview"] = event.content_preview
             continue
 
     # Close any open frames as incomplete
