@@ -9,7 +9,7 @@
 #
 # Selectors verified against CommCare 2.62.0 on 2026-04-29 via uiautomator
 # dump on ACE_Pixel_API_34_PS (google_apis_playstore arm64). The composite
-# caller continues with connect-register-from-otp.yaml from the next screen.
+# caller continues with connect-register-2-app-lock.yaml from the next screen.
 #
 # Post-Continue: ACE uses the +7426 demo-user bypass prefix exclusively, so
 # the flow lands on the demo snackbar "I see you're a demo user, so we'll
@@ -103,6 +103,6 @@ appId: org.commcare.dalvik
     id: "org.commcare.dalvik:id/personalid_phone_continue_button"
 
 # Wait for the demo-user snackbar (+7426 bypass). Caller
-# (connect-register-from-otp.yaml) handles the rest of the demo flow.
+# (connect-register-2-app-lock.yaml) handles the rest of the demo flow.
 - waitForAnimationToEnd:
     timeout: 8000

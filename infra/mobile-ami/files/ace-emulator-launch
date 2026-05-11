@@ -19,7 +19,7 @@
 #   3. Cold-boot the AVD (-no-snapshot -wipe-data) — fully fresh /data
 #   4. Wait for sys.boot_completed
 #   5. adb install the matching APK
-#   6. Run connect-register-to-otp.yaml then connect-register-from-otp.yaml
+#   6. Run connect-register-1-phone-entry.yaml then connect-register-2-app-lock.yaml
 #   7. Touch /run/ace-mobile/ready so callers can poll for "ready"
 #   8. exec emulator (so systemd considers the unit alive while the
 #      emulator runs — ace-web's stop/idle layers handle shutdown)
@@ -148,7 +148,7 @@ fi
 echo "[ace-emulator-launch] boot complete"
 
 # ── Install + register ───────────────────────────────────────────────
-# IMPORTANT: keep GMS ENABLED while running connect-register-to-otp.yaml.
+# IMPORTANT: keep GMS ENABLED while running connect-register-1-phone-entry.yaml.
 # Disabling GMS causes Android to surface a heads-up notification
 # ("Enable Google Play services - Messages won't work…") that overlays
 # the CommCare burger-menu icon at point (73,209), and the recipe's
@@ -156,7 +156,7 @@ echo "[ace-emulator-launch] boot complete"
 # Discovered 2026-05-10 — see the launcher's runner.log + the
 # diag/ S3 prefix for the failure screenshot.
 #
-# We DO need GMS disabled for connect-register-from-otp.yaml's
+# We DO need GMS disabled for connect-register-2-app-lock.yaml's
 # face-capture step (so MicroImageActivity falls back to ManualMode).
 # So: disable BETWEEN the two recipes.
 
@@ -170,8 +170,8 @@ echo "[ace-emulator-launch] granting CAMERA to org.commcare.dalvik..."
 mark_active
 cd "$RECIPE_DIR"
 
-echo "[ace-emulator-launch] running connect-register-to-otp.yaml (GMS enabled)..."
-"$MAESTRO" test connect-register-to-otp.yaml \
+echo "[ace-emulator-launch] running connect-register-1-phone-entry.yaml (GMS enabled)..."
+"$MAESTRO" test connect-register-1-phone-entry.yaml \
   --env "COUNTRY_CODE=$COUNTRY_CODE" \
   --env "PHONE_LOCAL=$PHONE_LOCAL" \
   --env "PHONE=$PHONE"
@@ -180,8 +180,8 @@ mark_active
 echo "[ace-emulator-launch] disabling GMS for face-capture ManualMode..."
 "$ADB" shell pm disable-user --user 0 com.google.android.gms || true
 
-echo "[ace-emulator-launch] running connect-register-from-otp.yaml..."
-"$MAESTRO" test connect-register-from-otp.yaml \
+echo "[ace-emulator-launch] running connect-register-2-app-lock.yaml..."
+"$MAESTRO" test connect-register-2-app-lock.yaml \
   --env "NAME=$NAME" \
   --env "BACKUP_CODE=$BACKUP_CODE" \
   --env "PIN=$PIN"

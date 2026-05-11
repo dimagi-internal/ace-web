@@ -114,7 +114,7 @@ build {
   # Stage Maestro recipes, systemd units, idle script.
   # `source = "files/recipes"` (no trailing slash) + `destination =
   # "/tmp"` uploads the directory itself, so the recipes land at
-  # /tmp/recipes/{connect-register-to-otp,connect-register-from-otp}.yaml.
+  # /tmp/recipes/{connect-register-1-phone-entry,connect-register-2-app-lock}.yaml.
   # The trailing-slash variant requires the destination dir to already
   # exist on the remote — which it doesn't on a fresh bake instance.
   provisioner "file" {

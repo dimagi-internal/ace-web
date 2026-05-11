@@ -114,13 +114,13 @@ AMI name as `ami_version`) into `infra/mobile/terraform.tfvars`.
 
 ## Maestro recipes (vendored)
 
-`files/recipes/connect-register-to-otp.yaml` and
-`files/recipes/connect-register-from-otp.yaml` are **verbatim copies**
+`files/recipes/connect-register-1-phone-entry.yaml` and
+`files/recipes/connect-register-2-app-lock.yaml` are **verbatim copies**
 from the canonical source in the ACE plugin:
 
 ```
-../ace/mcp/mobile/recipes/static/connect-register-to-otp.yaml
-../ace/mcp/mobile/recipes/static/connect-register-from-otp.yaml
+../ace/mcp/mobile/recipes/static/connect-register-1-phone-entry.yaml
+../ace/mcp/mobile/recipes/static/connect-register-2-app-lock.yaml
 ```
 
 Don't edit the local copies. When CommCare's UI changes (typical pattern:
@@ -129,8 +129,8 @@ the ACE plugin first, verify on a laptop AVD via
 `mobile_register_test_user`, then refresh the copies here:
 
 ```bash
-cp ../../../ace/mcp/mobile/recipes/static/connect-register-to-otp.yaml   files/recipes/
-cp ../../../ace/mcp/mobile/recipes/static/connect-register-from-otp.yaml files/recipes/
+cp ../../../ace/mcp/mobile/recipes/static/connect-register-1-phone-entry.yaml   files/recipes/
+cp ../../../ace/mcp/mobile/recipes/static/connect-register-2-app-lock.yaml files/recipes/
 ```
 
 (Adjust the relative path to wherever the `ace` repo lives in your worktree.)
