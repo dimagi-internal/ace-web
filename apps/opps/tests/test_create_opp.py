@@ -20,8 +20,8 @@ def authed_client(db):
 def test_create_opp_happy_path(authed_client, db):
     fake = FakeDriveClient.from_tree({"ACE": {}})
     ace_id = fake.folder_id("ACE")
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/",
             data={
@@ -59,8 +59,8 @@ def test_create_opp_writes_pdd_when_provided(authed_client, db):
     fake = FakeDriveClient.from_tree({"ACE": {}})
     ace_id = fake.folder_id("ACE")
     pdd_body = "# Malaria PDD\n\nBed-net distribution intervention design."
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/",
             data={
@@ -82,8 +82,8 @@ def test_create_opp_skips_pdd_when_empty(authed_client, db):
     """No pdd param → no pdd.md written (default behavior)."""
     fake = FakeDriveClient.from_tree({"ACE": {}})
     ace_id = fake.folder_id("ACE")
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/",
             data={
@@ -102,8 +102,8 @@ def test_create_opp_skips_pdd_when_empty(authed_client, db):
 def test_create_opp_slug_collision(authed_client, db):
     fake = FakeDriveClient.from_tree({"ACE": {"malaria-pilot": {}}})
     ace_id = fake.folder_id("ACE")
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/",
             data={
@@ -128,8 +128,8 @@ def test_create_opp_writes_flat_layout_no_runs_subfolder(authed_client, db):
     """
     fake = FakeDriveClient.from_tree({"ACE": {}})
     ace_id = fake.folder_id("ACE")
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id", return_value=ace_id):
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value=ace_id):
         resp = authed_client.post(
             "/api/opps/",
             data={

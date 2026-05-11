@@ -27,8 +27,8 @@ def authed_client(db):
 
 
 def _with_fake(authed_client, fake, url):
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         return authed_client.get(url)
 
@@ -82,8 +82,8 @@ def test_step_detail_logs_when_artifact_body_read_fails(authed_client, caplog):
             raise RuntimeError("simulated drive 503")
         return real_get_content(file_id, mime_type)
 
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")), \
          patch.object(fake, "get_content", side_effect=_selective_503), \
          caplog.at_level(logging.WARNING, logger="apps.opps.views"):

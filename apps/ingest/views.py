@@ -1,4 +1,5 @@
 """Upload endpoint for JSONL session files."""
+import gzip
 import logging
 import re
 import tempfile
@@ -70,8 +71,8 @@ def upload(request: Request) -> Response:
     ace_root_folder_id = (request.data.get("ace_root_folder_id") or "").strip()
     workspace = None
     if ace_root_folder_id:
+        from apps.common.access import gate_membership
         from apps.workspaces.models import Workspace
-        from apps.workspaces.permissions import is_member
         try:
             workspace = Workspace.objects.get(drive_root_folder_id=ace_root_folder_id)
         except Workspace.DoesNotExist:
@@ -82,18 +83,16 @@ def upload(request: Request) -> Response:
                 ),
                 status=404,
             )
-        if not is_member(request.user, workspace):
-            return Response(
-                error_response(
-                    message="you are not a member of this workspace",
-                    code="not-a-member",
-                ),
-                status=403,
-            )
+        # The caller already supplied the drive_root_folder_id, so existence
+        # is not a secret — surface 403 ("not a member") rather than
+        # 404 ("not found") on membership failure.
+        err = gate_membership(request.user, workspace, hidden_existence=False)
+        if err is not None:
+            return err
 
+    raw_bytes_data = b"".join(file.chunks())
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
-        for chunk in file.chunks():
-            tmp.write(chunk)
+        tmp.write(raw_bytes_data)
         tmp_path = Path(tmp.name)
 
     try:
@@ -168,6 +167,7 @@ def upload(request: Request) -> Response:
         cli_session_id=parsed.cli_session_id or "",
         content_sha256=parsed.content_sha256 or "",
         workspace=workspace,
+        raw_jsonl_gz=gzip.compress(raw_bytes_data),
     )
 
     log.info(

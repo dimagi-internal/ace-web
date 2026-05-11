@@ -1,16 +1,12 @@
 import { useEffect, useRef } from "react";
 
+import { wsUrl } from "../lib/wsUrl";
+
 interface Options {
   slug: string;
   runId?: string;
   onOppUpdated?: () => void;
 }
-
-const WS_BASE = (() => {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-  return `${protocol}//${window.location.host}${base}`;
-})();
 
 export function useOppSocket({ slug, runId, onOppUpdated }: Options) {
   // Keep the latest handler in a ref so re-renders don't recreate the
@@ -21,7 +17,7 @@ export function useOppSocket({ slug, runId, onOppUpdated }: Options) {
   useEffect(() => {
     if (!slug) return;
     const suffix = runId ? `/runs/${encodeURIComponent(runId)}/` : "/";
-    const url = `${WS_BASE}/ws/opps/${encodeURIComponent(slug)}${suffix}`;
+    const url = wsUrl(`ws/opps/${encodeURIComponent(slug)}${suffix}`);
     let ws: WebSocket | null = null;
     let closedByCleanup = false;
     let reconnectTimer: number | null = null;

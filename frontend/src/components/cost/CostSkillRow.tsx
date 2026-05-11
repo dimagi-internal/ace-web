@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 
 import type { CostSkill } from "../../api/types";
 import { CostInvocationRow } from "./CostInvocationRow";
-import { formatDuration, formatTokens, formatUsd, totalTokens } from "./format";
+import { formatDuration, formatTokens, formatUsd, totalTokens } from "../../lib/format";
 
 interface Props {
   skill: CostSkill;

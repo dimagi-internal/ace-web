@@ -115,7 +115,7 @@ remote `VERSION` and will tell you when the snapshot has drifted.
 - **Frontend**: React 19, Vite 5, TypeScript 5, Tailwind 3.4, react-router-dom 6. Served via nginx sidecar container in prod, built with bun.
 - **DB**: PostgreSQL (shared AWS RDS `labs-*` instance, database `ace_web`; local Postgres via `docker compose`).
 - **Infra**: AWS ECS Fargate (cluster `labs-jj-cluster`, us-east-1) behind the shared connect-labs ALB (path prefix `/ace/*`). GitHub Actions with OIDC for deploys. AWS Secrets Manager for secrets. ECR for images.
-- **Tests**: pytest + pytest-django + pytest-asyncio, in-memory SQLite for unit tests.
+- **Tests**: pytest + pytest-django + pytest-asyncio, in-memory SQLite for unit tests. Frontend tests run on vitest + @testing-library/react + jsdom (`bun run test` / `bun run test:watch`); shipped 2026-05-10 alongside the `sessionReducer` extraction.
 - **Pattern sources**: `../connect-labs/` (CommCare Connect OAuth pattern), `../canopy-web/` (CLI backend + PTY auth flow), `../connect-search/` (DriveClient ABC pattern for `apps/opps/`). The two-container ECS deploy pattern lives in this repo's own `Dockerfile` + `Dockerfile.frontend` + `frontend/nginx.prod.conf`.
 
 ## Project structure
@@ -139,18 +139,59 @@ ace-web/
 ├── docs/
 │   ├── deploy.md
 │   ├── architecture/    # cli-credentials.md
-│   ├── learnings/       # 16 load-bearing gotchas (see below)
+│   ├── learnings/       # 17 load-bearing gotchas (see below)
 │   ├── plans/           # Phase plans + scoped initiatives (18 files)
 │   └── specs/           # Design specs (15 files)
 ├── Dockerfile, Dockerfile.frontend, docker-compose.yml, docker-entrypoint.sh
 ├── frontend/nginx.prod.conf   # nginx sidecar config for the prod container
+├── frontend/vitest.config.ts  # vitest harness (jsdom + RTL)
 ├── deploy/aws/                # task-definition.json + one-time-setup.sh
 ├── .github/workflows/         # build-backend, build-frontend, deploy-ace-web-labs, ci
 └── pyproject.toml, VERSION
 ```
 
-207 source Python files under `apps/` (excluding migrations and `__pycache__`),
-91 `test_*.py` files, 127 frontend TS/TSX files, as of 2026-05-06.
+241 source Python files under `apps/` (excluding migrations and `__pycache__`),
+103 `test_*.py` files, 144 frontend TS/TSX files (3 `*.test.ts`), as of 2026-05-10.
+
+**Notable internal modules to know about** (introduced in PR #286, 2026-05-10):
+- `apps/opps/access.py` — public workspace + Drive helpers (`resolve_workspace`,
+  `require_drive`, `resolve_ace_root_folder_id`, `overlay_workspace_display_name`,
+  `snapshot_etag`). All views call `access.X(...)` via attribute lookup so a
+  single `mock.patch("apps.opps.access.X")` intercepts every caller. See
+  `docs/learnings/opps-access-module.md`.
+- `apps/opps/views_{read,write,session,summary}.py` — views.py was 1,583 lines;
+  split into focused modules. `views.py` keeps the read views and the GET/POST
+  + GET/PATCH/DELETE dispatchers (`opp_collection`, `workbench`); other files
+  are imported into views.py for back-compat with code that imports from
+  `apps.opps.views`.
+- `apps/opps/snapshot_cache.cold_load_client` + `etag_or_304` — collapsed the
+  two near-identical cache-flow blocks in `_opp_list_impl` and `workbench`.
+- `apps/common/access.gate_membership(user, workspace, hidden_existence=)` —
+  shared 404-vs-403 decision used by `apps/opps/access`,
+  `apps/workspaces/views`, and `apps/ingest/views`. Lookup logic stays per-app
+  (each surface uses a different key — slug, drive_root_folder_id, header).
+- `apps/common/cli_backend.py` defers `Session`/`Message` ORM imports via
+  `TYPE_CHECKING` + function-local imports; breaks the static
+  `common ↔ sessions` cycle (turn_driver imports back from common).
+
+**Frontend modules introduced 2026-05-10**:
+- `frontend/src/hooks/sessionReducer.ts` — pure 14-branch WS reducer extracted
+  from `useSessionSocket` (which dropped 447 → 210 lines). Side-effect events
+  (`session.title_updated`, `session.error`) stay impure in the hook. Covered
+  by 17 vitest cases.
+- `frontend/src/hooks/useApi.ts` — generic fetch+state hook with cancellation;
+  replaces the open-coded `useState + useEffect + cancelled` triple in
+  `useOppCostRollup`, `useMultiRunSummary`, `useOppRuns`, and elsewhere.
+- `frontend/src/lib/wsUrl.ts` — single WS URL builder shared by
+  `useSessionSocket` and `useOppSocket`.
+- `frontend/src/lib/sortOpps.ts` + `frontend/src/components/opps/OppCard.tsx` —
+  `OppListPage` 558 → 240 lines after extracting the inline card.
+- `frontend/src/components/opps/ConfirmDialog.tsx` — destructive-confirm
+  primitive (Dialog shell + submitting state + toast translation). Used by
+  `DeleteOppDialog` and `DeleteRunDialog`.
+- `frontend/src/components/views/phase-skill/sections.tsx` — Producer / QA /
+  Eval drawer sections moved out of `PhaseSkillRow.tsx` (which dropped
+  487 → 218 lines).
 
 The sessions data model has 7 core tables: `users`, `sessions`,
 `session_participants`, `messages`, `drafts`, `share_tokens`, `ingest_uploads`.
@@ -177,7 +218,8 @@ through to Google Drive.
   detail and `docs/learnings/channels-websocket-auth.md` for the handshake
   auth pattern. Stream-resume hazards documented in
   `docs/learnings/stream-resume-vercel-open-agents.md`.
-- **Per-session and per-opp cost & timing breakdown**: ace-web aggregates wall time and token costs from uploaded JSONL transcripts at ingest time, persists to `Session.cost_breakdown` (JSONField), and surfaces them as a Cost & Timing tab on session detail and a rollup chip on the Opp Workbench. Phase / skill labels reuse `apps/system/reader.py`'s plugin-derived registry. Aggregator logic in `apps/ingest/cost_aggregator.py`; pricing table in `apps/ingest/pricing.py` (refresh ~twice/year). Sidechain attribution gotcha: `docs/learnings/sidechain-attribution.md`.
+- **Per-session and per-opp cost & timing breakdown**: ace-web aggregates wall time and token costs from uploaded JSONL transcripts at ingest time, persists to `Session.cost_breakdown` (JSONField), and surfaces them as a rollup chip on the Opp Workbench (the per-session Cost & Timing tab was retired in favor of the Structure view; see next bullet). Phase / skill labels reuse `apps/system/reader.py`'s plugin-derived registry. Aggregator logic in `apps/ingest/cost_aggregator.py`; pricing table in `apps/ingest/pricing.py` (refresh ~twice/year). Sidechain attribution gotcha: `docs/learnings/sidechain-attribution.md`.
+- **Per-session Structure view** (`apps/sessions/views.py::session_structure` at `GET /api/sessions/<slug>/structure`): on-demand hierarchical session tree (phase → skill → tool, with subagent recursion + parallel-group clusters). Computed fresh per request from `IngestUpload.raw_jsonl_gz` (gzipped raw bytes persisted at ingest time); never persisted as a JSONField. The Structure tab in `frontend/src/components/structure/` replaced the Cost & Timing tab on session detail — collapsed it shows the same phase rollups with wall-time and cost, expanded it drills to individual tool calls with status icons (✓/✗/◐) and parallel-execution brackets. Aggregator: `apps/ingest/structure_aggregator.py` (pure; shares helpers with cost aggregator via `apps/ingest/_common.py`). Pre-2026-05-10 uploads have `raw_jsonl_gz=NULL` and need re-upload via `/ace:upload-transcript` to enable the view; the endpoint returns `schema_version=0` with `unavailable_reason: "no-raw-jsonl"` (or `"parse-failed"` for corrupt blobs) so the UI renders a clear hint. Spec: `docs/plans/2026-05-10-session-structure-view.md`.
 - **Opp Workbench cache (Drive Changes API)**: opp data is read-through to Drive but cached long-lived. Each request polls `drive.changes.list` once (~150 ms) with a Redis-stored pageToken; only file_ids reported as changed invalidate matching `OppSnapshot` / `OppCard` cache entries. Backend serves cached snapshots with an ETag header derived from `sha256(json.dumps(payload, sort_keys=True))`; `If-None-Match` round-trips return 304. Frontend keeps a per-tab `Map<key, {data, etag}>` cache that survives route mounts. Net effect: load any opp once, navigations back are sub-second indefinitely until something in that opp's tree actually changes in Drive (~46-55× speedup on a real opp). Spec: `docs/specs/2026-05-08-opp-cache-redesign.md`. Implementation gotchas: `docs/learnings/opp-cache-architecture.md` (load-bearing details: `workspace.pk` is a slug, cold-load needs `bypass=True`, ETag must hash serialized body not file fingerprints).
 
 ## Learnings (read before touching the relevant area)
@@ -207,9 +249,11 @@ Cost & timing breakdown:
 
 Opp Workbench cache (`apps/opps/`):
 - [opp-cache-architecture](docs/learnings/opp-cache-architecture.md) — Drive Changes API per-request poll + long-lived `OppSnapshot` / `OppCard` cache + ETag round-trip. `workspace.pk` is a slug not an int; cold-load needs `bypass=True` to defeat the inner per-call TTL; ETag is `sha256` of the serialized payload (cold and warm paths must agree); 410 on `pageToken` clears the workspace cache; `_KEY_VERSION` must bump when `OppSnapshot` shape changes.
+- [opps-access-module](docs/learnings/opps-access-module.md) — patch on `apps.opps.access.X`, not `apps.opps.views.X`. Views call `access.X(...)` via attribute lookup so a single patch intercepts every caller across the `views_{read,write,session,summary}.py` split. Patching `apps.opps.views._resolve_*` only works for views still in views.py; views moved out won't see the patch and silently use the real function.
 
 Frontend:
 - [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs that show wall-clock-driven transitions need explicit setTimeout-driven re-renders.
+- [card-click-and-grid-stretch](docs/learnings/card-click-and-grid-stretch.md) — two layout traps that masquerade as React state bugs in card-grid UIs: (1) `<button>` nested inside `<a>` / `<Link>` routes clicks ambiguously across cards; (2) CSS Grid's default `align-items: stretch` makes collapsed neighbors visually appear to also expand. Both took a real-browser repro to catch.
 
 Deploy & infrastructure:
 - [alb-nginx-django-https](docs/learnings/alb-nginx-django-https.md) — `SECURE_PROXY_SSL_HEADER` + nginx `$real_scheme` map preserve the ALB's `https`, and every `proxy_pass` must rewrite `Host` so ALB health checks don't trip `ALLOWED_HOSTS`. Silent until triggered in real infra.

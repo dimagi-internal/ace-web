@@ -25,8 +25,8 @@ def authed_client(authed_user):
 
 
 def _with_fake_drive(authed_client, fake, url, **query):
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         return authed_client.get(url, query)
 
@@ -34,8 +34,8 @@ def _with_fake_drive(authed_client, fake, url, **query):
 def _with_fake_drive_headers(authed_client, fake, url, headers=None, **query):
     """Like _with_fake_drive but also passes extra HTTP headers (e.g. If-None-Match)."""
     headers = headers or {}
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         return authed_client.get(url, query, **headers)
 

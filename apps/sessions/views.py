@@ -7,6 +7,8 @@ lives in the consumer's _handle_chat_send → _activate_imported_session.
 """
 from __future__ import annotations
 
+import logging
+
 from django.db import IntegrityError
 from django.db.models import OuterRef, Q, Subquery
 from rest_framework import status
@@ -26,6 +28,8 @@ from .serializers import (
     SessionDetailSerializer,
     SessionSerializer,
 )
+
+log = logging.getLogger(__name__)
 
 
 def _annotate_first_user_plaintext(qs):
@@ -343,3 +347,65 @@ def session_cost_breakdown(request: Request, slug: str) -> Response:
             "phases": [],
         }))
     return Response(success_response(breakdown))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def session_structure(request: Request, slug: str) -> Response:
+    """Compute the hierarchical structure tree for a session, on demand.
+
+    Reads the most recent IngestUpload's raw_jsonl_gz, re-parses it through
+    apps.ingest.parser, and runs apps.ingest.structure_aggregator. Nothing
+    is persisted; the tree is computed fresh per request.
+
+    Returns schema_version=0 + null session + empty phases (matching the
+    cost-breakdown empty shape) when the session has no persisted raw JSONL
+    — the frontend dispatches on schema_version to render a re-upload hint.
+
+    ETag/304: a 200 response carries an ``ETag`` keyed by the aggregator
+    schema version and the upload's content_sha256. Subsequent requests with
+    matching ``If-None-Match`` return 304 without re-parsing — the blob is
+    immutable so the tree is byte-stable per (schema, blob).
+    """
+    import gzip
+
+    from apps.ingest.parser import parse_session_bytes
+    from apps.ingest.structure_aggregator import SCHEMA_VERSION, aggregate
+
+    session = _load_session_for_participant(slug, request.user)
+    if session is None:
+        return _not_found()
+
+    upload = session.ingest_records.order_by("-created_at").first()
+    if upload is None or not upload.raw_jsonl_gz:
+        return Response(success_response({
+            "schema_version": 0,
+            "session": None,
+            "phases": [],
+            "unavailable_reason": "no-raw-jsonl",
+        }))
+
+    # 304 fast path: ETag is stable per (schema_version, content_sha256)
+    # because the persisted blob is immutable. content_sha256 was computed
+    # at ingest time; we never write to raw_jsonl_gz after the row's first
+    # save, so the tree is bit-identical on repeated requests.
+    etag = f'"v{SCHEMA_VERSION}:{upload.content_sha256}"' if upload.content_sha256 else None
+    if etag and request.headers.get("If-None-Match") == etag:
+        return Response(status=304)
+
+    try:
+        _parsed, events = parse_session_bytes(gzip.decompress(bytes(upload.raw_jsonl_gz)))
+        tree = aggregate(events)
+    except Exception:
+        log.exception("structure aggregation failed for session %s", session.slug)
+        return Response(success_response({
+            "schema_version": 0,
+            "session": None,
+            "phases": [],
+            "unavailable_reason": "parse-failed",
+        }))
+
+    response = Response(success_response(tree))
+    if etag:
+        response["ETag"] = etag
+    return response

@@ -51,7 +51,11 @@ class CostEvent:
     tool_input: dict[str, Any] | None = None
 
     # tool_result fields
+    # content_preview: first 200 chars of the result body — for list-typed
+    # content, the first text block (no concatenation); None if empty.
     matched_tool_use_id: str | None = None
+    is_error: bool = False
+    content_preview: str | None = None
 
 
 def _parse_ts(value: Any) -> datetime | None:
@@ -134,6 +138,20 @@ def _extract_cost_events(lines: list[str]) -> list[CostEvent]:
                 if not isinstance(block, dict):
                     continue
                 if block.get("type") == "tool_result":
+                    content = block.get("content")
+                    if isinstance(content, list):
+                        # Multi-block result content (e.g. text + image refs).
+                        # Take the first text block as preview.
+                        preview_src = ""
+                        for sub in content:
+                            if isinstance(sub, dict) and sub.get("type") == "text":
+                                preview_src = sub.get("text", "")
+                                break
+                    elif isinstance(content, str):
+                        preview_src = content
+                    else:
+                        preview_src = ""
+                    preview = preview_src[:200] if preview_src else None
                     events.append(CostEvent(
                         kind="tool_result",
                         timestamp=ts,
@@ -141,6 +159,8 @@ def _extract_cost_events(lines: list[str]) -> list[CostEvent]:
                         parent_uuid=parent_uuid,
                         is_sidechain=is_sidechain,
                         matched_tool_use_id=block.get("tool_use_id"),
+                        is_error=bool(block.get("is_error", False)),
+                        content_preview=preview,
                     ))
             continue
 
@@ -149,7 +169,16 @@ def _extract_cost_events(lines: list[str]) -> list[CostEvent]:
 
 def parse_session_file(path: Path) -> tuple[ParsedSession, list[CostEvent]]:
     """Parse a .jsonl session file. Returns (ParsedSession, cost events)."""
-    raw = path.read_bytes()
+    return parse_session_bytes(path.read_bytes())
+
+
+def parse_session_bytes(raw: bytes) -> tuple[ParsedSession, list[CostEvent]]:
+    """Parse JSONL bytes directly. Same return shape as parse_session_file.
+
+    Used by the on-demand structure endpoint, which loads gzipped JSONL from
+    IngestUpload.raw_jsonl_gz and would otherwise have to write it to a temp
+    file just to read it back.
+    """
     lines = raw.decode("utf-8", errors="replace").splitlines()
 
     session = ParsedSession(

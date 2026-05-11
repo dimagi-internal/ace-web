@@ -180,6 +180,46 @@ def fingerprint(file_id_modtime_pairs: Iterable[tuple[str, str | None]]) -> str:
     return f"sha256:{h.hexdigest()}"
 
 
+# --- view helpers ---
+
+
+def cold_load_client(client):
+    """Return a CachedDriveClient with bypass=True wrapping the same inner
+    client.
+
+    On the cold-load path we must defeat the underlying Drive TTL cache:
+    a request that lands here arrived because either a snapshot cache
+    miss / explicit ?force=1 OR a Drive Changes API hit invalidated the
+    snapshot. In both cases we cannot serve content from a stale per-call
+    TTL entry that was written before the snapshot cache was invalidated.
+    """
+    # Local import to avoid a cycle: drive_cache imports nothing from
+    # snapshot_cache, but snapshot_cache being shared we keep its imports
+    # narrow.
+    from apps.opps.drive_cache import CachedDriveClient
+
+    inner = client._inner if isinstance(client, CachedDriveClient) else client
+    return CachedDriveClient(inner, bypass=True)
+
+
+def etag_or_304(request, etag, build_response):
+    """Honor If-None-Match: return a 304 if the request's ETag matches,
+    otherwise call ``build_response()`` and tag its response with the ETag.
+
+    Centralizes the ETag round-trip for the read paths that serve cached
+    OppSnapshot / OppCard / opp-list payloads. Both branches must agree
+    on the ETag value, so passing it in once eliminates a class of bugs
+    where the cold-load and cached-hit paths drifted.
+    """
+    from django.http import HttpResponse
+
+    if request.headers.get("If-None-Match") == etag:
+        return HttpResponse(status=304, headers={"ETag": etag})
+    resp = build_response()
+    resp["ETag"] = etag
+    return resp
+
+
 # --- internals ---
 
 

@@ -25,12 +25,12 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.common.envelope import success_response
-from apps.opps.sync import list_opp_events_lean
-from apps.opps.views import (
-    _require_drive,
-    _resolve_ace_root_folder_id,
-    _resolve_workspace,
+from apps.opps.access import (
+    require_drive,
+    resolve_ace_root_folder_id,
+    resolve_workspace,
 )
+from apps.opps.sync import list_opp_events_lean
 from apps.sessions.models import Session
 from apps.sessions.views import _scope_sessions_to_user
 
@@ -79,11 +79,11 @@ def activity_feed(request: Request) -> Response:
     # configured (e.g. dev sandboxes, the test harness without
     # service-account fixtures).
     if needs_drive:
-        ws, client, err = _require_drive(request)
+        ws, client, err = require_drive(request)
         if err is not None:
             return err
     else:
-        ws, err = _resolve_workspace(request)
+        ws, err = resolve_workspace(request)
         if err is not None:
             return err
         client = None
@@ -96,7 +96,7 @@ def activity_feed(request: Request) -> Response:
 
     # 2. Verdicts from Drive. Iterate the opp set in scope.
     if needs_drive:
-        ace_folder_id = _resolve_ace_root_folder_id(ws)
+        ace_folder_id = resolve_ace_root_folder_id(ws)
         if ace_folder_id is not None and client is not None:
             drive_events = _drive_events_cached(
                 ws.slug,

@@ -2,31 +2,20 @@
 import logging
 
 from django.conf import settings
-from django.db import models, transaction
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.common.envelope import error_response, success_response
-from apps.opps import drive_changes, snapshot_cache
-from apps.opps.actions import ActionError, ActionPayload, inject_action
-from apps.opps.drive_cache import CachedDriveClient
-from apps.opps.drive_client import get_drive_client
-from apps.opps.models import OppWorkspace
-from apps.opps.opp_creator import SLUG_RE, CreateOppError, create_opp
-from apps.opps.opp_forker import ForkOppError, fork_opp
-from apps.opps.seed import build_chat_seed
+from apps.opps import access, drive_changes, snapshot_cache
 from apps.opps.serializers import (
     normalize_score_pct,
     serialize_opp_snapshot,
     serialize_scorecard,
     serialize_step_snapshot,
 )
-from apps.opps.summary import build_summary_payload
 from apps.opps.sync import (
-    delete_opp_folder,
-    delete_run_folder,
     list_opp_runs,
     load_opp,
     load_opp_card,
@@ -34,8 +23,7 @@ from apps.opps.sync import (
     load_scorecard,
 )
 from apps.opps.touched_tracker import TouchedFileTracker
-from apps.service_accounts.exceptions import ServiceAccountNotFound
-from apps.sessions.models import Message, Session
+from apps.sessions.models import Session
 from apps.system.reader import (
     load_system_overview,
 )
@@ -45,8 +33,6 @@ from apps.system.reader import (
 from apps.system.reader import (
     skill_display_names as _skill_display_names,
 )
-from apps.workspaces.models import Workspace
-from apps.workspaces.permissions import is_member, user_workspaces
 
 log = logging.getLogger(__name__)
 
@@ -78,132 +64,6 @@ def health(request):
     return Response(success_response({"status": "ok", "module": "opps"}))
 
 
-def _resolve_ace_root_folder_id(workspace) -> str | None:
-    """Return the Drive folder id of the workspace's ACE root folder.
-
-    Each Workspace pins its own `drive_root_folder_id` (post-2026-04-27
-    multi-tenancy). Returns None when no workspace is provided —
-    callers treat that as "no workspace context" and return an empty
-    list / 404 as appropriate.
-    """
-    if workspace is None:
-        return None
-    return workspace.drive_root_folder_id or None
-
-
-def _resolve_workspace(request):
-    """Return (workspace, error_response). Reads workspace identity from
-    (in priority order): URL kwarg `workspace_slug`, request header
-    `X-ACE-Workspace`, or — as a backward-compat fallback for the
-    legacy `/api/opps/` paths — the user's first workspace.
-
-    Membership is enforced; non-members get a 404 (not 403) so workspace
-    existence isn't leaked.
-    """
-    if not request.user.is_authenticated:
-        return None, Response(
-            error_response("authentication required", code="auth-required"),
-            status=401,
-        )
-
-    slug = request.headers.get("X-ACE-Workspace") or None
-
-    if slug:
-        try:
-            ws = Workspace.objects.get(slug=slug)
-        except Workspace.DoesNotExist:
-            return None, Response(
-                error_response("workspace not found", code="not-found"),
-                status=404,
-            )
-        if not is_member(request.user, ws):
-            return None, Response(
-                error_response("workspace not found", code="not-found"),
-                status=404,
-            )
-        return ws, None
-
-    # Legacy fallback: bare /api/opps/ paths default to the user's most-recent
-    # workspace. Phase B retires this once the frontend always provides
-    # `workspace_slug` in the URL.
-    ws = user_workspaces(request.user).first()
-    if ws is None:
-        return None, Response(
-            error_response(
-                "no workspace — create or join one first",
-                code="no-workspace",
-            ),
-            status=403,
-        )
-    return ws, None
-
-
-def _require_drive(request):
-    """Return (workspace, drive_client, error_response). On error, the first
-    two are None.
-
-    The returned client is wrapped in :class:`CachedDriveClient` so repeated
-    list/content reads within the cache TTL hit Redis instead of Drive.
-    Pass ``?force=1`` on the request to bypass the cache for a hard refresh
-    (writes still populate the cache so subsequent reads get the fresh data).
-    """
-    ws, err = _resolve_workspace(request)
-    if err is not None:
-        return None, None, err
-    try:
-        inner = get_drive_client(workspace=ws)
-    except ServiceAccountNotFound as exc:
-        return ws, None, Response(
-            error_response(str(exc), code="drive-not-configured"),
-            status=500,
-        )
-    bypass = request.GET.get("force") == "1"
-    return ws, CachedDriveClient(inner, bypass=bypass), None
-
-
-def _overlay_workspace_display_name(manifest, slug: str, workspace=None) -> None:
-    """Layer OppWorkspace DB metadata (display_name + tags) onto the
-    Drive-derived manifest in place.
-
-    Since 2026-04-20, display_name lives only on the OppWorkspace DB row —
-    no longer in a Drive state.yaml (that ownership moved to the ACE plugin
-    per docs/plans/2026-04-20-drop-multi-run-simplify.md). Tags are also
-    DB-only (free-form grouping across sibling opps). Views that render
-    opp metadata layer both over the Drive snapshot at the boundary so the
-    sync module stays pure.
-
-    The `workspace` arg scopes the lookup to the active Workspace —
-    multiple Workspaces can have an opp with the same slug, so a global
-    .get(slug=...) is no longer well-defined.
-    """
-    try:
-        q = OppWorkspace.objects.only("display_name", "tags")
-        if workspace is not None:
-            q = q.filter(workspace=workspace)
-        opp_ws = q.get(slug=slug)
-    except OppWorkspace.DoesNotExist:
-        return
-    if opp_ws.display_name and opp_ws.display_name != slug:
-        manifest.display_name = opp_ws.display_name
-    manifest.tags = list(opp_ws.tags or [])
-
-
-def _snapshot_etag(snap, *, pairs=None) -> str:
-    """Compute the ETag for an OppSnapshot.
-
-    Always hashes the serialized JSON payload so the ETag is stable
-    across the cold-load and cached-hit paths. The ``pairs`` argument
-    is accepted for forward-compat with any caller that supplies it, but
-    is not used — json-body hashing is simpler and produces a
-    consistent ETag regardless of which Drive modified_time values the
-    client happened to see.
-    """
-    import hashlib
-    import json
-    body = json.dumps(serialize_opp_snapshot(snap), sort_keys=True, default=str)
-    return f"sha256:{hashlib.sha256(body.encode('utf-8')).hexdigest()}"
-
-
 def _opp_list_impl(request):
     """Plain function form of the opp-list handler. Called directly by
     opp_collection (GET) to avoid double-wrapping with @api_view.
@@ -212,11 +72,11 @@ def _opp_list_impl(request):
     contains ALL of the listed tags (intersection — matches the "narrow
     down to iterations of the same idea" UX).
     """
-    ws, client, err = _require_drive(request)
+    ws, client, err = access.require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    ace_folder_id = access.resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(success_response([]))
 
@@ -288,12 +148,7 @@ def _opp_list_impl(request):
 
         if card is None:
             try:
-                # Use a bypass=True client on the cold-load path to defeat
-                # the underlying Drive TTL cache: changed-file content
-                # mustn't be served from a stale per-call entry that was
-                # written before the snapshot cache was invalidated.
-                inner = client._inner if isinstance(client, CachedDriveClient) else client
-                cold_client = CachedDriveClient(inner, bypass=True)
+                cold_client = snapshot_cache.cold_load_client(client)
                 with TouchedFileTracker() as tracker:
                     # opp_children was listed above (outside the tracker) for
                     # the "is this an opp folder?" check; replay both the
@@ -305,7 +160,7 @@ def _opp_list_impl(request):
                     for f in opp_children:
                         tracker.record(f.id, f.modified_time)
                     card = load_opp_card(cold_client, opp_folder=child, opp_children=opp_children)
-                _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
+                access.overlay_workspace_display_name(card.opp, child.name, workspace=ws)
                 snapshot_cache.set_card(
                     workspace_id=ws.pk,
                     slug=child.name,
@@ -344,7 +199,7 @@ def _opp_list_impl(request):
                 })
                 continue
         else:
-            _overlay_workspace_display_name(card.opp, child.name, workspace=ws)
+            access.overlay_workspace_display_name(card.opp, child.name, workspace=ws)
 
         if required_tags and not required_tags.issubset(set(card.opp.tags)):
             continue
@@ -381,184 +236,22 @@ def _opp_list_impl(request):
     import json
     body = json.dumps(cards, sort_keys=True, default=str)
     list_etag = f"sha256:{hashlib.sha256(body.encode('utf-8')).hexdigest()}"
-    if request.headers.get("If-None-Match") == list_etag:
-        return HttpResponse(status=304, headers={"ETag": list_etag})
-    resp = Response(success_response(cards))
-    resp["ETag"] = list_etag
-    return resp
-
-
-def opp_create(request):
-    """POST /api/opps/ — create a new opp. Called via opp_collection;
-    not a standalone @api_view (the wrapping lives on opp_collection)."""
-    # Authentication check (cheap) before any JSON parsing or Drive I/O.
-    if not request.user.is_authenticated:
-        return Response(
-            error_response("authentication required", code="auth-required"),
-            status=401,
-        )
-    # Use DRF's pre-parsed request.data — calling json.loads(request.body)
-    # after DRF has already consumed the stream raises RawPostDataException
-    # on the ASGI path (observed on labs).
-    payload = request.data if isinstance(request.data, dict) else {}
-
-    # Fast-fail on slug format before hitting Drive.
-    slug = payload.get("slug", "")
-    if not SLUG_RE.match(slug):
-        return Response(
-            error_response(f"invalid slug {slug!r}", code="invalid-slug"),
-            status=400,
-        )
-
-    ws, client, err = _require_drive(request)
-    if err is not None:
-        return err
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
-    if ace_folder_id is None:
-        return Response(
-            error_response("ACE root folder not found", code="ace-root-not-found"),
-            status=404,
-        )
-
-    try:
-        result = create_opp(
-            drive=client,
-            ace_root_folder_id=ace_folder_id,
-            owner=request.user,
-            slug=slug,
-            display_name=payload.get("display_name", ""),
-            idea=payload.get("idea", ""),
-            mode=payload.get("mode", "review"),
-            pdd=payload.get("pdd", ""),
-            workspace=ws,
-        )
-    except CreateOppError as exc:
-        status = 409 if exc.code == "slug-taken" else 400
-        return Response(error_response(str(exc), code=exc.code), status=status)
-
-    return Response(
-        success_response({
-            "slug": result.slug,
-            "working_session_slug": result.working_session.slug,
-        }),
-        status=201,
+    return snapshot_cache.etag_or_304(
+        request, list_etag, lambda: Response(success_response(cards)),
     )
 
 
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def opp_fork(request, slug: str):
-    """POST /api/opps/<slug>/fork — fork this opp into a new one at the
-    given phase boundary.
-
-    Body: ``{new_slug: <str>, fork_at_phase: <phase-name>}``
-
-    Synchronous Drive-recursive copy; can take 30-60s on large opps.
-    Frontend should show a loading state. Returns the new slug on
-    success; the caller navigates to its workbench.
-    """
-    if not request.user.is_authenticated:
-        return Response(
-            error_response("authentication required", code="auth-required"),
-            status=401,
-        )
-    payload = request.data if isinstance(request.data, dict) else {}
-    new_slug = (payload.get("new_slug") or "").strip()
-    fork_at_phase = (payload.get("fork_at_phase") or "").strip()
-    if not new_slug:
-        return Response(
-            error_response("new_slug is required", code="invalid-slug"),
-            status=400,
-        )
-    if not fork_at_phase:
-        return Response(
-            error_response(
-                "fork_at_phase is required", code="invalid-phase",
-            ),
-            status=400,
-        )
-
-    ws, client, err = _require_drive(request)
-    if err is not None:
-        return err
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
-    if ace_folder_id is None:
-        return Response(
-            error_response("ACE root folder not found", code="ace-root-not-found"),
-            status=404,
-        )
-
-    try:
-        result = fork_opp(
-            drive=client,
-            ace_root_folder_id=ace_folder_id,
-            owner=request.user,
-            source_slug=slug,
-            new_slug=new_slug,
-            fork_at_phase=fork_at_phase,
-            workspace=ws,
-        )
-    except ForkOppError as exc:
-        status = (
-            409 if exc.code == "slug-taken"
-            else 404 if exc.code == "source-not-found"
-            else 400
-        )
-        return Response(error_response(str(exc), code=exc.code), status=status)
-
-    return Response(
-        success_response({
-            "slug": result.new_slug,
-            "working_session_slug": result.working_session.slug,
-        }),
-        status=201,
-    )
-
-
-@api_view(["DELETE"])
-@permission_classes([AllowAny])
-def delete_run(request, slug: str, run_id: str):
-    """DELETE /api/opps/<slug>/runs/<run_id> — trash a single run subfolder.
-
-    Drive trash is 30-day recoverable. The opp folder itself stays
-    intact; only the named run subfolder is moved to trash. Linked
-    chat sessions are NOT cascade-deleted (a chat seeded from a step
-    of this run is still useful as transcript history).
-
-    Returns 204 on success, 404 if the run doesn't exist.
-    """
-    if not request.user.is_authenticated:
-        return Response(
-            error_response("authentication required", code="auth-required"),
-            status=401,
-        )
-    ws, client, err = _require_drive(request)
-    if err is not None:
-        return err
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
-    if ace_folder_id is None:
-        return Response(
-            error_response("ACE root folder not found", code="ace-root-not-found"),
-            status=404,
-        )
-
-    try:
-        delete_run_folder(
-            client, ace_folder_id=ace_folder_id, opp_slug=slug, run_id=run_id,
-        )
-    except FileNotFoundError as exc:
-        return Response(
-            error_response(str(exc), code="run-not-found"),
-            status=404,
-        )
-
-    # Drop any cached snapshots/cards for this workspace — the
-    # run-folder trash isn't always reflected in the Drive Changes
-    # pageToken before the next list, and a stale snapshot would still
-    # surface the deleted run in the strip / runs list.
-    snapshot_cache.clear_workspace(ws.pk)
-
-    return Response(status=204)
+# ── Write endpoints ────────────────────────────────────────────────
+# Moved to apps/opps/views_write.py.
+from apps.opps.views_write import (  # noqa: E402,F401
+    delete_opp,
+    delete_run,
+    opp_action,
+    opp_artifact_write,
+    opp_create,
+    opp_fork,
+    patch_opp,
+)
 
 
 @api_view(["GET", "POST"])
@@ -570,85 +263,6 @@ def opp_collection(request):
     return _opp_list_impl(request)
 
 
-def delete_opp(request, slug: str):
-    """Handle DELETE. Called from workbench() when request.method == 'DELETE'.
-    Not decorated with @api_view — workbench() carries the decorator."""
-    ws, client, err = _require_drive(request)
-    if err is not None:
-        return err
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
-    if ace_folder_id is None:
-        return Response(
-            error_response("ACE root folder not found", code="ace-root-not-found"),
-            status=404,
-        )
-
-    try:
-        delete_opp_folder(client, ace_folder_id=ace_folder_id, slug=slug)
-    except FileNotFoundError:
-        return Response(
-            error_response(f"no opp named {slug!r}", code="opp-not-found"),
-            status=404,
-        )
-
-    with transaction.atomic():
-        # Cascade-delete linked Sessions. Match by opp_slug AND
-        # (workspace=ws OR workspace IS NULL) — the latter captures
-        # legacy sessions that pre-date the workspace FK and weren't
-        # backfilled because they were created without an opp tie.
-        Session.objects.filter(opp_slug=slug).filter(
-            models.Q(workspace=ws) | models.Q(workspace__isnull=True)
-        ).delete()
-        OppWorkspace.objects.filter(workspace=ws, slug=slug).delete()
-
-    return Response(status=204)
-
-
-def patch_opp(request, slug: str):
-    """PATCH /api/opps/<slug> — update mutable OppWorkspace fields.
-
-    Currently supports: `tags` (replaces the full list). Lazily
-    materializes an OppWorkspace row if the opp folder exists on Drive
-    but no DB row does — same shape as opp_working_session does.
-    """
-    if not request.user.is_authenticated:
-        return Response(
-            error_response("auth required", code="auth-required"), status=401
-        )
-    ws, err = _resolve_workspace(request)
-    if err is not None:
-        return err
-    body = request.data if isinstance(request.data, dict) else {}
-
-    # Validate tags: list of short strings, each cleaned up (strip + drop blanks).
-    raw_tags = body.get("tags")
-    if raw_tags is None or not isinstance(raw_tags, list):
-        return Response(
-            error_response("tags must be a list of strings", code="invalid-tags"),
-            status=400,
-        )
-    cleaned: list[str] = []
-    for t in raw_tags:
-        if not isinstance(t, str):
-            return Response(
-                error_response("tags must be a list of strings", code="invalid-tags"),
-                status=400,
-            )
-        stripped = t.strip()
-        if stripped and len(stripped) <= 64 and stripped not in cleaned:
-            cleaned.append(stripped)
-
-    workspace, _ = OppWorkspace.objects.get_or_create(
-        workspace=ws,
-        slug=slug,
-        defaults={"display_name": slug, "created_by": request.user},
-    )
-    workspace.tags = cleaned
-    workspace.save(update_fields=["tags", "updated_at"])
-
-    return Response(success_response({"slug": slug, "tags": cleaned}))
-
-
 @api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([AllowAny])  # Drive availability enforced via _require_drive
 def workbench(request, slug: str):
@@ -657,11 +271,11 @@ def workbench(request, slug: str):
     if request.method == "PATCH":
         return patch_opp(request, slug)
 
-    ws, client, err = _require_drive(request)
+    ws, client, err = access.require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    ace_folder_id = access.resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -679,21 +293,14 @@ def workbench(request, slug: str):
     if not force:
         cached = snapshot_cache.get(workspace_id=ws.pk, slug=slug, run_id=run_id)
         if cached is not None:
-            _overlay_workspace_display_name(cached.opp, slug, workspace=ws)
-            etag = _snapshot_etag(cached)
-            if request.headers.get("If-None-Match") == etag:
-                return HttpResponse(status=304, headers={"ETag": etag})
-            resp = Response(success_response(serialize_opp_snapshot(cached)))
-            resp["ETag"] = etag
-            return resp
+            access.overlay_workspace_display_name(cached.opp, slug, workspace=ws)
+            etag = access.snapshot_etag(cached)
+            return snapshot_cache.etag_or_304(
+                request, etag,
+                lambda: Response(success_response(serialize_opp_snapshot(cached))),
+            )
 
-    # Cold-load path: bypass the drive-level TTL cache so we always read
-    # fresh content after a cache miss or force=1. The CachedDriveClient
-    # wrapping was done in _require_drive with bypass keyed to ?force; here
-    # we need bypass=True unconditionally so changed-file content isn't
-    # served from a stale TTL entry. We reconstruct from the inner client.
-    inner = client._inner if isinstance(client, CachedDriveClient) else client
-    bypass_client = CachedDriveClient(inner, bypass=True)
+    bypass_client = snapshot_cache.cold_load_client(client)
 
     try:
         with TouchedFileTracker() as tracker:
@@ -703,12 +310,15 @@ def workbench(request, slug: str):
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
-    _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
+    access.overlay_workspace_display_name(snap.opp, slug, workspace=ws)
     snapshot_cache.set(
         workspace_id=ws.pk, slug=slug, run_id=run_id,
         snap=snap, file_ids=tracker.file_ids,
     )
-    etag = _snapshot_etag(snap)
+    # Cold-load always returns 200 with ETag, even if the request happened to
+    # carry a matching If-None-Match — ?force=1 callers (or genuine cache
+    # misses) want fresh content, not a 304.
+    etag = access.snapshot_etag(snap)
     resp = Response(success_response(serialize_opp_snapshot(snap)))
     resp["ETag"] = etag
     return resp
@@ -722,10 +332,10 @@ def runs_list(request, slug: str):
     Powers the frontend RunSelector dropdown. Returns an empty list (not 404)
     when the opp exists but has no ``runs/`` subfolder (legacy flat layout).
     """
-    ws, client, err = _require_drive(request)
+    ws, client, err = access.require_drive(request)
     if err is not None:
         return err
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    ace_folder_id = access.resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -802,10 +412,10 @@ def multi_run_summary(request, slug: str):
     """
     from django.core.cache import cache as _cache
 
-    ws, client, err = _require_drive(request)
+    ws, client, err = access.require_drive(request)
     if err is not None:
         return err
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    ace_folder_id = access.resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -935,11 +545,11 @@ def multi_run_summary(request, slug: str):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def step_detail(request, slug: str, run_id: str, skill: str):
-    ws, client, err = _require_drive(request)
+    ws, client, err = access.require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    ace_folder_id = access.resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -953,7 +563,7 @@ def step_detail(request, slug: str, run_id: str, skill: str):
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
-    _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
+    access.overlay_workspace_display_name(snap.opp, slug, workspace=ws)
 
     step_snap = next(
         (s for s in snap.current_run.steps if s.step.skill_name == skill), None
@@ -991,11 +601,11 @@ def step_detail(request, slug: str, run_id: str, skill: str):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def artifact_body(request, slug: str, run_id: str, skill: str, artifact_name: str):
-    ws, client, err = _require_drive(request)
+    ws, client, err = access.require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    ace_folder_id = access.resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -1009,7 +619,7 @@ def artifact_body(request, slug: str, run_id: str, skill: str, artifact_name: st
             error_response(f"no opp named {slug!r}", code="opp-not-found"),
             status=404,
         )
-    _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
+    access.overlay_workspace_display_name(snap.opp, slug, workspace=ws)
 
     step_snap = next(
         (s for s in snap.current_run.steps if s.step.skill_name == skill), None
@@ -1043,11 +653,11 @@ def scorecard(request, slug: str):
     Drive folder. Returns an all-empty payload (no 404) when opp-eval
     hasn't run yet — opp-eval is ad-hoc, not part of the default pipeline.
     """
-    ws, client, err = _require_drive(request)
+    ws, client, err = access.require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    ace_folder_id = access.resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -1083,11 +693,11 @@ def opp_compare(request, slug_a: str, slug_b: str):
             status=400,
         )
 
-    ws, client, err = _require_drive(request)
+    ws, client, err = access.require_drive(request)
     if err is not None:
         return err
 
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
+    ace_folder_id = access.resolve_ace_root_folder_id(ws)
     if ace_folder_id is None:
         return Response(
             error_response("ACE root folder not found", code="ace-root-not-found"),
@@ -1109,8 +719,8 @@ def opp_compare(request, slug_a: str, slug_b: str):
             status=404,
         )
 
-    _overlay_workspace_display_name(snap_a.opp, slug_a, workspace=ws)
-    _overlay_workspace_display_name(snap_b.opp, slug_b, workspace=ws)
+    access.overlay_workspace_display_name(snap_a.opp, slug_a, workspace=ws)
+    access.overlay_workspace_display_name(snap_b.opp, slug_b, workspace=ws)
 
     # Pull eval scores via the card helper (cheap follow-up listing per opp).
     # Tolerate failure: a missing/malformed eval shouldn't 500 the compare view.
@@ -1144,290 +754,15 @@ def opp_compare(request, slug_a: str, slug_b: str):
     }))
 
 
-def _skill_md_relative_path(skill: str) -> str:
-    """Return the path of a skill's SKILL.md relative to the ace plugin repo root.
+# ── Session-bridging endpoints ─────────────────────────────────────
+# Moved to apps/opps/views_session.py.
+from apps.opps.views_session import (  # noqa: E402,F401
+    discuss,
+    opp_working_session,
+    step_chats,
+)
 
-    The ACE plugin lays skills out as `skills/<skill-name>/SKILL.md`.
-    """
-    return f"skills/{skill}/SKILL.md"
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def discuss(request, slug: str, run_id: str, skill: str):
-    """Create a new ace-web chat Session linked to this opp/run/step."""
-    ws, client, err = _require_drive(request)
-    if err is not None:
-        return err
-
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
-    if ace_folder_id is None:
-        return Response(
-            error_response("ACE root folder not found", code="ace-root-not-found"),
-            status=404,
-        )
-
-    try:
-        snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
-    except FileNotFoundError:
-        return Response(
-            error_response(f"no opp named {slug!r}", code="opp-not-found"),
-            status=404,
-        )
-    _overlay_workspace_display_name(snap.opp, slug, workspace=ws)
-
-    workbench_url = request.build_absolute_uri(
-        f"/w/{ws.slug}/opps/{slug}/runs/{run_id}/steps/{skill}"
-    )
-
-    try:
-        seed_body = build_chat_seed(
-            snap,
-            skill=skill,
-            drive_client=client,
-            skill_md_path=_skill_md_relative_path(skill),
-            workbench_url=workbench_url,
-        )
-    except ValueError as exc:
-        return Response(
-            error_response(str(exc), code="step-not-found"), status=404
-        )
-
-    # Resolve the PDD drive file id for session.idd_ref (column name preserved
-    # for data-migration reasons; the content it now points at is pdd.md).
-    idd_drive_id = ""
-    for step_snap in snap.current_run.steps:
-        if step_snap.step.skill_name == "idea-to-pdd":
-            for artifact in step_snap.artifacts:
-                # Accept both during the IDD→PDD rename transition.
-                if artifact.name in ("pdd.md", "idd.md"):
-                    idd_drive_id = artifact.drive_file_id
-                    break
-    # Fall back to the top-level pdd.md at the opp root if the idea-to-pdd step
-    # didn't capture it as an artifact.
-    # (Top-level pdd.md lookup happens inside sync.load_opp but we didn't
-    # surface its file id. It would be a cheap enhancement to add that.)
-
-    with transaction.atomic():
-        session = Session.create_with_owner(
-            owner=request.user,
-            title=f"{skill}: {slug}",
-            backend_kind="cli",
-            status="active",
-            source="web",
-            opp_slug=slug,
-            opp_run_id=run_id,
-            opp_step_skill=skill,
-            idd_ref=idd_drive_id,
-            workspace=ws,
-        )
-        Message.objects.create(
-            session=session,
-            turn_index=0,
-            role="system",
-            sender_user=request.user,
-            content={"type": "system", "source": "opps-discuss"},
-            plaintext=seed_body,
-            status="complete",
-        )
-
-    return Response(
-        success_response({"session_slug": session.slug}),
-        status=201,
-    )
-
-
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def step_chats(request, slug: str, run_id: str, skill: str):
-    """List prior ace-web chat sessions linked to this opp/run/step.
-
-    Returns BOTH:
-      - Step-specific sessions (full match on opp_slug + run_id + skill) —
-        typically "Discuss in chat" seeds, with ``kind='step'``
-      - Opp-wide sessions (opp_slug match, but no step_skill on the Session) —
-        typically uploaded transcripts from ``/ace:run --ace-web-url`` and
-        the opp's working session, with ``kind='opp'``
-
-    Step-specific chats are listed first. Both buckets share the same
-    response shape (a flat list) so existing frontend rendering keeps
-    working — the ``kind`` field lets the UI render a small badge.
-    """
-    ws, client, err = _require_drive(request)
-    if err is not None:
-        return err
-
-    from apps.sessions.serializers import _truncate_preview
-    from apps.sessions.views import _annotate_first_user_plaintext
-
-    step_chats_qs = _annotate_first_user_plaintext(
-        Session.objects
-        .filter(opp_slug=slug, opp_run_id=run_id, opp_step_skill=skill)
-        .order_by("-updated_at")
-    )[:20]
-    opp_chats_qs = _annotate_first_user_plaintext(
-        Session.objects
-        .filter(opp_slug=slug)
-        .exclude(opp_step_skill=skill, opp_run_id=run_id)
-        .order_by("-updated_at")
-    )[:20]
-
-    skill_display_lookup = _skill_display_name_lookup()
-
-    def _row(c: Session, kind: str) -> dict:
-        return {
-            "slug": c.slug,
-            "title": c.title or "(untitled)",
-            "updated_at": c.updated_at.isoformat(),
-            "owner_email": c.owner.email,
-            "source": c.source,            # "web" | "upload"
-            "kind": kind,                  # "step" | "opp"
-            "step_skill": c.opp_step_skill or None,
-            # Resolved display name for the step (e.g. "Idea to PDD" from
-            # ``idea-to-pdd``). Falls back to the slug when not in the
-            # plugin registry. Null only when step_skill is null.
-            "step_skill_display": (
-                skill_display_lookup.get(c.opp_step_skill, c.opp_step_skill)
-                if c.opp_step_skill
-                else None
-            ),
-            "preview": _truncate_preview(getattr(c, "first_user_plaintext", "") or ""),
-        }
-
-    payload = [_row(c, "step") for c in step_chats_qs]
-    # Cap the combined list so a noisy opp doesn't make the panel unbounded.
-    remaining = max(0, 20 - len(payload))
-    payload += [_row(c, "opp") for c in opp_chats_qs[:remaining]]
-
-    return Response(success_response(payload))
-
-
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def opp_working_session(request, slug: str):
-    """Return (or create) the working session for an opp.
-
-    - If the OppWorkspace has a working_session and it is active, return its slug.
-    - Otherwise, create a new session linked to the opp, attach it, return slug.
-    - If the OppWorkspace doesn't exist (Drive-only opp created pre-migration),
-      create one lazily.
-    """
-    if not request.user.is_authenticated:
-        return Response(
-            error_response("auth required", code="auth-required"), status=401
-        )
-    ws, err = _resolve_workspace(request)
-    if err is not None:
-        return err
-
-    try:
-        workspace = OppWorkspace.objects.get(workspace=ws, slug=slug)
-    except OppWorkspace.DoesNotExist:
-        workspace = OppWorkspace.objects.create(
-            slug=slug, display_name=slug, created_by=request.user,
-            workspace=ws,
-        )
-
-    if workspace.working_session is None or workspace.working_session.status != "active":
-        session = Session.create_with_owner(
-            owner=request.user,
-            title=f"{workspace.display_name} — working session",
-            backend_kind="cli",
-            status="active",
-            source="web",
-            opp_slug=slug,
-            workspace=ws,
-        )
-        workspace.working_session = session
-        workspace.save(update_fields=["working_session", "updated_at"])
-
-    return Response(success_response({
-        "working_session_slug": workspace.working_session.slug,
-    }))
-
-
-@api_view(["PUT"])
-@permission_classes([AllowAny])
-def opp_artifact_write(request, slug: str, run_id: str, skill: str, artifact_name: str):
-    """PUT the body of an existing artifact back to Drive."""
-    ws, client, err = _require_drive(request)
-    if err is not None:
-        return err
-    ace_folder_id = _resolve_ace_root_folder_id(ws)
-    if ace_folder_id is None:
-        return Response(
-            error_response("ACE root folder not found", code="ace-root-not-found"),
-            status=404,
-        )
-
-    body = request.data if isinstance(request.data, dict) else {}
-    content = body.get("content")
-    if content is None:
-        return Response(
-            error_response("content required", code="missing-content"), status=400
-        )
-
-    try:
-        snap = load_opp(client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
-    except FileNotFoundError:
-        return Response(
-            error_response(f"no opp named {slug!r}", code="opp-not-found"), status=404
-        )
-    step_snap = next(
-        (s for s in snap.current_run.steps if s.step.skill_name == skill), None
-    )
-    if step_snap is None:
-        return Response(
-            error_response(f"no step {skill!r}", code="step-not-found"), status=404
-        )
-    artifact = next(
-        (a for a in step_snap.artifacts if a.name == artifact_name), None
-    )
-    if artifact is None:
-        return Response(
-            error_response(f"no artifact {artifact_name!r}", code="artifact-not-found"),
-            status=404,
-        )
-
-    client.update_file(
-        artifact.drive_file_id,
-        content=content,
-        mime_type=artifact.mime_type or "text/plain",
-    )
-    return Response(success_response({"ok": True}))
-
-
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def opp_action(request, slug: str, run_id: str, action: str):
-    if not request.user.is_authenticated:
-        return Response(error_response("auth required", code="auth-required"), status=401)
-    ws, err = _resolve_workspace(request)
-    if err is not None:
-        return err
-    try:
-        workspace = OppWorkspace.objects.get(workspace=ws, slug=slug)
-    except OppWorkspace.DoesNotExist:
-        return Response(error_response("opp not found", code="opp-not-found"), status=404)
-    session = workspace.working_session
-    if session is None or session.status != "active":
-        return Response(
-            error_response("no active working session", code="no-session"), status=409,
-        )
-    body = request.data if isinstance(request.data, dict) else {}
-    payload = ActionPayload(skill=body.get("skill", ""), reason=body.get("reason"))
-    try:
-        message = inject_action(
-            session=session, action=action, slug=slug, payload=payload,
-            user=request.user,
-        )
-    except ActionError as exc:
-        return Response(error_response(str(exc), code=exc.code), status=400)
-
-    return Response(success_response({
-        "message_id": message.id,
-        "turn_index": message.turn_index,
-    }))
+# opp_artifact_write and opp_action moved to views_write.py (re-exported above).
 
 
 @api_view(["GET"])
@@ -1441,7 +776,7 @@ def cost_rollup(request, slug: str) -> Response:
     nothing — the UI surfaces ``sessions_without_breakdown`` so the user
     can disclose under-counting.
     """
-    workspace, err = _resolve_workspace(request)
+    workspace, err = access.resolve_workspace(request)
     if err is not None:
         return err
 
@@ -1518,66 +853,5 @@ def cost_rollup(request, slug: str) -> Response:
 
 
 # ── Public per-run summary ──────────────────────────────────────────
-
-
-_SUMMARY_CACHE_TTL_SECONDS = 60
-
-
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def public_opp_summary(
-    request, workspace: str, slug: str, run_id: str,
-) -> Response:
-    """Public, unauthenticated per-run summary payload.
-
-    See ``docs/specs/2026-05-04-opp-summary-page-design.md``. Resolves
-    the workspace + opp + run from Drive, composes the JSON payload, and
-    returns it. 404s on any miss with the same envelope so the API
-    doesn't leak which segment was missing. Successful payloads are
-    cached for ~60 seconds; 404s are not cached.
-    """
-    from django.core.cache import cache as _cache
-
-    cache_key = f"opp-summary:v1:{workspace}:{slug}:{run_id}"
-    cached = _cache.get(cache_key)
-    if cached is not None:
-        return Response(success_response(cached))
-
-    try:
-        ws = Workspace.objects.get(slug=workspace)
-    except Workspace.DoesNotExist:
-        return Response(
-            error_response("not found", code="not-found"),
-            status=404,
-        )
-
-    if not ws.drive_root_folder_id:
-        return Response(
-            error_response("not found", code="not-found"),
-            status=404,
-        )
-
-    try:
-        client = CachedDriveClient(
-            get_drive_client(workspace=ws),
-            bypass=request.GET.get("force") == "1",
-        )
-    except ServiceAccountNotFound as exc:
-        # Drive misconfiguration is a server problem, not a 404 —
-        # surface it explicitly so it can be diagnosed.
-        return Response(
-            error_response(str(exc), code="drive-not-configured"),
-            status=500,
-        )
-
-    payload = build_summary_payload(
-        client, workspace=ws, opp_slug=slug, run_id=run_id,
-    )
-    if payload is None:
-        return Response(
-            error_response("not found", code="not-found"),
-            status=404,
-        )
-
-    _cache.set(cache_key, payload, timeout=_SUMMARY_CACHE_TTL_SECONDS)
-    return Response(success_response(payload))
+# Moved to apps/opps/views_summary.py.
+from apps.opps.views_summary import public_opp_summary  # noqa: E402,F401

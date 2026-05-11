@@ -80,30 +80,13 @@ def _clear_cache():
     cache.clear()
 
 
-def _patch_drive(fake_drive: FakeDriveClient):
-    """Make get_drive_client return our fake AND make the workspace's
-    drive_root_folder_id resolve to the fake's ACE folder id."""
-    return patch.multiple(
-        "apps.opps.views",
-        get_drive_client=lambda **kw: fake_drive,
-    ), patch(
-        "apps.opps.summary.build_summary_payload",
-        side_effect=lambda drive, *, workspace, opp_slug, run_id: (
-            __import__("apps.opps.summary", fromlist=["build_summary_payload"])
-            .build_summary_payload.__wrapped__(drive, workspace=workspace,
-                                              opp_slug=opp_slug, run_id=run_id)
-            if False else None
-        ),
-    )
-
-
 def test_anonymous_request_succeeds(fake_drive, workspace):
     """A Client with no login can hit the public summary endpoint and
     receive the JSON envelope (no auth redirect)."""
     workspace.drive_root_folder_id = fake_drive.folder_id("ACE")
     workspace.save()
     c = Client()
-    with patch("apps.opps.views.get_drive_client", return_value=fake_drive):
+    with patch("apps.opps.views_summary.get_drive_client", return_value=fake_drive):
         response = c.get(
             "/api/opps/public/smoke-team/smoke-pilot/runs/20260415-1430/summary"
         )
@@ -120,7 +103,7 @@ def test_unknown_run_returns_404(fake_drive, workspace):
     workspace.drive_root_folder_id = fake_drive.folder_id("ACE")
     workspace.save()
     c = Client()
-    with patch("apps.opps.views.get_drive_client", return_value=fake_drive):
+    with patch("apps.opps.views_summary.get_drive_client", return_value=fake_drive):
         response = c.get(
             "/api/opps/public/smoke-team/smoke-pilot/runs/does-not-exist/summary"
         )
@@ -142,7 +125,7 @@ def test_unknown_opp_returns_404(fake_drive, workspace):
     workspace.drive_root_folder_id = fake_drive.folder_id("ACE")
     workspace.save()
     c = Client()
-    with patch("apps.opps.views.get_drive_client", return_value=fake_drive):
+    with patch("apps.opps.views_summary.get_drive_client", return_value=fake_drive):
         response = c.get(
             "/api/opps/public/smoke-team/no-such-opp/runs/r1/summary"
         )
@@ -160,7 +143,7 @@ def test_response_is_cached(fake_drive, workspace):
         call_count["n"] += 1
         return fake_drive
 
-    with patch("apps.opps.views.get_drive_client", side_effect=_track):
+    with patch("apps.opps.views_summary.get_drive_client", side_effect=_track):
         r1 = c.get(
             "/api/opps/public/smoke-team/smoke-pilot/runs/20260415-1430/summary"
         )
@@ -185,7 +168,7 @@ def test_404_is_not_cached(fake_drive, workspace):
         call_count["n"] += 1
         return fake_drive
 
-    with patch("apps.opps.views.get_drive_client", side_effect=_track):
+    with patch("apps.opps.views_summary.get_drive_client", side_effect=_track):
         c.get("/api/opps/public/smoke-team/smoke-pilot/runs/missing/summary")
         c.get("/api/opps/public/smoke-team/smoke-pilot/runs/missing/summary")
 

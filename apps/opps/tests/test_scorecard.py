@@ -71,8 +71,8 @@ def test_load_scorecard_missing_opp_raises():
 
 
 def _with_fake_drive(client, fake, url):
-    with patch("apps.opps.views.get_drive_client", return_value=fake), \
-         patch("apps.opps.views._resolve_ace_root_folder_id",
+    with patch("apps.opps.access.get_drive_client", return_value=fake), \
+         patch("apps.opps.access.resolve_ace_root_folder_id",
                return_value=fake.folder_id("ACE")):
         return client.get(url)
 

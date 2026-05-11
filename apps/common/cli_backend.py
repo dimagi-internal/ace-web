@@ -82,10 +82,16 @@ import uuid
 from collections import deque
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from asgiref.sync import sync_to_async
 
-from apps.sessions.models import Message, Session
+if TYPE_CHECKING:
+    # Type-only imports — avoids the `apps.common ↔ apps.sessions` import
+    # cycle (apps/sessions/turn_driver.py imports from apps.common.cli_backend).
+    # The runtime ORM access lives in the two call sites below; both do
+    # function-local imports.
+    from apps.sessions.models import Session  # noqa: F401
 
 from .auth_flow import get_stored_token
 from .chat_backend import StreamEvent, StreamEventType
@@ -818,6 +824,8 @@ class CLIBackend:
         Returns silently if the Session has been deleted (the credential
         blob has nowhere to go).
         """
+        from apps.sessions.models import Session  # local: avoid common↔sessions cycle
+
         try:
             session = Session.objects.get(pk=session_pk)
         except Session.DoesNotExist:
@@ -825,9 +833,11 @@ class CLIBackend:
         self._persist_refreshed_blob(session, source, staged_home)
 
     async def _clear_cli_session_id(self, session: Session) -> None:
+        from apps.sessions.models import Session as _Session
+
         @sync_to_async
         def _clear():
-            Session.objects.filter(pk=session.pk).update(cli_session_id=None)
+            _Session.objects.filter(pk=session.pk).update(cli_session_id=None)
             session.cli_session_id = None
 
         await _clear()
@@ -1203,6 +1213,8 @@ class CLIBackend:
         escapes any user text that looks like a turn boundary. Not a
         substitute for native conversation replay.
         """
+        from apps.sessions.models import Message  # local: avoid common↔sessions cycle
+
         @sync_to_async
         def _load_history():
             return list(
@@ -1221,9 +1233,11 @@ class CLIBackend:
         return "\n\n".join(lines)
 
     async def _persist_session_id(self, session: Session, cli_session_id: str) -> None:
+        from apps.sessions.models import Session as _Session
+
         @sync_to_async
         def _save():
-            Session.objects.filter(pk=session.pk).update(cli_session_id=cli_session_id)
+            _Session.objects.filter(pk=session.pk).update(cli_session_id=cli_session_id)
             session.cli_session_id = cli_session_id
 
         await _save()
