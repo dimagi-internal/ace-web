@@ -117,16 +117,16 @@ def test_structure_endpoint_returns_parse_failed_for_corrupt_blob(
     """A persisted blob that the parser/aggregator can't handle returns the
     parse-failed envelope instead of bubbling a 500.
 
-    parse_session_file is forgiving (it skips invalid lines) so plain garbage
+    parse_session_bytes is forgiving (it skips invalid lines) so plain garbage
     bytes don't reliably raise. Monkeypatch the parser at its source module
     (the view imports it locally inside the function) to raise unconditionally
     — that's the load-bearing branch we need to prove returns the documented
     empty-envelope shape rather than 500.
     """
-    def _boom(_path):
+    def _boom(_raw):
         raise ValueError("simulated parser failure")
 
-    monkeypatch.setattr("apps.ingest.parser.parse_session_file", _boom)
+    monkeypatch.setattr("apps.ingest.parser.parse_session_bytes", _boom)
 
     response = client.get(f"/api/sessions/{session_with_blob.slug}/structure")
     assert response.status_code == 200
@@ -136,3 +136,85 @@ def test_structure_endpoint_returns_parse_failed_for_corrupt_blob(
     assert body["data"]["session"] is None
     assert body["data"]["phases"] == []
     assert body["data"]["unavailable_reason"] == "parse-failed"
+
+
+def test_structure_endpoint_returns_etag_header(client, user):
+    """Successful response carries an ETag derived from content_sha256."""
+    raw = (FIXTURES / "tool_use_session.jsonl").read_bytes()
+    session = Session.create_with_owner(owner=user, title="t")
+    IngestUpload.objects.create(
+        session=session,
+        uploaded_by=user,
+        source_path="fixture.jsonl",
+        raw_bytes=len(raw),
+        line_count=raw.count(b"\n"),
+        cli_session_id="",
+        content_sha256="abc123",  # synthetic — the ETag just echoes this
+        raw_jsonl_gz=gzip.compress(raw),
+    )
+    response = client.get(f"/api/sessions/{session.slug}/structure")
+    assert response.status_code == 200
+    assert response["ETag"] == '"v1:abc123"'
+
+
+def test_structure_endpoint_returns_304_on_matching_if_none_match(client, user):
+    """Repeated request with matching If-None-Match short-circuits to 304."""
+    raw = (FIXTURES / "tool_use_session.jsonl").read_bytes()
+    session = Session.create_with_owner(owner=user, title="t")
+    IngestUpload.objects.create(
+        session=session,
+        uploaded_by=user,
+        source_path="fixture.jsonl",
+        raw_bytes=len(raw),
+        line_count=raw.count(b"\n"),
+        cli_session_id="",
+        content_sha256="abc123",
+        raw_jsonl_gz=gzip.compress(raw),
+    )
+    response = client.get(
+        f"/api/sessions/{session.slug}/structure",
+        HTTP_IF_NONE_MATCH='"v1:abc123"',
+    )
+    assert response.status_code == 304
+
+
+def test_structure_endpoint_ignores_stale_if_none_match(client, user):
+    """A non-matching If-None-Match still returns 200 with the fresh tree + ETag."""
+    raw = (FIXTURES / "tool_use_session.jsonl").read_bytes()
+    session = Session.create_with_owner(owner=user, title="t")
+    IngestUpload.objects.create(
+        session=session,
+        uploaded_by=user,
+        source_path="fixture.jsonl",
+        raw_bytes=len(raw),
+        line_count=raw.count(b"\n"),
+        cli_session_id="",
+        content_sha256="abc123",
+        raw_jsonl_gz=gzip.compress(raw),
+    )
+    response = client.get(
+        f"/api/sessions/{session.slug}/structure",
+        HTTP_IF_NONE_MATCH='"v1:stale-hash"',
+    )
+    assert response.status_code == 200
+    assert response["ETag"] == '"v1:abc123"'
+
+
+def test_structure_endpoint_omits_etag_when_content_sha256_empty(client, user):
+    """Uploads pre-dating content_sha256 (or with empty hashes) skip the ETag —
+    we can't claim immutability without a digest."""
+    raw = (FIXTURES / "tool_use_session.jsonl").read_bytes()
+    session = Session.create_with_owner(owner=user, title="t")
+    IngestUpload.objects.create(
+        session=session,
+        uploaded_by=user,
+        source_path="fixture.jsonl",
+        raw_bytes=len(raw),
+        line_count=raw.count(b"\n"),
+        cli_session_id="",
+        content_sha256="",  # legacy row
+        raw_jsonl_gz=gzip.compress(raw),
+    )
+    response = client.get(f"/api/sessions/{session.slug}/structure")
+    assert response.status_code == 200
+    assert response.get("ETag") is None

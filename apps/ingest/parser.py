@@ -169,7 +169,16 @@ def _extract_cost_events(lines: list[str]) -> list[CostEvent]:
 
 def parse_session_file(path: Path) -> tuple[ParsedSession, list[CostEvent]]:
     """Parse a .jsonl session file. Returns (ParsedSession, cost events)."""
-    raw = path.read_bytes()
+    return parse_session_bytes(path.read_bytes())
+
+
+def parse_session_bytes(raw: bytes) -> tuple[ParsedSession, list[CostEvent]]:
+    """Parse JSONL bytes directly. Same return shape as parse_session_file.
+
+    Used by the on-demand structure endpoint, which loads gzipped JSONL from
+    IngestUpload.raw_jsonl_gz and would otherwise have to write it to a temp
+    file just to read it back.
+    """
     lines = raw.decode("utf-8", errors="replace").splitlines()
 
     session = ParsedSession(
