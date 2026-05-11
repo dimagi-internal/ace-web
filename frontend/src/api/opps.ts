@@ -149,15 +149,39 @@ export function deleteOppRun(slug: string, runId: string): Promise<void> {
 
 export function forkOpp(
   slug: string,
-  payload: { new_slug: string; fork_at_phase: string },
-): Promise<{ slug: string; working_session_slug: string }> {
-  return request<{ slug: string; working_session_slug: string }>(
+  payload: { fork_at_phase: string; source_run_id?: string | null },
+): Promise<{ slug: string; run_id: string; working_session_slug: string }> {
+  return request<{ slug: string; run_id: string; working_session_slug: string }>(
     `/opps/${encodeURIComponent(slug)}/fork`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     },
+  );
+}
+
+export type ForkProgress =
+  | { status: "unknown" | "counting" | "finalizing" }
+  | { status: "copying"; copied: number; total: number; current?: string }
+  | {
+      status: "done";
+      copied: number;
+      total: number;
+      opp_slug: string;
+      new_run_id: string;
+    }
+  | { status: "error"; error: string; code?: string };
+
+export function getForkStatus(
+  slug: string,
+  sourceRunId: string | null | undefined,
+): Promise<ForkProgress> {
+  const qs = new URLSearchParams({
+    source_run_id: sourceRunId ?? "",
+  }).toString();
+  return request<ForkProgress>(
+    `/opps/${encodeURIComponent(slug)}/fork/status?${qs}`,
   );
 }
 

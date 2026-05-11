@@ -7,6 +7,7 @@ stay in ``views.py`` and call into the helpers here for write methods.
 """
 from __future__ import annotations
 
+from django.core.cache import cache
 from django.db import models, transaction
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -24,6 +25,18 @@ from apps.opps.sync import (
     load_opp,
 )
 from apps.sessions.models import Session
+
+# Progress for an in-flight fork is written to django.core.cache by the
+# request thread doing the copy and read by the polling status endpoint
+# in a sibling request. The polling endpoint identifies the in-flight
+# fork by ``(source_slug, source_run_id)`` since the new run-id isn't
+# known until the fork has minted it.
+_FORK_PROGRESS_TTL = 600  # seconds — well past the worst-case fork time
+
+
+def _fork_progress_key(workspace, source_slug: str, source_run_id: str) -> str:
+    ws_key = workspace.pk if workspace is not None else "_"
+    return f"opp-fork:{ws_key}:{source_slug}:{source_run_id or '_latest'}"
 
 
 def opp_create(request):
@@ -86,14 +99,19 @@ def opp_create(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def opp_fork(request, slug: str):
-    """POST /api/opps/<slug>/fork — fork this opp into a new one at the
-    given phase boundary.
+    """POST /api/opps/<slug>/fork — fork a new run within this opp at
+    the given phase boundary.
 
-    Body: ``{new_slug: <str>, fork_at_phase: <phase-name>}``
+    Body: ``{fork_at_phase: <phase-name>, source_run_id: <run-id> | null}``
 
-    Synchronous Drive-recursive copy; can take 30-60s on large opps.
-    Frontend should show a loading state. Returns the new slug on
-    success; the caller navigates to its workbench.
+    Per the plugin's canonical fork contract, this mints a new run
+    folder under the same opp, carrying forward the kept upstream
+    phase artifacts and per-run docs. No new opp is created. Returns
+    ``{slug, run_id, working_session_slug}`` — ``slug`` is the existing
+    opp; ``run_id`` is the freshly-minted run.
+
+    Synchronous Drive copy; the frontend polls ``/fork/status`` for
+    progress.
     """
     if not request.user.is_authenticated:
         return Response(
@@ -101,13 +119,8 @@ def opp_fork(request, slug: str):
             status=401,
         )
     payload = request.data if isinstance(request.data, dict) else {}
-    new_slug = (payload.get("new_slug") or "").strip()
     fork_at_phase = (payload.get("fork_at_phase") or "").strip()
-    if not new_slug:
-        return Response(
-            error_response("new_slug is required", code="invalid-slug"),
-            status=400,
-        )
+    source_run_id = (payload.get("source_run_id") or "").strip() or None
     if not fork_at_phase:
         return Response(
             error_response(
@@ -126,31 +139,77 @@ def opp_fork(request, slug: str):
             status=404,
         )
 
+    progress_key = _fork_progress_key(ws, slug, source_run_id or "")
+
+    def _write_progress(payload: dict) -> None:
+        cache.set(progress_key, payload, timeout=_FORK_PROGRESS_TTL)
+
     try:
         result = fork_opp(
             drive=client,
             ace_root_folder_id=ace_folder_id,
             owner=request.user,
             source_slug=slug,
-            new_slug=new_slug,
             fork_at_phase=fork_at_phase,
+            source_run_id=source_run_id,
             workspace=ws,
+            progress_cb=_write_progress,
         )
     except ForkOppError as exc:
+        cache.set(
+            progress_key,
+            {"status": "error", "error": str(exc), "code": exc.code},
+            timeout=_FORK_PROGRESS_TTL,
+        )
         status = (
-            409 if exc.code == "slug-taken"
-            else 404 if exc.code == "source-not-found"
+            404 if exc.code in ("source-not-found", "source-run-not-found")
+            else 409 if exc.code == "no-runs"
             else 400
         )
         return Response(error_response(str(exc), code=exc.code), status=status)
+    except Exception as exc:
+        cache.set(
+            progress_key,
+            {"status": "error", "error": str(exc), "code": "fork-failed"},
+            timeout=_FORK_PROGRESS_TTL,
+        )
+        raise
 
     return Response(
         success_response({
-            "slug": result.new_slug,
+            "slug": result.opp_slug,
+            "run_id": result.new_run_id,
             "working_session_slug": result.working_session.slug,
         }),
         status=201,
     )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def opp_fork_status(request, slug: str):
+    """GET /api/opps/<slug>/fork/status?source_run_id=<id> — poll an
+    in-flight fork's progress.
+
+    The poller identifies the fork by ``source_run_id`` (the run it's
+    being forked from) since the new run-id isn't known until the fork
+    has minted it. Pass an empty ``source_run_id`` (or omit it) when
+    the fork was started without specifying a source run. Returns
+    ``{status: "unknown"}`` when no entry exists.
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            error_response("authentication required", code="auth-required"),
+            status=401,
+        )
+    source_run_id = (request.query_params.get("source_run_id") or "").strip()
+    ws, err = access.resolve_workspace(request)
+    if err is not None:
+        return err
+    payload = cache.get(_fork_progress_key(ws, slug, source_run_id))
+    if payload is None:
+        payload = {"status": "unknown"}
+    return Response(success_response(payload))
 
 
 @api_view(["DELETE"])

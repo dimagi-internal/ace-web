@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, GitFork, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { forkOpp } from "@/api/opps";
+import { forkOpp, getForkStatus, type ForkProgress } from "@/api/opps";
 import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,89 +16,109 @@ import {
 } from "@/components/ui/dialog";
 
 // After this many ms of "Forking…", show a "still copying" hint so the
-// user knows the dialog hasn't frozen on a large-opp Drive copy.
+// user knows the dialog hasn't frozen on a Drive copy.
 const SLOW_AFTER_MS = 10_000;
 // last_actor_at within this many minutes = "opp may still be running".
-// We don't block the fork; just warn so the user doesn't accidentally
-// fork a half-baked state.
+// Warn so the user doesn't fork a half-baked state.
 const RECENT_ACTIVITY_MIN = 10;
+// How often the dialog polls /fork/status while the fork runs.
+const POLL_INTERVAL_MS = 750;
 
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  /** Source opp slug to fork from. */
+  /** Source opp slug — fork mints a new run under THIS opp. */
   sourceSlug: string;
-  /** Phase NAME (e.g. ``design-review``) the fork resumes from. */
+  /** Source run-id the fork seeds from. */
+  sourceRunId: string;
+  /** Phase NAME (e.g. ``commcare-setup``) the fork resumes from. */
   forkAtPhase: string;
-  /** Human label for the phase (e.g. ``Design Review``). Used in copy. */
+  /** Human label for the phase. Used in copy. */
   forkAtPhaseDisplay: string;
   /**
-   * ISO-8601 timestamp of the source run's last actor activity (from
-   * state.yaml). When within the last RECENT_ACTIVITY_MIN minutes, the
-   * dialog surfaces a warning that the opp may still be running.
+   * ISO-8601 timestamp of the source run's last actor activity. When
+   * within the last RECENT_ACTIVITY_MIN minutes, the dialog warns that
+   * the run may still be in progress.
    */
   sourceLastActorAt?: string | null;
 }
 
 /**
- * Confirm + fork dialog. Recursively copies the source opp's Drive folder
- * to a new slug and resets ``state.yaml.current_phase`` to the fork target
- * so the next ``/ace:run`` resumes from there.
+ * Confirm + fork dialog. Per the ACE plugin's canonical fork contract,
+ * forking creates a NEW RUN under the same opp — not a new opp. The
+ * new run carries forward upstream phase artifacts and per-run docs;
+ * per-opp resources (opp.yaml, inputs/, eval-calibration/, etc.) stay
+ * shared.
  *
- * Default slug: ``<source>-fork-YYYYMMDD-HHMM``. Editable. Slug-format
- * validation matches backend (``[a-z0-9][a-z0-9-]{0,62}[a-z0-9]``).
- *
- * Synchronous Drive copy can take 30-60s on large opps; the dialog stays
- * open with a "forking…" state until the API resolves.
+ * Synchronous Drive copy proportional to the kept phase count. The
+ * dialog polls /fork/status for a live "Copied N of M" while it runs.
  */
 export function ForkOppDialog({
   open,
   onOpenChange,
   sourceSlug,
+  sourceRunId,
   forkAtPhase,
   forkAtPhaseDisplay,
   sourceLastActorAt,
 }: Props) {
-  const [slug, setSlug] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
+  const [progress, setProgress] = useState<ForkProgress | null>(null);
   const navigate = useNavigate();
   const { workspaceSlug } = useParams<{ workspaceSlug?: string }>();
 
-  // Compute a sensible default each time the dialog opens. Using an
-  // effect (not useState initializer) so re-opening on a different opp
-  // refreshes the default instead of stale-bleeding the prior slug.
   useEffect(() => {
     if (!open) return;
-    setSlug(defaultForkSlug(sourceSlug));
     setSlow(false);
+    setProgress(null);
   }, [open, sourceSlug]);
 
   // Promote to "still copying…" after SLOW_AFTER_MS so the dialog
-  // doesn't look frozen during a 30-60s Drive copy.
+  // doesn't look frozen during a multi-second Drive copy.
   useEffect(() => {
     if (!submitting) return;
     const t = setTimeout(() => setSlow(true), SLOW_AFTER_MS);
     return () => clearTimeout(t);
   }, [submitting]);
 
-  const validSlug = SLUG_RE.test(slug) && slug !== sourceSlug;
+  // Poll /fork/status while the synchronous POST is in flight so we
+  // can surface "Copied N of M" + a progress bar. The POST is on a
+  // separate connection, so the browser happily fires this in parallel.
+  useEffect(() => {
+    if (!submitting) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const p = await getForkStatus(sourceSlug, sourceRunId);
+        if (!cancelled) setProgress(p);
+      } catch {
+        /* poll failures are non-fatal — keep trying */
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [submitting, sourceSlug, sourceRunId]);
+
   const recentlyActive = isRecentlyActive(sourceLastActorAt);
 
   async function handleFork() {
-    if (!validSlug) return;
     setSubmitting(true);
     try {
       const result = await forkOpp(sourceSlug, {
-        new_slug: slug,
         fork_at_phase: forkAtPhase,
+        source_run_id: sourceRunId || null,
       });
-      toast.success(`Forked to ${result.slug}`);
+      toast.success(`Forked to run ${result.run_id}`);
       onOpenChange(false);
-      const dest = workspaceSlug
+      const base = workspaceSlug
         ? `/w/${workspaceSlug}/opps/${result.slug}`
         : `/opps/${result.slug}`;
-      navigate(dest);
+      navigate(`${base}?run_id=${encodeURIComponent(result.run_id)}`);
     } catch (err) {
       const detail = err instanceof ApiError ? err.message : String(err);
       toast.error(`Fork failed: ${detail}`);
@@ -113,17 +133,15 @@ export function ForkOppDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitFork className="h-4 w-4 text-primary" />
-            Fork from {forkAtPhaseDisplay}
+            Fork run from {forkAtPhaseDisplay}
           </DialogTitle>
           <DialogDescription>
-            Creates a new opp by copying{" "}
-            <code className="font-mono">ACE/{sourceSlug}</code> and resetting
-            its plan to start at{" "}
-            <code className="font-mono">{forkAtPhase}</code>. Artifacts from
-            phases past <code className="font-mono">{forkAtPhase}</code> are
-            kept in the copy but will be overwritten when the next{" "}
-            <code className="font-mono">/ace:run</code> picks up.
-            {" "}<strong>The Drive copy is recursive and may take 30–60 seconds.</strong>
+            Mints a new run under{" "}
+            <code className="font-mono">ACE/{sourceSlug}</code>, carrying
+            forward only the upstream phases. The new run's plan starts
+            at <code className="font-mono">{forkAtPhase}</code>; per-opp
+            state (opp.yaml, inputs, calibration, open questions, Connect
+            IDs) stays shared with the source.
           </DialogDescription>
         </DialogHeader>
         {recentlyActive && !submitting && (
@@ -133,35 +151,17 @@ export function ForkOppDialog({
           >
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
-              The source opp had activity in the last {RECENT_ACTIVITY_MIN} minutes —
-              forking now copies a possibly-mid-flight state. If a run is
+              Source run had activity in the last {RECENT_ACTIVITY_MIN} minutes —
+              forking now snapshots a possibly-mid-flight state. If a run is
               actively in progress, wait for it to settle first.
             </span>
           </div>
         )}
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="fork-new-slug"
-            className="text-xs text-muted-foreground"
-          >
-            New opp ID
-          </label>
-          <input
-            id="fork-new-slug"
-            type="text"
-            autoComplete="off"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-            disabled={submitting}
-            className="rounded border border-input bg-card px-2 py-1 text-sm font-mono text-foreground focus:border-ring focus:outline-none"
-          />
-          {slug && !validSlug && (
-            <p className="text-[10px] text-destructive">
-              {slug === sourceSlug
-                ? "Must differ from the source opp ID."
-                : "ID must be lowercase letters, digits, and hyphens (3–64 chars)."}
-            </p>
-          )}
+        <div className="grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 text-xs">
+          <span className="text-muted-foreground">Source run</span>
+          <code className="font-mono text-foreground">{sourceRunId || "(latest)"}</code>
+          <span className="text-muted-foreground">Resume at</span>
+          <code className="font-mono text-foreground">{forkAtPhase}</code>
         </div>
         <DialogFooter>
           <Button
@@ -171,28 +171,90 @@ export function ForkOppDialog({
           >
             Cancel
           </Button>
-          <Button
-            onClick={handleFork}
-            disabled={submitting || !validSlug}
-          >
+          <Button onClick={handleFork} disabled={submitting}>
             {submitting ? (
               <>
                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                {slow ? "Still copying…" : "Forking…"}
+                Forking…
               </>
             ) : (
-              "Fork"
+              "Fork run"
             )}
           </Button>
         </DialogFooter>
-        {submitting && slow && (
-          <p className="-mt-2 text-[11px] text-muted-foreground">
-            Drive recursive copy in progress. Large opps can take up to a
-            minute. Don't close this tab.
-          </p>
-        )}
+        {submitting && <ForkProgressView progress={progress} slow={slow} />}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ForkProgressView({
+  progress,
+  slow,
+}: {
+  progress: ForkProgress | null;
+  slow: boolean;
+}) {
+  const copied =
+    progress && (progress.status === "copying" || progress.status === "done")
+      ? progress.copied
+      : 0;
+  const total =
+    progress && (progress.status === "copying" || progress.status === "done")
+      ? progress.total
+      : 0;
+  const pct = total > 0 ? Math.min(100, Math.round((copied / total) * 100)) : 0;
+  const current =
+    progress && progress.status === "copying" ? progress.current : "";
+
+  let label: string;
+  if (!progress || progress.status === "unknown") {
+    label = "Starting fork…";
+  } else if (progress.status === "counting") {
+    label = "Counting files in source run…";
+  } else if (progress.status === "copying") {
+    label = `Copying ${copied} of ${total} files`;
+  } else if (progress.status === "finalizing") {
+    label = "Finalizing fork…";
+  } else if (progress.status === "done") {
+    label = `Copied ${copied} of ${total} files. Opening run ${progress.new_run_id}…`;
+  } else {
+    label = "Working…";
+  }
+
+  return (
+    <div className="-mt-1 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>{label}</span>
+        {total > 0 && (
+          <span className="font-mono tabular-nums">{pct}%</span>
+        )}
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded bg-muted">
+        <div
+          className={
+            progress && progress.status === "copying" && total > 0
+              ? "h-full bg-primary transition-[width] duration-300"
+              : "h-full w-1/3 animate-pulse bg-primary/60"
+          }
+          style={
+            progress && progress.status === "copying" && total > 0
+              ? { width: `${pct}%` }
+              : undefined
+          }
+        />
+      </div>
+      {current && (
+        <p className="truncate font-mono text-[10px] text-muted-foreground">
+          {current}
+        </p>
+      )}
+      {slow && (
+        <p className="text-[10px] text-muted-foreground">
+          Drive copies are paced ~150 ms per file. Don't close this tab.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -201,22 +263,4 @@ function isRecentlyActive(iso: string | null | undefined): boolean {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return false;
   return Date.now() - t < RECENT_ACTIVITY_MIN * 60 * 1000;
-}
-
-const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;
-
-function defaultForkSlug(sourceSlug: string): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const stamp =
-    now.getFullYear() +
-    pad(now.getMonth() + 1) +
-    pad(now.getDate()) +
-    "-" +
-    pad(now.getHours()) +
-    pad(now.getMinutes());
-  // Trim source slug if combining would exceed 64 chars; "-fork-" + stamp
-  // is 16 chars, so the trim point is 64 - 16 = 48.
-  const trimmed = sourceSlug.length > 48 ? sourceSlug.slice(0, 48) : sourceSlug;
-  return `${trimmed}-fork-${stamp}`;
 }

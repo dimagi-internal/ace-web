@@ -1,36 +1,66 @@
-"""Fork an opp at a phase boundary.
+"""Fork a run within an opp.
 
-The semantic: clone the source opp's Drive folder under a new slug, then
-reset ``state.yaml``'s ``current_phase`` / ``current_step`` to the fork
-target so the plugin's ``/ace:run`` resumes from there. Artifacts from
-phases past the fork point ARE copied (we don't introspect the artifact
-manifest to trim — the simplest semantic is "branch this run, then
-re-run from phase X"). The plugin overwrites as needed when it re-runs.
+Per the ACE plugin's canonical fork contract
+(``agents/orchestrator-reference.md`` § Fork Points, ace 0.13.151),
+forking does NOT create a new opp. It mints a new run-id under the
+**same** opp folder and seeds it from a prior run's outputs.
 
-Tagging: writes a ``forked_from`` block into the new opp.yaml carrying
-``{slug, phase, run_id, forked_at}``. Workbench surfaces this on the
-header so the lineage is visible without diving into Drive.
+Per-opp resources stay untouched — ``opp.yaml``, ``inputs/``,
+``eval-calibration/``, ``open-questions.md``, ``connect-state.yaml``,
+``current/``. They live above ``runs/`` and every run shares them.
 
-Drive cost: O(N) calls where N is the number of files in the source's
-latest run subtree. For a typical 60-100 artifact opp, this is 30-60
-seconds wall time. We accept the latency synchronously for v1; a
-background worker is the obvious follow-up if real users find it slow.
+Per-run resources get a fresh home under ``runs/<new-run-id>/``:
+
+* Phase folders ``<N>-<phase>/`` from the source run, copied only when
+  ``N < fork_ordinal``. The plugin lays out per-phase artifacts in
+  numbered folders so the folder name carries the phase ordinal — no
+  manifest introspection needed.
+* ``decisions.yaml`` carried over from the source run, with rows for
+  phases >= the fork ordinal trimmed.
+* ``idea.md`` (only when the source had a ``--idea`` seed) and
+  ``inputs-manifest.yaml`` carried over verbatim — they describe the
+  source pack the kept phases worked from.
+* A fresh ``run_state.yaml`` synthesized from scratch per the State
+  Schema in orchestrator-reference: ``opportunity``, ``run_id``,
+  ``mode``, ``created``, ``initiated_by``, ``last_actor`` +
+  ``last_actor_at``, and a ``phases`` map seeded ``done`` for kept
+  phases and ``pending`` for everything from ``fork_at_phase`` onward.
+
+Drive cost: O(N) calls where N is the number of files we end up
+copying — proportional to the *kept* phase count, not the source's
+total. For a fork at phase 2 of a fully-completed 8-phase opp, we
+copy roughly 1/8 of the source's run artifacts.
 """
 from __future__ import annotations
 
 import datetime as _dt
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import yaml
-from django.db import transaction
 
 from apps.opps.drive_client import DriveClient, DriveFile
-from apps.opps.models import OppWorkspace
 from apps.sessions.models import Message, Session
 
-SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$")
 _FOLDER_MIME = "application/vnd.google-apps.folder"
+
+# Phase folders the plugin writes look like ``1-design`` / ``2-commcare``.
+# The leading integer is the phase ordinal, which lets us decide what to
+# carry forward without looking up anything skill-side. The trailing
+# ``[a-z]`` is what keeps us from misclassifying run-id folders like
+# ``20260501-1200`` (numeric timestamp) as phase folders.
+_PHASE_FOLDER_RE = re.compile(r"^(\d+)-[a-z]")
+
+# Files inside the source run folder that get carried over verbatim
+# (alongside the kept ``<N>-phase/`` subtrees). decisions.yaml gets a
+# post-copy trim; everything else here is just a straight copy.
+_RUN_ROOT_FILES_TO_COPY = (
+    "decisions.yaml",
+    "decisions.yml",
+    "idea.md",
+    "inputs-manifest.yaml",
+)
 
 
 class ForkOppError(Exception):
@@ -41,10 +71,13 @@ class ForkOppError(Exception):
 
 @dataclass
 class ForkOppResult:
-    new_slug: str
-    new_folder_id: str
-    workspace: OppWorkspace
+    opp_slug: str            # unchanged — fork stays within the same opp
+    new_run_id: str          # YYYYMMDD-HHMM, the new run folder name
+    new_run_folder_id: str   # Drive folder id of the new run
     working_session: Session
+
+
+ProgressCb = Callable[[dict], None]
 
 
 def fork_opp(
@@ -53,183 +86,356 @@ def fork_opp(
     ace_root_folder_id: str,
     owner,
     source_slug: str,
-    new_slug: str,
     fork_at_phase: str,
+    source_run_id: str | None = None,
     workspace=None,
+    progress_cb: ProgressCb | None = None,
+    now: _dt.datetime | None = None,
 ) -> ForkOppResult:
-    """Recursively copy the source opp folder to a new slug + reset its
-    state.yaml to the fork phase.
+    """Fork the source opp's named run (or its latest if ``source_run_id``
+    is None) into a new run under the same opp.
 
     Raises ``ForkOppError`` for caller-friendly validation failures
-    (bad slug, slug taken, source not found). Drive failures during
-    the copy bubble up as the original exception — partial Drive state
-    may be left behind on failure (a follow-up retry will collide on
-    the slug check, which is the desired behavior).
+    (source not found, no runs to fork from, run-id collision). Drive
+    failures during the copy bubble up; partial state may be left
+    behind (the new run folder will exist but be incomplete) and the
+    operator can delete it via the existing run-trash flow.
     """
-    if not SLUG_RE.match(new_slug):
-        raise ForkOppError("invalid-slug", f"invalid slug {new_slug!r}")
-    if new_slug == source_slug:
+    fork_ordinal = _resolve_phase_ordinal(fork_at_phase)
+    if fork_ordinal is None:
+        # Fail fast rather than degenerate to "copy everything." A fork
+        # against an unknown phase silently producing a no-op trim (i.e.
+        # cloning the source run wholesale) is the bug the per-run fork
+        # contract exists to prevent — the next /ace:run would see every
+        # phase already done. The most likely cause is ACE_PLUGIN_PATH
+        # pointing at a missing/stale plugin checkout.
         raise ForkOppError(
-            "same-slug", "fork slug must differ from the source slug"
+            "unknown-phase",
+            f"phase {fork_at_phase!r} is not in the skill registry — "
+            "check ACE_PLUGIN_PATH",
         )
 
-    # Slug uniqueness — Postgres + Drive
-    slug_q = OppWorkspace.objects.filter(slug=new_slug)
-    if workspace is not None:
-        slug_q = slug_q.filter(workspace=workspace)
-    if slug_q.exists():
-        raise ForkOppError("slug-taken", f"opp {new_slug!r} already exists")
-    children = drive.list_files(ace_root_folder_id)
-    source_folder: DriveFile | None = None
-    for child in children:
-        if child.name == new_slug:
-            raise ForkOppError(
-                "slug-taken", f"Drive folder {new_slug!r} already exists"
-            )
-        if child.name == source_slug and child.mime_type == _FOLDER_MIME:
-            source_folder = child
+    source_folder = _find_child_folder(
+        drive.list_files(ace_root_folder_id), source_slug
+    )
     if source_folder is None:
         raise ForkOppError(
             "source-not-found", f"no opp folder named {source_slug!r}"
         )
 
-    # Recursive copy. We track which file IDs map to the new opp.yaml
-    # and state.yaml(s) so we can patch them after the copy without
-    # re-listing the destination tree.
-    new_folder_id = drive.create_folder(ace_root_folder_id, new_slug)
-    forked_at = _dt.datetime.now(_dt.UTC).isoformat()
-    patches: _CopyPatches = _CopyPatches()
-    _copy_subtree(
+    runs_folder = _find_child_folder(
+        drive.list_files(source_folder.id), "runs"
+    )
+    if runs_folder is None:
+        raise ForkOppError(
+            "no-runs",
+            f"opp {source_slug!r} has no runs/ subfolder to fork from",
+        )
+
+    run_children = drive.list_files(runs_folder.id)
+    if source_run_id is None:
+        source_run = _latest_run(run_children)
+    else:
+        source_run = _find_child_folder(run_children, source_run_id)
+        if source_run is None:
+            raise ForkOppError(
+                "source-run-not-found",
+                f"opp {source_slug!r} has no run named {source_run_id!r}",
+            )
+    if source_run is None:
+        raise ForkOppError(
+            "no-runs", f"opp {source_slug!r} has no runs to fork from"
+        )
+
+    now_utc = now or _dt.datetime.now(_dt.UTC)
+    new_run_id = _mint_run_id(now_utc, run_children)
+
+    # Pre-walk to count files we'll actually copy. Cheaper than the
+    # copy itself (one list_files per kept folder vs. ~150 ms per
+    # copy_file), so the UX win — accurate "X of Y" — is worth it.
+    _emit(progress_cb, {"status": "counting", "copied": 0, "total": 0})
+    total_files = _count_files_to_copy(
+        drive, source_run.id, fork_ordinal=fork_ordinal,
+    )
+    counter = _Counter(total=total_files)
+    _emit(progress_cb, {
+        "status": "copying", "copied": 0, "total": total_files, "current": "",
+    })
+
+    new_run_folder_id = drive.create_folder(runs_folder.id, new_run_id)
+    decisions_dest_id, decisions_source_body = _copy_run_subtree(
         drive=drive,
-        source_folder_id=source_folder.id,
-        dest_folder_id=new_folder_id,
-        rel_path="",
-        patches=patches,
+        source_run_folder_id=source_run.id,
+        dest_run_folder_id=new_run_folder_id,
+        fork_ordinal=fork_ordinal,
+        counter=counter,
+        progress_cb=progress_cb,
     )
 
-    # Patch opp.yaml: rewrite slug + display_name (keep human label
-    # informative — append " (fork)" so two opps are distinguishable
-    # in the list view) + tag forked_from.
-    if patches.opp_yaml_id is not None:
-        original_yaml = patches.opp_yaml_body or ""
-        new_yaml = _rewrite_opp_yaml(
-            original_yaml,
-            new_slug=new_slug,
-            source_slug=source_slug,
-            fork_at_phase=fork_at_phase,
-            source_run_id=patches.source_run_id,
-            forked_at=forked_at,
-        )
-        drive.update_file(patches.opp_yaml_id, new_yaml, "text/yaml")
+    _emit(progress_cb, {
+        "status": "finalizing", "copied": counter.copied, "total": total_files,
+    })
 
-    # Patch state.yaml(s): reset current_phase / current_step to the
-    # fork target so the plugin's /ace:run resumes there.
-    for state_id, original in patches.state_yaml_bodies.items():
-        new_state = _rewrite_state_yaml(original, fork_at_phase=fork_at_phase)
-        drive.update_file(state_id, new_state, "text/yaml")
+    # Synthesize the new run's run_state.yaml. We intentionally DON'T
+    # copy the source run's run_state — its phases map and timestamps
+    # belong to the prior run. Generating fresh keeps the new run's
+    # state honest about what's done vs. pending.
+    new_state = _build_run_state_yaml(
+        opp_slug=source_slug,
+        run_id=new_run_id,
+        owner_email=getattr(owner, "email", "") or "unknown",
+        fork_at_phase=fork_at_phase,
+        fork_ordinal=fork_ordinal,
+        forked_from_run_id=source_run.name,
+        now_utc=now_utc,
+    )
+    drive.upload_file(
+        new_run_folder_id, "run_state.yaml", new_state, "text/yaml",
+    )
 
-    # Postgres: workspace row + working session.
-    with transaction.atomic():
-        session = Session.create_with_owner(
-            owner=owner,
-            title=f"{new_slug} — forked from {source_slug}",
-            backend_kind="cli",
-            status="active",
-            source="web",
-            opp_slug=new_slug,
-            opp_run_id="run-001",
-            workspace=workspace,
+    # Trim decisions.yaml to pre-fork rows (only if the source run had
+    # one — otherwise nothing to trim).
+    if decisions_dest_id is not None:
+        trimmed = _rewrite_decisions_yaml(
+            decisions_source_body or "", fork_ordinal=fork_ordinal,
         )
-        Message.objects.create(
-            session=session,
-            turn_index=0,
-            role="system",
-            sender_user=owner,
-            content={
-                "type": "system",
-                "source": "opps-fork",
-                "source_slug": source_slug,
-                "fork_at_phase": fork_at_phase,
-            },
-            plaintext=(
-                f"Forked `{new_slug}` from `{source_slug}` at phase "
-                f"`{fork_at_phase}`. Re-run /ace:run to continue from there."
-            ),
-            status="complete",
-        )
-        opp_ws = OppWorkspace.objects.create(
-            slug=new_slug,
-            display_name=f"{source_slug} (fork @ {fork_at_phase})",
-            working_session=session,
-            created_by=owner,
-            workspace=workspace,
-        )
+        drive.update_file(decisions_dest_id, trimmed, "text/yaml")
 
+    session = Session.create_with_owner(
+        owner=owner,
+        title=f"{source_slug} — new run {new_run_id} (fork @ {fork_at_phase})",
+        backend_kind="cli",
+        status="active",
+        source="web",
+        opp_slug=source_slug,
+        opp_run_id=new_run_id,
+        workspace=workspace,
+    )
+    Message.objects.create(
+        session=session,
+        turn_index=0,
+        role="system",
+        sender_user=owner,
+        content={
+            "type": "system",
+            "source": "opps-fork",
+            "opp_slug": source_slug,
+            "fork_at_phase": fork_at_phase,
+            "source_run_id": source_run.name,
+            "new_run_id": new_run_id,
+        },
+        plaintext=(
+            f"Forked run `{new_run_id}` from `{source_run.name}` at phase "
+            f"`{fork_at_phase}`. Re-run /ace:run to continue from there."
+        ),
+        status="complete",
+    )
+
+    _emit(progress_cb, {
+        "status": "done",
+        "copied": counter.copied,
+        "total": total_files,
+        "opp_slug": source_slug,
+        "new_run_id": new_run_id,
+    })
     return ForkOppResult(
-        new_slug=new_slug,
-        new_folder_id=new_folder_id,
-        workspace=opp_ws,
+        opp_slug=source_slug,
+        new_run_id=new_run_id,
+        new_run_folder_id=new_run_folder_id,
         working_session=session,
     )
 
 
+# ── Drive helpers ──────────────────────────────────────────────────
+
+
+def _find_child_folder(files: list[DriveFile], name: str) -> DriveFile | None:
+    for f in files:
+        if f.name == name and f.mime_type == _FOLDER_MIME:
+            return f
+    return None
+
+
+def _latest_run(run_children: list[DriveFile]) -> DriveFile | None:
+    """Pick the lex-newest run subfolder. Run-ids follow ``YYYYMMDD-HHMM``
+    so lex-sort matches chronological order."""
+    runs = [f for f in run_children if f.mime_type == _FOLDER_MIME]
+    if not runs:
+        return None
+    runs.sort(key=lambda f: f.name)
+    return runs[-1]
+
+
+def _mint_run_id(
+    now_utc: _dt.datetime, existing_run_children: list[DriveFile],
+) -> str:
+    """Build a ``YYYYMMDD-HHMM`` run-id and bump until it's unique.
+
+    Two forks from the same UI in the same minute would collide
+    otherwise; appending a ``-N`` suffix is the simplest disambiguator
+    that stays sortable.
+    """
+    base = now_utc.strftime("%Y%m%d-%H%M")
+    existing = {f.name for f in existing_run_children}
+    if base not in existing:
+        return base
+    suffix = 2
+    while f"{base}-{suffix}" in existing:
+        suffix += 1
+    return f"{base}-{suffix}"
+
+
+# ── Pre-walk / count ───────────────────────────────────────────────
+
+
 @dataclass
-class _CopyPatches:
-    """Bookkeeping for files we need to rewrite post-copy."""
-    opp_yaml_id: str | None = None
-    opp_yaml_body: str | None = None
-    state_yaml_bodies: dict[str, str] | None = None  # {new_file_id: original_yaml}
-    source_run_id: str | None = None  # latest run id under source/runs/<id>
-
-    def __post_init__(self):
-        if self.state_yaml_bodies is None:
-            self.state_yaml_bodies = {}
+class _Counter:
+    total: int
+    copied: int = 0
 
 
-def _copy_subtree(
+def _count_files_to_copy(
+    drive: DriveClient, source_run_folder_id: str, *, fork_ordinal: int | None,
+) -> int:
+    """Count files we'll actually copy from the source run folder.
+
+    Mirrors the filter applied by ``_copy_run_subtree`` — files at the
+    run root that aren't in ``_RUN_ROOT_FILES_TO_COPY`` aren't counted,
+    and phase folders past the fork point aren't recursed into.
+    """
+    n = 0
+    for child in drive.list_files(source_run_folder_id):
+        if child.mime_type == _FOLDER_MIME:
+            if _should_skip_phase_folder(child.name, fork_ordinal):
+                continue
+            if not _PHASE_FOLDER_RE.match(child.name):
+                # Run-root folders other than `<N>-phase/` aren't part
+                # of the canonical per-run layout; skip them rather than
+                # blindly copying unknown content.
+                continue
+            n += _count_files_recursive(drive, child.id)
+        else:
+            if child.name in _RUN_ROOT_FILES_TO_COPY:
+                n += 1
+    return n
+
+
+def _count_files_recursive(drive: DriveClient, folder_id: str) -> int:
+    n = 0
+    for child in drive.list_files(folder_id):
+        if child.mime_type == _FOLDER_MIME:
+            n += _count_files_recursive(drive, child.id)
+        else:
+            n += 1
+    return n
+
+
+def _should_skip_phase_folder(folder_name: str, fork_ordinal: int | None) -> bool:
+    """True iff ``folder_name`` is a phase folder for a phase at or after
+    the fork point. Folders not matching ``<N>-…`` are never skipped here."""
+    if fork_ordinal is None:
+        return False
+    m = _PHASE_FOLDER_RE.match(folder_name)
+    if not m:
+        return False
+    return int(m.group(1)) >= fork_ordinal
+
+
+# ── Copy ───────────────────────────────────────────────────────────
+
+
+def _copy_run_subtree(
+    *,
+    drive: DriveClient,
+    source_run_folder_id: str,
+    dest_run_folder_id: str,
+    fork_ordinal: int | None,
+    counter: _Counter,
+    progress_cb: ProgressCb | None,
+) -> tuple[str | None, str | None]:
+    """Copy kept phase folders + carried run-root files into the new run.
+
+    Returns ``(decisions_dest_id, decisions_source_body)`` so the caller
+    can trim decisions.yaml after the copy. Either is None when the
+    source run had no decisions log.
+    """
+    decisions_dest_id: str | None = None
+    decisions_source_body: str | None = None
+    for child in drive.list_files(source_run_folder_id):
+        if child.mime_type == _FOLDER_MIME:
+            if _should_skip_phase_folder(child.name, fork_ordinal):
+                continue
+            if not _PHASE_FOLDER_RE.match(child.name):
+                # Per the canonical layout, run-root subfolders are all
+                # `<N>-phase/`. Anything else is unrecognized; leave it
+                # in the source and don't propagate to the new run.
+                continue
+            sub_id = drive.create_folder(dest_run_folder_id, child.name)
+            _copy_subtree_verbatim(
+                drive=drive,
+                source_folder_id=child.id,
+                dest_folder_id=sub_id,
+                rel_path=child.name,
+                counter=counter,
+                progress_cb=progress_cb,
+            )
+        else:
+            if child.name not in _RUN_ROOT_FILES_TO_COPY:
+                continue
+            new_id = drive.copy_file(child.id, dest_run_folder_id, child.name)
+            if child.name in ("decisions.yaml", "decisions.yml"):
+                decisions_dest_id = new_id
+                decisions_source_body = _read_text_or_empty(drive, child)
+            counter.copied += 1
+            _emit(progress_cb, {
+                "status": "copying",
+                "copied": counter.copied,
+                "total": counter.total,
+                "current": child.name,
+            })
+    return decisions_dest_id, decisions_source_body
+
+
+def _copy_subtree_verbatim(
     *,
     drive: DriveClient,
     source_folder_id: str,
     dest_folder_id: str,
     rel_path: str,
-    patches: _CopyPatches,
+    counter: _Counter,
+    progress_cb: ProgressCb | None,
 ) -> None:
-    """Recursively copy every child of ``source_folder_id`` into ``dest_folder_id``.
-
-    ``rel_path`` is the path within the opp tree (e.g. ``"runs/<run-id>"``)
-    — used to recognize the canonical state.yaml / opp.yaml locations so
-    we can patch them after the copy.
-    """
+    """Copy every child of a kept phase folder, no filtering."""
     for child in drive.list_files(source_folder_id):
-        new_path = f"{rel_path}/{child.name}" if rel_path else child.name
+        new_path = f"{rel_path}/{child.name}"
         if child.mime_type == _FOLDER_MIME:
             sub_id = drive.create_folder(dest_folder_id, child.name)
-            # Track the latest run-id we encounter under runs/. Run-ids
-            # sort lexicographically newest-last when they're timestamps;
-            # we just keep updating to the most recent string.
-            if rel_path == "runs":
-                if (
-                    patches.source_run_id is None
-                    or child.name > patches.source_run_id
-                ):
-                    patches.source_run_id = child.name
-            _copy_subtree(
+            _copy_subtree_verbatim(
                 drive=drive,
                 source_folder_id=child.id,
                 dest_folder_id=sub_id,
                 rel_path=new_path,
-                patches=patches,
+                counter=counter,
+                progress_cb=progress_cb,
             )
         else:
-            new_id = drive.copy_file(child.id, dest_folder_id, child.name)
-            # Capture body for the files we need to rewrite. Read from
-            # the SOURCE id (faster — already-cached metadata) but record
-            # the DESTINATION id we'll patch after the copy completes.
-            if rel_path == "" and child.name == "opp.yaml":
-                patches.opp_yaml_id = new_id
-                patches.opp_yaml_body = _read_text_or_empty(drive, child)
-            elif child.name in ("state.yaml", "run_state.yaml"):
-                patches.state_yaml_bodies[new_id] = _read_text_or_empty(drive, child)
+            drive.copy_file(child.id, dest_folder_id, child.name)
+            counter.copied += 1
+            _emit(progress_cb, {
+                "status": "copying",
+                "copied": counter.copied,
+                "total": counter.total,
+                "current": new_path,
+            })
+
+
+def _emit(progress_cb: ProgressCb | None, payload: dict) -> None:
+    if progress_cb is None:
+        return
+    try:
+        progress_cb(payload)
+    except Exception:  # noqa: BLE001 — progress reporting must never break the fork
+        pass
 
 
 def _read_text_or_empty(drive: DriveClient, f: DriveFile) -> str:
@@ -237,68 +443,127 @@ def _read_text_or_empty(drive: DriveClient, f: DriveFile) -> str:
     caller falls back to leaving the original content alone."""
     try:
         content = drive.get_content(f.id, f.mime_type)
-        # FileContent has a ``text`` attribute for text-shaped files.
-        return getattr(content, "text", "") or ""
+        return getattr(content, "content", "") or ""
     except Exception:  # noqa: BLE001
         return ""
 
 
-def _rewrite_opp_yaml(
-    original: str,
-    *,
-    new_slug: str,
-    source_slug: str,
-    fork_at_phase: str,
-    source_run_id: str | None,
-    forked_at: str,
-) -> str:
-    """Rewrite opp.yaml: new slug + display_name + forked_from block.
+# ── State synthesis ────────────────────────────────────────────────
 
-    Falls back to a hand-built YAML stub if the source yaml is empty
-    or unparseable — the fork is still usable, just without the source's
-    other metadata.
-    """
+
+def _resolve_phase_ordinal(phase_name: str) -> int | None:
+    """Look up a phase's ordinal from the agent registry. Returns None if
+    the phase is unknown — in which case the copy degenerates to "copy
+    everything" (safer than silently dropping content)."""
+    # Deferred import: opp_forker is imported during view module load and
+    # the skill registry pulls in the heavier system reader.
+    from apps.opps.skills import all_phases
+
+    phases = all_phases()
     try:
-        data = yaml.safe_load(original) or {}
-        if not isinstance(data, dict):
-            data = {}
-    except yaml.YAMLError:
-        data = {}
+        return phases.index(phase_name) + 1
+    except ValueError:
+        return None
 
-    data["slug"] = new_slug
-    if "display_name" in data:
-        data["display_name"] = f"{data['display_name']} (fork @ {fork_at_phase})"
-    else:
-        data["display_name"] = f"{source_slug} (fork @ {fork_at_phase})"
-    data["forked_from"] = {
-        "slug": source_slug,
-        "phase": fork_at_phase,
-        "run_id": source_run_id or "",
-        "forked_at": forked_at,
+
+def _build_phases_map(fork_ordinal: int | None) -> dict[str, dict[str, str]]:
+    """Build the ``phases`` map for a fresh run_state.yaml.
+
+    Skills in phases ``< fork_ordinal`` are seeded ``done`` (we just
+    carried their artifacts forward); skills in phases ``>= fork``
+    start ``pending`` for the new run to overwrite.
+    """
+    from apps.opps.skills import SKILL_REGISTRY, all_phases
+
+    phases_map: dict[str, dict[str, str]] = {}
+    phase_order = all_phases()
+    for skill in SKILL_REGISTRY:
+        if skill.is_recurring:
+            # Recurring skills aren't tracked in the per-phase map.
+            continue
+        try:
+            phase_idx = phase_order.index(skill.phase) + 1
+        except ValueError:
+            continue
+        if fork_ordinal is None:
+            status = "pending"
+        elif phase_idx < fork_ordinal:
+            status = "done"
+        else:
+            status = "pending"
+        phases_map.setdefault(skill.phase, {})[skill.name] = status
+    return phases_map
+
+
+def _build_run_state_yaml(
+    *,
+    opp_slug: str,
+    run_id: str,
+    owner_email: str,
+    fork_at_phase: str,
+    fork_ordinal: int | None,
+    forked_from_run_id: str,
+    now_utc: _dt.datetime,
+) -> str:
+    """Synthesize a fresh ``run_state.yaml`` per the State Schema in the
+    plugin's orchestrator-reference (§ State Schema, defensive init).
+
+    Adds a ``forked_from`` block so lineage is visible without diving
+    into Drive — the plugin doesn't read this field but humans will.
+    """
+    iso_now = now_utc.isoformat()
+    data: dict = {
+        "opportunity": opp_slug,
+        "run_id": run_id,
+        "mode": "default",
+        "created": iso_now,
+        "initiated_by": owner_email,
+        "last_actor": owner_email,
+        "last_actor_at": iso_now,
+        "current_phase": fork_at_phase,
+        "phases": _build_phases_map(fork_ordinal),
+        "forked_from": {
+            "run_id": forked_from_run_id,
+            "phase": fork_at_phase,
+            "forked_at": iso_now,
+        },
     }
     return yaml.safe_dump(data, sort_keys=False)
 
 
-def _rewrite_state_yaml(original: str, *, fork_at_phase: str) -> str:
-    """Reset current_phase / current_step to the fork target.
+def _rewrite_decisions_yaml(original: str, *, fork_ordinal: int | None) -> str:
+    """Trim ``decisions.yaml`` to rows from phases strictly before the fork.
 
-    The plugin's ``/ace:run`` resumes from the recorded ``current_phase`` —
-    setting it to the fork phase makes the next run start there, and the
-    later-phase artifacts left in the copy get overwritten.
+    Each row carries its own ``phase`` tag (agent-declared phase name).
+    Rows whose phase ordinal >= ``fork_ordinal`` are dropped. Rows whose
+    phase isn't recognized stay (safer than silently dropping content
+    when the registry / decisions file disagree).
     """
+    if fork_ordinal is None:
+        return original
     try:
         data = yaml.safe_load(original) or {}
         if not isinstance(data, dict):
-            data = {}
+            return original
     except yaml.YAMLError:
-        data = {}
+        return original
 
-    data["current_phase"] = fork_at_phase
-    # current_step set to None so the plugin picks the first step of the
-    # phase. Same for the timing fields — those carry the source run's
-    # times and would otherwise lie about the fork's progress.
-    data.pop("current_step", None)
-    data.pop("started_at", None)
-    data.pop("last_actor_at", None)
-    data.pop("last_actor", None)
+    rows = data.get("decisions")
+    if not isinstance(rows, list):
+        return original
+
+    kept: list = []
+    for row in rows:
+        if not isinstance(row, dict):
+            kept.append(row)
+            continue
+        phase_name = str(row.get("phase") or "").strip()
+        if not phase_name:
+            kept.append(row)
+            continue
+        ordinal = _resolve_phase_ordinal(phase_name)
+        if ordinal is None or ordinal < fork_ordinal:
+            kept.append(row)
+
+    data["decisions"] = kept
     return yaml.safe_dump(data, sort_keys=False)

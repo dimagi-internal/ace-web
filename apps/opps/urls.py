@@ -26,6 +26,11 @@ urlpatterns = [
     path("<slug:slug>/scorecard", views.scorecard, name="opps-scorecard"),
     path("<slug:slug>/fork", views.opp_fork, name="opps-fork"),
     path(
+        "<slug:slug>/fork/status",
+        views.opp_fork_status,
+        name="opps-fork-status",
+    ),
+    path(
         "<slug:slug>/runs/<str:run_id>",
         views.delete_run,
         name="opps-delete-run",
