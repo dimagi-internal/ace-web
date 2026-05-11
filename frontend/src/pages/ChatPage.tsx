@@ -20,7 +20,14 @@ import {
 export function ChatPage() {
   const { slug = "" } = useParams();
   const [meta, setMeta] = useState<Session | null>(null);
-  const [showStructure, setShowStructure] = useState(false);
+  // The Structure tab is collapsed by default but can be deep-linked open by
+  // landing on a URL with `#structure` — e.g. /w/<ws>/sessions/<slug>#structure.
+  // `hasOpenedStructure` keeps the tab mounted across collapse/expand once first
+  // opened, so the fetched tree (and its ETag) survives toggling.
+  const [structureOpen, setStructureOpen] = useState(
+    () => typeof window !== "undefined" && window.location.hash === "#structure",
+  );
+  const [hasOpenedStructure, setHasOpenedStructure] = useState(structureOpen);
   // Distinct from `meta == null` (loading) so the "session not found"
   // branch is reachable. Previously this page caught fetch errors with
   // setMeta(null), which collided with the initial loading state and
@@ -93,14 +100,20 @@ export function ChatPage() {
         <div className="flex-1 overflow-hidden">
           <ChatPanel key={slug} slug={slug} />
         </div>
-        <details className="border-t">
-          <summary
-            className="cursor-pointer px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-            onClick={() => setShowStructure(true)}
-          >
+        <details
+          id="structure"
+          className="border-t"
+          open={structureOpen}
+          onToggle={(e) => {
+            const open = (e.target as HTMLDetailsElement).open;
+            setStructureOpen(open);
+            if (open) setHasOpenedStructure(true);
+          }}
+        >
+          <summary className="cursor-pointer px-4 py-2 text-sm text-muted-foreground hover:text-foreground">
             Structure
           </summary>
-          {showStructure ? <StructureTab slug={slug} /> : null}
+          {hasOpenedStructure ? <StructureTab slug={slug} /> : null}
         </details>
       </div>
     </div>
