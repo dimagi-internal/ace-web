@@ -514,6 +514,10 @@ export interface StructureToolNode {
   started_at: string | null;
   wall_time_seconds: number;
   status: StructureStatus;
+  // First 200 chars of the tool_result body (first text block for multi-
+  // block content; full body for string content). Null when the tool had
+  // no matching result (in-flight / interrupted) or the result body was empty.
+  content_preview: string | null;
 }
 
 export interface StructureParallelGroup {
