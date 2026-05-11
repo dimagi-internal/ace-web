@@ -5,7 +5,6 @@ import type { Session } from "../../api/types";
 import { useCliAuthStatus } from "../../hooks/useCliAuthStatus";
 import { useSessionSocket } from "../../hooks/useSessionSocket";
 import { isDraftIdle, msUntilDraftIdle } from "../../lib/drafts";
-import { CliAuthBanner } from "../CliAuthBanner";
 import { ConnectionStatus } from "../ConnectionStatus";
 import { MessageList } from "../MessageList";
 import { PresenceChips } from "../PresenceChips";
@@ -94,7 +93,6 @@ export function ChatPanel({ slug }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <CliAuthBanner />
       <div className="flex items-center gap-3 border-b border-border bg-background px-3 py-1.5 text-xs">
         <ConnectionStatus
           wsConnected={socket.connected}
