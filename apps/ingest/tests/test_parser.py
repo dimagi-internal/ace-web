@@ -174,3 +174,25 @@ def test_cost_event_content_preview_truncates_long_results(tmp_path):
     assert result.is_error is False
     assert result.content_preview == long_body[:200]
     assert len(result.content_preview) == 200
+
+
+def test_parse_session_bytes_matches_parse_session_file():
+    """parse_session_bytes produces the same output as parse_session_file
+    for the same content — the file variant just delegates."""
+    from apps.ingest.parser import parse_session_bytes, parse_session_file
+
+    path = FIXTURES / "tool_use_session.jsonl"
+    raw = path.read_bytes()
+    session_a, events_a = parse_session_file(path)
+    session_b, events_b = parse_session_bytes(raw)
+
+    assert session_a.cli_session_id == session_b.cli_session_id
+    assert session_a.raw_bytes == session_b.raw_bytes
+    assert session_a.line_count == session_b.line_count
+    assert session_a.content_sha256 == session_b.content_sha256
+    assert len(session_a.turns) == len(session_b.turns)
+    assert len(events_a) == len(events_b)
+    for ea, eb in zip(events_a, events_b, strict=True):
+        assert ea.kind == eb.kind
+        assert ea.tool_use_id == eb.tool_use_id
+        assert ea.matched_tool_use_id == eb.matched_tool_use_id
