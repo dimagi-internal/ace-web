@@ -85,6 +85,7 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
                 phase={selectedPhaseInfo}
                 steps={selectedPhaseSteps}
                 oppSlug={oppSlug}
+                sourceRunId={snapshot.current_run.run_id}
                 sourceLastActorAt={
                   // The active run's last_actor_at lives in runs[] (RunSummary)
                   // — Run itself only has started_at / completed_at.
@@ -228,6 +229,7 @@ interface PhasePanelHeaderProps {
   phase: PhaseInfo;
   steps: Step[];
   oppSlug: string;
+  sourceRunId: string;
   sourceLastActorAt: string | null;
 }
 
@@ -235,6 +237,7 @@ function PhasePanelHeader({
   phase,
   steps,
   oppSlug,
+  sourceRunId,
   sourceLastActorAt,
 }: PhasePanelHeaderProps) {
   const [forkOpen, setForkOpen] = useState(false);
@@ -261,16 +264,15 @@ function PhasePanelHeader({
             {phase.display_name}
           </h2>
         </div>
-        {/* Fork CTA: lets a viewer branch the run from this phase boundary
-            so they can re-run the rest of the lifecycle as a separate
-            opp without losing the source. The Drive copy is recursive
-            and can take 30-60s — see ForkOppDialog for the wait state. */}
+        {/* Fork CTA: mints a NEW RUN under this opp seeded from the
+            current run's upstream phase artifacts. Per-opp state
+            (opp.yaml, inputs, calibration) stays shared. */}
         <Button
           variant="outline"
           size="sm"
           onClick={() => setForkOpen(true)}
           className="shrink-0 text-xs"
-          title={`Fork this opp into a new one starting at ${phase.display_name}`}
+          title={`Fork a new run starting at ${phase.display_name}`}
         >
           <GitFork className="mr-1.5 h-3.5 w-3.5" />
           Fork from here
@@ -304,6 +306,7 @@ function PhasePanelHeader({
         open={forkOpen}
         onOpenChange={setForkOpen}
         sourceSlug={oppSlug}
+        sourceRunId={sourceRunId}
         forkAtPhase={phase.name}
         forkAtPhaseDisplay={phase.display_name}
         sourceLastActorAt={sourceLastActorAt}

@@ -250,6 +250,7 @@ from apps.opps.views_write import (  # noqa: E402,F401
     opp_artifact_write,
     opp_create,
     opp_fork,
+    opp_fork_status,
     patch_opp,
 )
 
