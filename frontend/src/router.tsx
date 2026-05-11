@@ -12,6 +12,7 @@ import OppComparePage from "./pages/OppComparePage";
 import OppListPage from "./pages/OppListPage";
 import OppSummaryPage from "./pages/OppSummaryPage";
 import OppWorkbenchPage from "./pages/OppWorkbenchPage";
+import { SessionStructurePage } from "./pages/SessionStructurePage";
 import SessionsPage from "./pages/SessionsPage";
 import SettingsPage from "./pages/SettingsPage";
 import ShareViewPage from "./pages/ShareViewPage";
@@ -55,6 +56,7 @@ export const router = createBrowserRouter(
             { path: "sessions", element: <SessionsPage /> },
             { path: "chat", element: <ChatRedirectPage /> },
             { path: "chat/:slug", element: <ChatPage /> },
+            { path: "chat/:slug/structure", element: <SessionStructurePage /> },
             { path: "workspace-settings", element: <WorkspaceSettingsPage /> },
           ],
         },

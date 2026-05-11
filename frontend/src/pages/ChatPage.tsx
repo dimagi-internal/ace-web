@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-
-import { StructureTab } from "../components/structure/StructureTab";
+import { ListTree } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { createSession, getSession, updateSession } from "../api/sessions";
@@ -18,16 +17,11 @@ import {
 } from "../hooks/useRecentSessions";
 
 export function ChatPage() {
-  const { slug = "" } = useParams();
+  const { slug = "", workspaceSlug = "" } = useParams<{
+    slug: string;
+    workspaceSlug: string;
+  }>();
   const [meta, setMeta] = useState<Session | null>(null);
-  // The Structure tab is collapsed by default but can be deep-linked open by
-  // landing on a URL with `#structure` — e.g. /w/<ws>/sessions/<slug>#structure.
-  // `hasOpenedStructure` keeps the tab mounted across collapse/expand once first
-  // opened, so the fetched tree (and its ETag) survives toggling.
-  const [structureOpen, setStructureOpen] = useState(
-    () => typeof window !== "undefined" && window.location.hash === "#structure",
-  );
-  const [hasOpenedStructure, setHasOpenedStructure] = useState(structureOpen);
   // Distinct from `meta == null` (loading) so the "session not found"
   // branch is reachable. Previously this page caught fetch errors with
   // setMeta(null), which collided with the initial loading state and
@@ -93,6 +87,14 @@ export function ChatPage() {
             <InlineTitleEdit value={meta.title} onSave={handleTitleSave} />
           </div>
           <div className="relative flex items-center gap-3">
+            <Link
+              to={`/w/${workspaceSlug}/chat/${slug}/structure`}
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              title="View hierarchical breakdown of this session"
+            >
+              <ListTree className="h-4 w-4" />
+              Structure
+            </Link>
             <AddTeammateButton slug={slug} />
             <SharePopover slug={slug} />
           </div>
@@ -100,21 +102,6 @@ export function ChatPage() {
         <div className="flex-1 overflow-hidden">
           <ChatPanel key={slug} slug={slug} />
         </div>
-        <details
-          id="structure"
-          className="border-t"
-          open={structureOpen}
-          onToggle={(e) => {
-            const open = (e.target as HTMLDetailsElement).open;
-            setStructureOpen(open);
-            if (open) setHasOpenedStructure(true);
-          }}
-        >
-          <summary className="cursor-pointer px-4 py-2 text-sm text-muted-foreground hover:text-foreground">
-            Structure
-          </summary>
-          {hasOpenedStructure ? <StructureTab slug={slug} /> : null}
-        </details>
       </div>
     </div>
   );
