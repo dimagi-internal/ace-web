@@ -32,11 +32,15 @@ from .exceptions import EmulatorBootTimeout, MobileError, SSMFailure
 # How long to wait for the EC2 instance + SSM agent to come ready
 # after a cold ``StartInstances`` call.
 _BOOT_HARD_TIMEOUT_SEC = 180
-# How long to wait for the in-VM Android emulator (already-running EC2
-# instance) to report ``sys.boot_completed=1``. The emulator is launched
-# by the systemd unit baked into the AMI; first boot after a cold
-# instance start can take ~60 s.
-_EMULATOR_READY_TIMEOUT_SEC = 120
+# How long to wait for the in-VM Android emulator + cold-boot
+# registration to complete. ``ace-emulator-launch`` writes
+# ``/run/ace-mobile/ready`` once the +7426 demo registration recipes
+# finish — that's the signal we wait for. Budget: AVD boot ~60-90s,
+# adb install ~10s, two registration recipes ~60s, total ~3 min.
+# 5-min ceiling gives headroom for transient slowness without masking
+# real failures.
+_EMULATOR_READY_TIMEOUT_SEC = 300
+_EMULATOR_READY_MARKER = "/run/ace-mobile/ready"
 # Per-call SSM timeouts. Tuned for the typical command class.
 _SSM_PROBE_TIMEOUT_SEC = 30
 _SSM_OP_TIMEOUT_SEC = 300
@@ -457,6 +461,50 @@ class EmulatorController:
         )
         return result.stdout
 
+    def capture_screenshot(self) -> Artifact:
+        """Take a screenshot of the running AVD and return a presigned URL.
+
+        Useful for "what's on screen right now" debug probes from
+        skills, the API, or `/tmp/get-screenshot`. The PNG is uploaded
+        to S3 with a timestamped key under ``screenshots/adhoc/``;
+        S3's 7-day lifecycle cleans it up.
+        """
+        self._assert_running()
+        run_id = uuid.uuid4().hex[:12]
+        ts = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
+        local_path = f"/tmp/screen-{run_id}.png"
+        s3_key = f"screenshots/adhoc/{ts}-{run_id}.png"
+        commands = [
+            "set -eu",
+            f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+            f"sudo -u ubuntu {_ADB} shell screencap -p /sdcard/now.png",
+            f"sudo -u ubuntu {_ADB} pull /sdcard/now.png {shlex.quote(local_path)} >/dev/null",
+            f"aws s3 cp {shlex.quote(local_path)} "
+            f"s3://{self.s3_bucket}/{shlex.quote(s3_key)} --quiet",
+            f"rm -f {shlex.quote(local_path)}",
+        ]
+        ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=commands,
+            timeout_seconds=_SSM_OP_TIMEOUT_SEC,
+        )
+        try:
+            url = self.s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.s3_bucket, "Key": s3_key},
+                ExpiresIn=_PRESIGN_TTL_SEC,
+            )
+        except ClientError as e:
+            raise MobileError(
+                f"s3.generate_presigned_url failed for {s3_key}: {e}"
+            ) from e
+        return Artifact(
+            name=f"{ts}-{run_id}.png",
+            presigned_url=url,
+            content_type="image/png",
+        )
+
     # ── Internals ────────────────────────────────────────────────
 
     def _describe_instance(self) -> dict[str, Any]:
@@ -513,20 +561,24 @@ class EmulatorController:
         )
 
     def _wait_for_emulator(self) -> None:
-        """Probe the in-VM Android emulator until ``sys.boot_completed``.
+        """Probe the in-VM AVD until cold-boot registration completes.
 
-        Issues a single SSM command that itself blocks for up to
-        ``_EMULATOR_READY_TIMEOUT_SEC`` — that's cheaper than polling
-        SSM repeatedly and the in-VM ``adb wait-for-device`` is the
-        thing we actually need to wait for.
+        ``ace-emulator-launch`` writes ``_EMULATOR_READY_MARKER`` after:
+          1. AVD boots (sys.boot_completed=1)
+          2. CommCare APK is installed
+          3. Both +7426 demo registration recipes succeed
+
+        We poll for that marker rather than just ``sys.boot_completed``
+        — the latter fires before registration, so callers would see
+        "running" while the launcher is still typing into PersonalID.
+        Budget: ~3 min on a cold instance start.
         """
+        marker = _EMULATOR_READY_MARKER
         commands = [
             "set -eu",
-            f"{_ADB} wait-for-device",
-            f"for i in $(seq 1 60); do "
-            f"  ready=$({_ADB} shell getprop sys.boot_completed 2>/dev/null | tr -d '\\r'); "
-            "  if [ \"$ready\" = \"1\" ]; then echo READY; exit 0; fi; "
-            "  sleep 2; "
+            f"for i in $(seq 1 {_EMULATOR_READY_TIMEOUT_SEC // 5}); do "
+            f"  if [ -f {shlex.quote(marker)} ]; then echo READY; exit 0; fi; "
+            "  sleep 5; "
             "done; "
             "echo NOT_READY; exit 1",
         ]

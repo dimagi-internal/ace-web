@@ -251,8 +251,8 @@ infra/mobile-ami/
     ├── ace-mobile-runner.service
     ├── idle-shutdown.sh         # /usr/local/bin/ace-idle-shutdown
     └── recipes/
-        ├── connect-register-to-otp.yaml      # copied from ../ace/mcp/mobile/recipes/static/
-        └── connect-register-from-otp.yaml    # copied from ../ace/mcp/mobile/recipes/static/
+        ├── connect-register-1-phone-entry.yaml      # copied from ../ace/mcp/mobile/recipes/static/
+        └── connect-register-2-app-lock.yaml    # copied from ../ace/mcp/mobile/recipes/static/
 ```
 
 Packer builder: `amazon-ebs`, source AMI `ami-*-ubuntu-noble-24.04-amd64-server-*`,
@@ -274,8 +274,8 @@ Packer as a normal provisioner step:
 2. Grant CAMERA permission to `org.commcare.dalvik`.
 3. Boot the AVD headless: `emulator -avd ACE_Pixel_API_34 -no-window -gpu swiftshader_indirect -no-snapshot-save &` and wait for `sys.boot_completed`.
 4. `adb install -r /opt/ace/apks/commcare.apk`.
-5. `maestro test connect-register-to-otp.yaml --env COUNTRY_CODE=... --env PHONE_LOCAL=...` — phone is a `+7426*` Packer var.
-6. `maestro test connect-register-from-otp.yaml --env NAME=... --env BACKUP_CODE=... --env PIN=...`.
+5. `maestro test connect-register-1-phone-entry.yaml --env COUNTRY_CODE=... --env PHONE_LOCAL=...` — phone is a `+7426*` Packer var.
+6. `maestro test connect-register-2-app-lock.yaml --env NAME=... --env BACKUP_CODE=... --env PIN=...`.
 7. `adb emu avd snapshot save registered-test-user`.
 8. `adb emu kill`.
 

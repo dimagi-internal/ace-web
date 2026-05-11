@@ -295,6 +295,24 @@ def capture_ui_dump(request: Request) -> Response:
     return Response(success_response({"xml": xml}))
 
 
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def screenshot(request: Request) -> Response:
+    """Take a screenshot of the running AVD and return a presigned URL.
+
+    GET or POST (no body needed). The endpoint runs adb screencap on
+    the instance, uploads the PNG to S3, and returns a 1-hour presigned
+    URL. Useful for debugging, skill screenshots-on-demand, and the
+    /tmp/get-screenshot local helper.
+    """
+    try:
+        _assert_configured()
+        artifact = _make_controller().capture_screenshot()
+    except MobileError as e:
+        return _mobile_error_response(e)
+    return Response(success_response(_to_payload(artifact)))
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def stop(request: Request) -> Response:

@@ -65,32 +65,10 @@ variable "commcare_versions" {
 # how to inject them via `packer build -var=...` or env vars.
 # ---------------------------------------------------------------------------
 
-variable "test_phone_local" {
-  description = "Local digits of the demo phone (no `+`, no country code). e.g., 4260000100. The combined COUNTRY_CODE+PHONE_LOCAL must start with `+7426` for the Connect-id demo-bypass to skip OTP."
-  type        = string
-  sensitive   = true
-}
-
-variable "test_country_code" {
-  description = "Country-code prefix of the demo phone, including the `+`. Typically `+7` for the +7426 demo range."
-  type        = string
-  sensitive   = true
-}
-
-variable "test_pin" {
-  description = "4-digit PIN that backs the App Lock setup. e.g., 1234"
-  type        = string
-  sensitive   = true
-}
-
-variable "test_backup_code" {
-  description = "6-digit numeric backup code for ConnectID."
-  type        = string
-  sensitive   = true
-}
-
-variable "test_name" {
-  description = "Display name written to ConnectID. e.g., \"ACE Test User\"."
-  type        = string
-  default     = "ACE Test User"
-}
+# Test-user creds USED to be passed to the bake (back when the bake
+# saved a snapshot of the registered state). Now the runtime cold-boots
+# and registers on every instance launch, reading creds from AWS
+# Secrets Manager (`ace-mobile-test-user-creds`). The bake no longer
+# needs them. Variables removed; secret is provisioned out-of-band
+# via `aws secretsmanager create-secret` — see
+# docs/specs/2026-05-10-phase5-cloud-mobile-integration-design.md.

@@ -1,82 +1,204 @@
 #!/bin/bash
-# Launch the Android emulator from a named state snapshot. Reads
-# /opt/ace/states.yaml for the catalog of states baked into the AMI.
+# Cold-boot the Android emulator and register the +7426 demo user
+# end-to-end. This is the first-class boot path — we do NOT bake an
+# AVD snapshot into the AMI (that approach hit Android-emulator
+# snapshot persistence quirks across AMI capture; investigation log
+# in docs/learnings/cloud-emulator-snapshot-persistence.md).
 #
-# Usage:
-#   ace-emulator-launch              # uses `default` from states.yaml
-#   ace-emulator-launch cc-2.62.0    # uses a specific named state
+# Cold-boot wall clock budget: ~2-3 min (cold AVD boot ~60-90s,
+# adb install ~10s, two registration recipes ~60s, idle).
 #
-# After the emulator boots, this script self-heals: if CommCare isn't
-# installed for some reason (e.g., a partial snapshot), it installs the
-# matching APK from /opt/ace/apks/<version>/commcare.apk. This is
-# defensive — the snapshot save in step 50 + sync should normally
-# preserve the install — but it makes the runtime resilient to AMI
-# capture quirks.
+# Args:
+#   $1 — state name (default: states.yaml's `default`). Selects which
+#        CommCare APK version + recipe set to register against.
 #
-# This script execs the emulator (it does NOT exit), so systemd
-# considers the unit alive while the emulator runs.
-set -euo pipefail
+# Per-boot flow (idempotent — safe to re-run):
+#   1. Read /opt/ace/states.yaml to resolve state name → APK + version
+#   2. Read AWS Secrets Manager `ace-mobile-test-user-creds` for the
+#      +7426 demo phone, PIN, backup code, country code
+#   3. Cold-boot the AVD (-no-snapshot -wipe-data) — fully fresh /data
+#   4. Wait for sys.boot_completed
+#   5. adb install the matching APK
+#   6. Run connect-register-1-phone-entry.yaml then connect-register-2-app-lock.yaml
+#   7. Touch /run/ace-mobile/ready so callers can poll for "ready"
+#   8. exec emulator (so systemd considers the unit alive while the
+#      emulator runs — ace-web's stop/idle layers handle shutdown)
+#
+# This script must run AS the ubuntu user (the systemd unit sets that).
+
+set -e
 
 STATES_YAML=/opt/ace/states.yaml
 APK_ROOT=/opt/ace/apks
+RECIPE_DIR=/opt/ace/recipes
 ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-/opt/android-sdk}
 ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
+EMU="$ANDROID_SDK_ROOT/emulator/emulator"
+MAESTRO=/usr/local/bin/maestro
+AVD_NAME=ACE_Pixel_API_34
+RUNDIR=/run/ace-mobile
+READY_MARKER="$RUNDIR/ready"
+LOG_FILE=/var/log/ace-mobile/emulator.log
+SECRET_NAME=ace-mobile-test-user-creds
+REGION="${AWS_REGION:-us-east-1}"
+
+# Idle marker. Touched aggressively here so the in-VM watchdog
+# doesn't shoot us during the longer cold-boot path.
+mark_active() { touch "$RUNDIR/last-activity" 2>/dev/null || true; }
+mark_active
 
 REQUESTED_STATE="${1:-}"
 if [[ -z "$REQUESTED_STATE" ]]; then
   REQUESTED_STATE=$(awk '/^default:/ {print $2; exit}' "$STATES_YAML")
 fi
+echo "[ace-emulator-launch] state=$REQUESTED_STATE"
+echo "$REQUESTED_STATE" > "$RUNDIR/active-state" 2>/dev/null || true
 
-# Pull this state's snapshot name, commcare version, and apk path from
-# states.yaml. Use awk because we don't want to hard-depend on yq.
+# Resolve state → APK path + version.
 read -r SNAPSHOT_NAME COMMCARE_VERSION APK_PATH < <(
   awk -v target="$REQUESTED_STATE" '
     $1 == "-" && $2 == "name:" && $3 == target { found = 1; next }
     found && $1 == "snapshot:" { snap = $2 }
     found && $1 == "commcare_version:" { gsub(/"/, "", $2); ver = $2 }
     found && $1 == "apk_path:" { apk = $2 }
-    found && $1 == "-" { exit }  # next state begins
+    found && $1 == "-" { exit }
     END { print snap, ver, apk }
   ' "$STATES_YAML"
 )
+if [[ -z "$APK_PATH" || ! -f "$APK_PATH" ]]; then
+  echo "[ace-emulator-launch] ERROR: APK missing for state $REQUESTED_STATE (path=$APK_PATH)" >&2
+  exit 1
+fi
+echo "[ace-emulator-launch] commcare_version=$COMMCARE_VERSION apk=$APK_PATH"
 
-if [[ -z "$SNAPSHOT_NAME" ]]; then
-  echo "ERROR: state '$REQUESTED_STATE' not in $STATES_YAML" >&2
+# ── Read test creds from Secrets Manager ─────────────────────────────
+mark_active
+echo "[ace-emulator-launch] reading $SECRET_NAME from Secrets Manager..."
+SECRET_JSON=$(aws --region "$REGION" secretsmanager get-secret-value \
+  --secret-id "$SECRET_NAME" --query SecretString --output text 2>&1) || {
+  echo "[ace-emulator-launch] ERROR: secretsmanager get-secret-value failed: $SECRET_JSON" >&2
+  exit 1
+}
+PHONE_LOCAL=$(echo "$SECRET_JSON" | jq -r .phone_local)
+COUNTRY_CODE=$(echo "$SECRET_JSON" | jq -r .country_code)
+PIN=$(echo "$SECRET_JSON" | jq -r .pin)
+BACKUP_CODE=$(echo "$SECRET_JSON" | jq -r .backup_code)
+NAME=$(echo "$SECRET_JSON" | jq -r .name)
+PHONE="${COUNTRY_CODE}${PHONE_LOCAL}"
+
+# Sanity-check the +7426 demo prefix.
+case "$PHONE" in
+  +7426*) ;;
+  *)
+    echo "[ace-emulator-launch] ERROR: combined phone '$PHONE' is not in +7426 demo range" >&2
+    exit 1
+    ;;
+esac
+
+# ── Cold-boot the emulator ───────────────────────────────────────────
+mark_active
+echo "[ace-emulator-launch] booting emulator (cold, -wipe-data)..."
+mkdir -p "$(dirname "$LOG_FILE")"
+nohup "$EMU" -avd "$AVD_NAME" \
+  -no-window -no-audio -no-metrics \
+  -gpu swiftshader_indirect \
+  -no-snapshot \
+  -no-boot-anim \
+  -wipe-data \
+  > "$LOG_FILE" 2>&1 &
+EMULATOR_PID=$!
+echo "[ace-emulator-launch] emulator pid=$EMULATOR_PID, log=$LOG_FILE"
+
+# Self-cleanup if anything below errors out.
+trap 'echo "[ace-emulator-launch] startup failed — killing emulator pid=$EMULATOR_PID" >&2; kill -9 $EMULATOR_PID 2>/dev/null || true; rm -f "$READY_MARKER" 2>/dev/null || true' ERR
+
+# Background marker keepalive while we wait. Stops on script exit.
+( while sleep 30; do mark_active; done ) &
+KEEPALIVE_PID=$!
+trap 'kill $KEEPALIVE_PID 2>/dev/null || true' EXIT
+
+# Verify emulator process is alive after a few seconds.
+sleep 5
+if ! kill -0 $EMULATOR_PID 2>/dev/null; then
+  echo "[ace-emulator-launch] ERROR: emulator died before adb saw it. Log tail:" >&2
+  tail -40 "$LOG_FILE" >&2 || true
   exit 1
 fi
 
-echo "[ace-emulator-launch] state=$REQUESTED_STATE snapshot=$SNAPSHOT_NAME commcare=$COMMCARE_VERSION"
+# Wait for adb device + boot complete.
+echo "[ace-emulator-launch] waiting for adb (max 180s)..."
+if ! timeout 180 "$ADB" wait-for-device; then
+  echo "[ace-emulator-launch] ERROR: adb wait-for-device timed out" >&2
+  tail -60 "$LOG_FILE" >&2 || true
+  exit 1
+fi
 
-# Self-heal probe: launch a child shell that waits for boot and installs
-# the APK if not present. Runs in background so the emulator exec below
-# doesn't get blocked. The probe touches the idle marker periodically
-# so the watchdog doesn't kill us during boot.
-(
-  set +e
-  for i in $(seq 1 120); do
-    bc=$($ADB shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-    if [[ "$bc" == "1" ]]; then break; fi
-    touch /run/ace-mobile/last-activity 2>/dev/null
-    sleep 5
-  done
-  if [[ "$bc" != "1" ]]; then
-    echo "[ace-emulator-launch] self-heal: boot never completed" >&2
-    exit 0
-  fi
-  if ! $ADB shell pm list packages | grep -q '^package:org.commcare.dalvik$'; then
-    if [[ -f "$APK_PATH" ]]; then
-      echo "[ace-emulator-launch] self-heal: installing $APK_PATH"
-      $ADB install -r "$APK_PATH" || true
-    else
-      echo "[ace-emulator-launch] self-heal: APK missing at $APK_PATH" >&2
-    fi
-  fi
-  touch /run/ace-mobile/last-activity 2>/dev/null
-) &
+echo "[ace-emulator-launch] waiting for sys.boot_completed (max 5 min)..."
+boot_complete=""
+for i in $(seq 1 60); do
+  boot_complete=$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+  [[ "$boot_complete" == "1" ]] && break
+  sleep 5
+  mark_active
+done
+if [[ "$boot_complete" != "1" ]]; then
+  echo "[ace-emulator-launch] ERROR: boot timed out" >&2
+  exit 1
+fi
+echo "[ace-emulator-launch] boot complete"
 
-exec "$ANDROID_SDK_ROOT/emulator/emulator" \
-  -avd ACE_Pixel_API_34 \
-  -no-window -no-audio -no-boot-anim -no-metrics \
-  -gpu swiftshader_indirect \
-  -no-snapshot-save \
-  -snapshot "$SNAPSHOT_NAME"
+# ── Install + register ───────────────────────────────────────────────
+# IMPORTANT: keep GMS ENABLED while running connect-register-1-phone-entry.yaml.
+# Disabling GMS causes Android to surface a heads-up notification
+# ("Enable Google Play services - Messages won't work…") that overlays
+# the CommCare burger-menu icon at point (73,209), and the recipe's
+# coordinate-based tap hits the notification instead of the menu.
+# Discovered 2026-05-10 — see the launcher's runner.log + the
+# diag/ S3 prefix for the failure screenshot.
+#
+# We DO need GMS disabled for connect-register-2-app-lock.yaml's
+# face-capture step (so MicroImageActivity falls back to ManualMode).
+# So: disable BETWEEN the two recipes.
+
+mark_active
+echo "[ace-emulator-launch] installing CommCare $COMMCARE_VERSION..."
+"$ADB" install -r "$APK_PATH"
+
+echo "[ace-emulator-launch] granting CAMERA to org.commcare.dalvik..."
+"$ADB" shell pm grant org.commcare.dalvik android.permission.CAMERA || true
+
+mark_active
+cd "$RECIPE_DIR"
+
+echo "[ace-emulator-launch] running connect-register-1-phone-entry.yaml (GMS enabled)..."
+"$MAESTRO" test connect-register-1-phone-entry.yaml \
+  --env "COUNTRY_CODE=$COUNTRY_CODE" \
+  --env "PHONE_LOCAL=$PHONE_LOCAL" \
+  --env "PHONE=$PHONE"
+
+mark_active
+echo "[ace-emulator-launch] disabling GMS for face-capture ManualMode..."
+"$ADB" shell pm disable-user --user 0 com.google.android.gms || true
+
+echo "[ace-emulator-launch] running connect-register-2-app-lock.yaml..."
+"$MAESTRO" test connect-register-2-app-lock.yaml \
+  --env "NAME=$NAME" \
+  --env "BACKUP_CODE=$BACKUP_CODE" \
+  --env "PIN=$PIN"
+
+mark_active
+trap - ERR  # registration succeeded; from here on, errors don't kill the emulator
+
+echo "[ace-emulator-launch] registration complete; signaling ready"
+touch "$READY_MARKER"
+
+# Kill the keepalive — from here ace-web's SSM commands bump the marker
+# whenever they touch the runner.
+kill $KEEPALIVE_PID 2>/dev/null || true
+trap - EXIT
+
+# Wait on the emulator process; systemd treats this unit as alive while
+# emulator runs. ace-web's /api/mobile/stop or the in-VM idle watchdog
+# brings it down.
+echo "[ace-emulator-launch] emulator running, awaiting shutdown signals"
+wait $EMULATOR_PID

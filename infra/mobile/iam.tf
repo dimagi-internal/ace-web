@@ -58,6 +58,24 @@ resource "aws_iam_role_policy" "mobile_instance_s3" {
   policy = data.aws_iam_policy_document.instance_s3_put.json
 }
 
+# Read test-user creds for the cold-boot registration recipes. Scoped
+# to the specific secret so the instance can't read others.
+data "aws_iam_policy_document" "instance_secrets" {
+  statement {
+    sid     = "ReadTestUserCreds"
+    actions = ["secretsmanager:GetSecretValue"]
+    resources = [
+      "arn:aws:secretsmanager:${var.region}:${local.account_id}:secret:ace-mobile-test-user-creds-*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "mobile_instance_secrets" {
+  name   = "ace-mobile-instance-secrets-${var.env_suffix}"
+  role   = aws_iam_role.mobile_instance.id
+  policy = data.aws_iam_policy_document.instance_secrets.json
+}
+
 resource "aws_iam_instance_profile" "mobile" {
   name = "ace-mobile-instance-profile-${var.env_suffix}"
   role = aws_iam_role.mobile_instance.name

@@ -12,5 +12,6 @@ urlpatterns = [
     path("save-snapshot", views.save_snapshot, name="mobile_save_snapshot"),
     path("load-snapshot", views.load_snapshot, name="mobile_load_snapshot"),
     path("capture-ui-dump", views.capture_ui_dump, name="mobile_capture_ui_dump"),
+    path("screenshot", views.screenshot, name="mobile_screenshot"),
     path("stop", views.stop, name="mobile_stop"),
 ]
