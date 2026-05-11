@@ -332,8 +332,14 @@ class EmulatorController:
             commands = [
                 "set -eu",
                 f"mkdir -p {shlex.quote(run_dir)}",
+                # SSM runs as root by default; Maestro runs as `ubuntu`
+                # and needs to create a `.maestro/` workdir inside
+                # run_dir + write the recipe file it reads. Hand both
+                # over to ubuntu before invoking maestro.
+                f"chown -R ubuntu:ubuntu {shlex.quote(run_dir)}",
                 f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
                 f"echo {shlex.quote(recipe_b64)} | base64 -d > {shlex.quote(recipe_path)}",
+                f"chown ubuntu:ubuntu {shlex.quote(recipe_path)}",
                 f"sudo -u ubuntu /usr/local/bin/maestro test "
                 f"--debug-output {shlex.quote(run_dir)} "
                 f"{env_flags} {shlex.quote(recipe_path)}",
