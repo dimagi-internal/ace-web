@@ -300,6 +300,32 @@ class EmulatorController:
         elif ec2_state == "stopped":
             self._start_instance()
             self._wait_for_ec2_ok(_BOOT_HARD_TIMEOUT_SEC)
+        elif ec2_state in ("terminated", "shutting-down"):
+            # The instance is gone or going away. ace-web can't recover
+            # — the instance_id is baked into the ECS task definition,
+            # so a fresh instance from `terraform apply` will land
+            # under a different id and the task-def needs updating +
+            # redeploy. Surface the recovery path explicitly so an
+            # operator reading this error knows exactly what to do.
+            # (Caught in vivo on leep Phase 5 attempt 7, 2026-05-12 —
+            # something external terminated the configured instance
+            # mid-recipe, and the prior `unexpected state 'terminated'`
+            # error left the operator guessing about cause and
+            # remediation.)
+            raise MobileError(
+                f"instance {self.instance_id} is {ec2_state!r} — the "
+                f"configured EC2 instance has been destroyed or is "
+                f"being destroyed. ace-web cannot recover (the "
+                f"instance_id is baked into the ECS task definition). "
+                f"Recovery: `cd infra/mobile && terraform apply` to "
+                f"create a fresh instance, update "
+                f"`ACE_MOBILE_INSTANCE_ID` in the task definition + "
+                f"redeploy ace-web. Check CloudTrail "
+                f"`TerminateInstances` events around the time of "
+                f"failure to identify what terminated the prior "
+                f"instance — neither ace-web's code nor the configured "
+                f"Terraform shutdown_behavior should ever terminate it."
+            )
         else:
             raise MobileError(
                 f"instance {self.instance_id} is in unexpected state {ec2_state!r}"
