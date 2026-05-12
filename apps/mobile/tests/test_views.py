@@ -515,6 +515,52 @@ def test_stop_returns_envelope(bearer_client, configured):
     assert data["stopped_at"]
 
 
+# ── admin/patch-launch-script ─────────────────────────────────────
+
+
+def test_admin_patch_launch_script_writes_and_restarts(bearer_client, configured):
+    """Happy path — body validates, controller is called with both
+    fields, response surfaces the SHA the controller returned."""
+    fake = MagicMock()
+    fake.patch_launch_script.return_value = {
+        "sha256": "abc123",
+        "bytes_written": 1234,
+        "restarted_runner": True,
+        "restart_log": None,
+    }
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post(
+            "/api/mobile/admin/patch-launch-script",
+            {"script_body": "#!/bin/bash\necho hi\n", "restart_runner": True},
+            format="json",
+        )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["sha256"] == "abc123"
+    assert data["restarted_runner"] is True
+    fake.patch_launch_script.assert_called_once_with(
+        script_body="#!/bin/bash\necho hi\n", restart=True
+    )
+
+
+def test_admin_patch_launch_script_requires_script_body(bearer_client, configured):
+    resp = bearer_client.post(
+        "/api/mobile/admin/patch-launch-script", {}, format="json"
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "invalid-request"
+
+
+def test_admin_patch_launch_script_requires_auth():
+    c = APIClient()
+    resp = c.post(
+        "/api/mobile/admin/patch-launch-script",
+        {"script_body": "#!/bin/bash\n"},
+        format="json",
+    )
+    assert resp.status_code in (401, 403)
+
+
 # ── Sanity: dataclass round-trip ──────────────────────────────────
 
 

@@ -721,6 +721,92 @@ class EmulatorController:
                 f"emulator on {self.instance_id} did not reach boot_completed: {e.message}"
             ) from e
 
+    def patch_launch_script(self, *, script_body: str, restart: bool) -> dict[str, Any]:
+        """Hot-patch ``/usr/local/bin/ace-emulator-launch`` on the EC2
+        instance with a new body, optionally restart the runner unit.
+
+        Intent: emergency fix path for the launch script without a full
+        AMI rebake. The same fix MUST also land in
+        ``infra/mobile-ami/files/ace-emulator-launch`` in this repo so
+        the next rebake picks it up — without that the live fix
+        evaporates on next AMI roll.
+
+        Body validation:
+          - Must start with ``#!/bin/bash`` (no `env bash`, no `sh`).
+          - Must be ≤ 64KB (current script is ~7KB; budget is for
+            comments / pm-wait additions, not wholesale rewrites).
+
+        Returns the SHA256 of the written body so the caller can confirm
+        the live script matches what they sent.
+        """
+        if not script_body.startswith("#!/bin/bash"):
+            raise MobileError(
+                "launch script must start with '#!/bin/bash' shebang "
+                "(got: " + repr(script_body[:32]) + ")"
+            )
+        if len(script_body.encode("utf-8")) > 64 * 1024:
+            raise MobileError(
+                "launch script body exceeds 64KB cap; this endpoint is "
+                "for surgical fixes, not wholesale rewrites — rebake the AMI"
+            )
+        import hashlib
+
+        sha = hashlib.sha256(script_body.encode("utf-8")).hexdigest()
+        body_b64 = base64.b64encode(script_body.encode("utf-8")).decode("ascii")
+        target = "/usr/local/bin/ace-emulator-launch"
+        commands = [
+            "set -eu",
+            # Back up the prior version with a timestamp so an operator
+            # can recover by hand if the patch turns out to be wrong.
+            f"sudo cp -p {shlex.quote(target)} "
+            f"{shlex.quote(target)}.bak.$(date +%Y%m%d-%H%M%S) || true",
+            f"echo {shlex.quote(body_b64)} | base64 -d | "
+            f"sudo tee {shlex.quote(target)} >/dev/null",
+            f"sudo chmod 0755 {shlex.quote(target)}",
+            # Verify the on-disk SHA matches what we sent — fail loud
+            # if base64 / shell quoting corrupted the body.
+            f"echo \"SHA256: $(sha256sum {shlex.quote(target)} | awk '{{print $1}}')\"",
+        ]
+        try:
+            result = ssm.run_command(
+                self.ssm,
+                self.instance_id,
+                commands=commands,
+                timeout_seconds=_SSM_OP_TIMEOUT_SEC,
+            )
+        except SSMFailure as e:
+            raise MobileError(f"launch-script patch SSM call failed: {e.message}") from e
+        live_sha = _grep_kv(result.stdout, "SHA256")
+        if live_sha != sha:
+            raise MobileError(
+                f"launch-script SHA mismatch after write — sent={sha} live={live_sha}; "
+                "body may have been corrupted in transit"
+            )
+        restart_log = ""
+        if restart:
+            try:
+                restart_result = ssm.run_command(
+                    self.ssm,
+                    self.instance_id,
+                    commands=[
+                        "set +e",
+                        f"sudo rm -f {shlex.quote(_EMULATOR_READY_MARKER)}",
+                        "sudo systemctl restart ace-mobile-runner.service",
+                    ],
+                    timeout_seconds=_SSM_OP_TIMEOUT_SEC,
+                )
+                restart_log = restart_result.stdout
+            except SSMFailure as e:
+                raise MobileError(
+                    f"launch-script written (sha={sha}) but runner restart failed: {e.message}"
+                ) from e
+        return {
+            "sha256": sha,
+            "bytes_written": len(script_body.encode("utf-8")),
+            "restarted_runner": restart,
+            "restart_log": restart_log.strip() or None,
+        }
+
     def _recover_emulator(self) -> None:
         """Restart the runner systemd unit, then wait for a fresh ready
         marker. Used by ``ensure_running`` when it detects a stale

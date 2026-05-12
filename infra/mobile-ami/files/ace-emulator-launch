@@ -167,6 +167,26 @@ echo "[ace-emulator-launch] installing CommCare $COMMCARE_VERSION..."
 echo "[ace-emulator-launch] granting CAMERA to org.commcare.dalvik..."
 "$ADB" shell pm grant org.commcare.dalvik android.permission.CAMERA || true
 
+# Wait for pm to be stable BEFORE Maestro's first invocation. Same race
+# we already wait through after the GMS disable later in this script —
+# Maestro's `installMaestroApks` does a dadb-based install of
+# `dev.mobile.maestro.apk` that hits "cmd: Failure calling service
+# package: Broken pipe (32)" if pm is still warming up from boot +
+# CommCare install. Without this guard the launch script ERRs out and
+# the whole cold-boot fails; symptom is runner_service_state=failed
+# without /run/ace-mobile/ready ever being touched.
+# Probe `pm path` of an installed package — it exercises the same
+# `cmd package` code path Maestro's installer uses, so success here
+# strongly predicts success at the Maestro layer.
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  if "$ADB" shell pm path org.commcare.dalvik 2>/dev/null | grep -q "^package:"; then
+    echo "[ace-emulator-launch] pm responsive after $i tries (pre-recipe-1)"
+    break
+  fi
+  sleep 1
+done
+sleep 3  # extra cushion — broken-pipe race is timing-sensitive
+
 mark_active
 cd "$RECIPE_DIR"
 
