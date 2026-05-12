@@ -417,6 +417,13 @@ class EmulatorController:
         run_id = uuid.uuid4().hex
         prefix = (screenshot_prefix or run_id).strip("/")
         s3_prefix = f"screenshots/{prefix}"
+        # Pre-build the full s3:// URL so the shell command below can quote
+        # it as a single token. The serializer already constrains
+        # ``screenshot_prefix`` to ``[A-Za-z0-9_./-]`` and bucket names
+        # come from settings (not user input), but ``shlex.quote`` on the
+        # composed URL is the second layer of defense against any future
+        # widening of the regex.
+        s3_dest_url = f"s3://{self.s3_bucket}/{s3_prefix}/"
         run_dir = f"/tmp/run-{run_id}"
         recipe_path = f"/tmp/recipe-{run_id}.yaml"
         recipe_b64 = base64.b64encode(recipe_yaml.encode("utf-8")).decode("ascii")
@@ -463,7 +470,7 @@ class EmulatorController:
                 'echo ""',
                 'echo "---STEPS_JSON_END---"',
                 f"aws s3 cp {shlex.quote(run_dir)}/ "
-                f"s3://{self.s3_bucket}/{s3_prefix}/ --recursive",
+                f"{shlex.quote(s3_dest_url)} --recursive",
                 f"rm -f {shlex.quote(recipe_path)}",
                 f"rm -rf {shlex.quote(run_dir)}",
             ]

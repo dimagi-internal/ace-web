@@ -19,8 +19,22 @@ class RunRecipeSerializer(serializers.Serializer):
         required=False,
         default=dict,
     )
-    screenshot_prefix = serializers.CharField(
-        required=False, allow_blank=False, allow_null=True, default=None
+    # Allow only S3-key-safe characters: alphanumeric, underscore, dot,
+    # dash, and forward slash (for nested prefixes like ``opp/run-1``).
+    # The strict allowlist is load-bearing — this string ends up in the
+    # ``aws s3 cp`` shell command that the controller dispatches to SSM
+    # (controller.run_recipe), so any shell metacharacter (``;``, ``$``,
+    # backtick, ``|``, ``&``, whitespace, quotes, …) is a command-
+    # injection vector against the EC2 instance as root. The controller
+    # also ``shlex.quote``-s the S3 URL as a belt-and-suspenders layer.
+    screenshot_prefix = serializers.RegexField(
+        regex=r"^[A-Za-z0-9_./-]{1,128}$",
+        required=False,
+        allow_null=True,
+        default=None,
+        error_messages={
+            "invalid": "screenshot_prefix must match [A-Za-z0-9_./-]{1,128}",
+        },
     )
     state = serializers.RegexField(
         regex=r"^[A-Za-z0-9_.-]{1,64}$",
@@ -35,8 +49,10 @@ class RunRecipeSerializer(serializers.Serializer):
     def validate_screenshot_prefix(self, value: str | None) -> str | None:
         if value is None:
             return None
-        # Block path traversal / absolute paths — this string ends up as
-        # an S3 key prefix so we want it tame.
+        # Layered on top of the regex: also block ``..`` traversal and
+        # leading ``/`` (which would land the prefix outside the
+        # ``screenshots/`` namespace in S3 after the controller's
+        # ``strip("/")``).
         if value.startswith("/") or ".." in value:
             raise serializers.ValidationError(
                 "screenshot_prefix must be a plain key segment"
