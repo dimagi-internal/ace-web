@@ -96,6 +96,10 @@ class Status:
 class InstallResult:
     package_name: str
     version: str
+    # versionCode is the monotonic integer from the APK manifest; useful
+    # for cross-checking installed builds (versionName strings can
+    # collide across RC channels). Zero means "unknown" (aapt parse miss).
+    version_code: int = 0
 
 
 @dataclass
@@ -279,21 +283,32 @@ class EmulatorController:
     def install_apk(self, apk_url: str) -> InstallResult:
         """Download an APK on the instance and install it via adb.
 
-        Returns the package name + versionName parsed from ``aapt``.
+        Returns package_name + versionName + versionCode parsed from
+        ``aapt``. versionCode falls back to 0 if the aapt output didn't
+        contain the field (shouldn't happen for valid APKs, but we
+        don't want to raise on the parse — a 0 surfaces clearly to the
+        caller as "unknown").
         """
         self._assert_running()
         local = f"/tmp/install-{uuid.uuid4().hex}.apk"
+        # `aapt dump badging` emits a single ``package:`` line like:
+        #   package: name='org.commcare.dalvik' versionCode='462001' versionName='2.62.0' ...
+        # Field order varies between aapt versions (legacy aapt vs aapt2
+        # in newer SDKs), so we parse by KEY rather than column position
+        # — sed extracts whatever's inside the single quotes following
+        # each label.
         commands = [
             "set -eu",
             f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
             f"curl -fsSL -o {shlex.quote(local)} {shlex.quote(apk_url)}",
             f"{_ADB} install -r {shlex.quote(local)}",
-            "PKG=$(aapt dump badging "
-            f"{shlex.quote(local)} | awk -F\"'\" '/package: name=/{{print $2; exit}}')",
-            "VER=$(aapt dump badging "
-            f"{shlex.quote(local)} | awk -F\"'\" '/versionName=/{{print $4; exit}}')",
-            "echo \"PACKAGE=$PKG\"",
-            "echo \"VERSION=$VER\"",
+            f"BADGING=$(aapt dump badging {shlex.quote(local)} | grep '^package:' | head -1)",
+            'PKG=$(echo "$BADGING" | sed -n "s/.*name=\'\\([^\']*\\)\'.*/\\1/p")',
+            'VER=$(echo "$BADGING" | sed -n "s/.*versionName=\'\\([^\']*\\)\'.*/\\1/p")',
+            'VC=$(echo "$BADGING" | sed -n "s/.*versionCode=\'\\([^\']*\\)\'.*/\\1/p")',
+            'echo "PACKAGE=$PKG"',
+            'echo "VERSION=$VER"',
+            'echo "VERSION_CODE=$VC"',
             f"rm -f {shlex.quote(local)}",
         ]
         result = ssm.run_command(
@@ -304,7 +319,16 @@ class EmulatorController:
         )
         package = _grep_kv(result.stdout, "PACKAGE") or ""
         version = _grep_kv(result.stdout, "VERSION") or ""
-        return InstallResult(package_name=package, version=version)
+        version_code_str = _grep_kv(result.stdout, "VERSION_CODE") or ""
+        try:
+            version_code = int(version_code_str) if version_code_str else 0
+        except ValueError:
+            version_code = 0
+        return InstallResult(
+            package_name=package,
+            version=version,
+            version_code=version_code,
+        )
 
     def run_recipe(
         self,

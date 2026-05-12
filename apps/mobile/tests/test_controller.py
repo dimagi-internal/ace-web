@@ -249,11 +249,40 @@ def test_install_apk_parses_package_and_version(controller_factory):
     )
     _queue_ssm_command(
         controller_factory.ssm_stub,
-        stdout="PACKAGE=org.commcare.dalvik\nVERSION=2.62.0\n",
+        stdout="PACKAGE=org.commcare.dalvik\nVERSION=2.62.0\nVERSION_CODE=462001\n",
     )
     result = c.install_apk("https://example.com/cc.apk")
     assert result.package_name == "org.commcare.dalvik"
     assert result.version == "2.62.0"
+    assert result.version_code == 462001
+
+
+def test_install_apk_version_code_defaults_to_zero_on_missing(controller_factory):
+    """If aapt doesn't surface VERSION_CODE we return 0 rather than raise."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(
+        controller_factory.ssm_stub,
+        stdout="PACKAGE=org.commcare.dalvik\nVERSION=2.62.0\n",
+    )
+    result = c.install_apk("https://example.com/cc.apk")
+    assert result.version_code == 0
+
+
+def test_install_apk_version_code_defaults_to_zero_on_unparseable(controller_factory):
+    """A non-integer VERSION_CODE token degrades to 0, never raises."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(
+        controller_factory.ssm_stub,
+        stdout="PACKAGE=org.commcare.dalvik\nVERSION=2.62.0\nVERSION_CODE=nope\n",
+    )
+    result = c.install_apk("https://example.com/cc.apk")
+    assert result.version_code == 0
 
 
 def test_install_apk_when_not_running_raises(controller_factory):
@@ -456,3 +485,8 @@ def test_install_result_is_a_dataclass():
 
     r = InstallResult(package_name="x", version="1")
     assert r.package_name == "x"
+    # version_code defaults to 0 so older callers keep working
+    assert r.version_code == 0
+
+    r2 = InstallResult(package_name="x", version="1", version_code=42)
+    assert r2.version_code == 42
