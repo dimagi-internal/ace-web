@@ -1,599 +1,140 @@
-"""Public per-run summary payload.
+"""Public per-run summary payload — products.*-driven.
 
-Reads a focused subset of artifacts from the ACE Drive folder and composes
-the JSON payload rendered by the public summary page (see
-``docs/specs/2026-05-04-opp-summary-page-design.md``).
+Reads structured `phases.<phase>.products.<block>` state from the run's
+`run_state.yaml` (plus identity from `opp.yaml`) and projects it into the
+JSON payload the public summary page renders. The plugin's
+state-consolidation sweep (plugin v0.13.155–v0.13.172) puts every
+typed handoff there; this loader does no markdown-body parsing.
 
-This is a separate, lighter loader than the full Workbench ``load_opp``.
+What lives where:
 
-**Drive layout** (as observed on labs, May 2026 — diverges from the
-plugin's artifact-manifest.ts which reflects an older convention):
+- `ACE/<opp-slug>/opp.yaml`
+    Identity: ``display_name``, ``slug``, ``tags``, ``created_at``,
+    ``created_by``. Plus the durable Connect program reference at
+    ``connect.program.{id, url, labs_int_id}`` — written once by
+    ``connect-program-setup`` and reused across every run.
 
-    ACE/<opp-slug>/
-    ├── opp.yaml                         display_name (often == slug)
-    ├── inputs/pdd.md                    Google Doc — hero name + description
-    ├── connect-setup/
-    │   ├── opportunity.md               markdown body, **Field:** value
-    │   └── program.md                   markdown body
-    ├── ocs-agent-config.md              opp-level (status only here)
-    ├── ocs-setup/
-    │   └── widget-handoff.md            markdown table with chatbot_public_id /
-    │                                    chatbot_embed_key / chatbot_url
-    ├── training-materials/
-    │   ├── <Slides file>                application/vnd.google-apps.presentation
-    │   ├── llo-manager-guide.md         Google Docs
-    │   ├── flw-training-guide.md
-    │   ├── quick-reference.md
-    │   ├── faq.md
-    │   └── onboarding-email-body.md
-    └── runs/<run_id>/
-        ├── run_state.yaml
-        ├── open-questions.md            Google Doc — link only, not parsed
-        └── 2-commcare/
-            ├── pdd-to-learn-app_summary.md     frontmatter: title, nova_app_*
-            ├── pdd-to-deliver-app_summary.md   frontmatter: title, nova_app_*
-            └── app-deploy_summary.md            frontmatter: learn_app_url, deliver_app_url
+- ``ACE/<opp-slug>/runs/<run-id>/run_state.yaml``
+    Per-run state under ``phases.<phase>.{status, products, steps}``.
+    Every block this loader reads:
 
-Many fields are markdown body, not frontmatter — the loader uses targeted
-regex extraction. Tolerant of missing/malformed files: every section is
-independently nullable; a single failed read never 500s the page.
+    | Phase                     | Block                                                |
+    |---------------------------|------------------------------------------------------|
+    | ``design``                | ``products.pdd.{title, description, file_id}``       |
+    | ``commcare-setup``        | ``products.apps.{learn, deliver}.{name, nova_*, hq_*, build_status}`` |
+    | ``connect-setup``         | ``products.connect.{program, opportunity, ace_test_user}`` |
+    | ``ocs-setup``             | ``products.ocs_chatbot.{experiment_id, public_id, embed_key, admin_url, team_slug}`` |
+    | ``qa-and-training``       | ``products.training.{deck, docs.*}``                  |
+    | ``synthetic-data-and-workflows`` | ``products.synthetic.{walkthroughs, workflows, labs_opp_id}`` |
+    | ``solicitation-management`` | ``products.{solicitation, selected_llo}``           |
+    | ``execution-management``  | ``products.launch``                                  |
+    | ``closeout``              | ``products.{cycle_grade, opp_eval, learnings}``      |
+
+No defensive fallbacks to the pre-consolidation Drive layout. Older
+runs without the typed blocks simply render with the affected sections
+empty — they get the same defensive ``dict.get`` chain that the rest
+of the loader uses, so nothing 500s. Each section is independently
+nullable.
+
+Open Questions doc is the lone exception that still requires a Drive
+fetch — the orchestrator doesn't yet write a typed pointer for it.
 """
 from __future__ import annotations
 
 import logging
-import re
 from datetime import date
 from typing import Any
 
 import yaml
 
-from apps.opps.drive_client import DriveClient, DriveFile
+from apps.opps.drive_client import DriveClient
 
 log = logging.getLogger(__name__)
 
 
-# ─── Drive helpers ─────────────────────────────────────────────────
+# ─── Helpers ───────────────────────────────────────────────────────
 
 
-_FOLDER_MIME = "application/vnd.google-apps.folder"
-_PRESENTATION_MIME = "application/vnd.google-apps.presentation"
-
-
-def _is_folder(f: DriveFile) -> bool:
-    return f.mime_type == _FOLDER_MIME
-
-
-def _find(files: list[DriveFile], name: str) -> DriveFile | None:
-    for f in files:
-        if f.name == name:
-            return f
-    return None
-
-
-def _find_folder(files: list[DriveFile], name: str) -> DriveFile | None:
-    f = _find(files, name)
-    return f if (f is not None and _is_folder(f)) else None
-
-
-def _list(drive: DriveClient, folder_id: str) -> list[DriveFile]:
+def _read_yaml(drive: DriveClient, file_id: str) -> dict:
+    """Fetch and parse a YAML file by id. Returns ``{}`` on any failure."""
     try:
-        return drive.list_files(folder_id)
+        content = drive.get_content(file_id, "application/x-yaml")
+        body = content.content or ""
     except Exception as exc:  # noqa: BLE001
-        log.warning("summary: list %s failed: %s", folder_id, exc)
-        return []
-
-
-def _read_text(drive: DriveClient, f: DriveFile | None) -> str:
-    if f is None:
+        log.warning("summary: read yaml %s failed: %s", file_id, exc)
         return ""
     try:
-        content = drive.get_content(f.id, f.mime_type)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("summary: read %s failed: %s", f.name, exc)
-        return ""
-    return content.content or ""
-
-
-# ─── Markdown / frontmatter parsing ────────────────────────────────
-
-
-_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-
-
-def _parse_frontmatter(body: str) -> dict[str, Any]:
-    if not body:
-        return {}
-    body = body.lstrip("﻿").lstrip()
-    m = _FRONTMATTER_RE.match(body)
-    if m is None:
-        return {}
-    try:
-        data = yaml.safe_load(m.group(1)) or {}
+        data = yaml.safe_load(body) or {}
         return data if isinstance(data, dict) else {}
     except yaml.YAMLError as exc:
-        log.warning("summary: malformed frontmatter: %s", exc)
+        log.warning("summary: parse yaml %s failed: %s", file_id, exc)
         return {}
 
 
-def _strip_frontmatter(body: str) -> str:
-    if not body:
-        return ""
-    body = body.lstrip("﻿").lstrip()
-    m = _FRONTMATTER_RE.match(body)
-    return body[m.end():] if m else body
-
-
-def _extract_field_line(body: str, label: str) -> str | None:
-    """Extract the value from a ``**Label:** value`` line in markdown body.
-
-    Tolerates both ``**Label:**`` (colon inside bold) and ``**Label**:``
-    (colon outside bold), backtick-wrapped values, and trailing punctuation.
-    Returns the value with leading/trailing whitespace and surrounding
-    backticks stripped.
-    """
-    # Single regex: optional colon inside the bold pair, then mandatory
-    # colon after. ``\*\*<label>:?\*\*\s*:?`` matches both forms.
-    pat = re.compile(
-        rf"\*\*\s*{re.escape(label)}\s*:?\s*\*\*\s*:?\s*(.+?)(?=\n|\*\*|$)",
-        re.IGNORECASE,
-    )
-    m = pat.search(body)
-    if m is None:
-        return None
-    raw = m.group(1).strip().rstrip(".,;:")
-    raw = re.sub(r"^`+|`+$", "", raw).strip()
-    return raw or None
-
-
-def _extract_table_row(body: str, key: str) -> str | None:
-    """Extract the value from a ``| `key` | `value` |`` markdown table row.
-
-    Used by widget-handoff.md, where chatbot creds live in a table whose
-    keys are themselves in backticks.
-    """
-    pat = re.compile(
-        rf"\|\s*`?{re.escape(key)}`?\s*\|\s*([^|]+?)\s*\|",
-        re.IGNORECASE,
-    )
-    m = pat.search(body)
-    if m is None:
-        return None
-    raw = m.group(1).strip()
-    raw = re.sub(r"^`+|`+$", "", raw).strip()
-    return raw or None
-
-
-# ─── Hero name + description from inputs/pdd.md ────────────────────
-
-
-_DOCS_COMMENT_MARKER_RE = re.compile(r"\[[a-z]\](\[[a-z]\])*", re.IGNORECASE)
-
-
-def _extract_hero_name(pdd_body: str) -> str | None:
-    """Pull a friendly title from the PDD's opening line.
-
-    The plugin's PDDs typically open with::
-
-        Intervention Design Document: <Friendly Name>
-
-    or::
-
-        # <Friendly Name>
-
-    In both cases the friendly name follows the first colon (or the H1).
-    Returns ``None`` if no plausible title is found — caller falls back
-    to ``opp.yaml`` ``display_name`` then to the slug.
-    """
-    if not pdd_body:
-        return None
-    for line in _strip_frontmatter(pdd_body).splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith("# "):
-            candidate = line[2:].strip()
-            if candidate:
-                return _DOCS_COMMENT_MARKER_RE.sub("", candidate).strip()
-        if ":" in line:
-            label, _, rest = line.partition(":")
-            if label.lower().strip() in {
-                "intervention design document",
-                "program design document",
-                "title",
-            }:
-                candidate = rest.strip()
-                if candidate:
-                    return _DOCS_COMMENT_MARKER_RE.sub("", candidate).strip()
-        # If the very first non-blank line is just plain text (no colon,
-        # no heading), use it — it's almost always the doc title.
-        return _DOCS_COMMENT_MARKER_RE.sub("", line).strip() or None
+def _find_in_folder(drive: DriveClient, folder_id: str, name: str):
+    try:
+        for f in drive.list_files(folder_id):
+            if f.name == name:
+                return f
+    except Exception as exc:  # noqa: BLE001
+        log.warning("summary: list %s failed: %s", folder_id, exc)
     return None
 
 
-def _extract_hero_description(pdd_body: str) -> str:
-    """Pull a clean one-paragraph description from the PDD.
-
-    Strategy: find a heading-like line of "Overview" / "Summary" /
-    "Background" (case-insensitive, not nested under a section), and
-    return the first non-empty paragraph that follows. Falls back to
-    the second paragraph of the document if no such heading exists.
-
-    Strips Google Docs comment markers (``[a][b]``) and surrounding
-    asterisks.
-    """
-    if not pdd_body:
-        return ""
-    text = _strip_frontmatter(pdd_body)
-    lines = text.splitlines()
-
-    overview_idx = None
-    for i, line in enumerate(lines):
-        s = line.strip()
-        low = s.lower().lstrip("# ").rstrip(":").strip()
-        if low in {"overview", "summary", "abstract"}:
-            overview_idx = i
-            break
-
-    start = overview_idx + 1 if overview_idx is not None else 0
-    paragraph_lines: list[str] = []
-    seen_blank_after_heading = overview_idx is None  # if no heading, take 2nd para
-
-    for line in lines[start:]:
-        s = line.strip()
-        if not s:
-            if paragraph_lines:
-                break
-            continue
-        if s.startswith("#"):
-            if paragraph_lines:
-                break
-            continue
-        # Skip the document's own H1 / first prose line if no heading was
-        # found — we want the SECOND paragraph (first paragraph is often
-        # boilerplate / metadata).
-        if overview_idx is None and not seen_blank_after_heading:
-            seen_blank_after_heading = True
-            continue
-        paragraph_lines.append(s)
-
-    desc = " ".join(paragraph_lines)
-    desc = _DOCS_COMMENT_MARKER_RE.sub("", desc)
-    # Strip Markdown bold/italic wrappers but keep their content.
-    desc = re.sub(r"\*\*(.+?)\*\*", r"\1", desc)
-    desc = re.sub(r"(?<!\w)\*(.+?)\*(?!\w)", r"\1", desc)
-    return desc.strip()
-
-
-# ─── Apps section ──────────────────────────────────────────────────
-
-
-_NOVA_BASE_URL = "https://commcare.app"
-
-
-def _construct_nova_url(nova_app_id: str | None) -> str | None:
-    """Build the Nova preview URL for an app id.
-
-    The plugin writes ``nova_app_url: https://commcare.app/apps/<id>`` to
-    each app summary's frontmatter, but Nova's actual route is
-    ``/build/<id>`` — ``/apps/<id>`` is a 404. We construct from the
-    ``nova_app_id`` directly and ignore the (wrong) URL field.
-    """
-    if not nova_app_id:
+def _find_folder(drive: DriveClient, parent_id: str, name: str):
+    f = _find_in_folder(drive, parent_id, name)
+    if f is None or f.mime_type != "application/vnd.google-apps.folder":
         return None
-    return f"{_NOVA_BASE_URL}/build/{nova_app_id}"
+    return f
 
 
-def _read_apps(
-    drive: DriveClient, run_children: list[DriveFile]
-) -> list[dict]:
-    """Build the apps[] payload from runs/<id>/2-commcare/."""
-    phase2 = _find_folder(run_children, "2-commcare")
-    if phase2 is None:
-        return []
-    p2_children = _list(drive, phase2.id)
-
-    deploy = _find(p2_children, "app-deploy_summary.md")
-    deploy_fm = _parse_frontmatter(_read_text(drive, deploy))
-
-    out: list[dict] = []
-    for kind, summary_filename, hq_url_key in (
-        ("Learn", "pdd-to-learn-app_summary.md", "learn_app_url"),
-        ("Deliver", "pdd-to-deliver-app_summary.md", "deliver_app_url"),
-    ):
-        f = _find(p2_children, summary_filename)
-        if f is None:
-            continue
-        fm = _parse_frontmatter(_read_text(drive, f))
-        name = fm.get("title") or fm.get("display_name") or fm.get("name") or f"{kind} app"
-        out.append({
-            "kind": kind,
-            "name": str(name),
-            "nova_url": _construct_nova_url(fm.get("nova_app_id")),
-            "hq_url": deploy_fm.get(hq_url_key),
-        })
-    return out
-
-
-# ─── Connect section ───────────────────────────────────────────────
-
-
-def _read_connect(
-    drive: DriveClient, opp_children: list[DriveFile]
-) -> tuple[dict | None, str | None]:
-    """Return (connect_payload, opp_end_date_iso).
-
-    The end_date is also returned because the hero status derivation
-    needs it.
-    """
-    folder = _find_folder(opp_children, "connect-setup")
-    if folder is None:
-        return None, None
-    children = _list(drive, folder.id)
-
-    opp_md = _find(children, "opportunity.md")
-    prog_md = _find(children, "program.md")
-
-    opp_block: dict | None = None
-    end_date: str | None = None
-    if opp_md is not None:
-        body = _read_text(drive, opp_md)
-        url = _extract_field_line(body, "URL")
-        name = _extract_field_line(body, "Name")
-        opp_uuid = _extract_field_line(body, "Opportunity ID (UUID)")
-        # Dates appear in a markdown table — `start_date` / `end_date` are
-        # column-cell values. Fall back to bullet lookup just in case.
-        start_date = (
-            _extract_table_value(body, "start_date")
-            or _extract_field_line(body, "start_date")
-        )
-        end_date = (
-            _extract_table_value(body, "end_date")
-            or _extract_field_line(body, "end_date")
-        )
-        if name or url or opp_uuid:
-            opp_block = {
-                "name": name or "Connect opportunity",
-                "url": url,
-                "start_date": start_date,
-                "end_date": end_date,
-            }
-
-    prog_block: dict | None = None
-    if prog_md is not None:
-        body = _read_text(drive, prog_md)
-        prog_url = _extract_field_line(body, "URL")
-        prog_name = _extract_field_line(body, "Name")
-        prog_uuid = _extract_field_line(body, "Program ID (UUID)")
-        # Older runs' program.md doesn't carry an explicit URL — construct
-        # it from the program UUID + the org slug we can pull out of the
-        # opportunity URL (e.g. .../a/<org_slug>/opportunity/<id>/).
-        if prog_url is None and prog_uuid and opp_block and opp_block.get("url"):
-            prog_url = _construct_program_url(opp_block["url"], prog_uuid)
-        if prog_name or prog_url or prog_uuid:
-            prog_block = {
-                "name": prog_name or "Program",
-                "url": prog_url,
-            }
-
-    if opp_block or prog_block:
-        return {"opportunity": opp_block, "program": prog_block}, end_date
-    return None, None
-
-
-def _construct_program_url(opp_url: str, program_uuid: str) -> str | None:
-    """Derive a working program link from the opportunity URL.
-
-    Connect mounts the program app at ``/a/<org_slug>/program/`` (the
-    program-list home). The per-program detail URL ``/program/<uuid>/view``
-    *exists* in upstream commcare-connect's program/urls.py (it points
-    at ``ManagedOpportunityList``) but renders an error page when hit
-    directly — the view's template assumes a wrapper context that the
-    standalone URL can't provide. The PM-side program management UI
-    only exposes the program via HTMX modals on the home page, never
-    as a top-level navigable URL.
-
-    So we link to the program-list home and let the viewer find the
-    program in context. ``program_uuid`` is unused but kept in the
-    signature so callers don't change shape if a real per-program URL
-    appears in the future.
-    """
-    del program_uuid  # see docstring
-    m = re.search(r"^(https?://[^/]+/a/[^/]+)/", opp_url)
-    if m is None:
-        return None
-    return f"{m.group(1)}/program/"
-
-
-def _extract_table_value(body: str, key: str) -> str | None:
-    """Pull a value from a ``| key | value |`` row, with `key` un-quoted
-    (no backticks). Used for ``start_date`` / ``end_date`` columns in
-    the opportunity.md core-config table.
-    """
-    pat = re.compile(
-        rf"\|\s*`?{re.escape(key)}`?\s*\|\s*([^|]+?)\s*\|",
-        re.IGNORECASE,
+def _phase_products(state: dict, phase: str, block: str | None = None) -> dict:
+    """Pull ``state.phases.<phase>.products[.block]`` with empty-dict fallback."""
+    products = (
+        state.get("phases", {})
+        .get(phase, {})
+        .get("products", {})
     )
-    m = pat.search(body)
-    if m is None:
-        return None
-    raw = m.group(1).strip()
-    # Strip parentheticals like "2026-06-14 (placeholder — LLO sets...)".
-    raw = re.split(r"\s+\(", raw, maxsplit=1)[0].strip()
-    raw = re.sub(r"^`+|`+$", "", raw).strip()
-    return raw or None
+    if not isinstance(products, dict):
+        return {}
+    if block is None:
+        return products
+    sub = products.get(block) or {}
+    return sub if isinstance(sub, dict) else {}
 
 
-# ─── Training section ──────────────────────────────────────────────
+# ─── Per-section readers ───────────────────────────────────────────
 
 
-_TRAINING_DOC_TITLES = {
-    "llo-manager-guide.md":     "LLO manager guide",
-    "flw-training-guide.md":    "FLW training guide",
-    "quick-reference.md":       "Quick reference card",
-    "faq.md":                   "FAQ",
-    "onboarding-email-body.md": "Onboarding email",
-    # ``training-deck-outline.md`` is an intermediate artifact (input to
-    # the deck builder), not a public deliverable — deliberately omitted.
-}
+def _read_opp(state: dict, opp_yaml: dict, *, workspace_slug: str,
+              opp_slug: str, run_id: str) -> dict:
+    pdd = _phase_products(state, "design", "pdd")
+    connect_opp = _phase_products(state, "connect-setup", "connect").get("opportunity") or {}
+    cycle_grade = _phase_products(state, "closeout", "cycle_grade")
 
-
-def _read_training(
-    drive: DriveClient, opp_children: list[DriveFile]
-) -> dict | None:
-    folder = _find_folder(opp_children, "training-materials")
-    if folder is None:
-        return None
-    children = _list(drive, folder.id)
-
-    deck_block: dict | None = None
-    docs: list[dict] = []
-    for f in children:
-        if _is_folder(f):
-            continue
-        if f.mime_type == _PRESENTATION_MIME and deck_block is None:
-            deck_block = {
-                "title": f.name,
-                "url": f.web_view_link,
-            }
-            continue
-        title = _TRAINING_DOC_TITLES.get(f.name)
-        if title is None:
-            continue
-        docs.append({"title": title, "url": f.web_view_link})
-
-    order = list(_TRAINING_DOC_TITLES.values())
-    docs.sort(key=lambda d: order.index(d["title"]) if d["title"] in order else 99)
-
-    if deck_block is None and not docs:
-        return None
-    return {"deck": deck_block, "docs": docs}
-
-
-# ─── Assistant (OCS) section ───────────────────────────────────────
-
-
-_OCS_BASE_URL = "https://www.openchatstudio.com"
-_OCS_TEAM_SLUG = "connect-ace"  # Override via Django setting if a different team ships ACE bots.
-
-
-def _construct_ocs_admin_url(experiment_id: str | None) -> str | None:
-    """Build the OCS chatbot admin URL.
-
-    Pattern: ``/a/<team>/chatbots/<experiment_id>/`` — the chatbot
-    home/edit page on OCS. Auth-gated (redirects to OCS login), but
-    that's expected: this is the "view/edit it on OCS" link, useful
-    for ACE-team operators who actually have OCS access.
-
-    The ``/chatbots/embed/<public_id>/`` URL the plugin writes to
-    ``widget-handoff.md`` is a 404 — there's no standalone embed page
-    on OCS; the corner widget is the only chat surface. We compute
-    the admin URL from ``experiment_id`` instead.
-    """
-    if not experiment_id:
-        return None
-    from django.conf import settings as _s
-    base = getattr(_s, "ACE_OCS_BASE_URL", _OCS_BASE_URL).rstrip("/")
-    team = getattr(_s, "ACE_OCS_TEAM_SLUG", _OCS_TEAM_SLUG)
-    return f"{base}/a/{team}/chatbots/{experiment_id}/"
-
-
-_EXPERIMENT_ID_RE = re.compile(r"experiment[- ](\d+)", re.IGNORECASE)
-
-
-def _extract_experiment_id(*texts: str) -> str | None:
-    """Best-effort extract of the OCS experiment_id (integer)."""
-    for t in texts:
-        if not t:
-            continue
-        m = _EXPERIMENT_ID_RE.search(t)
-        if m:
-            return m.group(1)
-    return None
-
-
-def _read_assistant(
-    drive: DriveClient, opp_children: list[DriveFile]
-) -> dict | None:
-    folder = _find_folder(opp_children, "ocs-setup")
-    if folder is None:
-        return None
-    children = _list(drive, folder.id)
-    handoff = _find(children, "widget-handoff.md")
-    if handoff is None:
-        return None
-    body = _read_text(drive, handoff)
-    public_id = _extract_table_row(body, "chatbot_public_id")
-    embed_key = _extract_table_row(body, "chatbot_embed_key")
-    if not public_id or not embed_key:
-        return None
-
-    # experiment_id sources, in order of preference:
-    #   1. ocs-agent-config.md frontmatter (canonical, per the
-    #      ocs-agent-setup SKILL spec)
-    #   2. ``resume_from: existing-bot-experiment-<N>`` in same frontmatter
-    #   3. "experiment <N>" prose in widget-handoff.md
-    cfg = _find(opp_children, "ocs-agent-config.md")
-    cfg_body = _read_text(drive, cfg) if cfg else ""
-    cfg_fm = _parse_frontmatter(cfg_body)
-    experiment_id: str | None = None
-    raw = cfg_fm.get("experiment_id")
-    if raw is not None:
-        experiment_id = str(raw)
-    if not experiment_id:
-        experiment_id = _extract_experiment_id(
-            cfg_fm.get("resume_from") or "",
-            cfg_body,
-            body,
-        )
+    display_name = (
+        pdd.get("title")
+        or opp_yaml.get("display_name")
+        or opp_slug
+    )
+    description = pdd.get("description") or ""
+    end_date = connect_opp.get("end_date")
 
     return {
-        "ocs_url": _construct_ocs_admin_url(experiment_id),
-        "public_id": public_id,
-        "embed_key": embed_key,
+        "workspace_slug": workspace_slug,
+        "slug": opp_slug,
+        "run_id": run_id,
+        "display_name": display_name,
+        "description": description,
+        "status": _resolve_status(cycle_grade, end_date),
+        "end_date": end_date,
     }
 
 
-# ─── Open questions (run folder) ───────────────────────────────────
-
-
-def _read_open_questions(
-    drive: DriveClient, run_children: list[DriveFile]
-) -> dict | None:
-    f = _find(run_children, "open-questions.md")
-    if f is None or not f.web_view_link:
-        return None
-    return {"url": f.web_view_link}
-
-
-# ─── Status ─────────────────────────────────────────────────────────
-
-
-def _resolve_status(
-    drive: DriveClient,
-    run_children: list[DriveFile],
-    end_date_iso: str | None,
-) -> str:
-    """Return ``closed`` if a closeout cycle-grade is present, otherwise
-    ``active`` / ``in_progress`` based on the connect end_date.
-
-    Looks for cycle-grade.md in any of:
-        runs/<id>/closeout/cycle-grade.md
-        runs/<id>/6-llo/cycle-grade.md     (legacy candidate)
-        runs/<id>/7-closeout/cycle-grade.md
-        runs/<id>/<phase-numbered-folder>/cycle-grade.md
-    """
-    for child in run_children:
-        if not _is_folder(child):
-            continue
-        if not (child.name == "closeout" or re.match(r"^\d+-", child.name)):
-            continue
-        try:
-            inner = _list(drive, child.id)
-        except Exception:  # noqa: BLE001
-            inner = []
-        if any(f.name == "cycle-grade.md" for f in inner):
-            return "closed"
-
+def _resolve_status(cycle_grade: dict, end_date_iso: str | None) -> str:
+    """Closed when cycle-grade exists; otherwise active if end_date is future."""
+    if cycle_grade and cycle_grade.get("letter"):
+        return "closed"
     if end_date_iso and _is_future(end_date_iso):
         return "active"
     return "in_progress"
@@ -605,6 +146,185 @@ def _is_future(date_iso: str) -> bool:
     except (TypeError, ValueError):
         return False
     return d >= date.today()
+
+
+def _read_apps(state: dict) -> list[dict]:
+    apps_block = _phase_products(state, "commcare-setup", "apps")
+    out: list[dict] = []
+    for kind_key, kind_label in (("learn", "Learn"), ("deliver", "Deliver")):
+        app = apps_block.get(kind_key)
+        if not isinstance(app, dict) or not app:
+            continue
+        out.append({
+            "kind": kind_label,
+            "name": app.get("name") or f"{kind_label} app",
+            "nova_url": app.get("nova_url"),
+            "hq_url": app.get("hq_url"),
+        })
+    return out
+
+
+def _read_connect(state: dict, opp_yaml: dict) -> dict | None:
+    connect = _phase_products(state, "connect-setup", "connect")
+    program = (opp_yaml.get("connect") or {}).get("program") or connect.get("program") or {}
+    opp = connect.get("opportunity") or {}
+
+    opp_block = None
+    if opp.get("id") or opp.get("url"):
+        opp_block = {
+            "name": opp.get("name") or "Connect opportunity",
+            "url": opp.get("url"),
+            "start_date": opp.get("start_date"),
+            "end_date": opp.get("end_date"),
+        }
+
+    prog_block = None
+    if program.get("id") or program.get("url"):
+        prog_block = {
+            "name": program.get("name") or "Program",
+            "url": program.get("url"),
+        }
+
+    if not opp_block and not prog_block:
+        return None
+    return {"opportunity": opp_block, "program": prog_block}
+
+
+def _read_training(state: dict) -> dict | None:
+    training = _phase_products(state, "qa-and-training", "training")
+    if not training:
+        return None
+
+    deck_block = None
+    deck = training.get("deck") or {}
+    if deck.get("file_id") or deck.get("web_view_link"):
+        deck_block = {
+            "title": deck.get("title") or "Training deck",
+            "url": deck.get("web_view_link"),
+        }
+
+    docs_block = training.get("docs") or {}
+    docs: list[dict] = []
+    # Preserve a stable display order matching agent-doc convention.
+    for key in ("llo_guide", "flw_guide", "quick_reference", "faq", "onboarding_email"):
+        doc = docs_block.get(key) or {}
+        if doc.get("web_view_link") or doc.get("file_id"):
+            docs.append({
+                "title": doc.get("title") or key.replace("_", " ").title(),
+                "url": doc.get("web_view_link"),
+            })
+
+    if deck_block is None and not docs:
+        return None
+    return {"deck": deck_block, "docs": docs}
+
+
+def _read_assistant(state: dict) -> dict | None:
+    chatbot = _phase_products(state, "ocs-setup", "ocs_chatbot")
+    public_id = chatbot.get("public_id")
+    embed_key = chatbot.get("embed_key")
+    if not public_id or not embed_key:
+        return None
+    return {
+        "ocs_url": chatbot.get("admin_url"),
+        "public_id": public_id,
+        "embed_key": embed_key,
+    }
+
+
+def _read_walkthroughs(state: dict) -> list[dict]:
+    synthetic = _phase_products(state, "synthetic-data-and-workflows", "synthetic")
+    raw = synthetic.get("walkthroughs") or []
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for w in raw:
+        if not isinstance(w, dict):
+            continue
+        url = w.get("slideshow_url") or w.get("web_view_link")
+        if not url:
+            continue
+        out.append({
+            "persona": w.get("persona") or "walkthrough",
+            "url": url,
+            "eval_score": w.get("eval_score"),
+        })
+    return out
+
+
+def _read_selected_llo(state: dict) -> dict | None:
+    llo = _phase_products(state, "solicitation-management", "selected_llo")
+    if not llo or not llo.get("org_slug"):
+        return None
+    return {
+        "org_slug": llo.get("org_slug"),
+        "org_display_name": llo.get("org_display_name") or llo.get("org_slug"),
+        "contact_email": llo.get("contact_email"),
+        "awarded_at": llo.get("awarded_at"),
+    }
+
+
+def _read_solicitation(state: dict) -> dict | None:
+    sol = _phase_products(state, "solicitation-management", "solicitation")
+    if not sol or not (sol.get("url") or sol.get("public_url")):
+        return None
+    return {
+        "url": sol.get("url") or sol.get("public_url"),
+        "deadline": sol.get("deadline"),
+        "status": sol.get("status"),
+    }
+
+
+def _read_launch(state: dict) -> dict | None:
+    launch = _phase_products(state, "execution-management", "launch")
+    if not launch or not launch.get("went_live_at"):
+        return None
+    return {
+        "went_live_at": launch.get("went_live_at"),
+        "llo_org_display_name": launch.get("llo_org_display_name") or launch.get("llo_org_slug"),
+    }
+
+
+def _read_cycle_grade(state: dict) -> dict | None:
+    grade = _phase_products(state, "closeout", "cycle_grade")
+    if not grade or not grade.get("letter"):
+        return None
+    return {
+        "letter": grade.get("letter"),
+        "headline": grade.get("headline") or "",
+        "overall_score": grade.get("overall_score"),
+    }
+
+
+def _read_opp_eval(state: dict) -> dict | None:
+    ev = _phase_products(state, "closeout", "opp_eval")
+    if not ev or ev.get("overall_score") is None:
+        return None
+    return {
+        "overall_score": ev.get("overall_score"),
+        "verdict": ev.get("verdict"),
+        "mode": ev.get("mode"),
+    }
+
+
+def _read_learnings(state: dict) -> dict | None:
+    learn = _phase_products(state, "closeout", "learnings")
+    if not learn or not learn.get("summary_file_id"):
+        return None
+    # File-id-only; we don't render the body, just the deep-link.
+    return {
+        "summary_file_id": learn.get("summary_file_id"),
+        "new_pdd_file_id": learn.get("new_pdd_file_id"),
+        "iteration_warranted": bool(learn.get("iteration_warranted")),
+    }
+
+
+def _read_open_questions(drive: DriveClient, run_folder_id: str) -> dict | None:
+    """Open Questions doc — no typed handoff yet; Drive fetch required."""
+    f = _find_in_folder(drive, run_folder_id, "open-questions.md")
+    if f is None or not f.web_view_link:
+        return None
+    return {"url": f.web_view_link}
 
 
 # ─── Top-level entry point ─────────────────────────────────────────
@@ -620,67 +340,35 @@ def build_summary_payload(
     """Build the public summary JSON payload for a per-run summary page.
 
     Returns ``None`` when the workspace's ACE root, the opp folder, or
-    the requested run folder can't be located. Callers map ``None`` to
-    a 404 so the API doesn't leak which segment was the miss.
+    the requested run folder can't be located, so callers can map to a
+    404 without leaking which segment was the miss.
     """
     ace_root_id = getattr(workspace, "drive_root_folder_id", None)
     if not ace_root_id:
         return None
 
-    ace_children = _list(drive, ace_root_id)
-    opp_folder = _find_folder(ace_children, opp_slug)
+    opp_folder = _find_folder(drive, ace_root_id, opp_slug)
     if opp_folder is None:
         return None
 
-    opp_children = _list(drive, opp_folder.id)
+    # opp.yaml — identity + Connect program reference.
+    opp_yaml_file = _find_in_folder(drive, opp_folder.id, "opp.yaml")
+    opp_yaml: dict = {}
+    if opp_yaml_file is not None:
+        opp_yaml = _read_yaml(drive, opp_yaml_file.id)
 
-    runs_folder = _find_folder(opp_children, "runs")
+    runs_folder = _find_folder(drive, opp_folder.id, "runs")
     if runs_folder is None:
         return None
-    run_dirs = _list(drive, runs_folder.id)
-    run_folder = _find_folder(run_dirs, run_id)
+    run_folder = _find_folder(drive, runs_folder.id, run_id)
     if run_folder is None:
         return None
-    run_children = _list(drive, run_folder.id)
 
-    # ── Hero (display_name + description) ──
-    inputs_folder = _find_folder(opp_children, "inputs")
-    pdd_body = ""
-    if inputs_folder is not None:
-        pdd_md = _find(_list(drive, inputs_folder.id), "pdd.md")
-        pdd_body = _read_text(drive, pdd_md)
-
-    hero_name = _extract_hero_name(pdd_body)
-    description = _extract_hero_description(pdd_body)
-
-    opp_yaml = _find(opp_children, "opp.yaml")
-    opp_meta: dict = {}
-    if opp_yaml is not None:
-        try:
-            opp_meta = yaml.safe_load(_read_text(drive, opp_yaml)) or {}
-        except yaml.YAMLError:
-            opp_meta = {}
-    yaml_display = opp_meta.get("display_name")
-    # Prefer the PDD-derived friendly name, but only if it differs from
-    # the slug (some PDDs lead with a generic boilerplate header).
-    if hero_name and hero_name.lower() != opp_slug.lower():
-        display_name = hero_name
-    elif yaml_display and yaml_display != opp_slug:
-        display_name = yaml_display
-    else:
-        display_name = hero_name or yaml_display or opp_slug
-
-    # ── Connect ──
-    connect_section, end_date_iso = _read_connect(drive, opp_children)
-
-    # ── Status ──
-    status = _resolve_status(drive, run_children, end_date_iso)
-
-    # ── Sections ──
-    apps = _read_apps(drive, run_children)
-    training = _read_training(drive, opp_children)
-    assistant = _read_assistant(drive, opp_children)
-    open_questions = _read_open_questions(drive, run_children)
+    # run_state.yaml — every per-run product.
+    state_file = _find_in_folder(drive, run_folder.id, "run_state.yaml")
+    state: dict = {}
+    if state_file is not None:
+        state = _read_yaml(drive, state_file.id)
 
     workspace_slug = getattr(workspace, "slug", "")
     workbench_url = (
@@ -690,19 +378,23 @@ def build_summary_payload(
     )
 
     return {
-        "opp": {
-            "workspace_slug": workspace_slug,
-            "slug": opp_slug,
-            "run_id": run_id,
-            "display_name": display_name,
-            "description": description,
-            "status": status,
-            "end_date": end_date_iso,
-        },
-        "apps": apps,
-        "connect": connect_section,
-        "training": training,
-        "assistant": assistant,
-        "open_questions": open_questions,
+        "opp": _read_opp(
+            state, opp_yaml,
+            workspace_slug=workspace_slug,
+            opp_slug=opp_slug,
+            run_id=run_id,
+        ),
+        "apps": _read_apps(state),
+        "connect": _read_connect(state, opp_yaml),
+        "training": _read_training(state),
+        "assistant": _read_assistant(state),
+        "walkthroughs": _read_walkthroughs(state),
+        "selected_llo": _read_selected_llo(state),
+        "solicitation": _read_solicitation(state),
+        "launch": _read_launch(state),
+        "cycle_grade": _read_cycle_grade(state),
+        "opp_eval": _read_opp_eval(state),
+        "learnings": _read_learnings(state),
+        "open_questions": _read_open_questions(drive, run_folder.id),
         "workbench_url": workbench_url,
     }

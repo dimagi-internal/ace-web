@@ -15,28 +15,35 @@ from django.test import Client
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
 
 
+_STATE_YAML = """\
+phases:
+  design:
+    products:
+      pdd:
+        title: Smoke Pilot
+        description: A short description.
+        file_id: fake-pdd
+  commcare-setup:
+    products:
+      apps:
+        learn:
+          name: Smoke Learn
+          nova_app_id: x
+          nova_url: https://commcare.app/build/x
+          hq_app_id: abc
+          hq_url: https://www.commcarehq.org/a/smoke/apps/view/abc/
+          build_status: success
+"""
+
+
 def _make_tree() -> dict:
     return {
         "ACE": {
             "smoke-pilot": {
                 "opp.yaml": "display_name: Smoke Pilot\nslug: smoke-pilot\n",
-                "inputs": {"pdd.md": "# Smoke Pilot\n\nA short description.\n"},
                 "runs": {
                     "20260415-1430": {
-                        "2-commcare": {
-                            "pdd-to-learn-app_summary.md": (
-                                "---\n"
-                                "nova_app_id: x\n"
-                                "nova_app_url: https://commcare.app/apps/x\n"
-                                "title: Smoke Learn\n"
-                                "---\n# Smoke Learn\n"
-                            ),
-                            "app-deploy_summary.md": (
-                                "---\n"
-                                "learn_app_url: https://www.commcarehq.org/a/smoke/apps/view/abc/\n"
-                                "---\n"
-                            ),
-                        },
+                        "run_state.yaml": _STATE_YAML,
                     },
                 },
             },
