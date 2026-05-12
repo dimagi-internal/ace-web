@@ -1091,33 +1091,38 @@ class EmulatorController:
             )
 
     def _presign_prefix(self, prefix: str) -> list[Artifact]:
+        """List every key under ``prefix/`` in S3 and return a presigned
+        URL per key.
+
+        Uses the boto3 paginator so recipes that emit >1000 artifacts
+        (Maestro's ``--debug-output`` over a long flow easily clears
+        that on screenshot-heavy runs) don't silently truncate at the
+        first ``list_objects_v2`` page. Pre-fix: callers got the first
+        1000 keys with no indication more existed.
+        """
+        artifacts: list[Artifact] = []
         try:
-            resp = self.s3.list_objects_v2(
+            paginator = self.s3.get_paginator("list_objects_v2")
+            page_iter = paginator.paginate(
                 Bucket=self.s3_bucket, Prefix=f"{prefix}/"
             )
+            for page in page_iter:
+                for obj in page.get("Contents") or []:
+                    key = obj["Key"]
+                    url = self.s3.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": self.s3_bucket, "Key": key},
+                        ExpiresIn=_PRESIGN_TTL_SEC,
+                    )
+                    artifacts.append(
+                        Artifact(
+                            name=key.rsplit("/", 1)[-1],
+                            presigned_url=url,
+                            content_type=_guess_content_type(key),
+                        )
+                    )
         except ClientError as e:
             raise MobileError(f"s3.list_objects_v2 failed: {e}") from e
-        contents = resp.get("Contents") or []
-        artifacts: list[Artifact] = []
-        for obj in contents:
-            key = obj["Key"]
-            try:
-                url = self.s3.generate_presigned_url(
-                    "get_object",
-                    Params={"Bucket": self.s3_bucket, "Key": key},
-                    ExpiresIn=_PRESIGN_TTL_SEC,
-                )
-            except ClientError as e:
-                raise MobileError(
-                    f"s3.generate_presigned_url failed for {key}: {e}"
-                ) from e
-            artifacts.append(
-                Artifact(
-                    name=key.rsplit("/", 1)[-1],
-                    presigned_url=url,
-                    content_type=_guess_content_type(key),
-                )
-            )
         return artifacts
 
 
