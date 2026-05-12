@@ -300,6 +300,103 @@ def test_run_recipe_returns_artifacts_with_presigned_urls(controller_factory):
     types = {a.name: a.content_type for a in result.artifacts}
     assert types["01.png"] == "image/png"
     assert types["results.xml"] == "application/xml"
+    # No steps marker in stdout → empty steps list (back-compat).
+    assert result.steps == []
+
+
+def test_run_recipe_parses_steps_from_marker_block(controller_factory):
+    """End-to-end: stdout contains a base64-encoded Maestro commands JSON
+    between the begin/end markers, and run_recipe lifts it into Step
+    records on the response."""
+    import base64 as _b64
+    import json as _json
+
+    maestro_json = _json.dumps([
+        {
+            "command": {"launchApp": "com.example"},
+            "status": "COMPLETED",
+            "metadata": {"duration": 1234},
+        },
+        {
+            "command": {"tapOn": "Submit"},
+            "status": "COMPLETED",
+            "screenshot": "01.png",
+        },
+        {
+            "command": {"assertVisible": {"text": "Welcome"}},
+            "status": "FAILED",
+            "error": {"message": "element not found"},
+        },
+    ])
+    framed = (
+        "...maestro chatter...\n"
+        "---STEPS_JSON_BEGIN---\n"
+        f"{_b64.b64encode(maestro_json.encode()).decode()}\n"
+        "---STEPS_JSON_END---\n"
+    )
+
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(controller_factory.ssm_stub, stdout=framed)
+    _queue_ssm_command(controller_factory.ssm_stub)  # finally branch idle bump
+    controller_factory.s3_stub.add_response("list_objects_v2", {"Contents": []})
+
+    result = c.run_recipe(recipe_yaml="...", env={}, screenshot_prefix="run-2")
+    assert len(result.steps) == 3
+    assert result.steps[0].name == "launchApp: com.example"
+    assert result.steps[0].status == "pass"
+    assert result.steps[0].duration_ms == 1234
+    assert result.steps[1].screenshot == "01.png"
+    assert result.steps[2].status == "fail"
+    assert result.steps[2].error == "element not found"
+
+
+def test_run_recipe_steps_absent_when_marker_block_empty(controller_factory):
+    """Marker block present but empty body (no commands JSON file emitted
+    by Maestro) → steps is an empty list, not an exception."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(
+        controller_factory.ssm_stub,
+        stdout="---STEPS_JSON_BEGIN---\n\n---STEPS_JSON_END---\n",
+    )
+    _queue_ssm_command(controller_factory.ssm_stub)  # finally idle bump
+    controller_factory.s3_stub.add_response("list_objects_v2", {"Contents": []})
+
+    result = c.run_recipe(recipe_yaml="...", env={}, screenshot_prefix="run-3")
+    assert result.steps == []
+
+
+def test_lift_maestro_steps_handles_flow_object_shape():
+    """Maestro emits either a top-level list or a flow object with
+    .commands. _lift_maestro_steps accepts both."""
+    from apps.mobile.controller import _lift_maestro_steps
+
+    flow_obj = {
+        "name": "test-flow",
+        "commands": [
+            {"command": {"launchApp": "com.x"}, "status": "PASSED"},
+            {"command": {"tapOn": "Next"}, "status": "SKIPPED"},
+        ],
+    }
+    steps = _lift_maestro_steps(flow_obj)
+    assert [s.status for s in steps] == ["pass", "skipped"]
+    assert steps[0].name == "launchApp: com.x"
+
+
+def test_lift_maestro_steps_unknown_status_maps_to_unknown():
+    """A status we don't recognize must not crash — it falls through to
+    'unknown' so callers can still surface the row."""
+    from apps.mobile.controller import _lift_maestro_steps
+
+    steps = _lift_maestro_steps([
+        {"command": {"tapOn": "x"}, "status": "WEIRD_NEW_STATE"}
+    ])
+    assert steps[0].status == "unknown"
 
 
 def test_run_recipe_finally_bumps_idle_marker_even_on_failure(controller_factory):

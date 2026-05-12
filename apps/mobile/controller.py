@@ -16,10 +16,11 @@ Boto3 clients are lazy-built and cached per controller instance.
 from __future__ import annotations
 
 import base64
+import json
 import shlex
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -106,11 +107,29 @@ class Artifact:
 
 
 @dataclass
+class Step:
+    """One executed Maestro command, lifted from the commands-*.json
+    report Maestro writes into the --debug-output directory.
+
+    Fields are best-effort: Maestro's exact JSON shape varies by version,
+    so missing fields surface as None rather than raising.
+    """
+
+    index: int
+    name: str
+    status: str  # 'pass' | 'fail' | 'skipped' | 'unknown'
+    screenshot: str | None = None
+    error: str | None = None
+    duration_ms: int | None = None
+
+
+@dataclass
 class RunResult:
     exit_code: int
     stdout: str
     stderr: str
     artifacts: list[Artifact]
+    steps: list[Step] = field(default_factory=list)
 
 
 @dataclass
@@ -349,6 +368,23 @@ class EmulatorController:
                 f"(cd {shlex.quote(run_dir)} && sudo -u ubuntu /usr/local/bin/maestro test "
                 f"--debug-output {shlex.quote(run_dir)} "
                 f"{env_flags} {shlex.quote(recipe_path)})",
+                # Lift Maestro's per-command JSON report (if it exists)
+                # out of the debug-output dir and emit it inline, framed
+                # by markers, so the Python side can parse structured
+                # step data without an extra SSM round-trip. We pick the
+                # first ``commands-*.json`` — Maestro emits one per flow;
+                # multi-flow recipes get the first flow's report (rare).
+                # POSIX shell — dash on SSM doesn't have bash arrays. An
+                # unmatched glob expands to the literal pattern, so we
+                # guard with ``[ -f "$f" ]`` and break on the first hit.
+                'echo "---STEPS_JSON_BEGIN---"',
+                (
+                    f"for f in {shlex.quote(run_dir)}/commands-*.json; do "
+                    'if [ -f "$f" ]; then base64 -w0 < "$f"; break; fi; '
+                    "done || true"
+                ),
+                'echo ""',
+                'echo "---STEPS_JSON_END---"',
                 f"aws s3 cp {shlex.quote(run_dir)}/ "
                 f"s3://{self.s3_bucket}/{s3_prefix}/ --recursive",
                 f"rm -f {shlex.quote(recipe_path)}",
@@ -361,11 +397,13 @@ class EmulatorController:
                 timeout_seconds=_SSM_RECIPE_TIMEOUT_SEC,
             )
             artifacts = self._presign_prefix(s3_prefix)
+            steps = _parse_steps_marker(result.stdout)
             return RunResult(
                 exit_code=result.exit_code,
                 stdout=result.stdout,
                 stderr=result.stderr,
                 artifacts=artifacts,
+                steps=steps,
             )
         finally:
             # Always bump the idle marker on the way out, even if the SSM
@@ -780,3 +818,139 @@ def _parse_states_yaml(stdout: str) -> StatesCatalog:
     flush()
 
     return StatesCatalog(default=default, states=states, active=active or default or None)
+
+
+# ── Maestro --debug-output parsing ────────────────────────────────────
+
+
+_STEPS_MARKER_BEGIN = "---STEPS_JSON_BEGIN---"
+_STEPS_MARKER_END = "---STEPS_JSON_END---"
+
+# Maestro statuses → our normalized triplet. Anything else falls through
+# to 'unknown' so a new Maestro release doesn't crash the parse.
+_STEP_STATUS_MAP = {
+    "COMPLETED": "pass",
+    "PASS": "pass",
+    "PASSED": "pass",
+    "SUCCESS": "pass",
+    "OK": "pass",
+    "FAILED": "fail",
+    "FAIL": "fail",
+    "ERROR": "fail",
+    "SKIPPED": "skipped",
+    "SKIP": "skipped",
+    "PENDING": "skipped",
+}
+
+
+def _parse_steps_marker(stdout: str) -> list[Step]:
+    """Extract Maestro's commands-*.json (base64) from stdout markers,
+    decode, and lift into our normalized Step list. Returns [] on any
+    parse failure — never raises. Maestro's exact JSON shape varies by
+    version, so every lookup is defensive.
+    """
+    if not stdout:
+        return []
+    begin = stdout.find(_STEPS_MARKER_BEGIN)
+    end = stdout.find(_STEPS_MARKER_END)
+    if begin < 0 or end < 0 or end <= begin:
+        return []
+    body = stdout[begin + len(_STEPS_MARKER_BEGIN):end].strip()
+    if not body:
+        return []
+    try:
+        raw = base64.b64decode(body, validate=False).decode("utf-8", errors="replace")
+    except Exception:
+        return []
+    if not raw.strip():
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    return _lift_maestro_steps(data)
+
+
+def _lift_maestro_steps(data: Any) -> list[Step]:
+    """Walk a Maestro commands JSON and produce Step records.
+
+    Maestro emits either a top-level list of command records, or a flow
+    object containing a ``commands`` list. We accept both. Each command
+    record's keys vary by version — known shapes:
+      { command: { tapOnElement: {...} } | { tapOn: "..." } | { ... },
+        status: "COMPLETED" | "FAILED" | ..., metadata?: {...} }
+    or
+      { command, metadata: { status, duration, ... }, screenshot? }
+    """
+    items: list[Any]
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        commands = data.get("commands")
+        if isinstance(commands, list):
+            items = commands
+        else:
+            return []
+    else:
+        return []
+
+    out: list[Step] = []
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        # ``status`` lives at top level on newer Maestro; on older it's
+        # nested in metadata.
+        raw_meta = item.get("metadata")
+        meta_for_status = raw_meta if isinstance(raw_meta, dict) else None
+        status_raw = item.get("status") or (
+            meta_for_status.get("status") if meta_for_status else None
+        )
+        status = _STEP_STATUS_MAP.get(str(status_raw or "").upper(), "unknown")
+        name = _maestro_command_label(item.get("command"))
+        meta = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        duration_ms = meta.get("duration") or meta.get("durationMs") or item.get("duration")
+        try:
+            duration_ms = int(duration_ms) if duration_ms is not None else None
+        except (TypeError, ValueError):
+            duration_ms = None
+        screenshot = item.get("screenshot") or meta.get("screenshot")
+        error = item.get("error") or meta.get("error")
+        if isinstance(error, dict):
+            error = error.get("message") or json.dumps(error)
+        out.append(
+            Step(
+                index=i,
+                name=name or f"step-{i}",
+                status=status,
+                screenshot=screenshot if isinstance(screenshot, str) else None,
+                error=error if isinstance(error, str) else None,
+                duration_ms=duration_ms,
+            )
+        )
+    return out
+
+
+def _maestro_command_label(command: Any) -> str | None:
+    """Best-effort one-line label for a Maestro command record.
+
+    Maestro commands are a single-key dict naming the action (``tapOn``,
+    ``assertVisible``, etc.) whose value carries arguments. We surface
+    ``<action>: <text>`` when there's a string-y argument, else just
+    ``<action>``. Unknown shapes → None.
+    """
+    if not isinstance(command, dict) or not command:
+        return None
+    # Take first key — Maestro commands have exactly one.
+    action = next(iter(command.keys()), None)
+    if not action:
+        return None
+    arg = command[action]
+    if isinstance(arg, str):
+        return f"{action}: {arg}"
+    if isinstance(arg, dict):
+        # Pick a likely-displayable field.
+        for k in ("text", "id", "name", "label", "value"):
+            v = arg.get(k)
+            if isinstance(v, str) and v:
+                return f"{action}: {v}"
+    return action
