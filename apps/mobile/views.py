@@ -27,7 +27,7 @@ from apps.common.envelope import error_response, success_response
 
 from . import singleton
 from .controller import EmulatorController
-from .exceptions import MobileError, NotConfigured, SingletonBusy
+from .exceptions import EmulatorNotReady, MobileError, NotConfigured, SingletonBusy
 from .serializers import (
     EnsureRunningSerializer,
     InstallApkSerializer,
@@ -73,6 +73,12 @@ def _to_payload(obj: Any) -> Any:
 
 def _mobile_error_response(e: MobileError, extra: dict[str, Any] | None = None) -> Response:
     body = error_response(message=e.message, code=e.code)
+    # EmulatorNotReady carries a Diagnostics snapshot captured at the
+    # moment of failure; surface it on the error so callers see WHY
+    # the emulator isn't usable without making a follow-up
+    # /api/mobile/diagnose round-trip.
+    if isinstance(e, EmulatorNotReady) and e.diagnostics:
+        body["error"]["diagnostics"] = e.diagnostics
     if extra:
         body["error"].update(extra)
     return Response(body, status=e.http_status)
@@ -117,6 +123,26 @@ def ensure_running(request: Request) -> Response:
     except MobileError as e:
         return _mobile_error_response(e)
     return Response(success_response(_to_payload(result)))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def diagnose(request: Request) -> Response:
+    """Read-only snapshot of the in-VM emulator runtime.
+
+    Doesn't start the EC2 instance, doesn't run recipes, doesn't
+    mutate any state. Returns the same Diagnostics shape that
+    ``ensure_running`` attaches to its success / failure responses,
+    so callers can probe without committing to a start. Useful when
+    a previous call returned booted-but-not-usable and the caller
+    wants to know what's actually broken.
+    """
+    try:
+        _assert_configured()
+        diag = _make_controller().diagnose()
+    except MobileError as e:
+        return _mobile_error_response(e)
+    return Response(success_response(_to_payload(diag)))
 
 
 @api_view(["GET"])

@@ -17,14 +17,16 @@ from rest_framework.test import APIClient
 from apps.auth.models import PersonalToken
 from apps.mobile import singleton
 from apps.mobile.controller import (
+    AdbDevice,
     Artifact,
+    Diagnostics,
     InstallResult,
     RunningState,
     RunResult,
     SnapshotResult,
     StoppedState,
 )
-from apps.mobile.exceptions import EmulatorBootTimeout, SSMTimeout
+from apps.mobile.exceptions import EmulatorBootTimeout, EmulatorNotReady, SSMTimeout
 
 pytestmark = pytest.mark.django_db
 
@@ -248,6 +250,75 @@ def test_ensure_running_boot_timeout_returns_504(bearer_client, configured):
         resp = bearer_client.post("/api/mobile/ensure-running", {}, format="json")
     assert resp.status_code == 504
     assert resp.json()["error"]["code"] == "boot-timeout"
+
+
+def test_ensure_running_emulator_not_ready_surfaces_diagnostics(
+    bearer_client, configured
+):
+    """The 503 emulator-not-ready response must carry the diagnostic
+    snapshot inline so the caller knows why."""
+    diag = {
+        "adb_devices": [],
+        "adb_visible_count": 0,
+        "emulator_pid": None,
+        "runner_service_state": "failed",
+        "marker_present": True,
+        "marker_age_seconds": 1200,
+        "runner_log_tail": "[ace-emulator-launch] ERROR: boot timed out",
+        "emulator_log_tail": "(short)",
+    }
+    fake = MagicMock()
+    fake.ensure_running.side_effect = EmulatorNotReady("stale marker", diagnostics=diag)
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post("/api/mobile/ensure-running", {}, format="json")
+    assert resp.status_code == 503
+    err = resp.json()["error"]
+    assert err["code"] == "emulator-not-ready"
+    assert err["diagnostics"]["adb_visible_count"] == 0
+    assert err["diagnostics"]["runner_service_state"] == "failed"
+    assert err["diagnostics"]["marker_age_seconds"] == 1200
+
+
+# ── diagnose ──────────────────────────────────────────────────────
+
+
+def test_diagnose_returns_full_snapshot(bearer_client, configured):
+    fake = MagicMock()
+    fake.diagnose.return_value = Diagnostics(
+        ssm_ok=True,
+        adb_devices=[AdbDevice(serial="emulator-5554", state="device")],
+        emulator_pid=12345,
+        emulator_cmdline="/opt/.../emulator -avd ACE_Pixel_API_34",
+        runner_service_state="active",
+        marker_present=True,
+        marker_age_seconds=42,
+        runner_log_tail="...",
+        emulator_log_tail="...",
+    )
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.get("/api/mobile/diagnose")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["error"] is None
+    data = body["data"]
+    assert data["ssm_ok"] is True
+    assert data["adb_devices"] == [{"serial": "emulator-5554", "state": "device"}]
+    assert data["emulator_pid"] == 12345
+    assert data["runner_service_state"] == "active"
+
+
+def test_diagnose_when_unconfigured_returns_503(bearer_client, settings):
+    settings.ACE_MOBILE_INSTANCE_ID = ""
+    settings.ACE_MOBILE_S3_BUCKET = ""
+    resp = bearer_client.get("/api/mobile/diagnose")
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "not-configured"
+
+
+def test_diagnose_requires_auth():
+    c = APIClient()
+    resp = c.get("/api/mobile/diagnose")
+    assert resp.status_code in (401, 403)
 
 
 # ── install_apk ────────────────────────────────────────────────────

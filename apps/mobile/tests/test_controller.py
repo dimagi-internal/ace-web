@@ -17,6 +17,7 @@ import pytest
 from apps.mobile import singleton
 from apps.mobile.exceptions import (
     EmulatorBootTimeout,
+    EmulatorNotReady,
     MobileError,
     SSMFailure,
     SSMTimeout,
@@ -96,6 +97,52 @@ def _queue_ssm_command(stub, *, stdout: str = "", exit_code: int = 0):
     )
 
 
+def _diagnostics_stdout(
+    *,
+    adb_devices: list[tuple[str, str]] | None = None,
+    emulator_pid: int | None = 12345,
+    runner_service: str = "active",
+    marker_present: bool = True,
+    marker_mtime: int = 0,  # 0 → "not set"
+    runner_log: str = "[ace-emulator-launch] registration complete",
+    emulator_log: str = "(emulator log)",
+) -> str:
+    """Compose the framed stdout that ``_collect_diagnostics`` parses."""
+    devices = adb_devices if adb_devices is not None else [("emulator-5554", "device")]
+    adb_lines = ["List of devices attached"]
+    adb_lines += [f"{s}\t{st}" for s, st in devices]
+    proc_line = (
+        f"{emulator_pid} /opt/android-sdk/emulator/emulator -avd ACE_Pixel_API_34"
+        if emulator_pid is not None
+        else ""
+    )
+    marker_lines = (
+        ["present", f"mtime={marker_mtime}"]
+        if marker_present
+        else ["absent", "mtime=0"]
+    )
+    return (
+        "---ADB_DEVICES---\n"
+        + "\n".join(adb_lines)
+        + "\n---EMULATOR_PROC---\n"
+        + proc_line
+        + "\n---RUNNER_SERVICE---\n"
+        + runner_service
+        + "\n---MARKER---\n"
+        + "\n".join(marker_lines)
+        + "\n---RUNNER_LOG_TAIL---\n"
+        + runner_log
+        + "\n---EMULATOR_LOG_TAIL---\n"
+        + emulator_log
+        + "\n---END---\n"
+    )
+
+
+def _queue_diagnostics(stub, **kw):
+    """Queue the SSM command + invocation pair for a _collect_diagnostics call."""
+    _queue_ssm_command(stub, stdout=_diagnostics_stdout(**kw))
+
+
 # ── Lifecycle: ensure_running ────────────────────────────────────────
 
 
@@ -109,14 +156,15 @@ def test_ensure_running_when_already_running_only_probes(controller_factory, mon
     )
     # _wait_for_emulator probe.
     _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
-    # Final describe_instances to read state for return.
-    controller_factory.ec2_stub.add_response(
-        "describe_instances", _describe_resp("running")
-    )
+    # _collect_diagnostics probe (one device visible → adb_visible_count>0).
+    _queue_diagnostics(controller_factory.ssm_stub)
 
     state = c.ensure_running()
     assert state.state == "running"
     assert state.instance_id == "i-0123456789abcdef0"
+    assert state.diagnostics is not None
+    assert state.diagnostics.adb_visible_count == 1
+    assert state.diagnostics.runner_service_state == "active"
 
 
 def test_ensure_running_starts_stopped_instance(controller_factory, monkeypatch):
@@ -133,12 +181,62 @@ def test_ensure_running_starts_stopped_instance(controller_factory, monkeypatch)
         "describe_instance_status", _instance_status_resp()
     )
     _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
+    _queue_diagnostics(controller_factory.ssm_stub)
     controller_factory.ec2_stub.add_response(
         "describe_instances", _describe_resp("running")
     )
 
     state = c.ensure_running()
     assert state.state == "running"
+    assert state.diagnostics is not None
+    assert state.diagnostics.adb_visible_count == 1
+
+
+def test_ensure_running_raises_emulator_not_ready_when_adb_empty(
+    controller_factory, monkeypatch
+):
+    """The canonical bug we're fixing: ready-marker exists but adb sees
+    no device. ensure_running must raise EmulatorNotReady with the
+    diagnostic snapshot attached so callers see why."""
+    monkeypatch.setattr(time, "sleep", lambda *_: None)
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
+    # Empty adb devices list — emulator died after registration / marker is stale.
+    _queue_diagnostics(controller_factory.ssm_stub, adb_devices=[], emulator_pid=None)
+
+    with pytest.raises(EmulatorNotReady) as exc_info:
+        c.ensure_running()
+
+    diag = exc_info.value.diagnostics
+    assert diag["adb_visible_count"] == 0
+    assert diag["adb_devices"] == []
+    assert diag["marker_present"] is True
+    assert diag["emulator_pid"] is None
+    assert "runner_log_tail" in diag
+
+
+def test_ensure_running_raises_emulator_not_ready_when_only_offline_devices(
+    controller_factory, monkeypatch
+):
+    """An adb device in 'offline' or 'unauthorized' state is not usable
+    — only 'device' counts. The check has to look at state, not just
+    the row count, otherwise a half-booted emulator passes the gate."""
+    monkeypatch.setattr(time, "sleep", lambda *_: None)
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
+    _queue_diagnostics(
+        controller_factory.ssm_stub,
+        adb_devices=[("emulator-5554", "offline")],
+    )
+
+    with pytest.raises(EmulatorNotReady):
+        c.ensure_running()
 
 
 def test_ensure_running_unexpected_state_raises(controller_factory):
@@ -237,6 +335,56 @@ def test_status_returns_stopped_state_without_ssm_probe(controller_factory):
     assert s.state == "stopped"
     assert s.last_run_at is None
     assert s.idle_for_seconds is None
+
+
+# ── Lifecycle: diagnose ─────────────────────────────────────────────
+
+
+def test_diagnose_running_instance_reports_visible_emulator(controller_factory):
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_diagnostics(controller_factory.ssm_stub)
+    diag = c.diagnose()
+    assert diag.ssm_ok is True
+    assert diag.adb_visible_count == 1
+    assert diag.adb_devices[0].serial == "emulator-5554"
+    assert diag.adb_devices[0].state == "device"
+    assert diag.emulator_pid == 12345
+    assert diag.runner_service_state == "active"
+    assert diag.marker_present is True
+
+
+def test_diagnose_reports_unhealthy_emulator_without_raising(controller_factory):
+    """Unlike ensure_running, diagnose never raises on degraded state —
+    it just reports what it sees. This is the load-bearing contract:
+    callers can probe without committing to a start."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_diagnostics(
+        controller_factory.ssm_stub,
+        adb_devices=[],
+        emulator_pid=None,
+        runner_service="failed",
+    )
+    diag = c.diagnose()
+    assert diag.ssm_ok is True
+    assert diag.adb_visible_count == 0
+    assert diag.emulator_pid is None
+    assert diag.runner_service_state == "failed"
+
+
+def test_diagnose_when_instance_stopped_reports_ssm_unavailable(controller_factory):
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("stopped")
+    )
+    diag = c.diagnose()
+    assert diag.ssm_ok is False
+    assert "is 'stopped'" in (diag.ssm_error or "")
 
 
 # ── Operations: install_apk ─────────────────────────────────────────

@@ -31,6 +31,21 @@ class EmulatorBootTimeout(MobileError):
     http_status = 504
 
 
+class EmulatorNotReady(MobileError):
+    """Raised when ensure_running finds the ready-marker but the
+    emulator is not actually visible to adb. Indicates the marker is
+    stale or the emulator died after registration. Carries the
+    diagnostic snapshot collected at the moment of failure so callers
+    don't have to make a second round-trip to find out why."""
+
+    code = "emulator-not-ready"
+    http_status = 503
+
+    def __init__(self, message: str, diagnostics: dict | None = None):
+        super().__init__(message)
+        self.diagnostics = diagnostics or {}
+
+
 class SSMTimeout(MobileError):
     code = "ssm-timeout"
     http_status = 504

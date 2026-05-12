@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path("status", views.status, name="mobile_status"),
+    path("diagnose", views.diagnose, name="mobile_diagnose"),
     path("states", views.states, name="mobile_states"),
     path("ensure-running", views.ensure_running, name="mobile_ensure_running"),
     path("select-state", views.select_state, name="mobile_select_state"),
