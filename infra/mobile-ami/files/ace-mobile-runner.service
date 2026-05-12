@@ -19,10 +19,22 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin:/opt/android-sdk/platform-tools:/o
 # restart it with a different state via SSM (see EmulatorController.select_state).
 ExecStart=/usr/local/bin/ace-emulator-launch
 
-# After ExecStart exits we're done — no automatic restart. ace-web's
-# /api/mobile/ensure-running will start the EC2 instance afresh, which
-# triggers this unit again on next boot.
-Restart=no
+# Auto-recover from a launch-script crash a bounded number of times
+# before giving up. A non-zero exit (qemu died, registration recipe
+# failed, adb wedge) triggers a clean restart after 10s. After 3
+# failed starts within 120s the unit stays in `failed` state — at
+# that point ace-web's /api/mobile/ensure-running or restart-runner
+# endpoints are the explicit operator path (and call
+# `systemctl reset-failed` via _runner_clean_restart_commands).
+#
+# An explicit `systemctl stop` (used by select_state and the recovery
+# path) is a clean termination and does NOT trigger Restart — only
+# non-zero exits do. The idle-shutdown timer powers the whole instance
+# off rather than killing the unit, so it doesn't interact either.
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=3
+StartLimitIntervalSec=120
 
 StandardOutput=append:/var/log/ace-mobile/runner.log
 StandardError=append:/var/log/ace-mobile/runner.log
