@@ -432,8 +432,27 @@ def test_capture_ui_dump_returns_xml_and_elements(bearer_client, configured):
 # ── stop ─────────────────────────────────────────────────────────
 
 
-def test_stop_does_not_take_singleton_lock(bearer_client, configured):
-    """Stop must succeed even when the singleton is held mid-run."""
+def test_stop_refuses_when_singleton_held_without_force(bearer_client, configured):
+    """Stop without force must refuse if a recipe is in flight, surfacing
+    the current owner so the caller can decide whether to force."""
+    singleton.try_acquire("other-task:other-req")
+    fake = MagicMock()
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post("/api/mobile/stop", {}, format="json")
+    # SingletonBusy maps to 503 in exceptions.py (parallel to run-recipe contention).
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["error"]["code"] == "singleton-busy"
+    assert body["error"]["current_owner"] == "other-task:other-req"
+    # Controller.stop never called.
+    fake.stop.assert_not_called()
+    # Lock still held — stop didn't touch it.
+    assert singleton.current_owner() == "other-task:other-req"
+
+
+def test_stop_with_force_bypasses_lock_check(bearer_client, configured):
+    """force=true must stop even when singleton is held — the escape
+    hatch for aborting a hung recipe."""
     singleton.try_acquire("other-task:other-req")
     fake = MagicMock()
     fake.stop.return_value = StoppedState(
@@ -442,14 +461,18 @@ def test_stop_does_not_take_singleton_lock(bearer_client, configured):
         stopped_at="2026-05-09T00:00:00+00:00",
     )
     with patch("apps.mobile.views.EmulatorController", return_value=fake):
-        resp = bearer_client.post("/api/mobile/stop", {}, format="json")
+        resp = bearer_client.post(
+            "/api/mobile/stop", {"force": True}, format="json"
+        )
     assert resp.status_code == 200
     assert resp.json()["data"]["state"] == "stopping"
-    # Lock should remain held — stop didn't touch it.
-    assert singleton.current_owner() == "other-task:other-req"
+    # Stop itself doesn't release the lock — it'll TTL-expire — but the
+    # call succeeded mid-run.
+    fake.stop.assert_called_once()
 
 
-def test_stop_returns_envelope(bearer_client, configured):
+def test_stop_returns_envelope_when_idle(bearer_client, configured):
+    """No singleton held → default stop proceeds without force."""
     fake = MagicMock()
     fake.stop.return_value = StoppedState(
         instance_id="i-0123456789abcdef0",

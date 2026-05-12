@@ -77,3 +77,15 @@ class EnsureRunningSerializer(serializers.Serializer):
             "invalid": "state must match [A-Za-z0-9_.-]{1,64}",
         },
     )
+
+
+class StopSerializer(serializers.Serializer):
+    """``stop`` accepts an optional ``force`` flag.
+
+    Without ``force`` (the default), stop refuses if the singleton lock
+    is held — a recipe is in flight and the caller probably didn't mean
+    to interrupt it. With ``force: true``, stop bypasses the guard so a
+    hung recipe can still be aborted by tearing the instance down.
+    """
+
+    force = serializers.BooleanField(required=False, default=False)
