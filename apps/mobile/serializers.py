@@ -105,6 +105,18 @@ class RestartRunnerSerializer(serializers.Serializer):
     wait_for_ready = serializers.BooleanField(required=False, default=True)
 
 
+class StopSerializer(serializers.Serializer):
+    """``stop`` accepts an optional ``force`` flag.
+
+    Without ``force`` (the default), stop refuses with ``singleton-busy``
+    503 if the singleton lock is held — a recipe is in flight and the
+    caller probably didn't mean to interrupt it. ``{"force": true}``
+    bypasses the guard so a hung recipe can still be aborted by tearing
+    the instance down."""
+
+    force = serializers.BooleanField(required=False, default=False)
+
+
 class PatchLaunchScriptSerializer(serializers.Serializer):
     """Emergency-fix endpoint for hot-patching the in-VM
     ace-emulator-launch script without a full AMI rebake. The script

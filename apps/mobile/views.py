@@ -9,8 +9,11 @@ the work; views are thin: assert configured → validate input → (for
 ``run_recipe`` only) acquire singleton lock → dispatch → envelope.
 
 The singleton lock only wraps ``run_recipe``. Other endpoints are short
-enough not to need it; ``stop`` deliberately does NOT take the lock so a
-hung ``run_recipe`` can always be aborted by stopping the instance.
+enough not to need it. ``stop`` doesn't *take* the lock either — it just
+*probes* ``singleton.current_owner()``: if a recipe is in flight it
+refuses with ``singleton-busy`` 503, surfacing the current owner so the
+caller can decide. ``{"force": true}`` bypasses the guard so a genuinely
+hung recipe can still be aborted by tearing the instance down.
 """
 from __future__ import annotations
 
@@ -36,6 +39,7 @@ from .serializers import (
     RunRecipeSerializer,
     SnapshotSerializer,
     StateSerializer,
+    StopSerializer,
 )
 
 
@@ -424,13 +428,40 @@ def admin_patch_launch_script(request: Request) -> Response:
 def stop(request: Request) -> Response:
     """Stop the EC2 instance.
 
-    Deliberately does NOT take the singleton lock — ``stop`` must always
-    succeed even mid-run so a hung recipe can be aborted by tearing the
-    instance down. SSM commands queued against a stopping instance will
-    fail naturally.
+    By default, refuses with ``singleton-busy`` 503 if a recipe is in
+    flight (someone else's ``run_recipe`` holds the lock) so a concurrent
+    skill can't silently kill a legitimate run. ``{"force": true}``
+    bypasses the guard and tears the instance down anyway — needed for
+    aborting a hung recipe whose own lock never releases. Stop itself
+    never takes the lock (so when cleared to act it always proceeds even
+    if the holder's TTL is mid-expiry); SSM commands queued against a
+    stopping instance fail naturally.
     """
     try:
         _assert_configured()
+    except MobileError as e:
+        return _mobile_error_response(e)
+
+    serializer = StopSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return Response(
+            error_response(
+                message=f"invalid request: {serializer.errors}",
+                code="invalid-request",
+            ),
+            status=400,
+        )
+    force = serializer.validated_data.get("force") or False
+
+    if not force:
+        current = singleton.current_owner()
+        if current:
+            try:
+                raise SingletonBusy(owner=current)
+            except SingletonBusy as e:
+                return _mobile_error_response(e, extra={"current_owner": e.owner})
+
+    try:
         result = _make_controller().stop()
     except MobileError as e:
         return _mobile_error_response(e)
