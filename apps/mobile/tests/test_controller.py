@@ -427,6 +427,59 @@ def test_status_reports_idle_marker_when_running(controller_factory):
     assert 25 <= s.idle_for_seconds <= 60
 
 
+def test_status_caches_idle_marker_skips_ssm_on_second_call(controller_factory):
+    """Hot-path optimization: a second ``status()`` within the cache
+    TTL must skip the SSM probe entirely. We queue exactly one SSM
+    response and assert both calls succeed with the same idle_for —
+    Stubber would fail the test if a second SSM round-trip happened
+    (no response queued)."""
+    c = controller_factory()
+    # describe_instances fires on every status call (cheap EC2 API).
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    epoch = int(time.time()) - 30
+    _queue_ssm_command(controller_factory.ssm_stub, stdout=f"{epoch}\n")
+
+    s1 = c.status()
+    s2 = c.status()
+
+    assert s1.last_run_at == s2.last_run_at
+    assert s1.idle_for_seconds is not None
+    assert s2.idle_for_seconds is not None
+    # Both calls must report a valid idle window; the second came from
+    # the cache, not from SSM. Stubber would have raised on s2 if a
+    # second SSM call had fired.
+    controller_factory.ssm_stub.assert_no_pending_responses()
+
+
+def test_status_caches_no_marker_case_too(controller_factory):
+    """The "instance running but no recipe issued yet" path (marker
+    file absent, ``stat`` returns 0) must also be cached so polling
+    callers don't pay the SSM round-trip on every miss."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    # echo 0 → "no marker file" sentinel branch.
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="0\n")
+
+    s1 = c.status()
+    s2 = c.status()
+
+    assert s1.last_run_at is None
+    assert s1.idle_for_seconds is None
+    assert s2.last_run_at is None
+    assert s2.idle_for_seconds is None
+    controller_factory.ssm_stub.assert_no_pending_responses()
+
+
 def test_status_returns_stopped_state_without_ssm_probe(controller_factory):
     c = controller_factory()
     controller_factory.ec2_stub.add_response(
