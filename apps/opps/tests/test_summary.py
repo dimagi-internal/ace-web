@@ -8,7 +8,6 @@ state dict.
 """
 from __future__ import annotations
 
-import textwrap
 from dataclasses import dataclass
 
 from apps.opps.summary import build_summary_payload
