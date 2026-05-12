@@ -34,6 +34,7 @@ from .serializers import (
     RunRecipeSerializer,
     SnapshotSerializer,
     StateSerializer,
+    StopSerializer,
 )
 
 
@@ -318,13 +319,39 @@ def screenshot(request: Request) -> Response:
 def stop(request: Request) -> Response:
     """Stop the EC2 instance.
 
-    Deliberately does NOT take the singleton lock — ``stop`` must always
-    succeed even mid-run so a hung recipe can be aborted by tearing the
-    instance down. SSM commands queued against a stopping instance will
-    fail naturally.
+    By default, refuses if a recipe is in flight (singleton lock held)
+    so an accidental stop call from a concurrent skill can't silently
+    kill a legitimate run. Pass ``{"force": true}`` to bypass the guard
+    and tear the instance down anyway — needed for aborting a hung
+    recipe whose own lock never releases. The stop itself never takes
+    the lock (so it can always proceed once cleared to act); SSM
+    commands queued against a stopping instance fail naturally.
     """
     try:
         _assert_configured()
+    except MobileError as e:
+        return _mobile_error_response(e)
+
+    serializer = StopSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return Response(
+            error_response(
+                message=f"invalid request: {serializer.errors}",
+                code="invalid-request",
+            ),
+            status=400,
+        )
+    force = serializer.validated_data.get("force") or False
+
+    if not force:
+        current = singleton.current_owner()
+        if current:
+            try:
+                raise SingletonBusy(owner=current)
+            except SingletonBusy as e:
+                return _mobile_error_response(e, extra={"current_owner": e.owner})
+
+    try:
         result = _make_controller().stop()
     except MobileError as e:
         return _mobile_error_response(e)
