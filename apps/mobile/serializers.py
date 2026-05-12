@@ -77,3 +77,14 @@ class EnsureRunningSerializer(serializers.Serializer):
             "invalid": "state must match [A-Za-z0-9_.-]{1,64}",
         },
     )
+
+
+class PatchLaunchScriptSerializer(serializers.Serializer):
+    """Emergency-fix endpoint for hot-patching the in-VM
+    ace-emulator-launch script without a full AMI rebake. The script
+    body is sent verbatim — server-side validation enforces shebang +
+    size cap (the controller). ``restart_runner`` defaults true so a
+    typical fix lands and is exercised on the next boot."""
+
+    script_body = serializers.CharField(allow_blank=False, trim_whitespace=False)
+    restart_runner = serializers.BooleanField(required=False, default=True)

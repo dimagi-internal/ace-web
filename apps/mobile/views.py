@@ -31,6 +31,7 @@ from .exceptions import EmulatorNotReady, MobileError, NotConfigured, SingletonB
 from .serializers import (
     EnsureRunningSerializer,
     InstallApkSerializer,
+    PatchLaunchScriptSerializer,
     RunRecipeSerializer,
     SnapshotSerializer,
     StateSerializer,
@@ -337,6 +338,45 @@ def screenshot(request: Request) -> Response:
     except MobileError as e:
         return _mobile_error_response(e)
     return Response(success_response(_to_payload(artifact)))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_patch_launch_script(request: Request) -> Response:
+    """Emergency hot-patch the in-VM ace-emulator-launch script.
+
+    Use when the launch script has a bug we want to fix without a full
+    AMI rebake. The same fix MUST also land in
+    ``infra/mobile-ami/files/ace-emulator-launch`` in this repo so the
+    next rebake picks it up — without that, the live fix evaporates on
+    next AMI roll.
+
+    Auth: regular IsAuthenticated (PAT or session). This is a
+    privileged operation but the PAT permission model is the same as
+    every other mobile endpoint, so no extra gating beyond that.
+    """
+    try:
+        _assert_configured()
+    except MobileError as e:
+        return _mobile_error_response(e)
+
+    serializer = PatchLaunchScriptSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(
+            error_response(
+                message=f"invalid request: {serializer.errors}",
+                code="invalid-request",
+            ),
+            status=400,
+        )
+    try:
+        result = _make_controller().patch_launch_script(
+            script_body=serializer.validated_data["script_body"],
+            restart=serializer.validated_data["restart_runner"],
+        )
+    except MobileError as e:
+        return _mobile_error_response(e)
+    return Response(success_response(result))
 
 
 @api_view(["POST"])
