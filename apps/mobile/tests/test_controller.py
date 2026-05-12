@@ -415,17 +415,42 @@ def test_load_snapshot_returns_name_and_timestamp(controller_factory):
     assert r.loaded_at is not None
 
 
-def test_capture_ui_dump_returns_xml_string(controller_factory):
+def test_capture_ui_dump_returns_xml_and_elements(controller_factory):
     c = controller_factory()
     controller_factory.ec2_stub.add_response(
         "describe_instances", _describe_resp("running")
     )
     _queue_ssm_command(
         controller_factory.ssm_stub,
-        stdout="<hierarchy><node text='hi'/></hierarchy>\n",
+        stdout=(
+            '<hierarchy rotation="0">'
+            '<node text="Hello" resource-id="com.x:id/greet" '
+            'class="android.widget.TextView" bounds="[0,0][100,40]" />'
+            '<node text="" resource-id="com.x:id/btn" '
+            'class="android.widget.Button" bounds="[0,40][100,80]" />'
+            "</hierarchy>"
+        ),
     )
-    xml = c.capture_ui_dump()
-    assert "<hierarchy>" in xml
+    r = c.capture_ui_dump()
+    assert "<hierarchy" in r.xml
+    assert len(r.elements) == 2
+    assert r.elements[0].id == "com.x:id/greet"
+    assert r.elements[0].text == "Hello"
+    assert r.elements[0].class_ == "android.widget.TextView"
+    assert r.elements[0].bounds == "[0,0][100,40]"
+    assert r.elements[1].id == "com.x:id/btn"
+    assert r.elements[1].text is None  # empty string becomes None
+
+
+def test_capture_ui_dump_empty_xml_returns_empty_elements(controller_factory):
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="")
+    r = c.capture_ui_dump()
+    assert r.xml == ""
+    assert r.elements == []
 
 
 # ── Lock interaction at view layer is tested in test_views.py.
