@@ -465,7 +465,7 @@ def test_list_only_reloads_changed_card(settings, authed_client):
         assert first.status_code == 200
         first_etag = first.headers["ETag"]
 
-        state_id = fake.file_id("ACE/malaria-pilot/state.yaml")
+        state_id = fake.file_id("ACE/malaria-pilot/run_state.yaml")
         fake.update_file(
             state_id,
             "current_phase: app-building\ncurrent_step: app-build\nmode: review\n",

@@ -121,10 +121,8 @@ def _opp_list_impl(request):
             continue
         opp_children = client.list_files(child.id)
 
-        # Minimum signal that this folder is an opp. We accept five shapes:
+        # Minimum signal that this folder is an opp. We accept four shapes:
         #   - idea.md at root (flat layout, the canonical pre-2026-05-02 shape)
-        #   - state.yaml at root (legacy flat opps from before the
-        #     2026-05-03 rename to run_state.yaml)
         #   - run_state.yaml at root (would only happen if a single-run
         #     opp was migrated in place — supported for completeness)
         #   - opp.yaml at root (multi-run layout — current ACE plugin)
@@ -134,7 +132,6 @@ def _opp_list_impl(request):
         names = {f.name for f in opp_children}
         if not (
             "idea.md" in names
-            or "state.yaml" in names
             or "run_state.yaml" in names
             or "opp.yaml" in names
             or "runs" in names
@@ -154,8 +151,7 @@ def _opp_list_impl(request):
                     # the "is this an opp folder?" check; replay both the
                     # opp folder id and its children into the tracker so a
                     # change to either (e.g. the runs/ folder appearing for
-                    # the first time, or state.yaml moving up to root)
-                    # invalidates this OppCard.
+                    # the first time) invalidates this OppCard.
                     tracker.record(child.id, child.modified_time)
                     for f in opp_children:
                         tracker.record(f.id, f.modified_time)
@@ -168,7 +164,7 @@ def _opp_list_impl(request):
                     file_ids=tracker.file_ids,
                 )
             except Exception as exc:
-                # A malformed state.yaml or a Drive blip on one opp shouldn't
+                # A malformed run_state.yaml or a Drive blip on one opp shouldn't
                 # erase the whole list — but it shouldn't vanish silently
                 # either. Log loudly and surface a placeholder card so the UI
                 # can show "couldn't load" instead of pretending the opp

@@ -31,11 +31,11 @@ def _opp_with_two_runs() -> dict:
                 "opp.yaml": "display_name: Stale Opp\nslug: stale-opp\n",
                 "runs": {
                     "20260501-1200": {
-                        "state.yaml": "current_phase: ocs\n",
+                        "run_state.yaml": "current_phase: ocs\n",
                         "1-design": {"x.md": "x"},
                     },
                     "20260502-1200": {
-                        "state.yaml": "current_phase: closeout\n",
+                        "run_state.yaml": "current_phase: closeout\n",
                         "1-design": {"y.md": "y"},
                     },
                 },

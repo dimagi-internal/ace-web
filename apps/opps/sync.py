@@ -9,7 +9,7 @@ Folder shape (the one the ACE plugin writes today):
     ACE/<slug>/pdd.md  or  idd.md                (optional; legacy name accepted)
     ACE/<slug>/opp.yaml                          (multi-run layout: opp-level metadata)
     ACE/<slug>/runs/<run-id>/run_state.yaml      (multi-run layout, current — written by /ace:run)
-    ACE/<slug>/state.yaml                        (legacy flat layout, pre-0.11.3 rename)
+    ACE/<slug>/run_state.yaml                    (flat layout, single-run)
     ACE/<slug>/<subfolder>/*                     (per skill, per manifest)
     ACE/<slug>/verdicts/<skill>-*.yaml           (LLM-as-Judge verdicts)
 
@@ -114,15 +114,8 @@ def _find_child_folder(files: list[DriveFile], name: str) -> DriveFile | None:
 
 
 def _find_state_file(files: list[DriveFile]) -> DriveFile | None:
-    """Return the per-run state file from a folder listing.
-
-    The plugin renamed ``state.yaml`` → ``run_state.yaml`` in 0.11.3 to make
-    the per-run scope explicit (vs opp-level metadata in ``opp.yaml``). Some
-    opps in Drive still carry the old name because the rename is only
-    applied as opps are touched. Prefer ``run_state.yaml``; fall back to
-    ``state.yaml`` for unmigrated opps.
-    """
-    return _find_child(files, "run_state.yaml") or _find_child(files, "state.yaml")
+    """Return the per-run state file from a folder listing."""
+    return _find_child(files, "run_state.yaml")
 
 
 def _read_text(client: DriveClient, file: DriveFile) -> str:
@@ -183,8 +176,8 @@ def list_opp_runs(
     """List runs under <opp>/runs/, newest-first by run-id (sorts as string).
 
     Returns empty list if the opp folder doesn't exist or has no runs/
-    subfolder. Each RunSummary is loaded by reading state.yaml from the
-    run folder.
+    subfolder. Each RunSummary is loaded by reading run_state.yaml from the
+    run folder. Run folders without run_state.yaml are skipped.
 
     ``opp_children``: if the caller has already listed the opp folder, pass
     the result here to avoid a redundant Drive call.  When ``None``, the opp
@@ -977,7 +970,7 @@ class OppCard:
     Populated from a bounded number of Drive calls per opp:
       - Folder listing (already performed by the caller for the signal
         check) — reused, no extra call.
-      - ``state.yaml`` ``get_content`` (skipped when absent).
+      - ``run_state.yaml`` ``get_content`` (skipped when absent).
       - When (and only when) the opp has a ``verdicts/`` subfolder: one
         ``list_files`` of that folder plus one ``get_content`` for the
         highest-rank ``opp-eval-*.yaml`` (deep > monitor > quick).
@@ -987,12 +980,12 @@ class OppCard:
 
     Note on ``status`` and ``last_activity_at``: ace-web has no live
     process signal — we only see what Drive shows us. ``status`` reports
-    what we observed (``ok`` = state.yaml present and parsable; ``no-state``
-    = no state.yaml; ``error`` set by callers when load failed). It does
-    NOT claim "running"; the plugin may have exited hours ago.
-    ``last_activity_at`` is state.yaml's Drive modifiedTime — the plugin
-    updates state.yaml on every step transition, so this is the best
-    cheap proxy for "when did anything happen here."
+    what we observed (``ok`` = run_state.yaml present and parsable;
+    ``no-state`` = no run_state.yaml; ``error`` set by callers when load
+    failed). It does NOT claim "running"; the plugin may have exited hours
+    ago. ``last_activity_at`` is run_state.yaml's Drive modifiedTime — the
+    plugin updates run_state.yaml on every step transition, so this is the
+    best cheap proxy for "when did anything happen here."
     """
     opp: OppManifest
     current_phase: str | None
@@ -1000,8 +993,8 @@ class OppCard:
     status: str
     eval_score: float | None            # latest opp-eval overall_score (0-100), if any
     eval_passed: bool | None            # latest opp-eval verdict pass/fail, if any
-    last_activity_at: str | None        # state.yaml modifiedTime (ISO-8601), if present
-    run_count: int = 1                  # number of runs; legacy flat opps are always 1
+    last_activity_at: str | None        # run_state.yaml modifiedTime (ISO-8601), if present
+    run_count: int = 1                  # number of runs; flat-layout opps are always 1
 
 
 def load_opp_card(
@@ -1012,18 +1005,17 @@ def load_opp_card(
 ) -> OppCard:
     """Read the subset of ``ACE/<slug>/`` needed for a list card.
 
-    Handles three Drive layouts in one pass:
+    Handles two Drive layouts in one pass:
 
-    1. **Flat** (pre-2026-05-02): ``state.yaml`` + ``idea.md`` at opp root,
-       with ``verdicts/`` and per-skill subfolders alongside.
-    2. **Legacy multi-run**: ``runs/run-001/state.yaml`` (older convention).
-    3. **Multi-run with timestamp run IDs** (current ACE plugin shape):
-       ``opp.yaml`` at root, ``runs/<YYYYMMDD-HHMM>/{state.yaml,verdicts/,...}``,
-       and inputs/pdd.md as the canonical PDD source.
+    1. **Flat**: ``run_state.yaml`` + ``idea.md`` at opp root, with
+       ``verdicts/`` and per-skill subfolders alongside.
+    2. **Multi-run** (current ACE plugin shape): ``opp.yaml`` at root,
+       ``runs/<YYYYMMDD-HHMM>/{run_state.yaml,verdicts/,...}``, and
+       inputs/pdd.md as the canonical PDD source.
 
     ``opp_children`` is the caller-provided listing of the opp folder
     (they already fetched it to decide whether this folder is an opp),
-    so we don't re-list. We only fetch the body of ``state.yaml`` /
+    so we don't re-list. We only fetch the body of ``run_state.yaml`` /
     ``opp.yaml`` when they're present.
     """
     slug = opp_folder.name
@@ -1034,9 +1026,9 @@ def load_opp_card(
     if _find_child(opp_children, "opp.yaml") is not None:
         opp_yaml_data = _read_opp_yaml(client, opp_folder.id)
 
-    # Locate state.yaml + the folder we'll search for verdicts/.
-    # state.yaml lives next to verdicts/ — root for flat, run folder for
-    # multi-run. Tracking both keeps _load_opp_eval_summary's reads on
+    # Locate run_state.yaml + the folder we'll search for verdicts/.
+    # run_state.yaml lives next to verdicts/ — root for flat, run folder
+    # for multi-run. Tracking both keeps _load_opp_eval_summary's reads on
     # the right children list.
     state_file: DriveFile | None = None
     state_source_children: list[DriveFile] = opp_children
@@ -1050,21 +1042,26 @@ def load_opp_card(
             (c for c in run_children if _is_folder(c)),
             key=lambda f: f.name, reverse=True,
         )
-        if run_folders:
-            run_count = len(run_folders)
-            # Try newest run first; fall through to older runs if newest
-            # has no state.yaml (e.g. a half-initialized run dir).
-            for rf in run_folders:
-                run_inner = client.list_files(rf.id)
-                sf = _find_state_file(run_inner)
-                if sf is not None:
-                    state_file = sf
-                    state_source_children = run_inner
-                    latest_run_name = rf.name
-                    break
+        # Count only run folders that contain a run_state.yaml — matches
+        # list_opp_runs' definition of a real run. Half-initialized or
+        # partially-deleted run folders (folder exists, no run_state.yaml)
+        # must not inflate the count, or the card disagrees with the
+        # expanded runs list.
+        valid_runs = 0
+        for rf in run_folders:
+            run_inner = client.list_files(rf.id)
+            sf = _find_state_file(run_inner)
+            if sf is None:
+                continue
+            valid_runs += 1
+            if state_file is None:
+                state_file = sf
+                state_source_children = run_inner
+                latest_run_name = rf.name
+        run_count = valid_runs
 
     if state_file is None:
-        # Flat layout: state.yaml at opp root.
+        # Flat layout: run_state.yaml at opp root.
         state_file = _find_state_file(opp_children)
         if state_file is not None:
             state_source_children = opp_children
@@ -1074,13 +1071,13 @@ def load_opp_card(
         try:
             state_data = yaml.safe_load(_read_text(client, state_file)) or {}
         except yaml.YAMLError:
-            log.warning("state.yaml for %s is not valid YAML", slug)
+            log.warning("run_state.yaml for %s is not valid YAML", slug)
 
     # current_run_id: latest run-folder name when multi-run, "r1" when flat
     # (the synthesised single-run id the frontend payload still expects).
     current_run_id = latest_run_name or "r1"
 
-    # display_name precedence: opp.yaml (multi-run) → state.yaml → slug.
+    # display_name precedence: opp.yaml (multi-run) → run_state.yaml → slug.
     display_name = (
         opp_yaml_data.get("display_name")
         or state_data.get("display_name")
@@ -1110,7 +1107,7 @@ def load_opp_card(
     # subfolder AND it contains an opp-eval-*.yaml.
     eval_score, eval_passed = _load_opp_eval_summary(client, state_source_children)
 
-    # The plugin's state.yaml key names diverged between layouts:
+    # The plugin's run_state.yaml key names diverged between layouts:
     # flat opps use ``current_phase`` / ``current_step``; multi-run runs
     # use ``phase`` / ``step`` (matching ``list_opp_runs``). Accept both
     # so this card loader works regardless of which the plugin emits.
@@ -1295,28 +1292,18 @@ def _load_opp_flat(
     skill_registry,
     overview: dict,
 ) -> OppSnapshot:
-    """Load an OppSnapshot from the legacy flat layout (state.yaml at opp root)."""
+    """Load an OppSnapshot from the flat layout (run_state.yaml at opp root)."""
     # Single flat recursive listing of the opp folder — one round-trip.
     opp_tree = client.list_files(opp_folder.id, recursive=True)
 
-    # state.yaml lives at root (new shape) or runs/run-001/ (legacy).
     state_file = _find_state_file(opp_children)
-    if state_file is None:
-        runs_folder = _find_child(opp_children, "runs")
-        if runs_folder is not None and _is_folder(runs_folder):
-            run_children = client.list_files(runs_folder.id)
-            run1 = _find_child(run_children, "run-001")
-            if run1 is not None and _is_folder(run1):
-                state_file = _find_child(
-                    client.list_files(run1.id), "state.yaml"
-                )
     state_data: dict = {}
     if state_file is not None:
         raw = _read_text(client, state_file)
         try:
             state_data = yaml.safe_load(raw) or {}
         except yaml.YAMLError:
-            log.warning("state.yaml for %s is not valid YAML", slug)
+            log.warning("run_state.yaml for %s is not valid YAML", slug)
             state_data = {}
 
     # IDD→PDD rename transition: accept either primary-doc filename.
@@ -1401,17 +1388,20 @@ def _load_opp_run(
     run_folder_id = run_summary.folder_id
     slug = opp_folder.name
 
-    # List the run folder's immediate children for state.yaml lookup.
+    # List the run folder's immediate children for run_state.yaml lookup.
     run_children = client.list_folder(run_folder_id)
 
-    # state.yaml is already parsed into run_summary — just read for extra fields.
+    # run_state.yaml is already parsed into run_summary — just read for extra fields.
     state_file = _find_state_file(run_children)
     state_data: dict = {}
     if state_file is not None:
         try:
             state_data = yaml.safe_load(_read_text(client, state_file)) or {}
         except yaml.YAMLError:
-            log.warning("state.yaml for run %s/%s is not valid YAML", slug, run_summary.run_id)
+            log.warning(
+                "run_state.yaml for run %s/%s is not valid YAML",
+                slug, run_summary.run_id,
+            )
 
     # pdd.md / idea.md: prefer run folder, fall back to opp root inputs/.
     opp_folder_children = client.list_folder(opp_folder.id)
@@ -1468,7 +1458,7 @@ def _load_opp_run(
         qa_results_by_skill=qa_results_by_skill,
     )
 
-    # Read opp.yaml for display_name; fall back to state.yaml then slug.
+    # Read opp.yaml for display_name; fall back to run_state.yaml then slug.
     opp_data = _read_opp_yaml(client, opp_folder.id)
     display_name = opp_data.get("display_name") or state_data.get("display_name") or slug
 

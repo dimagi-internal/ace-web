@@ -76,7 +76,7 @@ export const ARTIFACT_MANIFEST: readonly ArtifactEntry[] = [
     description: 'Opp-specific Q&A pairs derived from the PDD; each entry has an expected-answer summary that ocs-chatbot-qa embeds in the transcript and ocs-chatbot-eval grades against',
   },
   {
-    path: 'state.yaml',
+    path: 'run_state.yaml',
     producedBy: 'ace-orchestrator',
     consumedBy: ['timeline-monitor'],
     phase: 'design',

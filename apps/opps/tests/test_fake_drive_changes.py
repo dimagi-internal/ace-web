@@ -11,7 +11,7 @@ def client() -> FakeDriveClient:
     return FakeDriveClient.from_tree({
         "ACE": {
             "alpha": {
-                "state.yaml": "current_step: a\n",
+                "run_state.yaml": "current_step: a\n",
                 "idea.md": "alpha idea",
             }
         }
@@ -34,7 +34,7 @@ def test_list_changes_returns_empty_initially(client):
 
 def test_list_changes_reports_mutations_after_token(client):
     tok = client.get_changes_start_page_token()
-    state_id = client.file_id("ACE/alpha/state.yaml")
+    state_id = client.file_id("ACE/alpha/run_state.yaml")
     client.update_file(state_id, "current_step: b\n", "application/x-yaml")
 
     page = client.list_changes(tok)
@@ -55,7 +55,7 @@ def test_list_changes_reports_creates(client):
 
 
 def test_list_changes_reports_deletes(client):
-    state_id = client.file_id("ACE/alpha/state.yaml")
+    state_id = client.file_id("ACE/alpha/run_state.yaml")
     tok = client.get_changes_start_page_token()
     # Trash the parent folder; the fake should record the delete of children.
     alpha_id = client.folder_id("ACE/alpha")

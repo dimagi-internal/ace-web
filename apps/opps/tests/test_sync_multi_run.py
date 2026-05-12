@@ -7,8 +7,8 @@ Layout being tested:
     │   ├── inputs/
     │   │   └── pdd.md
     │   ├── runs/
-    │   │   ├── 20260502-1830/{state.yaml, idea.md, ...}
-    │   │   └── 20260502-1430/{state.yaml, ...}
+    │   │   ├── 20260502-1830/{run_state.yaml, idea.md, ...}
+    │   │   └── 20260502-1430/{run_state.yaml, ...}
     │   └── opp.yaml
     └── ...
 """
@@ -141,7 +141,7 @@ def _build_turmeric_layout() -> _Folder:
                                 id="run-1830", name="20260502-1830", parent="turmeric-runs",
                                 children=[
                                     _File(
-                                        id="state-1830", name="state.yaml",
+                                        id="state-1830", name="run_state.yaml",
                                         parent="run-1830",
                                         body=(
                                             "mode: default\n"
@@ -186,7 +186,7 @@ def _build_turmeric_layout() -> _Folder:
                                 id="run-1430", name="20260502-1430", parent="turmeric-runs",
                                 children=[
                                     _File(
-                                        id="state-1430", name="state.yaml",
+                                        id="state-1430", name="run_state.yaml",
                                         parent="run-1430",
                                         body=(
                                             "mode: default\n"
@@ -486,6 +486,35 @@ def test_load_opp_card_uses_opp_yaml_display_name():
     assert card.opp.current_run_id == "20260502-1830"
     assert card.current_phase == "ocs"
     assert card.run_count == 2
+
+
+def test_load_opp_card_run_count_skips_folders_without_state():
+    """A run folder without run_state.yaml (partially deleted or half-
+    initialized) must NOT be counted — otherwise the card disagrees with
+    the expanded runs list."""
+    layout = _build_turmeric_layout()
+    runs_folder = next(
+        c for c in layout.children[0].children if isinstance(c, _Folder) and c.name == "runs"
+    )
+    runs_folder.children.append(
+        _Folder(
+            id="run-orphan", name="20260502-9999", parent="turmeric-runs",
+            children=[
+                _File(
+                    id="orphan-readme", name="README.md", parent="run-orphan",
+                    body="started but never wrote run_state.yaml",
+                    mime_type="text/markdown",
+                ),
+            ],
+        )
+    )
+    fake = FakeDrive(layout)
+    card = load_opp_card_by_slug(fake, ace_folder_id="ACE", slug="turmeric")
+    # 3 folders under runs/, but only 2 have run_state.yaml.
+    assert card.run_count == 2
+    # And the live runs list agrees.
+    runs = list_opp_runs(fake, ace_root_folder_id="ACE", opp_slug="turmeric")
+    assert len(runs) == 2
 
 
 def test_load_opp_returns_default_run_when_no_id_specified():

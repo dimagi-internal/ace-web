@@ -23,7 +23,7 @@ def client() -> CachedDriveClient:
     inner = FakeDriveClient.from_tree({
         "ACE": {
             "alpha": {
-                "state.yaml": "step: a\n",
+                "run_state.yaml": "step: a\n",
                 "idea.md": "alpha idea",
             }
         }
@@ -39,7 +39,7 @@ def test_no_tracker_active_means_no_recording(client):
 
 def test_list_files_records_visited_file_ids(client):
     alpha_id = client._inner.folder_id("ACE/alpha")
-    state_id = client._inner.file_id("ACE/alpha/state.yaml")
+    state_id = client._inner.file_id("ACE/alpha/run_state.yaml")
     idea_id = client._inner.file_id("ACE/alpha/idea.md")
 
     with TouchedFileTracker() as tracker:
@@ -57,7 +57,7 @@ def test_list_files_records_visited_file_ids(client):
 
 
 def test_get_content_records_file_id(client):
-    state_id = client._inner.file_id("ACE/alpha/state.yaml")
+    state_id = client._inner.file_id("ACE/alpha/run_state.yaml")
     with TouchedFileTracker() as tracker:
         client.get_content(state_id, "application/x-yaml")
     assert state_id in tracker.file_ids
@@ -65,8 +65,8 @@ def test_get_content_records_file_id(client):
 
 def test_pairs_records_modified_time(client):
     """The tracker yields (file_id, modified_time) pairs for fingerprinting."""
-    client._inner.set_modified_time("ACE/alpha/state.yaml", "2026-05-08T12:00:00Z")
-    state_id = client._inner.file_id("ACE/alpha/state.yaml")
+    client._inner.set_modified_time("ACE/alpha/run_state.yaml", "2026-05-08T12:00:00Z")
+    state_id = client._inner.file_id("ACE/alpha/run_state.yaml")
 
     with TouchedFileTracker() as tracker:
         client.list_files(client._inner.folder_id("ACE/alpha"))
