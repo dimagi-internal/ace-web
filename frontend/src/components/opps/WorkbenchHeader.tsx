@@ -35,10 +35,12 @@ interface Props {
   /**
    * Called after a run is trashed via the RunSelector's per-row trash
    * icon. Distinct from ``onRefresh`` because the page also needs to
-   * clear the ``?run_id=`` URL param when the active run gets deleted —
-   * otherwise the next snapshot fetch 404s on the now-gone run.
+   * navigate off the deleted run when it's the one pinned in the URL —
+   * otherwise the next snapshot fetch 404s on the now-gone run. Receives
+   * the deleted run id so the page can branch on "active run was
+   * deleted" vs "some other run was deleted".
    */
-  onRunDeleted?: () => void;
+  onRunDeleted?: (deletedRunId: string) => void;
   /**
    * Caller-fetched cost rollup. Lifted from inside CostRollupCard so the
    * lifecycle phase rows can share the same fetch via ``useOppCostRollup``

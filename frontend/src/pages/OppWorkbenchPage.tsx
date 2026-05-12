@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { getOpp } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
@@ -48,6 +48,7 @@ type LoadState =
 export default function OppWorkbenchPage() {
   const { slug = "", runId: pathRunId, skill, workspaceSlug } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   // ?run_id= query param takes precedence; fall back to :runId path segment
   // (kept for backwards-compat with existing /opps/:slug/runs/:runId routes).
   const runId = searchParams.get("run_id") ?? pathRunId;
@@ -136,14 +137,24 @@ export default function OppWorkbenchPage() {
         selectedRunId={snapshot.selected_run_id ?? null}
         onRunChange={(id) => setSearchParams({ run_id: id })}
         onRefresh={() => load()}
-        onRunDeleted={() => {
-          // The just-trashed run is gone from Drive but ?run_id=<deleted>
-          // is still in the URL — re-fetching with that id 404s and
-          // surfaces a confusing error. Clear the param so the page
-          // resolves to the new latest run (or to "Cycle hasn't
-          // started yet" if no runs remain).
-          setSearchParams({}, { replace: true });
-          load();
+        onRunDeleted={(deletedRunId) => {
+          // The just-trashed run is gone from Drive. If the URL pinned
+          // that run — as `?run_id=` OR as a `/runs/<runId>` path
+          // segment (the typical deep-link from Heatmap/Diff/Storyboard/
+          // PhaseSkillRow) — re-fetching with that id 404s and surfaces
+          // a confusing "no opp" error. Navigate to the bare opp URL so
+          // both the path and the query clear, then let useEffect
+          // refetch and resolve the new latest run. When a non-active
+          // run was deleted, the URL is fine; just refresh the snapshot
+          // so the runs strip drops it.
+          if (runId === deletedRunId) {
+            const target = workspaceSlug
+              ? `/w/${workspaceSlug}/opps/${slug}`
+              : `/opps/${slug}`;
+            navigate(target, { replace: true });
+          } else {
+            load();
+          }
         }}
         onJumpToPhases={() => setView("phase")}
         costRollup={costRollup}
