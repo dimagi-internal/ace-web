@@ -368,15 +368,21 @@ class EmulatorController:
                 f"(cd {shlex.quote(run_dir)} && sudo -u ubuntu /usr/local/bin/maestro test "
                 f"--debug-output {shlex.quote(run_dir)} "
                 f"{env_flags} {shlex.quote(recipe_path)})",
-                # Lift Maestro's per-command JSON report (if it exists) out
-                # of the debug-output dir and emit it inline, framed by
-                # markers, so the Python side can parse structured step
-                # data without an extra SSM round-trip. We pick the first
-                # commands-*.json — Maestro emits one per flow; multi-flow
-                # recipes get the first flow's report (rare in ACE).
+                # Lift Maestro's per-command JSON report (if it exists)
+                # out of the debug-output dir and emit it inline, framed
+                # by markers, so the Python side can parse structured
+                # step data without an extra SSM round-trip. We pick the
+                # first ``commands-*.json`` — Maestro emits one per flow;
+                # multi-flow recipes get the first flow's report (rare).
+                # POSIX shell — dash on SSM doesn't have bash arrays. An
+                # unmatched glob expands to the literal pattern, so we
+                # guard with ``[ -f "$f" ]`` and break on the first hit.
                 'echo "---STEPS_JSON_BEGIN---"',
-                f"(ls -1 {shlex.quote(run_dir)}/commands-*.json 2>/dev/null | head -1 | "
-                "xargs -r -I{} cat {} | base64 -w0) || true",
+                (
+                    f"for f in {shlex.quote(run_dir)}/commands-*.json; do "
+                    'if [ -f "$f" ]; then base64 -w0 < "$f"; break; fi; '
+                    "done || true"
+                ),
                 'echo ""',
                 'echo "---STEPS_JSON_END---"',
                 f"aws s3 cp {shlex.quote(run_dir)}/ "
