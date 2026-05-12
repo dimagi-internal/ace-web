@@ -28,7 +28,7 @@
         {"name": "ACE_MOBILE_AWS_REGION", "value": "us-east-1"},
         {"name": "ACE_MOBILE_INSTANCE_ID", "value": "i-07e488c07b6d19fcb"},
         {"name": "ACE_MOBILE_S3_BUCKET", "value": "ace-mobile-artifacts-labs"},
-        {"name": "ACE_MOBILE_AMI_VERSION", "value": "2026-05-11-0449"}
+        {"name": "ACE_MOBILE_AMI_VERSION", "value": "2026-05-12-2142"}
       ],
       "secrets": [
         {"name": "DJANGO_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-django-secret-key-2XSt10"},
