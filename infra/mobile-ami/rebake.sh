@@ -214,8 +214,25 @@ run aws ec2 wait instance-running --instance-ids "$NEW_INSTANCE_ID"
 
 note "Step 9a: stop the new instance (ace-web starts it on demand)"
 run aws ec2 stop-instances --instance-ids "$NEW_INSTANCE_ID" '>/dev/null'
+run aws ec2 wait instance-stopped --instance-ids "$NEW_INSTANCE_ID"
 
-note "Step 9b: re-apply standard tags"
+# Critical: enable nested virtualization on the new instance. Without
+# this, the Android emulator's KVM path fails with "x86_64 emulation
+# currently requires hardware acceleration!" and the runner script
+# exits before adb sees the emulator (runner-log shows this exact
+# error message). The launch template carries the instance type
+# (m8i.xlarge) but NOT the cpu-options — those are an instance-level
+# attribute that has to be set explicitly per-instance after launch.
+# The attribute can only be modified on a stopped instance. Idempotent:
+# re-running on an already-enabled instance is a no-op.
+# Caught in vivo on the first rebake.sh roll (2026-05-12).
+note "Step 9b: enable nested virtualization on the new instance"
+run aws ec2 modify-instance-cpu-options \
+  --instance-id "$NEW_INSTANCE_ID" \
+  --nested-virtualization enabled \
+  '>/dev/null'
+
+note "Step 9c: re-apply standard tags"
 run aws ec2 create-tags --resources "$NEW_INSTANCE_ID" --tags \
   'Key=Name,Value=ace-mobile-emulator' \
   'Key=managed-by,Value=script' \
