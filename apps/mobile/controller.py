@@ -16,6 +16,7 @@ Boto3 clients are lazy-built and cached per controller instance.
 from __future__ import annotations
 
 import base64
+import re
 import shlex
 import time
 import uuid
@@ -122,6 +123,27 @@ class SnapshotResult:
     name: str
     saved_at: str | None = None
     loaded_at: str | None = None
+
+
+@dataclass
+class UiElement:
+    """One ``<node …/>`` from an uiautomator dump, flattened.
+
+    Mirrors the fields surfaced by the local AVD backend in the ACE
+    plugin (``mcp/mobile/backends/avd.ts: parseHierarchy``) so callers
+    can switch backends without rewriting selectors.
+    """
+
+    id: str | None = None
+    text: str | None = None
+    class_: str | None = None  # ``class`` is reserved; renamed at envelope time
+    bounds: str | None = None
+
+
+@dataclass
+class UiDumpResult:
+    xml: str
+    elements: list[UiElement]
 
 
 @dataclass
@@ -481,7 +503,14 @@ class EmulatorController:
             started_at=_iso_now(),
         )
 
-    def capture_ui_dump(self) -> str:
+    def capture_ui_dump(self) -> UiDumpResult:
+        """Dump the on-screen view hierarchy and parse it into a flat
+        element list.
+
+        Returns both the raw XML (callers that want full attribute access
+        can re-parse) and the flattened ``elements`` list (the common
+        case: search by id/text/class/bounds).
+        """
         self._assert_running()
         commands = [
             "set -eu",
@@ -495,7 +524,8 @@ class EmulatorController:
             commands=commands,
             timeout_seconds=_SSM_OP_TIMEOUT_SEC,
         )
-        return result.stdout
+        xml = result.stdout
+        return UiDumpResult(xml=xml, elements=_parse_ui_hierarchy(xml))
 
     def capture_screenshot(self) -> Artifact:
         """Take a screenshot of the running AVD and return a presigned URL.
@@ -732,6 +762,50 @@ def _grep_kv(text: str, key: str) -> str | None:
         if line.startswith(needle):
             return line[len(needle):].strip()
     return None
+
+
+# Each ``<node …/>`` in the uiautomator dump XML. Self-closing tags only —
+# uiautomator emits leaf nodes self-closed and container nodes opened/closed,
+# so this regex captures the actual interactable leaves and the inner-most
+# containers (their attributes survive on the open tag).
+_UI_NODE_RE = re.compile(r"<node\s+([^>]*?)/?>")
+_UI_ATTR_RE_CACHE: dict[str, re.Pattern[str]] = {}
+
+
+def _ui_attr_re(key: str) -> re.Pattern[str]:
+    if key not in _UI_ATTR_RE_CACHE:
+        _UI_ATTR_RE_CACHE[key] = re.compile(f'{re.escape(key)}="([^"]*)"')
+    return _UI_ATTR_RE_CACHE[key]
+
+
+def _parse_ui_hierarchy(xml: str) -> list[UiElement]:
+    """Flatten an uiautomator XML dump to a list of UiElement records.
+
+    Mirrors ``mcp/mobile/backends/avd.ts: parseHierarchy`` in the ACE
+    plugin so callers can switch backends without rewriting selectors.
+    Fields surfaced: resource-id → id, text, class, bounds. Other
+    attributes (content-desc, clickable, package, etc.) live on the raw
+    XML for callers that need them.
+    """
+    if not xml:
+        return []
+    out: list[UiElement] = []
+    for m in _UI_NODE_RE.finditer(xml):
+        attrs = m.group(1)
+
+        def get(key: str) -> str | None:
+            am = _ui_attr_re(key).search(attrs)
+            return am.group(1) if am else None
+
+        out.append(
+            UiElement(
+                id=get("resource-id") or None,
+                text=get("text") or None,
+                class_=get("class") or None,
+                bounds=get("bounds") or None,
+            )
+        )
+    return out
 
 
 _CONTENT_TYPES = {

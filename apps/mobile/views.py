@@ -55,17 +55,34 @@ def _make_controller() -> EmulatorController:
     )
 
 
+def _strip_trailing_underscore_keys(obj: Any) -> Any:
+    """Recursively rename ``k_`` → ``k`` in dict keys.
+
+    Used so dataclass fields that follow the Python kwarg convention
+    (``class_`` etc.) serialize as their natural JSON key. Doesn't touch
+    dunder names.
+    """
+    if isinstance(obj, dict):
+        out: dict[str, Any] = {}
+        for k, v in obj.items():
+            key = k[:-1] if isinstance(k, str) and k.endswith("_") and not k.endswith("__") else k
+            out[key] = _strip_trailing_underscore_keys(v)
+        return out
+    if isinstance(obj, list):
+        return [_strip_trailing_underscore_keys(x) for x in obj]
+    return obj
+
+
 def _to_payload(obj: Any) -> Any:
     """Normalize a controller result for the JSON envelope.
 
     Dataclass → dict; list of dataclasses → list of dicts; primitives pass.
+
+    Trailing-underscore field names are stripped (``class_`` → ``class``)
+    after ``asdict`` walks the tree.
     """
     if is_dataclass(obj):
-        d = asdict(obj)
-        # Recurse for nested dataclasses (e.g. RunResult.artifacts).
-        for k, v in list(d.items()):
-            d[k] = _to_payload(v) if is_dataclass(v) else v
-        return d
+        return _strip_trailing_underscore_keys(asdict(obj))
     if isinstance(obj, list):
         return [_to_payload(x) for x in obj]
     return obj
@@ -289,10 +306,10 @@ def load_snapshot(request: Request) -> Response:
 def capture_ui_dump(request: Request) -> Response:
     try:
         _assert_configured()
-        xml = _make_controller().capture_ui_dump()
+        result = _make_controller().capture_ui_dump()
     except MobileError as e:
         return _mobile_error_response(e)
-    return Response(success_response({"xml": xml}))
+    return Response(success_response(_to_payload(result)))
 
 
 @api_view(["GET", "POST"])

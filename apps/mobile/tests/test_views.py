@@ -397,15 +397,36 @@ def test_load_snapshot_returns_envelope(bearer_client, configured):
 # ── capture_ui_dump ───────────────────────────────────────────────
 
 
-def test_capture_ui_dump_returns_xml(bearer_client, configured):
+def test_capture_ui_dump_returns_xml_and_elements(bearer_client, configured):
+    from apps.mobile.controller import UiDumpResult, UiElement
+
     fake = MagicMock()
-    fake.capture_ui_dump.return_value = "<hierarchy/>"
+    fake.capture_ui_dump.return_value = UiDumpResult(
+        xml='<hierarchy><node text="hi" class="android.widget.TextView"/></hierarchy>',
+        elements=[
+            UiElement(
+                id="com.x:id/g",
+                text="hi",
+                class_="android.widget.TextView",
+                bounds="[0,0][1,1]",
+            )
+        ],
+    )
     with patch("apps.mobile.views.EmulatorController", return_value=fake):
         resp = bearer_client.post(
             "/api/mobile/capture-ui-dump", {}, format="json"
         )
     assert resp.status_code == 200
-    assert resp.json()["data"]["xml"] == "<hierarchy/>"
+    data = resp.json()["data"]
+    assert data["xml"].startswith("<hierarchy>")
+    assert data["elements"] == [
+        {
+            "id": "com.x:id/g",
+            "text": "hi",
+            "class": "android.widget.TextView",
+            "bounds": "[0,0][1,1]",
+        }
+    ]
 
 
 # ── stop ─────────────────────────────────────────────────────────
