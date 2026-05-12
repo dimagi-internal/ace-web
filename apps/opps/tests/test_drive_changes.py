@@ -29,8 +29,8 @@ def _flush_cache():
 def client() -> FakeDriveClient:
     return FakeDriveClient.from_tree({
         "ACE": {
-            "alpha": {"state.yaml": "step: a\n"},
-            "beta": {"state.yaml": "step: a\n"},
+            "alpha": {"run_state.yaml": "step: a\n"},
+            "beta": {"run_state.yaml": "step: a\n"},
         }
     })
 
@@ -52,7 +52,7 @@ def test_second_call_after_no_mutation_returns_empty(workspace, client):
 
 def test_call_after_mutation_returns_changed_file_id(workspace, client):
     observe(workspace, client)  # seed
-    state_id = client.file_id("ACE/alpha/state.yaml")
+    state_id = client.file_id("ACE/alpha/run_state.yaml")
     client.update_file(state_id, "step: b\n", "application/x-yaml")
 
     changed = observe(workspace, client)
@@ -61,7 +61,7 @@ def test_call_after_mutation_returns_changed_file_id(workspace, client):
 
 def test_each_change_reported_exactly_once(workspace, client):
     observe(workspace, client)
-    state_id = client.file_id("ACE/alpha/state.yaml")
+    state_id = client.file_id("ACE/alpha/run_state.yaml")
     client.update_file(state_id, "step: b\n", "application/x-yaml")
 
     first = observe(workspace, client)

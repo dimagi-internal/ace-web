@@ -210,10 +210,8 @@ class TestParseArtifactManifest:
         result = parse_artifact_manifest(text)
         # Should parse many entries (90+ in current manifest)
         assert len(result) > 20
-        # Plugin 0.13.3 renamed state.yaml → run_state.yaml. Either name
-        # being present indicates the run-level metadata entry parsed.
         run_state = next(
-            (e for e in result if e["path"] in ("run_state.yaml", "state.yaml")),
+            (e for e in result if e["path"] == "run_state.yaml"),
             None,
         )
         assert run_state is not None

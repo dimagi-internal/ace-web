@@ -147,8 +147,8 @@ def test_create_opp_writes_flat_layout_no_runs_subfolder(authed_client, db):
     assert "runs" not in opp_children, (
         "opp_creator must not create a runs/ subfolder — /ace:run owns Drive state"
     )
-    assert "state.yaml" not in opp_children, (
-        "opp_creator must not write state.yaml — /ace:run initializes it at run start"
+    assert "run_state.yaml" not in opp_children, (
+        "opp_creator must not write run_state.yaml — /ace:run initializes it at run start"
     )
 
 

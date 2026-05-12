@@ -282,7 +282,7 @@ def malaria_pilot_tree() -> dict:
     return {
         "ACE": {
             "malaria-pilot": {
-                "state.yaml": """current_phase: app-building
+                "run_state.yaml": """current_phase: app-building
 current_step: app-test
 mode: review
 started_at: 2026-04-01T10:00:00Z
@@ -324,7 +324,7 @@ def nutrition_legacy_flat_tree() -> dict:
     return {
         "ACE": {
             "nutrition-legacy": {
-                "state.yaml": """current_phase: app-building
+                "run_state.yaml": """current_phase: app-building
 current_step: app-test
 mode: review
 started_at: 2026-03-20T09:00:00Z
@@ -357,7 +357,7 @@ def web_created_opp_tree() -> dict:
 
 def turmeric_multi_run_tree() -> dict:
     """Multi-run-layout fixture for turmeric — the new ACE-plugin shape
-    (2026-05-02+) where state.yaml, idea.md, verdicts/, and scorecards/
+    (2026-05-02+) where run_state.yaml, idea.md, verdicts/, and scorecards/
     all live under ``runs/<timestamp-run-id>/`` instead of at the opp root.
     Opp root carries ``opp.yaml`` (display_name, slug, created_by) and an
     optional ``inputs/`` folder for the canonical PDD.
@@ -379,7 +379,7 @@ def turmeric_multi_run_tree() -> dict:
                 },
                 "runs": {
                     "20260502-1830": {
-                        "state.yaml": (
+                        "run_state.yaml": (
                             "current_phase: ocs\n"
                             "current_step: ocs-agent-setup\n"
                             "mode: review\n"
@@ -412,7 +412,7 @@ def turmeric_multi_run_tree() -> dict:
                         },
                     },
                     "20260502-1430": {
-                        "state.yaml": (
+                        "run_state.yaml": (
                             "current_phase: closeout\n"
                             "current_step: cycle-grade\n"
                             "mode: review\n"
@@ -443,7 +443,7 @@ def opp_with_scorecard_tree() -> dict:
     return {
         "ACE": {
             "cholera-smoketest": {
-                "state.yaml": """current_phase: llo-management
+                "run_state.yaml": """current_phase: llo-management
 current_step: llo-launch
 mode: review
 started_at: 2026-04-10T10:00:00Z
@@ -536,7 +536,7 @@ def compare_pair_tree() -> dict:
     return {
         "ACE": {
             "idea-v1": {
-                "state.yaml": """current_phase: design-review
+                "run_state.yaml": """current_phase: design-review
 current_step: idea-to-pdd
 mode: review
 started_at: 2026-04-20T10:00:00Z
@@ -564,7 +564,7 @@ verdict: fail
                 },
             },
             "idea-v2": {
-                "state.yaml": """current_phase: design-review
+                "run_state.yaml": """current_phase: design-review
 current_step: idea-to-pdd
 mode: review
 started_at: 2026-04-25T10:00:00Z

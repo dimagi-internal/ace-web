@@ -96,7 +96,7 @@ def test_workbench_returns_200_after_drive_mutation(settings, authed_client):
     first = _with_fake_drive(authed_client, fake, "/api/opps/malaria-pilot")
     etag1 = first.headers["ETag"]
 
-    state_id = fake.file_id("ACE/malaria-pilot/state.yaml")
+    state_id = fake.file_id("ACE/malaria-pilot/run_state.yaml")
     fake.update_file(
         state_id, "current_step: ocs-agent-setup\n", "application/x-yaml",
     )
