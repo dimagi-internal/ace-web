@@ -665,6 +665,58 @@ def test_run_recipe_ssm_timeout_surfaces_as_ssm_timeout(controller_factory, monk
         c.run_recipe(recipe_yaml="...", env={}, screenshot_prefix=None)
 
 
+def test_run_recipe_shell_quotes_s3_destination_url(controller_factory, monkeypatch):
+    """Belt-and-suspenders against shell injection in the ``aws s3 cp``
+    SSM command: even if a future serializer widening lets an unsafe
+    character through, the controller must ``shlex.quote`` the
+    assembled ``s3://...`` URL so it can't break out of its shell token.
+
+    We bypass the serializer by calling the controller directly with a
+    prefix that contains shell metacharacters; the controller is the
+    layer under test here. A safe prefix would pass through
+    ``shlex.quote`` unchanged (POSIX doesn't quote alphanumerics), so
+    the test wouldn't actually exercise the quoting code path."""
+    captured: dict[str, list[str]] = {}
+
+    def fake_run_command(client, instance_id, *, commands, timeout_seconds, **_):
+        # Record only the first invocation (the recipe run itself); the
+        # finally-branch idle bump is a separate call.
+        if "commands" not in captured:
+            captured["commands"] = commands
+        from apps.mobile.ssm import CommandResult
+
+        return CommandResult(status="Success", exit_code=0, stdout="", stderr="")
+
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", fake_run_command)
+
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    controller_factory.s3_stub.add_response("list_objects_v2", {"Contents": []})
+
+    # Classic command-substitution payload — if the controller didn't
+    # shlex.quote the URL, the in-VM shell would expand $(id) before
+    # ``aws s3 cp`` ever ran.
+    c.run_recipe(recipe_yaml="x", env={}, screenshot_prefix="evil$(id)")
+
+    joined = "\n".join(captured["commands"])
+    # The dangerous payload must appear only inside a shell-quoted
+    # token; never as a raw substitution the shell would expand.
+    assert "$(id)" in joined, "test setup broken: payload missing"
+    # ``shlex.quote`` wraps strings containing ``$`` in single quotes.
+    # Verify the s3:// URL was emitted as one such single-quoted token.
+    assert "'s3://" in joined and "$(id)" not in joined.split("'s3://", 1)[0], (
+        f"s3:// URL was not shell-quoted; injection vector open:\n{joined}"
+    )
+    # And the single-quoted token must contain the payload, proving
+    # the quoter wrapped the whole URL (not just the safe prefix).
+    quoted_segment = joined.split("'s3://", 1)[1].split("'", 1)[0]
+    assert "$(id)" in quoted_segment, (
+        f"payload escaped the shell-quoted token:\n{joined}"
+    )
+
+
 def test_run_recipe_finally_swallows_idle_bump_errors(controller_factory):
     """If the idle-bump SSM call fails, the finally must not mask the
     main result. We observe by verifying a successful run still returns
