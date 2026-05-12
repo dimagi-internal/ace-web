@@ -253,6 +253,17 @@ def run_recipe(request: Request) -> Response:
             if requested_state:
                 # Switch state if needed — no-op if already active.
                 controller.ensure_running(state_name=requested_state)
+                # ensure_running on a cold-boot path can spend 3+ min
+                # before returning; that eats a meaningful fraction of
+                # the lock's 30-min default TTL before the recipe even
+                # starts. Reset the TTL so the recipe gets its own
+                # fresh window — otherwise the lock can silently
+                # expire mid-recipe and let a concurrent caller race
+                # in. Best-effort: a refresh failure means someone
+                # else now owns the lock (vanishingly unlikely under
+                # 30 min), in which case the recipe will still run
+                # but on the assumption that ours released cleanly.
+                singleton.refresh(owner)
             result = controller.run_recipe(
                 recipe_yaml=serializer.validated_data["recipe_yaml"],
                 env=serializer.validated_data.get("env") or {},

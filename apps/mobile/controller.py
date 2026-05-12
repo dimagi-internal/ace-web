@@ -34,6 +34,7 @@ from .exceptions import (
     EmulatorNotReady,
     MobileError,
     SSMFailure,
+    SSMTimeout,
 )
 
 # How long to wait for the EC2 instance + SSM agent to come ready
@@ -753,24 +754,33 @@ class EmulatorController:
         — the latter fires before registration, so callers would see
         "running" while the launcher is still typing into PersonalID.
         Budget: ~3 min on a cold instance start.
+
+        Single source of truth for the timeout is the SSM wrapper's
+        ``timeout_seconds``; the in-VM loop runs unbounded and just
+        keeps polling until SSM tears the command down. Pre-fix the
+        two layers had separate bounds (in-VM ``for i in seq 1 N``
+        with ``N = timeout/5`` AND SSM ``timeout + 10``), so logs and
+        errors were ambiguous about which one fired. With one bound,
+        any timeout is always an SSM timeout.
         """
         marker = _EMULATOR_READY_MARKER
         commands = [
             "set -eu",
-            f"for i in $(seq 1 {_EMULATOR_READY_TIMEOUT_SEC // 5}); do "
-            f"  if [ -f {shlex.quote(marker)} ]; then echo READY; exit 0; fi; "
-            "  sleep 5; "
-            "done; "
-            "echo NOT_READY; exit 1",
+            # Unbounded in-VM poll — SSM's timeout_seconds is the
+            # single source of truth. ``exec >/dev/null`` would also
+            # work, but ``echo READY`` lets the caller's SSM result
+            # text show progress if we ever surface it.
+            f"while [ ! -f {shlex.quote(marker)} ]; do sleep 5; done; "
+            "echo READY",
         ]
         try:
             ssm.run_command(
                 self.ssm,
                 self.instance_id,
                 commands=commands,
-                timeout_seconds=_EMULATOR_READY_TIMEOUT_SEC + 10,
+                timeout_seconds=_EMULATOR_READY_TIMEOUT_SEC,
             )
-        except SSMFailure as e:
+        except (SSMFailure, SSMTimeout) as e:
             raise EmulatorBootTimeout(
                 f"emulator on {self.instance_id} did not reach boot_completed: {e.message}"
             ) from e

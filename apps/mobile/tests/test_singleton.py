@@ -78,3 +78,32 @@ def test_ttl_seconds_helper_reports_remaining(fake_redis, ttl):
     singleton.try_acquire("alice:req-1", ttl_seconds=ttl)
     remaining = singleton.ttl_seconds()
     assert 0 < remaining <= ttl
+
+
+def test_refresh_extends_ttl_when_owner_matches(fake_redis):
+    """A long ensure_running can eat half the TTL before the recipe
+    starts; refresh restores it so the recipe gets the full window."""
+    singleton.try_acquire("alice:req-1", ttl_seconds=300)
+    # Simulate time having passed: drop TTL to 60s.
+    fake_redis.expire(singleton.LOCK_KEY, 60)
+    assert fake_redis.ttl(singleton.LOCK_KEY) <= 60
+
+    refreshed = singleton.refresh("alice:req-1", ttl_seconds=1800)
+    assert refreshed is True
+    # TTL should now be ~1800 again.
+    assert fake_redis.ttl(singleton.LOCK_KEY) > 60
+
+
+def test_refresh_refuses_when_not_owner(fake_redis):
+    """Refresh must never extend someone else's lock — same CAS shape
+    as release."""
+    singleton.try_acquire("alice:req-1", ttl_seconds=120)
+    refreshed = singleton.refresh("bob:req-2", ttl_seconds=1800)
+    assert refreshed is False
+    # Alice's TTL untouched.
+    assert fake_redis.ttl(singleton.LOCK_KEY) <= 120
+
+
+def test_refresh_returns_false_when_no_lock(fake_redis):
+    refreshed = singleton.refresh("nobody")
+    assert refreshed is False
