@@ -900,8 +900,10 @@ def _lift_maestro_steps(data: Any) -> list[Step]:
             continue
         # ``status`` lives at top level on newer Maestro; on older it's
         # nested in metadata.
+        raw_meta = item.get("metadata")
+        meta_for_status = raw_meta if isinstance(raw_meta, dict) else None
         status_raw = item.get("status") or (
-            item.get("metadata", {}).get("status") if isinstance(item.get("metadata"), dict) else None
+            meta_for_status.get("status") if meta_for_status else None
         )
         status = _STEP_STATUS_MAP.get(str(status_raw or "").upper(), "unknown")
         name = _maestro_command_label(item.get("command"))
