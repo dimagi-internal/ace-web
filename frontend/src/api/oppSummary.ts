@@ -1,6 +1,8 @@
 import { apiFetch } from "./client";
 
 // Matches apps/opps/summary.py build_summary_payload return shape.
+// Backed by phases.<phase>.products.* blocks in run_state.yaml as of
+// plugin v0.13.155-v0.13.172 state-consolidation.
 export interface OppSummaryPayload {
   opp: {
     workspace_slug: string;
@@ -37,6 +39,41 @@ export interface OppSummaryPayload {
     ocs_url: string | null;
     public_id: string;
     embed_key: string;
+  } | null;
+  walkthroughs: {
+    persona: string;
+    url: string;
+    eval_score: number | null;
+  }[];
+  selected_llo: {
+    org_slug: string;
+    org_display_name: string;
+    contact_email: string | null;
+    awarded_at: string | null;
+  } | null;
+  solicitation: {
+    url: string;
+    deadline: string | null;
+    status: string | null;
+  } | null;
+  launch: {
+    went_live_at: string;
+    llo_org_display_name: string | null;
+  } | null;
+  cycle_grade: {
+    letter: string;
+    headline: string;
+    overall_score: number | null;
+  } | null;
+  opp_eval: {
+    overall_score: number;
+    verdict: string | null;
+    mode: string | null;
+  } | null;
+  learnings: {
+    summary_file_id: string;
+    new_pdd_file_id: string | null;
+    iteration_warranted: boolean;
   } | null;
   open_questions: { url: string } | null;
   workbench_url: string | null;
