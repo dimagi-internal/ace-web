@@ -16,8 +16,17 @@ A single `packer build` produces an Ubuntu-24.04 AMI with:
 - A `ace-idle-shutdown.timer` that halts the instance after 5 minutes
   of inactivity (layer 2 in the three-layer auto-stop story).
 
-The AMI is consumed by `infra/mobile/` Terraform — drop the AMI ID into
-`terraform.tfvars` and apply.
+The AMI is consumed by the `ace-mobile-emulator-labs` launch template in
+AWS. Use `./rebake.sh` (in this directory) to bake + roll the new AMI
+into the running EC2 instance in one step — see the Rebake runbook below.
+
+> **Note on the `infra/mobile/` Terraform stack:** the .tf files in
+> the sibling directory created the original resources (launch template,
+> EC2 instance, IAM, S3 bucket, CloudWatch) but the state file has never
+> been on a shared backend and is functionally lost. Day-to-day rolls
+> are AWS-CLI-direct via `rebake.sh`. If you ever need to recreate the
+> stack, `terraform import` the existing resources first; don't apply
+> from an empty state.
 
 ---
 
@@ -41,31 +50,39 @@ The AMI is consumed by `infra/mobile/` Terraform — drop the AMI ID into
 
 ---
 
-## Bake runbook
+## Rebake + roll runbook
+
+One command — bake the AMI, update the launch template, terminate the
+old EC2 instance, launch a new one, update task-def, open + merge the
+PR, and trigger the ace-web deploy:
+
+```bash
+AWS_PROFILE=labs ./rebake.sh
+```
+
+That's the supported path. The script lives at `infra/mobile-ami/rebake.sh`
+and is the single source of truth for how a roll happens. See the
+header docstring for flags (`--skip-bake AMI` to retry a partial run,
+`--dry-run` to preview).
+
+### What if I just want to bake without rolling?
+
+Useful for testing the bake itself before committing to the roll. The
+script can't be partially-stopped, but a raw `packer build` works:
 
 ```bash
 cd infra/mobile-ami
-
-# 1. Source test creds from 1Password into your shell env. Pick one:
-#
-# Option A — `op run`:
-op run --env-file=- -- packer build \
-  -var-file=<(op inject -i bake-vars.tpl) \
-  .
-#
-# Option B — manual export:
-export PKR_VAR_test_phone_local=$(op read 'op://ACE/mobile-ami-bake/phone_local')
-export PKR_VAR_test_country_code=$(op read 'op://ACE/mobile-ami-bake/country_code')
-export PKR_VAR_test_pin=$(op read 'op://ACE/mobile-ami-bake/pin')
-export PKR_VAR_test_backup_code=$(op read 'op://ACE/mobile-ami-bake/backup_code')
-export PKR_VAR_test_name=$(op read 'op://ACE/mobile-ami-bake/name')
-
 packer init .
 packer validate .
 packer build .
 ```
 
-The bake takes ~20 minutes end-to-end. The slow steps are:
+(The test-user credentials the older runbook referenced were removed
+when bake moved to cold-boot-register-on-launch in May 2026; 1Password
+is no longer required for the bake. Runtime creds live in AWS Secrets
+Manager as `ace-mobile-test-user-creds`.)
+
+The bake takes ~35 minutes end-to-end on `c5n.metal`. The slow steps are:
 
 1. `apt-get install` (~3 min for KVM + JDK).
 2. `sdkmanager` system-image download (~6 min — ~1.2 GB image).
@@ -80,8 +97,11 @@ When it's done, Packer prints the new AMI ID:
 us-east-1: ami-0abcdef1234567890
 ```
 
-Plug `ami-0abcdef1234567890` (and the `formatdate(...)` portion of the
-AMI name as `ami_version`) into `infra/mobile/terraform.tfvars`.
+If you ran `./rebake.sh` (the recommended path), it's already parsed
+the AMI ID + name and updated `deploy/aws/task-definition.json` for you.
+If you ran `packer build .` directly, you'll need to feed the AMI ID
+into `rebake.sh --skip-bake ami-0abcdef1234567890` to handle the rest
+of the roll.
 
 ---
 
@@ -148,13 +168,18 @@ cp ../../../ace/mcp/mobile/recipes/static/connect-register-2-app-lock.yaml files
 | Android system image security patch | quarterly cadence is fine |
 | Recipe changes in the ACE plugin (selector fixes etc.) | yes |
 
-A re-bake produces a new AMI ID. Update `ami_id` and `ami_version` in
-`infra/mobile/terraform.tfvars` and re-apply. The Terraform stack will
-notice the launch template changed; the running EC2 instance keeps
-its current AMI until next stop/start cycle (we set
-`lifecycle.ignore_changes = [ami]` on `aws_instance` so we don't force
-replacement). The next `/api/mobile/ensure-running` after the operator
-manually `stop`s + `start`s will boot from the new AMI.
+Run `AWS_PROFILE=labs ./rebake.sh` to bake and roll. The script:
+
+1. Bakes the new AMI (~35 min).
+2. Adds it as a new launch-template version and marks that the default.
+3. Terminates the current EC2 instance and launches a fresh one from
+   the LT — EC2 AMIs are pinned at launch time, so a stop/start
+   wouldn't pick up the new image. (An earlier version of this README
+   said stop/start did the job — that was incorrect; it's `terminate
+   + run-instances` or nothing.)
+4. Stops the new instance (ace-web starts it on demand).
+5. Updates `deploy/aws/task-definition.json` with the new instance ID
+   + AMI version, opens + merges the PR, triggers the deploy workflow.
 
 ---
 
