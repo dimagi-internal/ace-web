@@ -10,6 +10,7 @@ urlpatterns = [
     path("select-state", views.select_state, name="mobile_select_state"),
     path("install-apk", views.install_apk, name="mobile_install_apk"),
     path("run-recipe", views.run_recipe, name="mobile_run_recipe"),
+    path("jobs/<str:job_id>", views.get_job, name="mobile_get_job"),
     path("save-snapshot", views.save_snapshot, name="mobile_save_snapshot"),
     path("load-snapshot", views.load_snapshot, name="mobile_load_snapshot"),
     path("capture-ui-dump", views.capture_ui_dump, name="mobile_capture_ui_dump"),

@@ -15,7 +15,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.auth.models import PersonalToken
-from apps.mobile import singleton
+from apps.mobile import jobs, singleton
 from apps.mobile.controller import (
     AdbDevice,
     Artifact,
@@ -447,7 +447,8 @@ def test_run_recipe_rejects_shell_unsafe_screenshot_prefix(
 )
 def test_run_recipe_accepts_safe_screenshot_prefix(bearer_client, configured, safe):
     """The allowlist regex must still admit the legitimate nested-prefix
-    shape the opp Workbench uses."""
+    shape the opp Workbench uses. Submission now returns 202 + job_id
+    under the async pattern."""
     fake = MagicMock()
     fake.run_recipe.return_value = RunResult(exit_code=0, stdout="", stderr="", artifacts=[])
     with patch("apps.mobile.views.EmulatorController", return_value=fake):
@@ -456,12 +457,20 @@ def test_run_recipe_accepts_safe_screenshot_prefix(bearer_client, configured, sa
             {"recipe_yaml": "x", "screenshot_prefix": safe},
             format="json",
         )
-    assert resp.status_code == 200, (
+    assert resp.status_code == 202, (
         f"safe prefix {safe!r} rejected: {resp.json()}"
     )
+    assert "job_id" in resp.json()["data"]
 
 
-def test_run_recipe_happy_path_acquires_and_releases_lock(bearer_client, configured):
+def test_run_recipe_happy_path_returns_202_and_job_polls_to_completion(
+    bearer_client, configured
+):
+    """The async submission contract:
+    1. POST run-recipe → 202 + job_id, lock acquired by worker thread.
+    2. Worker executes the recipe (mocked controller).
+    3. GET jobs/<id> returns 200 with status=completed + result envelope.
+    4. Lock is released by the worker's finally block."""
     fake = MagicMock()
     fake.run_recipe.return_value = RunResult(
         exit_code=0,
@@ -476,7 +485,7 @@ def test_run_recipe_happy_path_acquires_and_releases_lock(bearer_client, configu
         ],
     )
     with patch("apps.mobile.views.EmulatorController", return_value=fake):
-        resp = bearer_client.post(
+        submit_resp = bearer_client.post(
             "/api/mobile/run-recipe",
             {
                 "recipe_yaml": "appId: x",
@@ -485,18 +494,31 @@ def test_run_recipe_happy_path_acquires_and_releases_lock(bearer_client, configu
             },
             format="json",
         )
-    assert resp.status_code == 200
-    data = resp.json()["data"]
-    assert data["exit_code"] == 0
-    assert len(data["artifacts"]) == 1
-    assert data["artifacts"][0]["name"] == "01.png"
-    # Lock must be released after the call.
+        assert submit_resp.status_code == 202
+        job_id = submit_resp.json()["data"]["job_id"]
+        assert submit_resp.json()["data"]["status"] == "running"
+
+        # Wait for the worker thread to drain (cheap mock).
+        rec = jobs.wait_for_completion(job_id, timeout_seconds=2.0)
+        assert rec.status == "completed"
+
+        # Poll endpoint surfaces the result envelope.
+        poll_resp = bearer_client.get(f"/api/mobile/jobs/{job_id}")
+        assert poll_resp.status_code == 200
+        data = poll_resp.json()["data"]
+        assert data["status"] == "completed"
+        assert data["result"]["exit_code"] == 0
+        assert len(data["result"]["artifacts"]) == 1
+        assert data["result"]["artifacts"][0]["name"] == "01.png"
+    # Lock must be released after the worker thread exits.
     assert singleton.current_owner() == ""
 
 
 def test_run_recipe_503_on_singleton_contention(bearer_client, configured):
     """Pre-acquire the lock; the endpoint must return 503 with the
-    current owner string in the error envelope."""
+    current owner string in the error envelope BEFORE spawning a
+    worker thread (so contention surfaces immediately, not after a
+    job poll)."""
     singleton.try_acquire("other-task:other-req")
     fake = MagicMock()
     with patch("apps.mobile.views.EmulatorController", return_value=fake):
@@ -512,18 +534,72 @@ def test_run_recipe_503_on_singleton_contention(bearer_client, configured):
     fake.run_recipe.assert_not_called()
 
 
-def test_run_recipe_releases_lock_on_controller_exception(bearer_client, configured):
+def test_run_recipe_worker_records_mobile_error_and_releases_lock(
+    bearer_client, configured
+):
+    """The worker thread translates a MobileError into a failed job
+    with the typed error_code preserved, AND releases the lock. The
+    HTTP response is still 202 because submission succeeded — the
+    failure surfaces on the next jobs/<id> poll."""
     fake = MagicMock()
-    fake.run_recipe.side_effect = SSMTimeout("timed out")
+    fake.run_recipe.side_effect = SSMTimeout("ssm timed out after 1800s")
     with patch("apps.mobile.views.EmulatorController", return_value=fake):
-        resp = bearer_client.post(
+        submit_resp = bearer_client.post(
             "/api/mobile/run-recipe",
             {"recipe_yaml": "x", "env": {}},
             format="json",
         )
-    assert resp.status_code == 504
-    assert resp.json()["error"]["code"] == "ssm-timeout"
+        assert submit_resp.status_code == 202
+        job_id = submit_resp.json()["data"]["job_id"]
+
+        rec = jobs.wait_for_completion(job_id, timeout_seconds=2.0)
+        assert rec.status == "failed"
+        assert rec.error_code == "ssm-timeout"
+        assert "ssm timed out after 1800s" in rec.error
+
+        poll_resp = bearer_client.get(f"/api/mobile/jobs/{job_id}")
+        data = poll_resp.json()["data"]
+        assert data["status"] == "failed"
+        assert data["error_code"] == "ssm-timeout"
+    # Lock released by worker's finally — even on controller error.
     assert singleton.current_owner() == ""
+
+
+def test_run_recipe_worker_records_unexpected_exception_with_traceback(
+    bearer_client, configured
+):
+    """An unexpected (non-MobileError) exception in the worker still
+    completes the job record with status=failed + traceback in error,
+    AND releases the lock — never leaks."""
+    fake = MagicMock()
+    fake.run_recipe.side_effect = RuntimeError("boom")
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        submit_resp = bearer_client.post(
+            "/api/mobile/run-recipe",
+            {"recipe_yaml": "x", "env": {}},
+            format="json",
+        )
+        assert submit_resp.status_code == 202
+        job_id = submit_resp.json()["data"]["job_id"]
+        rec = jobs.wait_for_completion(job_id, timeout_seconds=2.0)
+        assert rec.status == "failed"
+        assert rec.error_code == "unexpected-error"
+        assert "boom" in rec.error
+        # Traceback included.
+        assert "RuntimeError" in rec.error
+    assert singleton.current_owner() == ""
+
+
+def test_get_job_returns_404_for_unknown_id(bearer_client, configured):
+    resp = bearer_client.get("/api/mobile/jobs/deadbeef")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "job-not-found"
+
+
+def test_get_job_requires_auth():
+    c = APIClient()
+    resp = c.get("/api/mobile/jobs/anything")
+    assert resp.status_code in (401, 403)
 
 
 # ── snapshots ──────────────────────────────────────────────────────
