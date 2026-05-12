@@ -168,7 +168,7 @@ export function RunDiffView({ oppSlug, workspaceSlug }: Props) {
                 type="button"
                 onClick={() =>
                   navigate(
-                    `/w/${workspaceSlug}/opps/${oppSlug}/runs/${a.run_id}/steps/${r.skill.skill_name}`,
+                    `/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}/runs/${encodeURIComponent(a.run_id)}/steps/${encodeURIComponent(r.skill.skill_name)}`,
                   )
                 }
                 className="truncate text-left text-foreground hover:underline"

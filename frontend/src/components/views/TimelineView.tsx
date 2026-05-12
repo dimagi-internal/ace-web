@@ -301,12 +301,14 @@ function EventTitle({
     );
   }
   if (event.opp_slug) {
+    const encOpp = encodeURIComponent(event.opp_slug);
+    const encStep = event.step_skill ? encodeURIComponent(event.step_skill) : "";
     return (
       <Link
         to={
           workspaceSlug
-            ? `/w/${workspaceSlug}/opps/${event.opp_slug}${event.step_skill ? `/runs/r1/steps/${event.step_skill}` : ""}`
-            : `/opps/${event.opp_slug}`
+            ? `/w/${workspaceSlug}/opps/${encOpp}${encStep ? `/runs/r1/steps/${encStep}` : ""}`
+            : `/opps/${encOpp}`
         }
         className="text-sm text-foreground hover:text-primary hover:underline"
       >

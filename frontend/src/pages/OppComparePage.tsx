@@ -69,14 +69,14 @@ export default function OppComparePage() {
         </Link>
         <h1 className="text-xl font-semibold text-foreground">Compare</h1>
         <Link
-          to={`${wsBase}/opps/${a.opp.slug}`}
+          to={`${wsBase}/opps/${encodeURIComponent(a.opp.slug)}`}
           className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-foreground hover:bg-muted/70"
         >
           {a.opp.slug}
         </Link>
         <ArrowRight className="h-4 w-4 text-muted-foreground" />
         <Link
-          to={`${wsBase}/opps/${b.opp.slug}`}
+          to={`${wsBase}/opps/${encodeURIComponent(b.opp.slug)}`}
           className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-foreground hover:bg-muted/70"
         >
           {b.opp.slug}

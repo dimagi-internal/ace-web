@@ -115,9 +115,10 @@ export function ForkOppDialog({
       });
       toast.success(`Forked to run ${result.run_id}`);
       onOpenChange(false);
+      const encSlug = encodeURIComponent(result.slug);
       const base = workspaceSlug
-        ? `/w/${workspaceSlug}/opps/${result.slug}`
-        : `/opps/${result.slug}`;
+        ? `/w/${workspaceSlug}/opps/${encSlug}`
+        : `/opps/${encSlug}`;
       navigate(`${base}?run_id=${encodeURIComponent(result.run_id)}`);
     } catch (err) {
       const detail = err instanceof ApiError ? err.message : String(err);

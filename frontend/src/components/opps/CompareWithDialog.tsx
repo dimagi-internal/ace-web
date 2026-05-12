@@ -43,7 +43,9 @@ export function CompareWithDialog({ open, onOpenChange, source, candidates }: Pr
   const goCompare = (otherSlug: string) => {
     onOpenChange(false);
     const wsBase = workspaceSlug ? `/w/${workspaceSlug}` : "";
-    navigate(`${wsBase}/opps/compare/${source.slug}/${otherSlug}`);
+    navigate(
+      `${wsBase}/opps/compare/${encodeURIComponent(source.slug)}/${encodeURIComponent(otherSlug)}`,
+    );
   };
 
   const noOptions =

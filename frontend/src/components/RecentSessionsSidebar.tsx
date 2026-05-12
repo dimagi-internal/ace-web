@@ -182,9 +182,10 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
           groups.map((g) => {
             const headerLabel =
               g.oppDisplayName || g.oppSlug || "Other chats";
+            const encOpp = g.oppSlug ? encodeURIComponent(g.oppSlug) : "";
             const oppHref = workspaceSlug
-              ? `/w/${workspaceSlug}/opps/${g.oppSlug}`
-              : `/opps/${g.oppSlug}`;
+              ? `/w/${workspaceSlug}/opps/${encOpp}`
+              : `/opps/${encOpp}`;
             return (
               <div key={g.oppSlug || "__unlinked__"} className="mt-2 first:mt-0">
                 <div className="flex items-center justify-between px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
