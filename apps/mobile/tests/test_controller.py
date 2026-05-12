@@ -815,6 +815,49 @@ def test_run_recipe_shell_quotes_s3_destination_url(controller_factory, monkeypa
     )
 
 
+def test_presign_prefix_paginates_past_1000_keys(controller_factory):
+    """Regression guard: ``_presign_prefix`` must use the boto3
+    paginator so artifact lists past the 1000-key ``list_objects_v2``
+    page limit don't silently truncate. We queue two pages — page 1
+    truncated with ``IsTruncated=True`` + ``NextContinuationToken``,
+    page 2 the remainder — and verify every key gets presigned.
+    Pre-fix, the second page was never fetched and the caller saw
+    only the first 1000 artifacts."""
+    c = controller_factory()
+    page1_keys = [f"run-big/{i:04d}.png" for i in range(1000)]
+    page2_keys = [f"run-big/{i:04d}.png" for i in range(1000, 1234)]
+
+    # Stubber wraps the underlying client.list_objects_v2 call regardless
+    # of whether the caller goes through the paginator or invokes the
+    # method directly — the paginator just loops calling the same op.
+    controller_factory.s3_stub.add_response(
+        "list_objects_v2",
+        {
+            "Contents": [{"Key": k, "Size": 100} for k in page1_keys],
+            "IsTruncated": True,
+            "NextContinuationToken": "page-2-token",
+        },
+    )
+    controller_factory.s3_stub.add_response(
+        "list_objects_v2",
+        {
+            "Contents": [{"Key": k, "Size": 100} for k in page2_keys],
+            "IsTruncated": False,
+        },
+    )
+
+    artifacts = c._presign_prefix("screenshots/run-big")
+
+    assert len(artifacts) == len(page1_keys) + len(page2_keys), (
+        f"expected paginator to fetch both pages; got {len(artifacts)} artifacts"
+    )
+    # Spot-check the boundary: last key on page 1 and first key on page 2.
+    names = [a.name for a in artifacts]
+    assert "0999.png" in names
+    assert "1000.png" in names
+    assert "1233.png" in names
+
+
 def test_run_recipe_finally_swallows_idle_bump_errors(controller_factory):
     """If the idle-bump SSM call fails, the finally must not mask the
     main result. We observe by verifying a successful run still returns
