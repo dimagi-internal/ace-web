@@ -329,15 +329,9 @@ export default function OppSummaryPage() {
                     : "Synthesis of what this run learned"
                 }
                 links={[
-                  {
-                    label: "Open in Drive",
-                    href: `https://drive.google.com/file/d/${learnings.summary_file_id}/view`,
-                  },
-                  ...(learnings.new_pdd_file_id
-                    ? [{
-                        label: "Next PDD",
-                        href: `https://drive.google.com/file/d/${learnings.new_pdd_file_id}/view`,
-                      }]
+                  { label: "Open in Drive", href: learnings.summary_url },
+                  ...(learnings.new_pdd_url
+                    ? [{ label: "Next PDD", href: learnings.new_pdd_url }]
                     : []),
                 ]}
               />

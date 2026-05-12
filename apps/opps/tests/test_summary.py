@@ -397,8 +397,10 @@ def test_opp_eval_and_learnings_render_from_closeout_block():
         },
         "learnings": {
             "summary_file_id": "fake-learnings",
+            "summary_web_view_link": "https://docs.google.com/document/d/fake-learnings/edit",
             "iteration_warranted": True,
             "new_pdd_file_id": "fake-new-pdd",
+            "new_pdd_web_view_link": "https://docs.google.com/document/d/fake-new-pdd/edit",
         },
     })
     drive = FakeDriveClient.from_tree(_full_tree(state_yaml=state))
@@ -409,6 +411,26 @@ def test_opp_eval_and_learnings_render_from_closeout_block():
     assert p["opp_eval"]["overall_score"] == 82
     assert p["opp_eval"]["verdict"] == "pass"
     assert p["learnings"]["iteration_warranted"] is True
+    assert p["learnings"]["summary_url"] == "https://docs.google.com/document/d/fake-learnings/edit"
+    assert p["learnings"]["new_pdd_url"] == "https://docs.google.com/document/d/fake-new-pdd/edit"
+
+
+def test_learnings_falls_back_to_constructed_url_when_web_view_link_absent():
+    """Pre-0.13.174 runs only have file_ids — loader constructs a Drive
+    blob-preview URL as a fallback so the link still works."""
+    state = _state_yaml(closeout={
+        "learnings": {
+            "summary_file_id": "fake-learnings",
+            "iteration_warranted": False,
+        },
+    })
+    drive = FakeDriveClient.from_tree(_full_tree(state_yaml=state))
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["learnings"]["summary_url"] == "https://drive.google.com/file/d/fake-learnings/view"
+    assert p["learnings"]["new_pdd_url"] is None
 
 
 def test_solicitation_renders_when_url_present():
