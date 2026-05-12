@@ -256,6 +256,18 @@ class EmulatorController:
             if state_name and state_name != self._read_active_state():
                 self._switch_state(state_name)
             diag = self._collect_diagnostics()
+            if diag.adb_visible_count == 0:
+                # Marker probe returned READY but adb sees nothing — the
+                # canonical "stale marker, dead emulator" state we hit
+                # whenever the runner unit exited (idle-shutdown of the
+                # emulator process, or any other reason) while EC2 stayed
+                # up. Recover in-place once and re-check; the recovery is
+                # cheap enough (~2-3 min cold boot) that the
+                # alternatives — manual operator intervention or "stop
+                # the EC2 and let next call cold-start" — aren't worth
+                # the friction.
+                self._recover_emulator()
+                diag = self._collect_diagnostics()
             self._assert_adb_visible(diag)
             return RunningState(
                 instance_id=self.instance_id,
@@ -708,6 +720,48 @@ class EmulatorController:
             raise EmulatorBootTimeout(
                 f"emulator on {self.instance_id} did not reach boot_completed: {e.message}"
             ) from e
+
+    def _recover_emulator(self) -> None:
+        """Restart the runner systemd unit, then wait for a fresh ready
+        marker. Used by ``ensure_running`` when it detects a stale
+        marker (marker present but adb sees no device) — i.e. the
+        emulator died but the EC2 instance stayed up so the ``marker``
+        file is left over in tmpfs from the prior boot.
+
+        We explicitly remove the marker before restarting so
+        ``_wait_for_emulator``'s subsequent probe blocks until the
+        fresh launch script touches it again. Without the explicit
+        remove there's a TOCTOU window where the new script is still
+        booting AND the stale marker is still present, so the probe
+        would return immediately.
+        """
+        marker = _EMULATOR_READY_MARKER
+        commands = [
+            "set +e",
+            # Remove the stale marker first so _wait_for_emulator's
+            # next probe doesn't accept the prior boot's signal.
+            f"sudo rm -f {shlex.quote(marker)}",
+            # systemd considers the unit 'inactive' after the prior
+            # script exited; restart cleanly. ace-mobile-runner.service
+            # has Restart=no so it doesn't auto-respawn after an
+            # idle-shutdown of the emulator process — recovery here is
+            # an explicit operator action.
+            "sudo systemctl restart ace-mobile-runner.service",
+        ]
+        try:
+            ssm.run_command(
+                self.ssm,
+                self.instance_id,
+                commands=commands,
+                timeout_seconds=_SSM_OP_TIMEOUT_SEC,
+            )
+        except SSMFailure as e:
+            raise EmulatorBootTimeout(
+                f"emulator recovery on {self.instance_id} failed at "
+                f"systemctl restart: {e.message}"
+            ) from e
+        # Now wait for the fresh cold-boot to set the marker.
+        self._wait_for_emulator()
 
     def _collect_diagnostics(self) -> Diagnostics:
         """One SSM round-trip that captures everything a human or caller

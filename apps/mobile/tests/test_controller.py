@@ -192,29 +192,76 @@ def test_ensure_running_starts_stopped_instance(controller_factory, monkeypatch)
     assert state.diagnostics.adb_visible_count == 1
 
 
-def test_ensure_running_raises_emulator_not_ready_when_adb_empty(
+def test_ensure_running_auto_recovers_stale_marker(
     controller_factory, monkeypatch
 ):
-    """The canonical bug we're fixing: ready-marker exists but adb sees
-    no device. ensure_running must raise EmulatorNotReady with the
-    diagnostic snapshot attached so callers see why."""
+    """The canonical failure: ready-marker exists but adb sees no
+    device. ensure_running must NOT just bail — it should restart the
+    runner unit, wait for a fresh registration, and return success.
+
+    Pre-fix the caller hit ``adb: no devices/emulators found`` on the
+    next call (cryptic, no context). Mid-fix we raised EmulatorNotReady
+    with a diagnostic snapshot (better, but still required an
+    operator). This is the v3: auto-recover once, raise only if
+    recovery itself fails."""
     monkeypatch.setattr(time, "sleep", lambda *_: None)
     c = controller_factory()
     controller_factory.ec2_stub.add_response(
         "describe_instances", _describe_resp("running")
     )
+    # Initial _wait_for_emulator probe — marker exists (stale).
     _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
-    # Empty adb devices list — emulator died after registration / marker is stale.
-    _queue_diagnostics(controller_factory.ssm_stub, adb_devices=[], emulator_pid=None)
+    # First _collect_diagnostics — empty adb (the stale-marker case).
+    _queue_diagnostics(
+        controller_factory.ssm_stub, adb_devices=[], emulator_pid=None
+    )
+    # _recover_emulator: rm marker + restart runner unit (one SSM call).
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="")
+    # _wait_for_emulator again, this time on the fresh marker.
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
+    # Final _collect_diagnostics — adb sees the recovered emulator.
+    _queue_diagnostics(controller_factory.ssm_stub)
+
+    state = c.ensure_running()
+
+    assert state.state == "running"
+    assert state.diagnostics is not None
+    assert state.diagnostics.adb_visible_count == 1
+
+
+def test_ensure_running_raises_emulator_not_ready_when_recovery_fails(
+    controller_factory, monkeypatch
+):
+    """If recovery itself doesn't restore adb visibility, we surface
+    the diagnostics on EmulatorNotReady. Recovery is best-effort — a
+    sustained boot failure is an operator concern, not something we
+    should mask."""
+    monkeypatch.setattr(time, "sleep", lambda *_: None)
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    # Initial marker probe — present.
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
+    # First diagnostics — empty adb.
+    _queue_diagnostics(
+        controller_factory.ssm_stub, adb_devices=[], emulator_pid=None
+    )
+    # Recovery: rm + restart succeeds.
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="")
+    # Re-wait for marker — succeeds (the runner script touched the
+    # marker again).
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
+    # Second diagnostics — STILL empty (recovery touched the marker
+    # but the emulator process didn't actually come back).
+    _queue_diagnostics(
+        controller_factory.ssm_stub, adb_devices=[], emulator_pid=None
+    )
 
     with pytest.raises(EmulatorNotReady) as exc_info:
         c.ensure_running()
-
     diag = exc_info.value.diagnostics
     assert diag["adb_visible_count"] == 0
-    assert diag["adb_devices"] == []
-    assert diag["marker_present"] is True
-    assert diag["emulator_pid"] is None
     assert "runner_log_tail" in diag
 
 
@@ -223,12 +270,21 @@ def test_ensure_running_raises_emulator_not_ready_when_only_offline_devices(
 ):
     """An adb device in 'offline' or 'unauthorized' state is not usable
     — only 'device' counts. The check has to look at state, not just
-    the row count, otherwise a half-booted emulator passes the gate."""
+    the row count, otherwise a half-booted emulator passes the gate.
+    Recovery is also attempted here; if it doesn't restore visibility,
+    we raise."""
     monkeypatch.setattr(time, "sleep", lambda *_: None)
     c = controller_factory()
     controller_factory.ec2_stub.add_response(
         "describe_instances", _describe_resp("running")
     )
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
+    _queue_diagnostics(
+        controller_factory.ssm_stub,
+        adb_devices=[("emulator-5554", "offline")],
+    )
+    # Recovery attempted.
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="")
     _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
     _queue_diagnostics(
         controller_factory.ssm_stub,
