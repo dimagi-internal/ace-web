@@ -28,7 +28,12 @@ import boto3
 from botocore.exceptions import ClientError
 
 from . import ssm
-from .exceptions import EmulatorBootTimeout, MobileError, SSMFailure
+from .exceptions import (
+    EmulatorBootTimeout,
+    EmulatorNotReady,
+    MobileError,
+    SSMFailure,
+)
 
 # How long to wait for the EC2 instance + SSM agent to come ready
 # after a cold ``StartInstances`` call.
@@ -70,11 +75,47 @@ _PRESIGN_TTL_SEC = 3600
 
 
 @dataclass
+class AdbDevice:
+    serial: str  # e.g. "emulator-5554"
+    state: str  # "device" | "offline" | "unauthorized" | "no permissions" | ...
+
+
+@dataclass
+class Diagnostics:
+    """Live snapshot of the in-VM emulator runtime, collected in one
+    SSM call. Returned from ``ensure_running`` (success and failure
+    paths) and from ``GET /api/mobile/diagnose``. Read this first when
+    a caller can talk to the EC2 instance but can't run recipes.
+
+    All fields are best-effort. If an SSM probe fails, the request as a
+    whole is reported (``ssm_ok=False``, ``ssm_error``) and the other
+    fields stay at their defaults so callers can still inspect what
+    was learned before the failure."""
+
+    ssm_ok: bool = True
+    ssm_error: str | None = None
+    adb_devices: list[AdbDevice] = field(default_factory=list)
+    emulator_pid: int | None = None
+    emulator_cmdline: str | None = None
+    runner_service_state: str | None = None  # "active" | "inactive" | "failed" | ...
+    marker_present: bool = False
+    marker_age_seconds: int | None = None
+    runner_log_tail: str = ""
+    emulator_log_tail: str = ""
+
+    @property
+    def adb_visible_count(self) -> int:
+        """Count of adb devices in the canonical 'device' state."""
+        return sum(1 for d in self.adb_devices if d.state == "device")
+
+
+@dataclass
 class RunningState:
     instance_id: str
     state: str
     public_dns: str | None
     started_at: str
+    diagnostics: Diagnostics | None = None
 
 
 @dataclass
@@ -214,11 +255,14 @@ class EmulatorController:
             self._wait_for_emulator()
             if state_name and state_name != self._read_active_state():
                 self._switch_state(state_name)
+            diag = self._collect_diagnostics()
+            self._assert_adb_visible(diag)
             return RunningState(
                 instance_id=self.instance_id,
                 state="running",
                 public_dns=info.get("public_dns"),
                 started_at=_iso_now(),
+                diagnostics=diag,
             )
 
         if ec2_state in ("pending", "stopping"):
@@ -236,12 +280,33 @@ class EmulatorController:
         if state_name and state_name != self._read_active_state():
             self._switch_state(state_name)
         info = self._describe_instance()
+        diag = self._collect_diagnostics()
+        self._assert_adb_visible(diag)
         return RunningState(
             instance_id=self.instance_id,
             state=info["state"],
             public_dns=info.get("public_dns"),
             started_at=_iso_now(),
+            diagnostics=diag,
         )
+
+    def diagnose(self) -> Diagnostics:
+        """Read-only snapshot of the in-VM emulator runtime.
+
+        Unlike ``ensure_running``, this never mutates EC2 state and
+        never raises on unhealthy emulator state — it just reports
+        what's there. Returns a Diagnostics with ``ssm_ok=False`` if
+        the EC2 instance isn't running (so the API caller can
+        distinguish "no instance" from "instance there, emulator
+        broken")."""
+        info = self._describe_instance()
+        if info["state"] != "running":
+            return Diagnostics(
+                ssm_ok=False,
+                ssm_error=f"instance {self.instance_id} is {info['state']!r}; "
+                "start it with /api/mobile/ensure-running before diagnosing",
+            )
+        return self._collect_diagnostics()
 
     def stop(self) -> StoppedState:
         try:
@@ -644,6 +709,76 @@ class EmulatorController:
                 f"emulator on {self.instance_id} did not reach boot_completed: {e.message}"
             ) from e
 
+    def _collect_diagnostics(self) -> Diagnostics:
+        """One SSM round-trip that captures everything a human or caller
+        needs to tell whether the in-VM emulator is actually usable.
+
+        Output is framed by ``---<KEY>---`` lines so the Python side
+        can demux without needing JSON tooling on the instance. Each
+        section is best-effort — failures in one section don't poison
+        the others; missing fields surface as defaults in
+        ``Diagnostics``.
+        """
+        marker = _EMULATOR_READY_MARKER
+        commands = [
+            "set +e",
+            "echo '---ADB_DEVICES---'",
+            # adb devices output is two-column "<serial>\t<state>" after
+            # a "List of devices attached" header line. We strip the
+            # header in Python.
+            f"sudo -u ubuntu {_ADB} devices 2>&1 || echo 'adb_failed'",
+            "echo '---EMULATOR_PROC---'",
+            # Print "<pid> <cmdline>" or empty. Use pgrep -af to get the
+            # full command line so we can distinguish the emulator from
+            # other processes if needed.
+            "pgrep -af 'emulator -avd' | head -1 || true",
+            "echo '---RUNNER_SERVICE---'",
+            "systemctl is-active ace-mobile-runner.service 2>/dev/null "
+            "|| systemctl is-active ace-mobile-runner-override 2>/dev/null "
+            "|| echo unknown",
+            "echo '---MARKER---'",
+            f"if [ -f {shlex.quote(marker)} ]; then "
+            f"  echo present; "
+            f"  echo \"mtime=$(stat -c %Y {shlex.quote(marker)} 2>/dev/null || echo 0)\"; "
+            "else echo absent; echo mtime=0; fi",
+            "echo '---RUNNER_LOG_TAIL---'",
+            "tail -n 30 /var/log/ace-mobile/runner.log 2>/dev/null || echo '(no runner.log)'",
+            "echo '---EMULATOR_LOG_TAIL---'",
+            "tail -n 30 /var/log/ace-mobile/emulator.log 2>/dev/null || echo '(no emulator.log)'",
+            "echo '---END---'",
+        ]
+        try:
+            result = ssm.run_command(
+                self.ssm,
+                self.instance_id,
+                commands=commands,
+                timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
+            )
+        except MobileError as e:
+            return Diagnostics(ssm_ok=False, ssm_error=e.message)
+        return _parse_diagnostics(result.stdout)
+
+    def _assert_adb_visible(self, diag: Diagnostics) -> None:
+        """Raise EmulatorNotReady if the ready-marker was observed but
+        adb sees no device in 'device' state.
+
+        This catches the canonical failure: the marker is stale from a
+        prior boot, the emulator process is gone (idle-killed,
+        crashed, or never started), but ``ensure_running``'s marker
+        probe still returned READY. Without this guard, callers see a
+        success response and then their first ``run_recipe`` /
+        ``capture_ui_dump`` fails with the cryptic "adb: no
+        devices/emulators found"."""
+        if diag.adb_visible_count > 0:
+            return
+        raise EmulatorNotReady(
+            "emulator on "
+            f"{self.instance_id} signalled ready but no device is visible "
+            "to adb (likely a stale ready-marker after the emulator died, "
+            "or a partial cold-boot). See diagnostics for the in-VM state.",
+            diagnostics=_diagnostics_to_dict(diag),
+        )
+
     def _switch_state(self, state_name: str) -> None:
         """Stop ace-mobile-runner, restart with the requested state, wait for boot."""
         # The runner unit's ExecStart is /usr/local/bin/ace-emulator-launch
@@ -746,6 +881,99 @@ def _grep_kv(text: str, key: str) -> str | None:
         if line.startswith(needle):
             return line[len(needle):].strip()
     return None
+
+
+def _parse_diagnostics(stdout: str) -> Diagnostics:
+    """Demux the framed output of ``_collect_diagnostics``.
+
+    Sections are separated by ``---<KEY>---`` lines; the parser walks
+    line by line, switching sections on each marker and accumulating
+    body lines into the matching field. Best-effort: a missing
+    section simply leaves the field at its default.
+    """
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in (stdout or "").splitlines():
+        if line.startswith("---") and line.endswith("---"):
+            current = line[3:-3]
+            sections[current] = []
+            continue
+        if current is not None:
+            sections[current].append(line)
+
+    diag = Diagnostics()
+    diag.adb_devices = _parse_adb_devices_lines(sections.get("ADB_DEVICES", []))
+
+    emu_lines = [ln for ln in sections.get("EMULATOR_PROC", []) if ln.strip()]
+    if emu_lines:
+        first = emu_lines[0].strip()
+        # "<pid> <cmdline...>"
+        parts = first.split(None, 1)
+        if parts and parts[0].isdigit():
+            diag.emulator_pid = int(parts[0])
+            diag.emulator_cmdline = parts[1] if len(parts) > 1 else ""
+
+    runner_lines = [ln for ln in sections.get("RUNNER_SERVICE", []) if ln.strip()]
+    if runner_lines:
+        diag.runner_service_state = runner_lines[0].strip()
+
+    marker_lines = [ln for ln in sections.get("MARKER", []) if ln.strip()]
+    if marker_lines:
+        diag.marker_present = marker_lines[0].strip() == "present"
+        mtime = _grep_kv("\n".join(marker_lines), "mtime")
+        try:
+            mt = int(mtime or "0")
+        except ValueError:
+            mt = 0
+        if mt > 0:
+            diag.marker_age_seconds = max(0, int(time.time()) - mt)
+
+    diag.runner_log_tail = "\n".join(sections.get("RUNNER_LOG_TAIL", [])).rstrip()
+    diag.emulator_log_tail = "\n".join(sections.get("EMULATOR_LOG_TAIL", [])).rstrip()
+    return diag
+
+
+def _parse_adb_devices_lines(lines: list[str]) -> list[AdbDevice]:
+    """Parse the body of ``adb devices`` output.
+
+    ``adb devices`` emits one header (``List of devices attached``)
+    and zero-or-more ``<serial>\\t<state>`` rows. ``adb_failed`` is a
+    sentinel the SSM probe emits when adb itself isn't on PATH.
+    """
+    devices: list[AdbDevice] = []
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("List of devices"):
+            continue
+        if line == "adb_failed":
+            continue
+        # Lines may use tab OR multiple spaces; split on whitespace.
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        devices.append(AdbDevice(serial=parts[0], state=parts[1]))
+    return devices
+
+
+def _diagnostics_to_dict(diag: Diagnostics) -> dict[str, Any]:
+    """Flatten a Diagnostics into the JSON shape ``_to_payload`` would
+    produce, so it can be embedded into ``EmulatorNotReady`` (which
+    can't import the view's ``_to_payload`` without a circular dep)."""
+    return {
+        "ssm_ok": diag.ssm_ok,
+        "ssm_error": diag.ssm_error,
+        "adb_devices": [{"serial": d.serial, "state": d.state} for d in diag.adb_devices],
+        "adb_visible_count": diag.adb_visible_count,
+        "emulator_pid": diag.emulator_pid,
+        "emulator_cmdline": diag.emulator_cmdline,
+        "runner_service_state": diag.runner_service_state,
+        "marker_present": diag.marker_present,
+        "marker_age_seconds": diag.marker_age_seconds,
+        "runner_log_tail": diag.runner_log_tail,
+        "emulator_log_tail": diag.emulator_log_tail,
+    }
 
 
 _CONTENT_TYPES = {
