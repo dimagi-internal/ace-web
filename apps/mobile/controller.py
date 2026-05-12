@@ -44,10 +44,14 @@ _BOOT_HARD_TIMEOUT_SEC = 180
 # registration to complete. ``ace-emulator-launch`` writes
 # ``/run/ace-mobile/ready`` once the +7426 demo registration recipes
 # finish — that's the signal we wait for. Budget: AVD boot ~60-90s,
-# adb install ~10s, two registration recipes ~60s, total ~3 min.
-# 5-min ceiling gives headroom for transient slowness without masking
-# real failures.
-_EMULATOR_READY_TIMEOUT_SEC = 300
+# adb install ~10s, the new pre-recipe pm-settle wait ~3-15s, two
+# registration recipes ~60s each, total ~3-4 min.
+# 8-min ceiling gives headroom for transient slowness without masking
+# real failures (bumped from 5 min after leep Phase 5 attempt 6
+# surfaced a 300s-wait timeout during a state-switch cold-boot —
+# even though the underlying cold-boot was healthy, the wait window
+# was just slightly tight).
+_EMULATOR_READY_TIMEOUT_SEC = 480
 _EMULATOR_READY_MARKER = "/run/ace-mobile/ready"
 # Per-call SSM timeouts. Tuned for the typical command class.
 _SSM_PROBE_TIMEOUT_SEC = 30
