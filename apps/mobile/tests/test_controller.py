@@ -215,7 +215,9 @@ def test_ensure_running_auto_recovers_stale_marker(
     _queue_diagnostics(
         controller_factory.ssm_stub, adb_devices=[], emulator_pid=None
     )
-    # _recover_emulator: rm marker + restart runner unit (one SSM call).
+    # _recover_emulator: stop+reset units, wait for qemu to die, rm
+    # marker, start runner — same recipe restart_runner uses (one SSM
+    # round-trip; see _runner_clean_restart_commands).
     _queue_ssm_command(controller_factory.ssm_stub, stdout="")
     # _wait_for_emulator again, this time on the fresh marker.
     _queue_ssm_command(controller_factory.ssm_stub, stdout="READY\n")
@@ -227,6 +229,49 @@ def test_ensure_running_auto_recovers_stale_marker(
     assert state.state == "running"
     assert state.diagnostics is not None
     assert state.diagnostics.adb_visible_count == 1
+
+
+def test_recover_emulator_uses_full_runner_clean_restart(
+    controller_factory, monkeypatch
+):
+    """Regression guard: ``_recover_emulator`` must use the same
+    stop+kill+restart sequence as the public ``restart_runner`` path.
+    Previously it just did ``rm marker; systemctl restart`` and skipped
+    the qemu-process wait, so a still-running qemu from the prior boot
+    held the AVD lock when the new launch script started and the boot
+    failed with "AVD already in use"."""
+    captured: list[list[str]] = []
+
+    def fake_run_command(client, instance_id, *, commands, timeout_seconds, **_):
+        captured.append(commands)
+        from apps.mobile.ssm import CommandResult
+
+        # _recover_emulator first invokes the cleanup SSM call, then
+        # _wait_for_emulator polls for the READY marker — return READY
+        # for the second call so the recovery completes.
+        stdout = "READY\n" if len(captured) >= 2 else ""
+        return CommandResult(status="Success", exit_code=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", fake_run_command)
+
+    c = controller_factory()
+    c._recover_emulator()
+
+    cleanup = "\n".join(captured[0])
+    # Must stop both the main unit AND the override unit (left over
+    # from a prior select_state).
+    assert "systemctl stop ace-mobile-runner.service" in cleanup
+    assert "systemctl stop ace-mobile-runner-override" in cleanup
+    # Must wait for qemu to exit before relaunching — the load-bearing
+    # missing step the prior implementation skipped.
+    assert "pgrep -f 'qemu-system-x86_64|emulator -avd'" in cleanup
+    # Must clear the stale marker before the new launch touches it
+    # (TOCTOU guard for _wait_for_emulator's probe). shlex.quote leaves
+    # /run/ace-mobile/ready unchanged (no shell metacharacters), so the
+    # literal string is fine to assert against.
+    assert "rm -f /run/ace-mobile/ready" in cleanup
+    # And only then start the fresh runner.
+    assert "systemctl start ace-mobile-runner.service" in cleanup
 
 
 def test_ensure_running_raises_emulator_not_ready_when_recovery_fails(

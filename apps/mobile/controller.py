@@ -821,7 +821,7 @@ class EmulatorController:
         operator path: "the emulator is wedged, get me a clean
         cold-boot and tell me the new state."
 
-        Steps (one SSM round-trip):
+        Steps (one SSM round-trip, see ``_runner_clean_restart_commands``):
           1. Stop the .service and any leftover override unit; reset
              their failed state.
           2. Wait up to 30s for any emulator process to exit.
@@ -836,27 +836,11 @@ class EmulatorController:
         kick a restart and walk away — returns immediately with a
         partial Diagnostics snapshot.
         """
-        marker = _EMULATOR_READY_MARKER
-        commands = [
-            "set +e",
-            "sudo systemctl stop ace-mobile-runner.service 2>/dev/null || true",
-            "sudo systemctl stop ace-mobile-runner-override 2>/dev/null || true",
-            "sudo systemctl reset-failed ace-mobile-runner.service "
-            "2>/dev/null || true",
-            "sudo systemctl reset-failed ace-mobile-runner-override "
-            "2>/dev/null || true",
-            "for i in $(seq 1 30); do "
-            "  if ! pgrep -f 'qemu-system-x86_64|emulator -avd' >/dev/null; "
-            "  then break; fi; sleep 1; "
-            "done",
-            f"sudo rm -f {shlex.quote(marker)}",
-            "sudo systemctl start ace-mobile-runner.service",
-        ]
         try:
             ssm.run_command(
                 self.ssm,
                 self.instance_id,
-                commands=commands,
+                commands=_runner_clean_restart_commands(),
                 timeout_seconds=_SSM_OP_TIMEOUT_SEC,
             )
         except SSMFailure as e:
@@ -874,31 +858,20 @@ class EmulatorController:
         emulator died but the EC2 instance stayed up so the ``marker``
         file is left over in tmpfs from the prior boot.
 
-        We explicitly remove the marker before restarting so
-        ``_wait_for_emulator``'s subsequent probe blocks until the
-        fresh launch script touches it again. Without the explicit
-        remove there's a TOCTOU window where the new script is still
-        booting AND the stale marker is still present, so the probe
-        would return immediately.
+        Uses the same clean-restart sequence as ``restart_runner`` so
+        recovery is no weaker than the operator's manual path. In
+        particular: we kill any leftover qemu process and clear both
+        the main and override units' failed state before re-launching.
+        Without the qemu kill, a previously-running emulator would
+        still hold the AVD lock when the new launch script starts and
+        the boot would fail with "AVD already in use" — caught in vivo
+        as a recovery-flakes-but-restart_runner-works asymmetry.
         """
-        marker = _EMULATOR_READY_MARKER
-        commands = [
-            "set +e",
-            # Remove the stale marker first so _wait_for_emulator's
-            # next probe doesn't accept the prior boot's signal.
-            f"sudo rm -f {shlex.quote(marker)}",
-            # systemd considers the unit 'inactive' after the prior
-            # script exited; restart cleanly. ace-mobile-runner.service
-            # has Restart=no so it doesn't auto-respawn after an
-            # idle-shutdown of the emulator process — recovery here is
-            # an explicit operator action.
-            "sudo systemctl restart ace-mobile-runner.service",
-        ]
         try:
             ssm.run_command(
                 self.ssm,
                 self.instance_id,
-                commands=commands,
+                commands=_runner_clean_restart_commands(),
                 timeout_seconds=_SSM_OP_TIMEOUT_SEC,
             )
         except SSMFailure as e:
@@ -1085,6 +1058,47 @@ class EmulatorController:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _runner_clean_restart_commands() -> list[str]:
+    """Shell commands for a clean restart of the ace-mobile-runner unit.
+
+    Used by both ``restart_runner`` (the public API path) and
+    ``_recover_emulator`` (the private auto-fix from ``ensure_running``).
+    They share the same recipe so recovery is never weaker than the
+    explicit operator path.
+
+    Steps, in one SSM round-trip:
+      1. Stop ace-mobile-runner.service and any leftover
+         ace-mobile-runner-override unit (from a prior ``select_state``);
+         reset-failed both so a previous crash doesn't block a fresh
+         start.
+      2. Wait up to 30s for any qemu / emulator process to exit, so the
+         next launch doesn't race the prior boot for the AVD lock.
+      3. ``rm`` the ready marker so ``_wait_for_emulator``'s next probe
+         can't accept the prior boot's signal.
+      4. ``systemctl start`` the main unit.
+
+    All steps are best-effort (``|| true`` / ``2>/dev/null``) up to the
+    final start, which must succeed; SSM surfaces a non-zero exit on
+    that step as ``SSMFailure``.
+    """
+    marker = _EMULATOR_READY_MARKER
+    return [
+        "set +e",
+        "sudo systemctl stop ace-mobile-runner.service 2>/dev/null || true",
+        "sudo systemctl stop ace-mobile-runner-override 2>/dev/null || true",
+        "sudo systemctl reset-failed ace-mobile-runner.service "
+        "2>/dev/null || true",
+        "sudo systemctl reset-failed ace-mobile-runner-override "
+        "2>/dev/null || true",
+        "for i in $(seq 1 30); do "
+        "  if ! pgrep -f 'qemu-system-x86_64|emulator -avd' >/dev/null; "
+        "  then break; fi; sleep 1; "
+        "done",
+        f"sudo rm -f {shlex.quote(marker)}",
+        "sudo systemctl start ace-mobile-runner.service",
+    ]
 
 
 def _iso_now() -> str:
