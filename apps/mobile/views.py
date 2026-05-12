@@ -17,6 +17,7 @@ hung recipe can still be aborted by tearing the instance down.
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
@@ -29,7 +30,7 @@ from rest_framework.response import Response
 from apps.common.auth_views import _can_write_global
 from apps.common.envelope import error_response, success_response
 
-from . import singleton
+from . import jobs, singleton
 from .controller import EmulatorController
 from .exceptions import EmulatorNotReady, MobileError, NotConfigured, SingletonBusy
 from .models import MobileLaunchScriptPatch
@@ -223,6 +224,22 @@ def install_apk(request: Request) -> Response:
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def run_recipe(request: Request) -> Response:
+    """Submit a Maestro recipe for async execution against the cloud AVD.
+
+    Returns 202 + ``{job_id}`` immediately; the actual work runs in a
+    background thread. The client polls ``GET /api/mobile/jobs/<id>``
+    for completion. This pattern is necessary because AWS ALB closes
+    idle connections at 60 s and typical Maestro runs take 60–300 s —
+    a synchronous POST reliably died as ``fetch failed`` client-side
+    AND leaked the singleton lock until its TTL expired (caught in
+    vivo by the leep Phase 5 run, 2026-05-12).
+
+    Singleton lock is held by the background thread; the request
+    handler hands it off via the ``owner`` string captured in the
+    closure. The thread's ``try/finally`` is the sole release path —
+    a network drop between client and ALB no longer leaves the lock
+    held until TTL expiry.
+    """
     try:
         _assert_configured()
     except MobileError as e:
@@ -246,35 +263,99 @@ def run_recipe(request: Request) -> Response:
         except SingletonBusy as e:
             return _mobile_error_response(e, extra={"current_owner": e.owner})
 
-    try:
-        try:
-            controller = _make_controller()
-            requested_state = serializer.validated_data.get("state")
-            if requested_state:
-                # Switch state if needed — no-op if already active.
-                controller.ensure_running(state_name=requested_state)
-                # ensure_running on a cold-boot path can spend 3+ min
-                # before returning; that eats a meaningful fraction of
-                # the lock's 30-min default TTL before the recipe even
-                # starts. Reset the TTL so the recipe gets its own
-                # fresh window — otherwise the lock can silently
-                # expire mid-recipe and let a concurrent caller race
-                # in. Best-effort: a refresh failure means someone
-                # else now owns the lock (vanishingly unlikely under
-                # 30 min), in which case the recipe will still run
-                # but on the assumption that ours released cleanly.
-                singleton.refresh(owner)
-            result = controller.run_recipe(
-                recipe_yaml=serializer.validated_data["recipe_yaml"],
-                env=serializer.validated_data.get("env") or {},
-                screenshot_prefix=serializer.validated_data.get("screenshot_prefix"),
-            )
-        except MobileError as e:
-            return _mobile_error_response(e)
-    finally:
-        singleton.release(owner)
+    # Capture the validated inputs into a closure for the worker.
+    recipe_yaml = serializer.validated_data["recipe_yaml"]
+    env = serializer.validated_data.get("env") or {}
+    screenshot_prefix = serializer.validated_data.get("screenshot_prefix")
+    requested_state = serializer.validated_data.get("state")
 
-    return Response(success_response(_to_payload(result)))
+    def worker_holding(job_id: str) -> None:
+        """Execute the recipe in a background thread. MUST release the
+        singleton lock in the finally — that's the sole release path
+        for the async-mode submission, so a network drop between
+        client and ALB no longer leaks the lock until TTL expiry."""
+        try:
+            try:
+                controller = _make_controller()
+                if requested_state:
+                    controller.ensure_running(state_name=requested_state)
+                    # ensure_running on a cold-boot path can spend 3+ min
+                    # before returning; reset the lock TTL so the recipe
+                    # gets its own fresh window (same logic the prior
+                    # synchronous path had).
+                    singleton.refresh(owner)
+                result = controller.run_recipe(
+                    recipe_yaml=recipe_yaml,
+                    env=env,
+                    screenshot_prefix=screenshot_prefix,
+                )
+                jobs.mark_completed(job_id, _to_payload(result))
+            except MobileError as e:
+                jobs.mark_failed(
+                    job_id,
+                    error=e.message,
+                    error_code=e.code,
+                )
+            except Exception as e:  # noqa: BLE001 — store unexpected exc detail
+                jobs.mark_failed(
+                    job_id,
+                    error=f"unexpected error: {e}",
+                    error_code="unexpected-error",
+                    include_traceback=True,
+                )
+        finally:
+            singleton.release(owner)
+
+    # Pre-allocate the job_id so the worker closure can use it AND we
+    # can return it in the 202 response immediately.
+    job_id = jobs.make_job_id()
+    job = jobs.JobRecord(
+        job_id=job_id,
+        operation="run_recipe",
+        status="running",
+        owner=owner,
+        started_at=jobs._iso_now(),  # noqa: SLF001 — same module
+    )
+    jobs.write(job)
+    threading.Thread(
+        target=worker_holding,
+        args=(job_id,),
+        name=f"mobile-job-{job_id}",
+        daemon=True,
+    ).start()
+
+    return Response(success_response({"job_id": job_id, "status": "running"}), status=202)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_job(request: Request, job_id: str) -> Response:
+    """Poll the status of an async mobile job.
+
+    ``200 {status: 'running'}`` while the worker is still executing.
+    ``200 {status: 'completed', result: ...}`` on success — the result
+    envelope is the same shape ``run_recipe`` used to return
+    synchronously (CloudRunResult dataclass post-_to_payload).
+    ``200 {status: 'failed', error, error_code}`` on failure — clients
+    that previously mapped error codes to typed errors can keep doing
+    so.
+    ``404`` when the job_id is unknown or has expired past its 1h TTL.
+    """
+    try:
+        _assert_configured()
+    except MobileError as e:
+        return _mobile_error_response(e)
+
+    rec = jobs.read(job_id)
+    if rec is None:
+        return Response(
+            error_response(
+                message=f"job {job_id!r} not found or expired",
+                code="job-not-found",
+            ),
+            status=404,
+        )
+    return Response(success_response(rec.to_dict()))
 
 
 @api_view(["POST"])

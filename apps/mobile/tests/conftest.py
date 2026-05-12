@@ -26,7 +26,7 @@ import fakeredis
 import pytest
 from botocore.stub import Stubber
 
-from apps.mobile import singleton
+from apps.mobile import jobs, singleton
 
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "test-access-key")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test-secret-key")
@@ -36,10 +36,16 @@ os.environ.setdefault("AWS_SESSION_TOKEN", "test-session-token")
 
 @pytest.fixture(autouse=True)
 def fake_redis(monkeypatch):
-    """Swap the singleton module's Redis client for an in-memory fake."""
+    """Swap the singleton + jobs modules' Redis client for an in-memory
+    fake. Both modules share the same backend in production (the
+    cloud Redis URL) so tests use a single fakeredis instance for
+    both, so a job's lifecycle and the singleton lock that wraps it
+    are visible to each other within a test."""
     fake = fakeredis.FakeRedis(decode_responses=True)
     monkeypatch.setattr(singleton, "_sync_redis", None)
     monkeypatch.setattr(singleton, "_get_redis", lambda: fake)
+    monkeypatch.setattr(jobs, "_sync_redis", None)
+    monkeypatch.setattr(jobs, "_get_redis", lambda: fake)
     yield fake
 
 
