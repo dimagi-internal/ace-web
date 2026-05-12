@@ -3,72 +3,83 @@ from django.urls import path
 
 from . import views
 
+# Opp "slug" is whatever the Drive folder is named — the `ace` CLI plugin
+# creates folders with the user's literal display string, which can include
+# spaces and uppercase (e.g. "Malaria RDT QA"). Use Django's `<str:>`
+# converter (matches anything except `/`) rather than the strict `<slug:>`
+# converter (`[-a-zA-Z0-9_]+`) so requests like
+# `/api/opps/Malaria%20RDT%20QA/runs` route through instead of falling
+# through to the SPA catch-all as a 404. The frontend always passes the
+# slug through `encodeURIComponent`, and downstream code treats slug as a
+# literal folder name (`_find_child_folder` does string-equality), so no
+# slug-shape assumption exists past the URL layer.
 urlpatterns = [
     path("health", views.health, name="opps-health"),
     path("", views.opp_collection, name="opps-collection"),
     path(
-        "compare/<slug:slug_a>/<slug:slug_b>",
+        "compare/<str:slug_a>/<str:slug_b>",
         views.opp_compare,
         name="opps-compare",
     ),
     path(
-        "<slug:slug>/working-session",
+        "<str:slug>/working-session",
         views.opp_working_session,
         name="opps-working-session",
     ),
-    path("<slug:slug>/runs", views.runs_list, name="opps-runs-list"),
+    path("<str:slug>/runs", views.runs_list, name="opps-runs-list"),
     path(
-        "<slug:slug>/multi-run-summary",
+        "<str:slug>/multi-run-summary",
         views.multi_run_summary, name="opps-multi-run-summary",
     ),
-    path("<slug:slug>/cost-rollup", views.cost_rollup, name="opps-cost-rollup"),
-    path("<slug:slug>", views.workbench, name="opps-workbench"),
-    path("<slug:slug>/scorecard", views.scorecard, name="opps-scorecard"),
-    path("<slug:slug>/fork", views.opp_fork, name="opps-fork"),
+    path("<str:slug>/cost-rollup", views.cost_rollup, name="opps-cost-rollup"),
+    path("<str:slug>", views.workbench, name="opps-workbench"),
+    path("<str:slug>/scorecard", views.scorecard, name="opps-scorecard"),
+    path("<str:slug>/fork", views.opp_fork, name="opps-fork"),
     path(
-        "<slug:slug>/fork/status",
+        "<str:slug>/fork/status",
         views.opp_fork_status,
         name="opps-fork-status",
     ),
     path(
-        "<slug:slug>/runs/<str:run_id>",
+        "<str:slug>/runs/<str:run_id>",
         views.delete_run,
         name="opps-delete-run",
     ),
     path(
-        "<slug:slug>/runs/<str:run_id>/steps/<str:skill>",
+        "<str:slug>/runs/<str:run_id>/steps/<str:skill>",
         views.step_detail,
         name="opps-step-detail",
     ),
     path(
-        "<slug:slug>/runs/<str:run_id>/steps/<str:skill>/discuss",
+        "<str:slug>/runs/<str:run_id>/steps/<str:skill>/discuss",
         views.discuss,
         name="opps-discuss",
     ),
     path(
-        "<slug:slug>/runs/<str:run_id>/steps/<str:skill>/chats",
+        "<str:slug>/runs/<str:run_id>/steps/<str:skill>/chats",
         views.step_chats,
         name="opps-step-chats",
     ),
     path(
-        "<slug:slug>/runs/<str:run_id>/steps/<str:skill>/artifacts/<str:artifact_name>",
+        "<str:slug>/runs/<str:run_id>/steps/<str:skill>/artifacts/<str:artifact_name>",
         views.artifact_body,
         name="opps-artifact-body",
     ),
     path(
-        "<slug:slug>/runs/<str:run_id>/steps/<str:skill>"
+        "<str:slug>/runs/<str:run_id>/steps/<str:skill>"
         "/artifacts/<str:artifact_name>/write",
         views.opp_artifact_write,
         name="opps-artifact-write",
     ),
     path(
-        "<slug:slug>/runs/<str:run_id>/actions/<str:action>",
+        "<str:slug>/runs/<str:run_id>/actions/<str:action>",
         views.opp_action, name="opps-action",
     ),
-    # Public, unauthenticated per-run summary. Workspace slug is in the
-    # path because there's no auth context to resolve it from.
+    # Public, unauthenticated per-run summary. Workspace slug stays strict
+    # — workspaces are created via the onboarding wizard with slugify(),
+    # so they're guaranteed slug-shaped.
     path(
-        "public/<slug:workspace>/<slug:slug>/runs/<str:run_id>/summary",
+        "public/<slug:workspace>/<str:slug>/runs/<str:run_id>/summary",
         views.public_opp_summary, name="opps-public-summary",
     ),
 ]

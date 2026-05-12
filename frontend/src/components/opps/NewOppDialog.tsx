@@ -52,7 +52,7 @@ export function NewOppDialog({ open, onOpenChange }: Props) {
     setSubmitting(true);
     try {
       const result = await createOpp({ slug, display_name: displayName, idea, mode });
-      navigate(`/opps/${result.slug}`);
+      navigate(`/opps/${encodeURIComponent(result.slug)}`);
     } catch (e) {
       setError(String((e as Error).message ?? e));
       setSubmitting(false);

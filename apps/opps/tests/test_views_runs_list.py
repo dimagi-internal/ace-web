@@ -144,3 +144,29 @@ def test_runs_list_unauthenticated_returns_401():
     c = Client()
     resp = c.get("/api/opps/turmeric/runs")
     assert resp.status_code == 401
+
+
+@pytest.mark.django_db
+def test_runs_list_accepts_slug_with_spaces_and_uppercase(authed_client):
+    """The `ace` CLI plugin creates Drive folders with the user's literal
+    display string (e.g. "Malaria RDT QA"). The URL converter must route
+    those through to the view, not 404 to the SPA catch-all — otherwise
+    the runs panel sits at "Loading runs…" forever (apiFetch throws
+    invalid_response on the HTML 404 body, useApi swallows it silently).
+    """
+    captured = {}
+
+    def fake_list_runs(client, *, ace_root_folder_id, opp_slug):
+        captured["opp_slug"] = opp_slug
+        return []
+
+    with patch("apps.opps.views.list_opp_runs", side_effect=fake_list_runs), \
+         patch("apps.opps.access.resolve_ace_root_folder_id", return_value="ACE"), \
+         patch("apps.opps.access.get_drive_client", return_value=object()):
+        resp = authed_client.get("/api/opps/Malaria%20RDT%20QA/runs")
+
+    assert resp.status_code == 200
+    assert resp.json()["error"] is None
+    # View receives the URL-decoded folder name verbatim — downstream
+    # Drive lookup is a string-equality match on folder name.
+    assert captured["opp_slug"] == "Malaria RDT QA"

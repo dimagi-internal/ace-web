@@ -34,12 +34,15 @@ export function OppHeaderBreadcrumb({
 
   if (!oppSlug) return null;
 
+  const slug = encodeURIComponent(oppSlug);
+  const runSeg = oppRunId ? encodeURIComponent(oppRunId) : oppRunId;
+  const stepSeg = oppStepSkill ? encodeURIComponent(oppStepSkill) : oppStepSkill;
   const stepHref = workspaceSlug
-    ? `/w/${workspaceSlug}/opps/${oppSlug}/runs/${oppRunId}/steps/${oppStepSkill}`
-    : `/opps/${oppSlug}/runs/${oppRunId}/steps/${oppStepSkill}`;
+    ? `/w/${workspaceSlug}/opps/${slug}/runs/${runSeg}/steps/${stepSeg}`
+    : `/opps/${slug}/runs/${runSeg}/steps/${stepSeg}`;
   const oppHref = workspaceSlug
-    ? `/w/${workspaceSlug}/opps/${oppSlug}`
-    : `/opps/${oppSlug}`;
+    ? `/w/${workspaceSlug}/opps/${slug}`
+    : `/opps/${slug}`;
   const oppLabel = oppDisplayName?.trim() || oppSlug;
   const stepLabel = oppStepSkillDisplay?.trim() || oppStepSkill;
 

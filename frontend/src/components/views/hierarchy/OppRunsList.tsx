@@ -49,7 +49,7 @@ export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
         {runs.map((r) => (
           <li key={r.run_id}>
             <Link
-              to={`/w/${workspaceSlug}/opps/${oppSlug}?run_id=${encodeURIComponent(r.run_id)}`}
+              to={`/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}?run_id=${encodeURIComponent(r.run_id)}`}
               className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 text-xs hover:bg-accent/40"
               onClick={(e) => e.stopPropagation()}
             >

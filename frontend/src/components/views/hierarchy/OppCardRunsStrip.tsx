@@ -104,7 +104,7 @@ function RunChip({
 
   return (
     <Link
-      to={`/w/${workspaceSlug}/opps/${oppSlug}?run_id=${encodeURIComponent(run.run_id)}`}
+      to={`/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}?run_id=${encodeURIComponent(run.run_id)}`}
       title={tooltipParts.join("\n")}
       className={`inline-flex h-5 min-w-[26px] items-center justify-center rounded border px-1 text-[10px] font-semibold tabular-nums transition hover:brightness-125 ${tone}`}
       onClick={(e) => e.stopPropagation()}

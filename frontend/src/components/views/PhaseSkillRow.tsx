@@ -75,7 +75,7 @@ export function PhaseSkillRow({ step, oppSlug, runId }: Props) {
           <EvalSection step={step} />
           <div className="mt-3 flex items-center gap-3 border-t border-border pt-2 text-[11px]">
             <Link
-              to={`/w/${workspaceSlug}/opps/${oppSlug}/runs/${runId}/steps/${step.skill_name}?view=workbench`}
+              to={`/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(step.skill_name)}?view=workbench`}
               className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
             >
               Open in Workbench <ExternalLink className="h-3 w-3" />

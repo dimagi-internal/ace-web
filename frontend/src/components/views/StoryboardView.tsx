@@ -226,7 +226,7 @@ export function StoryboardView({ oppSlug, workspaceSlug, runId }: Props) {
                 type="button"
                 onClick={() =>
                   navigate(
-                    `/w/${workspaceSlug}/opps/${oppSlug}/runs/${runId}/steps/${slide.stepSkill}`,
+                    `/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(slide.stepSkill)}`,
                   )
                 }
                 className="flex items-center gap-1 rounded border border-border

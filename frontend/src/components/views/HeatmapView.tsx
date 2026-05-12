@@ -129,7 +129,7 @@ export function HeatmapView({ oppSlug, workspaceSlug }: Props) {
                           type="button"
                           onClick={() =>
                             navigate(
-                              `/w/${workspaceSlug}/opps/${oppSlug}/runs/${r.run_id}/steps/${s.skill_name}`,
+                              `/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}/runs/${encodeURIComponent(r.run_id)}/steps/${encodeURIComponent(s.skill_name)}`,
                             )
                           }
                           title={cellTitle(score, status, passed)}

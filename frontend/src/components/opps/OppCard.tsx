@@ -38,7 +38,7 @@ export function OppCardItem({
   onRequestCompare,
 }: OppCardProps) {
   const navigate = useNavigate();
-  const goToWorkbench = () => navigate(`/opps/${opp.slug}`);
+  const goToWorkbench = () => navigate(`/opps/${encodeURIComponent(opp.slug)}`);
   const scorePct = opp.eval_score_pct ?? toPct(opp.eval_score);
 
   return (
