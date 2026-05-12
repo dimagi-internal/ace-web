@@ -21,12 +21,28 @@ export function ChatPage() {
     slug: string;
     workspaceSlug: string;
   }>();
+  const navigate = useNavigate();
   const [meta, setMeta] = useState<Session | null>(null);
   // Distinct from `meta == null` (loading) so the "session not found"
   // branch is reachable. Previously this page caught fetch errors with
   // setMeta(null), which collided with the initial loading state and
   // left the user on "Loading…" forever for any deleted-or-invalid slug.
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Back-compat redirect: an earlier iteration of the Structure feature used
+  // a `#structure` hash on the chat URL to auto-open an embedded panel. The
+  // panel was promoted to a dedicated /chat/<slug>/structure page in PR #299;
+  // any saved links with the hash should land on that page directly.
+  useEffect(() => {
+    if (
+      slug &&
+      workspaceSlug &&
+      typeof window !== "undefined" &&
+      window.location.hash === "#structure"
+    ) {
+      navigate(`/w/${workspaceSlug}/chat/${slug}/structure`, { replace: true });
+    }
+  }, [slug, workspaceSlug, navigate]);
 
   useEffect(() => {
     if (!slug) return;

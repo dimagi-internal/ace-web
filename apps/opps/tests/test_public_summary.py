@@ -14,7 +14,6 @@ from django.test import Client
 
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
 
-
 _STATE_YAML = """\
 phases:
   design:

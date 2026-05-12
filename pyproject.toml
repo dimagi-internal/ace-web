@@ -64,3 +64,6 @@ select = ["E", "F", "W", "I", "UP", "B"]
 # inside triple-quoted Python strings; splitting changes the fixture content
 # and breaks the parser assertions the tests are designed to verify.
 "apps/opps/tests/test_summary.py" = ["E501"]
+# The phase→products contract lives in this file's module docstring as a
+# wide markdown table; splitting the columns hurts readability.
+"apps/opps/summary.py" = ["E501"]
