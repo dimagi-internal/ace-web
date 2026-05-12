@@ -2,6 +2,7 @@ import type { OppSummaryPayload } from "@/api/oppSummary";
 
 interface Props {
   opp: OppSummaryPayload["opp"];
+  cycleGrade?: OppSummaryPayload["cycle_grade"];
 }
 
 const STATUS_LABEL: Record<OppSummaryPayload["opp"]["status"], string> = {
@@ -39,8 +40,9 @@ const STATUS_DATE_PREFIX: Record<OppSummaryPayload["opp"]["status"], string> = {
  * ``--status-ok`` token; matches the way Connect treats live state in
  * its own headers.
  */
-export function SummaryHero({ opp }: Props) {
+export function SummaryHero({ opp, cycleGrade }: Props) {
   const formattedEnd = formatEndDate(opp.end_date);
+  const showGrade = opp.status === "closed" && cycleGrade?.letter;
 
   return (
     <header className="border-b border-border">
@@ -57,6 +59,14 @@ export function SummaryHero({ opp }: Props) {
             />
             {STATUS_LABEL[opp.status]}
           </span>
+          {showGrade && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/50 px-2.5 py-1 font-mono font-semibold text-foreground"
+              aria-label={`Cycle grade: ${cycleGrade.letter}`}
+            >
+              Grade {cycleGrade.letter}
+            </span>
+          )}
           {formattedEnd && (
             <span className="uppercase tracking-[0.2em] text-muted-foreground">
               {STATUS_DATE_PREFIX[opp.status]} {formattedEnd}
@@ -69,6 +79,11 @@ export function SummaryHero({ opp }: Props) {
         {opp.description && (
           <p className="mt-8 max-w-2xl text-pretty text-lg leading-[1.7] text-muted-foreground">
             {opp.description}
+          </p>
+        )}
+        {showGrade && cycleGrade.headline && (
+          <p className="mt-6 max-w-2xl text-pretty text-base italic leading-[1.6] text-muted-foreground">
+            {cycleGrade.headline}
           </p>
         )}
       </div>

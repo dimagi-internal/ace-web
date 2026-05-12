@@ -97,7 +97,10 @@ export default function OppSummaryPage() {
   }
 
   const { payload } = state;
-  const { opp, apps, connect, training, assistant, open_questions, workbench_url } = payload;
+  const {
+    opp, apps, connect, training, assistant, open_questions, workbench_url,
+    walkthroughs, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
+  } = payload;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -112,7 +115,7 @@ export default function OppSummaryPage() {
         </div>
       </div>
 
-      <SummaryHero opp={opp} />
+      <SummaryHero opp={opp} cycleGrade={cycle_grade} />
 
       <main className="mx-auto max-w-3xl space-y-14 px-6 py-14">
         {apps.length > 0 && (
@@ -173,6 +176,71 @@ export default function OppSummaryPage() {
           </SummarySection>
         )}
 
+        {solicitation && (
+          <SummarySection title="Solicitation">
+            <SummaryRow
+              label="RFP"
+              name={
+                <>
+                  Published call for LLO responses
+                  {solicitation.deadline && (
+                    <span className="text-muted-foreground">
+                      {" · "}deadline {solicitation.deadline}
+                    </span>
+                  )}
+                  {solicitation.status && (
+                    <span className="text-muted-foreground">
+                      {" · "}{solicitation.status}
+                    </span>
+                  )}
+                </>
+              }
+              links={[{ label: "Open solicitation", href: solicitation.url }]}
+            />
+          </SummarySection>
+        )}
+
+        {(selected_llo || launch) && (
+          <SummarySection title="Execution">
+            {selected_llo && (
+              <SummaryRow
+                label="LLO"
+                name={
+                  <>
+                    {selected_llo.org_display_name}
+                    {selected_llo.awarded_at && (
+                      <span className="text-muted-foreground">
+                        {" · "}awarded {_formatShortDate(selected_llo.awarded_at)}
+                      </span>
+                    )}
+                  </>
+                }
+                links={
+                  selected_llo.contact_email
+                    ? [{ label: "Contact", href: `mailto:${selected_llo.contact_email}` }]
+                    : []
+                }
+              />
+            )}
+            {launch && (
+              <SummaryRow
+                label="Live"
+                name={
+                  <>
+                    Went live {_formatShortDate(launch.went_live_at)}
+                    {launch.llo_org_display_name && !selected_llo && (
+                      <span className="text-muted-foreground">
+                        {" · "}{launch.llo_org_display_name}
+                      </span>
+                    )}
+                  </>
+                }
+                links={[]}
+              />
+            )}
+          </SummarySection>
+        )}
+
         {training && (training.deck || training.docs.length > 0) && (
           <SummarySection title="Training pack">
             {training.deck && (
@@ -193,6 +261,28 @@ export default function OppSummaryPage() {
           </SummarySection>
         )}
 
+        {walkthroughs.length > 0 && (
+          <SummarySection title="Persona walkthroughs">
+            {walkthroughs.map((w) => (
+              <SummaryRow
+                key={w.url}
+                label="Demo"
+                name={
+                  <>
+                    {w.persona}
+                    {w.eval_score != null && (
+                      <span className="text-muted-foreground">
+                        {" · "}eval {w.eval_score}/10
+                      </span>
+                    )}
+                  </>
+                }
+                links={[{ label: "Open deck", href: w.url }]}
+              />
+            ))}
+          </SummarySection>
+        )}
+
         {assistant && (
           <SummarySection title="Support assistant">
             <SummaryRow
@@ -204,6 +294,48 @@ export default function OppSummaryPage() {
                   : []
               }
             />
+          </SummarySection>
+        )}
+
+        {(opp_eval || learnings) && (
+          <SummarySection title="Outcomes">
+            {opp_eval && (
+              <SummaryRow
+                label="Score"
+                name={
+                  <>
+                    {opp_eval.overall_score}
+                    {opp_eval.verdict && (
+                      <span className="text-muted-foreground">
+                        {" · "}{opp_eval.verdict}
+                      </span>
+                    )}
+                    {opp_eval.mode && (
+                      <span className="text-muted-foreground">
+                        {" · "}{opp_eval.mode} eval
+                      </span>
+                    )}
+                  </>
+                }
+                links={[]}
+              />
+            )}
+            {learnings && (
+              <SummaryRow
+                label="Learnings"
+                name={
+                  learnings.iteration_warranted
+                    ? "Synthesis with follow-up PDD for the next cycle"
+                    : "Synthesis of what this run learned"
+                }
+                links={[
+                  { label: "Open in Drive", href: learnings.summary_url },
+                  ...(learnings.new_pdd_url
+                    ? [{ label: "Next PDD", href: learnings.new_pdd_url }]
+                    : []),
+                ]}
+              />
+            )}
           </SummarySection>
         )}
 

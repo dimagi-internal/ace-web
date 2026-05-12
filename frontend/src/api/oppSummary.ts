@@ -71,8 +71,8 @@ export interface OppSummaryPayload {
     mode: string | null;
   } | null;
   learnings: {
-    summary_file_id: string;
-    new_pdd_file_id: string | null;
+    summary_url: string;
+    new_pdd_url: string | null;
     iteration_warranted: boolean;
   } | null;
   open_questions: { url: string } | null;

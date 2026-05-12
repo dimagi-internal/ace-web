@@ -308,14 +308,29 @@ def _read_opp_eval(state: dict) -> dict | None:
 
 def _read_learnings(state: dict) -> dict | None:
     learn = _phase_products(state, "closeout", "learnings")
-    if not learn or not learn.get("summary_file_id"):
+    if not learn or not (learn.get("summary_file_id") or learn.get("summary_web_view_link")):
         return None
-    # File-id-only; we don't render the body, just the deep-link.
     return {
-        "summary_file_id": learn.get("summary_file_id"),
-        "new_pdd_file_id": learn.get("new_pdd_file_id"),
+        "summary_url": _learnings_link(
+            learn.get("summary_web_view_link"), learn.get("summary_file_id"),
+        ),
+        "new_pdd_url": _learnings_link(
+            learn.get("new_pdd_web_view_link"), learn.get("new_pdd_file_id"),
+        ),
         "iteration_warranted": bool(learn.get("iteration_warranted")),
     }
+
+
+def _learnings_link(web_view_link: str | None, file_id: str | None) -> str | None:
+    """Prefer the producer-recorded webViewLink (plugin v0.13.174+); fall
+    back to a constructed Drive blob-preview URL when only file_id is
+    present (briefly-populated pre-v0.13.174 runs).
+    """
+    if web_view_link:
+        return web_view_link
+    if file_id:
+        return f"https://drive.google.com/file/d/{file_id}/view"
+    return None
 
 
 def _read_open_questions(drive: DriveClient, run_folder_id: str) -> dict | None:
