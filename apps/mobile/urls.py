@@ -15,6 +15,7 @@ urlpatterns = [
     path("capture-ui-dump", views.capture_ui_dump, name="mobile_capture_ui_dump"),
     path("screenshot", views.screenshot, name="mobile_screenshot"),
     path("stop", views.stop, name="mobile_stop"),
+    path("restart-runner", views.restart_runner, name="mobile_restart_runner"),
     path(
         "admin/patch-launch-script",
         views.admin_patch_launch_script,

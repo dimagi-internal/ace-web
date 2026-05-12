@@ -79,6 +79,16 @@ class EnsureRunningSerializer(serializers.Serializer):
     )
 
 
+class RestartRunnerSerializer(serializers.Serializer):
+    """``restart-runner`` accepts a single ``wait_for_ready`` flag.
+
+    Default ``true`` because the typical operator wants to know
+    whether the cold-boot succeeded before returning. ``false`` is
+    fire-and-forget — partial Diagnostics returned immediately."""
+
+    wait_for_ready = serializers.BooleanField(required=False, default=True)
+
+
 class PatchLaunchScriptSerializer(serializers.Serializer):
     """Emergency-fix endpoint for hot-patching the in-VM
     ace-emulator-launch script without a full AMI rebake. The script

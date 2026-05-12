@@ -515,6 +515,49 @@ def test_stop_returns_envelope(bearer_client, configured):
     assert data["stopped_at"]
 
 
+# ── restart-runner ────────────────────────────────────────────────
+
+
+def test_restart_runner_returns_post_restart_diagnostics(bearer_client, configured):
+    fake = MagicMock()
+    fake.restart_runner.return_value = Diagnostics(
+        ssm_ok=True,
+        adb_devices=[AdbDevice(serial="emulator-5554", state="device")],
+        emulator_pid=7777,
+        runner_service_state="active",
+        marker_present=True,
+        marker_age_seconds=12,
+    )
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post("/api/mobile/restart-runner", {}, format="json")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["adb_devices"] == [{"serial": "emulator-5554", "state": "device"}]
+    assert data["marker_present"] is True
+    fake.restart_runner.assert_called_once_with(wait_for_ready=True)
+
+
+def test_restart_runner_honours_wait_for_ready_false(bearer_client, configured):
+    fake = MagicMock()
+    fake.restart_runner.return_value = Diagnostics(
+        ssm_ok=True, marker_present=False, runner_service_state="activating"
+    )
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post(
+            "/api/mobile/restart-runner",
+            {"wait_for_ready": False},
+            format="json",
+        )
+    assert resp.status_code == 200
+    fake.restart_runner.assert_called_once_with(wait_for_ready=False)
+
+
+def test_restart_runner_requires_auth():
+    c = APIClient()
+    resp = c.post("/api/mobile/restart-runner", {}, format="json")
+    assert resp.status_code in (401, 403)
+
+
 # ── admin/patch-launch-script ─────────────────────────────────────
 
 

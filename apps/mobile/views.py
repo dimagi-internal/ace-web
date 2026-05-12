@@ -32,6 +32,7 @@ from .serializers import (
     EnsureRunningSerializer,
     InstallApkSerializer,
     PatchLaunchScriptSerializer,
+    RestartRunnerSerializer,
     RunRecipeSerializer,
     SnapshotSerializer,
     StateSerializer,
@@ -338,6 +339,45 @@ def screenshot(request: Request) -> Response:
     except MobileError as e:
         return _mobile_error_response(e)
     return Response(success_response(_to_payload(artifact)))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def restart_runner(request: Request) -> Response:
+    """Cleanly restart the ace-mobile-runner systemd unit and return
+    the post-restart in-VM diagnostics.
+
+    Public-API counterpart to the private recovery path inside
+    ``ensure_running``. Use when the caller wants a fresh cold-boot
+    without the state-switching side-effects of ``select_state`` and
+    without the marker-stale-detection gate of ``ensure_running``.
+
+    ``wait_for_ready=false`` returns immediately after issuing the
+    restart (Diagnostics will show the partial state); the default
+    polls for the fresh ready marker before returning so the response
+    shape matches ``ensure_running``.
+    """
+    try:
+        _assert_configured()
+    except MobileError as e:
+        return _mobile_error_response(e)
+
+    serializer = RestartRunnerSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return Response(
+            error_response(
+                message=f"invalid request: {serializer.errors}",
+                code="invalid-request",
+            ),
+            status=400,
+        )
+    try:
+        diag = _make_controller().restart_runner(
+            wait_for_ready=serializer.validated_data["wait_for_ready"]
+        )
+    except MobileError as e:
+        return _mobile_error_response(e)
+    return Response(success_response(_to_payload(diag)))
 
 
 @api_view(["POST"])

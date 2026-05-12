@@ -765,7 +765,11 @@ class EmulatorController:
             f"sudo chmod 0755 {shlex.quote(target)}",
             # Verify the on-disk SHA matches what we sent — fail loud
             # if base64 / shell quoting corrupted the body.
-            f"echo \"SHA256: $(sha256sum {shlex.quote(target)} | awk '{{print $1}}')\"",
+            # KEY=value framing so the Python side can demux with
+            # `_grep_kv`. The earlier "SHA256: " variant was a parser
+            # mismatch and surfaced as live=None / spurious SHA-fail
+            # 500s while the write itself was fine.
+            f"echo \"SHA256=$(sha256sum {shlex.quote(target)} | awk '{{print $1}}')\"",
         ]
         try:
             result = ssm.run_command(
@@ -806,6 +810,62 @@ class EmulatorController:
             "restarted_runner": restart,
             "restart_log": restart_log.strip() or None,
         }
+
+    def restart_runner(self, *, wait_for_ready: bool = True) -> Diagnostics:
+        """Cleanly restart the ace-mobile-runner systemd unit.
+
+        Public-API counterpart to the private ``_recover_emulator``.
+        Use when the caller wants a fresh cold-boot without the state-
+        switching side-effects of ``select_state`` and without the
+        marker-stale-detection gate of ``ensure_running``. Typical
+        operator path: "the emulator is wedged, get me a clean
+        cold-boot and tell me the new state."
+
+        Steps (one SSM round-trip):
+          1. Stop the .service and any leftover override unit; reset
+             their failed state.
+          2. Wait up to 30s for any emulator process to exit.
+          3. rm /run/ace-mobile/ready so _wait_for_emulator's probe
+             can't accept the prior boot's signal.
+          4. `systemctl start ace-mobile-runner.service`.
+
+        Then, when ``wait_for_ready=True`` (default), poll for the
+        ready marker and re-collect diagnostics so the response shape
+        is the same as ``ensure_running``. ``wait_for_ready=False`` is
+        a fire-and-forget mode useful for the operator who wants to
+        kick a restart and walk away — returns immediately with a
+        partial Diagnostics snapshot.
+        """
+        marker = _EMULATOR_READY_MARKER
+        commands = [
+            "set +e",
+            "sudo systemctl stop ace-mobile-runner.service 2>/dev/null || true",
+            "sudo systemctl stop ace-mobile-runner-override 2>/dev/null || true",
+            "sudo systemctl reset-failed ace-mobile-runner.service "
+            "2>/dev/null || true",
+            "sudo systemctl reset-failed ace-mobile-runner-override "
+            "2>/dev/null || true",
+            "for i in $(seq 1 30); do "
+            "  if ! pgrep -f 'qemu-system-x86_64|emulator -avd' >/dev/null; "
+            "  then break; fi; sleep 1; "
+            "done",
+            f"sudo rm -f {shlex.quote(marker)}",
+            "sudo systemctl start ace-mobile-runner.service",
+        ]
+        try:
+            ssm.run_command(
+                self.ssm,
+                self.instance_id,
+                commands=commands,
+                timeout_seconds=_SSM_OP_TIMEOUT_SEC,
+            )
+        except SSMFailure as e:
+            raise MobileError(
+                f"runner restart on {self.instance_id} failed: {e.message}"
+            ) from e
+        if wait_for_ready:
+            self._wait_for_emulator()
+        return self._collect_diagnostics()
 
     def _recover_emulator(self) -> None:
         """Restart the runner systemd unit, then wait for a fresh ready
@@ -868,10 +928,19 @@ class EmulatorController:
             # header in Python.
             f"sudo -u ubuntu {_ADB} devices 2>&1 || echo 'adb_failed'",
             "echo '---EMULATOR_PROC---'",
-            # Print "<pid> <cmdline>" or empty. Use pgrep -af to get the
-            # full command line so we can distinguish the emulator from
-            # other processes if needed.
-            "pgrep -af 'emulator -avd' | head -1 || true",
+            # The `emulator` wrapper script exec's `qemu-system-x86_64`
+            # for the actual emulation process, so we look for either
+            # pattern. The wrapper line is what `nohup $EMU` invokes
+            # and what `_switch_state`'s pgrep waits on, but the
+            # wrapper exits early in the lifecycle and only
+            # qemu-system-x86_64 survives. Without the qemu fallback
+            # `emulator_pid` is reported `null` even when the emulator
+            # is alive and responding on emulator-5554 (caught in vivo
+            # 2026-05-12 — adb saw the device, pgrep on 'emulator -avd'
+            # did not, so an operator looking at the diagnose payload
+            # thought the emulator was dead while it was actively
+            # serving requests).
+            "pgrep -af 'qemu-system-x86_64|emulator -avd' | head -1 || true",
             "echo '---RUNNER_SERVICE---'",
             "systemctl is-active ace-mobile-runner.service 2>/dev/null "
             "|| systemctl is-active ace-mobile-runner-override 2>/dev/null "
@@ -929,8 +998,17 @@ class EmulatorController:
             "set +e",
             f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
             "sudo systemctl stop ace-mobile-runner.service || true",
+            # Also stop and reset any leftover override unit from a
+            # prior select_state. Without this the next
+            # `systemd-run --unit=ace-mobile-runner-override` fails
+            # with "Unit ace-mobile-runner-override.service was
+            # already loaded or has a fragment file" — caught in vivo
+            # 2026-05-12 as a first-call-fails-second-call-succeeds
+            # flake.
+            "sudo systemctl stop ace-mobile-runner-override 2>/dev/null || true",
+            "sudo systemctl reset-failed ace-mobile-runner-override 2>/dev/null || true",
             "for i in $(seq 1 30); do "
-            "  if ! pgrep -f 'emulator -avd' >/dev/null; then break; fi; "
+            "  if ! pgrep -f 'qemu-system-x86_64|emulator -avd' >/dev/null; then break; fi; "
             "  sleep 1; "
             "done",
             f"echo {shlex.quote(state_name)} | "
