@@ -26,11 +26,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.common.auth_views import _can_write_global
 from apps.common.envelope import error_response, success_response
 
 from . import singleton
 from .controller import EmulatorController
 from .exceptions import EmulatorNotReady, MobileError, NotConfigured, SingletonBusy
+from .models import MobileLaunchScriptPatch
 from .serializers import (
     EnsureRunningSerializer,
     InstallApkSerializer,
@@ -395,14 +397,34 @@ def admin_patch_launch_script(request: Request) -> Response:
     next rebake picks it up — without that, the live fix evaporates on
     next AMI roll.
 
-    Auth: regular IsAuthenticated (PAT or session). This is a
-    privileged operation but the PAT permission model is the same as
-    every other mobile endpoint, so no extra gating beyond that.
+    Auth: ``IsAuthenticated`` + ``_can_write_global`` (staff users or
+    ``@dimagi-ai.com`` automation identities). The previous
+    PAT-only-gate allowed any authenticated user to swap the in-VM
+    launch script body for arbitrary bash that runs as root on the
+    next boot — too broad for a stolen-PAT scenario as the surface
+    grows past the founding handful of operators.
+
+    Every successful patch is written to ``MobileLaunchScriptPatch``
+    (user, ts, sha256, bytes_written, restart, instance_id, ami_version)
+    so a later "what changed on the AMI between bakes" investigation
+    has an authoritative trail.
     """
     try:
         _assert_configured()
     except MobileError as e:
         return _mobile_error_response(e)
+
+    if not _can_write_global(request.user):
+        return Response(
+            error_response(
+                message=(
+                    "admin/patch-launch-script requires staff or a Dimagi "
+                    "automation identity; contact the mobile-runner owner"
+                ),
+                code="forbidden",
+            ),
+            status=403,
+        )
 
     serializer = PatchLaunchScriptSerializer(data=request.data)
     if not serializer.is_valid():
@@ -420,6 +442,17 @@ def admin_patch_launch_script(request: Request) -> Response:
         )
     except MobileError as e:
         return _mobile_error_response(e)
+
+    # Audit row written only after the controller confirms the in-VM
+    # SHA matches what we sent — failed patches don't pollute the log.
+    MobileLaunchScriptPatch.objects.create(
+        user=request.user,
+        sha256=result.get("sha256", ""),
+        bytes_written=result.get("bytes_written", 0),
+        restart_requested=bool(result.get("restarted_runner")),
+        instance_id=settings.ACE_MOBILE_INSTANCE_ID,
+        ami_version=settings.ACE_MOBILE_AMI_VERSION or "",
+    )
     return Response(success_response(result))
 
 

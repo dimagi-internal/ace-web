@@ -47,6 +47,46 @@ def bearer_client(user):
 
 
 @pytest.fixture
+def staff_user(django_user_model):
+    """A staff user — passes _can_write_global without needing the
+    @dimagi-ai.com automation domain. The project's UserManager doesn't
+    accept ``is_staff`` as a create_user kwarg, so set it after."""
+    u = django_user_model.objects.create_user(
+        email="staff-mobile@example.com", display_name="staff"
+    )
+    u.is_staff = True
+    u.save(update_fields=["is_staff"])
+    return u
+
+
+@pytest.fixture
+def staff_bearer_client(staff_user):
+    raw, _ = PersonalToken.create_for_user(user=staff_user, label="mobile-test-staff")
+    c = APIClient()
+    c.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
+    return c
+
+
+@pytest.fixture
+def automation_user(django_user_model):
+    """A @dimagi-ai.com bot identity — _can_write_global passes by
+    email-domain even without is_staff."""
+    return django_user_model.objects.create_user(
+        email="ace@dimagi-ai.com", display_name="ace-bot"
+    )
+
+
+@pytest.fixture
+def automation_bearer_client(automation_user):
+    raw, _ = PersonalToken.create_for_user(
+        user=automation_user, label="mobile-test-automation"
+    )
+    c = APIClient()
+    c.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
+    return c
+
+
+@pytest.fixture
 def configured(settings):
     settings.ACE_MOBILE_INSTANCE_ID = "i-0123456789abcdef0"
     settings.ACE_MOBILE_S3_BUCKET = "ace-mobile-artifacts-test"
@@ -658,9 +698,14 @@ def test_restart_runner_requires_auth():
 # ── admin/patch-launch-script ─────────────────────────────────────
 
 
-def test_admin_patch_launch_script_writes_and_restarts(bearer_client, configured):
-    """Happy path — body validates, controller is called with both
-    fields, response surfaces the SHA the controller returned."""
+def test_admin_patch_launch_script_writes_and_restarts(
+    staff_bearer_client, staff_user, configured
+):
+    """Happy path — staff user, body validates, controller is called
+    with both fields, response surfaces the SHA the controller
+    returned, and an audit row is written."""
+    from apps.mobile.models import MobileLaunchScriptPatch
+
     fake = MagicMock()
     fake.patch_launch_script.return_value = {
         "sha256": "abc123",
@@ -669,7 +714,7 @@ def test_admin_patch_launch_script_writes_and_restarts(bearer_client, configured
         "restart_log": None,
     }
     with patch("apps.mobile.views.EmulatorController", return_value=fake):
-        resp = bearer_client.post(
+        resp = staff_bearer_client.post(
             "/api/mobile/admin/patch-launch-script",
             {"script_body": "#!/bin/bash\necho hi\n", "restart_runner": True},
             format="json",
@@ -681,14 +726,68 @@ def test_admin_patch_launch_script_writes_and_restarts(bearer_client, configured
     fake.patch_launch_script.assert_called_once_with(
         script_body="#!/bin/bash\necho hi\n", restart=True
     )
+    # Audit row written with the right fields.
+    row = MobileLaunchScriptPatch.objects.get()
+    assert row.user_id == staff_user.id
+    assert row.sha256 == "abc123"
+    assert row.bytes_written == 1234
+    assert row.restart_requested is True
+    assert row.instance_id == "i-0123456789abcdef0"
+    assert row.ami_version == "v1"
 
 
-def test_admin_patch_launch_script_requires_script_body(bearer_client, configured):
-    resp = bearer_client.post(
+def test_admin_patch_launch_script_requires_script_body(
+    staff_bearer_client, configured
+):
+    """Body validation runs after the staff gate; use a staff client
+    so we exercise the 400 path, not the 403."""
+    resp = staff_bearer_client.post(
         "/api/mobile/admin/patch-launch-script", {}, format="json"
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "invalid-request"
+
+
+def test_admin_patch_launch_script_requires_staff(bearer_client, configured):
+    """A regular PAT-holding user (no is_staff, no @dimagi-ai.com email)
+    must NOT be able to swap the launch script body — the prior
+    IsAuthenticated-only gate made this surface a stolen-PAT
+    persistence vector."""
+    from apps.mobile.models import MobileLaunchScriptPatch
+
+    fake = MagicMock()
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post(
+            "/api/mobile/admin/patch-launch-script",
+            {"script_body": "#!/bin/bash\necho hi\n"},
+            format="json",
+        )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "forbidden"
+    fake.patch_launch_script.assert_not_called()
+    # No audit row for a refused call.
+    assert MobileLaunchScriptPatch.objects.count() == 0
+
+
+def test_admin_patch_launch_script_automation_user_passes_gate(
+    automation_bearer_client, configured
+):
+    """``@dimagi-ai.com`` bot identities (ace, etc.) pass the gate
+    without is_staff — the canonical automation path."""
+    fake = MagicMock()
+    fake.patch_launch_script.return_value = {
+        "sha256": "feedbeef",
+        "bytes_written": 100,
+        "restarted_runner": False,
+        "restart_log": None,
+    }
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = automation_bearer_client.post(
+            "/api/mobile/admin/patch-launch-script",
+            {"script_body": "#!/bin/bash\n", "restart_runner": False},
+            format="json",
+        )
+    assert resp.status_code == 200
 
 
 def test_admin_patch_launch_script_requires_auth():
