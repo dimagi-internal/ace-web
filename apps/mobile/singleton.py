@@ -28,6 +28,16 @@ _LOCK_RELEASE_LUA = (
     "return redis.call('del',KEYS[1]) else return 0 end"
 )
 
+# Atomic check-then-set-with-expiry — same pattern as release but the
+# action is "extend the TTL" instead of "delete". Used by ``refresh``
+# so a long ensure_running on a cold boot can give the actual recipe
+# a fresh full TTL window instead of inheriting the now-half-expired
+# original lease.
+_LOCK_REFRESH_LUA = (
+    "if redis.call('get',KEYS[1])==ARGV[1] then "
+    "return redis.call('expire',KEYS[1],ARGV[2]) else return 0 end"
+)
+
 
 _sync_redis: _redis_sync.Redis | None = None
 
@@ -94,6 +104,39 @@ def release(owner: str) -> bool:
                     return False
                 pipe.multi()
                 pipe.delete(LOCK_KEY)
+                result = pipe.execute()
+                return bool(result and result[0])
+        except Exception:
+            return False
+
+
+def refresh(owner: str, ttl_seconds: int = LOCK_TTL_SECONDS) -> bool:
+    """Reset the TTL on a lock we still own. Returns True if refreshed.
+
+    Use case: a long ``ensure_running`` cold boot (3+ min budget) can
+    eat a meaningful fraction of the 30-min default TTL before the
+    actual recipe even starts. Refreshing after the cold boot returns
+    gives the recipe its own fresh window so the lock doesn't
+    silently expire mid-run and let a concurrent caller race in.
+
+    Same atomic check-then-act shape as ``release``: prefer Lua
+    EVAL; fall back to a WATCH+MULTI transaction for backends that
+    don't support EVAL (some fakeredis versions in tests).
+    """
+    r = _get_redis()
+    try:
+        result = r.eval(_LOCK_REFRESH_LUA, 1, LOCK_KEY, owner, ttl_seconds)
+        return bool(result)
+    except Exception:
+        try:
+            with r.pipeline() as pipe:
+                pipe.watch(LOCK_KEY)
+                current = pipe.get(LOCK_KEY)
+                if current != owner:
+                    pipe.unwatch()
+                    return False
+                pipe.multi()
+                pipe.expire(LOCK_KEY, ttl_seconds)
                 result = pipe.execute()
                 return bool(result and result[0])
         except Exception:
