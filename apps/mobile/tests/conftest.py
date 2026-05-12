@@ -43,6 +43,17 @@ def fake_redis(monkeypatch):
     yield fake
 
 
+@pytest.fixture(autouse=True)
+def _clear_django_cache():
+    """Reset Django's locmem cache between tests so cached probes
+    (e.g. status's idle-marker cache) don't leak across cases."""
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture
 def configured_settings(settings):
     settings.ACE_MOBILE_INSTANCE_ID = "i-0123456789abcdef0"

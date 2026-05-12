@@ -26,6 +26,7 @@ from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
+from django.core.cache import cache as _cache
 
 from . import ssm
 from .exceptions import (
@@ -69,6 +70,17 @@ _STATES_YAML_PATH = "/opt/ace/states.yaml"
 _ACTIVE_STATE_PATH = "/run/ace-mobile/active-state"
 # S3 presigned URL TTL — 1 hour matches the spec contract.
 _PRESIGN_TTL_SEC = 3600
+# Cache TTL for the idle-marker mtime probe in ``status()``. Short
+# enough to keep the value near real-time (skill loops polling status
+# tolerate ~10s staleness fine — the idle-shutdown threshold is 60 min
+# in dev, 10 min in prod, both much coarser than this), long enough
+# to amortize the 200-500 ms SSM round-trip across a hot poll loop.
+_STATUS_IDLE_CACHE_TTL_SEC = 10
+# Sentinel value cached when the in-VM marker file doesn't exist yet
+# (e.g. instance running but no recipe issued since boot). 0 would
+# collide with "value never set"; we use -1 so a cache HIT can be
+# distinguished from a cache MISS without a separate key.
+_STATUS_IDLE_NO_MARKER_SENTINEL = -1
 
 
 # ── Result dataclasses ────────────────────────────────────────────────
@@ -341,26 +353,12 @@ class EmulatorController:
         last_run_at = None
         idle_for = None
         if state == "running":
-            try:
-                # Read the idle marker mtime via SSM. Cheap (sub-second).
-                result = ssm.run_command(
-                    self.ssm,
-                    self.instance_id,
-                    commands=[
-                        f"stat -c %Y {shlex.quote(_IDLE_MARKER_PATH)} 2>/dev/null || echo 0"
-                    ],
-                    timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
-                )
-                last_epoch = int((result.stdout or "0").strip() or "0")
-                if last_epoch > 0:
-                    last_run_at = datetime.fromtimestamp(
-                        last_epoch, tz=UTC
-                    ).isoformat()
-                    idle_for = max(0, int(time.time()) - last_epoch)
-            except MobileError:
-                # Status is best-effort — never fail the GET because the
-                # idle marker probe blew up.
-                pass
+            last_epoch = self._get_idle_marker_epoch_cached()
+            if last_epoch and last_epoch > 0:
+                last_run_at = datetime.fromtimestamp(
+                    last_epoch, tz=UTC
+                ).isoformat()
+                idle_for = max(0, int(time.time()) - last_epoch)
 
         return Status(
             instance_id=self.instance_id,
@@ -369,6 +367,55 @@ class EmulatorController:
             idle_for_seconds=idle_for,
             ami_version=self.ami_version or None,
         )
+
+    def _get_idle_marker_epoch_cached(self) -> int | None:
+        """Return the idle-marker mtime (unix epoch) for the running
+        instance, cached for ``_STATUS_IDLE_CACHE_TTL_SEC``.
+
+        Hot path: ``GET /api/mobile/status`` is the canonical "is the
+        emulator busy" probe for skill polling loops. Without a cache
+        every call paid a 200-500 ms SSM round-trip (worst case 30 s
+        on the SSM timeout if the agent was unresponsive) and
+        serialized through one ECS worker. The cache amortizes that
+        cost across the typical 1-Hz poll rate.
+
+        Cache key is per-instance so a future multi-instance fleet
+        doesn't cross-contaminate. ``None`` on miss means the SSM
+        probe itself failed (best-effort: status should never raise
+        because the idle probe blew up); negative sentinel means "no
+        marker file yet" so the next call still hits the cache rather
+        than re-probing.
+        """
+        cache_key = f"mobile:status:idle:{self.instance_id}"
+        cached = _cache.get(cache_key)
+        if cached is not None:
+            return None if cached == _STATUS_IDLE_NO_MARKER_SENTINEL else int(cached)
+
+        try:
+            result = ssm.run_command(
+                self.ssm,
+                self.instance_id,
+                commands=[
+                    f"stat -c %Y {shlex.quote(_IDLE_MARKER_PATH)} 2>/dev/null || echo 0"
+                ],
+                timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
+            )
+        except MobileError:
+            # Status is best-effort — never fail the GET because the
+            # idle marker probe blew up. Don't cache the failure either:
+            # the next call will re-probe and may succeed.
+            return None
+
+        last_epoch = int((result.stdout or "0").strip() or "0")
+        # Cache both the present-marker and no-marker cases so polling
+        # callers don't pay the SSM round-trip on the no-marker path
+        # either.
+        _cache.set(
+            cache_key,
+            last_epoch if last_epoch > 0 else _STATUS_IDLE_NO_MARKER_SENTINEL,
+            timeout=_STATUS_IDLE_CACHE_TTL_SEC,
+        )
+        return last_epoch if last_epoch > 0 else None
 
     # ── Operations ───────────────────────────────────────────────
 
