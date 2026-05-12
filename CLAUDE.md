@@ -139,7 +139,7 @@ ace-web/
 ├── docs/
 │   ├── deploy.md
 │   ├── architecture/    # cli-credentials.md
-│   ├── learnings/       # 17 load-bearing gotchas (see below)
+│   ├── learnings/       # 18 load-bearing gotchas (see below)
 │   ├── plans/           # Phase plans + scoped initiatives (18 files)
 │   └── specs/           # Design specs (15 files)
 ├── Dockerfile, Dockerfile.frontend, docker-compose.yml, docker-entrypoint.sh
@@ -258,6 +258,9 @@ Frontend:
 Deploy & infrastructure:
 - [alb-nginx-django-https](docs/learnings/alb-nginx-django-https.md) — `SECURE_PROXY_SSL_HEADER` + nginx `$real_scheme` map preserve the ALB's `https`, and every `proxy_pass` must rewrite `Host` so ALB health checks don't trip `ALLOWED_HOSTS`. Silent until triggered in real infra.
 - [mcp-bootstrap-container-traps](docs/learnings/mcp-bootstrap-container-traps.md) — two infra failure modes that both look like "MCP tools missing" in chat: (1) `op inject` parses `{{ }}` and `op://` literals inside `.env.tpl` comments and aborts the whole render; (2) `npx tsx` from a cwd without `node_modules` triggers an on-the-fly registry install that races Claude Code's 30 s MCP connection timeout. Read before touching `Dockerfile`, `docker-entrypoint.sh`, or `.env.tpl`.
+
+Repo / merge process:
+- [squash-merge-stale-branch-orphans-commits](docs/learnings/squash-merge-stale-branch-orphans-commits.md) — GitHub squash-merge from a topic branch that hasn't pulled an intervening merge silently overwrites the intervening commits on `main`; the orphaned PR still shows `state: MERGED` on GitHub but `git merge-base --is-ancestor <merge> origin/main` returns no. Cost us PR #309 (mobile stop busy-guard) in May 2026. Repo defense: `allow_squash_merge=false` (set 2026-05-12). Don't re-enable squash without also turning on "Always suggest updating pull request branches" + a branch-protection rule requiring up-to-date branches before merge.
 
 Notable plans (not learnings, but load-bearing context):
 - `docs/plans/2026-04-08-aws-migration.md` — completed migration from standalone GCP Cloud Run to AWS ECS Fargate. Two-container ECS task; shared RDS, ALB, ElastiCache.
