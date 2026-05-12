@@ -482,9 +482,47 @@ def test_capture_ui_dump_returns_xml(bearer_client, configured):
 # ── stop ─────────────────────────────────────────────────────────
 
 
-def test_stop_does_not_take_singleton_lock(bearer_client, configured):
-    """Stop must succeed even when the singleton is held mid-run."""
+def test_stop_refuses_when_singleton_held(bearer_client, configured):
+    """Default ``stop`` refuses if a recipe is in flight, so a
+    concurrent skill can't silently kill someone else's run."""
     singleton.try_acquire("other-task:other-req")
+    fake = MagicMock()
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post("/api/mobile/stop", {}, format="json")
+    assert resp.status_code == 503
+    err = resp.json()["error"]
+    assert err["code"] == "singleton-busy"
+    assert err["current_owner"] == "other-task:other-req"
+    fake.stop.assert_not_called()
+    # Lock untouched — stop never acquired it.
+    assert singleton.current_owner() == "other-task:other-req"
+
+
+def test_stop_with_force_bypasses_singleton_guard(bearer_client, configured):
+    """``{"force": true}`` is the escape hatch for a hung recipe whose
+    own lock never releases. Stop tears the instance down anyway and
+    leaves the (now-orphaned) lock alone — the 30-min TTL clears it."""
+    singleton.try_acquire("stuck-task:stuck-req")
+    fake = MagicMock()
+    fake.stop.return_value = StoppedState(
+        instance_id="i-0123456789abcdef0",
+        state="stopping",
+        stopped_at="2026-05-09T00:00:00+00:00",
+    )
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.post(
+            "/api/mobile/stop", {"force": True}, format="json"
+        )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["state"] == "stopping"
+    fake.stop.assert_called_once()
+    # Stop never touches the lock — TTL is what clears a stuck holder.
+    assert singleton.current_owner() == "stuck-task:stuck-req"
+
+
+def test_stop_when_lock_unheld_proceeds_without_force(bearer_client, configured):
+    """Idle path: no recipe in flight, no ``force`` needed, stop just
+    runs."""
     fake = MagicMock()
     fake.stop.return_value = StoppedState(
         instance_id="i-0123456789abcdef0",
@@ -494,9 +532,7 @@ def test_stop_does_not_take_singleton_lock(bearer_client, configured):
     with patch("apps.mobile.views.EmulatorController", return_value=fake):
         resp = bearer_client.post("/api/mobile/stop", {}, format="json")
     assert resp.status_code == 200
-    assert resp.json()["data"]["state"] == "stopping"
-    # Lock should remain held — stop didn't touch it.
-    assert singleton.current_owner() == "other-task:other-req"
+    fake.stop.assert_called_once()
 
 
 def test_stop_returns_envelope(bearer_client, configured):
