@@ -403,6 +403,72 @@ async def test_chat_stop_from_bob_cancels_alice_stream(
     await bc.disconnect()
 
 
+async def test_turn_task_strong_referenced_at_module_level(
+    fake_redis, session, alice, bob
+):
+    """The consumer's ``_turn_tasks`` set alone is per-instance state —
+    when daphne unwinds the consumer after WS disconnect, that set
+    becomes unreachable and (because ``asyncio.tasks._all_tasks`` keeps
+    only weak references) the in-flight turn task can be GC'd mid-stream.
+    The module-level ``_TURN_BG_TASKS`` in apps.sessions.consumers
+    holds a strong reference so this can't happen.
+
+    This test directly asserts that pattern: after chat.send, the
+    in-flight task must be a member of ``_TURN_BG_TASKS``. Without the
+    fix this set doesn't exist (or doesn't contain the task), so the
+    assertion fires. End-to-end "disconnect mid-turn and observe the
+    rest of the stream" is hard to drive deterministically through
+    WebsocketCommunicator (which holds references through fixtures),
+    so we test the invariant directly.
+    """
+    from apps.sessions.consumers import _TURN_BG_TASKS
+
+    initial_size = len(_TURN_BG_TASKS)
+    gate = asyncio.Event()
+
+    class GatedBackend:
+        async def stream_completion(self, **kwargs):
+            yield StreamEvent.delta(text="started ")
+            await gate.wait()
+            yield StreamEvent.done()
+
+    ac, ac_ok = await _connect(alice, session.slug)
+    assert ac_ok
+    await ac.receive_json_from()
+
+    await ac.send_json_to({
+        "action": "draft.update",
+        "data": {"version": 0, "body": "msg"},
+    })
+    await _drain_until(ac, "draft.updated")
+
+    with patch(
+        "apps.sessions.turn_driver._get_backend",
+        return_value=GatedBackend(),
+    ):
+        await ac.send_json_to({"action": "chat.send", "data": {}})
+        await _drain_until(ac, "chat.stream_start")
+        await _drain_until(ac, "chat.delta")
+
+        # The turn task is in flight — must be strong-referenced in
+        # both the per-consumer set AND the module-level set.
+        assert len(_TURN_BG_TASKS) == initial_size + 1, (
+            f"in-flight turn task missing from _TURN_BG_TASKS — "
+            f"expected size {initial_size + 1}, got {len(_TURN_BG_TASKS)}. "
+            f"Without this strong reference, daphne's consumer-unwind on "
+            f"disconnect can let the task be GC'd mid-turn."
+        )
+
+        # Release the gate so the turn completes cleanly.
+        gate.set()
+        await _drain_until(ac, "chat.stream_complete")
+
+        # Done callbacks discarded the task from both sets.
+        assert len(_TURN_BG_TASKS) == initial_size
+
+    await ac.disconnect()
+
+
 async def test_draft_take_over_fails_on_live_lock(fake_redis, session, alice, bob):
     ac, _ = await _connect(alice, session.slug)
     bc, _ = await _connect(bob, session.slug)

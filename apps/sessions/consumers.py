@@ -41,6 +41,18 @@ logger = logging.getLogger(__name__)
 
 EDITOR_ROLES = {"owner", "editor"}
 
+# Module-level strong-reference set for in-flight turn tasks. ``consumer
+# ._turn_tasks`` alone is not enough — when the WebSocket disconnects, the
+# ``SessionConsumer`` instance is eligible for GC, and asyncio will cancel
+# any task whose only strong reference came from that set. The broadcast
+# layer (channels-redis) is per-process and independent of the consumer's
+# connection, so as long as we hold a reference here the turn continues
+# to run and stream events to any other clients in the same session group
+# (including the same user reconnecting in a new tab). Removed by the
+# task's own done-callback below. Mirrors the ``turn_driver._bg_tasks``
+# pattern used for the auto-titler.
+_TURN_BG_TASKS: set[asyncio.Task] = set()
+
 
 def _group_name(slug: str) -> str:
     return f"session.{slug}"
@@ -374,12 +386,17 @@ async def _handle_chat_send(consumer: SessionConsumer, data: dict):
         },
     )
 
-    # Spawn the turn driver as a background task owned by this consumer.
+    # Spawn the turn driver as a background task. Hold strong references
+    # in BOTH the per-consumer set (so chat.stop on this connection can
+    # find its in-flight turns) AND a module-level set (so the task
+    # survives WS disconnect — see _TURN_BG_TASKS docstring).
     task = asyncio.create_task(
         _run_turn_driver(consumer, result.assistant_message_id)
     )
     consumer._turn_tasks.add(task)
+    _TURN_BG_TASKS.add(task)
     task.add_done_callback(consumer._turn_tasks.discard)
+    task.add_done_callback(_TURN_BG_TASKS.discard)
 
 
 async def _handle_chat_stop(consumer: SessionConsumer, data: dict):
