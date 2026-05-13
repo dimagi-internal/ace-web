@@ -1,6 +1,9 @@
 # Plan: long-lived per-session `claude` subprocess (Phase 1B)
 
-**Status**: design doc, not yet implemented. Pick up here in a fresh session.
+**Status**: HISTORICAL — shipped in commit `a02093e`. Source of truth for the
+live design is the `apps/common/cli_backend.py` module docstring's
+"Two execution paths" section. Keep this file as the original design
+record but do not treat it as forward-looking.
 **Date**: 2026-05-03
 **Prereq**: PR #198 (Phase 1A — `--input-format stream-json` wire format), already merged + live on task def :159.
 

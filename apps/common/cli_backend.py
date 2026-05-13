@@ -772,6 +772,18 @@ class CLIBackend:
                 f"_send_and_drain_persistent called with no live proc "
                 f"for session={sp.slug}"
             )
+        # Between turns the subprocess can have ``returncode is None``
+        # (still running per ``is_alive()``) yet have stdin already
+        # closed — by a SIGPIPE on stdout, a transport hiccup, or the
+        # cleanup path on a prior aborted turn. Catching this BEFORE the
+        # write surfaces a clearer error than the BrokenPipeError fallback
+        # below; the long-lived path's CLIBackendError handler will then
+        # evict and respawn for the next turn.
+        if proc.stdin is None or proc.stdin.is_closing():
+            raise CLIBackendError(
+                f"subprocess stdin closed unexpectedly before next turn "
+                f"for session={sp.slug}"
+            )
 
         envelope = (
             json.dumps({
