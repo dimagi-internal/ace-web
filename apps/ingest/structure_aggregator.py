@@ -120,6 +120,19 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     }
     pending_dispatch: dict[str, tuple[dict[str, Any] | None, float | None]] = {}
 
+    # Per-phase orchestrator-thinking accumulators. Top-level assistant turns
+    # (no open Skill/Agent frame, not themselves a dispatch turn) belong to
+    # the most recently entered phase if any — that's the orchestrator
+    # planning/thinking *for* that phase. Before any dispatch, they fall into
+    # the global Orchestration bucket. Surfaces as a synthetic "(orchestration)"
+    # skill row inside each phase at rollup time so totals reconcile with
+    # session cost. Matches cost_aggregator's behavior.
+    phase_orch_cost: dict[str, float] = {}
+    phase_orch_partial: dict[str, bool] = {}
+    phase_orch_tokens: dict[str, dict[str, int]] = {}
+    phase_orch_first_ts: dict[str, datetime] = {}
+    phase_orch_last_ts: dict[str, datetime] = {}
+
     def _ensure_phase(name: str) -> dict[str, Any]:
         if name not in phase_buckets:
             if name == "_orchestration":
@@ -231,6 +244,26 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 # Top-level dispatch turn: hold the usage until the segment
                 # opens on the matching tool_use event below.
                 pending_dispatch[event.uuid] = (event.usage, cost)
+            else:
+                # Top-level orchestrator thinking (no Skill/Agent in flight,
+                # not a dispatch turn — e.g. assistant reply that precedes a
+                # Bash/Read tool call, or pure thinking between dispatches).
+                # Attribute to the current phase if one has been entered,
+                # else to the global Orchestration bucket. Without this the
+                # cost is lost from every phase rollup.
+                bucket_key = current_phase or "_orchestration"
+                add_usage(phase_orch_tokens.setdefault(bucket_key, empty_tokens()),
+                          event.usage)
+                if cost is None:
+                    phase_orch_partial[bucket_key] = True
+                else:
+                    phase_orch_cost[bucket_key] = (
+                        phase_orch_cost.get(bucket_key, 0.0) + cost
+                    )
+                if event.timestamp is not None:
+                    if bucket_key not in phase_orch_first_ts:
+                        phase_orch_first_ts[bucket_key] = event.timestamp
+                    phase_orch_last_ts[bucket_key] = event.timestamp
             continue
 
         if event.kind == "tool_use":
@@ -377,6 +410,36 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             _attach(skill_node, frame=open_frames[-1], phase_name=None, turn_uuid=None)
         else:
             _attach(skill_node, frame=None, phase_name=frame.phase_name, turn_uuid=None)
+
+    # Inject orchestrator-thinking as a synthetic "(orchestration)" skill row
+    # in each phase that has any. The cost lives in `phase_orch_*` because it
+    # came from top-level assistant turns with no enclosing frame — without a
+    # synthetic row to carry it, the phase rollup would lose this spend even
+    # though wall-time and tool nodes are correctly bucketed under the phase.
+    for bucket_key, tokens in phase_orch_tokens.items():
+        if not any(tokens.values()):
+            continue
+        bucket = _ensure_phase(bucket_key)
+        synthetic_skill = {
+            "kind": "skill",
+            "name": "(orchestration)",
+            "display": "(orchestration)",
+            "is_subagent": False,
+            "started_at": (
+                phase_orch_first_ts[bucket_key].isoformat()
+                if bucket_key in phase_orch_first_ts else None
+            ),
+            "wall_time_seconds": wall_time_seconds(
+                phase_orch_first_ts.get(bucket_key),
+                phase_orch_last_ts.get(bucket_key),
+            ),
+            "estimated_cost_usd": round(phase_orch_cost.get(bucket_key, 0.0), 6),
+            "cost_is_partial": phase_orch_partial.get(bucket_key, False),
+            "tokens": tokens,
+            "status": "ok",
+            "children": [],
+        }
+        bucket["children"].append(synthetic_skill)
 
     # Roll phase totals from children
     for bucket in phase_buckets.values():

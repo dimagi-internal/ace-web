@@ -258,6 +258,86 @@ def test_nested_subagent_cost_rolls_up_to_parent_and_phase(tmp_path, monkeypatch
     assert inner["tokens"]["output_tokens"] == 2000
 
 
+def test_orchestrator_thinking_attributed_to_current_phase(tmp_path, monkeypatch):
+    """Top-level assistant turns (not dispatch turns, no open frame) belong
+    to the most-recently-entered phase as a synthetic "(orchestration)"
+    skill row. Otherwise their cost is lost from phase rollups even though
+    the wall-time and tool nodes are bucketed correctly.
+    """
+    from apps.ingest import structure_aggregator
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+
+    monkeypatch.setattr(
+        structure_aggregator, "skill_phase_index",
+        lambda: {"qa-and-training": {"phase": "phase-5-qa-and-training",
+                                     "phase_display": "Phase 5: QA and Training",
+                                     "phase_ordinal": 5,
+                                     "skill_display": "QA and Training"}},
+    )
+
+    jsonl = tmp_path / "orch_thinking.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        # Dispatch + close a Skill — enters the phase, then closes.
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tA","name":"Skill",'
+        '"input":{"skill":"qa-and-training"}}]}}\n'
+        '{"type":"user","uuid":"u2","timestamp":"2026-05-10T14:00:01Z",'
+        '"message":{"content":[{"type":"tool_result",'
+        '"tool_use_id":"tA","content":"done"}]}}\n'
+        # AFTER the skill closes: top-level orchestrator turn with real
+        # usage but no enclosing frame and no dispatch. This is the gap
+        # that was losing cost — there are ~50 of these in a real chat
+        # session that imports a transcript and keeps talking to Claude.
+        '{"type":"assistant","uuid":"u3","timestamp":"2026-05-10T14:00:02Z",'
+        '"message":{"id":"m3","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":100000,"output_tokens":5000},"content":['
+        '{"type":"text","text":"thinking after the dispatch"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+
+    phase = next(p for p in tree["phases"] if p["name"] == "phase-5-qa-and-training")
+    # Phase total reconciles with session total — the orchestrator turn's
+    # cost lives in a synthetic "(orchestration)" child of the phase.
+    assert phase["estimated_cost_usd"] == tree["session"]["estimated_cost_usd"]
+
+    orch_rows = [c for c in phase["children"]
+                 if c["kind"] == "skill" and c["name"] == "(orchestration)"]
+    assert len(orch_rows) == 1
+    assert orch_rows[0]["tokens"]["input_tokens"] == 100000
+    assert orch_rows[0]["tokens"]["output_tokens"] == 5000
+    assert orch_rows[0]["estimated_cost_usd"] > 0
+
+
+def test_orchestrator_thinking_before_any_dispatch_lands_in_orchestration(tmp_path):
+    """A top-level assistant turn that fires before any Skill dispatch has
+    no current_phase yet — its cost belongs in the global Orchestration
+    bucket so it still reconciles with the session total.
+    """
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+
+    jsonl = tmp_path / "pre_dispatch.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":50000,"output_tokens":1000},"content":['
+        '{"type":"text","text":"orchestrator setup"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+
+    orch_phase = next(p for p in tree["phases"] if p["name"] == "_orchestration")
+    assert orch_phase["estimated_cost_usd"] == tree["session"]["estimated_cost_usd"]
+    synthetic = next(c for c in orch_phase["children"]
+                     if c["kind"] == "skill" and c["name"] == "(orchestration)")
+    assert synthetic["tokens"]["input_tokens"] == 50000
+
+
 def test_tool_without_result_has_null_content_preview(tmp_path):
     """A tool_use without a matching tool_result leaves content_preview=None."""
     from apps.ingest.parser import parse_session_file
