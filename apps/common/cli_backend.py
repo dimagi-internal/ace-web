@@ -78,6 +78,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import time
 import uuid
 from collections import deque
@@ -244,6 +245,17 @@ class CLIBackend:
         self._idle_timeout_seconds = session_idle_timeout_seconds
         self._idle_sweep_interval_seconds = session_idle_sweep_interval_seconds
         self._max_session_pool_size = max_session_pool_size
+        # ``_persist_cache`` short-circuits ``_persist_refreshed_blob``: the
+        # CLI only rotates OAuth tokens every ~hour, but every successful
+        # turn re-reads the staged credentials file and runs an
+        # ``UPDATE UserCredential …`` (or ``SystemConfig …``) even when
+        # the bytes are unchanged. Cache the SHA-256 of the last persisted
+        # text per (source, identifier) and skip the write when the
+        # current text hashes the same. ``threading.Lock`` because
+        # ``_persist_refreshed_blob`` runs inside ``sync_to_async`` — its
+        # callers may execute it on the asgi thread pool.
+        self._persist_cache: dict[tuple[str, int | str], str] = {}
+        self._persist_cache_lock = threading.Lock()
 
     def _breaker_for(self, session_or_owner_id) -> CircuitBreaker:
         """Return the breaker for this session's owner, lazily creating it.
@@ -1256,6 +1268,22 @@ class CLIBackend:
         # bytes of secret entropy past the public ``sk-ant-oat01-``
         # prefix into CloudWatch.
         token_fp = _token_fingerprint(access_token)
+
+        # Short-circuit: skip the write when the blob hasn't actually
+        # rotated. Hashing 1-2 KB of JSON is dramatically cheaper than the
+        # DB UPDATE round-trip we'd otherwise do on every successful turn.
+        cache_key: tuple[str, int | str]
+        if source == "user":
+            cache_key = ("user", session.owner.pk)
+        elif source == "global":
+            cache_key = ("global", "")
+        else:
+            cache_key = ("env", "")
+        current_hash = hashlib.sha256(current_text.encode("utf-8")).hexdigest()
+        with self._persist_cache_lock:
+            if self._persist_cache.get(cache_key) == current_hash:
+                return
+            self._persist_cache[cache_key] = current_hash
 
         if source == "user":
             from .models import UserCredential

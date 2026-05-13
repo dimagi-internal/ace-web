@@ -202,6 +202,44 @@ def test_persist_refreshed_blob_updates_user_credential():
 
 
 @pytest.mark.django_db
+def test_persist_refreshed_blob_short_circuits_on_unchanged_hash():
+    """When the staged credentials text is identical to the last persisted
+    text (the CLI didn't rotate during the turn), the persist call must
+    skip the DB UPDATE entirely. Without this short-circuit, every turn
+    re-writes the row even though the blob is unchanged.
+    """
+    user = get_user_model().objects.create_user(email="cache@dimagi.com")
+    token = "sk-ant-oat01-" + "c" * 40
+    blob = {"claudeAiOauth": {"accessToken": token, "refreshToken": "r"}}
+    UserCredential.objects.create(
+        user=user,
+        blob_encrypted=json.dumps(blob),
+        token_prefix=token[:15],
+    )
+    session = Session.objects.create(owner=user, slug="cache-sess", title="t")
+    backend = CLIBackend()
+    env, staged_home, source = backend._stage_env_for(session)
+    try:
+        # First persist — populates the in-memory cache.
+        backend._persist_refreshed_blob(session, source, staged_home)
+        # Mutate the row out-of-band to a sentinel; if the short-circuit
+        # works, the next persist call should not overwrite it.
+        UserCredential.objects.filter(user=user).update(
+            blob_encrypted="SENTINEL_NOT_OVERWRITTEN",
+        )
+        # Second persist — staged file is unchanged, so this should be
+        # a no-op and leave SENTINEL_NOT_OVERWRITTEN in place.
+        backend._persist_refreshed_blob(session, source, staged_home)
+        cred = UserCredential.objects.get(user=user)
+        assert cred.blob_encrypted == "SENTINEL_NOT_OVERWRITTEN", (
+            "persist did not short-circuit on unchanged hash — DB was "
+            "rewritten on a no-op turn"
+        )
+    finally:
+        backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
 def test_persist_refreshed_blob_is_noop_when_file_missing():
     """If cleanup ran before persist (or subprocess never wrote), no crash."""
     user = get_user_model().objects.create_user(email="gone@dimagi.com")
