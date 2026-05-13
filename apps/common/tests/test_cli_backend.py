@@ -532,6 +532,62 @@ async def test_long_lived_evicts_on_subprocess_pipe_death(session):
     )
 
 
+async def test_pool_lru_evicts_oldest_when_at_cap(django_user_model):
+    """When the pool is at ``max_session_pool_size``, admitting a new
+    Session must LRU-evict the entry with the oldest ``last_active``.
+    Without this cap, a runaway client opening many sessions could pin
+    unbounded RAM on the worker.
+    """
+    @sync_to_async
+    def _make(suffix):
+        user = django_user_model.objects.create_user(
+            email=f"u{suffix}@example.com", display_name=f"u{suffix}"
+        )
+        return Session.objects.create(owner=user, title=f"s{suffix}")
+
+    s1 = await _make("1")
+    s2 = await _make("2")
+    s3 = await _make("3")
+
+    fixture = (FIXTURES / "stream_json_session_init.txt").read_bytes()
+
+    # Cap of 2: after s1 and s2, admitting s3 must evict the LRU (s1).
+    backend = CLIBackend(max_session_pool_size=2)
+
+    def fresh_fake():
+        return _multi_turn_fake_proc([fixture])
+
+    procs = [fresh_fake(), fresh_fake(), fresh_fake()]
+    terminated = []
+    for i, p in enumerate(procs):
+        p.terminate = lambda i=i: terminated.append(i)
+
+    proc_iter = iter(procs)
+    with patch(
+        "asyncio.create_subprocess_exec",
+        new=AsyncMock(side_effect=lambda *a, **kw: next(proc_iter)),
+    ):
+        for s in (s1, s2):
+            async for _ in backend.stream_completion(session=s, new_user_message="hi"):
+                pass
+
+        # Force s1 to be the LRU by advancing s2's last_active.
+        backend._sessions[s2.slug].last_active += 100.0
+
+        async for _ in backend.stream_completion(session=s3, new_user_message="hi"):
+            pass
+
+    assert s1.slug not in backend._sessions, "LRU (s1) should have been evicted"
+    assert s2.slug in backend._sessions
+    assert s3.slug in backend._sessions
+    assert len(backend._sessions) == 2
+    assert 0 in terminated, "s1's subprocess should have been terminated by LRU eviction"
+
+    # Cleanup
+    if backend._idle_reaper_task and not backend._idle_reaper_task.done():
+        backend._idle_reaper_task.cancel()
+
+
 async def test_idle_reaper_evicts_stale_sessions(session):
     """Reaper sweeps SessionProcesses whose last_active is older than
     the configured idle timeout — terminates the proc, persists any

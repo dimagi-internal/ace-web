@@ -141,6 +141,14 @@ SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
 # typically-empty dict every few seconds.
 SESSION_IDLE_SWEEP_INTERVAL_SECONDS = 5 * 60
 
+# Hard upper bound on concurrent long-lived SessionProcesses per worker. Each
+# subprocess holds the full MCP working set (~hundreds of MB once gdrive/ocs/
+# mobile/connect/nova are all initialised); without a cap, a runaway client or
+# burst of new sessions could pin an ECS worker's RAM in minutes. When the cap
+# is hit, the LRU SessionProcess (oldest ``last_active``) is evicted to make
+# room. The 30-min idle reaper still handles the steady-state case.
+MAX_SESSION_POOL_SIZE = 16
+
 
 class CLIBackendError(RuntimeError):
     """Raised when the CLI subprocess fails in a way the consumer should know about."""
@@ -215,6 +223,7 @@ class CLIBackend:
         terminate_grace_seconds: float = 2.0,
         session_idle_timeout_seconds: float = SESSION_IDLE_TIMEOUT_SECONDS,
         session_idle_sweep_interval_seconds: float = SESSION_IDLE_SWEEP_INTERVAL_SECONDS,
+        max_session_pool_size: int = MAX_SESSION_POOL_SIZE,
     ):
         self._binary = binary
         # Per-owner breakers. Keying by owner_id keeps one user's bad
@@ -233,6 +242,7 @@ class CLIBackend:
         self._idle_reaper_task: asyncio.Task | None = None
         self._idle_timeout_seconds = session_idle_timeout_seconds
         self._idle_sweep_interval_seconds = session_idle_sweep_interval_seconds
+        self._max_session_pool_size = max_session_pool_size
 
     def _breaker_for(self, session_or_owner_id) -> CircuitBreaker:
         """Return the breaker for this session's owner, lazily creating it.
@@ -637,12 +647,51 @@ class CLIBackend:
     async def _get_or_create_session_process(
         self, session: Session
     ) -> SessionProcess:
+        """Return this Session's SessionProcess, creating + admitting it
+        on first contact.
+
+        Enforces ``self._max_session_pool_size`` by evicting the LRU
+        entry (oldest ``last_active``) when admission would push the pool
+        over the cap. The LRU is popped from the dict UNDER the dict lock
+        (so it's atomically unreachable to concurrent callers) and then
+        cleaned up out-of-band — actual proc teardown happens after the
+        dict lock is released so we don't block other admissions on a
+        possibly-slow subprocess termination.
+        """
+        lru_to_evict: SessionProcess | None = None
         async with self._sessions_dict_lock:
             sp = self._sessions.get(session.slug)
             if sp is None:
                 sp = SessionProcess(slug=session.slug, session_pk=session.pk)
                 self._sessions[session.slug] = sp
-            return sp
+                if len(self._sessions) > self._max_session_pool_size:
+                    lru_slug = min(
+                        (s for s in self._sessions if s != session.slug),
+                        key=lambda s: self._sessions[s].last_active,
+                        default=None,
+                    )
+                    if lru_slug is not None:
+                        lru_to_evict = self._sessions.pop(lru_slug)
+
+        if lru_to_evict is not None:
+            logger.info(
+                "cli_backend: pool at cap (%d) — LRU-evicting session=%s "
+                "(idle_for=%.0fs) to admit session=%s",
+                self._max_session_pool_size,
+                lru_to_evict.slug,
+                time.monotonic() - lru_to_evict.last_active,
+                session.slug,
+            )
+            try:
+                async with lru_to_evict.lock:
+                    await self._evict_locked(lru_to_evict)
+            except Exception:
+                logger.exception(
+                    "cli_backend: LRU eviction failed for session=%s",
+                    lru_to_evict.slug,
+                )
+
+        return sp
 
     async def _spawn_session_process(
         self, sp: SessionProcess, session: Session
