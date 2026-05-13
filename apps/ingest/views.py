@@ -63,12 +63,17 @@ def upload(request: Request) -> Response:
                 status=422,
             )
 
-    # Optional workspace resolution via Drive folder id (added in the
-    # multi-tenancy Phase A). The plugin's upload-transcript skill is
-    # being updated to pass this; uploads from older plugin versions
-    # will arrive without it and become orphan uploads attached only
-    # to the uploading user.
+    # Workspace resolution. Two paths:
+    #   (a) `ace_root_folder_id` — the ACE plugin's upload-transcript skill
+    #       sends this; the Drive folder id uniquely identifies a workspace.
+    #   (b) `workspace_slug` — the web UI sends this from the
+    #       /w/<slug>/sessions page so a user-driven upload lands in the
+    #       workspace the user is currently viewing.
+    # Both are validated by membership; (a) returns 403 on membership
+    # failure (caller named the workspace via folder id, so existence isn't
+    # secret), (b) returns 404 (existence-hidden by default).
     ace_root_folder_id = (request.data.get("ace_root_folder_id") or "").strip()
+    workspace_slug = (request.data.get("workspace_slug") or "").strip()
     workspace = None
     if ace_root_folder_id:
         from apps.common.access import gate_membership
@@ -83,10 +88,23 @@ def upload(request: Request) -> Response:
                 ),
                 status=404,
             )
-        # The caller already supplied the drive_root_folder_id, so existence
-        # is not a secret — surface 403 ("not a member") rather than
-        # 404 ("not found") on membership failure.
         err = gate_membership(request.user, workspace, hidden_existence=False)
+        if err is not None:
+            return err
+    elif workspace_slug:
+        from apps.common.access import gate_membership
+        from apps.workspaces.models import Workspace
+        try:
+            workspace = Workspace.objects.get(slug=workspace_slug)
+        except Workspace.DoesNotExist:
+            return Response(
+                error_response(
+                    message="workspace not found",
+                    code="not-found",
+                ),
+                status=404,
+            )
+        err = gate_membership(request.user, workspace, hidden_existence=True)
         if err is not None:
             return err
 

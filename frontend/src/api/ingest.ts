@@ -19,9 +19,18 @@ function getCsrfToken(): string {
   return "";
 }
 
-export const uploadSession = async (file: File): Promise<UploadResult> => {
+export const uploadSession = async (
+  file: File,
+  workspaceSlug?: string,
+): Promise<UploadResult> => {
   const formData = new FormData();
   formData.append("file", file);
+  if (workspaceSlug) {
+    // So the server attaches the new Session to the workspace the user
+    // is currently viewing — otherwise uploads land as orphans and the
+    // session is only visible to the uploader.
+    formData.append("workspace_slug", workspaceSlug);
+  }
   const resp = await fetch(`${API_PREFIX}/api/ingest/upload`, {
     method: "POST",
     body: formData,

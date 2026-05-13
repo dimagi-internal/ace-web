@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from apps.ingest._common import (
@@ -422,8 +422,8 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         bucket = _ensure_phase(bucket_key)
         synthetic_skill = {
             "kind": "skill",
-            "name": "(orchestration)",
-            "display": "(orchestration)",
+            "name": "(direct turns)",
+            "display": "Direct turns (no skill)",
             "is_subagent": False,
             "started_at": (
                 phase_orch_first_ts[bucket_key].isoformat()
@@ -488,16 +488,41 @@ def _propagate_to_parent(child: _Frame, parent: _Frame) -> None:
         parent.tokens[k] += child.tokens.get(k, 0)
 
 
+def _phase_wall_span(bucket: dict) -> int:
+    """Compute phase wall as the span of its first → last child timestamp.
+
+    Summing child wall_time double-counts: a top-level Bash tool runs *during*
+    an orchestrator-thinking turn, so the synthetic "direct turns" span and
+    the tool's wall both cover the same wall-clock seconds. Use a span instead
+    — the phase wall is "from earliest activity to latest activity in this
+    bucket", which is what a user reading "wall=822s" expects.
+    """
+    starts: list[datetime] = []
+    ends: list[datetime] = []
+    for child in bucket["children"]:
+        start_iso = child.get("started_at")
+        if not start_iso:
+            continue
+        try:
+            start = datetime.fromisoformat(start_iso)
+        except ValueError:
+            continue
+        wall = child.get("wall_time_seconds", 0) or 0
+        starts.append(start)
+        ends.append(start + timedelta(seconds=wall))
+    if not starts:
+        return 0
+    return wall_time_seconds(min(starts), max(ends))
+
+
 def _roll_phase_totals(bucket: dict) -> None:
-    """Sum wall/cost/tokens from a phase's direct children."""
-    wall = 0
+    """Sum cost/tokens from a phase's direct children; wall is a span."""
     cost = 0.0
     cost_partial = False
     tokens = empty_tokens()
     status = "ok"
     for child in bucket["children"]:
         if child["kind"] == "skill":
-            wall += child.get("wall_time_seconds", 0)
             cost += child.get("estimated_cost_usd", 0.0)
             cost_partial = cost_partial or child.get("cost_is_partial", False)
             for k in tokens:
@@ -507,15 +532,13 @@ def _roll_phase_totals(bucket: dict) -> None:
             elif child.get("status") == "incomplete" and status != "error":
                 status = "incomplete"
         elif child["kind"] == "parallel_group":
-            wall += child.get("wall_time_seconds", 0)
             for sub in child["children"]:
                 if sub.get("status") == "error":
                     status = "error"
         elif child["kind"] == "tool":
-            wall += child.get("wall_time_seconds", 0)
             if child.get("status") == "error":
                 status = "error"
-    bucket["wall_time_seconds"] = wall
+    bucket["wall_time_seconds"] = _phase_wall_span(bucket)
     bucket["estimated_cost_usd"] = round(cost, 6)
     bucket["cost_is_partial"] = cost_partial
     bucket["tokens"] = tokens
