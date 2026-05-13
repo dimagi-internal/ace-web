@@ -563,11 +563,23 @@ class EmulatorController:
                 f"rm -f {shlex.quote(recipe_path)}",
                 f"rm -rf {shlex.quote(run_dir)}",
             ]
+            # ``return_on_script_failure=True`` so a recipe that exits
+            # non-zero (Maestro parse error, selector miss, assertion
+            # failure) comes back as a CommandResult with the full
+            # stderr instead of bubbling up as SSMFailure(stderr[:500]).
+            # The caller wraps it in a RunResult envelope; cloud.ts then
+            # delivers RecipeRunResult{status:'fail', exitCode, stderr,
+            # diagnostics} so skills can introspect without grepping
+            # exception strings (and the auto-diagnose path can attach
+            # the in-VM snapshot). True infrastructure failures —
+            # exit_code<0, Cancelled, TimedOut — still raise so they
+            # can't be mistaken for a clean recipe failure.
             result = ssm.run_command(
                 self.ssm,
                 self.instance_id,
                 commands=commands,
                 timeout_seconds=_SSM_RECIPE_TIMEOUT_SEC,
+                return_on_script_failure=True,
             )
             artifacts = self._presign_prefix(s3_prefix)
             steps = _parse_steps_marker(result.stdout)
