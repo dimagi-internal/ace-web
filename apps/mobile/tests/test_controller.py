@@ -701,34 +701,91 @@ def test_lift_maestro_steps_unknown_status_maps_to_unknown():
     assert steps[0].status == "unknown"
 
 
-def test_run_recipe_finally_bumps_idle_marker_even_on_failure(controller_factory):
-    """If the SSM run fails, the finally branch must still issue the
-    idle-bump SSM call (which we observe by leaving exactly one idle
-    bump SSM response queued — Stubber will assert all responses
-    consumed at teardown)."""
+def test_run_recipe_returns_runresult_on_script_failure(controller_factory):
+    """A Maestro recipe that exits non-zero (parse error, selector miss,
+    assertion failure) must come back as a RunResult with the full
+    stderr — NOT raised as SSMFailure. cloud.ts at the boundary needs
+    the structured envelope to attach diagnostics; the raw exception
+    string buries the actual Maestro frame.
+
+    Pre-fix the controller raised SSMFailure with stderr truncated to
+    500 chars in the exception message — losing structure and
+    truncating long parse-error frames. New contract uses
+    ``return_on_script_failure=True`` so the failed-script case is
+    indistinguishable from the passed-script case at the controller
+    boundary; the caller branches on exit_code in the result envelope.
+    """
     c = controller_factory()
     controller_factory.ec2_stub.add_response(
         "describe_instances", _describe_resp("running")
     )
-    # First send_command succeeds, but get_command_invocation reports failure.
-    controller_factory.ssm_stub.add_response(
-        "send_command", _send_command_resp()
-    )
+    # Recipe runs, exits non-zero with a long Maestro parse-error frame.
+    full_parse_error = "> Parsing Failed\n\n/tmp/recipe.yaml:15\n" + "x" * 1000
+    controller_factory.ssm_stub.add_response("send_command", _send_command_resp())
     controller_factory.ssm_stub.add_response(
         "get_command_invocation",
-        _invocation_resp(status="Failed", exit_code=1, stderr="boom"),
+        _invocation_resp(status="Failed", exit_code=1, stderr=full_parse_error),
+    )
+    # S3 list (no artifacts on parse error)
+    controller_factory.s3_stub.add_response(
+        "list_objects_v2",
+        {"Contents": []},
+    )
+    # finally idle-bump
+    _queue_ssm_command(controller_factory.ssm_stub)
+
+    result = c.run_recipe(recipe_yaml="appId: x\n", env={}, screenshot_prefix=None)
+    assert result.exit_code == 1
+    # Full stderr preserved — not truncated, not wrapped in exception string.
+    assert "Parsing Failed" in result.stderr
+    assert "x" * 1000 in result.stderr
+    controller_factory.ssm_stub.assert_no_pending_responses()
+
+
+def test_run_recipe_still_raises_on_infrastructure_failure(controller_factory):
+    """Negative exit_code (signal-killed: instance terminated mid-run,
+    SSM agent crashed, etc.) is NOT a script-level failure. There's
+    nothing to wrap in a RunResult, so it must still raise
+    SSMFailure → 502. Distinguishes "the recipe ran and failed" from
+    "the recipe never got a chance to run cleanly"."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    controller_factory.ssm_stub.add_response("send_command", _send_command_resp())
+    controller_factory.ssm_stub.add_response(
+        "get_command_invocation",
+        _invocation_resp(status="Failed", exit_code=-1, stderr=""),
     )
     # finally idle-bump
     _queue_ssm_command(controller_factory.ssm_stub)
 
     with pytest.raises(SSMFailure):
-        c.run_recipe(
-            recipe_yaml="...",
-            env={},
-            screenshot_prefix=None,
-        )
-    # Both stub queues should be drained — Stubber.assert_no_pending_responses
-    # is called at fixture teardown but we can also assert here.
+        c.run_recipe(recipe_yaml="...", env={}, screenshot_prefix=None)
+    controller_factory.ssm_stub.assert_no_pending_responses()
+
+
+def test_run_recipe_finally_bumps_idle_marker_even_on_infrastructure_failure(
+    controller_factory,
+):
+    """When the recipe-run genuinely raises (signal-killed), the finally
+    branch must still issue the idle-bump SSM call so we don't leak a
+    stale activity timestamp that trips the in-VM idle watchdog while
+    ace-web is still wrapping things up."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    controller_factory.ssm_stub.add_response("send_command", _send_command_resp())
+    controller_factory.ssm_stub.add_response(
+        "get_command_invocation",
+        _invocation_resp(status="Failed", exit_code=-1, stderr="killed"),
+    )
+    # finally idle-bump
+    _queue_ssm_command(controller_factory.ssm_stub)
+
+    with pytest.raises(SSMFailure):
+        c.run_recipe(recipe_yaml="...", env={}, screenshot_prefix=None)
     controller_factory.ssm_stub.assert_no_pending_responses()
 
 

@@ -49,6 +49,7 @@ def run_command(
     commands: list[str],
     timeout_seconds: int,
     poll_interval: float = 1.0,
+    return_on_script_failure: bool = False,
 ) -> CommandResult:
     """Send a shell command to ``instance_id`` and wait for completion.
 
@@ -90,7 +91,7 @@ def run_command(
         last_response = resp
         status = resp.get("Status", "Pending")
         if status in _TERMINAL_STATUSES:
-            return _build_result(resp)
+            return _build_result(resp, return_on_script_failure=return_on_script_failure)
         time.sleep(poll_interval)
 
     raise SSMTimeout(
@@ -133,7 +134,11 @@ def _send_with_retry(
         return command_id
 
 
-def _build_result(resp: dict[str, Any]) -> CommandResult:
+def _build_result(
+    resp: dict[str, Any],
+    *,
+    return_on_script_failure: bool = False,
+) -> CommandResult:
     status = resp.get("Status", "Failed")
     raw_code = resp.get("ResponseCode")
     exit_code = int(raw_code if raw_code is not None else 1)
@@ -141,13 +146,27 @@ def _build_result(resp: dict[str, Any]) -> CommandResult:
     stderr = resp.get("StandardErrorContent", "") or ""
 
     if status in _FAILURE_STATUSES:
-        # Terminal failure — surface as SSMFailure so the view returns 502.
-        # We still package the streams in the exception message so callers
-        # can see what the in-VM command spat out before bailing.
-        raise SSMFailure(
-            f"SSM command terminated with status={status} exit_code={exit_code}; "
-            f"stderr={stderr[:500]!r}"
+        # ``return_on_script_failure`` only forgives ``Failed`` with a
+        # non-negative exit_code — that's a script that ran to completion
+        # and exited non-zero (Maestro parse error, selector miss,
+        # assertion failure). ``Cancelled``, ``TimedOut``, and ``Failed``
+        # with exit_code < 0 (signal-killed: instance terminated mid-run,
+        # SSM agent crash) are infrastructure failures and still raise.
+        # The caller can't produce a meaningful result envelope from
+        # those, but it CAN from a clean recipe failure.
+        script_failed_cleanly = (
+            return_on_script_failure
+            and status == "Failed"
+            and exit_code >= 0
         )
+        if not script_failed_cleanly:
+            # Terminal failure — surface as SSMFailure so the view returns 502.
+            # We still package the streams in the exception message so callers
+            # can see what the in-VM command spat out before bailing.
+            raise SSMFailure(
+                f"SSM command terminated with status={status} exit_code={exit_code}; "
+                f"stderr={stderr[:500]!r}"
+            )
 
     return CommandResult(
         status=status,
