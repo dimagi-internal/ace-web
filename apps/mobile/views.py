@@ -612,3 +612,104 @@ def stop(request: Request) -> Response:
     except MobileError as e:
         return _mobile_error_response(e)
     return Response(success_response(_to_payload(result)))
+
+
+# Default + maximum page size for the launch-script-patches list.
+# Most operators want "recent activity" — 50 covers months of typical
+# rebake cadence. The hard cap is defense against accidentally
+# fetching the whole table in one call; honest operators paginate.
+_LAUNCH_PATCHES_DEFAULT_LIMIT = 50
+_LAUNCH_PATCHES_MAX_LIMIT = 500
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_list_launch_script_patches(request: Request) -> Response:
+    """List ``MobileLaunchScriptPatch`` audit rows for debugging.
+
+    Operators (and skills) reading "what hot-patches landed on the
+    launcher and when" should hit this endpoint rather than dropping
+    into the Django admin or running SQL. Mirrors the auth gate of
+    ``admin/patch-launch-script`` itself — if you can write, you can
+    read; if you can't write, the rows are none of your business.
+
+    Query params:
+      - ``limit``  (default 50, max 500) — page size
+      - ``offset`` (default 0) — pagination cursor
+
+    Response envelope:
+      ``{data: {patches: [...], total: N, limit: L, offset: O}, error: null}``
+
+    Each patch carries:
+      ``id``, ``created_at`` (ISO), ``user_email``, ``user_id``,
+      ``sha256``, ``bytes_written``, ``restart_requested``,
+      ``instance_id``, ``ami_version``.
+    """
+    if not _can_write_global(request.user):
+        return Response(
+            error_response(
+                message=(
+                    "admin/launch-script-patches requires staff or a Dimagi "
+                    "automation identity (same gate as admin/patch-launch-script)"
+                ),
+                code="forbidden",
+            ),
+            status=403,
+        )
+
+    try:
+        limit = int(request.query_params.get("limit", _LAUNCH_PATCHES_DEFAULT_LIMIT))
+        offset = int(request.query_params.get("offset", 0))
+    except ValueError:
+        return Response(
+            error_response(
+                message="limit and offset must be integers",
+                code="invalid-request",
+            ),
+            status=400,
+        )
+    if limit < 1 or limit > _LAUNCH_PATCHES_MAX_LIMIT:
+        return Response(
+            error_response(
+                message=f"limit must be between 1 and {_LAUNCH_PATCHES_MAX_LIMIT}",
+                code="invalid-request",
+            ),
+            status=400,
+        )
+    if offset < 0:
+        return Response(
+            error_response(
+                message="offset must be >= 0",
+                code="invalid-request",
+            ),
+            status=400,
+        )
+
+    qs = MobileLaunchScriptPatch.objects.select_related("user").order_by("-created_at")
+    total = qs.count()
+    page = qs[offset : offset + limit]
+
+    patches = [
+        {
+            "id": p.id,
+            "created_at": p.created_at.isoformat(),
+            "user_id": p.user_id,
+            "user_email": p.user.email,
+            "sha256": p.sha256,
+            "bytes_written": p.bytes_written,
+            "restart_requested": p.restart_requested,
+            "instance_id": p.instance_id,
+            "ami_version": p.ami_version,
+        }
+        for p in page
+    ]
+    return Response(
+        success_response(
+            {
+                "patches": patches,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
+    )
