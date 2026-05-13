@@ -617,6 +617,50 @@ def test_run_recipe_worker_records_unexpected_exception_with_traceback(
     assert singleton.current_owner() == ""
 
 
+def test_run_recipe_releases_lock_if_worker_thread_fails_to_start(
+    bearer_client, configured
+):
+    """Regression guard: ``threading.Thread.start()`` can raise
+    ``RuntimeError`` under OS thread exhaustion / OOM. Pre-fix that
+    leaked both the singleton lock (held until 30-min TTL) and the
+    job record (stuck at status='running' until 1-hour TTL). Mock the
+    Thread class to raise and assert all three recoveries fire: lock
+    released, job marked failed, 500 returned to the client."""
+    from apps.mobile import jobs as jobs_mod
+
+    class _ExplodingThread:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread (simulated OS limit)")
+
+    with patch("apps.mobile.views.threading.Thread", _ExplodingThread):
+        resp = bearer_client.post(
+            "/api/mobile/run-recipe",
+            {"recipe_yaml": "appId: x\n- launchApp"},
+            format="json",
+        )
+
+    assert resp.status_code == 500, resp.json()
+    assert resp.json()["error"]["code"] == "thread-start-failed"
+    # Lock must be released — a second submission would otherwise see
+    # singleton-busy 503.
+    assert singleton.current_owner() == "", "lock not released after thread-start failure"
+    # Job record exists and is marked failed (so an operator who
+    # somehow has the job_id can still see what went wrong; in this
+    # path the client doesn't get the job_id, but the record stays
+    # for audit).
+    # The job_id isn't returned to the caller in the 500 response —
+    # find the one record that exists in the test fake-redis.
+    keys = jobs_mod._get_redis().keys(f"{jobs_mod.JOB_KEY_PREFIX}*")
+    assert len(keys) == 1, f"expected exactly one job record, got {len(keys)}"
+    rec = jobs_mod.read(keys[0][len(jobs_mod.JOB_KEY_PREFIX):])
+    assert rec is not None
+    assert rec.status == "failed"
+    assert rec.error_code == "thread-start-failed"
+
+
 def test_get_job_returns_404_for_unknown_id(bearer_client, configured):
     resp = bearer_client.get("/api/mobile/jobs/deadbeef")
     assert resp.status_code == 404
