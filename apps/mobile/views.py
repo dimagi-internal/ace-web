@@ -317,12 +317,33 @@ def run_recipe(request: Request) -> Response:
         started_at=jobs._iso_now(),  # noqa: SLF001 — same module
     )
     jobs.write(job)
-    threading.Thread(
-        target=worker_holding,
-        args=(job_id,),
-        name=f"mobile-job-{job_id}",
-        daemon=True,
-    ).start()
+    # threading.Thread.start() can raise RuntimeError under OS thread
+    # exhaustion / OOM (rare but real). If we don't catch it, the
+    # singleton lock and the running-state job record both leak — the
+    # client got no job_id back so it can't poll; the lock TTL is
+    # 30 min. Wrap the spawn so a thread-start failure releases the
+    # lock + marks the job failed + surfaces 500 to the caller.
+    try:
+        threading.Thread(
+            target=worker_holding,
+            args=(job_id,),
+            name=f"mobile-job-{job_id}",
+            daemon=True,
+        ).start()
+    except Exception as e:  # noqa: BLE001 — surface any thread spawn fault
+        singleton.release(owner)
+        jobs.mark_failed(
+            job_id,
+            error=f"failed to start worker thread: {e}",
+            error_code="thread-start-failed",
+        )
+        return Response(
+            error_response(
+                message=f"could not start mobile-runner worker thread: {e}",
+                code="thread-start-failed",
+            ),
+            status=500,
+        )
 
     return Response(success_response({"job_id": job_id, "status": "running"}), status=202)
 
