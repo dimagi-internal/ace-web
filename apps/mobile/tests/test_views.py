@@ -347,6 +347,33 @@ def test_diagnose_returns_full_snapshot(bearer_client, configured):
     assert data["runner_service_state"] == "active"
 
 
+def test_diagnose_response_includes_adb_visible_count(bearer_client, configured):
+    """Regression guard: adb_visible_count must round-trip through the
+    JSON envelope. Pre-fix it was an @property on the Diagnostics
+    dataclass and ``asdict()`` silently dropped it, so /api/mobile/diagnose
+    reported ``adb_visible_count: null`` even when ``adb_devices``
+    showed one device in the canonical 'device' state. Caught in vivo
+    on labs after the 2026-05-12 AMI roll."""
+    fake = MagicMock()
+    fake.diagnose.return_value = Diagnostics(
+        ssm_ok=True,
+        adb_devices=[
+            AdbDevice(serial="emulator-5554", state="device"),
+            AdbDevice(serial="emulator-5556", state="offline"),
+        ],
+        runner_service_state="active",
+        marker_present=True,
+    )
+    with patch("apps.mobile.views.EmulatorController", return_value=fake):
+        resp = bearer_client.get("/api/mobile/diagnose")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    # Only the 'device'-state row counts; 'offline' doesn't.
+    assert data["adb_visible_count"] == 1, (
+        f"expected 1, got {data['adb_visible_count']!r}"
+    )
+
+
 def test_diagnose_when_unconfigured_returns_503(bearer_client, settings):
     settings.ACE_MOBILE_INSTANCE_ID = ""
     settings.ACE_MOBILE_S3_BUCKET = ""
@@ -819,6 +846,40 @@ def test_admin_patch_launch_script_requires_script_body(
     so we exercise the 400 path, not the 403."""
     resp = staff_bearer_client.post(
         "/api/mobile/admin/patch-launch-script", {}, format="json"
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "invalid-request"
+
+
+def test_admin_patch_launch_script_rejects_bad_shebang_as_400(
+    staff_bearer_client, configured
+):
+    """Bad shebang must return 400 invalid-request from the serializer,
+    NOT 500 mobile-error from the controller. Pre-fix the controller
+    raised MobileError (http_status=500) for client-side input
+    validation, which is wrong — body validation belongs in the
+    serializer."""
+    resp = staff_bearer_client.post(
+        "/api/mobile/admin/patch-launch-script",
+        {"script_body": "not a bash shebang at all"},
+        format="json",
+    )
+    assert resp.status_code == 400, (
+        f"expected 400 from serializer; got {resp.status_code} {resp.json()}"
+    )
+    assert resp.json()["error"]["code"] == "invalid-request"
+    assert "shebang" in resp.json()["error"]["message"]
+
+
+def test_admin_patch_launch_script_rejects_oversize_body_as_400(
+    staff_bearer_client, configured
+):
+    """64KB cap also lives in the serializer now — 400 not 500."""
+    oversize = "#!/bin/bash\n" + ("a" * (64 * 1024 + 100))
+    resp = staff_bearer_client.post(
+        "/api/mobile/admin/patch-launch-script",
+        {"script_body": oversize},
+        format="json",
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "invalid-request"
