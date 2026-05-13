@@ -1,0 +1,38 @@
+email:
+  to: jjackson@dimagi.com
+  from: ace@dimagi-ai.com
+  subject_prefix: "[ace-web]"
+  sender_skill: ace:email-communicator
+
+shipping:
+  branch_prefix: ace-web/auto/
+  pr_label: autonomous
+  merge: squash
+  deploy_command: gh workflow run deploy-labs.yml --ref main -f run_migrations=false
+  deploy_workflow: deploy-labs.yml
+  post_deploy_health:
+    - https://labs.connect.dimagi.com/ace/api/health
+
+testing:
+  prepare: bash -c "uv sync && uv pip install pytest pytest-django pytest-asyncio fakeredis ruff && (cd frontend && npm install)"
+  unit:    .venv/bin/python -m pytest -q
+  lint:    .venv/bin/python -m ruff check .
+  types:   bash -c "cd frontend && node_modules/.bin/tsc -b"
+  dogfood:
+    base_url: http://localhost:8000/ace
+    start_command: docker compose up -d
+    wait_for: http://localhost:8000/ace/api/health
+    headless_browser_skill: gstack
+
+guardrails:
+  one_pr_in_flight: true
+  diff_size_limit_lines: 1500
+  max_fix_forward_attempts: 3
+
+theme_detection:
+  lens_rotation:
+    - user-value
+    - adoption-blockers
+    - integration-depth
+    - trust-reliability
+    - tech-debt
