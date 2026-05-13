@@ -3,10 +3,11 @@
 Items closed or rejected during PM cycles. Read this before every scout run to avoid re-proposing.
 
 ## Closed Items
-(none yet)
+- **Global keyboard navigation across viewer surfaces** (`j/k`, `/`, `?`, `g o`/`g s`). Closed 2026-05-13-viewer-defaults. Reason: "too speculative — needs a clearer pain point." For solo view-mode workflows, don't propose generic keyboard nav unless the user surfaces a concrete moment-by-moment friction that keyboard nav specifically would close. The mouse-click count alone is not enough signal.
 
 ## Preferences
-- Lens to default to when user doesn't specify: web-only / third-party adoption (per 2026-04-27 scout request)
+- **Real lens for ace-web today is solo view-mode use, not third-party adoption.** (Override of the prior 2026-04-27 default.) The sole user prefers the CLI for running and uses ace-web mostly to view what another agent's runs produce. Scout lenses should target view-experience friction (legibility, scan-ability, default landings) until that changes.
+- Lens to default to when user doesn't specify: solo view-mode (per 2026-05-13 scout request)
 - "Right and elegant over speed" — bias toward the thorough option, not MVP/polish split
 - Phase 5 polish work (observability, evals, a11y, security review) is deferred — do not propose unless a concrete pain point surfaces
 - For first-impression / new-user-polish slices, bundle related items into ONE PR rather than splitting per-finding — coherent story, less review overhead (validated 2026-04-28-user-value)

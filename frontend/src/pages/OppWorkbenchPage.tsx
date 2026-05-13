@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { getOpp } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
@@ -15,14 +16,18 @@ import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
+import { useChatPaneCollapsed } from "../hooks/useChatPaneCollapsed";
 import { useOppCostRollup } from "../hooks/useOppCostRollup";
 import { useOppSocket } from "../hooks/useOppSocket";
 import { useViewMode } from "../hooks/useViewMode";
 
-// Per-opp view tabs. "workbench" (the existing 3-pane) is the default.
+// Per-opp view tabs. Phases is the default — it's the view that
+// answers "what's the state of this opp?" at a glance without
+// requiring a step selection (the Workbench's 3-pane shell needs a
+// click to populate its middle pane).
 const VIEW_TABS: ViewTab[] = [
-  { kind: "workbench", label: "Workbench" },
   { kind: "phase", label: "Phases" },
+  { kind: "workbench", label: "Workbench" },
   { kind: "heatmap", label: "Heatmap" },
   { kind: "diff", label: "Diff" },
   { kind: "story", label: "Storyboard" },
@@ -51,10 +56,12 @@ export default function OppWorkbenchPage() {
   // ?run_id= query param takes precedence; fall back to :runId path segment
   // (kept for backwards-compat with existing /opps/:slug/runs/:runId routes).
   const runId = searchParams.get("run_id") ?? pathRunId;
-  const { view, setView } = useViewMode("workbench");
+  const { view, setView } = useViewMode("phase");
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
   const costRollup = useOppCostRollup(slug, workspaceSlug);
+  const { collapsed: chatCollapsed, toggle: toggleChatCollapsed } =
+    useChatPaneCollapsed();
 
   const load = useCallback(
     (opts: { silent?: boolean; force?: boolean } = {}) => {
@@ -153,7 +160,13 @@ export default function OppWorkbenchPage() {
       {view === "workbench" && (
         <>
           <div className="flex flex-1 overflow-hidden">
-            <main className="flex-1 overflow-y-auto">
+            <main
+              className={
+                chatCollapsed
+                  ? "w-[440px] shrink-0 overflow-y-auto"
+                  : "flex-1 overflow-y-auto"
+              }
+            >
               <SkillList
                 steps={snapshot.current_run.steps}
                 priorRunSteps={[]}
@@ -163,7 +176,13 @@ export default function OppWorkbenchPage() {
                 costRollup={costRollup}
               />
             </main>
-            <section className="w-[560px] shrink-0 overflow-y-auto border-l border-border bg-background">
+            <section
+              className={
+                chatCollapsed
+                  ? "flex-1 overflow-y-auto border-l border-border bg-background"
+                  : "w-[560px] shrink-0 overflow-y-auto border-l border-border bg-background"
+              }
+            >
               {selectedStep ? (
                 <StepDetailPane
                   slug={slug}
@@ -175,20 +194,50 @@ export default function OppWorkbenchPage() {
                 <EmptyState title="Select a step" description="Click a row in the lifecycle to see its details." />
               )}
             </section>
-            <aside className="flex w-[400px] shrink-0 flex-col border-l border-border bg-card">
-              {selectedStep ? (
-                <WorkbenchChatPane
-                  slug={slug}
-                  runId={snapshot.current_run.run_id}
-                  skill={selectedStep.skill_name}
-                  skillDisplayName={selectedStep.display_name}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
-                  Select a step in the lifecycle to see its chats
+            {chatCollapsed ? (
+              <aside className="flex w-8 shrink-0 flex-col items-center border-l border-border bg-card">
+                <button
+                  type="button"
+                  onClick={toggleChatCollapsed}
+                  className="mt-2 flex h-8 w-8 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
+                  title="Show chat pane"
+                  aria-label="Show chat pane"
+                  aria-expanded="false"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+              </aside>
+            ) : (
+              <aside className="flex w-[400px] shrink-0 flex-col border-l border-border bg-card">
+                <div className="flex items-center justify-between border-b border-border px-2 py-1">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Chat
+                  </span>
+                  <button
+                    type="button"
+                    onClick={toggleChatCollapsed}
+                    className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                    title="Hide chat pane"
+                    aria-label="Hide chat pane"
+                    aria-expanded="true"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
                 </div>
-              )}
-            </aside>
+                {selectedStep ? (
+                  <WorkbenchChatPane
+                    slug={slug}
+                    runId={snapshot.current_run.run_id}
+                    skill={selectedStep.skill_name}
+                    skillDisplayName={selectedStep.display_name}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
+                    Select a step in the lifecycle to see its chats
+                  </div>
+                )}
+              </aside>
+            )}
           </div>
         </>
       )}
