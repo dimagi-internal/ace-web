@@ -117,12 +117,35 @@ class StopSerializer(serializers.Serializer):
     force = serializers.BooleanField(required=False, default=False)
 
 
+# Maximum bytes the launch-script body may have. Current script is
+# ~7KB; the cap is for comments / pm-wait additions, not wholesale
+# rewrites — rebake the AMI for those. Lives here so a bad body
+# returns 400 invalid-request from the serializer, not a 500
+# mobile-error from the controller.
+_LAUNCH_SCRIPT_MAX_BYTES = 64 * 1024
+
+
 class PatchLaunchScriptSerializer(serializers.Serializer):
     """Emergency-fix endpoint for hot-patching the in-VM
     ace-emulator-launch script without a full AMI rebake. The script
-    body is sent verbatim — server-side validation enforces shebang +
-    size cap (the controller). ``restart_runner`` defaults true so a
-    typical fix lands and is exercised on the next boot."""
+    body is validated here (shebang + size cap) so a malformed body
+    returns 400 invalid-request, not a 500 mobile-error from the
+    controller. ``restart_runner`` defaults true so a typical fix
+    lands and is exercised on the next boot."""
 
     script_body = serializers.CharField(allow_blank=False, trim_whitespace=False)
     restart_runner = serializers.BooleanField(required=False, default=True)
+
+    def validate_script_body(self, value: str) -> str:
+        if not value.startswith("#!/bin/bash"):
+            raise serializers.ValidationError(
+                "launch script must start with '#!/bin/bash' shebang "
+                f"(got: {value[:32]!r})"
+            )
+        if len(value.encode("utf-8")) > _LAUNCH_SCRIPT_MAX_BYTES:
+            raise serializers.ValidationError(
+                f"launch script body exceeds {_LAUNCH_SCRIPT_MAX_BYTES}-byte cap; "
+                "this endpoint is for surgical fixes, not wholesale rewrites — "
+                "rebake the AMI"
+            )
+        return value

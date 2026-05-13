@@ -119,11 +119,22 @@ class Diagnostics:
     marker_age_seconds: int | None = None
     runner_log_tail: str = ""
     emulator_log_tail: str = ""
+    # Count of adb devices in the canonical 'device' state. Derived
+    # from ``adb_devices`` in ``__post_init__`` so it serializes via
+    # ``dataclasses.asdict`` (an ``@property`` would not — caught when
+    # ``/api/mobile/diagnose`` started returning ``adb_visible_count:
+    # null`` despite a populated ``adb_devices`` list).
+    adb_visible_count: int = 0
 
-    @property
-    def adb_visible_count(self) -> int:
-        """Count of adb devices in the canonical 'device' state."""
-        return sum(1 for d in self.adb_devices if d.state == "device")
+    def __post_init__(self) -> None:
+        # Always recompute from the device list so callers that pass
+        # ``adb_devices`` get the right count automatically. Callers
+        # who pass ``adb_visible_count`` explicitly are overwritten —
+        # this is intentional: the count and the list should never
+        # disagree.
+        self.adb_visible_count = sum(
+            1 for d in self.adb_devices if d.state == "device"
+        )
 
 
 @dataclass
@@ -825,24 +836,16 @@ class EmulatorController:
         the next rebake picks it up — without that the live fix
         evaporates on next AMI roll.
 
-        Body validation:
-          - Must start with ``#!/bin/bash`` (no `env bash`, no `sh`).
-          - Must be ≤ 64KB (current script is ~7KB; budget is for
-            comments / pm-wait additions, not wholesale rewrites).
+        Body validation (shebang + 64 KB cap) lives in
+        ``PatchLaunchScriptSerializer.validate_script_body`` so the API
+        surface returns 400 invalid-request, not a 500 mobile-error,
+        for a malformed body. This method assumes the body is already
+        validated; the SHA check below is a transit-corruption guard,
+        not input validation.
 
         Returns the SHA256 of the written body so the caller can confirm
         the live script matches what they sent.
         """
-        if not script_body.startswith("#!/bin/bash"):
-            raise MobileError(
-                "launch script must start with '#!/bin/bash' shebang "
-                "(got: " + repr(script_body[:32]) + ")"
-            )
-        if len(script_body.encode("utf-8")) > 64 * 1024:
-            raise MobileError(
-                "launch script body exceeds 64KB cap; this endpoint is "
-                "for surgical fixes, not wholesale rewrites — rebake the AMI"
-            )
         import hashlib
 
         sha = hashlib.sha256(script_body.encode("utf-8")).hexdigest()
@@ -1261,6 +1264,12 @@ def _parse_diagnostics(stdout: str) -> Diagnostics:
 
     diag.runner_log_tail = "\n".join(sections.get("RUNNER_LOG_TAIL", [])).rstrip()
     diag.emulator_log_tail = "\n".join(sections.get("EMULATOR_LOG_TAIL", [])).rstrip()
+    # adb_visible_count is derived from adb_devices in __post_init__,
+    # which ran with the empty default list. Recompute now that we've
+    # populated the real device list.
+    diag.adb_visible_count = sum(
+        1 for d in diag.adb_devices if d.state == "device"
+    )
     return diag
 
 
