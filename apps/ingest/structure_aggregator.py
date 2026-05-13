@@ -107,6 +107,19 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     phase_buckets: dict[str, dict[str, Any]] = {}
     current_phase: str | None = None
 
+    # The parser emits `assistant_turn` *before* the `tool_use` event for the
+    # same JSONL line. So when an orchestrator turn that exists only to
+    # dispatch a Skill/Agent fires its assistant_turn, the frame it's
+    # dispatching hasn't been opened yet — its usage would land in the
+    # session-totals-only bucket and disappear from phase rollups. Pre-scan
+    # to find those uuids and defer their usage onto the segment that opens
+    # on the matching tool_use. Mirrors cost_aggregator's behavior.
+    dispatch_turn_uuids: set[str] = {
+        e.uuid for e in events
+        if e.kind == "tool_use" and e.tool_name in ("Skill", "Agent") and e.uuid
+    }
+    pending_dispatch: dict[str, tuple[dict[str, Any] | None, float | None]] = {}
+
     def _ensure_phase(name: str) -> dict[str, Any]:
         if name not in phase_buckets:
             if name == "_orchestration":
@@ -205,7 +218,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 session_cost_partial = True
             else:
                 session_cost += cost
-            # Attribute usage to the innermost open frame, if any
+            # Attribute usage to the innermost open frame, if any.
             if open_frames:
                 add_usage(open_frames[-1].tokens, event.usage)
                 if cost is None:
@@ -214,6 +227,10 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     open_frames[-1].cost += cost
                 if event.timestamp is not None:
                     open_frames[-1].last_ts = event.timestamp
+            elif event.uuid in dispatch_turn_uuids:
+                # Top-level dispatch turn: hold the usage until the segment
+                # opens on the matching tool_use event below.
+                pending_dispatch[event.uuid] = (event.usage, cost)
             continue
 
         if event.kind == "tool_use":
@@ -253,6 +270,15 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     start_ts=event.timestamp,
                     last_ts=event.timestamp,
                 )
+                # Drain any deferred dispatch-turn usage into the new frame so
+                # the orchestrator's planning turn counts against this skill.
+                if event.uuid and event.uuid in pending_dispatch:
+                    pending_usage, pending_cost = pending_dispatch.pop(event.uuid)
+                    add_usage(frame.tokens, pending_usage)
+                    if pending_cost is None:
+                        frame.cost_partial = True
+                    else:
+                        frame.cost += pending_cost
                 open_frames.append(frame)
                 continue
 
@@ -307,6 +333,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     "children": frame.children,
                 }
                 if open_frames:
+                    _propagate_to_parent(frame, open_frames[-1])
                     _attach(skill_node, frame=open_frames[-1], phase_name=None, turn_uuid=None)
                 else:
                     _attach(skill_node, frame=None, phase_name=frame.phase_name, turn_uuid=None)
@@ -346,6 +373,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             "children": frame.children,
         }
         if open_frames:
+            _propagate_to_parent(frame, open_frames[-1])
             _attach(skill_node, frame=open_frames[-1], phase_name=None, turn_uuid=None)
         else:
             _attach(skill_node, frame=None, phase_name=frame.phase_name, turn_uuid=None)
@@ -379,6 +407,22 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         },
         "phases": phases,
     }
+
+
+def _propagate_to_parent(child: _Frame, parent: _Frame) -> None:
+    """Roll a closing child frame's cost/tokens up to its parent.
+
+    Without this, a top-level skill that dispatches all its work to subagents
+    reports estimated_cost_usd≈0 — the cost lives only in the deepest frame.
+    Wall time is already inclusive because we span start_ts → close_ts; we
+    do the same for cost/tokens so a collapsed skill row shows what that
+    subtree actually spent (and the phase rollup sums to the session total).
+    """
+    parent.cost += child.cost
+    if child.cost_partial:
+        parent.cost_partial = True
+    for k in parent.tokens:
+        parent.tokens[k] += child.tokens.get(k, 0)
 
 
 def _roll_phase_totals(bucket: dict) -> None:
