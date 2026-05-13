@@ -22,4 +22,9 @@ urlpatterns = [
         views.admin_patch_launch_script,
         name="mobile_admin_patch_launch_script",
     ),
+    path(
+        "admin/launch-script-patches",
+        views.admin_list_launch_script_patches,
+        name="mobile_admin_list_launch_script_patches",
+    ),
 ]

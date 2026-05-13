@@ -981,6 +981,111 @@ def test_admin_patch_launch_script_requires_auth():
     assert resp.status_code in (401, 403)
 
 
+# ── admin/launch-script-patches (audit log read) ──────────────────
+
+
+def _make_patch_rows(user, n=3):
+    """Insert ``n`` MobileLaunchScriptPatch rows with distinct
+    sha256/timestamps so ordering and pagination can be observed."""
+    from apps.mobile.models import MobileLaunchScriptPatch
+
+    rows = []
+    for i in range(n):
+        rows.append(
+            MobileLaunchScriptPatch.objects.create(
+                user=user,
+                sha256=f"{i:064x}",
+                bytes_written=100 + i,
+                restart_requested=bool(i % 2),
+                instance_id=f"i-{i:017d}",
+                ami_version=f"2026-05-{12 + i:02d}-0000",
+            )
+        )
+    return rows
+
+
+def test_admin_list_launch_script_patches_requires_staff(bearer_client, configured):
+    """Same gate as the write endpoint — a regular PAT must NOT see
+    the audit log (it can show who patched what, and a stolen PAT
+    shouldn't enumerate that)."""
+    resp = bearer_client.get("/api/mobile/admin/launch-script-patches")
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "forbidden"
+
+
+def test_admin_list_launch_script_patches_requires_auth():
+    c = APIClient()
+    resp = c.get("/api/mobile/admin/launch-script-patches")
+    assert resp.status_code in (401, 403)
+
+
+def test_admin_list_launch_script_patches_empty(staff_bearer_client, configured):
+    resp = staff_bearer_client.get("/api/mobile/admin/launch-script-patches")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data == {"patches": [], "total": 0, "limit": 50, "offset": 0}
+
+
+def test_admin_list_launch_script_patches_returns_rows_newest_first(
+    staff_bearer_client, staff_user, configured
+):
+    rows = _make_patch_rows(staff_user, n=3)
+    resp = staff_bearer_client.get("/api/mobile/admin/launch-script-patches")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["total"] == 3
+    # Newest-first ordering — last created is first.
+    returned_shas = [p["sha256"] for p in data["patches"]]
+    assert returned_shas == [rows[2].sha256, rows[1].sha256, rows[0].sha256]
+    # Each row carries the audit fields a debugger needs.
+    p0 = data["patches"][0]
+    assert p0["user_email"] == staff_user.email
+    assert p0["user_id"] == staff_user.id
+    assert p0["bytes_written"] == 102
+    assert p0["restart_requested"] is False  # i=2, 2%2==0
+    assert p0["instance_id"] == "i-00000000000000002"
+    assert p0["ami_version"] == "2026-05-14-0000"
+
+
+def test_admin_list_launch_script_patches_paginates(
+    staff_bearer_client, staff_user, configured
+):
+    _make_patch_rows(staff_user, n=5)
+    # First page of 2
+    resp = staff_bearer_client.get("/api/mobile/admin/launch-script-patches?limit=2&offset=0")
+    page1 = resp.json()["data"]
+    assert resp.status_code == 200
+    assert len(page1["patches"]) == 2
+    assert page1["total"] == 5
+
+    # Next page of 2
+    resp = staff_bearer_client.get("/api/mobile/admin/launch-script-patches?limit=2&offset=2")
+    page2 = resp.json()["data"]
+    assert len(page2["patches"]) == 2
+    # No overlap between pages.
+    page1_ids = {p["id"] for p in page1["patches"]}
+    page2_ids = {p["id"] for p in page2["patches"]}
+    assert page1_ids.isdisjoint(page2_ids)
+
+
+def test_admin_list_launch_script_patches_rejects_bad_params(staff_bearer_client, configured):
+    """``limit`` and ``offset`` are user-provided ints; the view must
+    400 on garbage rather than blow up with a stack trace."""
+    for bad in ("limit=notanumber", "offset=notanumber", "limit=0", "limit=501", "offset=-1"):
+        resp = staff_bearer_client.get(f"/api/mobile/admin/launch-script-patches?{bad}")
+        assert resp.status_code == 400, f"{bad} should 400; got {resp.status_code}"
+        assert resp.json()["error"]["code"] == "invalid-request"
+
+
+def test_admin_list_launch_script_patches_automation_user_passes_gate(
+    automation_bearer_client, configured
+):
+    """``@dimagi-ai.com`` bot identities pass the gate without is_staff —
+    same rule as the write endpoint, mirrored for the read path."""
+    resp = automation_bearer_client.get("/api/mobile/admin/launch-script-patches")
+    assert resp.status_code == 200
+
+
 # ── Sanity: dataclass round-trip ──────────────────────────────────
 
 
