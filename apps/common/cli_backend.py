@@ -72,11 +72,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
 import shutil
 import tempfile
+import threading
 import time
 import uuid
 from collections import deque
@@ -140,6 +142,14 @@ SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
 # no SLA on eviction precision, and we don't want to waste cycles polling a
 # typically-empty dict every few seconds.
 SESSION_IDLE_SWEEP_INTERVAL_SECONDS = 5 * 60
+
+# Hard upper bound on concurrent long-lived SessionProcesses per worker. Each
+# subprocess holds the full MCP working set (~hundreds of MB once gdrive/ocs/
+# mobile/connect/nova are all initialised); without a cap, a runaway client or
+# burst of new sessions could pin an ECS worker's RAM in minutes. When the cap
+# is hit, the LRU SessionProcess (oldest ``last_active``) is evicted to make
+# room. The 30-min idle reaper still handles the steady-state case.
+MAX_SESSION_POOL_SIZE = 16
 
 
 class CLIBackendError(RuntimeError):
@@ -215,17 +225,112 @@ class CLIBackend:
         terminate_grace_seconds: float = 2.0,
         session_idle_timeout_seconds: float = SESSION_IDLE_TIMEOUT_SECONDS,
         session_idle_sweep_interval_seconds: float = SESSION_IDLE_SWEEP_INTERVAL_SECONDS,
+        max_session_pool_size: int = MAX_SESSION_POOL_SIZE,
     ):
         self._binary = binary
-        self._breaker = CircuitBreaker(
-            threshold=circuit_threshold, cooldown_seconds=circuit_cooldown
-        )
+        # Per-owner breakers. Keying by owner_id keeps one user's bad
+        # credentials from poisoning chat for every other user sharing the
+        # ECS worker — the original process-global breaker tripped for
+        # everyone the moment a single user hit 5 auth failures. ``None``
+        # is the fallback key for paths that don't have a resolved owner
+        # (tests, dev fixtures); it acts like the old single breaker.
+        self._circuit_threshold = circuit_threshold
+        self._circuit_cooldown = circuit_cooldown
+        self._breakers: dict[int | None, CircuitBreaker] = {}
+        self._breakers_lock = asyncio.Lock()
         self._terminate_grace = terminate_grace_seconds
         self._sessions: dict[str, SessionProcess] = {}
         self._sessions_dict_lock = asyncio.Lock()
         self._idle_reaper_task: asyncio.Task | None = None
         self._idle_timeout_seconds = session_idle_timeout_seconds
         self._idle_sweep_interval_seconds = session_idle_sweep_interval_seconds
+        self._max_session_pool_size = max_session_pool_size
+        # ``_persist_cache`` short-circuits ``_persist_refreshed_blob``: the
+        # CLI only rotates OAuth tokens every ~hour, but every successful
+        # turn re-reads the staged credentials file and runs an
+        # ``UPDATE UserCredential …`` (or ``SystemConfig …``) even when
+        # the bytes are unchanged. Cache the SHA-256 of the last persisted
+        # text per (source, identifier) and skip the write when the
+        # current text hashes the same. ``threading.Lock`` because
+        # ``_persist_refreshed_blob`` runs inside ``sync_to_async`` — its
+        # callers may execute it on the asgi thread pool.
+        self._persist_cache: dict[tuple[str, int | str], str] = {}
+        self._persist_cache_lock = threading.Lock()
+
+    def session_state(self, slug: str) -> dict | None:
+        """Read-only introspection of the long-lived SessionProcess for
+        ``slug``. Returns ``None`` when there is no SessionProcess in the
+        pool (i.e. the long-lived path has never run for this slug, or
+        the SessionProcess was evicted).
+
+        Returned shape:
+            {
+              "alive": bool,         # proc still running
+              "pid": int | None,
+              "elapsed_s": float,    # since spawn, only if proc set
+              "last_active_age_s": float,
+              "credential_source": str | None,
+              "cli_session_id": str | None,
+              "spawned_with_resume": bool,
+            }
+
+        Safe to call from sync request handlers — no awaits, no I/O.
+        Note: ``_sessions`` is mutated under ``_sessions_dict_lock`` from
+        async code, but a stale read here is fine for an observation
+        endpoint (worst case: we report "alive" for a SessionProcess that
+        was evicted milliseconds ago, which the next call will correct).
+        """
+        sp = self._sessions.get(slug)
+        if sp is None:
+            return None
+        proc = sp.proc
+        if proc is None:
+            return {
+                "alive": False,
+                "pid": None,
+                "elapsed_s": 0.0,
+                "last_active_age_s": time.monotonic() - sp.last_active,
+                "credential_source": sp.credential_source,
+                "cli_session_id": sp.cli_session_id,
+                "spawned_with_resume": sp.spawned_with_resume,
+            }
+        started = getattr(proc, "_ace_started_at", None)
+        elapsed = (time.monotonic() - started) if started is not None else 0.0
+        return {
+            "alive": proc.returncode is None,
+            "pid": getattr(proc, "pid", None),
+            "elapsed_s": elapsed,
+            "last_active_age_s": time.monotonic() - sp.last_active,
+            "credential_source": sp.credential_source,
+            "cli_session_id": sp.cli_session_id,
+            "spawned_with_resume": sp.spawned_with_resume,
+        }
+
+    def _breaker_for(self, session_or_owner_id) -> CircuitBreaker:
+        """Return the breaker for this session's owner, lazily creating it.
+
+        Accepts either a ``Session`` (we read ``owner_id`` from it) or an
+        ``int`` owner_id directly (for ``_spawn`` which is called without
+        a session ref in one of its error paths). Synchronous because
+        breaker creation is cheap and ``CircuitBreaker`` is itself
+        thread-safe via an internal ``threading.Lock`` — the only race
+        here is two coroutines lazy-creating the same key, which would
+        leave one extra unreferenced breaker (harmless).
+        """
+        if hasattr(session_or_owner_id, "owner_id"):
+            key = session_or_owner_id.owner_id
+        elif hasattr(session_or_owner_id, "owner"):
+            key = getattr(session_or_owner_id.owner, "pk", None)
+        else:
+            key = session_or_owner_id  # raw int or None
+        breaker = self._breakers.get(key)
+        if breaker is None:
+            breaker = CircuitBreaker(
+                threshold=self._circuit_threshold,
+                cooldown_seconds=self._circuit_cooldown,
+            )
+            self._breakers[key] = breaker
+        return breaker
 
     async def stream_completion(
         self,
@@ -249,7 +354,7 @@ class CLIBackend:
         in-flight turn cannot be safely resumed mid-stream).
         """
         try:
-            self._breaker.check()
+            self._breaker_for(session).check()
         except CircuitOpenError as exc:
             raise CLIBackendError(str(exc)) from exc
 
@@ -302,6 +407,7 @@ class CLIBackend:
                 prompt=new_user_message,
                 env=staged_env,
                 session_slug=session.slug,
+                owner_id=session.owner_id,
             )
             had_events = False
             try:
@@ -316,9 +422,14 @@ class CLIBackend:
                 stderr_text = _proc_stderr_tail(proc, char_limit=2000)
                 if stderr_text:
                     logger.error("claude CLI stderr tail: %s", stderr_text)
-                self._breaker.record_failure()
+                self._breaker_for(session).record_failure()
+                elapsed = time.monotonic() - getattr(
+                    proc, "_ace_started_at", time.monotonic()
+                )
+                stderr_lines = len(getattr(proc, "_ace_stderr_buf", ()) or ())
                 raise CLIBackendError(
-                    f"claude CLI failed (rc={proc.returncode}, events={had_events})"
+                    f"claude CLI failed (rc={proc.returncode}, events=0, "
+                    f"elapsed={elapsed:.1f}s, stderr_lines={stderr_lines})"
                     + (f" stderr: {stderr_text[:500]}" if stderr_text else "")
                 )
             if proc.returncode != 0:
@@ -326,7 +437,7 @@ class CLIBackend:
                     "claude CLI exited %s but produced events — treating as success",
                     proc.returncode,
                 )
-            self._breaker.record_success()
+            self._breaker_for(session).record_success()
         finally:
             try:
                 await sync_to_async(self._persist_refreshed_blob)(
@@ -471,12 +582,21 @@ class CLIBackend:
                                 done_yielded = True
                             if event.type is StreamEventType.ERROR:
                                 # Even the seeded-history fallback can hit
-                                # a terminal error event. Same handling as
-                                # the primary path: evict and (defensively)
-                                # clear cli_session_id.
+                                # a terminal error event. The fallback spawn
+                                # is always fresh (no --resume), so
+                                # ``sp.spawned_with_resume`` was set to False
+                                # by ``_spawn_session_process``; the
+                                # ``if sp.spawned_with_resume`` guard the
+                                # primary path uses would be dead here.
+                                # Instead clear unconditionally: the
+                                # ``cli_session_id`` we just captured from
+                                # the SESSION_ID event above is associated
+                                # with a CLI session that immediately failed,
+                                # and next turn should respawn fresh rather
+                                # than chase a possibly-bad ``--resume``.
                                 error_yielded = True
-                                if sp.spawned_with_resume:
-                                    await self._clear_cli_session_id(session)
+                                await self._clear_cli_session_id(session)
+                                sp.cli_session_id = None
                                 await self._evict_locked(
                                     sp, persist_for_session=session
                                 )
@@ -488,8 +608,12 @@ class CLIBackend:
                 # Belt-and-braces: a turn that streamed events but never
                 # emitted DONE (CLI-side bug, partial result, etc.) still
                 # needs the bookkeeping. Real turns always go through the
-                # in-loop branch above.
-                if not done_yielded:
+                # in-loop branch above. Skip when the turn ended in a
+                # terminal ERROR event — the proc was already evicted and
+                # ``_mark_turn_complete`` would falsely record a
+                # ``record_success()`` on the circuit breaker and try to
+                # persist from a torn-down staged_home.
+                if not done_yielded and not error_yielded:
                     await self._mark_turn_complete(sp, session)
 
             except (GeneratorExit, asyncio.CancelledError):
@@ -524,7 +648,7 @@ class CLIBackend:
                 )
                 await self._evict_locked(sp, persist_for_session=session)
                 await self._drop_session_from_pool(sp.slug)
-                self._breaker.record_failure()
+                self._breaker_for(session).record_failure()
                 raise CLIBackendError(
                     f"claude CLI subprocess died mid-turn: {exc}"
                 ) from exc
@@ -542,7 +666,7 @@ class CLIBackend:
                     await self._clear_cli_session_id(session)
                 await self._evict_locked(sp, persist_for_session=session)
                 await self._drop_session_from_pool(sp.slug)
-                self._breaker.record_failure()
+                self._breaker_for(session).record_failure()
                 raise
             except Exception:
                 # Unknown failure — evict to avoid leaking a half-broken
@@ -553,7 +677,7 @@ class CLIBackend:
                 )
                 await self._evict_locked(sp, persist_for_session=session)
                 await self._drop_session_from_pool(sp.slug)
-                self._breaker.record_failure()
+                self._breaker_for(session).record_failure()
                 raise
 
     async def _mark_turn_complete(
@@ -580,17 +704,56 @@ class CLIBackend:
                 session.slug,
                 exc_info=True,
             )
-        self._breaker.record_success()
+        self._breaker_for(session).record_success()
 
     async def _get_or_create_session_process(
         self, session: Session
     ) -> SessionProcess:
+        """Return this Session's SessionProcess, creating + admitting it
+        on first contact.
+
+        Enforces ``self._max_session_pool_size`` by evicting the LRU
+        entry (oldest ``last_active``) when admission would push the pool
+        over the cap. The LRU is popped from the dict UNDER the dict lock
+        (so it's atomically unreachable to concurrent callers) and then
+        cleaned up out-of-band — actual proc teardown happens after the
+        dict lock is released so we don't block other admissions on a
+        possibly-slow subprocess termination.
+        """
+        lru_to_evict: SessionProcess | None = None
         async with self._sessions_dict_lock:
             sp = self._sessions.get(session.slug)
             if sp is None:
                 sp = SessionProcess(slug=session.slug, session_pk=session.pk)
                 self._sessions[session.slug] = sp
-            return sp
+                if len(self._sessions) > self._max_session_pool_size:
+                    lru_slug = min(
+                        (s for s in self._sessions if s != session.slug),
+                        key=lambda s: self._sessions[s].last_active,
+                        default=None,
+                    )
+                    if lru_slug is not None:
+                        lru_to_evict = self._sessions.pop(lru_slug)
+
+        if lru_to_evict is not None:
+            logger.info(
+                "cli_backend: pool at cap (%d) — LRU-evicting session=%s "
+                "(idle_for=%.0fs) to admit session=%s",
+                self._max_session_pool_size,
+                lru_to_evict.slug,
+                time.monotonic() - lru_to_evict.last_active,
+                session.slug,
+            )
+            try:
+                async with lru_to_evict.lock:
+                    await self._evict_locked(lru_to_evict)
+            except Exception:
+                logger.exception(
+                    "cli_backend: LRU eviction failed for session=%s",
+                    lru_to_evict.slug,
+                )
+
+        return sp
 
     async def _spawn_session_process(
         self, sp: SessionProcess, session: Session
@@ -656,6 +819,18 @@ class CLIBackend:
         if proc is None:
             raise CLIBackendError(
                 f"_send_and_drain_persistent called with no live proc "
+                f"for session={sp.slug}"
+            )
+        # Between turns the subprocess can have ``returncode is None``
+        # (still running per ``is_alive()``) yet have stdin already
+        # closed — by a SIGPIPE on stdout, a transport hiccup, or the
+        # cleanup path on a prior aborted turn. Catching this BEFORE the
+        # write surfaces a clearer error than the BrokenPipeError fallback
+        # below; the long-lived path's CLIBackendError handler will then
+        # evict and respawn for the next turn.
+        if proc.stdin is None or proc.stdin.is_closing():
+            raise CLIBackendError(
+                f"subprocess stdin closed unexpectedly before next turn "
                 f"for session={sp.slug}"
             )
 
@@ -735,8 +910,18 @@ class CLIBackend:
         """Remove a SessionProcess from the pool: terminate proc, persist any
         refreshed OAuth blob, rmtree staged HOME, drop dict entry.
 
-        Acquires ``sp.lock`` so we don't kill a turn in flight. Idempotent
-        — calling twice is safe.
+        Pops the slug from ``self._sessions`` FIRST, then acquires ``sp.lock``
+        for the (possibly slow) proc cleanup. Pop-first is load-bearing for
+        the eviction-vs-spawn race: if eviction held ``sp.lock`` while the
+        slug was still in the dict, a concurrent ``stream_completion`` could
+        find the about-to-be-evicted sp, block on its lock, and after release
+        observe ``proc=None`` → call ``_spawn_session_process`` onto the
+        orphaned sp. The reaper would then pop the slug from the dict,
+        leaving a live subprocess + staged HOME that nothing tracks. By
+        popping first, the concurrent call always sees an empty slot and
+        creates a fresh SessionProcess.
+
+        Idempotent — calling twice is safe.
 
         ``persist_for_session`` is the live ``Session`` ref (when the caller
         already has it, e.g. the idle reaper passes ``None`` and we fetch
@@ -748,15 +933,12 @@ class CLIBackend:
         directly.
         """
         async with self._sessions_dict_lock:
-            sp = self._sessions.get(slug)
-            if sp is None:
-                return
+            sp = self._sessions.pop(slug, None)
+        if sp is None:
+            return
 
         async with sp.lock:
             await self._evict_locked(sp, persist_for_session=persist_for_session)
-
-        async with self._sessions_dict_lock:
-            self._sessions.pop(slug, None)
 
     async def _evict_locked(
         self,
@@ -900,6 +1082,7 @@ class CLIBackend:
         prompt: str | None,
         env: dict[str, str],
         session_slug: str = "",
+        owner_id: int | None = None,
     ):
         """Spawn the CLI subprocess. Optionally write a user-message envelope
         to stdin.
@@ -977,7 +1160,7 @@ class CLIBackend:
                 await proc.stdin.drain()
             except (ConnectionResetError, BrokenPipeError) as exc:
                 await self._cleanup(proc)
-                self._breaker.record_failure()
+                self._breaker_for(owner_id).record_failure()
                 raise CLIBackendError(
                     f"claude CLI stdin closed before prompt delivered: {exc}"
                 ) from exc
@@ -1014,7 +1197,18 @@ class CLIBackend:
             / f"{session.slug}-{uuid.uuid4().hex[:8]}"
         )
         claude_dir = staged_root / ".claude"
+        # 0o700 on the per-session dirs: the per-session HOME contains the
+        # staged credentials blob (mode 0o600 below) plus symlinks into the
+        # real ``~/.claude/``. Without 0o700, another local user on the same
+        # host could list the directory and observe filenames / sizes even
+        # if not the credentials file itself. ``mkdir(mode=...)`` only sets
+        # the mode on the leaf, so we apply 0o700 to staged_root too.
         claude_dir.mkdir(parents=True, exist_ok=True)
+        for _path in (staged_root, claude_dir):
+            try:
+                _path.chmod(0o700)
+            except OSError:
+                pass
 
         # Symlink everything from the real ~/.claude/ EXCEPT .credentials.json
         # into the staged HOME. We need plugins/, settings.json, plugin-data/,
@@ -1128,6 +1322,30 @@ class CLIBackend:
         if not access_token.startswith("sk-ant-oat"):
             return  # don't persist obviously-malformed state
 
+        # ``token_prefix`` (15 chars) goes to the UserCredential row for UI
+        # display in Settings (intentional, schema-coupled — users
+        # identify their token by these prefix bytes). ``token_fp`` is a
+        # short fingerprint used only in logs so we don't leak the 2
+        # bytes of secret entropy past the public ``sk-ant-oat01-``
+        # prefix into CloudWatch.
+        token_fp = _token_fingerprint(access_token)
+
+        # Short-circuit: skip the write when the blob hasn't actually
+        # rotated. Hashing 1-2 KB of JSON is dramatically cheaper than the
+        # DB UPDATE round-trip we'd otherwise do on every successful turn.
+        cache_key: tuple[str, int | str]
+        if source == "user":
+            cache_key = ("user", session.owner.pk)
+        elif source == "global":
+            cache_key = ("global", "")
+        else:
+            cache_key = ("env", "")
+        current_hash = hashlib.sha256(current_text.encode("utf-8")).hexdigest()
+        with self._persist_cache_lock:
+            if self._persist_cache.get(cache_key) == current_hash:
+                return
+            self._persist_cache[cache_key] = current_hash
+
         if source == "user":
             from .models import UserCredential
 
@@ -1136,8 +1354,8 @@ class CLIBackend:
                 token_prefix=access_token[:15],
             )
             logger.info(
-                "CLIBackend: persisted refreshed user blob for user=%s prefix=%s",
-                session.owner.pk, access_token[:15],
+                "CLIBackend: persisted refreshed user blob for user=%s fp=%s",
+                session.owner.pk, token_fp,
             )
         elif source == "global":
             from .models import SystemConfig
@@ -1147,8 +1365,8 @@ class CLIBackend:
                 defaults={"value": current_text},
             )
             logger.info(
-                "CLIBackend: persisted refreshed global blob prefix=%s",
-                access_token[:15],
+                "CLIBackend: persisted refreshed global blob fp=%s",
+                token_fp,
             )
         # source="env" is a dev/test fallback — don't persist back to anywhere
 
@@ -1279,6 +1497,20 @@ class CLIBackend:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await asyncio.shield(asyncio.wait_for(task, timeout=1.0))
+
+
+def _token_fingerprint(token: str) -> str:
+    """Stable 12-char identifier for a token, safe to log.
+
+    Hash-based so it reveals zero secret bytes — but still lets us
+    correlate "this token was persisted" log entries across requests
+    and across the user / global storage layers. SHA-256 truncated to
+    12 hex chars is comfortably collision-resistant for the population
+    sizes (Claude tokens per worker) we care about.
+    """
+    if not token:
+        return ""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
 
 
 def _escape_turn_boundaries(text: str) -> str:

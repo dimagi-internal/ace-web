@@ -2,9 +2,14 @@ import { AlertTriangle, OctagonX } from "lucide-react";
 
 import type { Message } from "../api/types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { ToolCallPair } from "./chat/ToolCallPair";
 
 interface Props {
   message: Message;
+  /** When set, expand/collapse this row regardless of native toggle. Lets
+   *  MessageList's toolbar drive bulk expand/collapse without having to
+   *  duplicate the rendering logic per row. */
+  forceToolOpen?: boolean;
 }
 
 // The backend marks cancelled-by-user turns as status=error with
@@ -24,33 +29,29 @@ function classifyError(detail: string | null) {
   };
 }
 
-export function MessageItem({ message }: Props) {
+export function MessageItem({ message, forceToolOpen }: Props) {
   const text = message.plaintext;
   const isStreaming = message.status === "streaming";
   const isPending = message.status === "pending";
   const isError = message.status === "error";
 
+  // tool_use and tool_result rows that survived the pairing pass in
+  // MessageList didn't find a partner — render as standalone with the
+  // same component for visual consistency. The common case (paired
+  // tool_use+tool_result) is rendered by MessageList itself via
+  // ToolCallPair so we never reach here for those.
   if (message.role === "tool_use") {
-    return (
-      <details className="my-2 rounded border border-border bg-muted p-2 text-sm">
-        <summary className="cursor-pointer text-muted-foreground">
-          tool_use: {String(message.content?.name ?? "unknown")}
-        </summary>
-        <pre className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">
-          {JSON.stringify(message.content, null, 2)}
-        </pre>
-      </details>
-    );
+    return <ToolCallPair use={message} result={null} forceOpen={forceToolOpen} />;
   }
   if (message.role === "tool_result") {
-    return (
-      <details className="my-2 rounded border border-border bg-muted p-2 text-sm">
-        <summary className="cursor-pointer text-muted-foreground">tool_result</summary>
-        <pre className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">
-          {message.plaintext}
-        </pre>
-      </details>
-    );
+    // Synthesize a fake "use" message so the pair component can render
+    // a uniform header. Defensive — should be rare.
+    const fakeUse: Message = {
+      ...message,
+      role: "tool_use",
+      content: { name: "tool_result (orphan)" },
+    };
+    return <ToolCallPair use={fakeUse} result={message} forceOpen={forceToolOpen} />;
   }
 
   const bubbleClass =

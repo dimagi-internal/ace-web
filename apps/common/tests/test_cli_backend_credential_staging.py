@@ -131,6 +131,39 @@ def test_staged_homes_are_isolated_per_invocation():
         backend._teardown_staged_home(home2)
 
 
+@pytest.mark.django_db
+def test_staged_home_dirs_are_owner_only_readable():
+    """Per-session staged HOME and its .claude/ subdir must be 0o700.
+    Without it, another local user on the same host could list directory
+    contents (filenames, sizes). The credentials file itself is 0o600,
+    so even with looser dirs the secret bytes were safe — but filename
+    enumeration is still avoidable hygiene.
+    """
+    import os
+    import stat
+
+    user = get_user_model().objects.create_user(email="perms@dimagi.com")
+    blob = {"claudeAiOauth": {"accessToken": REAL}}
+    UserCredential.objects.create(
+        user=user,
+        blob_encrypted=json.dumps(blob),
+        token_prefix=REAL[:15],
+    )
+    session = Session.objects.create(owner=user, slug="perms", title="perms")
+
+    backend = CLIBackend()
+    _, home, _ = backend._stage_env_for(session)
+    try:
+        home_mode = stat.S_IMODE(os.stat(home).st_mode)
+        claude_mode = stat.S_IMODE(os.stat(os.path.join(home, ".claude")).st_mode)
+        assert home_mode == 0o700, f"staged HOME mode {oct(home_mode)} != 0o700"
+        assert claude_mode == 0o700, (
+            f"staged .claude/ mode {oct(claude_mode)} != 0o700"
+        )
+    finally:
+        backend._teardown_staged_home(home)
+
+
 # ── Refresh persistence tests ──────────────────────────────────────────────
 
 
@@ -164,6 +197,44 @@ def test_persist_refreshed_blob_updates_user_credential():
         stored = json.loads(cred.blob_encrypted)
         assert stored == new_blob
         assert cred.token_prefix == new_token[:15]
+    finally:
+        backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
+def test_persist_refreshed_blob_short_circuits_on_unchanged_hash():
+    """When the staged credentials text is identical to the last persisted
+    text (the CLI didn't rotate during the turn), the persist call must
+    skip the DB UPDATE entirely. Without this short-circuit, every turn
+    re-writes the row even though the blob is unchanged.
+    """
+    user = get_user_model().objects.create_user(email="cache@dimagi.com")
+    token = "sk-ant-oat01-" + "c" * 40
+    blob = {"claudeAiOauth": {"accessToken": token, "refreshToken": "r"}}
+    UserCredential.objects.create(
+        user=user,
+        blob_encrypted=json.dumps(blob),
+        token_prefix=token[:15],
+    )
+    session = Session.objects.create(owner=user, slug="cache-sess", title="t")
+    backend = CLIBackend()
+    env, staged_home, source = backend._stage_env_for(session)
+    try:
+        # First persist — populates the in-memory cache.
+        backend._persist_refreshed_blob(session, source, staged_home)
+        # Mutate the row out-of-band to a sentinel; if the short-circuit
+        # works, the next persist call should not overwrite it.
+        UserCredential.objects.filter(user=user).update(
+            blob_encrypted="SENTINEL_NOT_OVERWRITTEN",
+        )
+        # Second persist — staged file is unchanged, so this should be
+        # a no-op and leave SENTINEL_NOT_OVERWRITTEN in place.
+        backend._persist_refreshed_blob(session, source, staged_home)
+        cred = UserCredential.objects.get(user=user)
+        assert cred.blob_encrypted == "SENTINEL_NOT_OVERWRITTEN", (
+            "persist did not short-circuit on unchanged hash — DB was "
+            "rewritten on a no-op turn"
+        )
     finally:
         backend._teardown_staged_home(staged_home)
 

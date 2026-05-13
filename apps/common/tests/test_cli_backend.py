@@ -354,6 +354,66 @@ async def test_circuit_breaker_opens_after_repeated_failures(session):
     assert "circuit" in str(exc_info.value).lower()
 
 
+async def test_circuit_breaker_isolated_per_owner(django_user_model):
+    """User A tripping the breaker must not affect user B. Without the
+    per-owner split, a single user's bad credentials open the breaker for
+    every other user on the same ECS worker.
+    """
+    @sync_to_async
+    def _setup():
+        user_a = django_user_model.objects.create_user(
+            email="a@example.com", display_name="a"
+        )
+        user_b = django_user_model.objects.create_user(
+            email="b@example.com", display_name="b"
+        )
+        session_a = Session.objects.create(owner=user_a, title="a")
+        session_b = Session.objects.create(owner=user_b, title="b")
+        return session_a, session_b
+    session_a, session_b = await _setup()
+
+    backend = CLIBackend(circuit_threshold=2, circuit_cooldown=10)
+
+    def make_failing():
+        return _fake_proc(b"", returncode=1)
+    fixture = (FIXTURES / "stream_json_simple.txt").read_bytes()
+
+    # Trip user A's breaker with 2 failures.
+    with patch(
+        "asyncio.create_subprocess_exec",
+        new=AsyncMock(side_effect=lambda *a, **kw: make_failing()),
+    ):
+        for _ in range(2):
+            with pytest.raises(CLIBackendError):
+                async for _e in backend.stream_completion(
+                    session=session_a, new_user_message="x"
+                ):
+                    pass
+
+    # User A's third call short-circuits with breaker open.
+    with patch(
+        "asyncio.create_subprocess_exec",
+        new=AsyncMock(side_effect=lambda *a, **kw: make_failing()),
+    ):
+        with pytest.raises(CLIBackendError) as exc_info_a:
+            async for _e in backend.stream_completion(
+                session=session_a, new_user_message="x"
+            ):
+                pass
+    assert "circuit" in str(exc_info_a.value).lower()
+
+    # User B's call should sail through with a healthy proc — its breaker
+    # is untouched by user A's failures.
+    fake_b = _fake_proc(fixture, returncode=0)
+    with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=fake_b)):
+        events_b = []
+        async for ev in backend.stream_completion(
+            session=session_b, new_user_message="ok"
+        ):
+            events_b.append(ev)
+    assert events_b, "user B's call did not produce events — breaker leaked across users"
+
+
 # ────────────────────────── Phase 1B: long-lived path ──────────────────────────
 
 
@@ -470,6 +530,62 @@ async def test_long_lived_evicts_on_subprocess_pipe_death(session):
         f"expected 2 spawns (first turn + post-eviction recovery), "
         f"got {create.call_count}"
     )
+
+
+async def test_pool_lru_evicts_oldest_when_at_cap(django_user_model):
+    """When the pool is at ``max_session_pool_size``, admitting a new
+    Session must LRU-evict the entry with the oldest ``last_active``.
+    Without this cap, a runaway client opening many sessions could pin
+    unbounded RAM on the worker.
+    """
+    @sync_to_async
+    def _make(suffix):
+        user = django_user_model.objects.create_user(
+            email=f"u{suffix}@example.com", display_name=f"u{suffix}"
+        )
+        return Session.objects.create(owner=user, title=f"s{suffix}")
+
+    s1 = await _make("1")
+    s2 = await _make("2")
+    s3 = await _make("3")
+
+    fixture = (FIXTURES / "stream_json_session_init.txt").read_bytes()
+
+    # Cap of 2: after s1 and s2, admitting s3 must evict the LRU (s1).
+    backend = CLIBackend(max_session_pool_size=2)
+
+    def fresh_fake():
+        return _multi_turn_fake_proc([fixture])
+
+    procs = [fresh_fake(), fresh_fake(), fresh_fake()]
+    terminated = []
+    for i, p in enumerate(procs):
+        p.terminate = lambda i=i: terminated.append(i)
+
+    proc_iter = iter(procs)
+    with patch(
+        "asyncio.create_subprocess_exec",
+        new=AsyncMock(side_effect=lambda *a, **kw: next(proc_iter)),
+    ):
+        for s in (s1, s2):
+            async for _ in backend.stream_completion(session=s, new_user_message="hi"):
+                pass
+
+        # Force s1 to be the LRU by advancing s2's last_active.
+        backend._sessions[s2.slug].last_active += 100.0
+
+        async for _ in backend.stream_completion(session=s3, new_user_message="hi"):
+            pass
+
+    assert s1.slug not in backend._sessions, "LRU (s1) should have been evicted"
+    assert s2.slug in backend._sessions
+    assert s3.slug in backend._sessions
+    assert len(backend._sessions) == 2
+    assert 0 in terminated, "s1's subprocess should have been terminated by LRU eviction"
+
+    # Cleanup
+    if backend._idle_reaper_task and not backend._idle_reaper_task.done():
+        backend._idle_reaper_task.cancel()
 
 
 async def test_idle_reaper_evicts_stale_sessions(session):

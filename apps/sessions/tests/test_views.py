@@ -119,6 +119,85 @@ def test_patch_session_title(client, user):
     assert resp.json()["data"]["title"] == "new"
 
 
+def test_turn_state_idle_when_no_task_running(client, user):
+    """No turn task + no CLIBackend session for this slug → running=false,
+    cli=null. Authoritative signal that the script can stop waiting."""
+    s = Session.objects.create(owner=user, title="idle")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    resp = client.get(f"/api/sessions/{s.slug}/turn-state")
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert body["running"] is False
+    assert body["cli"] is None
+    assert body["last_message_at"] is None
+
+
+def test_turn_state_running_when_task_in_slug_index(client, user):
+    """A task in ``_TURN_TASKS_BY_SLUG`` for this slug means the consumer
+    is mid-turn → running=true. The watch script polls this; when it
+    flips to false (without a chat.stream_complete event arriving), the
+    turn died silently and the script can exit instead of guessing at
+    a wall-clock timeout."""
+    from unittest.mock import MagicMock
+
+    from apps.sessions.consumers import _TURN_TASKS_BY_SLUG
+
+    s = Session.objects.create(owner=user, title="running")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    fake_task = MagicMock()
+    fake_task.done.return_value = False
+    _TURN_TASKS_BY_SLUG[s.slug] = fake_task
+    try:
+        resp = client.get(f"/api/sessions/{s.slug}/turn-state")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["running"] is True
+    finally:
+        _TURN_TASKS_BY_SLUG.pop(s.slug, None)
+
+
+def test_turn_state_running_false_when_task_done(client, user):
+    """Even if a stale task is still in the slug index (race between the
+    done-callback and the request), ``done()=True`` means the turn is
+    over. Belt-and-braces — the done-callback removes the entry first
+    but the consumer view shouldn't trust it without checking."""
+    from unittest.mock import MagicMock
+
+    from apps.sessions.consumers import _TURN_TASKS_BY_SLUG
+
+    s = Session.objects.create(owner=user, title="done")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    fake_task = MagicMock()
+    fake_task.done.return_value = True
+    _TURN_TASKS_BY_SLUG[s.slug] = fake_task
+    try:
+        resp = client.get(f"/api/sessions/{s.slug}/turn-state")
+        assert resp.json()["data"]["running"] is False
+    finally:
+        _TURN_TASKS_BY_SLUG.pop(s.slug, None)
+
+
+def test_turn_state_includes_last_message_at(client, user):
+    s = Session.objects.create(owner=user, title="msgs")
+    SessionParticipant.objects.create(session=s, user=user, role="owner")
+    m = Message.objects.create(
+        session=s, turn_index=1, role="user",
+        content={"text": "hi"}, plaintext="hi", status="complete",
+    )
+    resp = client.get(f"/api/sessions/{s.slug}/turn-state")
+    body = resp.json()["data"]
+    assert body["last_message_at"] is not None
+    # ISO-8601 prefix match — sloppy comparison is fine for a smoke test.
+    # ``isoformat()[:19]`` yields ``YYYY-MM-DDTHH:MM:SS`` without timezone,
+    # which the API response (with ``+00:00``) should still start with.
+    assert body["last_message_at"].startswith(m.created_at.isoformat()[:19])
+
+
+def test_turn_state_404_for_stranger(client, user, other_user):
+    s = Session.objects.create(owner=other_user, title="theirs")
+    resp = client.get(f"/api/sessions/{s.slug}/turn-state")
+    assert resp.status_code == 404
+
+
 def test_messages_list_returns_ordered_messages(client, user):
     s = Session.objects.create(owner=user, title="x")
     SessionParticipant.objects.create(session=s, user=user, role="owner")

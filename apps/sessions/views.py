@@ -329,6 +329,73 @@ def _not_found() -> Response:
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def session_turn_state(request: Request, slug: str) -> Response:
+    """Read-only signal: is a chat turn currently running on the server?
+
+    Exists so scripted callers (e.g. ``scripts/ace_send_and_watch.py``)
+    can wait for a turn to finish without resorting to wall-clock
+    timeouts. The WebSocket event stream tells you "the CLI emitted
+    something just now" — which is silent for many minutes during a
+    long LLM call even though everything is healthy. This endpoint
+    answers "is the server actively driving the backend right now"
+    instead.
+
+    Response shape:
+        {
+          "running": bool,                  # an asyncio turn task exists for this slug
+          "last_message_at": "..." | null,  # most recent persisted message
+          "cli": {                          # null when no long-lived SessionProcess
+            "alive": bool,
+            "pid": int | None,
+            "elapsed_s": float,
+            "last_active_age_s": float,
+            "credential_source": str | None,
+            "cli_session_id": str | None,
+            "spawned_with_resume": bool,
+          } | null,
+        }
+
+    Caveat: ``running`` only reflects THIS worker process. In multi-worker
+    deploys, a turn driven by a sibling worker shows as ``running=false``
+    here. The watch script should treat ``running=true`` as a positive
+    liveness signal and treat ``running=false + recent message activity``
+    as ambiguous (might be a sibling worker). This worker count today is
+    1 on labs, so in practice ``running`` is authoritative.
+    """
+    from apps.common.backend_selector import _cli_instance
+    from apps.sessions.consumers import turn_task_for_slug
+
+    session = _load_session_for_participant(slug, request.user)
+    if session is None:
+        return _not_found()
+
+    task = turn_task_for_slug(slug)
+    running = task is not None and not task.done()
+
+    # Best-effort CLIBackend introspection. Reading _cli_instance directly
+    # rather than via _cli() avoids forcing instantiation on a worker
+    # that's never had a CLI session.
+    cli_state = None
+    if _cli_instance is not None:
+        cli_state = _cli_instance.session_state(slug)
+
+    last = (
+        Message.objects.filter(session=session)
+        .order_by("-created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    return Response(
+        success_response({
+            "running": running,
+            "last_message_at": last.isoformat() if last is not None else None,
+            "cli": cli_state,
+        })
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def session_cost_breakdown(request: Request, slug: str) -> Response:
     """Return the persisted cost breakdown for a session.
 

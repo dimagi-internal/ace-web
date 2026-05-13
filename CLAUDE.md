@@ -367,7 +367,11 @@ Workbench's linked-chats panel. Orphan uploads (no opp fields) still work.
 
 - No observability, no eval harness, no security review — see **Phase 5 deferred** note below.
 - Stream-reconnect Hazard 2 (reconnect-during-stream gap, up to 250 ms char loss) is documented but **deferred** until observed in real user reports. See `docs/learnings/stream-resume-vercel-open-agents.md`.
-- `docs/plans/2026-05-03-cli-backend-phase-1b-long-lived.md` is design-only and not yet implemented (the long-lived per-session subprocess refactor of `CLIBackend`).
+
+(Phase 1B — long-lived per-session subprocess refactor of `CLIBackend` —
+SHIPPED in commit `a02093e`. The `docs/plans/2026-05-03-cli-backend-phase-1b-long-lived.md`
+file is HISTORICAL; the design is reflected in the `cli_backend.py` module
+docstring's "Two execution paths" section.)
 
 **Phase 5 deferred (2026-04-21):** The Phase 5 "Polish" bundle (structured
 logs + correlation fields, p50/p95/p99 metrics, eval harness against

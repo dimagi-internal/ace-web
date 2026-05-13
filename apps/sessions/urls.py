@@ -16,6 +16,11 @@ urlpatterns = [
         name="participant_collection",
     ),
     path(
+        "sessions/<slug:slug>/turn-state",
+        views.session_turn_state,
+        name="session_turn_state",
+    ),
+    path(
         "sessions/<slug:slug>/cost-breakdown",
         views.session_cost_breakdown,
         name="session_cost_breakdown",
