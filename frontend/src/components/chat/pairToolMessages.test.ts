@@ -10,9 +10,7 @@ import {
 
 function msg(partial: Partial<Message> & { id: number; role: Message["role"] }): Message {
   return {
-    id: partial.id,
     turn_index: partial.id,
-    role: partial.role,
     content: {},
     plaintext: "",
     status: "complete",
