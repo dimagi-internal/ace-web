@@ -471,12 +471,21 @@ class CLIBackend:
                                 done_yielded = True
                             if event.type is StreamEventType.ERROR:
                                 # Even the seeded-history fallback can hit
-                                # a terminal error event. Same handling as
-                                # the primary path: evict and (defensively)
-                                # clear cli_session_id.
+                                # a terminal error event. The fallback spawn
+                                # is always fresh (no --resume), so
+                                # ``sp.spawned_with_resume`` was set to False
+                                # by ``_spawn_session_process``; the
+                                # ``if sp.spawned_with_resume`` guard the
+                                # primary path uses would be dead here.
+                                # Instead clear unconditionally: the
+                                # ``cli_session_id`` we just captured from
+                                # the SESSION_ID event above is associated
+                                # with a CLI session that immediately failed,
+                                # and next turn should respawn fresh rather
+                                # than chase a possibly-bad ``--resume``.
                                 error_yielded = True
-                                if sp.spawned_with_resume:
-                                    await self._clear_cli_session_id(session)
+                                await self._clear_cli_session_id(session)
+                                sp.cli_session_id = None
                                 await self._evict_locked(
                                     sp, persist_for_session=session
                                 )
@@ -488,8 +497,12 @@ class CLIBackend:
                 # Belt-and-braces: a turn that streamed events but never
                 # emitted DONE (CLI-side bug, partial result, etc.) still
                 # needs the bookkeeping. Real turns always go through the
-                # in-loop branch above.
-                if not done_yielded:
+                # in-loop branch above. Skip when the turn ended in a
+                # terminal ERROR event — the proc was already evicted and
+                # ``_mark_turn_complete`` would falsely record a
+                # ``record_success()`` on the circuit breaker and try to
+                # persist from a torn-down staged_home.
+                if not done_yielded and not error_yielded:
                     await self._mark_turn_complete(sp, session)
 
             except (GeneratorExit, asyncio.CancelledError):
@@ -735,8 +748,18 @@ class CLIBackend:
         """Remove a SessionProcess from the pool: terminate proc, persist any
         refreshed OAuth blob, rmtree staged HOME, drop dict entry.
 
-        Acquires ``sp.lock`` so we don't kill a turn in flight. Idempotent
-        — calling twice is safe.
+        Pops the slug from ``self._sessions`` FIRST, then acquires ``sp.lock``
+        for the (possibly slow) proc cleanup. Pop-first is load-bearing for
+        the eviction-vs-spawn race: if eviction held ``sp.lock`` while the
+        slug was still in the dict, a concurrent ``stream_completion`` could
+        find the about-to-be-evicted sp, block on its lock, and after release
+        observe ``proc=None`` → call ``_spawn_session_process`` onto the
+        orphaned sp. The reaper would then pop the slug from the dict,
+        leaving a live subprocess + staged HOME that nothing tracks. By
+        popping first, the concurrent call always sees an empty slot and
+        creates a fresh SessionProcess.
+
+        Idempotent — calling twice is safe.
 
         ``persist_for_session`` is the live ``Session`` ref (when the caller
         already has it, e.g. the idle reaper passes ``None`` and we fetch
@@ -748,15 +771,12 @@ class CLIBackend:
         directly.
         """
         async with self._sessions_dict_lock:
-            sp = self._sessions.get(slug)
-            if sp is None:
-                return
+            sp = self._sessions.pop(slug, None)
+        if sp is None:
+            return
 
         async with sp.lock:
             await self._evict_locked(sp, persist_for_session=persist_for_session)
-
-        async with self._sessions_dict_lock:
-            self._sessions.pop(slug, None)
 
     async def _evict_locked(
         self,
