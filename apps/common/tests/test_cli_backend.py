@@ -354,6 +354,66 @@ async def test_circuit_breaker_opens_after_repeated_failures(session):
     assert "circuit" in str(exc_info.value).lower()
 
 
+async def test_circuit_breaker_isolated_per_owner(django_user_model):
+    """User A tripping the breaker must not affect user B. Without the
+    per-owner split, a single user's bad credentials open the breaker for
+    every other user on the same ECS worker.
+    """
+    @sync_to_async
+    def _setup():
+        user_a = django_user_model.objects.create_user(
+            email="a@example.com", display_name="a"
+        )
+        user_b = django_user_model.objects.create_user(
+            email="b@example.com", display_name="b"
+        )
+        session_a = Session.objects.create(owner=user_a, title="a")
+        session_b = Session.objects.create(owner=user_b, title="b")
+        return session_a, session_b
+    session_a, session_b = await _setup()
+
+    backend = CLIBackend(circuit_threshold=2, circuit_cooldown=10)
+
+    def make_failing():
+        return _fake_proc(b"", returncode=1)
+    fixture = (FIXTURES / "stream_json_simple.txt").read_bytes()
+
+    # Trip user A's breaker with 2 failures.
+    with patch(
+        "asyncio.create_subprocess_exec",
+        new=AsyncMock(side_effect=lambda *a, **kw: make_failing()),
+    ):
+        for _ in range(2):
+            with pytest.raises(CLIBackendError):
+                async for _e in backend.stream_completion(
+                    session=session_a, new_user_message="x"
+                ):
+                    pass
+
+    # User A's third call short-circuits with breaker open.
+    with patch(
+        "asyncio.create_subprocess_exec",
+        new=AsyncMock(side_effect=lambda *a, **kw: make_failing()),
+    ):
+        with pytest.raises(CLIBackendError) as exc_info_a:
+            async for _e in backend.stream_completion(
+                session=session_a, new_user_message="x"
+            ):
+                pass
+    assert "circuit" in str(exc_info_a.value).lower()
+
+    # User B's call should sail through with a healthy proc — its breaker
+    # is untouched by user A's failures.
+    fake_b = _fake_proc(fixture, returncode=0)
+    with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=fake_b)):
+        events_b = []
+        async for ev in backend.stream_completion(
+            session=session_b, new_user_message="ok"
+        ):
+            events_b.append(ev)
+    assert events_b, "user B's call did not produce events — breaker leaked across users"
+
+
 # ────────────────────────── Phase 1B: long-lived path ──────────────────────────
 
 

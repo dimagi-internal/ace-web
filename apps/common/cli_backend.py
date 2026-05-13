@@ -217,15 +217,48 @@ class CLIBackend:
         session_idle_sweep_interval_seconds: float = SESSION_IDLE_SWEEP_INTERVAL_SECONDS,
     ):
         self._binary = binary
-        self._breaker = CircuitBreaker(
-            threshold=circuit_threshold, cooldown_seconds=circuit_cooldown
-        )
+        # Per-owner breakers. Keying by owner_id keeps one user's bad
+        # credentials from poisoning chat for every other user sharing the
+        # ECS worker — the original process-global breaker tripped for
+        # everyone the moment a single user hit 5 auth failures. ``None``
+        # is the fallback key for paths that don't have a resolved owner
+        # (tests, dev fixtures); it acts like the old single breaker.
+        self._circuit_threshold = circuit_threshold
+        self._circuit_cooldown = circuit_cooldown
+        self._breakers: dict[int | None, CircuitBreaker] = {}
+        self._breakers_lock = asyncio.Lock()
         self._terminate_grace = terminate_grace_seconds
         self._sessions: dict[str, SessionProcess] = {}
         self._sessions_dict_lock = asyncio.Lock()
         self._idle_reaper_task: asyncio.Task | None = None
         self._idle_timeout_seconds = session_idle_timeout_seconds
         self._idle_sweep_interval_seconds = session_idle_sweep_interval_seconds
+
+    def _breaker_for(self, session_or_owner_id) -> CircuitBreaker:
+        """Return the breaker for this session's owner, lazily creating it.
+
+        Accepts either a ``Session`` (we read ``owner_id`` from it) or an
+        ``int`` owner_id directly (for ``_spawn`` which is called without
+        a session ref in one of its error paths). Synchronous because
+        breaker creation is cheap and ``CircuitBreaker`` is itself
+        thread-safe via an internal ``threading.Lock`` — the only race
+        here is two coroutines lazy-creating the same key, which would
+        leave one extra unreferenced breaker (harmless).
+        """
+        if hasattr(session_or_owner_id, "owner_id"):
+            key = session_or_owner_id.owner_id
+        elif hasattr(session_or_owner_id, "owner"):
+            key = getattr(session_or_owner_id.owner, "pk", None)
+        else:
+            key = session_or_owner_id  # raw int or None
+        breaker = self._breakers.get(key)
+        if breaker is None:
+            breaker = CircuitBreaker(
+                threshold=self._circuit_threshold,
+                cooldown_seconds=self._circuit_cooldown,
+            )
+            self._breakers[key] = breaker
+        return breaker
 
     async def stream_completion(
         self,
@@ -249,7 +282,7 @@ class CLIBackend:
         in-flight turn cannot be safely resumed mid-stream).
         """
         try:
-            self._breaker.check()
+            self._breaker_for(session).check()
         except CircuitOpenError as exc:
             raise CLIBackendError(str(exc)) from exc
 
@@ -302,6 +335,7 @@ class CLIBackend:
                 prompt=new_user_message,
                 env=staged_env,
                 session_slug=session.slug,
+                owner_id=session.owner_id,
             )
             had_events = False
             try:
@@ -316,9 +350,14 @@ class CLIBackend:
                 stderr_text = _proc_stderr_tail(proc, char_limit=2000)
                 if stderr_text:
                     logger.error("claude CLI stderr tail: %s", stderr_text)
-                self._breaker.record_failure()
+                self._breaker_for(session).record_failure()
+                elapsed = time.monotonic() - getattr(
+                    proc, "_ace_started_at", time.monotonic()
+                )
+                stderr_lines = len(getattr(proc, "_ace_stderr_buf", ()) or ())
                 raise CLIBackendError(
-                    f"claude CLI failed (rc={proc.returncode}, events={had_events})"
+                    f"claude CLI failed (rc={proc.returncode}, events=0, "
+                    f"elapsed={elapsed:.1f}s, stderr_lines={stderr_lines})"
                     + (f" stderr: {stderr_text[:500]}" if stderr_text else "")
                 )
             if proc.returncode != 0:
@@ -326,7 +365,7 @@ class CLIBackend:
                     "claude CLI exited %s but produced events — treating as success",
                     proc.returncode,
                 )
-            self._breaker.record_success()
+            self._breaker_for(session).record_success()
         finally:
             try:
                 await sync_to_async(self._persist_refreshed_blob)(
@@ -537,7 +576,7 @@ class CLIBackend:
                 )
                 await self._evict_locked(sp, persist_for_session=session)
                 await self._drop_session_from_pool(sp.slug)
-                self._breaker.record_failure()
+                self._breaker_for(session).record_failure()
                 raise CLIBackendError(
                     f"claude CLI subprocess died mid-turn: {exc}"
                 ) from exc
@@ -555,7 +594,7 @@ class CLIBackend:
                     await self._clear_cli_session_id(session)
                 await self._evict_locked(sp, persist_for_session=session)
                 await self._drop_session_from_pool(sp.slug)
-                self._breaker.record_failure()
+                self._breaker_for(session).record_failure()
                 raise
             except Exception:
                 # Unknown failure — evict to avoid leaking a half-broken
@@ -566,7 +605,7 @@ class CLIBackend:
                 )
                 await self._evict_locked(sp, persist_for_session=session)
                 await self._drop_session_from_pool(sp.slug)
-                self._breaker.record_failure()
+                self._breaker_for(session).record_failure()
                 raise
 
     async def _mark_turn_complete(
@@ -593,7 +632,7 @@ class CLIBackend:
                 session.slug,
                 exc_info=True,
             )
-        self._breaker.record_success()
+        self._breaker_for(session).record_success()
 
     async def _get_or_create_session_process(
         self, session: Session
@@ -920,6 +959,7 @@ class CLIBackend:
         prompt: str | None,
         env: dict[str, str],
         session_slug: str = "",
+        owner_id: int | None = None,
     ):
         """Spawn the CLI subprocess. Optionally write a user-message envelope
         to stdin.
@@ -997,7 +1037,7 @@ class CLIBackend:
                 await proc.stdin.drain()
             except (ConnectionResetError, BrokenPipeError) as exc:
                 await self._cleanup(proc)
-                self._breaker.record_failure()
+                self._breaker_for(owner_id).record_failure()
                 raise CLIBackendError(
                     f"claude CLI stdin closed before prompt delivered: {exc}"
                 ) from exc
