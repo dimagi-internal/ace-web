@@ -56,7 +56,11 @@ async def main(opp_slug: str) -> int:
             f"{k}={m.value}" for k, m in cookie_jar.items()
         )
         if "sessionid_ace" not in cookie_header:
-            print(f"e2e-login did not return sessionid_ace; got: {list(cookie_jar.keys())}", file=sys.stderr)
+            print(
+                f"e2e-login did not return sessionid_ace; "
+                f"got: {list(cookie_jar.keys())}",
+                file=sys.stderr,
+            )
             return 3
         print(f"[1/4] e2e-login OK as {email}")
 
@@ -89,7 +93,7 @@ async def main(opp_slug: str) -> int:
                 while True:
                     msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
                     yield json.loads(msg)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return
         async for frame in _initial_frames():
             t = frame.get("type") or frame.get("event")
@@ -111,7 +115,7 @@ async def main(opp_slug: str) -> int:
         try:
             ack = await asyncio.wait_for(ws.recv(), timeout=5.0)
             print(f"  ← {json.loads(ack).get('type') or json.loads(ack).get('event')}")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             print("  (no draft.update ack within 5s)", file=sys.stderr)
             return 4
 
@@ -127,11 +131,11 @@ async def main(opp_slug: str) -> int:
                 print(f"  ← {t}")
                 if t in ("chat.stream_start", "draft.committed"):
                     break
-        except asyncio.TimeoutError:
+        except TimeoutError:
             print("  (timed out waiting for stream_start)", file=sys.stderr)
             return 5
 
-        print(f"\n✓ Run kicked off. Open in browser:")
+        print("\n✓ Run kicked off. Open in browser:")
         print(f"  {ace_url}/w/{workspace}/chat/{session_slug}")
     return 0
 

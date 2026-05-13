@@ -79,7 +79,7 @@ async def _poll_turn_state(
                 on_state({"_error": str(exc)})
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=poll_seconds)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
 
@@ -166,7 +166,10 @@ async def main() -> int:
     print(f"[connect] {ws_url}")
 
     poll_task = asyncio.create_task(
-        _poll_turn_state(ace_url, cookie, args.session_slug, args.poll_seconds, _on_state, stop_event)
+        _poll_turn_state(
+            ace_url, cookie, args.session_slug,
+            args.poll_seconds, _on_state, stop_event,
+        )
     )
     sanity_task = None
     if args.max_seconds > 0:
@@ -193,7 +196,7 @@ async def main() -> int:
                 try:
                     raw = await asyncio.wait_for(ws.recv(), timeout=0.8)
                     frame = json.loads(raw)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     break
                 d = frame.get("data") or {}
                 if "version" in d:
@@ -204,7 +207,7 @@ async def main() -> int:
             }))
             try:
                 await asyncio.wait_for(ws.recv(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
             await ws.send(json.dumps({"action": "chat.send", "data": {}}))
             print(f"[sent] {args.message[:120]}")
@@ -214,7 +217,7 @@ async def main() -> int:
                 while not stop_event.is_set():
                     try:
                         raw = await asyncio.wait_for(ws.recv(), timeout=60.0)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         continue
                     frame = json.loads(raw)
                     t = frame.get("event") or frame.get("type")
@@ -233,7 +236,10 @@ async def main() -> int:
                         preview = (d.get("plaintext") or "")[:120].replace("\n", " ")
                         print(f"[tool_result] {preview}")
                     elif t == "chat.stream_complete":
-                        print(f"\n[done] total_deltas={delta_chars}c tool_counts={dict(tool_counts)}")
+                        print(
+                            f"\n[done] total_deltas={delta_chars}c "
+                            f"tool_counts={dict(tool_counts)}"
+                        )
                         completion_seen = True
                         stop_event.set()
                         return
