@@ -257,6 +257,55 @@ class CLIBackend:
         self._persist_cache: dict[tuple[str, int | str], str] = {}
         self._persist_cache_lock = threading.Lock()
 
+    def session_state(self, slug: str) -> dict | None:
+        """Read-only introspection of the long-lived SessionProcess for
+        ``slug``. Returns ``None`` when there is no SessionProcess in the
+        pool (i.e. the long-lived path has never run for this slug, or
+        the SessionProcess was evicted).
+
+        Returned shape:
+            {
+              "alive": bool,         # proc still running
+              "pid": int | None,
+              "elapsed_s": float,    # since spawn, only if proc set
+              "last_active_age_s": float,
+              "credential_source": str | None,
+              "cli_session_id": str | None,
+              "spawned_with_resume": bool,
+            }
+
+        Safe to call from sync request handlers — no awaits, no I/O.
+        Note: ``_sessions`` is mutated under ``_sessions_dict_lock`` from
+        async code, but a stale read here is fine for an observation
+        endpoint (worst case: we report "alive" for a SessionProcess that
+        was evicted milliseconds ago, which the next call will correct).
+        """
+        sp = self._sessions.get(slug)
+        if sp is None:
+            return None
+        proc = sp.proc
+        if proc is None:
+            return {
+                "alive": False,
+                "pid": None,
+                "elapsed_s": 0.0,
+                "last_active_age_s": time.monotonic() - sp.last_active,
+                "credential_source": sp.credential_source,
+                "cli_session_id": sp.cli_session_id,
+                "spawned_with_resume": sp.spawned_with_resume,
+            }
+        started = getattr(proc, "_ace_started_at", None)
+        elapsed = (time.monotonic() - started) if started is not None else 0.0
+        return {
+            "alive": proc.returncode is None,
+            "pid": getattr(proc, "pid", None),
+            "elapsed_s": elapsed,
+            "last_active_age_s": time.monotonic() - sp.last_active,
+            "credential_source": sp.credential_source,
+            "cli_session_id": sp.cli_session_id,
+            "spawned_with_resume": sp.spawned_with_resume,
+        }
+
     def _breaker_for(self, session_or_owner_id) -> CircuitBreaker:
         """Return the breaker for this session's owner, lazily creating it.
 
