@@ -72,6 +72,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -1123,7 +1124,18 @@ class CLIBackend:
             / f"{session.slug}-{uuid.uuid4().hex[:8]}"
         )
         claude_dir = staged_root / ".claude"
+        # 0o700 on the per-session dirs: the per-session HOME contains the
+        # staged credentials blob (mode 0o600 below) plus symlinks into the
+        # real ``~/.claude/``. Without 0o700, another local user on the same
+        # host could list the directory and observe filenames / sizes even
+        # if not the credentials file itself. ``mkdir(mode=...)`` only sets
+        # the mode on the leaf, so we apply 0o700 to staged_root too.
         claude_dir.mkdir(parents=True, exist_ok=True)
+        for _path in (staged_root, claude_dir):
+            try:
+                _path.chmod(0o700)
+            except OSError:
+                pass
 
         # Symlink everything from the real ~/.claude/ EXCEPT .credentials.json
         # into the staged HOME. We need plugins/, settings.json, plugin-data/,
@@ -1237,6 +1249,14 @@ class CLIBackend:
         if not access_token.startswith("sk-ant-oat"):
             return  # don't persist obviously-malformed state
 
+        # ``token_prefix`` (15 chars) goes to the UserCredential row for UI
+        # display in Settings (intentional, schema-coupled — users
+        # identify their token by these prefix bytes). ``token_fp`` is a
+        # short fingerprint used only in logs so we don't leak the 2
+        # bytes of secret entropy past the public ``sk-ant-oat01-``
+        # prefix into CloudWatch.
+        token_fp = _token_fingerprint(access_token)
+
         if source == "user":
             from .models import UserCredential
 
@@ -1245,8 +1265,8 @@ class CLIBackend:
                 token_prefix=access_token[:15],
             )
             logger.info(
-                "CLIBackend: persisted refreshed user blob for user=%s prefix=%s",
-                session.owner.pk, access_token[:15],
+                "CLIBackend: persisted refreshed user blob for user=%s fp=%s",
+                session.owner.pk, token_fp,
             )
         elif source == "global":
             from .models import SystemConfig
@@ -1256,8 +1276,8 @@ class CLIBackend:
                 defaults={"value": current_text},
             )
             logger.info(
-                "CLIBackend: persisted refreshed global blob prefix=%s",
-                access_token[:15],
+                "CLIBackend: persisted refreshed global blob fp=%s",
+                token_fp,
             )
         # source="env" is a dev/test fallback — don't persist back to anywhere
 
@@ -1388,6 +1408,20 @@ class CLIBackend:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await asyncio.shield(asyncio.wait_for(task, timeout=1.0))
+
+
+def _token_fingerprint(token: str) -> str:
+    """Stable 12-char identifier for a token, safe to log.
+
+    Hash-based so it reveals zero secret bytes — but still lets us
+    correlate "this token was persisted" log entries across requests
+    and across the user / global storage layers. SHA-256 truncated to
+    12 hex chars is comfortably collision-resistant for the population
+    sizes (Claude tokens per worker) we care about.
+    """
+    if not token:
+        return ""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
 
 
 def _escape_turn_boundaries(text: str) -> str:

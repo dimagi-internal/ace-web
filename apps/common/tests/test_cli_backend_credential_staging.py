@@ -131,6 +131,39 @@ def test_staged_homes_are_isolated_per_invocation():
         backend._teardown_staged_home(home2)
 
 
+@pytest.mark.django_db
+def test_staged_home_dirs_are_owner_only_readable():
+    """Per-session staged HOME and its .claude/ subdir must be 0o700.
+    Without it, another local user on the same host could list directory
+    contents (filenames, sizes). The credentials file itself is 0o600,
+    so even with looser dirs the secret bytes were safe — but filename
+    enumeration is still avoidable hygiene.
+    """
+    import os
+    import stat
+
+    user = get_user_model().objects.create_user(email="perms@dimagi.com")
+    blob = {"claudeAiOauth": {"accessToken": REAL}}
+    UserCredential.objects.create(
+        user=user,
+        blob_encrypted=json.dumps(blob),
+        token_prefix=REAL[:15],
+    )
+    session = Session.objects.create(owner=user, slug="perms", title="perms")
+
+    backend = CLIBackend()
+    _, home, _ = backend._stage_env_for(session)
+    try:
+        home_mode = stat.S_IMODE(os.stat(home).st_mode)
+        claude_mode = stat.S_IMODE(os.stat(os.path.join(home, ".claude")).st_mode)
+        assert home_mode == 0o700, f"staged HOME mode {oct(home_mode)} != 0o700"
+        assert claude_mode == 0o700, (
+            f"staged .claude/ mode {oct(claude_mode)} != 0o700"
+        )
+    finally:
+        backend._teardown_staged_home(home)
+
+
 # ── Refresh persistence tests ──────────────────────────────────────────────
 
 
