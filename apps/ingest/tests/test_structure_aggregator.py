@@ -179,6 +179,85 @@ def test_tool_content_preview_propagates_from_tool_result(tmp_path):
     assert tool["content_preview"] == "file1.txt\nfile2.txt"
 
 
+def test_nested_subagent_cost_rolls_up_to_parent_and_phase(tmp_path, monkeypatch):
+    """Cost from a sidechain assistant turn inside a subagent must roll up
+    to the parent skill node and to the phase total — otherwise a
+    /ace:run-style transcript (orchestrator dispatches → subagents do all
+    the model work) shows session_cost > 0 but every phase row = $0.
+    """
+    from apps.ingest import structure_aggregator
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+
+    monkeypatch.setattr(
+        structure_aggregator, "skill_phase_index",
+        lambda: {"qa-and-training": {"phase": "phase-5-qa-and-training",
+                                     "phase_display": "Phase 5: QA and Training",
+                                     "phase_ordinal": 5,
+                                     "skill_display": "QA and Training"}},
+    )
+
+    jsonl = tmp_path / "nested_costs.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        # Orchestrator's dispatch turn — has its own usage even though it
+        # only contains a Skill tool_use block. Without dispatch-turn
+        # deferral this cost would be lost from every phase.
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":1000,"output_tokens":100},"content":['
+        '{"type":"tool_use","id":"tOuter","name":"Skill",'
+        '"input":{"skill":"qa-and-training"}}]}}\n'
+        # Inner Agent dispatch (sidechain — runs inside qa-and-training).
+        '{"type":"assistant","uuid":"u2","parentUuid":"u1","isSidechain":true,'
+        '"timestamp":"2026-05-10T14:00:01Z",'
+        '"message":{"id":"m2","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tInner","name":"Agent",'
+        '"input":{"subagent_type":"unknown-inner"}}]}}\n'
+        # The big cost: the subagent's leaf assistant turn does the real work.
+        '{"type":"assistant","uuid":"u3","parentUuid":"u2","isSidechain":true,'
+        '"timestamp":"2026-05-10T14:00:02Z",'
+        '"message":{"id":"m3","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":50000,"output_tokens":2000},"content":['
+        '{"type":"text","text":"working"}]}}\n'
+        # Inner result first (LIFO close).
+        '{"type":"user","uuid":"u4","timestamp":"2026-05-10T14:00:03Z",'
+        '"message":{"content":[{"type":"tool_result",'
+        '"tool_use_id":"tInner","content":"inner done"}]}}\n'
+        # Outer result.
+        '{"type":"user","uuid":"u5","timestamp":"2026-05-10T14:00:04Z",'
+        '"message":{"content":[{"type":"tool_result",'
+        '"tool_use_id":"tOuter","content":"outer done"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+
+    session_cost = tree["session"]["estimated_cost_usd"]
+    assert session_cost > 0, "fixture must have nonzero cost or the test is vacuous"
+
+    phase = next(p for p in tree["phases"] if p["name"] == "phase-5-qa-and-training")
+    assert phase["estimated_cost_usd"] == session_cost, (
+        f"phase rollup {phase['estimated_cost_usd']} should equal session total "
+        f"{session_cost} — all events landed under this single phase"
+    )
+
+    outer = next(c for c in phase["children"] if c["kind"] == "skill")
+    assert outer["estimated_cost_usd"] == session_cost, (
+        "top-level skill node must include its subagent's cost so the row "
+        "shows the inclusive spend; otherwise the phase rollup drops it"
+    )
+    # Tokens propagate too — needed for the tokens chip on the skill row.
+    assert outer["tokens"]["input_tokens"] == 51000
+    assert outer["tokens"]["output_tokens"] == 2100
+
+    inner = next(c for c in outer["children"] if c["kind"] == "skill")
+    assert inner["is_subagent"] is True
+    # The inner skill node reports its own subtree cost (no parent dispatch
+    # turn was attributed to it).
+    assert inner["tokens"]["input_tokens"] == 50000
+    assert inner["tokens"]["output_tokens"] == 2000
+
+
 def test_tool_without_result_has_null_content_preview(tmp_path):
     """A tool_use without a matching tool_result leaves content_preview=None."""
     from apps.ingest.parser import parse_session_file
