@@ -184,6 +184,55 @@ def test_upload_to_workspace_user_is_not_member_of_returns_403(client, user):
     assert resp.json()["error"]["code"] == "not-a-member"
 
 
+def test_upload_with_workspace_slug_attaches_workspace(client, user):
+    """Web UI upload path: the frontend sends `workspace_slug` from the URL
+    so a user-driven upload lands in the workspace they're viewing,
+    not as an orphan only the uploader can see.
+    """
+    from apps.workspaces.models import Workspace, WorkspaceMembership
+    ws = Workspace.objects.create(
+        slug="acme", display_name="Acme",
+        drive_root_folder_id="folder-acme", created_by=user,
+    )
+    WorkspaceMembership.objects.create(workspace=ws, user=user, role="owner")
+
+    content = (FIXTURES / "simple_session.jsonl").read_bytes()
+    file = BytesIO(content)
+    file.name = "simple_session.jsonl"
+    resp = client.post(
+        "/api/ingest/upload",
+        {"file": file, "workspace_slug": "acme"},
+        format="multipart",
+    )
+    assert resp.status_code == 201
+    upload = IngestUpload.objects.get(uploaded_by=user)
+    assert upload.workspace == ws
+    assert upload.session.workspace == ws
+
+
+def test_upload_workspace_slug_non_member_returns_404(client, user):
+    """Non-membership on workspace_slug returns 404 (existence-hidden) —
+    callers know the slug from the URL, but membership is the real gate.
+    """
+    from apps.auth.models import User
+    from apps.workspaces.models import Workspace
+    other = User.objects.create_user(email="other@example.com", display_name="other")
+    Workspace.objects.create(
+        slug="other-ws", display_name="Other",
+        drive_root_folder_id="folder-other", created_by=other,
+    )
+
+    content = (FIXTURES / "simple_session.jsonl").read_bytes()
+    file = BytesIO(content)
+    file.name = "simple_session.jsonl"
+    resp = client.post(
+        "/api/ingest/upload",
+        {"file": file, "workspace_slug": "other-ws"},
+        format="multipart",
+    )
+    assert resp.status_code == 404
+
+
 def test_upload_without_folder_id_creates_orphan(client, user):
     """Backward compat: older plugin uploads (no ace_root_folder_id) work
     as orphan uploads — workspace=None, visible only to the uploader."""

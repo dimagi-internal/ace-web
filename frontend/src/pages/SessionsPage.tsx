@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Archive, ArchiveRestore, MoreHorizontal, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,6 +44,7 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
 
 export default function SessionsPage() {
   const navigate = useNavigate();
+  const { workspaceSlug } = useParams<{ workspaceSlug?: string }>();
   const [data, setData] = useState<SessionListPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +99,7 @@ export default function SessionsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const result = await uploadSession(file);
+      const result = await uploadSession(file, workspaceSlug);
       toast.success(`Uploaded: ${result.message_count} messages`);
       load();
     } catch (err) {

@@ -305,7 +305,7 @@ def test_orchestrator_thinking_attributed_to_current_phase(tmp_path, monkeypatch
     assert phase["estimated_cost_usd"] == tree["session"]["estimated_cost_usd"]
 
     orch_rows = [c for c in phase["children"]
-                 if c["kind"] == "skill" and c["name"] == "(orchestration)"]
+                 if c["kind"] == "skill" and c["name"] == "(direct turns)"]
     assert len(orch_rows) == 1
     assert orch_rows[0]["tokens"]["input_tokens"] == 100000
     assert orch_rows[0]["tokens"]["output_tokens"] == 5000
@@ -334,8 +334,54 @@ def test_orchestrator_thinking_before_any_dispatch_lands_in_orchestration(tmp_pa
     orch_phase = next(p for p in tree["phases"] if p["name"] == "_orchestration")
     assert orch_phase["estimated_cost_usd"] == tree["session"]["estimated_cost_usd"]
     synthetic = next(c for c in orch_phase["children"]
-                     if c["kind"] == "skill" and c["name"] == "(orchestration)")
+                     if c["kind"] == "skill" and c["name"] == "(direct turns)")
     assert synthetic["tokens"]["input_tokens"] == 50000
+
+
+def test_phase_wall_is_span_not_sum_when_orch_overlaps_tool(tmp_path):
+    """Phase wall must use a span, not a sum. The synthetic "direct turns"
+    row spans all top-level assistant turns; tool calls run *during* those
+    turns. Summing both double-counts wall-clock seconds.
+    """
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+
+    jsonl = tmp_path / "overlap.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        # Three top-level assistant turns spanning 100s. Each ends with a
+        # tool_use; each tool_result is +5s. With sum-based rollup the
+        # phase wall would be ~100 (orch span) + 15 (3×tool 5s) = 115.
+        # With span-based, the phase wall equals the actual elapsed time
+        # (~100s).
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":100,"output_tokens":10},"content":['
+        '{"type":"tool_use","id":"tA","name":"Bash","input":{"command":"ls"}}]}}\n'
+        '{"type":"user","uuid":"u2","timestamp":"2026-05-10T14:00:05Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tA",'
+        '"content":"x"}]}}\n'
+        '{"type":"assistant","uuid":"u3","timestamp":"2026-05-10T14:00:50Z",'
+        '"message":{"id":"m3","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":100,"output_tokens":10},"content":['
+        '{"type":"tool_use","id":"tB","name":"Bash","input":{"command":"ls"}}]}}\n'
+        '{"type":"user","uuid":"u4","timestamp":"2026-05-10T14:00:55Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tB",'
+        '"content":"x"}]}}\n'
+        '{"type":"assistant","uuid":"u5","timestamp":"2026-05-10T14:01:40Z",'
+        '"message":{"id":"m5","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":100,"output_tokens":10},"content":['
+        '{"type":"text","text":"final"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+    orch = next(p for p in tree["phases"] if p["name"] == "_orchestration")
+    # Span is 14:00:00 → 14:01:40 = 100s exactly. Old sum-based rollup
+    # would have produced ~110s (100s synthetic + ~5s + ~5s tools).
+    assert orch["wall_time_seconds"] == 100, (
+        f"expected 100s span, got {orch['wall_time_seconds']}s — "
+        "sum-based rollup is leaking tool wall on top of the orch span"
+    )
 
 
 def test_tool_without_result_has_null_content_preview(tmp_path):
