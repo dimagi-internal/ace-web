@@ -59,8 +59,19 @@ const authRedirectMiddleware: Middleware = {
   async onResponse({ response }) {
     if (response.status === 401 || response.status === 403) {
       try {
-        const body = (await response.clone().json()) as { detail?: string };
+        // v2 returns RFC 7807 application/problem+json with `type` URI and
+        // `title`. Legacy DRF used `detail`. Match both for safety.
+        const body = (await response.clone().json()) as {
+          type?: string;
+          title?: string;
+          detail?: string;
+        };
         const isAuthError =
+          // v2 problem+json
+          body.type?.includes("/problems/auth") ||
+          body.type?.includes("/problems/forbidden") ||
+          body.title === "Authentication required" ||
+          // Legacy DRF detail strings (kept for any non-v2 caller)
           body.detail?.includes("credentials were not provided") ||
           body.detail?.includes("CSRF") ||
           body.detail?.includes("not authenticated") ||
