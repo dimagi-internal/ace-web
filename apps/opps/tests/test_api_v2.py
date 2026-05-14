@@ -349,3 +349,47 @@ def test_patch_opp_400_empty_title(member_client):
 
 
 # ---------------------------------------------------------------------------
+# Task 2.1.6 — DELETE /w/{workspace_slug}/opps/{slug}
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_delete_opp_happy_path(member_client, monkeypatch):
+    client, workspace, user = member_client
+    monkeypatch.setattr(
+        "apps.opps.api_v2.delete_opp_by_slug",
+        lambda workspace, slug: None,
+    )
+    response = client.delete("/api/v2/w/ws1/opps/opp-1")
+    assert response.status_code == 204
+
+
+@pytest.mark.django_db
+def test_delete_opp_404_non_member(non_member_client):
+    client, _, _ = non_member_client
+    response = client.delete("/api/v2/w/ws1/opps/opp-1")
+    assert response.status_code == 404
+    assert response["Content-Type"].startswith("application/problem+json")
+
+
+@pytest.mark.django_db
+def test_delete_opp_401_anonymous(db, client):
+    Workspace.objects.create(
+        slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
+        created_by=User.objects.create_user(email="creator8@example.com"),
+    )
+    response = client.delete("/api/v2/w/ws1/opps/opp-1")
+    assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_delete_opp_404_unknown_slug(member_client, monkeypatch):
+    client, workspace, user = member_client
+
+    def _raise_not_found(workspace, slug):
+        raise FileNotFoundError(f"no opp named {slug!r}")
+
+    monkeypatch.setattr("apps.opps.api_v2.delete_opp_by_slug", _raise_not_found)
+    response = client.delete("/api/v2/w/ws1/opps/no-such-opp")
+    assert response.status_code == 404
+    assert response["Content-Type"].startswith("application/problem+json")

@@ -497,4 +497,62 @@ def update_opp(
 
 
 # ---------------------------------------------------------------------------
+# Task 2.1.6 helpers — opp delete
+# ---------------------------------------------------------------------------
 
+
+def delete_opp_by_slug(workspace, slug: str) -> None:
+    """Delete an opp from Drive + cascade-delete linked sessions.
+
+    Delegates to apps.opps.sync.delete_opp_folder and replicates the
+    OppWorkspace + Session cleanup from the legacy delete_opp view.
+    Raises FileNotFoundError when the opp doesn't exist in Drive.
+
+    The monkeypatch target in contract tests is this module-level function.
+    """
+    from django.db import models, transaction
+
+    from apps.opps import access
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.models import OppWorkspace
+    from apps.opps.sync import delete_opp_folder
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+    from apps.sessions.models import Session
+
+    ace_folder_id = access.resolve_ace_root_folder_id(workspace)
+    if ace_folder_id is None:
+        raise FileNotFoundError(f"no opp named {slug!r} — ACE root folder not configured")
+
+    try:
+        drive = get_drive_client(workspace=workspace)
+    except ServiceAccountNotFound as exc:
+        raise FileNotFoundError(f"Drive not configured: {exc}") from exc
+
+    delete_opp_folder(drive, ace_folder_id=ace_folder_id, slug=slug)
+
+    with transaction.atomic():
+        Session.objects.filter(opp_slug=slug).filter(
+            models.Q(workspace=workspace) | models.Q(workspace__isnull=True)
+        ).delete()
+        OppWorkspace.objects.filter(workspace=workspace, slug=slug).delete()
+
+
+# ---------------------------------------------------------------------------
+# Task 2.1.6 — DELETE /w/{workspace_slug}/opps/{slug}
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/{slug}", summary="Delete opp")
+def delete_opp(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+) -> HttpResponse:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    try:
+        delete_opp_by_slug(workspace, slug)
+    except FileNotFoundError as exc:
+        raise ProblemError(
+            404, "Opp not found", type_=TYPE_NOT_FOUND, detail=str(exc),
+        ) from exc
+    return HttpResponse(status=204)
