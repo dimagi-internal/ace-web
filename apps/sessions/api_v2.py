@@ -655,3 +655,140 @@ def list_share(
         raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
     payload = [ShareTokenOut.model_validate(t).model_dump(mode="json") for t in tokens]
     return JsonResponse(payload, safe=False)
+
+
+# ---------------------------------------------------------------------------
+# POST /{slug}/share — create share token
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{slug}/share", summary="Create share token")
+def create_share_token(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+) -> HttpResponse:
+    from django.conf import settings
+    from django.http import JsonResponse
+
+    from apps.api_v2.errors import TYPE_FORBIDDEN
+
+    from .models import Session, SessionParticipant, ShareToken
+    from .schemas import ShareTokenOut
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    session = Session.objects.filter(slug=slug, workspace=workspace).first()
+    if session is None:
+        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
+
+    # Owner or editor may create share tokens; viewers cannot.
+    try:
+        participant = SessionParticipant.objects.get(session=session, user=request.user)
+    except SessionParticipant.DoesNotExist as exc:
+        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND) from exc
+    if participant.role == "viewer":
+        raise ProblemError(
+            403, "Only owners and editors can manage share tokens", type_=TYPE_FORBIDDEN
+        )
+
+    token = ShareToken.objects.create(session=session, created_by=request.user)
+    base_url = request.build_absolute_uri("/").rstrip("/")
+    prefix = getattr(settings, "FORCE_SCRIPT_NAME", "") or ""
+    share_url = f"{base_url}{prefix}/share/{token.token}"
+
+    payload = ShareTokenOut.model_validate(
+        {
+            "token": token.token,
+            "created_at": token.created_at,
+            "revoked_at": None,
+            "url": share_url,
+        }
+    ).model_dump(mode="json")
+    return JsonResponse(payload, status=201)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{slug}/share/{token} — revoke share token
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/{slug}/share/{token_key}", summary="Revoke share token")
+def revoke_share_token(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    token_key: Annotated[str, Path()],
+) -> HttpResponse:
+    from django.http import JsonResponse
+    from django.utils import timezone
+
+    from apps.api_v2.errors import TYPE_FORBIDDEN
+
+    from .models import Session, SessionParticipant, ShareToken
+    from .schemas import ShareTokenOut
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    session = Session.objects.filter(slug=slug, workspace=workspace).first()
+    if session is None:
+        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
+
+    try:
+        participant = SessionParticipant.objects.get(session=session, user=request.user)
+    except SessionParticipant.DoesNotExist as exc:
+        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND) from exc
+    if participant.role == "viewer":
+        raise ProblemError(
+            403, "Only owners and editors can manage share tokens", type_=TYPE_FORBIDDEN
+        )
+
+    try:
+        share_token = ShareToken.objects.get(
+            session=session, token=token_key, revoked_at__isnull=True
+        )
+    except ShareToken.DoesNotExist as exc:
+        raise ProblemError(404, "Share token not found", type_=TYPE_NOT_FOUND) from exc
+
+    share_token.revoked_at = timezone.now()
+    share_token.save(update_fields=["revoked_at"])
+    payload = ShareTokenOut.model_validate(
+        {
+            "token": share_token.token,
+            "created_at": share_token.created_at,
+            "revoked_at": share_token.revoked_at,
+            "url": None,
+        }
+    ).model_dump(mode="json")
+    return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# Public share view — no auth router (mounted at /share in api_v2/api.py)
+# ---------------------------------------------------------------------------
+
+share_public_router = Router(tags=["sessions"])  # mounted at /share
+
+
+@share_public_router.get("/{token}", auth=None, summary="Public shared session view")
+def public_share_view(request: HttpRequest, token: str) -> HttpResponse:
+    """Return a shared session's messages.  No auth required."""
+    from django.http import JsonResponse
+
+    from .models import ShareToken
+
+    try:
+        share_token = ShareToken.objects.select_related("session").get(token=token)
+    except ShareToken.DoesNotExist as exc:
+        raise ProblemError(404, "Share link not found", type_=TYPE_NOT_FOUND) from exc
+
+    if share_token.revoked_at is not None:
+        raise ProblemError(404, "This share link has been revoked", type_=TYPE_NOT_FOUND)
+
+    session = share_token.session
+    messages = list(session.messages.all().order_by("turn_index").values(
+        "turn_index", "role", "content", "plaintext", "status", "created_at"
+    ))
+    payload = {
+        "title": session.title,
+        "messages": messages,
+    }
+    return JsonResponse(payload)

@@ -5,7 +5,6 @@ from django.views.generic import TemplateView
 
 from apps.api_v2.api import api as api_v2
 from apps.api_v2.views import redoc_docs, scalar_docs
-from apps.sessions.share_views import public_share_view
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -22,7 +21,6 @@ urlpatterns = [
     # resolution is the simpler path.
     path("api/opps/", include("apps.opps.urls")),
     path("api/workspaces/", include("apps.workspaces.urls")),
-    path("api/share/<str:token>", public_share_view, name="public_share"),
     # React pages under /auth/ that must be served by the SPA, not by
     # Django's auth views. These are listed explicitly because the SPA
     # catch-all excludes the auth/ prefix entirely.
