@@ -300,16 +300,11 @@ def me(request: HttpRequest) -> HttpResponse:
     """
     from django.http import JsonResponse
 
-    from apps.common.envelope import error_response, success_response
-
     if not request.user.is_authenticated:
-        return JsonResponse(
-            error_response("not authenticated", code="auth-required"),
-            status=401,
-        )
+        return JsonResponse({"error": "not authenticated"}, status=401)
     user = request.user
-    return JsonResponse(success_response({
+    return JsonResponse({
         "user_id": user.pk,
         "email": user.email,
         "display_name": getattr(user, "display_name", "") or user.email,
-    }))
+    })

@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react"
-import { api } from "../api/client"
+import { apiV2 } from "../api/client.v2"
 
 export default function HealthPage() {
   const [status, setStatus] = useState<string>("loading...")
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    api
-      .health()
-      .then((r) => setStatus(r.status))
+    apiV2
+      .GET("/api/v2/health")
+      .then(({ data }) => setStatus(data?.status ?? "unknown"))
       .catch((e) => setError(String(e)))
   }, [])
 

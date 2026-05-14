@@ -6,8 +6,6 @@ from django.db import connection
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
-from .envelope import success_response
-
 logger = logging.getLogger(__name__)
 
 
@@ -43,10 +41,10 @@ def health_check(request):
         "redis": {"ok": redis_ok, "error": redis_err},
     }
     healthy = db_ok and redis_ok
-    body = success_response({
+    body = {
         "status": "ok" if healthy else "unhealthy",
         "checks": checks,
-    })
+    }
     if healthy:
         return JsonResponse(body)
     failed = [name for name, c in checks.items() if not c["ok"]]

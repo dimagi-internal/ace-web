@@ -1,36 +1,11 @@
-"""Public workspace + Drive access helpers for the opps Workbench.
-
-These were previously private helpers (`_resolve_workspace`, `_require_drive`,
-etc.) inside `apps/opps/views.py`. They were reached into from
-`apps/activity/views.py` (which is a smell — private symbols becoming a
-de-facto public API). Pulling them into a public module:
-
-- gives sibling apps (activity, future readers) a clean import path
-- keeps the symbol names stable when `views.py` is later split into
-  `views_read.py` / `views_write.py` / etc.
-- isolates the workspace/Drive boundary so it can be tested independently
-
-`apps/opps/views.py` re-imports each of these under its original
-underscore-prefixed name so existing internal call sites and ``mock.patch``
-calls in tests against ``apps.opps.views._resolve_*`` keep working without
-churn.
-"""
+"""Public workspace + Drive access helpers for the opps Workbench."""
 from __future__ import annotations
 
 import hashlib
 import json
 
-from rest_framework.response import Response
-
-from apps.common.access import gate_membership
-from apps.common.envelope import error_response
-from apps.opps.drive_cache import CachedDriveClient
-from apps.opps.drive_client import get_drive_client
 from apps.opps.models import OppWorkspace
 from apps.opps.serializers import serialize_opp_snapshot
-from apps.service_accounts.exceptions import ServiceAccountNotFound
-from apps.workspaces.models import Workspace
-from apps.workspaces.permissions import user_workspaces
 
 
 def resolve_ace_root_folder_id(workspace) -> str | None:
@@ -45,73 +20,6 @@ def resolve_ace_root_folder_id(workspace) -> str | None:
         return None
     return workspace.drive_root_folder_id or None
 
-
-def resolve_workspace(request):
-    """Return ``(workspace, error_response)``. Reads workspace identity from
-    (in priority order): URL kwarg ``workspace_slug``, request header
-    ``X-ACE-Workspace``, or — as a backward-compat fallback for the
-    legacy ``/api/opps/`` paths — the user's first workspace.
-
-    Membership is enforced; non-members get a 404 (not 403) so workspace
-    existence isn't leaked.
-    """
-    if not request.user.is_authenticated:
-        return None, Response(
-            error_response("authentication required", code="auth-required"),
-            status=401,
-        )
-
-    slug = request.headers.get("X-ACE-Workspace") or None
-
-    if slug:
-        try:
-            ws = Workspace.objects.get(slug=slug)
-        except Workspace.DoesNotExist:
-            return None, Response(
-                error_response("workspace not found", code="not-found"),
-                status=404,
-            )
-        err = gate_membership(request.user, ws, hidden_existence=True)
-        if err is not None:
-            return None, err
-        return ws, None
-
-    # Legacy fallback: bare /api/opps/ paths default to the user's most-recent
-    # workspace. Phase B retires this once the frontend always provides
-    # `workspace_slug` in the URL.
-    ws = user_workspaces(request.user).first()
-    if ws is None:
-        return None, Response(
-            error_response(
-                "no workspace — create or join one first",
-                code="no-workspace",
-            ),
-            status=403,
-        )
-    return ws, None
-
-
-def require_drive(request):
-    """Return ``(workspace, drive_client, error_response)``. On error, the
-    first two are None.
-
-    The returned client is wrapped in :class:`CachedDriveClient` so repeated
-    list/content reads within the cache TTL hit Redis instead of Drive.
-    Pass ``?force=1`` on the request to bypass the cache for a hard refresh
-    (writes still populate the cache so subsequent reads get the fresh data).
-    """
-    ws, err = resolve_workspace(request)
-    if err is not None:
-        return None, None, err
-    try:
-        inner = get_drive_client(workspace=ws)
-    except ServiceAccountNotFound as exc:
-        return ws, None, Response(
-            error_response(str(exc), code="drive-not-configured"),
-            status=500,
-        )
-    bypass = request.GET.get("force") == "1"
-    return ws, CachedDriveClient(inner, bypass=bypass), None
 
 
 def overlay_workspace_display_name(manifest, slug: str, workspace=None) -> None:
