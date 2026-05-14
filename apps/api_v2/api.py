@@ -131,3 +131,8 @@ def _on_unhandled(request: HttpRequest, exc: Exception) -> HttpResponse:
 def _auth_smoke(request: HttpRequest) -> dict:
     """Internal smoke route — verifies session auth works."""
     return {"email": request.user.email}
+
+
+from apps.opps.api_v2 import router as opps_router  # noqa: E402
+
+api.add_router("/w/{workspace_slug}/opps", opps_router)
