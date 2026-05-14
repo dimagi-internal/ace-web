@@ -415,8 +415,26 @@ export interface paths {
         /** List share tokens */
         readonly get: operations["apps_sessions_api_v2_list_share"];
         readonly put?: never;
-        readonly post?: never;
+        /** Create share token */
+        readonly post: operations["apps_sessions_api_v2_create_share_token"];
         readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/share/{token_key}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** Revoke share token */
+        readonly delete: operations["apps_sessions_api_v2_revoke_share_token"];
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -431,6 +449,26 @@ export interface paths {
         };
         /** Workspace activity feed */
         readonly get: operations["apps_activity_api_v2_activity_feed"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/share/{token}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Public shared session view
+         * @description Return a shared session's messages.  No auth required.
+         */
+        readonly get: operations["apps_sessions_api_v2_public_share_view"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -523,7 +561,8 @@ export interface paths {
         readonly delete: operations["apps_workspaces_api_v2_remove_member"];
         readonly options?: never;
         readonly head?: never;
-        readonly patch?: never;
+        /** Change member role */
+        readonly patch: operations["apps_workspaces_api_v2_change_member_role"];
         readonly trace?: never;
     };
     readonly "/api/workspaces/{slug}/leave": {
@@ -571,6 +610,63 @@ export interface paths {
         readonly put?: never;
         /** Verify Drive access */
         readonly post: operations["apps_workspaces_api_v2_verify_drive_access"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/workspaces/drive-config": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Drive service-account email
+         * @description Returns the Google service-account email used for Drive access.
+         *
+         *     Callers display this so the user knows which account to share their
+         *     Drive folder with.
+         */
+        readonly get: operations["apps_workspaces_api_v2_get_drive_config"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/invites/{token}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Invite preview (public) */
+        readonly get: operations["apps_workspaces_api_v2_invite_preview"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/invites/{token}/accept": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Accept workspace invite */
+        readonly post: operations["apps_workspaces_api_v2_invite_accept"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1133,6 +1229,40 @@ export interface paths {
         readonly put?: never;
         /** Disconnect Nova OAuth (admin) */
         readonly post: operations["apps_auth_api_v2_nova_auth_disconnect"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/auth/cli/promote": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Promote user CLI credential to global scope (staff/automation only) */
+        readonly post: operations["apps_auth_api_v2_cli_auth_promote"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/auth/cli/expected-shape": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Expected CLI credential blob shape (public) */
+        readonly get: operations["apps_auth_api_v2_cli_auth_expected_shape"];
+        readonly put?: never;
+        readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1716,6 +1846,43 @@ export interface components {
         readonly WorkspaceInviteIn: {
             /** Email */
             readonly email: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            readonly role: "owner" | "editor" | "viewer";
+        };
+        /**
+         * InvitePreviewOut
+         * @description GET /api/invites/{token} — public invite preview (no auth required).
+         */
+        readonly InvitePreviewOut: {
+            /** Workspace Slug */
+            readonly workspace_slug: string;
+            /** Workspace Display Name */
+            readonly workspace_display_name: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            readonly role: "owner" | "editor" | "viewer";
+            /** Invited By Email */
+            readonly invited_by_email: string;
+            /** Email */
+            readonly email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            readonly expires_at: string;
+        };
+        /**
+         * InviteAcceptOut
+         * @description POST /api/invites/{token}/accept — accept an invite.
+         */
+        readonly InviteAcceptOut: {
+            /** Workspace Slug */
+            readonly workspace_slug: string;
             /**
              * Role
              * @enum {string}
@@ -2621,6 +2788,10 @@ export interface components {
          *
          *     ``can_manage`` is True for staff + automation accounts — they get
          *     the Connect/Disconnect controls in the UI.
+         *
+         *     ``expires_at`` is an ISO-8601 string when present.  The blob may store
+         *     either an ISO string or a unix-epoch integer; the view normalises to
+         *     string before validation.
          */
         readonly NovaAuthStatusOut: {
             /** Connected */
@@ -2636,6 +2807,28 @@ export interface components {
              * @default false
              */
             readonly can_manage: boolean;
+        };
+        /**
+         * CliAuthPromoteOut
+         * @description POST /api/auth/cli/promote — promote user blob to global scope.
+         */
+        readonly CliAuthPromoteOut: {
+            /** Promoted */
+            readonly promoted: boolean;
+            /** Authenticated */
+            readonly authenticated: boolean;
+            /** Token Prefix */
+            readonly token_prefix?: string | null;
+        };
+        /**
+         * CliAuthExpectedShapeOut
+         * @description GET /api/auth/cli/expected-shape — schema introspection (public).
+         */
+        readonly CliAuthExpectedShapeOut: {
+            /** Shape */
+            readonly shape: {
+                readonly [key: string]: unknown;
+            };
         };
         /**
          * HealthCheckOut
@@ -3401,6 +3594,49 @@ export interface operations {
             };
         };
     };
+    readonly apps_sessions_api_v2_create_share_token: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_v2_revoke_share_token: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+                readonly token_key: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     readonly apps_activity_api_v2_activity_feed: {
         readonly parameters: {
             readonly query?: {
@@ -3424,6 +3660,26 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["ActivityFeedOut"];
                 };
+            };
+        };
+    };
+    readonly apps_sessions_api_v2_public_share_view: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly token: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -3586,6 +3842,29 @@ export interface operations {
             };
         };
     };
+    readonly apps_workspaces_api_v2_change_member_role: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly slug: string;
+                readonly user_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkspaceMemberOut"];
+                };
+            };
+        };
+    };
     readonly apps_workspaces_api_v2_leave_workspace: {
         readonly parameters: {
             readonly query?: never;
@@ -3643,6 +3922,68 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly apps_workspaces_api_v2_get_drive_config: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_workspaces_api_v2_invite_preview: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly token: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InvitePreviewOut"];
+                };
+            };
+        };
+    };
+    readonly apps_workspaces_api_v2_invite_accept: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly token: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InviteAcceptOut"];
+                };
             };
         };
     };
@@ -4367,6 +4708,46 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly apps_auth_api_v2_cli_auth_promote: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CliAuthPromoteOut"];
+                };
+            };
+        };
+    };
+    readonly apps_auth_api_v2_cli_auth_expected_shape: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CliAuthExpectedShapeOut"];
+                };
             };
         };
     };
