@@ -30,7 +30,6 @@ urlpatterns = [
         workspaces_views.invite_accept,
         name="invite_accept",
     ),
-    path("api/mobile/", include("apps.mobile.urls")),
     path("api/auth/", include((token_urlpatterns, "auth_tokens"))),
     path("api/share/<str:token>", public_share_view, name="public_share"),
     # React pages under /auth/ that must be served by the SPA, not by
