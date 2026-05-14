@@ -110,25 +110,3 @@ LOGGING = {
     },
 }
 
-# ---------------------------------------------------------------------------
-# AWS X-Ray distributed tracing
-#
-# Emits segments to the X-Ray daemon, which should run as a sidecar in the
-# ECS task definition. Standard pattern: add an `xray-daemon` container
-# (public.ecr.aws/xray/aws-xray-daemon) alongside the app and frontend
-# containers, with UDP port 2000 exposed on localhost.
-#
-# ``context_missing="LOG_ERROR"`` ensures the SDK is non-fatal when no
-# daemon is present (e.g. local dev, CI) — it logs an error and continues.
-# ---------------------------------------------------------------------------
-from aws_xray_sdk.core import patch_all, xray_recorder  # noqa: E402
-
-xray_recorder.configure(
-    service="ace-web",
-    daemon_address=os.environ.get("AWS_XRAY_DAEMON_ADDRESS", "127.0.0.1:2000"),
-    context_missing="LOG_ERROR",  # don't crash when no daemon is reachable
-)
-patch_all()  # instruments httpx, requests, psycopg, boto3, etc.
-
-# X-Ray Django middleware — prepend so it wraps all other middleware.
-MIDDLEWARE = ["aws_xray_sdk.ext.django.middleware.XRayMiddleware"] + MIDDLEWARE  # noqa: F405
