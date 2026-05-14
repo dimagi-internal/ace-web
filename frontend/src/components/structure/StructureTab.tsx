@@ -9,6 +9,7 @@ import { StructurePhaseRow } from "./StructurePhaseRow";
 
 interface Props {
   slug: string;
+  workspaceSlug: string;
 }
 
 const UNAVAILABLE_MESSAGES = {
@@ -18,7 +19,7 @@ const UNAVAILABLE_MESSAGES = {
     "Could not parse the persisted transcript for this session. Try re-uploading via /ace:upload-transcript.",
 } as const;
 
-export function StructureTab({ slug }: Props) {
+export function StructureTab({ slug, workspaceSlug }: Props) {
   const [tree, setTree] = useState<StructureTree | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +27,7 @@ export function StructureTab({ slug }: Props) {
     let cancelled = false;
     setTree(null);
     setError(null);
-    getSessionStructure(slug)
+    getSessionStructure(slug, workspaceSlug)
       .then((data) => {
         if (!cancelled) setTree(data);
       })
@@ -39,7 +40,7 @@ export function StructureTab({ slug }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, workspaceSlug]);
 
   if (error) return <div className="text-sm text-destructive p-4">Failed to load: {error}</div>;
   if (tree === null) return <div className="text-sm text-muted-foreground p-4">Loading…</div>;
