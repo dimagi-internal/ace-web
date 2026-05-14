@@ -3,12 +3,14 @@ from django.contrib.auth.decorators import login_required
 from django.urls import include, path, re_path
 from django.views.generic import TemplateView
 
+from apps.api_v2.api import api as api_v2
 from apps.auth.urls import token_urlpatterns
 from apps.sessions.share_views import public_share_view
 from apps.workspaces import views as workspaces_views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/v2/", api_v2.urls),
     path("api/", include("apps.common.urls")),
     path("api/", include("apps.sessions.urls")),
     path("api/ingest/", include("apps.ingest.urls")),
