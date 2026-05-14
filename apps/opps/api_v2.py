@@ -10,11 +10,11 @@ from ninja import Path, Router
 
 from apps.api_v2.auth import session_auth
 from apps.api_v2.deps import resolve_workspace_for_member
-from apps.api_v2.errors import TYPE_NOT_FOUND, ProblemError
+from apps.api_v2.errors import TYPE_CONFLICT, TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
 from apps.api_v2.etag import compute_etag, maybe_not_modified
 from apps.api_v2.pagination import Page, paginate
 
-from .schemas import OppCardOut, OppSnapshotOut
+from .schemas import OppCardOut, OppCreateIn, OppSnapshotOut
 
 log = logging.getLogger(__name__)
 
@@ -334,6 +334,86 @@ def get_opp(
         return not_modified
     response = JsonResponse(payload)
     response["ETag"] = etag
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Task 2.1.4 helpers — opp create
+# ---------------------------------------------------------------------------
+
+
+def create_opp_and_return_card(workspace, user, body: OppCreateIn) -> dict:
+    """Create an opp via the existing creator and return an OppCardOut-compatible dict.
+
+    Delegates to apps.opps.opp_creator.create_opp. The monkeypatch target
+    in contract tests is this module-level function. Raises CreateOppError
+    on slug collision or invalid input (callers map to 409 / 400).
+    """
+    from apps.opps import access
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.opp_creator import create_opp
+
+    ace_folder_id = access.resolve_ace_root_folder_id(workspace)
+    if ace_folder_id is None:
+        raise ProblemError(
+            404, "ACE root folder not found", type_=TYPE_NOT_FOUND,
+            detail="workspace has no drive_root_folder_id configured",
+        )
+
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+    try:
+        drive = get_drive_client(workspace=workspace)
+    except ServiceAccountNotFound as exc:
+        raise ProblemError(
+            404, "Drive not configured", type_=TYPE_NOT_FOUND, detail=str(exc),
+        ) from exc
+
+    result = create_opp(
+        drive=drive,
+        ace_root_folder_id=ace_folder_id,
+        owner=user,
+        slug=body.slug,
+        display_name=body.title,
+        idea=body.idea,
+        mode=body.mode,
+        pdd=body.pdd,
+        workspace=workspace,
+    )
+    return {
+        "slug": result.slug,
+        "title": body.title,
+        "current_phase": None,
+        "current_skill": None,
+        "run_count": 1,
+        "last_run_id": None,
+        "updated_at": _EPOCH,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Task 2.1.4 — POST /w/{workspace_slug}/opps
+# ---------------------------------------------------------------------------
+
+
+@router.post("", summary="Create opp")
+def create_opp_endpoint(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    body: OppCreateIn,
+) -> HttpResponse:
+    from apps.opps.opp_creator import CreateOppError
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    try:
+        card = create_opp_and_return_card(workspace, request.user, body)
+    except CreateOppError as exc:
+        if exc.code == "slug-taken":
+            raise ProblemError(
+                409, "Opp already exists", type_=TYPE_CONFLICT, detail=str(exc),
+            ) from exc
+        raise ProblemError(400, str(exc), type_=TYPE_VALIDATION, detail=exc.code) from exc
+    payload = OppCardOut.model_validate(card).model_dump(mode="json")
+    response = JsonResponse(payload, status=201)
     return response
 
 

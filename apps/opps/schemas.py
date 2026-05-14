@@ -100,6 +100,26 @@ class OppSnapshotOut(StrictModel):
     updated_at: dt.datetime
 
 
+# --- Create / Update ---------------------------------------------------
+
+
+class OppCreateIn(StrictModel):
+    """Request body for POST /w/{workspace_slug}/opps."""
+
+    title: str = Field(min_length=1, max_length=128, description="Display name for the opp.")
+    slug: str = Field(
+        min_length=2,
+        max_length=64,
+        description=(
+            "URL-safe identifier. Must match [a-z0-9][a-z0-9-]{0,62}[a-z0-9]. "
+            "Validated against SLUG_RE in opp_creator."
+        ),
+    )
+    idea: str = Field(default="", description="Initial idea text (idea.md content).")
+    mode: str = Field(default="review", description="Opp mode: 'review' or 'auto'.")
+    pdd: str = Field(default="", description="Optional pre-written PDD body.")
+
+
 # --- Fork --------------------------------------------------------------
 
 
