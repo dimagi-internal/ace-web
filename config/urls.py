@@ -32,7 +32,6 @@ urlpatterns = [
         name="invite_accept",
     ),
     path("api/system/", include("apps.system.urls")),
-    path("api/activity/", include("apps.activity.urls")),
     path("api/mobile/", include("apps.mobile.urls")),
     path("api/auth/", include((token_urlpatterns, "auth_tokens"))),
     path("api/share/<str:token>", public_share_view, name="public_share"),
