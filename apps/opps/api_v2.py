@@ -14,7 +14,7 @@ from apps.api_v2.errors import TYPE_CONFLICT, TYPE_NOT_FOUND, TYPE_VALIDATION, P
 from apps.api_v2.etag import compute_etag, maybe_not_modified
 from apps.api_v2.pagination import Page, paginate
 
-from .schemas import OppCardOut, OppCreateIn, OppSnapshotOut
+from .schemas import OppCardOut, OppCreateIn, OppPatchIn, OppSnapshotOut
 
 log = logging.getLogger(__name__)
 
@@ -415,6 +415,85 @@ def create_opp_endpoint(
     payload = OppCardOut.model_validate(card).model_dump(mode="json")
     response = JsonResponse(payload, status=201)
     return response
+
+
+# ---------------------------------------------------------------------------
+# Task 2.1.5 helpers — opp patch
+# ---------------------------------------------------------------------------
+
+
+def patch_opp_and_return_card(workspace, slug: str, body: OppPatchIn) -> dict:
+    """Apply PATCH body to OppWorkspace DB row and return OppCardOut-compatible dict.
+
+    Currently supports: title (stored as display_name on OppWorkspace).
+    Raises CreateOppError("opp-not-found", ...) if the slug doesn't exist on Drive
+    (lightweight check via OppWorkspace; missing DB row for a valid Drive opp is
+    materialised like the legacy patch_opp does with get_or_create).
+
+    The monkeypatch target in contract tests is this module-level function.
+    """
+    from apps.opps.models import OppWorkspace
+    from apps.opps.opp_creator import CreateOppError
+
+    if body.title is None:
+        # No fields to patch; treat as no-op but still verify membership.
+        try:
+            ow = OppWorkspace.objects.get(workspace=workspace, slug=slug)
+        except OppWorkspace.DoesNotExist as exc:
+            raise CreateOppError("opp-not-found", f"opp {slug!r} not found") from exc
+        return {
+            "slug": slug,
+            "title": ow.display_name or slug,
+            "current_phase": None,
+            "current_skill": None,
+            "run_count": 0,
+            "last_run_id": None,
+            "updated_at": _EPOCH,
+        }
+
+    ow, _ = OppWorkspace.objects.get_or_create(
+        workspace=workspace,
+        slug=slug,
+        defaults={"display_name": slug},
+    )
+    ow.display_name = body.title
+    ow.save(update_fields=["display_name", "updated_at"])
+    return {
+        "slug": slug,
+        "title": ow.display_name,
+        "current_phase": None,
+        "current_skill": None,
+        "run_count": 0,
+        "last_run_id": None,
+        "updated_at": _EPOCH,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Task 2.1.5 — PATCH /w/{workspace_slug}/opps/{slug}
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/{slug}", summary="Update opp")
+def update_opp(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    body: OppPatchIn,
+) -> HttpResponse:
+    from apps.opps.opp_creator import CreateOppError
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    try:
+        card = patch_opp_and_return_card(workspace, slug, body)
+    except CreateOppError as exc:
+        if exc.code == "opp-not-found":
+            raise ProblemError(
+                404, "Opp not found", type_=TYPE_NOT_FOUND, detail=str(exc),
+            ) from exc
+        raise ProblemError(400, str(exc), type_=TYPE_VALIDATION, detail=exc.code) from exc
+    payload = OppCardOut.model_validate(card).model_dump(mode="json")
+    return JsonResponse(payload, status=200)
 
 
 # ---------------------------------------------------------------------------

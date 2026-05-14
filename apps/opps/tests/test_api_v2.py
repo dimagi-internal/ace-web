@@ -272,3 +272,80 @@ def test_create_opp_409_duplicate_slug(member_client, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Task 2.1.5 — PATCH /w/{workspace_slug}/opps/{slug}  (update opp)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_patch_opp_happy_path(member_client, monkeypatch):
+    client, workspace, user = member_client
+    monkeypatch.setattr(
+        "apps.opps.api_v2.patch_opp_and_return_card",
+        lambda workspace, slug, body: _FAKE_CARD,
+    )
+    response = client.patch(
+        "/api/v2/w/ws1/opps/opp-1",
+        data={"title": "Updated Title"},
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    OppCardOut.model_validate(body)
+
+
+@pytest.mark.django_db
+def test_patch_opp_404_non_member(non_member_client):
+    client, _, _ = non_member_client
+    response = client.patch(
+        "/api/v2/w/ws1/opps/opp-1",
+        data={"title": "Updated Title"},
+        content_type="application/json",
+    )
+    assert response.status_code == 404
+    assert response["Content-Type"].startswith("application/problem+json")
+
+
+@pytest.mark.django_db
+def test_patch_opp_401_anonymous(db, client):
+    Workspace.objects.create(
+        slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
+        created_by=User.objects.create_user(email="creator7@example.com"),
+    )
+    response = client.patch(
+        "/api/v2/w/ws1/opps/opp-1",
+        data={"title": "Updated"},
+        content_type="application/json",
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_patch_opp_404_unknown_slug(member_client, monkeypatch):
+    from apps.opps.opp_creator import CreateOppError
+    client, workspace, user = member_client
+
+    def _raise_not_found(workspace, slug, body):
+        raise CreateOppError("opp-not-found", "opp not found")
+
+    monkeypatch.setattr("apps.opps.api_v2.patch_opp_and_return_card", _raise_not_found)
+    response = client.patch(
+        "/api/v2/w/ws1/opps/no-such-opp",
+        data={"title": "Updated"},
+        content_type="application/json",
+    )
+    assert response.status_code == 404
+    assert response["Content-Type"].startswith("application/problem+json")
+
+
+@pytest.mark.django_db
+def test_patch_opp_400_empty_title(member_client):
+    client, workspace, _ = member_client
+    response = client.patch(
+        "/api/v2/w/ws1/opps/opp-1",
+        data={"title": ""},
+        content_type="application/json",
+    )
+    assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------

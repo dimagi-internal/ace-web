@@ -8,6 +8,7 @@ from apps.opps.schemas import (  # noqa: F401 — import-existence smoke test
     OppCreateIn,
     OppForkIn,
     OppForkOut,
+    OppPatchIn,
     OppRunOut,
     OppSnapshotOut,
     ScorecardOut,
@@ -88,3 +89,15 @@ def test_opp_create_in_requires_slug():
         OppCreateIn.model_validate({"title": "My Opp", "slug": "x"})  # too short
 
 
+def test_opp_patch_in_round_trip():
+    # All fields optional — empty body is valid.
+    obj = OppPatchIn.model_validate({})
+    assert obj.title is None
+
+    obj2 = OppPatchIn.model_validate({"title": "Updated Title"})
+    assert obj2.title == "Updated Title"
+
+
+def test_opp_patch_in_rejects_empty_title():
+    with pytest.raises(ValueError):
+        OppPatchIn.model_validate({"title": ""})

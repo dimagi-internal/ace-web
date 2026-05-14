@@ -120,6 +120,15 @@ class OppCreateIn(StrictModel):
     pdd: str = Field(default="", description="Optional pre-written PDD body.")
 
 
+class OppPatchIn(StrictModel):
+    """Request body for PATCH /w/{workspace_slug}/opps/{slug}.
+
+    All fields are optional — only set fields are applied.
+    """
+
+    title: str | None = Field(default=None, min_length=1, max_length=128)
+
+
 # --- Fork --------------------------------------------------------------
 
 
