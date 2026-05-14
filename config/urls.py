@@ -12,14 +12,6 @@ urlpatterns = [
     path("api/docs/", scalar_docs, name="api_docs_scalar"),
     path("api/redoc/", redoc_docs, name="api_docs_redoc"),
     path("api/", include("apps.common.urls")),
-    path("api/", include("apps.sessions.urls")),
-    # Opps endpoints. Workspace identity is resolved via the
-    # `X-ACE-Workspace` header (auto-injected by the frontend's
-    # `apiFetch` from the URL pathname). A workspace-scoped URL
-    # mount was tried earlier but Django passes captured URL kwargs
-    # to view functions, which the opp views don't accept — header
-    # resolution is the simpler path.
-    path("api/opps/", include("apps.opps.urls")),
     path("api/workspaces/", include("apps.workspaces.urls")),
     # React pages under /auth/ that must be served by the SPA, not by
     # Django's auth views. These are listed explicitly because the SPA
