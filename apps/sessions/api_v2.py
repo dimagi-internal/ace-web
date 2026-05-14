@@ -177,7 +177,12 @@ def list_sessions_in_workspace(
     return [_session_to_list_dict(s) for s in qs]
 
 
-@router.get("", response=Page[SessionListOut], summary="List sessions in workspace")
+@router.get(
+    "",
+    response=Page[SessionListOut],
+    summary="List sessions in workspace",
+    openapi_extra={"x-mcp-expose": True},
+)
 def list_sessions(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
@@ -245,7 +250,11 @@ def get_session_detail(workspace, slug: str) -> dict | None:
     return _session_to_detail_dict(session)
 
 
-@router.get("/{slug}", summary="Session detail")
+@router.get(
+    "/{slug}",
+    summary="Session detail",
+    openapi_extra={"x-mcp-expose": True},
+)
 def get_session(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
