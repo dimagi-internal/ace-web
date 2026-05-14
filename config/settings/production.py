@@ -2,6 +2,8 @@
 import os
 import warnings
 
+import logfire
+
 if not os.environ.get("ACE_FIELD_ENCRYPTION_KEY"):
     raise RuntimeError(
         "ACE_FIELD_ENCRYPTION_KEY must be set in production. "
@@ -53,3 +55,22 @@ SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 X_FRAME_OPTIONS = "DENY"
+
+# --- Observability (Logfire) ---
+# Wire Logfire for request tracing, Pydantic validation spans, and httpx calls.
+# When LOGFIRE_TOKEN is absent (e.g. local dev, CI), send_to_logfire="if-token-present"
+# makes Logfire a complete no-op — no network calls, no errors, no perf hit.
+#
+# To activate on the deployed instance:
+#   1. Create a project at https://logfire.pydantic.dev/
+#   2. Add LOGFIRE_TOKEN to AWS Secrets Manager and task-definition.json
+#   3. Redeploy — tracing starts automatically.
+logfire.configure(
+    token=os.environ.get("LOGFIRE_TOKEN"),
+    service_name="ace-web",
+    service_version=os.environ.get("LOGFIRE_SERVICE_VERSION", "dev"),
+    send_to_logfire="if-token-present",
+)
+logfire.instrument_django()
+logfire.instrument_httpx()
+logfire.instrument_pydantic()

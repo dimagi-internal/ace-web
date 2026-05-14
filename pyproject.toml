@@ -24,6 +24,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "whitenoise>=6.7",
     "fastmcp>=0.4",
+    "logfire[django,httpx]>=0.50",
 ]
 
 [project.optional-dependencies]
