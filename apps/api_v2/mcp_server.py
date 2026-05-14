@@ -165,9 +165,10 @@ def make_asgi_app() -> Any:
     Wraps ``build_mcp()`` in a Starlette ``Lifespan`` so that the httpx
     client is created once and reused across requests.
 
-    The path is set to ``/mcp`` because the ASGI app is mounted under
-    ``/api/mcp`` in ``config/asgi.py`` — Starlette mount strips the mount
-    prefix, so the internal path is just ``/mcp``.
+    The internal path is ``/`` so that the external URL is exactly the
+    Mount prefix — i.e. ``/api/mcp/`` in local dev and
+    ``/ace/api/mcp/`` on connect-labs. Setting it to anything else
+    creates an awkward double path like ``/api/mcp/mcp/``.
     """
     mcp = build_mcp()
-    return mcp.http_app(path="/mcp")
+    return mcp.http_app(path="/")
