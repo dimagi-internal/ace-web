@@ -91,8 +91,12 @@ const authRedirectMiddleware: Middleware = {
   },
 };
 
+// Paths in generated.ts already start with "/api/..." (NinjaAPI emits them
+// that way because the API is mounted at "/api/"). So the client baseUrl is
+// just the Vite BASE_URL — no extra "/api" segment, otherwise every URL
+// becomes /ace/api/api/<path>.
 export const apiV2 = createClient<paths>({
-  baseUrl: `${baseUrl.replace(/\/$/, "")}/api`,
+  baseUrl: baseUrl.replace(/\/$/, ""),
   credentials: "include",
   headers: {
     "X-Requested-With": "XMLHttpRequest",
