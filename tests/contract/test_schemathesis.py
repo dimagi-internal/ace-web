@@ -33,7 +33,6 @@ The test is marked ``@pytest.mark.contract`` so it can be run in isolation:
 """
 from __future__ import annotations
 
-import os
 import pytest
 import schemathesis
 from django.contrib.auth import get_user_model
