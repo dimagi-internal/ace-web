@@ -4,6 +4,7 @@ from django.urls import include, path, re_path
 from django.views.generic import TemplateView
 
 from apps.api_v2.api import api as api_v2
+from apps.api_v2.views import redoc_docs, scalar_docs
 from apps.auth.urls import token_urlpatterns
 from apps.sessions.share_views import public_share_view
 from apps.workspaces import views as workspaces_views
@@ -11,6 +12,8 @@ from apps.workspaces import views as workspaces_views
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v2/", api_v2.urls),
+    path("api/docs/", scalar_docs, name="api_docs_scalar"),
+    path("api/redoc/", redoc_docs, name="api_docs_redoc"),
     path("api/", include("apps.common.urls")),
     path("api/", include("apps.sessions.urls")),
     path("api/ingest/", include("apps.ingest.urls")),
