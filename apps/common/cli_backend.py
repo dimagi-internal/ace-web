@@ -1247,9 +1247,36 @@ class CLIBackend:
                 "stage_env_for: $HOME is unset — claude subprocess will run with "
                 "no plugins / slash commands / MCP servers"
             )
+
+        # Also symlink the top-level ``$HOME/.claude.json`` if present.
+        # User-scope MCP entries (registered via ``claude mcp add --scope
+        # user``) live in that file, NOT inside ``$HOME/.claude/``. The
+        # entrypoint registers a user-scope shadow Nova MCP override
+        # there with a PAT bearer header — the override is the documented
+        # workaround for nova-plugin#2 / nova-plugin#13 (architect
+        # subagent halts when only the plugin's OAuth entry is visible).
+        # Without this symlink, per-session subprocesses don't see the
+        # override and Nova falls back to the unreliable OAuth path.
+        claude_json_symlinked = False
+        if original_home:
+            real_claude_json = Path(original_home) / ".claude.json"
+            if real_claude_json.is_file():
+                link = staged_root / ".claude.json"
+                if not link.exists() and not link.is_symlink():
+                    try:
+                        link.symlink_to(real_claude_json)
+                        claude_json_symlinked = True
+                    except OSError:
+                        logger.warning(
+                            "Could not symlink %s → %s",
+                            real_claude_json, link, exc_info=True,
+                        )
+
         logger.info(
-            "stage_env_for: session=%s staged=%s real_home=%r symlinked=%s",
+            "stage_env_for: session=%s staged=%s real_home=%r symlinked=%s "
+            "claude_json_symlinked=%s",
             session.slug, staged_root, original_home, symlinked_names,
+            claude_json_symlinked,
         )
 
         if blob_json:

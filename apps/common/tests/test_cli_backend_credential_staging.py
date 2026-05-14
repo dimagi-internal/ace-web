@@ -417,3 +417,82 @@ def test_staged_env_symlink_works_when_real_home_has_no_claude_dir(
         assert (staged_claude / ".credentials.json").exists()
     finally:
         backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
+def test_staged_env_symlinks_claude_json_for_user_scope_mcp_overrides(
+    monkeypatch, tmp_path
+):
+    """User-scope MCP entries live in ``$HOME/.claude.json`` (a top-level
+    dotfile, NOT inside ``$HOME/.claude/``). The entrypoint registers a
+    user-scope Nova bearer override there to shadow the plugin's
+    OAuth-only MCP entry. Per-session subprocesses must inherit this
+    override or the architect subagent halts at turn 0 with no Nova
+    tools bound (see nova-plugin#2, nova-plugin#13).
+    """
+    fake_home = tmp_path / "real-home-with-mcp"
+    (fake_home / ".claude").mkdir(parents=True)
+    claude_json_content = json.dumps({
+        "mcpServers": {
+            "nova": {
+                "type": "http",
+                "url": "https://mcp.commcare.app/mcp",
+                "headers": {"Authorization": "Bearer sk-nova-test"},
+            },
+        },
+    })
+    (fake_home / ".claude.json").write_text(claude_json_content)
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    user = get_user_model().objects.create_user(email="mcp@dimagi.com")
+    blob = {"claudeAiOauth": {"accessToken": REAL, "refreshToken": "r"}}
+    UserCredential.objects.create(
+        user=user,
+        blob_encrypted=json.dumps(blob),
+        token_prefix=REAL[:15],
+    )
+    session = Session.objects.create(owner=user, slug="mcp-sess", title="t")
+
+    backend = CLIBackend()
+    _, staged_home, _ = backend._stage_env_for(session)
+    try:
+        link = Path(staged_home) / ".claude.json"
+        assert link.is_symlink(), (
+            "staged HOME must symlink ~/.claude.json so user-scope MCP "
+            "overrides reach the subprocess"
+        )
+        # And the symlink resolves to the real file's contents.
+        assert link.read_text() == claude_json_content
+    finally:
+        backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
+def test_staged_env_omits_claude_json_symlink_when_real_home_has_none(
+    monkeypatch, tmp_path
+):
+    """If the real HOME has no ``.claude.json``, staging must still
+    succeed — the user-scope MCP override is optional (OAuth fallback
+    still works without it)."""
+    fake_home = tmp_path / "real-home-no-claude-json"
+    (fake_home / ".claude").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    user = get_user_model().objects.create_user(email="nojson@dimagi.com")
+    blob = {"claudeAiOauth": {"accessToken": REAL, "refreshToken": "r"}}
+    UserCredential.objects.create(
+        user=user,
+        blob_encrypted=json.dumps(blob),
+        token_prefix=REAL[:15],
+    )
+    session = Session.objects.create(owner=user, slug="nojson-sess", title="t")
+
+    backend = CLIBackend()
+    _, staged_home, _ = backend._stage_env_for(session)
+    try:
+        link = Path(staged_home) / ".claude.json"
+        assert not link.exists()
+        # Staged HOME itself is still healthy.
+        assert (Path(staged_home) / ".claude").is_dir()
+    finally:
+        backend._teardown_staged_home(staged_home)
