@@ -11,8 +11,3 @@ class OrjsonRenderer(BaseRenderer):
     def render(self, request, data, *, response_status):
         return orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS | orjson.OPT_UTC_Z)
 
-
-class ProblemJsonRenderer(OrjsonRenderer):
-    """Used by the global error handler — sets `application/problem+json`."""
-
-    media_type = "application/problem+json"
