@@ -1,0 +1,6228 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ace-web API",
+    "version": "2.0.0",
+    "description": "Modern Pydantic-typed API surface for ace-web. Replaces the legacy `/api/` DRF endpoints. Errors are RFC 7807 application/problem+json."
+  },
+  "paths": {
+    "/api/v2/_auth_smoke/": {
+      "get": {
+        "operationId": "apps_api_v2_api__auth_smoke",
+        "summary": " Auth Smoke",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "description": "Internal smoke route \u2014 verifies session auth works.",
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps": {
+      "get": {
+        "operationId": "apps_opps_api_v2_list_opps",
+        "summary": "List opps in workspace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_OppCardOut_"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "apps_opps_api_v2_create_opp_endpoint",
+        "summary": "Create opp",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OppCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}": {
+      "get": {
+        "operationId": "apps_opps_api_v2_get_opp",
+        "summary": "Opp Workbench snapshot",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "apps_opps_api_v2_update_opp",
+        "summary": "Update opp",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OppPatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "apps_opps_api_v2_delete_opp",
+        "summary": "Delete opp",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/runs": {
+      "get": {
+        "operationId": "apps_opps_api_v2_list_runs",
+        "summary": "List runs for opp",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_OppRunOut_"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/runs/{run_id}": {
+      "get": {
+        "operationId": "apps_opps_api_v2_get_run",
+        "summary": "Run detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OppRunOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "apps_opps_api_v2_delete_run",
+        "summary": "Delete run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
+      "get": {
+        "operationId": "apps_opps_api_v2_get_step",
+        "summary": "Step detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "skill",
+            "schema": {
+              "title": "Skill",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepSnapshotOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}": {
+      "get": {
+        "operationId": "apps_opps_api_v2_get_artifact",
+        "summary": "Artifact metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}/download": {
+      "get": {
+        "operationId": "apps_opps_api_v2_download_artifact",
+        "summary": "Download artifact binary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/fork": {
+      "post": {
+        "operationId": "apps_opps_api_v2_fork_opp_endpoint",
+        "summary": "Fork opp run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OppForkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/fork/status": {
+      "get": {
+        "operationId": "apps_opps_api_v2_fork_status",
+        "summary": "Fork progress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "source_run_id",
+            "schema": {
+              "default": "",
+              "title": "Source Run Id",
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForkProgress"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/scorecard": {
+      "get": {
+        "operationId": "apps_opps_api_v2_get_scorecard",
+        "summary": "Opp-eval scorecard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/gates/{skill}": {
+      "post": {
+        "operationId": "apps_opps_api_v2_record_gate",
+        "summary": "Record gate decision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "skill",
+            "schema": {
+              "title": "Skill",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GateDecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/compare": {
+      "get": {
+        "operationId": "apps_opps_api_v2_compare_runs",
+        "summary": "Multi-run comparison",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OppCompareOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Run Ids"
+              }
+            }
+          },
+          "required": false
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/actions/seed-chat": {
+      "post": {
+        "operationId": "apps_opps_api_v2_seed_chat",
+        "summary": "Seed chat from step",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeedChatIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/health": {
+      "get": {
+        "operationId": "apps_opps_api_v2_opp_health",
+        "summary": "Drive health probe",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OppHealthOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/opps/{slug}/snapshot/invalidate": {
+      "post": {
+        "operationId": "apps_opps_api_v2_invalidate_snapshot",
+        "summary": "Invalidate snapshot cache (admin)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/sessions": {
+      "get": {
+        "operationId": "apps_sessions_api_v2_list_sessions",
+        "summary": "List sessions in workspace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "opp_slug",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Opp Slug"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "archived",
+            "schema": {
+              "default": false,
+              "title": "Archived",
+              "type": "boolean"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_SessionListOut_"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "apps_sessions_api_v2_create_session",
+        "summary": "Create session",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/sessions/{slug}": {
+      "get": {
+        "operationId": "apps_sessions_api_v2_get_session",
+        "summary": "Session detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "apps_sessions_api_v2_update_session",
+        "summary": "Update session",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "apps_sessions_api_v2_delete_session",
+        "summary": "Delete session",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/sessions/{slug}/messages": {
+      "get": {
+        "operationId": "apps_sessions_api_v2_list_messages",
+        "summary": "Message history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 200,
+              "title": "Limit",
+              "type": "integer"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/sessions/{slug}/participants": {
+      "get": {
+        "operationId": "apps_sessions_api_v2_list_participants",
+        "summary": "Participant list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/sessions/{slug}/turn-state": {
+      "get": {
+        "operationId": "apps_sessions_api_v2_session_turn_state",
+        "summary": "Turn state (polling)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/sessions/{slug}/cost": {
+      "get": {
+        "operationId": "apps_sessions_api_v2_session_cost",
+        "summary": "Cost breakdown",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/sessions/{slug}/structure": {
+      "get": {
+        "operationId": "apps_sessions_api_v2_session_structure",
+        "summary": "Session structure tree",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/sessions/{slug}/share": {
+      "get": {
+        "operationId": "apps_sessions_api_v2_list_share",
+        "summary": "List share tokens",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/w/{workspace_slug}/activity": {
+      "get": {
+        "operationId": "apps_activity_api_v2_activity_feed",
+        "summary": "Workspace activity feed",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "opp",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Opp"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "default": "chat,verdict",
+              "title": "Type",
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 200,
+              "title": "Limit",
+              "type": "integer"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityFeedOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "activity"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/workspaces": {
+      "get": {
+        "operationId": "apps_workspaces_api_v2_list_workspaces",
+        "summary": "List my workspaces",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "apps_workspaces_api_v2_post_workspace",
+        "summary": "Create workspace",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/workspaces/{slug}": {
+      "get": {
+        "operationId": "apps_workspaces_api_v2_workspace_detail",
+        "summary": "Workspace detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "apps_workspaces_api_v2_update_workspace",
+        "summary": "Update workspace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspacePatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/workspaces/{slug}/members": {
+      "get": {
+        "operationId": "apps_workspaces_api_v2_list_members",
+        "summary": "List workspace members",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceMemberOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/workspaces/{slug}/members/invite": {
+      "post": {
+        "operationId": "apps_workspaces_api_v2_invite_member",
+        "summary": "Invite a member",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceInviteOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceInviteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/workspaces/{slug}/members/{user_id}": {
+      "delete": {
+        "operationId": "apps_workspaces_api_v2_remove_member",
+        "summary": "Remove member",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/workspaces/{slug}/leave": {
+      "post": {
+        "operationId": "apps_workspaces_api_v2_leave_workspace",
+        "summary": "Leave workspace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/workspaces/{slug}/activity": {
+      "get": {
+        "operationId": "apps_workspaces_api_v2_workspace_activity",
+        "summary": "Workspace audit log (owner only)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/workspaces/{slug}/drive-config/verify": {
+      "post": {
+        "operationId": "apps_workspaces_api_v2_verify_drive_access",
+        "summary": "Verify Drive access",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/ingest/upload": {
+      "post": {
+        "operationId": "apps_ingest_api_v2_upload",
+        "summary": "Upload a JSONL transcript",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestUploadOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ingest"
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "title": "File",
+                    "type": "string"
+                  },
+                  "opp_slug": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Opp Slug"
+                  },
+                  "opp_run_id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Opp Run Id"
+                  },
+                  "opp_step_skill": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Opp Step Skill"
+                  },
+                  "ace_root_folder_id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Ace Root Folder Id"
+                  },
+                  "workspace_slug": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Workspace Slug"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "title": "MultiPartBodyParams",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/status": {
+      "get": {
+        "operationId": "apps_mobile_api_v2_status",
+        "summary": "Emulator status config",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileStatusOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/ensure-running": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_ensure_running",
+        "summary": "Ensure emulator is running",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/stop": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_stop",
+        "summary": "Stop emulator",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "force",
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/diagnose": {
+      "get": {
+        "operationId": "apps_mobile_api_v2_diagnose",
+        "summary": "Diagnose emulator",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnoseOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/states": {
+      "get": {
+        "operationId": "apps_mobile_api_v2_states",
+        "summary": "List emulator states",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatesCatalogOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/states/select": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_select_state",
+        "summary": "Select active state",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "title": "State",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/snapshots/save": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_save_snapshot",
+        "summary": "Save emulator snapshot",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapshotIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/snapshots/load": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_load_snapshot",
+        "summary": "Load emulator snapshot",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapshotIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/run-recipe": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_run_recipe",
+        "summary": "Submit recipe for async execution",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRecipeAcceptedOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRecipeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/jobs/{job_id}": {
+      "get": {
+        "operationId": "apps_mobile_api_v2_get_job",
+        "summary": "Poll async job status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/apk/install": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_install_apk",
+        "summary": "Install APK",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "apk_url",
+            "schema": {
+              "title": "Apk Url",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/capture-ui-dump": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_capture_ui_dump",
+        "summary": "Capture UI dump",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/screenshot": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_screenshot",
+        "summary": "Take screenshot",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/restart-runner": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_restart_runner",
+        "summary": "Restart the in-VM mobile runner",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "wait_for_ready",
+            "schema": {
+              "default": true,
+              "title": "Wait For Ready",
+              "type": "boolean"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/admin/patch-launch-script": {
+      "post": {
+        "operationId": "apps_mobile_api_v2_admin_patch_launch_script",
+        "summary": "Admin: patch in-VM launch script",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LaunchScriptPatchOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchScriptPatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/mobile/admin/launch-script-patches": {
+      "get": {
+        "operationId": "apps_mobile_api_v2_admin_list_launch_script_patches",
+        "summary": "Admin: list launch script patches",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/system/overview": {
+      "get": {
+        "operationId": "apps_system_api_v2_overview",
+        "summary": "Full system overview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemOverviewOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/system/skills": {
+      "get": {
+        "operationId": "apps_system_api_v2_list_skills",
+        "summary": "List skills",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillSummaryOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/system/skills/{name}": {
+      "get": {
+        "operationId": "apps_system_api_v2_skill_detail",
+        "summary": "Skill detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/system/agents": {
+      "get": {
+        "operationId": "apps_system_api_v2_list_agents",
+        "summary": "List agents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentSummaryOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/system/agents/{name}": {
+      "get": {
+        "operationId": "apps_system_api_v2_agent_detail",
+        "summary": "Agent detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/system/version": {
+      "get": {
+        "operationId": "apps_system_api_v2_version",
+        "summary": "Plugin version check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/system/cli-diag": {
+      "post": {
+        "operationId": "apps_system_api_v2_cli_diag",
+        "summary": "CLI diagnostic (admin)",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "prompt",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prompt"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "timeout_seconds",
+            "schema": {
+              "default": 30.0,
+              "title": "Timeout Seconds",
+              "type": "number"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliDiagOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/tokens": {
+      "get": {
+        "operationId": "apps_service_accounts_api_v2_list_tokens",
+        "summary": "List my personal tokens",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PersonalTokenOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "tokens"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "apps_service_accounts_api_v2_create_token",
+        "summary": "Create a personal token",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalTokenCreatedOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "tokens"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalTokenCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/tokens/{token_id}": {
+      "delete": {
+        "operationId": "apps_service_accounts_api_v2_delete_token",
+        "summary": "Revoke a personal token",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "schema": {
+              "title": "Token Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "tokens"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/auth/me": {
+      "get": {
+        "operationId": "apps_auth_api_v2_me",
+        "summary": "Current user info",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/auth/logout": {
+      "post": {
+        "operationId": "apps_auth_api_v2_logout",
+        "summary": "Logout",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/auth/e2e-login": {
+      "post": {
+        "operationId": "apps_auth_api_v2_e2e_login",
+        "summary": "Automation login (token-gated)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/E2ELoginOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/E2ELoginIn"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v2/auth/cli/status": {
+      "get": {
+        "operationId": "apps_auth_api_v2_cli_auth_status",
+        "summary": "CLI auth status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliAuthStatusOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/auth/cli/upload": {
+      "post": {
+        "operationId": "apps_auth_api_v2_cli_auth_upload",
+        "summary": "Upload CLI credentials",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "default": "user",
+              "title": "Scope",
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliAuthUploadOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/auth/nova/status": {
+      "get": {
+        "operationId": "apps_auth_api_v2_nova_auth_status",
+        "summary": "Nova OAuth status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NovaAuthStatusOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/auth/nova/disconnect": {
+      "post": {
+        "operationId": "apps_auth_api_v2_nova_auth_disconnect",
+        "summary": "Disconnect Nova OAuth (admin)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/health": {
+      "get": {
+        "operationId": "apps_common_api_v2_health",
+        "summary": "Health check (public)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "common"
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "OppCardOut": {
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "current_phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Phase"
+          },
+          "current_skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Skill"
+          },
+          "run_count": {
+            "minimum": 0,
+            "title": "Run Count",
+            "type": "integer"
+          },
+          "last_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "run_count",
+          "updated_at"
+        ],
+        "title": "OppCardOut",
+        "type": "object"
+      },
+      "Page_OppCardOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OppCardOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "minimum": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "limit": {
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "Page[OppCardOut]",
+        "type": "object"
+      },
+      "OppCreateIn": {
+        "additionalProperties": false,
+        "description": "Request body for POST /w/{workspace_slug}/opps.",
+        "properties": {
+          "title": {
+            "description": "Display name for the opp.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "slug": {
+            "description": "URL-safe identifier. Must match [a-z0-9][a-z0-9-]{0,62}[a-z0-9]. Validated against SLUG_RE in opp_creator.",
+            "maxLength": 64,
+            "minLength": 2,
+            "title": "Slug",
+            "type": "string"
+          },
+          "idea": {
+            "default": "",
+            "description": "Initial idea text (idea.md content).",
+            "title": "Idea",
+            "type": "string"
+          },
+          "mode": {
+            "default": "review",
+            "description": "Opp mode: 'review' or 'auto'.",
+            "title": "Mode",
+            "type": "string"
+          },
+          "pdd": {
+            "default": "",
+            "description": "Optional pre-written PDD body.",
+            "title": "Pdd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "slug"
+        ],
+        "title": "OppCreateIn",
+        "type": "object"
+      },
+      "OppPatchIn": {
+        "additionalProperties": false,
+        "description": "Request body for PATCH /w/{workspace_slug}/opps/{slug}.\n\nAll fields are optional \u2014 only set fields are applied.",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "OppPatchIn",
+        "type": "object"
+      },
+      "OppRunOut": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "scorecard": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScorecardOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "run_id",
+          "label",
+          "started_at",
+          "is_active"
+        ],
+        "title": "OppRunOut",
+        "type": "object"
+      },
+      "Page_OppRunOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OppRunOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "minimum": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "limit": {
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "Page[OppRunOut]",
+        "type": "object"
+      },
+      "ScorecardOut": {
+        "additionalProperties": false,
+        "properties": {
+          "score": {
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Score",
+            "type": "integer"
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "trend": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Trend",
+            "type": "array"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "score",
+          "verdict",
+          "rationale",
+          "trend",
+          "decided_at"
+        ],
+        "title": "ScorecardOut",
+        "type": "object"
+      },
+      "ArtifactOut": {
+        "additionalProperties": false,
+        "description": "One entry in the plugin's artifact-manifest.ts.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "consumed_by": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Consumed By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ArtifactOut",
+        "type": "object"
+      },
+      "GateOut": {
+        "additionalProperties": false,
+        "properties": {
+          "skill": {
+            "title": "Skill",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected",
+              "pending"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "skill",
+          "decision"
+        ],
+        "title": "GateOut",
+        "type": "object"
+      },
+      "StepSnapshotOut": {
+        "additionalProperties": false,
+        "properties": {
+          "skill": {
+            "title": "Skill",
+            "type": "string"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "in_progress",
+              "complete",
+              "skipped",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "artifact_count": {
+            "minimum": 0,
+            "title": "Artifact Count",
+            "type": "integer"
+          },
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactOut"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "verdicts": {
+            "items": {
+              "$ref": "#/components/schemas/VerdictOut"
+            },
+            "title": "Verdicts",
+            "type": "array"
+          },
+          "gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview"
+          }
+        },
+        "required": [
+          "skill",
+          "phase",
+          "status",
+          "artifact_count",
+          "artifacts",
+          "verdicts"
+        ],
+        "title": "StepSnapshotOut",
+        "type": "object"
+      },
+      "VerdictOut": {
+        "additionalProperties": false,
+        "properties": {
+          "skill": {
+            "title": "Skill",
+            "type": "string"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "quick",
+              "deep",
+              "monitor"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "score": {
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Score",
+            "type": "integer"
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "phase",
+          "kind",
+          "score",
+          "verdict",
+          "rationale",
+          "decided_at"
+        ],
+        "title": "VerdictOut",
+        "type": "object"
+      },
+      "OppForkIn": {
+        "additionalProperties": false,
+        "properties": {
+          "fork_at_phase": {
+            "minLength": 1,
+            "title": "Fork At Phase",
+            "type": "string"
+          },
+          "source_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run Id"
+          }
+        },
+        "required": [
+          "fork_at_phase"
+        ],
+        "title": "OppForkIn",
+        "type": "object"
+      },
+      "ForkProgress": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "unknown",
+              "counting",
+              "copying",
+              "finalizing",
+              "done",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "progress": {
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "number"
+          },
+          "files_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files Total"
+          },
+          "files_copied": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files Copied"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "new_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Slug"
+          },
+          "new_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Run Id"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ForkProgress",
+        "type": "object"
+      },
+      "GateDecisionIn": {
+        "additionalProperties": false,
+        "description": "Request body for POST /w/{workspace_slug}/opps/{slug}/gates/{skill}.",
+        "properties": {
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "GateDecisionIn",
+        "type": "object"
+      },
+      "OppCompareOut": {
+        "additionalProperties": false,
+        "description": "Response for GET /w/{workspace_slug}/opps/{slug}/compare.",
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Run Ids",
+            "type": "array"
+          },
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/OppSnapshotOut"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "slug",
+          "run_ids",
+          "snapshots"
+        ],
+        "title": "OppCompareOut",
+        "type": "object"
+      },
+      "OppSnapshotOut": {
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/OppRunOut"
+            },
+            "title": "Runs",
+            "type": "array"
+          },
+          "active_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Run Id"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/StepSnapshotOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "pending_gates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending Gates",
+            "type": "array"
+          },
+          "scorecard": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScorecardOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "runs",
+          "steps",
+          "pending_gates",
+          "updated_at"
+        ],
+        "title": "OppSnapshotOut",
+        "type": "object"
+      },
+      "SeedChatIn": {
+        "additionalProperties": false,
+        "description": "Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seed-chat.",
+        "properties": {
+          "step_skill": {
+            "minLength": 1,
+            "title": "Step Skill",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "required": [
+          "step_skill"
+        ],
+        "title": "SeedChatIn",
+        "type": "object"
+      },
+      "OppHealthOut": {
+        "additionalProperties": false,
+        "description": "Response for GET /w/{workspace_slug}/opps/{slug}/health.",
+        "properties": {
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          },
+          "last_checked_at": {
+            "format": "date-time",
+            "title": "Last Checked At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "required": [
+          "reachable",
+          "last_checked_at"
+        ],
+        "title": "OppHealthOut",
+        "type": "object"
+      },
+      "Page_SessionListOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SessionListOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "minimum": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "limit": {
+            "maximum": 500,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "Page[SessionListOut]",
+        "type": "object"
+      },
+      "SessionListOut": {
+        "additionalProperties": false,
+        "description": "Lighter shape returned by GET /api/sessions (list view).\n\nIncludes computed fields (message_count, preview) but omits the inline\nmessage list to keep list payloads small.",
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived",
+              "imported"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "backend_kind": {
+            "enum": [
+              "cli",
+              "api",
+              "mcp"
+            ],
+            "title": "Backend Kind",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "web",
+              "upload"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "cli_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cli Session Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "message_count": {
+            "minimum": 0,
+            "title": "Message Count",
+            "type": "integer"
+          },
+          "preview": {
+            "default": "",
+            "title": "Preview",
+            "type": "string"
+          },
+          "opp_slug": {
+            "default": "",
+            "title": "Opp Slug",
+            "type": "string"
+          },
+          "opp_run_id": {
+            "default": "",
+            "title": "Opp Run Id",
+            "type": "string"
+          },
+          "opp_step_skill": {
+            "default": "",
+            "title": "Opp Step Skill",
+            "type": "string"
+          },
+          "opp_display_name": {
+            "default": "",
+            "title": "Opp Display Name",
+            "type": "string"
+          },
+          "opp_step_skill_display": {
+            "default": "",
+            "title": "Opp Step Skill Display",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "status",
+          "backend_kind",
+          "source",
+          "created_at",
+          "updated_at",
+          "message_count"
+        ],
+        "title": "SessionListOut",
+        "type": "object"
+      },
+      "SessionCreateIn": {
+        "additionalProperties": false,
+        "description": "POST /api/sessions \u2014 create a new session.",
+        "properties": {
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "SessionCreateIn",
+        "type": "object"
+      },
+      "SessionPatchIn": {
+        "additionalProperties": false,
+        "description": "PATCH /api/sessions/<slug> \u2014 partial update.\n\nOnly ``title`` and ``status`` are mutable by the owner.\nUse ``model_dump(exclude_unset=True)`` to get only the fields supplied.",
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "archived",
+                  "imported"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "SessionPatchIn",
+        "type": "object"
+      },
+      "ActivityEntryOut": {
+        "additionalProperties": false,
+        "description": "One entry in the workspace activity feed.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "chat",
+              "verdict"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          },
+          "opp_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opp Slug"
+          },
+          "step_skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Skill"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "session_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Slug"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind",
+          "ts",
+          "title",
+          "meta"
+        ],
+        "title": "ActivityEntryOut",
+        "type": "object"
+      },
+      "ActivityFeedOut": {
+        "additionalProperties": false,
+        "description": "Response wrapper for GET /api/v2/activity/.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityEntryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "ActivityFeedOut",
+        "type": "object"
+      },
+      "WorkspaceOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "drive_root_folder_id": {
+            "title": "Drive Root Folder Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "member_count": {
+            "minimum": 0,
+            "title": "Member Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created_at",
+          "updated_at",
+          "slug",
+          "name",
+          "drive_root_folder_id",
+          "role",
+          "member_count"
+        ],
+        "title": "WorkspaceOut",
+        "type": "object"
+      },
+      "WorkspaceCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Slug",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "drive_root_folder_id": {
+            "minLength": 1,
+            "title": "Drive Root Folder Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "drive_root_folder_id"
+        ],
+        "title": "WorkspaceCreateIn",
+        "type": "object"
+      },
+      "WorkspacePatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "drive_root_folder_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drive Root Folder Id"
+          }
+        },
+        "title": "WorkspacePatchIn",
+        "type": "object"
+      },
+      "UserRefOut": {
+        "additionalProperties": false,
+        "description": "Minimal user reference for embedding in other responses.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          }
+        },
+        "required": [
+          "id",
+          "email"
+        ],
+        "title": "UserRefOut",
+        "type": "object"
+      },
+      "WorkspaceMemberOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserRefOut"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "joined_at": {
+            "format": "date-time",
+            "title": "Joined At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user",
+          "role",
+          "joined_at"
+        ],
+        "title": "WorkspaceMemberOut",
+        "type": "object"
+      },
+      "WorkspaceInviteOut": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "accepted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted At"
+          }
+        },
+        "required": [
+          "created_at",
+          "updated_at",
+          "token",
+          "email",
+          "role",
+          "accepted"
+        ],
+        "title": "WorkspaceInviteOut",
+        "type": "object"
+      },
+      "WorkspaceInviteIn": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "WorkspaceInviteIn",
+        "type": "object"
+      },
+      "CostBreakdownOut": {
+        "additionalProperties": false,
+        "description": "Full cost breakdown \u2014 mirrors Session.cost_breakdown JSONField shape.\n\n``totals`` is nullable: the view returns ``totals=None, phases=[]`` for\nsessions with no cost data (schema_version=0 legacy uploads).\n``computed_at`` is absent on the v0 empty sentinel.",
+        "properties": {
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "computed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed At"
+          },
+          "totals": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostTotalsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/CostPhaseOut"
+            },
+            "title": "Phases",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version"
+        ],
+        "title": "CostBreakdownOut",
+        "type": "object"
+      },
+      "CostInvocationOut": {
+        "additionalProperties": true,
+        "description": "Single skill invocation within the breakdown.\n\nUses ``extra=\"allow\"`` so future aggregator fields (e.g. tool-call counts,\nretry metadata) don't invalidate existing saved breakdowns.",
+        "properties": {
+          "start_ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Ts"
+          },
+          "wall_time_seconds": {
+            "default": 0,
+            "title": "Wall Time Seconds",
+            "type": "integer"
+          },
+          "estimated_cost_usd": {
+            "default": 0.0,
+            "title": "Estimated Cost Usd",
+            "type": "number"
+          },
+          "cost_is_partial": {
+            "default": false,
+            "title": "Cost Is Partial",
+            "type": "boolean"
+          },
+          "incomplete": {
+            "default": false,
+            "title": "Incomplete",
+            "type": "boolean"
+          },
+          "tokens": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TokensOut"
+              }
+            ]
+          }
+        },
+        "title": "CostInvocationOut",
+        "type": "object"
+      },
+      "CostPhaseOut": {
+        "additionalProperties": false,
+        "description": "Per-phase summary within a cost breakdown.",
+        "properties": {
+          "phase_name": {
+            "title": "Phase Name",
+            "type": "string"
+          },
+          "phase_display": {
+            "default": "",
+            "title": "Phase Display",
+            "type": "string"
+          },
+          "phase_ordinal": {
+            "default": 0,
+            "title": "Phase Ordinal",
+            "type": "integer"
+          },
+          "wall_time_seconds": {
+            "default": 0,
+            "title": "Wall Time Seconds",
+            "type": "integer"
+          },
+          "estimated_cost_usd": {
+            "default": 0.0,
+            "title": "Estimated Cost Usd",
+            "type": "number"
+          },
+          "cost_is_partial": {
+            "default": false,
+            "title": "Cost Is Partial",
+            "type": "boolean"
+          },
+          "tokens": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TokensOut"
+              }
+            ]
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/CostSkillOut"
+            },
+            "title": "Skills",
+            "type": "array"
+          }
+        },
+        "required": [
+          "phase_name"
+        ],
+        "title": "CostPhaseOut",
+        "type": "object"
+      },
+      "CostSkillOut": {
+        "additionalProperties": false,
+        "description": "Per-skill summary within a phase.",
+        "properties": {
+          "skill_name": {
+            "title": "Skill Name",
+            "type": "string"
+          },
+          "skill_display": {
+            "default": "",
+            "title": "Skill Display",
+            "type": "string"
+          },
+          "invocation_count": {
+            "default": 0,
+            "title": "Invocation Count",
+            "type": "integer"
+          },
+          "wall_time_seconds": {
+            "default": 0,
+            "title": "Wall Time Seconds",
+            "type": "integer"
+          },
+          "estimated_cost_usd": {
+            "default": 0.0,
+            "title": "Estimated Cost Usd",
+            "type": "number"
+          },
+          "cost_is_partial": {
+            "default": false,
+            "title": "Cost Is Partial",
+            "type": "boolean"
+          },
+          "tokens": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TokensOut"
+              }
+            ]
+          },
+          "invocations": {
+            "items": {
+              "$ref": "#/components/schemas/CostInvocationOut"
+            },
+            "title": "Invocations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "skill_name"
+        ],
+        "title": "CostSkillOut",
+        "type": "object"
+      },
+      "CostTotalsOut": {
+        "additionalProperties": false,
+        "description": "Session-level totals produced by cost_aggregator.",
+        "properties": {
+          "wall_time_seconds": {
+            "default": 0,
+            "title": "Wall Time Seconds",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "cache_creation_tokens": {
+            "default": 0,
+            "title": "Cache Creation Tokens",
+            "type": "integer"
+          },
+          "cache_read_tokens": {
+            "default": 0,
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "estimated_cost_usd": {
+            "default": 0.0,
+            "title": "Estimated Cost Usd",
+            "type": "number"
+          },
+          "cost_is_partial": {
+            "default": false,
+            "title": "Cost Is Partial",
+            "type": "boolean"
+          },
+          "cache_hit_ratio": {
+            "default": 0.0,
+            "title": "Cache Hit Ratio",
+            "type": "number"
+          }
+        },
+        "title": "CostTotalsOut",
+        "type": "object"
+      },
+      "IngestUploadOut": {
+        "additionalProperties": false,
+        "description": "201 response from POST /api/v2/ingest/upload.\n\n``cost_breakdown`` is null for sessions where the JSONL contained no\ncost-bearing assistant turns (empty or tool-only transcripts).\n``opp_slug``, ``opp_run_id``, and ``opp_step_skill`` are null when the\nupload is an orphan (no opp linkage provided in the multipart body).",
+        "properties": {
+          "session_slug": {
+            "title": "Session Slug",
+            "type": "string"
+          },
+          "messages_imported": {
+            "title": "Messages Imported",
+            "type": "integer"
+          },
+          "cli_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cli Session Id"
+          },
+          "opp_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opp Slug"
+          },
+          "opp_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opp Run Id"
+          },
+          "opp_step_skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opp Step Skill"
+          },
+          "cost_breakdown": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostBreakdownOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "session_slug",
+          "messages_imported"
+        ],
+        "title": "IngestUploadOut",
+        "type": "object"
+      },
+      "TokensOut": {
+        "additionalProperties": false,
+        "description": "Token usage counts \u2014 shared by cost and structure schemas.",
+        "properties": {
+          "input_tokens": {
+            "default": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "cache_creation_tokens": {
+            "default": 0,
+            "title": "Cache Creation Tokens",
+            "type": "integer"
+          },
+          "cache_read_tokens": {
+            "default": 0,
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          }
+        },
+        "title": "TokensOut",
+        "type": "object"
+      },
+      "MobileStatusOut": {
+        "additionalProperties": false,
+        "description": "GET /api/mobile/status response \u2014 configuration snapshot.\n\nDoes NOT probe the EC2 instance; just surfaces the Django settings.\n``configured`` is True only when both instance_id and s3_bucket are set.",
+        "properties": {
+          "instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Id"
+          },
+          "region": {
+            "title": "Region",
+            "type": "string"
+          },
+          "s3_bucket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "S3 Bucket"
+          },
+          "ami_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ami Version"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "region",
+          "configured"
+        ],
+        "title": "MobileStatusOut",
+        "type": "object"
+      },
+      "DiagnoseOut": {
+        "additionalProperties": true,
+        "description": "GET /api/mobile/diagnose response \u2014 in-VM emulator diagnostics.\n\nFields mirror ``Diagnostics`` dataclass in ``apps.mobile.controller``.\n``extra=\"allow\"`` so new fields added to the dataclass don't need a\nsimultaneous schema update.",
+        "properties": {
+          "ssm_ok": {
+            "default": true,
+            "title": "Ssm Ok",
+            "type": "boolean"
+          },
+          "ssm_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssm Error"
+          },
+          "adb_devices": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Adb Devices",
+            "type": "array"
+          },
+          "adb_visible_count": {
+            "default": 0,
+            "title": "Adb Visible Count",
+            "type": "integer"
+          },
+          "emulator_pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emulator Pid"
+          },
+          "emulator_cmdline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emulator Cmdline"
+          },
+          "runner_service_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runner Service State"
+          },
+          "marker_present": {
+            "default": false,
+            "title": "Marker Present",
+            "type": "boolean"
+          },
+          "marker_age_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marker Age Seconds"
+          },
+          "runner_log_tail": {
+            "default": "",
+            "title": "Runner Log Tail",
+            "type": "string"
+          },
+          "emulator_log_tail": {
+            "default": "",
+            "title": "Emulator Log Tail",
+            "type": "string"
+          }
+        },
+        "title": "DiagnoseOut",
+        "type": "object"
+      },
+      "StateOut": {
+        "additionalProperties": false,
+        "description": "One named state baked into the AMI.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "snapshot": {
+            "title": "Snapshot",
+            "type": "string"
+          },
+          "commcare_version": {
+            "title": "Commcare Version",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "snapshot",
+          "commcare_version"
+        ],
+        "title": "StateOut",
+        "type": "object"
+      },
+      "StatesCatalogOut": {
+        "additionalProperties": false,
+        "description": "GET /api/mobile/states response.",
+        "properties": {
+          "default": {
+            "type": "string",
+            "title": "Default"
+          },
+          "states": {
+            "items": {
+              "$ref": "#/components/schemas/StateOut"
+            },
+            "title": "States",
+            "type": "array"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          }
+        },
+        "required": [
+          "default",
+          "states"
+        ],
+        "title": "StatesCatalogOut",
+        "type": "object"
+      },
+      "SnapshotIn": {
+        "additionalProperties": false,
+        "description": "POST /api/mobile/save-snapshot and /api/mobile/load-snapshot body.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SnapshotIn",
+        "type": "object"
+      },
+      "RunRecipeAcceptedOut": {
+        "additionalProperties": false,
+        "description": "202 response \u2014 recipe accepted, poll jobs/<job_id> for result.",
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "running",
+            "default": "running",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "RunRecipeAcceptedOut",
+        "type": "object"
+      },
+      "RunRecipeIn": {
+        "additionalProperties": false,
+        "description": "POST /api/mobile/run-recipe \u2014 kick off a Maestro recipe.\n\n``recipe_yaml`` is the YAML string; ``env`` overrides env vars inside\nthe recipe; ``screenshot_prefix`` sets the S3 key namespace;\n``state`` names the baked AVD snapshot to ensure is loaded before\nthe recipe runs.",
+        "properties": {
+          "recipe_yaml": {
+            "title": "Recipe Yaml",
+            "type": "string"
+          },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Env",
+            "type": "object"
+          },
+          "screenshot_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screenshot Prefix"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          }
+        },
+        "required": [
+          "recipe_yaml"
+        ],
+        "title": "RunRecipeIn",
+        "type": "object"
+      },
+      "JobOut": {
+        "additionalProperties": true,
+        "description": "GET /api/mobile/jobs/<id> response \u2014 async job status.\n\n``result`` is populated on ``status=\"completed\"`` with the same\nshape ``run_recipe`` would have returned synchronously.\n``error`` / ``error_code`` are populated on ``status=\"failed\"``.\nUses ``extra=\"allow\"`` so future job fields don't require a schema bump.",
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "result": {
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          }
+        },
+        "required": [
+          "job_id",
+          "operation",
+          "status",
+          "owner",
+          "started_at"
+        ],
+        "title": "JobOut",
+        "type": "object"
+      },
+      "LaunchScriptPatchOut": {
+        "additionalProperties": false,
+        "description": "Audit row echoed back from a successful patch operation.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "user_email": {
+            "title": "User Email",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "bytes_written": {
+            "title": "Bytes Written",
+            "type": "integer"
+          },
+          "restart_requested": {
+            "title": "Restart Requested",
+            "type": "boolean"
+          },
+          "instance_id": {
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "ami_version": {
+            "default": "",
+            "title": "Ami Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "user_id",
+          "user_email",
+          "sha256",
+          "bytes_written",
+          "restart_requested",
+          "instance_id"
+        ],
+        "title": "LaunchScriptPatchOut",
+        "type": "object"
+      },
+      "LaunchScriptPatchIn": {
+        "additionalProperties": false,
+        "description": "POST /api/mobile/admin/patch-launch-script body.\n\n``restart_runner`` (default True) asks the controller to restart the\nin-VM ace-mobile-runner systemd unit immediately so the patch takes\neffect without a cold reboot.",
+        "properties": {
+          "script_body": {
+            "title": "Script Body",
+            "type": "string"
+          },
+          "restart_runner": {
+            "default": true,
+            "title": "Restart Runner",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "script_body"
+        ],
+        "title": "LaunchScriptPatchIn",
+        "type": "object"
+      },
+      "AgentSummaryOut": {
+        "additionalProperties": false,
+        "description": "One agent declared in the plugin's agents/ directory.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AgentSummaryOut",
+        "type": "object"
+      },
+      "McpServerOut": {
+        "additionalProperties": false,
+        "description": "One MCP server declared in the plugin's plugin.json.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source File"
+          },
+          "tools": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/McpToolOut"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "McpServerOut",
+        "type": "object"
+      },
+      "McpToolOut": {
+        "additionalProperties": true,
+        "description": "One tool exposed by a plugin MCP server.\n\n``used_by`` lists skill slugs whose body text mentions this tool name.\nUses ``extra=\"allow\"`` because the parser may add more metadata fields.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "used_by": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Used By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "McpToolOut",
+        "type": "object"
+      },
+      "PhaseSummaryOut": {
+        "additionalProperties": false,
+        "description": "One phase declared across the plugin's agent frontmatter.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "ordinal",
+          "agent"
+        ],
+        "title": "PhaseSummaryOut",
+        "type": "object"
+      },
+      "SkillArtifactRowOut": {
+        "additionalProperties": false,
+        "description": "Minimal artifact reference embedded in a skill summary.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SkillArtifactRowOut",
+        "type": "object"
+      },
+      "SkillSummaryOut": {
+        "additionalProperties": false,
+        "description": "One skill in the bundled ACE plugin \u2014 list-level shape.\n\nReturned as elements of ``SystemOverviewOut.skills``.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "ordinal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordinal"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "has_judge": {
+            "default": false,
+            "title": "Has Judge",
+            "type": "boolean"
+          },
+          "is_recurring": {
+            "default": false,
+            "title": "Is Recurring",
+            "type": "boolean"
+          },
+          "primary_output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Output"
+          },
+          "artifacts_produced": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SkillArtifactRowOut"
+            },
+            "title": "Artifacts Produced",
+            "type": "array"
+          },
+          "artifacts_consumed": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SkillArtifactRowOut"
+            },
+            "title": "Artifacts Consumed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "display_name"
+        ],
+        "title": "SkillSummaryOut",
+        "type": "object"
+      },
+      "SystemOverviewOut": {
+        "additionalProperties": false,
+        "description": "Full system snapshot returned by GET /api/v2/system/overview.",
+        "properties": {
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/SkillSummaryOut"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSummaryOut"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactOut"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseSummaryOut"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "mcps": {
+            "items": {
+              "$ref": "#/components/schemas/McpServerOut"
+            },
+            "title": "Mcps",
+            "type": "array"
+          },
+          "plugin_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plugin Version"
+          },
+          "remote_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote Version"
+          },
+          "update_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Available"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "skills",
+          "agents",
+          "artifacts",
+          "phases",
+          "mcps"
+        ],
+        "title": "SystemOverviewOut",
+        "type": "object"
+      },
+      "SkillDetailOut": {
+        "additionalProperties": false,
+        "description": "Single-skill detail \u2014 adds full markdown body.\n\nReturned by GET /api/v2/system/skills/<name>.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "ordinal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordinal"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "has_judge": {
+            "default": false,
+            "title": "Has Judge",
+            "type": "boolean"
+          },
+          "is_recurring": {
+            "default": false,
+            "title": "Is Recurring",
+            "type": "boolean"
+          },
+          "primary_output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Output"
+          },
+          "artifacts_produced": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SkillArtifactRowOut"
+            },
+            "title": "Artifacts Produced",
+            "type": "array"
+          },
+          "artifacts_consumed": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SkillArtifactRowOut"
+            },
+            "title": "Artifacts Consumed",
+            "type": "array"
+          },
+          "body_markdown": {
+            "default": "",
+            "title": "Body Markdown",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "display_name"
+        ],
+        "title": "SkillDetailOut",
+        "type": "object"
+      },
+      "AgentDetailOut": {
+        "additionalProperties": false,
+        "description": "Single-agent detail \u2014 adds full markdown body.\n\nReturned by GET /api/v2/system/agents/<name>.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "body_markdown": {
+            "default": "",
+            "title": "Body Markdown",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AgentDetailOut",
+        "type": "object"
+      },
+      "VersionOut": {
+        "additionalProperties": false,
+        "description": "Plugin version + remote comparison.\n\nReturned by GET /api/v2/system/version and embedded in SystemOverviewOut.\n``update_available`` is null when the remote check failed (network error\nor rate limit).",
+        "properties": {
+          "plugin_found": {
+            "title": "Plugin Found",
+            "type": "boolean"
+          },
+          "plugin_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plugin Version"
+          },
+          "remote_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote Version"
+          },
+          "update_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Available"
+          },
+          "plugin_path": {
+            "default": "",
+            "title": "Plugin Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_found"
+        ],
+        "title": "VersionOut",
+        "type": "object"
+      },
+      "CliDiagOut": {
+        "additionalProperties": true,
+        "description": "Response from POST /api/v2/system/cli-diag.\n\nThe shape is intentionally open (``extra=\"allow\"``) because the\ndiagnostic response embeds raw subprocess output, plugin probes, and\nenvironment snapshots whose exact keys evolve with the CLI version.\nConsumers should access known top-level keys (elapsed_seconds,\nreturncode, init_summary) and treat the rest as opaque diagnostic data.",
+        "properties": {
+          "elapsed_seconds": {
+            "title": "Elapsed Seconds",
+            "type": "number"
+          },
+          "returncode": {
+            "title": "Returncode",
+            "type": "integer"
+          },
+          "stream_event_count": {
+            "default": 0,
+            "title": "Stream Event Count",
+            "type": "integer"
+          },
+          "stderr_tail": {
+            "default": "",
+            "title": "Stderr Tail",
+            "type": "string"
+          },
+          "init_summary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Init Summary"
+          },
+          "tool_uses": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Tool Uses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "elapsed_seconds",
+          "returncode"
+        ],
+        "title": "CliDiagOut",
+        "type": "object"
+      },
+      "PersonalTokenOut": {
+        "additionalProperties": false,
+        "description": "Token metadata \u2014 returned in list and create responses.\n\nThe raw token value is NEVER included here; it appears only in\n``PersonalTokenCreatedOut`` (the POST 201 response), once.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "title": "PersonalTokenOut",
+        "type": "object"
+      },
+      "PersonalTokenCreatedOut": {
+        "additionalProperties": false,
+        "description": "201 response for a newly created token.\n\n``raw_token`` is the plaintext bearer value \u2014 shown ONCE; the server\nstores only the SHA-256 hash and cannot recover the raw value after\nthis response.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "raw_token": {
+            "title": "Raw Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "raw_token"
+        ],
+        "title": "PersonalTokenCreatedOut",
+        "type": "object"
+      },
+      "PersonalTokenCreateIn": {
+        "additionalProperties": false,
+        "description": "POST /api/v2/auth/tokens \u2014 create a new personal token.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PersonalTokenCreateIn",
+        "type": "object"
+      },
+      "MeOut": {
+        "additionalProperties": false,
+        "description": "GET /api/v2/auth/me \u2014 minimal current-user info.\n\n``workspaces`` lists every workspace the user is a member of,\nordered by the workspace display name.  Useful for workspace\nselectors, nav headers, and determining default workspace slug.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "is_staff": {
+            "default": false,
+            "title": "Is Staff",
+            "type": "boolean"
+          },
+          "workspaces": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceRefOut"
+            },
+            "title": "Workspaces",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "display_name"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
+      "WorkspaceRefOut": {
+        "additionalProperties": false,
+        "description": "Minimal workspace reference for embedding.\n\nNote: the public field name is `name` (not `display_name`).\nThe view layer maps workspace.display_name -> name when populating.",
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name"
+        ],
+        "title": "WorkspaceRefOut",
+        "type": "object"
+      },
+      "E2ELoginOut": {
+        "additionalProperties": false,
+        "description": "200 response from /auth/e2e-login/.",
+        "properties": {
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email"
+        ],
+        "title": "E2ELoginOut",
+        "type": "object"
+      },
+      "E2ELoginIn": {
+        "additionalProperties": false,
+        "description": "POST /auth/e2e-login/ body.\n\nUsed by automated tools (walkthroughs, smoke tests, CI harnesses)\nto authenticate without going through CommCare Connect OAuth.\n``token`` must match ``settings.ACE_E2E_AUTH_TOKEN``.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "token"
+        ],
+        "title": "E2ELoginIn",
+        "type": "object"
+      },
+      "CliAuthStatusOut": {
+        "additionalProperties": false,
+        "description": "GET /api/auth/cli/status \u2014 is the stored credential live?\n\n``authenticated`` reflects whatever backend the chat path will pick\n(user blob first, then global).  ``user.has_blob`` / ``global.has_blob``\nindicate which scopes have a stored credential.",
+        "properties": {
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "user": {
+            "additionalProperties": true,
+            "title": "User",
+            "type": "object"
+          },
+          "global_": {
+            "additionalProperties": true,
+            "title": "Global",
+            "type": "object"
+          }
+        },
+        "required": [
+          "authenticated",
+          "user",
+          "global_"
+        ],
+        "title": "CliAuthStatusOut",
+        "type": "object"
+      },
+      "CliAuthUploadOut": {
+        "additionalProperties": false,
+        "description": "POST /api/auth/cli/upload \u2014 credential blob accepted response.",
+        "properties": {
+          "stored": {
+            "title": "Stored",
+            "type": "boolean"
+          },
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "token_prefix": {
+            "title": "Token Prefix",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stored",
+          "authenticated",
+          "token_prefix",
+          "scope"
+        ],
+        "title": "CliAuthUploadOut",
+        "type": "object"
+      },
+      "NovaAuthStatusOut": {
+        "additionalProperties": false,
+        "description": "GET /api/auth/nova/status \u2014 is the Nova MCP credential connected?\n\n``can_manage`` is True for staff + automation accounts \u2014 they get\nthe Connect/Disconnect controls in the UI.",
+        "properties": {
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "can_manage": {
+            "default": false,
+            "title": "Can Manage",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connected",
+          "valid"
+        ],
+        "title": "NovaAuthStatusOut",
+        "type": "object"
+      },
+      "HealthCheckOut": {
+        "additionalProperties": false,
+        "description": "One subsystem check result.",
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "HealthCheckOut",
+        "type": "object"
+      },
+      "HealthOut": {
+        "additionalProperties": false,
+        "description": "GET /api/v2/health response.\n\n``healthy`` is True when all subsystem checks pass.\n``status`` is ``\"ok\"`` or ``\"unhealthy\"`` for human readability.",
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "healthy": {
+            "title": "Healthy",
+            "type": "boolean"
+          },
+          "checks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/HealthCheckOut"
+            },
+            "title": "Checks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "status",
+          "healthy",
+          "checks"
+        ],
+        "title": "HealthOut",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "DjangoSessionAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "sessionid"
+      }
+    }
+  },
+  "servers": []
+}
