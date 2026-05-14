@@ -29,6 +29,19 @@ services:
     volumes:
       # ABSOLUTE path on the host. Replace with your checkout location.
       - /Users/CHANGEME/emdash/repositories/ace:/app/vendor/ace
+      # ───────────────────────────────────────────────────────────────
+      # Resolve connect-videos clip-explorer media symlinks
+      # ───────────────────────────────────────────────────────────────
+      # `npm run hydrate -- --program=<slug>` materialises clips to
+      # ~/.cache/connect-videos/<gdrive-id>.mp4 on the HOST and then
+      # `build-clip-explorer` symlinks them into
+      # video-production/connect-videos/out/clip-explorer/<slug>/media/
+      # using ABSOLUTE paths. Mount the host cache dir at the same
+      # absolute path inside the container so those symlinks resolve
+      # when Django serves /api/w/<ws>/videos/.../media/<name>.mp4.
+      # The destination path must literally match the symlink target,
+      # so replace CHANGEME with your macOS username (cat /Users/$USER).
+      - /Users/CHANGEME/.cache/connect-videos:/Users/CHANGEME/.cache/connect-videos:ro
     environment:
       # Docker Desktop on macOS doesn't propagate inotify events from the
       # host into the container for bind-mounted volumes — file CONTENT is

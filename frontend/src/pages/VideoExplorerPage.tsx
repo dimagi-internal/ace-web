@@ -111,7 +111,14 @@ export default function VideoExplorerPage() {
           // and served (with URL rewrites + CSRF wrapper) by the Django
           // app. We embed it here so it inherits ace-web's chrome and
           // auth. Same-origin so cookies + workspace gating apply.
-          src={detail.explorer_url}
+          // Backend returns a bare /api/... path; we prefix BASE_URL so
+          // the iframe's relative fetches (library.json, edit, feedback)
+          // resolve under the SPA's URL prefix (/ace/ in prod-parity dev,
+          // / when FORCE_SCRIPT_NAME='').
+          src={
+            (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") +
+            detail.explorer_url
+          }
           title={`Clip explorer: ${detail.name}`}
           className="flex-1 border-0"
           allow="fullscreen"
