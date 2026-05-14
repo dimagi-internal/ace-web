@@ -61,7 +61,7 @@ def _read_yaml(drive: DriveClient, file_id: str) -> dict:
         body = content.content or ""
     except Exception as exc:  # noqa: BLE001
         log.warning("summary: read yaml %s failed: %s", file_id, exc)
-        return ""
+        return {}
     try:
         data = yaml.safe_load(body) or {}
         return data if isinstance(data, dict) else {}

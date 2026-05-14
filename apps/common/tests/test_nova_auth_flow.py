@@ -62,7 +62,7 @@ def _seed_blob(**overrides):
 def test_store_blob_normalizes_expires_in_to_expires_at():
     nf.store_blob({"access_token": "jwt", "expires_in": 3600, "refresh_token": "rt"})
     stored = nf.get_blob()
-    assert "expires_at" in stored
+    assert "expires_at" in stored  # pyright: ignore[reportOperatorIssue]
     assert stored["expires_at"] - stored["obtained_at"] == 3600
 
 

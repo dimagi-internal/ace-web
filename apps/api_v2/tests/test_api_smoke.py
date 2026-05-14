@@ -27,7 +27,7 @@ def test_scalar_docs_serves_html():
     client = Client()
     response = client.get("/api/docs/")
     assert response.status_code == 200
-    assert response["Content-Type"].startswith("text/html")
+    assert response["Content-Type"].startswith("text/html")  # pyright: ignore[reportIndexIssue]
     assert b"api-reference" in response.content
 
 

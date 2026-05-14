@@ -266,7 +266,7 @@ class ShareToken(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Token {self.token[:8]}... for session {self.session_id}"
+        return f"Token {self.token[:8]}... for session {self.session_id}"  # pyright: ignore[reportIndexIssue]
 
     class Meta:
         db_table = "share_tokens"

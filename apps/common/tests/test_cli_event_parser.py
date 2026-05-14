@@ -47,7 +47,7 @@ def test_tool_use_sequence():
 def test_error_terminal_emits_error_event():
     events = list(parse_stream_json_lines(_load("stream_json_error.txt")))
     assert events[-1].type is StreamEventType.ERROR
-    assert "max_turns" in events[-1].error
+    assert "max_turns" in events[-1].error  # pyright: ignore[reportOperatorIssue]
 
 
 def test_blank_lines_are_ignored():

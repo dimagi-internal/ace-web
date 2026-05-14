@@ -32,7 +32,7 @@ class MobileLaunchScriptPatchAdmin(admin.ModelAdmin):
         """Display a truncated SHA for the table view — the full
         64-char hex is preserved on the detail page and in the
         ``sha256`` search field."""
-        return obj.sha256[:12] + "…" if obj.sha256 else ""
+        return obj.sha256[:12] + "…" if obj.sha256 else ""  # pyright: ignore[reportIndexIssue]
 
     def has_add_permission(self, request):
         return False

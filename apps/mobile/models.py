@@ -54,4 +54,4 @@ class MobileLaunchScriptPatch(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.user_id} @ {self.created_at:%Y-%m-%d %H:%M} sha={self.sha256[:8]}"
+        return f"{self.user_id} @ {self.created_at:%Y-%m-%d %H:%M} sha={self.sha256[:8]}"  # pyright: ignore[reportIndexIssue]
