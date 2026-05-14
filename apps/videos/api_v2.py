@@ -312,13 +312,23 @@ def serve_media(
     resolve_workspace_for_member(request, workspace_slug)
     _require_program(workspace_slug, program_slug)
 
+    # Reject path traversal at the URL-input boundary, before any FS
+    # access. The clip-explorer build can populate this dir with absolute
+    # symlinks to ~/.cache/connect-videos/<gdrive-id>.mp4, so checking the
+    # resolved target against media_dir would reject the valid case. We
+    # only need to guarantee the user-supplied segment is a single safe
+    # leaf — no separators, no parent traversal, no absolute path.
+    import os.path
+    if (
+        "/" in file_name
+        or "\\" in file_name
+        or os.path.isabs(file_name)
+        or file_name in {".", ".."}
+        or file_name != os.path.basename(file_name)
+    ):
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
     media_dir = service.explorer_dir(program_slug) / "media"
-    try:
-        target = (media_dir / file_name).resolve()
-        # Reject path traversal: target must stay under media_dir (resolved).
-        target.relative_to(media_dir.resolve())
-    except (OSError, ValueError):
-        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from None
+    target = media_dir / file_name
     if not target.is_file():
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
 
