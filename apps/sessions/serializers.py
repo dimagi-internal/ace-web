@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from .models import Draft, Message, Session, SessionParticipant, ShareToken  # noqa: F401
 
-
 PREVIEW_LIMIT = 120
 
 
