@@ -1,10 +1,50 @@
 import pytest
 from django.contrib.auth import get_user_model
 
-from apps.opps.schemas import OppCardOut
+from apps.opps.schemas import OppCardOut, OppSnapshotOut
 from apps.workspaces.models import Workspace, WorkspaceMembership
 
 User = get_user_model()
+
+
+# ---------------------------------------------------------------------------
+# Shared fake data helpers
+# ---------------------------------------------------------------------------
+
+_FAKE_SNAPSHOT = {
+    "slug": "opp-1",
+    "title": "Opp One",
+    "runs": [
+        {
+            "run_id": "run-001",
+            "label": "Run 1",
+            "started_at": "2026-05-14T09:00:00Z",
+            "finished_at": None,
+            "is_active": True,
+            "scorecard": None,
+        }
+    ],
+    "active_run_id": "run-001",
+    "steps": [],
+    "pending_gates": [],
+    "scorecard": None,
+    "updated_at": "2026-05-14T10:00:00Z",
+}
+
+_FAKE_CARD = {
+    "slug": "opp-1",
+    "title": "Opp One",
+    "current_phase": None,
+    "current_skill": None,
+    "run_count": 1,
+    "last_run_id": "run-001",
+    "updated_at": "2026-05-14T10:00:00Z",
+}
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -84,3 +124,74 @@ def test_list_opps_401_anonymous(db, client):
     response = client.get("/api/v2/w/ws1/opps")
     assert response.status_code == 401
     assert response["Content-Type"].startswith("application/problem+json")
+
+
+# ---------------------------------------------------------------------------
+# Task 2.1.3 — GET /w/{workspace_slug}/opps/{slug}
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_get_opp_returns_snapshot_with_etag(member_client, monkeypatch):
+    client, workspace, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api_v2.load_opp_snapshot",
+        lambda workspace, slug, run_id=None: _FAKE_SNAPSHOT,
+    )
+    response = client.get("/api/v2/w/ws1/opps/opp-1")
+    assert response.status_code == 200
+    assert "ETag" in response
+    body = response.json()
+    OppSnapshotOut.model_validate(body)
+    assert body["slug"] == "opp-1"
+
+
+@pytest.mark.django_db
+def test_get_opp_304_on_matching_etag(member_client, monkeypatch):
+    client, workspace, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api_v2.load_opp_snapshot",
+        lambda workspace, slug, run_id=None: _FAKE_SNAPSHOT,
+    )
+    # First request — get the ETag.
+    r1 = client.get("/api/v2/w/ws1/opps/opp-1")
+    assert r1.status_code == 200
+    etag = r1["ETag"]
+    # Second request with matching If-None-Match → 304.
+    r2 = client.get("/api/v2/w/ws1/opps/opp-1", HTTP_IF_NONE_MATCH=etag)
+    assert r2.status_code == 304
+
+
+@pytest.mark.django_db
+def test_get_opp_404_non_member(non_member_client, monkeypatch):
+    client, _, _ = non_member_client
+    response = client.get("/api/v2/w/ws1/opps/opp-1")
+    assert response.status_code == 404
+    assert response["Content-Type"].startswith("application/problem+json")
+
+
+@pytest.mark.django_db
+def test_get_opp_401_anonymous(db, client):
+    Workspace.objects.create(
+        slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
+        created_by=User.objects.create_user(email="creator5@example.com"),
+    )
+    response = client.get("/api/v2/w/ws1/opps/opp-1")
+    assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_get_opp_404_unknown_slug(member_client, monkeypatch):
+    client, workspace, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api_v2.load_opp_snapshot",
+        lambda workspace, slug, run_id=None: None,
+    )
+    response = client.get("/api/v2/w/ws1/opps/no-such-opp")
+    assert response.status_code == 404
+    assert response["Content-Type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["type"].endswith("/not-found")
+
+
+# ---------------------------------------------------------------------------
