@@ -4,14 +4,33 @@ fork point, create a new working session seeded with context.
 Two modes:
 - with-feedback: copy step folders for all skills upstream of `from_skill`
   (by ordinal) and seed a new working session with the user's feedback.
-- empty: inherit only a minimal state.yaml. Create a fresh empty run.
+- empty: inherit only a minimal run_state.yaml. Create a fresh empty run.
 
 See docs/specs/2026-04-15-web-native-opp-lifecycle-design.md § 4.5.
+
+## Naming conventions — must match the ACE plugin
+
+The ACE plugin and ace-web operate on the same Drive folder tree, so
+both sides MUST agree on:
+
+- **Run-id format.** `YYYYMMDD-HHMM` (UTC), with a `-N` collision suffix
+  if two forks fire within the same minute. The ACE plugin's `/ace:run`
+  command generates run-ids in this format; mismatching `run-NNN` here
+  would create runs the plugin's commands can't address.
+
+- **State file name.** `run_state.yaml` (renamed from `state.yaml` in
+  ACE plugin v0.11.3). The orchestrator at
+  `agents/ace-orchestrator.md` only reads `run_state.yaml`; a forked
+  run with state under any other name is uninvokable via `/ace:run`.
+
+Both alignments shipped 2026-05-14 in response to the ACE plugin's
+fork-run skill (see ace#346 / ace PR #284).
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from django.db import transaction
 
@@ -33,16 +52,23 @@ class ForkResult:
     working_session: Session
 
 
-RUN_ID_RE = re.compile(r"^run-(\d{3})$")
-
-
 def _next_run_id(existing: list[str]) -> str:
-    maxn = 0
-    for r in existing:
-        m = RUN_ID_RE.match(r)
-        if m:
-            maxn = max(maxn, int(m.group(1)))
-    return f"run-{maxn + 1:03d}"
+    """Generate a `YYYYMMDD-HHMM`-format run-id matching the ACE plugin
+    convention. If a run with the same minute timestamp already exists
+    (rare but possible when forks fire in rapid succession), append a
+    `-N` suffix and increment until a free slot is found.
+
+    Matches `commands/run.md` and `agents/ace-orchestrator.md` § State
+    Schema in the ACE plugin. Avoid drift here — runs created with
+    other formats are uninvokable via the plugin's `/ace:run <opp>/<id>`.
+    """
+    base = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+    if base not in existing:
+        return base
+    suffix = 1
+    while f"{base}-{suffix}" in existing:
+        suffix += 1
+    return f"{base}-{suffix}"
 
 
 def fork_run(
@@ -109,15 +135,21 @@ def fork_run(
             dst_run_folder_id=new_run_folder_id,
             fork_ordinal=fork_ordinal,
         )
-        # Carry forward state.yaml (if present at the run root) so the new
-        # run starts with the same overall metadata.
+        # Carry forward run_state.yaml (if present at the run root) so the
+        # new run starts with the same overall metadata. The file was
+        # renamed from state.yaml → run_state.yaml in ACE plugin v0.11.3;
+        # this side matches the current name (see module docstring).
         src_state = next(
-            (f for f in drive.list_files(src_run.id) if f.name == "state.yaml"), None,
+            (
+                f for f in drive.list_files(src_run.id)
+                if f.name == "run_state.yaml"
+            ),
+            None,
         )
         if src_state is not None:
             content = drive.get_content(src_state.id, src_state.mime_type).content
             drive.upload_file(
-                new_run_folder_id, "state.yaml", content,
+                new_run_folder_id, "run_state.yaml", content,
                 src_state.mime_type or "application/yaml",
             )
     else:  # mode == "empty"
@@ -128,7 +160,7 @@ def fork_run(
             f"forked_from: {from_run_id} (empty fork)\n"
         )
         drive.upload_file(
-            new_run_folder_id, "state.yaml", state, "application/yaml",
+            new_run_folder_id, "run_state.yaml", state, "application/yaml",
         )
 
     # Seed a new working session, repoint the workspace to it.

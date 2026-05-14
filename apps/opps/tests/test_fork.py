@@ -82,7 +82,12 @@ def test_fork_with_feedback_creates_new_run(authed_client, seeded_opp):
     assert resp.status_code == 201, resp.json()
     body = resp.json()["data"]
     assert body["new_run_id"] != run_id
-    assert body["new_run_id"].startswith("run-")
+    # Run-id format matches the ACE plugin convention: YYYYMMDD-HHMM
+    # (with optional `-N` collision suffix when forks fire in the same
+    # minute). Previously this endpoint produced `run-NNN` which the
+    # ACE plugin's /ace:run command couldn't address.
+    import re
+    assert re.match(r"^\d{8}-\d{4}(-\d+)?$", body["new_run_id"]), body["new_run_id"]
     new_session_slug = body["working_session_slug"]
 
     # New session has the feedback seeded.
@@ -140,9 +145,11 @@ def test_fork_empty_creates_minimal_run(authed_client, seeded_opp):
         f.id for f in fake.list_files(runs_id) if f.name == new_run_id
     )
     children_names = {f.name for f in fake.list_files(new_run_folder_id)}
-    # Empty fork inherits only state.yaml — no steps/ folder.
+    # Empty fork inherits only run_state.yaml — no steps/ folder. The
+    # file name was state.yaml prior to 2026-05-14; renamed to match
+    # ACE plugin v0.11.3+ which only reads run_state.yaml.
     assert "steps" not in children_names
-    assert "state.yaml" in children_names
+    assert "run_state.yaml" in children_names
 
 
 def test_fork_with_feedback_requires_feedback(authed_client, seeded_opp):
