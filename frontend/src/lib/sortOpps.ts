@@ -1,4 +1,4 @@
-import type { OppCard } from "../api/types";
+import type { OppCard } from "../api/types.ws";
 
 export type SortKey = "recent" | "score" | "status" | "slug";
 

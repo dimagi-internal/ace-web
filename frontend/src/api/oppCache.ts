@@ -10,7 +10,7 @@
  * localStorage isn't worth the complexity. Cache dies on tab close,
  * which is fine.
  */
-import type { OppCard, OppSnapshot } from "./types";
+import type { OppCard, OppSnapshot } from "./types.ws";
 
 export type Entry<T> = { data: T; etag: string };
 

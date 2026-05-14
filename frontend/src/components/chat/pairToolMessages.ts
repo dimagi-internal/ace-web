@@ -1,4 +1,4 @@
-import type { Message } from "../../api/types";
+import type { Message } from "../../api/types.ws";
 
 /**
  * A renderable row in the chat: either a single message (user / assistant /

@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 
 import { getSession } from "../api/sessions";
-import type { Session } from "../api/types";
+import type { Session } from "../api/types.ws";
 import { OppHeaderBreadcrumb } from "../components/OppHeaderBreadcrumb";
 import { RecentSessionsSidebar } from "../components/RecentSessionsSidebar";
 import { StructureTab } from "../components/structure/StructureTab";

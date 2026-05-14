@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Play, Pause } from "lucide-react";
 
 import { getOpp } from "@/api/opps";
-import type { OppSnapshot, Step } from "@/api/types";
+import type { OppSnapshot, Step } from "@/api/types.ws";
 
 interface Props {
   oppSlug: string;

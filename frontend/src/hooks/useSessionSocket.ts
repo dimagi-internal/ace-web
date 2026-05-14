@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { SessionState, WsEvent } from "../api/types";
+import type { SessionState, WsEvent } from "../api/types.ws";
 import { wsUrl } from "../lib/wsUrl";
 import { sessionReducer } from "./sessionReducer";
 import { notifySessionsUpdated } from "./useRecentSessions";

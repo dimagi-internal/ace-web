@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { getSessionStructure } from "../../api/structure";
-import type { StructureTree } from "../../api/types";
+import type { StructureTree } from "../../api/types.ws";
 import { ApiError } from "../../api/client";
 import { formatDuration, formatTokens, formatUsd, totalTokens } from "../../lib/format";
 import { StatusIcon } from "./StatusIcon";

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, HelpCircle, MessageSquareWarning } from "lucide-react";
 
-import type { Decision } from "@/api/types";
+import type { Decision } from "@/api/types.ws";
 import { cn } from "@/lib/utils";
 
 interface Props {

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 
-import type { Message } from "../api/types";
+import type { Message } from "../api/types.ws";
 
 import { Button } from "./ui/button";
 import { MessageItem } from "./MessageItem";

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { getSession } from "../../api/sessions";
-import type { Session } from "../../api/types";
+import type { Session } from "../../api/types.ws";
 import { useCliAuthStatus } from "../../hooks/useCliAuthStatus";
 import { useSessionSocket } from "../../hooks/useSessionSocket";
 import { isDraftIdle, msUntilDraftIdle } from "../../lib/drafts";

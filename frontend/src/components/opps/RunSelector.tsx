@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, Trash2 } from "lucide-react";
 
-import type { RunSummary } from "../../api/types";
+import type { RunSummary } from "../../api/types.ws";
 import {
   DropdownMenu,
   DropdownMenuContent,

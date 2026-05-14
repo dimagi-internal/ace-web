@@ -1,4 +1,4 @@
-import type { Participant } from "../api/types";
+import type { Participant } from "../api/types.ws";
 
 interface Props {
   participants: Participant[];

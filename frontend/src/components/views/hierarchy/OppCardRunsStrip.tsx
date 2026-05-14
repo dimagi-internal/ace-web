@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-import type { RunSummary } from "@/api/types";
+import type { RunSummary } from "@/api/types.ws";
 import { useOppRuns } from "@/hooks/useOppRuns";
 import { relativeTime } from "@/lib/relativeTime";
 

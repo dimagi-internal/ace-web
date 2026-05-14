@@ -4,7 +4,7 @@ import { ListTree } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { createSession, getSession, updateSession } from "../api/sessions";
-import type { Session } from "../api/types";
+import type { Session } from "../api/types.ws";
 import { AddTeammateButton } from "../components/AddTeammateButton";
 import { InlineTitleEdit } from "../components/InlineTitleEdit";
 import { OppHeaderBreadcrumb } from "../components/OppHeaderBreadcrumb";

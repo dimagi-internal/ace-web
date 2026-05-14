@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { createSession, updateSession } from "../api/sessions";
-import type { Session } from "../api/types";
+import type { Session } from "../api/types.ws";
 import { notifySessionsUpdated, useRecentSessions } from "../hooks/useRecentSessions";
 import { relativeTime } from "../lib/relativeTime";
 

@@ -1,4 +1,4 @@
-import type { Step } from "../../api/types";
+import type { Step } from "../../api/types.ws";
 
 interface Props {
   step: Step;

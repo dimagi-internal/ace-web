@@ -1,4 +1,4 @@
-import type { Artifact } from "../../api/types";
+import type { Artifact } from "../../api/types.ws";
 
 interface Props {
   primaryArtifact: Artifact | null;

@@ -1,6 +1,13 @@
 import { apiFetch } from "./client";
-import type { CostRollup } from "./types";
+import type { CostRollup } from "./types.ws";
 
+/**
+ * costs.ts — cost rollup API client.
+ *
+ * The opp cost-rollup endpoint (/api/opps/<slug>/cost-rollup) is a legacy DRF
+ * endpoint not yet migrated to v2. We keep using the legacy client here and
+ * import `CostRollup` from types.ws instead of the deleted types.ts.
+ */
 export async function getOppCostRollup(
   oppSlug: string,
   workspaceSlug: string,

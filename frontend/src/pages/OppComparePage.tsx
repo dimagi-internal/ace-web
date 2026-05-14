@@ -4,7 +4,7 @@ import { ArrowRight, ChevronLeft } from "lucide-react";
 
 import { getOppCompare } from "../api/opps";
 import { ApiError } from "../api/client";
-import type { OppCompare, OppCompareSummary } from "../api/types";
+import type { OppCompare, OppCompareSummary } from "../api/types.ws";
 import { CompareTable } from "../components/opps/CompareTable";
 import { ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 

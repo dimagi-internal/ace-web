@@ -1,4 +1,4 @@
-import type { Judge, JudgeCriterionValue } from "../../api/types";
+import type { Judge, JudgeCriterionValue } from "../../api/types.ws";
 
 // Judge verdicts emit criteria in two shapes:
 //   - legacy: Record<string, number>            (just a score)

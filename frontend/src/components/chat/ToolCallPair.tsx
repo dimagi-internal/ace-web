@@ -1,6 +1,6 @@
 import { Check, ChevronRight, Loader2, X } from "lucide-react";
 
-import type { Message } from "../../api/types";
+import type { Message } from "../../api/types.ws";
 import {
   deriveToolStatus,
   toolDisplayName,

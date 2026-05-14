@@ -14,8 +14,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cliAuthStatus, disconnectNova, novaAuthStatus, promoteCliAuthToGlobal } from "@/api/auth";
-import { createToken, listTokens, revokeToken } from "@/api/tokens";
-import type { CliAuthStatus, NovaAuthStatus, PersonalToken } from "@/api/types";
+import { createToken, listTokens, revokeToken, type PersonalToken } from "@/api/tokens";
+import type { CliAuthStatus, NovaAuthStatus } from "@/api/types.ws";
 
 const NOVA_CONNECT_URL = `${(import.meta.env.BASE_URL ?? "/").replace(/\/$/, "")}/auth/nova/initiate/`;
 
@@ -253,7 +253,7 @@ export default function SettingsPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <Key className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="font-medium">{t.label}</span>
+                      <span className="font-medium">{t.name}</span>
                     </div>
                     <div className="mt-0.5 text-xs text-muted-foreground">
                       Created {new Date(t.created_at).toLocaleDateString()}

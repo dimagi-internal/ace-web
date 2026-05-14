@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import type { Draft, Message, SessionState, WsEvent } from "../api/types"
+import type { Draft, Message, SessionState, WsEvent } from "../api/types.ws"
 import { sessionReducer } from "./sessionReducer"
 
 const baseDraft: Draft = {

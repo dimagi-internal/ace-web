@@ -30,7 +30,7 @@ import {
   type ListSessionsParams,
 } from "@/api/sessions";
 import { listOpps } from "@/api/opps";
-import type { OppCard, Session, SessionListPage } from "@/api/types";
+import type { OppCard, Session, SessionListPage } from "@/api/types.ws";
 import { uploadSession } from "@/api/ingest";
 
 type StatusFilter = "active" | "archived" | "imported" | "";

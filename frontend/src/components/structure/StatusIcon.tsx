@@ -1,6 +1,6 @@
 import { CheckCircle2, XCircle, CircleDashed } from "lucide-react";
 
-import type { StructureStatus } from "../../api/types";
+import type { StructureStatus } from "../../api/types.ws";
 
 export function StatusIcon({ status }: { status: StructureStatus }) {
   if (status === "error") return <XCircle className="h-4 w-4 text-destructive" aria-label="error" />;

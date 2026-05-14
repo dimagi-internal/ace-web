@@ -7,7 +7,7 @@ import {
   listShareTokens,
   revokeShareToken,
 } from "../api/share";
-import type { ShareTokenListItem } from "../api/types";
+import type { ShareTokenListItem } from "../api/types.ws";
 
 interface Props {
   slug: string;

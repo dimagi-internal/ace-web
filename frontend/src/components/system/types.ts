@@ -1,5 +1,5 @@
-import type { PhaseInfo } from "../../api/types";
-export type { PhaseInfo } from "../../api/types";
+import type { PhaseInfo } from "../../api/types.ws";
+export type { PhaseInfo } from "../../api/types.ws";
 
 export interface ArtifactRef {
   path: string;

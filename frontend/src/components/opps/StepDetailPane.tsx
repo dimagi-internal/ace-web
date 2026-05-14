@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink, Pencil } from "lucide-react";
 
 import { getStepDetail } from "../../api/opps";
-import type { Artifact, StepDetail } from "../../api/types";
+import type { Artifact, StepDetail } from "../../api/types.ws";
 import { cn } from "@/lib/utils";
 import { ArtifactBody } from "./ArtifactBody";
 import { DiscussInChatButton } from "./DiscussInChatButton";

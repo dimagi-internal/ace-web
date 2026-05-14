@@ -7,7 +7,7 @@ import type {
   CostRollupPhase,
   PhaseInfo,
   Step,
-} from "../../api/types";
+} from "../../api/types.ws";
 import { formatDuration, formatTokens, formatUsd, totalTokens } from "../../lib/format";
 import { SkillRow } from "./SkillRow";
 

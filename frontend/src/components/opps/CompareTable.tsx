@@ -1,4 +1,4 @@
-import type { OppSnapshot, Step } from "../../api/types";
+import type { OppSnapshot, Step } from "../../api/types.ws";
 
 interface Props {
   a: OppSnapshot;

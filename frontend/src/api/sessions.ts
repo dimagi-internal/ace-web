@@ -1,5 +1,20 @@
+import { apiV2 } from "./client.v2";
 import { apiFetch } from "./client";
-import type { Session, SessionDetail, SessionListPage } from "./types";
+import type { Session, SessionDetail, SessionListPage } from "./types.ws";
+
+/**
+ * sessions.ts — sessions resource API client.
+ *
+ * v2 endpoints (workspace-scoped):
+ *   GET    /api/v2/w/{workspace_slug}/sessions         — list
+ *   POST   /api/v2/w/{workspace_slug}/sessions         — create
+ *   GET    /api/v2/w/{workspace_slug}/sessions/{slug}  — detail
+ *   PATCH  /api/v2/w/{workspace_slug}/sessions/{slug}  — update
+ *   DELETE /api/v2/w/{workspace_slug}/sessions/{slug}  — delete
+ *
+ * All v2 responses have content?: never so we use response.json() casts.
+ * Falls back to legacy DRF endpoints when workspaceSlug is not provided.
+ */
 
 export interface ListSessionsParams {
   q?: string;
@@ -8,9 +23,34 @@ export interface ListSessionsParams {
   opp?: string;
   page?: number;
   pageSize?: number;
+  /** Required for the v2 path. */
+  workspaceSlug?: string;
 }
 
-export const listSessions = (params: ListSessionsParams = {}) => {
+export const listSessions = async (params: ListSessionsParams = {}): Promise<SessionListPage> => {
+  if (params.workspaceSlug) {
+    const query: Record<string, string | number | boolean> = {};
+    // v2 uses offset/limit, not page
+    if (params.page) query.offset = ((params.page - 1) * (params.pageSize ?? 20));
+    if (params.pageSize) query.limit = params.pageSize;
+    if (params.opp) query.opp_slug = params.opp;
+    if (params.status === "archived") query.archived = true;
+
+    const { response } = await apiV2.GET(
+      "/api/v2/w/{workspace_slug}/sessions",
+      {
+        params: {
+          path: { workspace_slug: params.workspaceSlug },
+          query: query as Record<string, number>,
+        },
+      },
+    );
+    if (!response.ok) throw new Error(`Failed to list sessions: ${response.status}`);
+    const page = (await response.json()) as SessionListPage;
+    return page;
+  }
+
+  // Legacy fallback
   const qs = new URLSearchParams();
   if (params.q) qs.set("q", params.q);
   if (params.status) qs.set("status", params.status);
@@ -21,21 +61,68 @@ export const listSessions = (params: ListSessionsParams = {}) => {
   return apiFetch<SessionListPage>(`/api/sessions?${qs}`);
 };
 
-export const createSession = () =>
-  apiFetch<Session>("/api/sessions", { method: "POST", body: "{}" });
+export const createSession = async (workspaceSlug?: string): Promise<Session> => {
+  if (workspaceSlug) {
+    const { response } = await apiV2.POST(
+      "/api/v2/w/{workspace_slug}/sessions",
+      {
+        params: { path: { workspace_slug: workspaceSlug } },
+        body: { title: "" },
+      },
+    );
+    if (!response.ok) throw new Error(`Failed to create session: ${response.status}`);
+    return (await response.json()) as Session;
+  }
+  return apiFetch<Session>("/api/sessions", { method: "POST", body: "{}" });
+};
 
-export const getSession = (slug: string) =>
-  apiFetch<SessionDetail>(`/api/sessions/${slug}`);
+export const getSession = async (slug: string, workspaceSlug?: string): Promise<SessionDetail> => {
+  if (workspaceSlug) {
+    const { response } = await apiV2.GET(
+      "/api/v2/w/{workspace_slug}/sessions/{slug}",
+      { params: { path: { workspace_slug: workspaceSlug, slug } } },
+    );
+    if (!response.ok) throw new Error(`Failed to get session: ${response.status}`);
+    return (await response.json()) as SessionDetail;
+  }
+  return apiFetch<SessionDetail>(`/api/sessions/${slug}`);
+};
 
-export const updateSession = (slug: string, updates: Partial<Session>) =>
-  apiFetch<Session>(`/api/sessions/${slug}`, {
+export const updateSession = async (
+  slug: string,
+  updates: Partial<Session>,
+  workspaceSlug?: string,
+): Promise<Session> => {
+  if (workspaceSlug) {
+    const { response } = await apiV2.PATCH(
+      "/api/v2/w/{workspace_slug}/sessions/{slug}",
+      {
+        params: { path: { workspace_slug: workspaceSlug, slug } },
+        body: updates as { title?: string | null; status?: ("active" | "archived" | "imported") | null },
+      },
+    );
+    if (!response.ok) throw new Error(`Failed to update session: ${response.status}`);
+    return (await response.json()) as Session;
+  }
+  return apiFetch<Session>(`/api/sessions/${slug}`, {
     method: "PATCH",
     body: JSON.stringify(updates),
   });
+};
 
-export const deleteSession = async (slug: string): Promise<void> => {
-  // DELETE returns 204 with no body — can't use apiFetch which expects JSON.
-  // Still needs the CSRF token for Django's CsrfViewMiddleware.
+export const deleteSession = async (slug: string, workspaceSlug?: string): Promise<void> => {
+  if (workspaceSlug) {
+    const { response } = await apiV2.DELETE(
+      "/api/v2/w/{workspace_slug}/sessions/{slug}",
+      { params: { path: { workspace_slug: workspaceSlug, slug } } },
+    );
+    if (!response.ok && response.status !== 204) {
+      throw new Error(`Delete failed: ${response.status}`);
+    }
+    return;
+  }
+
+  // Legacy fallback — inline CSRF handling for non-v2 path
   const API_PREFIX = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const cookies = document.cookie.split(";");
   let csrfToken = "";
