@@ -26,7 +26,7 @@ export function OppChatChildren({ oppSlug, workspaceSlug }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    listSessions({ opp: oppSlug, pageSize: 50 })
+    listSessions({ opp: oppSlug, pageSize: 50, workspaceSlug })
       .then((p) => {
         if (!cancelled) setChats(p.items);
       })

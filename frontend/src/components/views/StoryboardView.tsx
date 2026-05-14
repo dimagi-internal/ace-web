@@ -66,7 +66,7 @@ export function StoryboardView({ oppSlug, workspaceSlug, runId }: Props) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    getOpp(oppSlug, runId)
+    getOpp(workspaceSlug, oppSlug, runId)
       .then(setSnap)
       .catch((e) => setError(String(e?.message ?? e)));
   }, [oppSlug, runId]);

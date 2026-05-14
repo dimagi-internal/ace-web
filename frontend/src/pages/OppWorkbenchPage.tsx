@@ -69,7 +69,7 @@ export default function OppWorkbenchPage() {
       if (!opts.silent) {
         setState({ kind: "loading" });
       }
-      getOpp(slug, runId ?? undefined, { force: opts.force })
+      getOpp(workspaceSlug ?? "", slug, runId ?? undefined, { force: opts.force })
         .then((snapshot) => {
           setState({ kind: "loaded", snapshot });
         })
@@ -85,7 +85,7 @@ export default function OppWorkbenchPage() {
           }
         });
     },
-    [slug, runId],
+    [slug, runId, workspaceSlug],
   );
 
   useEffect(() => {
@@ -160,7 +160,7 @@ export default function OppWorkbenchPage() {
         }}
         onJumpToPhases={() => setView("phase")}
         costRollup={costRollup}
-        workspaceSlug={workspaceSlug}
+        workspaceSlug={workspaceSlug ?? ""}
       />
       <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
       {view === "workbench" && (
@@ -191,6 +191,7 @@ export default function OppWorkbenchPage() {
             >
               {selectedStep ? (
                 <StepDetailPane
+                  workspaceSlug={workspaceSlug ?? ""}
                   slug={slug}
                   runId={snapshot.current_run.run_id}
                   skill={selectedStep.skill_name}

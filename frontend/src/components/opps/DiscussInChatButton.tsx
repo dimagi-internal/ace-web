@@ -5,12 +5,13 @@ import { MessageSquarePlus } from "lucide-react";
 import { discussStep } from "../../api/opps";
 
 interface Props {
+  workspaceSlug: string;
   slug: string;
   runId: string;
   skill: string;
 }
 
-export function DiscussInChatButton({ slug, runId, skill }: Props) {
+export function DiscussInChatButton({ workspaceSlug, slug, runId, skill }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -19,8 +20,8 @@ export function DiscussInChatButton({ slug, runId, skill }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const { session_slug } = await discussStep(slug, runId, skill);
-      navigate(`/chat/${session_slug}`);
+      const { session_slug } = await discussStep(workspaceSlug, slug, runId, skill);
+      navigate(`/w/${workspaceSlug}/chat/${session_slug}`);
     } catch (err) {
       setError(String((err as Error).message ?? err));
     } finally {

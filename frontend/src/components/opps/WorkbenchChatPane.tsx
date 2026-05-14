@@ -39,7 +39,7 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
   const [startError, setStartError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    getLinkedChats(slug, runId, skill)
+    getLinkedChats(slug, runId, skill) // NOTE: no v2 endpoint; will fail loudly until backend ships it
       .then((list) => {
         setChats(list);
         // Auto-select the first step-scoped chat if nothing is selected.
@@ -64,7 +64,7 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
     setStarting(true);
     setStartError(null);
     try {
-      const r = await discussStep(slug, runId, skill);
+      const r = await discussStep(workspaceSlug, slug, runId, skill);
       // Discuss seeds a new session and returns its slug; immediately
       // make it active and refresh the chat list so it shows up at top.
       setActiveSlug(r.session_slug);
@@ -162,7 +162,7 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
             </Link>
           </div>
           <div className="min-h-0 flex-1">
-            <ChatPanel key={activeSlug} slug={activeSlug} />
+            <ChatPanel key={activeSlug} slug={activeSlug} workspaceSlug={workspaceSlug} />
           </div>
         </div>
       )}

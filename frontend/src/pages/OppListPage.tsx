@@ -54,7 +54,7 @@ export default function OppListPage() {
 
   const load = useCallback(() => {
     setState({ kind: "loading" });
-    listOpps(tagFilter.length > 0 ? tagFilter : undefined)
+    listOpps(workspaceSlug, tagFilter.length > 0 ? tagFilter : undefined)
       .then((opps) => setState({ kind: "loaded", opps }))
       .catch((err) =>
         setState({
@@ -63,7 +63,7 @@ export default function OppListPage() {
           code: err instanceof ApiError ? err.code : null,
         }),
       );
-  }, [tagFilter]);
+  }, [workspaceSlug, tagFilter]);
 
   useEffect(load, [load]);
 
@@ -168,11 +168,12 @@ export default function OppListPage() {
         </div>
       </header>
       <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
-      <NewOppDialog open={newDialogOpen} onOpenChange={setNewDialogOpen} />
+      <NewOppDialog open={newDialogOpen} onOpenChange={setNewDialogOpen} workspaceSlug={workspaceSlug} />
       {deleteTarget && (
         <DeleteOppDialog
           open={true}
           onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}
+          workspaceSlug={workspaceSlug}
           slug={deleteTarget.slug}
           displayName={deleteTarget.display_name}
           onDeleted={() => {

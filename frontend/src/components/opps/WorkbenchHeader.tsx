@@ -45,7 +45,7 @@ interface Props {
    * — see OppWorkbenchPage.
    */
   costRollup: CostRollup | null;
-  workspaceSlug?: string;
+  workspaceSlug: string;
 }
 
 export function WorkbenchHeader({
@@ -125,6 +125,7 @@ export function WorkbenchHeader({
             cluster. */}
         <div className="flex flex-wrap items-center gap-2">
           <RunSelector
+            workspaceSlug={workspaceSlug}
             oppSlug={opp.slug}
             runs={runs}
             selectedRunId={selectedRunId}
@@ -164,9 +165,9 @@ export function WorkbenchHeader({
               {decisionsSummary.open} open
             </button>
           )}
-          <TagEditor slug={opp.slug} initialTags={opp.tags ?? []} />
-          {workspaceSlug ? <CostRollupCard data={costRollup} /> : null}
-          <ScorecardPanel slug={opp.slug} />
+          <TagEditor workspaceSlug={workspaceSlug} slug={opp.slug} initialTags={opp.tags ?? []} />
+          <CostRollupCard data={costRollup} />
+          <ScorecardPanel workspaceSlug={workspaceSlug} slug={opp.slug} />
         </div>
 
         {/* Action group: ghost refresh (recovery, not primary), then a
@@ -210,9 +211,10 @@ export function WorkbenchHeader({
       <DeleteOppDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
+        workspaceSlug={workspaceSlug}
         slug={opp.slug}
         displayName={opp.display_name}
-        onDeleted={() => navigate("/opps")}
+        onDeleted={() => navigate(`/w/${workspaceSlug}/opps`)}
       />
     </>
   );

@@ -19,6 +19,7 @@ import { MarkdownRenderer } from "../MarkdownRenderer";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 interface Props {
+  workspaceSlug: string;
   slug: string;
 }
 
@@ -36,7 +37,7 @@ function verdictLabel(passed: boolean | null): string {
   return "—";
 }
 
-export function ScorecardPanel({ slug }: Props) {
+export function ScorecardPanel({ workspaceSlug, slug }: Props) {
   const [data, setData] = useState<Scorecard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -45,7 +46,7 @@ export function ScorecardPanel({ slug }: Props) {
     let cancelled = false;
     setError(null);
     setData(null);
-    getScorecard(slug)
+    getScorecard(workspaceSlug, slug)
       .then((d) => {
         if (!cancelled) setData(d);
       })
