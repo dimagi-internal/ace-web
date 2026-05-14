@@ -457,6 +457,160 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/videos/programs": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List video programs in workspace */
+        readonly get: operations["apps_videos_api_v2_list_programs"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get a video program's detail payload */
+        readonly get: operations["apps_videos_api_v2_get_program"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/library.json": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Structured clip library for the explorer drawer */
+        readonly get: operations["apps_videos_api_v2_get_library"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/render-status": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Background-render busy flag for a program */
+        readonly get: operations["apps_videos_api_v2_get_render_status"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/feedback": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Read the per-program feedback markdown log */
+        readonly get: operations["apps_videos_api_v2_get_feedback"];
+        readonly put?: never;
+        /** Append a note to the per-program feedback markdown log */
+        readonly post: operations["apps_videos_api_v2_post_feedback"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/edit": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Mutate a clip / narration in the program YAML, fire a draft re-render */
+        readonly post: operations["apps_videos_api_v2_post_edit"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/explorer.html": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Serve the generated clip-explorer index.html (rewritten for iframe) */
+        readonly get: operations["apps_videos_api_v2_serve_explorer"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/library.html": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Serve the generated clip-library.html (rewritten for iframe) */
+        readonly get: operations["apps_videos_api_v2_serve_library_html"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/media/{file_name}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Serve an MP4 from the program's explorer media directory (Range-aware) */
+        readonly get: operations["apps_videos_api_v2_serve_media"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/share/{token}": {
         readonly parameters: {
             readonly query?: never;
@@ -1751,6 +1905,153 @@ export interface components {
             readonly items: readonly components["schemas"]["ActivityEntryOut"][];
             /** Total */
             readonly total: number;
+        };
+        /**
+         * ProgramCardOut
+         * @description One program in the list view.
+         */
+        readonly ProgramCardOut: {
+            /** Slug */
+            readonly slug: string;
+            /** Name */
+            readonly name: string;
+            /** Tagline */
+            readonly tagline?: string | null;
+            /** Country Focus */
+            readonly country_focus?: string | null;
+            /** Status */
+            readonly status?: string | null;
+            /** Program Url */
+            readonly program_url?: string | null;
+            /** Manifest Count */
+            readonly manifest_count: number;
+            /** Has Explorer Build */
+            readonly has_explorer_build: boolean;
+        };
+        /** ProgramDetailOut */
+        readonly ProgramDetailOut: {
+            /** Slug */
+            readonly slug: string;
+            /** Name */
+            readonly name: string;
+            /** Tagline */
+            readonly tagline?: string | null;
+            /** Country Focus */
+            readonly country_focus?: string | null;
+            /** Status */
+            readonly status?: string | null;
+            /** Program Url */
+            readonly program_url?: string | null;
+            /** Manifest Count */
+            readonly manifest_count: number;
+            /** Has Explorer Build */
+            readonly has_explorer_build: boolean;
+            /** Explorer Url */
+            readonly explorer_url: string;
+            /** Yaml Path */
+            readonly yaml_path: string;
+        };
+        /**
+         * LibraryEntryOut
+         * @description One entry in the clip library (used by the explorer drawer).
+         */
+        readonly LibraryEntryOut: {
+            /** Alias */
+            readonly alias: string;
+            /** Source Path */
+            readonly source_path?: string | null;
+            /** Duration Seconds */
+            readonly duration_seconds?: number | null;
+            /** Resolution */
+            readonly resolution?: string | null;
+            /** Used In */
+            readonly used_in?: readonly string[];
+        };
+        /** LibraryOut */
+        readonly LibraryOut: {
+            /** Entries */
+            readonly entries: readonly components["schemas"]["LibraryEntryOut"][];
+        };
+        /**
+         * RenderStatusOut
+         * @description Background-render busy flag.
+         */
+        readonly RenderStatusOut: {
+            /** Program Slug */
+            readonly program_slug: string;
+            /** Busy */
+            readonly busy: boolean;
+            /** Started At */
+            readonly started_at?: string | null;
+        };
+        /**
+         * FeedbackLogOut
+         * @description Raw markdown contents of the per-program feedback log.
+         */
+        readonly FeedbackLogOut: {
+            /** Program Slug */
+            readonly program_slug: string;
+            /** Markdown */
+            readonly markdown: string;
+        };
+        /** FeedbackPostOut */
+        readonly FeedbackPostOut: {
+            /** Ok */
+            readonly ok: boolean;
+            /** Timestamp */
+            readonly timestamp: string;
+        };
+        /** FeedbackPostIn */
+        readonly FeedbackPostIn: {
+            /**
+             * Scope
+             * @default global
+             * @enum {string}
+             */
+            readonly scope: "global" | "beat";
+            /** Beatid */
+            readonly beatId?: string | null;
+            /** Timestampsec */
+            readonly timestampSec?: number | null;
+            /** Note */
+            readonly note: string;
+        };
+        /** ClipEditOut */
+        readonly ClipEditOut: {
+            /** Ok */
+            readonly ok: boolean;
+            /** Message */
+            readonly message: string;
+            /** Rerender Triggered */
+            readonly rerender_triggered: boolean;
+        };
+        /**
+         * ClipEditIn
+         * @description POST /edit body — one of four ops over a program's YAML.
+         *
+         *     Mirrors the existing Node tsx server ops in
+         *     ``video-production/connect-videos/scripts/explore.ts::applyEdit``.
+         */
+        readonly ClipEditIn: {
+            /**
+             * Op
+             * @enum {string}
+             */
+            readonly op: "set-clip-start" | "set-clip-trim" | "set-clip-asset" | "set-narration";
+            /** Kind */
+            readonly kind?: ("scene-clip" | "product-beat") | null;
+            /** Index */
+            readonly index?: number | null;
+            /** Start Seconds */
+            readonly start_seconds?: number | null;
+            /** Duration Seconds */
+            readonly duration_seconds?: number | null;
+            /** Beatid */
+            readonly beatId?: string | null;
+            /** Text */
+            readonly text?: string | null;
+            /** Alias */
+            readonly alias?: string | null;
         };
         /** WorkspaceOut */
         readonly WorkspaceOut: {
@@ -3666,6 +3967,238 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["ActivityFeedOut"];
                 };
+            };
+        };
+    };
+    readonly apps_videos_api_v2_list_programs: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": readonly components["schemas"]["ProgramCardOut"][];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_v2_get_program: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProgramDetailOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_v2_get_library: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_v2_get_render_status: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RenderStatusOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_v2_get_feedback: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["FeedbackLogOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_v2_post_feedback: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["FeedbackPostIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["FeedbackPostOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_v2_post_edit: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ClipEditIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ClipEditOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_v2_serve_explorer: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_videos_api_v2_serve_library_html: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_videos_api_v2_serve_media: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+                readonly file_name: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
