@@ -134,5 +134,7 @@ def _auth_smoke(request: HttpRequest) -> dict:
 
 
 from apps.opps.api_v2 import router as opps_router  # noqa: E402
+from apps.sessions.api_v2 import router as sessions_router  # noqa: E402
 
 api.add_router("/w/{workspace_slug}/opps", opps_router)
+api.add_router("/w/{workspace_slug}/sessions", sessions_router)
