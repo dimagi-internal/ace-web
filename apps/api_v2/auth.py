@@ -4,9 +4,10 @@ Matches DRF's SessionAuthentication: trust `request.user` from Django's
 auth middleware. Raises `ProblemError(401, "Authentication required")`
 when no user is attached.
 
-CSRF: Ninja enforces CSRF on unsafe methods by default when using
-session auth. The v2 NinjaAPI is constructed with `csrf=True` in
-api.py once this auth class is wired in.
+CSRF: `SessionAuth` (via `APIKeyCookie`) defaults `csrf=True`, so
+unsafe methods (POST/PUT/PATCH/DELETE) are CSRF-checked automatically.
+django-ninja 1.6.x has no `csrf=` kwarg on `NinjaAPI()` itself — the
+enforcement lives on the auth class.
 """
 from __future__ import annotations
 
