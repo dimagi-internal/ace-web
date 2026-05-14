@@ -1125,9 +1125,9 @@ def get_scorecard(
 def record_gate_decision(
     workspace, slug: str, skill: str, body: GateDecisionIn, user
 ) -> dict:
-    """Write a gate decision to state.yaml in Drive.
+    """Write a gate decision to run_state.yaml in Drive.
 
-    Reads the current state.yaml, updates the gates: map, writes it back.
+    Reads the current run_state.yaml, updates the gates: map, writes it back.
     Returns a GateOut-compatible dict. Raises FileNotFoundError when opp
     doesn't exist.
 
@@ -1154,7 +1154,7 @@ def record_gate_decision(
     if opp_folder is None:
         raise FileNotFoundError(f"no opp named {slug!r}")
 
-    # Find active run folder — look for runs/<latest> or flat state.yaml.
+    # Find active run folder — look for runs/<latest> or flat run_state.yaml.
     opp_children = drive.list_files(opp_folder.id)
     runs_folder = _find_child_folder(opp_children, "runs")
     state_file = None
