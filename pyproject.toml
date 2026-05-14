@@ -23,6 +23,7 @@ dependencies = [
     "pyyaml>=6.0",
     "uvicorn[standard]>=0.30",
     "whitenoise>=6.7",
+    "fastmcp>=0.4",
 ]
 
 [project.optional-dependencies]

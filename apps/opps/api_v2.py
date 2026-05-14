@@ -147,7 +147,12 @@ def list_opp_cards(workspace) -> list[dict]:
     return out
 
 
-@router.get("", response=Page[OppCardOut], summary="List opps in workspace")
+@router.get(
+    "",
+    response=Page[OppCardOut],
+    summary="List opps in workspace",
+    openapi_extra={"x-mcp-expose": True},
+)
 def list_opps(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
@@ -339,7 +344,11 @@ def _snapshot_to_dict(snap) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{slug}", summary="Opp Workbench snapshot")
+@router.get(
+    "/{slug}",
+    summary="Opp Workbench snapshot",
+    openapi_extra={"x-mcp-expose": True},
+)
 def get_opp(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
@@ -638,7 +647,12 @@ def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{slug}/runs", response=Page[OppRunOut], summary="List runs for opp")
+@router.get(
+    "/{slug}/runs",
+    response=Page[OppRunOut],
+    summary="List runs for opp",
+    openapi_extra={"x-mcp-expose": True},
+)
 def list_runs(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
@@ -660,7 +674,12 @@ def list_runs(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{slug}/runs/{run_id}", response=OppRunOut, summary="Run detail")
+@router.get(
+    "/{slug}/runs/{run_id}",
+    response=OppRunOut,
+    summary="Run detail",
+    openapi_extra={"x-mcp-expose": True},
+)
 def get_run(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
@@ -757,7 +776,12 @@ def load_step_snapshot(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{slug}/steps/{skill}", response=StepSnapshotOut, summary="Step detail")
+@router.get(
+    "/{slug}/steps/{skill}",
+    response=StepSnapshotOut,
+    summary="Step detail",
+    openapi_extra={"x-mcp-expose": True},
+)
 def get_step(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
@@ -808,6 +832,7 @@ def load_artifact_meta(
     "/{slug}/artifacts/{artifact_id}",
     response=ArtifactOut,
     summary="Artifact metadata",
+    openapi_extra={"x-mcp-expose": True},
 )
 def get_artifact(
     request: HttpRequest,
@@ -1070,7 +1095,11 @@ def load_scorecard_for_opp(workspace, slug: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{slug}/scorecard", summary="Opp-eval scorecard")
+@router.get(
+    "/{slug}/scorecard",
+    summary="Opp-eval scorecard",
+    openapi_extra={"x-mcp-expose": True},
+)
 def get_scorecard(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
