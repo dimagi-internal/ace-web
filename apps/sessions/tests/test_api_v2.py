@@ -5,12 +5,9 @@ Pattern mirrors apps/opps/tests/test_api_v2.py:
 - member_client / non_member_client fixtures for workspace access control.
 - anon_client fixture for 401 tests.
 """
-import datetime as dt
-
 import pytest
 from django.contrib.auth import get_user_model
 
-from apps.sessions.models import Message, Session, SessionParticipant, ShareToken
 from apps.workspaces.models import Workspace, WorkspaceMembership
 
 User = get_user_model()
