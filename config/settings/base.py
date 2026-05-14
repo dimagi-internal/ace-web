@@ -41,7 +41,6 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "rest_framework",
     "channels",
     # Local apps
     "apps.common",
@@ -213,14 +212,6 @@ if not _DEFAULT_PLUGIN_PATH.is_dir():
             _DEFAULT_PLUGIN_PATH = _maybe
             break
 ACE_PLUGIN_PATH = env.str("ACE_PLUGIN_PATH", default=str(_DEFAULT_PLUGIN_PATH))
-
-# --- Django REST Framework ---
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
-        "apps.auth.token_backend.BearerTokenAuthentication",
-    ],
-}
 
 # --- Google Drive service account ---
 # SA JSON key for the shared ACE Drive (read/write on the Shared Drive
