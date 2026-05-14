@@ -1,0 +1,9 @@
+node_modules/
+out/
+assets/audio/
+assets/ingest/
+.remotion/
+*.log
+.env
+.env.local
+public/assets/programs/
