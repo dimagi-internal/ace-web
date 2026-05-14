@@ -169,16 +169,15 @@ def test_post_without_csrf_is_rejected(user):
 
 def test_token_round_trips_via_bearer_auth(client, user):
     """End-to-end: the token minted via the redirect actually authenticates Bearer-auth requests."""
+    from django.test import Client as DjangoClient
     resp = client.post(reverse("auth:cli_authorize") + "?" + _urlencode(_qs()))
     raw = parse_qs(urlparse(resp["Location"]).query)["token"][0]
 
-    from rest_framework.test import APIClient
-    api = APIClient()
-    api.credentials(HTTP_AUTHORIZATION=f"Bearer {raw}")
-    resp = api.get("/api/auth/tokens")
+    api = DjangoClient()
+    resp = api.get("/api/v2/tokens", HTTP_AUTHORIZATION=f"Bearer {raw}")
     assert resp.status_code == 200
-    items = resp.json()["data"]
-    labels = [it["label"] for it in items]
+    items = resp.json()
+    labels = [it["name"] for it in items]
     assert "my-laptop" in labels
 
 

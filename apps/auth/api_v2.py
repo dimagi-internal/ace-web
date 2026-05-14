@@ -271,10 +271,20 @@ def get_nova_status(user) -> dict:
             "can_manage": _can_write_global(user),
         }
     valid = nova_auth_flow.validate_token()
+    # Normalise expires_at: the blob may store a unix-epoch integer or an ISO
+    # string.  Pydantic expects str | None for NovaAuthStatusOut.
+    raw_expires = blob.get("expires_at")
+    if isinstance(raw_expires, (int, float)):
+        import datetime
+        expires_at: str | None = datetime.datetime.fromtimestamp(
+            raw_expires, tz=datetime.UTC
+        ).isoformat()
+    else:
+        expires_at = raw_expires  # already a string or None
     return {
         "connected": True,
         "valid": valid,
-        "expires_at": blob.get("expires_at"),
+        "expires_at": expires_at,
         "scope": blob.get("scope"),
         "can_manage": _can_write_global(user),
     }

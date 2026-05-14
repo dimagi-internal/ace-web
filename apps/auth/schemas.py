@@ -116,11 +116,22 @@ class NovaAuthStatusOut(StrictModel):
 
     ``can_manage`` is True for staff + automation accounts — they get
     the Connect/Disconnect controls in the UI.
+
+    ``expires_at`` is an ISO-8601 string when present.  The blob may store
+    either an ISO string or a unix-epoch integer; the view normalises to
+    string before validation.
     """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        from_attributes=True,
+        str_strip_whitespace=True,
+        populate_by_name=True,
+    )
 
     connected: bool
     valid: bool
-    expires_at: str | None = None  # ISO-8601 string from the blob
+    expires_at: str | None = None  # ISO-8601 string (normalised from blob)
     scope: str | None = None
     can_manage: bool = False
 
