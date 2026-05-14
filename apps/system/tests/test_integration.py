@@ -26,7 +26,7 @@ def authed_client(db):
 )
 @override_settings(ACE_PLUGIN_PATH=ACE_PLUGIN_PATH)
 def test_overview_endpoint_with_real_plugin(authed_client):
-    resp = authed_client.get("/api/v2/system/overview")
+    resp = authed_client.get("/api/system/overview")
     assert resp.status_code == 200
     data = resp.json()
     # Real plugin has at least ~19 phase skills + 1-2 utility
@@ -57,7 +57,7 @@ def test_overview_endpoint_with_real_plugin(authed_client):
 )
 @override_settings(ACE_PLUGIN_PATH=ACE_PLUGIN_PATH)
 def test_skill_detail_with_real_plugin(authed_client):
-    resp = authed_client.get("/api/v2/system/skills/idea-to-pdd")
+    resp = authed_client.get("/api/system/skills/idea-to-pdd")
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "idea-to-pdd"
@@ -75,7 +75,7 @@ def test_skill_detail_with_real_plugin(authed_client):
 def test_agent_detail_with_real_plugin(authed_client):
     # The orchestrator is the one agent guaranteed to exist regardless of
     # how the phase agents get reshuffled.
-    resp = authed_client.get("/api/v2/system/agents/ace-orchestrator")
+    resp = authed_client.get("/api/system/agents/ace-orchestrator")
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "ace-orchestrator"
@@ -88,7 +88,7 @@ def test_agent_detail_with_real_plugin(authed_client):
 )
 @override_settings(ACE_PLUGIN_PATH=ACE_PLUGIN_PATH)
 def test_version_endpoint_with_real_plugin(authed_client):
-    resp = authed_client.get("/api/v2/system/version")
+    resp = authed_client.get("/api/system/version")
     assert resp.status_code == 200
     data = resp.json()
     assert data["plugin_found"] is True

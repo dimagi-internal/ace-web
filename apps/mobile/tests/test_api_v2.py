@@ -57,7 +57,7 @@ def test_mobile_status_200(auth_client, monkeypatch):
         "apps.mobile.api_v2.get_mobile_status",
         lambda: _FAKE_STATUS,
     )
-    resp = client.get("/api/v2/mobile/status")
+    resp = client.get("/api/mobile/status")
     assert resp.status_code == 200
     body = resp.json()
     assert body["configured"] is True
@@ -66,7 +66,7 @@ def test_mobile_status_200(auth_client, monkeypatch):
 
 @pytest.mark.django_db
 def test_mobile_status_anon_401(anon_client):
-    resp = anon_client.get("/api/v2/mobile/status")
+    resp = anon_client.get("/api/mobile/status")
     assert resp.status_code == 401
 
 
@@ -82,7 +82,7 @@ def test_ensure_running_200(auth_client, monkeypatch):
         "apps.mobile.api_v2.ensure_running_op",
         lambda state=None: {"status": "running"},
     )
-    resp = client.post("/api/v2/mobile/ensure-running")
+    resp = client.post("/api/mobile/ensure-running")
     assert resp.status_code == 200
 
 
@@ -110,7 +110,7 @@ def test_diagnose_200(auth_client, monkeypatch):
             "emulator_log_tail": "",
         },
     )
-    resp = client.get("/api/v2/mobile/diagnose")
+    resp = client.get("/api/mobile/diagnose")
     assert resp.status_code == 200
     assert resp.json()["ssm_ok"] is True
 
@@ -127,7 +127,7 @@ def test_states_200(auth_client, monkeypatch):
         "apps.mobile.api_v2.list_states_op",
         lambda: {"default": "v2.6", "states": [], "active": "v2.6"},
     )
-    resp = client.get("/api/v2/mobile/states")
+    resp = client.get("/api/mobile/states")
     assert resp.status_code == 200
     assert resp.json()["default"] == "v2.6"
 
@@ -145,7 +145,7 @@ def test_run_recipe_202(auth_client, monkeypatch):
         lambda body: {"job_id": "job-abc", "status": "running"},
     )
     resp = client.post(
-        "/api/v2/mobile/run-recipe",
+        "/api/mobile/run-recipe",
         {"recipe_yaml": "appId: com.example.app\n---"},
         content_type="application/json",
     )
@@ -167,7 +167,7 @@ def test_get_job_200(auth_client, monkeypatch):
         "apps.mobile.api_v2.get_job_status",
         lambda job_id: _FAKE_JOB if job_id == "job-abc" else None,
     )
-    resp = client.get("/api/v2/mobile/jobs/job-abc")
+    resp = client.get("/api/mobile/jobs/job-abc")
     assert resp.status_code == 200
     assert resp.json()["status"] == "completed"
 
@@ -179,7 +179,7 @@ def test_get_job_404(auth_client, monkeypatch):
         "apps.mobile.api_v2.get_job_status",
         lambda job_id: None,
     )
-    resp = client.get("/api/v2/mobile/jobs/nonexistent")
+    resp = client.get("/api/mobile/jobs/nonexistent")
     assert resp.status_code == 404
 
 
@@ -192,7 +192,7 @@ def test_get_job_404(auth_client, monkeypatch):
 def test_patch_launch_script_non_admin_403(auth_client, monkeypatch):
     client, _ = auth_client
     resp = client.post(
-        "/api/v2/mobile/admin/patch-launch-script",
+        "/api/mobile/admin/patch-launch-script",
         {"script_body": "#!/bin/bash\n", "restart_runner": True},
         content_type="application/json",
     )
@@ -217,7 +217,7 @@ def test_patch_launch_script_admin_200(admin_client, monkeypatch):
         },
     )
     resp = client.post(
-        "/api/v2/mobile/admin/patch-launch-script",
+        "/api/mobile/admin/patch-launch-script",
         {"script_body": "#!/bin/bash\n", "restart_runner": True},
         content_type="application/json",
     )
@@ -233,7 +233,7 @@ def test_patch_launch_script_admin_200(admin_client, monkeypatch):
 @pytest.mark.django_db
 def test_list_patches_non_admin_403(auth_client):
     client, _ = auth_client
-    resp = client.get("/api/v2/mobile/admin/launch-script-patches")
+    resp = client.get("/api/mobile/admin/launch-script-patches")
     assert resp.status_code == 403
 
 
@@ -244,6 +244,6 @@ def test_list_patches_admin_200(admin_client, monkeypatch):
         "apps.mobile.api_v2.list_launch_script_patches",
         lambda offset=0, limit=50: {"patches": [], "total": 0, "limit": 50, "offset": 0},
     )
-    resp = client.get("/api/v2/mobile/admin/launch-script-patches")
+    resp = client.get("/api/mobile/admin/launch-script-patches")
     assert resp.status_code == 200
     assert resp.json()["total"] == 0

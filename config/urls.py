@@ -8,11 +8,9 @@ from apps.api_v2.views import redoc_docs, scalar_docs
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/v2/", api_v2.urls),
+    path("api/", api_v2.urls),
     path("api/docs/", scalar_docs, name="api_docs_scalar"),
     path("api/redoc/", redoc_docs, name="api_docs_redoc"),
-    path("api/", include("apps.common.urls")),
-    path("api/workspaces/", include("apps.workspaces.urls")),
     # React pages under /auth/ that must be served by the SPA, not by
     # Django's auth views. These are listed explicitly because the SPA
     # catch-all excludes the auth/ prefix entirely.

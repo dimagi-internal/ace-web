@@ -41,7 +41,7 @@ def test_list_tokens_200(auth_client, monkeypatch):
         "apps.service_accounts.api_v2.list_personal_tokens",
         lambda user: [_FAKE_TOKEN],
     )
-    resp = client.get("/api/v2/tokens")
+    resp = client.get("/api/tokens")
     assert resp.status_code == 200
     body = resp.json()
     assert isinstance(body, list)
@@ -50,7 +50,7 @@ def test_list_tokens_200(auth_client, monkeypatch):
 
 @pytest.mark.django_db
 def test_list_tokens_anon_401(anon_client):
-    resp = anon_client.get("/api/v2/tokens")
+    resp = anon_client.get("/api/tokens")
     assert resp.status_code == 401
 
 
@@ -67,7 +67,7 @@ def test_create_token_201(auth_client, monkeypatch):
         lambda user, name: {**_FAKE_TOKEN_CREATED, "name": name},
     )
     resp = client.post(
-        "/api/v2/tokens",
+        "/api/tokens",
         {"name": "ci-token"},
         content_type="application/json",
     )
@@ -80,7 +80,7 @@ def test_create_token_201(auth_client, monkeypatch):
 @pytest.mark.django_db
 def test_create_token_anon_401(anon_client):
     resp = anon_client.post(
-        "/api/v2/tokens",
+        "/api/tokens",
         {"name": "x"},
         content_type="application/json",
     )
@@ -99,7 +99,7 @@ def test_revoke_token_204(auth_client, monkeypatch):
         "apps.service_accounts.api_v2.revoke_personal_token",
         lambda user, token_id: True,
     )
-    resp = client.delete("/api/v2/tokens/1")
+    resp = client.delete("/api/tokens/1")
     assert resp.status_code == 204
 
 
@@ -110,11 +110,11 @@ def test_revoke_token_404(auth_client, monkeypatch):
         "apps.service_accounts.api_v2.revoke_personal_token",
         lambda user, token_id: False,
     )
-    resp = client.delete("/api/v2/tokens/999")
+    resp = client.delete("/api/tokens/999")
     assert resp.status_code == 404
 
 
 @pytest.mark.django_db
 def test_revoke_token_anon_401(anon_client):
-    resp = anon_client.delete("/api/v2/tokens/1")
+    resp = anon_client.delete("/api/tokens/1")
     assert resp.status_code == 401

@@ -1,4 +1,4 @@
-"""Pydantic v2 schemas for the /api/v2/workspaces surface."""
+"""Pydantic v2 schemas for the /api/workspaces surface."""
 from __future__ import annotations
 
 import datetime as dt
@@ -51,7 +51,7 @@ class WorkspaceInviteOut(StrictModel, TimestampMixin):
 
 
 class InvitePreviewOut(StrictModel):
-    """GET /api/v2/invites/{token} — public invite preview (no auth required)."""
+    """GET /api/invites/{token} — public invite preview (no auth required)."""
 
     workspace_slug: str
     workspace_display_name: str
@@ -62,7 +62,7 @@ class InvitePreviewOut(StrictModel):
 
 
 class InviteAcceptOut(StrictModel):
-    """POST /api/v2/invites/{token}/accept — accept an invite."""
+    """POST /api/invites/{token}/accept — accept an invite."""
 
     workspace_slug: str
     role: WorkspaceRole

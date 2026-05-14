@@ -51,7 +51,7 @@ def test_upload_201(member_client, monkeypatch):
         lambda **kwargs: _FAKE_UPLOAD_RESULT,
     )
     resp = client.post(
-        "/api/v2/ingest/upload",
+        "/api/ingest/upload",
         {
             "file": io.BytesIO(b'{"type":"text"}\n'),
             "workspace_slug": ws.slug,
@@ -67,7 +67,7 @@ def test_upload_201(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_upload_anon_401(anon_client):
     resp = anon_client.post(
-        "/api/v2/ingest/upload",
+        "/api/ingest/upload",
         {"file": io.BytesIO(b"data")},
         format="multipart",
     )
@@ -78,7 +78,7 @@ def test_upload_anon_401(anon_client):
 def test_upload_bad_opp_field_422(member_client, monkeypatch):
     client, ws, _ = member_client
     resp = client.post(
-        "/api/v2/ingest/upload",
+        "/api/ingest/upload",
         {
             "file": io.BytesIO(b"data"),
             "opp_slug": "bad slug with spaces",
@@ -93,7 +93,7 @@ def test_upload_nonmember_workspace_404(member_client, db, monkeypatch):
     client, _, _ = member_client
     # workspace that doesn't exist
     resp = client.post(
-        "/api/v2/ingest/upload",
+        "/api/ingest/upload",
         {
             "file": io.BytesIO(b"data"),
             "workspace_slug": "nonexistent-ws",

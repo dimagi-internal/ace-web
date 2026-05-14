@@ -1,6 +1,6 @@
-"""Single NinjaAPI instance for the /api/v2/ namespace.
+"""Single NinjaAPI instance for the /api/ namespace.
 
-All v2 routers register against this. Routers live in
+All routers register against this. Routers live in
 `apps/<app>/api_v2.py` and are imported below.
 """
 from __future__ import annotations
@@ -35,7 +35,7 @@ api = NinjaAPI(
     ),
     urls_namespace="api_v2",
     renderer=OrjsonRenderer(),
-    docs_url=None,  # we mount Scalar at /api/v2/docs/ separately in urls.py
+    docs_url=None,  # we mount Scalar at /api/docs/ separately in urls.py
     openapi_url="/openapi.json",
 )
 

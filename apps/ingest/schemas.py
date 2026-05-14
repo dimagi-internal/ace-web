@@ -16,7 +16,7 @@ from apps.sessions.schemas import CostBreakdownOut
 
 
 class IngestUploadOut(StrictModel):
-    """201 response from POST /api/v2/ingest/upload.
+    """201 response from POST /api/ingest/upload.
 
     ``cost_breakdown`` is null for sessions where the JSONL contained no
     cost-bearing assistant turns (empty or tool-only transcripts).

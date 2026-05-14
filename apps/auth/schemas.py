@@ -25,7 +25,7 @@ from apps.common.schemas import StrictModel, WorkspaceRefOut
 
 
 class MeOut(StrictModel):
-    """GET /api/v2/auth/me — minimal current-user info.
+    """GET /api/auth/me — minimal current-user info.
 
     ``workspaces`` lists every workspace the user is a member of,
     ordered by the workspace display name.  Useful for workspace

@@ -74,7 +74,7 @@ def test_activity_feed_200(member_client, monkeypatch):
         "apps.activity.api_v2.get_activity_feed",
         lambda workspace, user, request, **kwargs: _FAKE_ACTIVITY,
     )
-    resp = client.get(f"/api/v2/w/{ws.slug}/activity")
+    resp = client.get(f"/api/w/{ws.slug}/activity")
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 1
@@ -84,14 +84,14 @@ def test_activity_feed_200(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_activity_feed_non_member_404(non_member_client):
     client, ws, _ = non_member_client
-    resp = client.get(f"/api/v2/w/{ws.slug}/activity")
+    resp = client.get(f"/api/w/{ws.slug}/activity")
     assert resp.status_code == 404
 
 
 @pytest.mark.django_db
 def test_activity_feed_anon_401(anon_client):
     client, ws = anon_client
-    resp = client.get(f"/api/v2/w/{ws.slug}/activity")
+    resp = client.get(f"/api/w/{ws.slug}/activity")
     assert resp.status_code == 401
 
 
@@ -105,5 +105,5 @@ def test_activity_feed_opp_filter_passed_through(member_client, monkeypatch):
         return {"items": [], "total": 0}
 
     monkeypatch.setattr("apps.activity.api_v2.get_activity_feed", _fake)
-    client.get(f"/api/v2/w/{ws.slug}/activity?opp=my-opp")
+    client.get(f"/api/w/{ws.slug}/activity?opp=my-opp")
     assert captured["opp_slug"] == "my-opp"

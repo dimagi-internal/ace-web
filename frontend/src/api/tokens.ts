@@ -20,13 +20,13 @@ export type PersonalTokenCreated = PersonalTokenCreatedOut;
 // ---------------------------------------------------------------------------
 
 export const listTokens = async (): Promise<PersonalToken[]> => {
-  const { data, error } = await apiV2.GET("/api/v2/tokens");
+  const { data, error } = await apiV2.GET("/api/tokens");
   if (error) throw new Error((error as { title?: string }).title || "Failed to list tokens");
   return data as PersonalToken[];
 };
 
 export const createToken = async (name: string): Promise<PersonalTokenCreated> => {
-  const { data, error } = await apiV2.POST("/api/v2/tokens", {
+  const { data, error } = await apiV2.POST("/api/tokens", {
     body: { name },
   });
   if (error) throw new Error((error as { title?: string }).title || "Failed to create token");
@@ -34,7 +34,7 @@ export const createToken = async (name: string): Promise<PersonalTokenCreated> =
 };
 
 export const revokeToken = async (id: number): Promise<void> => {
-  const { response } = await apiV2.DELETE("/api/v2/tokens/{token_id}", {
+  const { response } = await apiV2.DELETE("/api/tokens/{token_id}", {
     params: { path: { token_id: id } },
   });
   if (!response.ok && response.status !== 204) {

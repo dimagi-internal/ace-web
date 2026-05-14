@@ -1,4 +1,4 @@
-"""Pydantic schemas for the /api/v2/opps surface.
+"""Pydantic schemas for the /api/opps surface.
 
 Mirrors the existing payload shape produced by `apps/opps/sync.py`
 and consumed by `frontend/src/api/opps.ts` + `types.ts`. Field names

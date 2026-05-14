@@ -8,7 +8,7 @@ User = get_user_model()
 @pytest.mark.django_db
 def test_openapi_schema_serves():
     client = Client()
-    response = client.get("/api/v2/openapi.json")
+    response = client.get("/api/openapi.json")
     assert response.status_code == 200
     payload = response.json()
     assert payload["info"]["title"] == "ace-web API"
@@ -18,7 +18,7 @@ def test_openapi_schema_serves():
 @pytest.mark.django_db
 def test_unknown_route_returns_problem_json():
     client = Client()
-    response = client.get("/api/v2/does-not-exist")
+    response = client.get("/api/does-not-exist")
     assert response.status_code == 404
 
 
@@ -41,7 +41,7 @@ def test_redoc_docs_serves_html():
 
 @pytest.mark.django_db
 def test_session_auth_rejects_anonymous(client):
-    response = client.get("/api/v2/_auth_smoke/")
+    response = client.get("/api/_auth_smoke/")
     assert response.status_code == 401
     body = response.json()
     assert body["status"] == 401
@@ -52,6 +52,6 @@ def test_session_auth_rejects_anonymous(client):
 def test_session_auth_accepts_logged_in_user(client):
     user = User.objects.create_user(email="alice@example.com")
     client.force_login(user)
-    response = client.get("/api/v2/_auth_smoke/")
+    response = client.get("/api/_auth_smoke/")
     assert response.status_code == 200
     assert response.json() == {"email": "alice@example.com"}

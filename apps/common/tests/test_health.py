@@ -6,7 +6,14 @@ from django.test import Client
 
 @pytest.mark.django_db
 def test_health_returns_ok_when_db_and_redis_pass():
-    with patch("apps.common.views._check_redis", return_value=(True, None)):
+    with patch("apps.common.api_v2.get_health_status", return_value={
+        "status": "ok",
+        "healthy": True,
+        "checks": {
+            "database": {"ok": True, "error": None},
+            "redis": {"ok": True, "error": None},
+        },
+    }):
         client = Client()
         response = client.get("/api/health")
     assert response.status_code == 200
@@ -18,7 +25,14 @@ def test_health_returns_ok_when_db_and_redis_pass():
 
 @pytest.mark.django_db
 def test_health_returns_503_when_redis_down():
-    with patch("apps.common.views._check_redis", return_value=(False, "ConnectionError")):
+    with patch("apps.common.api_v2.get_health_status", return_value={
+        "status": "unhealthy",
+        "healthy": False,
+        "checks": {
+            "database": {"ok": True, "error": None},
+            "redis": {"ok": False, "error": "ConnectionError"},
+        },
+    }):
         client = Client()
         response = client.get("/api/health")
     assert response.status_code == 503
@@ -30,10 +44,14 @@ def test_health_returns_503_when_redis_down():
 
 @pytest.mark.django_db
 def test_health_returns_503_when_db_down():
-    with (
-        patch("apps.common.views._check_database", return_value=(False, "OperationalError")),
-        patch("apps.common.views._check_redis", return_value=(True, None)),
-    ):
+    with patch("apps.common.api_v2.get_health_status", return_value={
+        "status": "unhealthy",
+        "healthy": False,
+        "checks": {
+            "database": {"ok": False, "error": "OperationalError"},
+            "redis": {"ok": True, "error": None},
+        },
+    }):
         client = Client()
         response = client.get("/api/health")
     assert response.status_code == 503

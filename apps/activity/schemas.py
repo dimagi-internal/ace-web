@@ -37,7 +37,7 @@ class ActivityEntryOut(StrictModel):
 
 
 class ActivityFeedOut(StrictModel):
-    """Response wrapper for GET /api/v2/activity/."""
+    """Response wrapper for GET /api/activity/."""
 
     items: list[ActivityEntryOut]
     total: int

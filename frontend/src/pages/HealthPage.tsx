@@ -7,7 +7,7 @@ export default function HealthPage() {
 
   useEffect(() => {
     apiV2
-      .GET("/api/v2/health")
+      .GET("/api/health")
       .then(({ data }) => setStatus(data?.status ?? "unknown"))
       .catch((e) => setError(String(e)))
   }, [])

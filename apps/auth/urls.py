@@ -17,7 +17,7 @@ urlpatterns = [
 ]
 
 # token_urlpatterns removed — personal-token CRUD now lives at
-# /api/v2/tokens/ via apps/service_accounts/api_v2.py.
+# /api/tokens/ via apps/service_accounts/api_v2.py.
 
 # Dev-only test-login endpoint. The URL is only registered when BOTH
 # ACE_ALLOW_TEST_LOGIN and DEBUG are True. In production.py / connectlabs.py

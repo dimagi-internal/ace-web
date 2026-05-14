@@ -6,11 +6,11 @@ import type { Session, SessionDetail, SessionListPage } from "./types.ws";
  * sessions.ts — sessions resource API client.
  *
  * v2 endpoints (workspace-scoped):
- *   GET    /api/v2/w/{workspace_slug}/sessions         — list
- *   POST   /api/v2/w/{workspace_slug}/sessions         — create
- *   GET    /api/v2/w/{workspace_slug}/sessions/{slug}  — detail
- *   PATCH  /api/v2/w/{workspace_slug}/sessions/{slug}  — update
- *   DELETE /api/v2/w/{workspace_slug}/sessions/{slug}  — delete
+ *   GET    /api/w/{workspace_slug}/sessions         — list
+ *   POST   /api/w/{workspace_slug}/sessions         — create
+ *   GET    /api/w/{workspace_slug}/sessions/{slug}  — detail
+ *   PATCH  /api/w/{workspace_slug}/sessions/{slug}  — update
+ *   DELETE /api/w/{workspace_slug}/sessions/{slug}  — delete
  *
  * All v2 responses have content?: never so we use response.json() casts.
  * Falls back to legacy DRF endpoints when workspaceSlug is not provided.
@@ -37,7 +37,7 @@ export const listSessions = async (params: ListSessionsParams = {}): Promise<Ses
     if (params.status === "archived") query.archived = true;
 
     const { response } = await apiV2.GET(
-      "/api/v2/w/{workspace_slug}/sessions",
+      "/api/w/{workspace_slug}/sessions",
       {
         params: {
           path: { workspace_slug: params.workspaceSlug },
@@ -64,7 +64,7 @@ export const listSessions = async (params: ListSessionsParams = {}): Promise<Ses
 export const createSession = async (workspaceSlug?: string): Promise<Session> => {
   if (workspaceSlug) {
     const { response } = await apiV2.POST(
-      "/api/v2/w/{workspace_slug}/sessions",
+      "/api/w/{workspace_slug}/sessions",
       {
         params: { path: { workspace_slug: workspaceSlug } },
         body: { title: "" },
@@ -79,7 +79,7 @@ export const createSession = async (workspaceSlug?: string): Promise<Session> =>
 export const getSession = async (slug: string, workspaceSlug?: string): Promise<SessionDetail> => {
   if (workspaceSlug) {
     const { response } = await apiV2.GET(
-      "/api/v2/w/{workspace_slug}/sessions/{slug}",
+      "/api/w/{workspace_slug}/sessions/{slug}",
       { params: { path: { workspace_slug: workspaceSlug, slug } } },
     );
     if (!response.ok) throw new Error(`Failed to get session: ${response.status}`);
@@ -95,7 +95,7 @@ export const updateSession = async (
 ): Promise<Session> => {
   if (workspaceSlug) {
     const { response } = await apiV2.PATCH(
-      "/api/v2/w/{workspace_slug}/sessions/{slug}",
+      "/api/w/{workspace_slug}/sessions/{slug}",
       {
         params: { path: { workspace_slug: workspaceSlug, slug } },
         body: updates as { title?: string | null; status?: ("active" | "archived" | "imported") | null },
@@ -113,7 +113,7 @@ export const updateSession = async (
 export const deleteSession = async (slug: string, workspaceSlug?: string): Promise<void> => {
   if (workspaceSlug) {
     const { response } = await apiV2.DELETE(
-      "/api/v2/w/{workspace_slug}/sessions/{slug}",
+      "/api/w/{workspace_slug}/sessions/{slug}",
       { params: { path: { workspace_slug: workspaceSlug, slug } } },
     );
     if (!response.ok && response.status !== 204) {

@@ -5,7 +5,7 @@ import type { Message } from "./types.ws";
 /**
  * messages.ts — message list API client.
  *
- * v2 endpoint: GET /api/v2/w/{workspace_slug}/sessions/{slug}/messages
+ * v2 endpoint: GET /api/w/{workspace_slug}/sessions/{slug}/messages
  * The response body is paginated but content?: never in the schema.
  * Returns the items array directly (matching legacy behaviour).
  *
@@ -17,7 +17,7 @@ export const listMessages = async (
 ): Promise<Message[]> => {
   if (workspaceSlug) {
     const { response } = await apiV2.GET(
-      "/api/v2/w/{workspace_slug}/sessions/{slug}/messages",
+      "/api/w/{workspace_slug}/sessions/{slug}/messages",
       { params: { path: { workspace_slug: workspaceSlug, slug } } },
     );
     if (!response.ok) throw new Error(`Failed to list messages: ${response.status}`);

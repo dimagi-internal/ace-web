@@ -148,7 +148,7 @@ def test_callback_state_mismatch_redirects_to_settings_with_error(admin_client):
 
 @pytest.mark.django_db
 def test_status_reports_not_connected_for_empty_db(user_client):
-    resp = user_client.get("/api/v2/auth/nova/status")
+    resp = user_client.get("/api/auth/nova/status")
     assert resp.status_code == 200
     body = resp.json()
     assert body["connected"] is False
@@ -171,7 +171,7 @@ def test_status_reports_connected_and_admin_can_manage(admin_client):
     )
     # Stub validate_token so we don't actually hit mcp.commcare.app.
     with patch.object(nf, "validate_token", return_value=True):
-        resp = admin_client.get("/api/v2/auth/nova/status")
+        resp = admin_client.get("/api/auth/nova/status")
 
     body = resp.json()
     assert body["connected"] is True
@@ -184,7 +184,7 @@ def test_status_reports_connected_and_admin_can_manage(admin_client):
 def test_status_reports_can_manage_for_bot_account(bot_client):
     """ace@dimagi-ai.com should see can_manage=True even without is_staff,
     so scripted rotation of the global blob can run as the bot."""
-    resp = bot_client.get("/api/v2/auth/nova/status")
+    resp = bot_client.get("/api/auth/nova/status")
     assert resp.status_code == 200
     body = resp.json()
     assert body["can_manage"] is True
@@ -217,11 +217,11 @@ def test_disconnect_removes_blob_admin_only(admin_client, user_client):
     )
 
     # Non-admin: 403
-    resp = user_client.post("/api/v2/auth/nova/disconnect", content_type="application/json")
+    resp = user_client.post("/api/auth/nova/disconnect", content_type="application/json")
     assert resp.status_code == 403
     assert nf.get_blob() is not None
 
     # Admin: 200, blob cleared.
-    resp = admin_client.post("/api/v2/auth/nova/disconnect", content_type="application/json")
+    resp = admin_client.post("/api/auth/nova/disconnect", content_type="application/json")
     assert resp.status_code == 200
     assert nf.get_blob() is None

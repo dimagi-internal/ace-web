@@ -22,7 +22,7 @@ def test_upload_does_not_log_full_token(caplog, monkeypatch, client):
     with caplog.at_level(logging.DEBUG):
         import json
         resp = client.post(
-            "/api/v2/auth/cli/upload",
+            "/api/auth/cli/upload",
             data=json.dumps({"claudeAiOauth": {"accessToken": REAL, "refreshToken": "r"}}),
             content_type="application/json",
         )

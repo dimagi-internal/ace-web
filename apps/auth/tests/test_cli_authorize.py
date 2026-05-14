@@ -174,7 +174,7 @@ def test_token_round_trips_via_bearer_auth(client, user):
     raw = parse_qs(urlparse(resp["Location"]).query)["token"][0]
 
     api = DjangoClient()
-    resp = api.get("/api/v2/tokens", HTTP_AUTHORIZATION=f"Bearer {raw}")
+    resp = api.get("/api/tokens", HTTP_AUTHORIZATION=f"Bearer {raw}")
     assert resp.status_code == 200
     items = resp.json()
     labels = [it["name"] for it in items]
