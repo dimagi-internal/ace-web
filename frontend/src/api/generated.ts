@@ -1415,6 +1415,13 @@ export interface components {
         /**
          * ArtifactOut
          * @description One entry in the plugin's artifact-manifest.ts.
+         *
+         *     Uses ``extra="allow"`` because the artifact manifest evolves with the
+         *     plugin (new fields like ``phase``, ``role``, etc. appear over time);
+         *     pinning the schema causes the System Overview to 500 every time the
+         *     plugin adds a metadata field. Tradeoff: drift not caught at schema
+         *     validation, but the System Overview is a read-through display and
+         *     new fields just get passed through to the frontend.
          */
         readonly ArtifactOut: {
             /** Path */
@@ -1436,6 +1443,8 @@ export interface components {
              * @default []
              */
             readonly consumed_by: readonly string[];
+        } & {
+            readonly [key: string]: unknown;
         };
         /** GateOut */
         readonly GateOut: {
@@ -2382,11 +2391,8 @@ export interface components {
         readonly McpToolOut: {
             /** Name */
             readonly name: string;
-            /**
-             * Description
-             * @default
-             */
-            readonly description: string;
+            /** Description */
+            readonly description?: string | null;
             /**
              * Used By
              * @default []
