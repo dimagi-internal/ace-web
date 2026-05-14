@@ -142,7 +142,8 @@ from apps.opps.api_v2 import router as opps_router  # noqa: E402
 from apps.service_accounts.api_v2 import router as tokens_router  # noqa: E402
 from apps.sessions.api_v2 import router as sessions_router  # noqa: E402
 from apps.system.api_v2 import router as system_router  # noqa: E402
-from apps.workspaces.api_v2 import router as workspaces_router  # noqa: E402
+from apps.workspaces.api_v2 import invites_router  # noqa: E402, I001
+from apps.workspaces.api_v2 import router as workspaces_router  # noqa: E402, I001
 
 # Workspace-scoped resources
 api.add_router("/w/{workspace_slug}/opps", opps_router)
@@ -151,6 +152,7 @@ api.add_router("/w/{workspace_slug}/activity", activity_router)
 
 # Top-level resources
 api.add_router("/workspaces", workspaces_router)
+api.add_router("/invites", invites_router)
 api.add_router("/ingest", ingest_router)
 api.add_router("/mobile", mobile_router)
 api.add_router("/system", system_router)

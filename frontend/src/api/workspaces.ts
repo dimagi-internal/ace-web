@@ -1,5 +1,4 @@
 import { apiV2 } from "./client.v2";
-import { apiFetch } from "./client";
 import type { components } from "./generated";
 
 // ---------------------------------------------------------------------------
@@ -15,7 +14,7 @@ export type WorkspaceMember = components["schemas"]["WorkspaceMemberOut"];
 export type WorkspaceRole = "owner" | "editor" | "viewer";
 
 // ---------------------------------------------------------------------------
-// Legacy-only types not in v2 schema (DRF endpoints still serve these)
+// Types for endpoints not yet in the generated schema
 // ---------------------------------------------------------------------------
 
 export interface DriveConfig {
@@ -151,11 +150,15 @@ export async function changeMemberRole(
   userId: number,
   role: WorkspaceRole,
 ): Promise<WorkspaceMember> {
-  // v2 doesn't have a PATCH member endpoint — keep using legacy DRF.
-  return apiFetch<WorkspaceMember>(`/api/workspaces/${slug}/members/${userId}/`, {
-    method: "PATCH",
-    body: JSON.stringify({ role }),
-  }) as Promise<WorkspaceMember>;
+  const { response } = await apiV2.PATCH(
+    "/api/v2/workspaces/{slug}/members/{user_id}" as never,
+    {
+      params: { path: { slug, user_id: userId } },
+      body: { role } as never,
+    },
+  );
+  if (!response.ok) throw new Error(`Change role failed: ${response.status}`);
+  return (await response.json()) as WorkspaceMember;
 }
 
 export async function leaveWorkspace(slug: string): Promise<void> {
@@ -167,27 +170,43 @@ export async function leaveWorkspace(slug: string): Promise<void> {
   }
 }
 
-export function getInvitePreview(token: string): Promise<InvitePreview> {
-  return apiFetch<InvitePreview>(`/api/invites/${token}/`);
+export async function getInvitePreview(token: string): Promise<InvitePreview> {
+  const { response } = await apiV2.GET("/api/v2/invites/{token}" as never, {
+    params: { path: { token } },
+  } as never);
+  if (!response.ok) throw new Error(`Invite not found: ${response.status}`);
+  return (await response.json()) as InvitePreview;
 }
 
-export function acceptInvite(token: string): Promise<AcceptResult> {
-  return apiFetch<AcceptResult>(`/api/invites/${token}/accept/`, { method: "POST" });
+export async function acceptInvite(token: string): Promise<AcceptResult> {
+  const { response } = await apiV2.POST("/api/v2/invites/{token}/accept" as never, {
+    params: { path: { token } },
+  } as never);
+  if (!response.ok) throw new Error(`Accept invite failed: ${response.status}`);
+  return (await response.json()) as AcceptResult;
 }
 
-export function getDriveConfig(): Promise<DriveConfig> {
-  return apiFetch<DriveConfig>("/api/workspaces/drive-config/");
+export async function getDriveConfig(): Promise<DriveConfig> {
+  const { response } = await apiV2.GET("/api/v2/workspaces/drive-config" as never, {} as never);
+  if (!response.ok) throw new Error(`Drive config failed: ${response.status}`);
+  return (await response.json()) as DriveConfig;
 }
 
-export function verifyDriveAccess(slug: string): Promise<VerifyResult> {
-  // v2 endpoint exists but content?: never — use legacy for now
-  return apiFetch<VerifyResult>(`/api/workspaces/${slug}/verify-drive-access/`, {
-    method: "POST",
+export async function verifyDriveAccess(slug: string): Promise<VerifyResult> {
+  const { response } = await apiV2.POST("/api/v2/workspaces/{slug}/drive-config/verify", {
+    params: { path: { slug } },
   });
+  if (!response.ok) throw new Error(`Drive verify failed: ${response.status}`);
+  return (await response.json()) as VerifyResult;
 }
 
-export function listActivity(slug: string): Promise<ActivityRow[]> {
-  return apiFetch<ActivityRow[]>(`/api/workspaces/${slug}/activity/`);
+export async function listActivity(slug: string): Promise<ActivityRow[]> {
+  const { response } = await apiV2.GET("/api/v2/workspaces/{slug}/activity" as never, {
+    params: { path: { slug } },
+  } as never);
+  if (!response.ok) throw new Error(`List activity failed: ${response.status}`);
+  const body = (await response.json()) as { items: ActivityRow[]; total: number };
+  return body.items;
 }
 
 // ---------------------------------------------------------------------------

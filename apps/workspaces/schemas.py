@@ -48,3 +48,21 @@ class WorkspaceInviteOut(StrictModel, TimestampMixin):
     role: WorkspaceRole
     accepted: bool
     accepted_at: dt.datetime | None = None
+
+
+class InvitePreviewOut(StrictModel):
+    """GET /api/v2/invites/{token} — public invite preview (no auth required)."""
+
+    workspace_slug: str
+    workspace_display_name: str
+    role: WorkspaceRole
+    invited_by_email: str
+    email: str
+    expires_at: dt.datetime
+
+
+class InviteAcceptOut(StrictModel):
+    """POST /api/v2/invites/{token}/accept — accept an invite."""
+
+    workspace_slug: str
+    role: WorkspaceRole
