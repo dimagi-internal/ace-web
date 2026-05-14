@@ -136,6 +136,11 @@ def _build_schema():
         .exclude(path_regex=r"/activity$")
         # Exclude the POST drive-config/verify (makes real Drive API call)
         .exclude(path_regex=r"/drive-config/")
+        # Exclude /api/health — it probes Redis + Postgres, returns 503 when
+        # services are unavailable. Schemathesis treats 5xx as Server Error
+        # even when declared in the schema. The endpoint itself is covered
+        # by unit tests in apps/common/.
+        .exclude(path="/api/health")
     )
 
 
