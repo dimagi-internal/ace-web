@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 
-import type { CostSkill } from "../../api/types";
+import type { CostSkill } from "../../api/types.ws";
 import { CostInvocationRow } from "./CostInvocationRow";
 import { formatDuration, formatTokens, formatUsd, totalTokens } from "../../lib/format";
 

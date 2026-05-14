@@ -13,7 +13,7 @@ import type {
   Scorecard,
   StepDetail,
   WorkingSessionResponse,
-} from "./types";
+} from "./types.ws";
 
 export async function listOpps(
   tags?: string[],

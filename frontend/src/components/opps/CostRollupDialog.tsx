@@ -1,4 +1,4 @@
-import type { CostRollup } from "../../api/types";
+import type { CostRollup } from "../../api/types.ws";
 import { CostPhaseRow } from "../cost/CostPhaseRow";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 

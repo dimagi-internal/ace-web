@@ -9,7 +9,7 @@ import type {
   OppCard,
   Run,
   RunSummary,
-} from "../../api/types";
+} from "../../api/types.ws";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CostRollupCard } from "./CostRollupCard";

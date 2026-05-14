@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, GitFork, Workflow } from "lucide-react";
 
-import type { OppSnapshot, PhaseInfo, Step } from "@/api/types";
+import type { OppSnapshot, PhaseInfo, Step } from "@/api/types.ws";
 import { ForkOppDialog } from "@/components/opps/ForkOppDialog";
 import { Button } from "@/components/ui/button";
 import { DecisionsPanel } from "@/components/views/DecisionsPanel";

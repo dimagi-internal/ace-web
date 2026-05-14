@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { getMultiRunSummary } from "@/api/opps";
-import type { MultiRunSummary } from "@/api/types";
+import type { MultiRunSummary } from "@/api/types.ws";
 
 interface Props {
   oppSlug: string;

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { getLinkedChats } from "../../api/opps";
-import type { LinkedChat } from "../../api/types";
+import type { LinkedChat } from "../../api/types.ws";
 
 interface Props {
   slug: string;

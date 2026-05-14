@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { GitCompareArrows } from "lucide-react";
 
-import type { OppCard } from "@/api/types";
+import type { OppCard } from "@/api/types.ws";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

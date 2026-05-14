@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom";
 import { getSharedSession } from "../api/share";
 import { ApiError } from "../api/client";
 import { MessageItem } from "../components/MessageItem";
-import type { SharedSession } from "../api/types";
+import type { SharedSession } from "../api/types.ws";
 
 type LoadState =
   | { kind: "loading" }

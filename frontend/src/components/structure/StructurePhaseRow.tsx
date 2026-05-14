@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 
-import type { StructurePhase } from "../../api/types";
+import type { StructurePhase } from "../../api/types.ws";
 import { formatDuration, formatUsd } from "../../lib/format";
 import { ParallelCluster } from "./ParallelCluster";
 import { StatusIcon } from "./StatusIcon";

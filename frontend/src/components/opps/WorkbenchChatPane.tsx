@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ExternalLink, MessageSquare, Plus } from "lucide-react";
 
 import { discussStep, getLinkedChats } from "../../api/opps";
-import type { LinkedChat } from "../../api/types";
+import type { LinkedChat } from "../../api/types.ws";
 import { Button } from "@/components/ui/button";
 import { ChatPanel } from "./ChatPanel";
 

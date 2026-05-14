@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { getOpp } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
 import { ApiError } from "../api/client";
-import type { OppSnapshot, Step } from "../api/types";
+import type { OppSnapshot, Step } from "../api/types.ws";
 import { HeatmapView } from "../components/views/HeatmapView";
 import { PhaseView } from "../components/views/PhaseView";
 import { RunDiffView } from "../components/views/RunDiffView";

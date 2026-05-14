@@ -1,4 +1,4 @@
-import type { StructureParallelGroup } from "../../api/types";
+import type { StructureParallelGroup } from "../../api/types.ws";
 import { formatDuration } from "../../lib/format";
 import { StructureToolRow } from "./StructureToolRow";
 

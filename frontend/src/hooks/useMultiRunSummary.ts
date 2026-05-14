@@ -1,5 +1,5 @@
 import { getMultiRunSummary } from "../api/opps";
-import type { MultiRunSummary } from "../api/types";
+import type { MultiRunSummary } from "../api/types.ws";
 import { useApi } from "./useApi";
 
 /**

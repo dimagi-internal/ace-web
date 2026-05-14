@@ -1,37 +1,43 @@
-import { apiFetch } from "./client";
-import type { PersonalToken, PersonalTokenCreated } from "./types";
+import { apiV2 } from "./client.v2";
+import type { components } from "./generated";
 
-export const listTokens = () =>
-  apiFetch<PersonalToken[]>("/api/auth/tokens");
+type PersonalTokenOut = components["schemas"]["PersonalTokenOut"];
+type PersonalTokenCreatedOut = components["schemas"]["PersonalTokenCreatedOut"];
 
-export const createToken = (label: string) =>
-  apiFetch<PersonalTokenCreated>("/api/auth/tokens", {
-    method: "POST",
-    body: JSON.stringify({ label }),
+// ---------------------------------------------------------------------------
+// v2 canonical types — exported for consumer files
+// ---------------------------------------------------------------------------
+
+/**
+ * PersonalToken — v2 shape. Note: the field is `name` (not `label`).
+ * Legacy consumers that referenced `label` need updating to `name`.
+ */
+export type PersonalToken = PersonalTokenOut;
+export type PersonalTokenCreated = PersonalTokenCreatedOut;
+
+// ---------------------------------------------------------------------------
+// API functions
+// ---------------------------------------------------------------------------
+
+export const listTokens = async (): Promise<PersonalToken[]> => {
+  const { data, error } = await apiV2.GET("/api/v2/tokens");
+  if (error) throw new Error((error as { title?: string }).title || "Failed to list tokens");
+  return data as PersonalToken[];
+};
+
+export const createToken = async (name: string): Promise<PersonalTokenCreated> => {
+  const { data, error } = await apiV2.POST("/api/v2/tokens", {
+    body: { name },
   });
-
-function getCsrfToken(): string {
-  const cookies = document.cookie.split(";");
-  for (const raw of cookies) {
-    const [rawName, ...rawValue] = raw.trim().split("=");
-    if (rawName === "csrftoken_ace" || rawName === "csrftoken") {
-      return decodeURIComponent(rawValue.join("="));
-    }
-  }
-  return "";
-}
+  if (error) throw new Error((error as { title?: string }).title || "Failed to create token");
+  return data as PersonalTokenCreated;
+};
 
 export const revokeToken = async (id: number): Promise<void> => {
-  // DELETE returns 204 with no body — can't use apiFetch which expects JSON.
-  // Must include X-CSRFToken since DRF's SessionAuthentication enforces CSRF
-  // for all unsafe methods.
-  const API_PREFIX = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-  const resp = await fetch(`${API_PREFIX}/api/auth/tokens/${id}`, {
-    method: "DELETE",
-    credentials: "same-origin",
-    headers: { "X-CSRFToken": getCsrfToken() },
+  const { response } = await apiV2.DELETE("/api/v2/tokens/{token_id}", {
+    params: { path: { token_id: id } },
   });
-  if (!resp.ok) {
-    throw new Error(`Revoke failed: ${resp.status}`);
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`Revoke failed: ${response.status}`);
   }
 };

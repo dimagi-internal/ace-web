@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChevronRight, ExternalLink } from "lucide-react";
 
-import type { Step } from "@/api/types";
+import type { Step } from "@/api/types.ws";
 import { cn } from "@/lib/utils";
 
 import { EvalSection, ProducerSection, QASection } from "./phase-skill/sections";

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { listSessions } from "../api/sessions";
-import type { Session } from "../api/types";
+import type { Session } from "../api/types.ws";
 
 export const SESSIONS_UPDATED_EVENT = "ace:sessions-updated";
 

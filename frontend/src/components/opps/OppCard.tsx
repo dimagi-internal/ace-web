@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, GitCompareArrows, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-import type { OppCard as OppCardData } from "../../api/types";
+import type { OppCard as OppCardData } from "../../api/types.ws";
 import { OppCardRunsStrip } from "../views/hierarchy/OppCardRunsStrip";
 import { OppChatChildren } from "../views/hierarchy/OppChatChildren";
 import { OppRunsList } from "../views/hierarchy/OppRunsList";

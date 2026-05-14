@@ -1,5 +1,5 @@
 import { getOppCostRollup } from "../api/costs";
-import type { CostRollup } from "../api/types";
+import type { CostRollup } from "../api/types.ws";
 import { useApi } from "./useApi";
 
 /**

@@ -69,7 +69,7 @@ export default function WelcomePage() {
     setError(null);
     try {
       const ws = await createWorkspace({
-        display_name: displayName.trim(),
+        name: displayName.trim(),
         drive_root_folder_id: folderInput.trim(),
       });
       setCreatedSlug(ws.slug);
@@ -130,7 +130,7 @@ export default function WelcomePage() {
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-foreground">
-                      {ws.display_name}
+                      {ws.name}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {ws.slug}

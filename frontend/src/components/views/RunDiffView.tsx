@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
 import { getMultiRunSummary } from "@/api/opps";
-import type { MultiRunSummary, PerRunSummary } from "@/api/types";
+import type { MultiRunSummary, PerRunSummary } from "@/api/types.ws";
 
 interface Props {
   oppSlug: string;

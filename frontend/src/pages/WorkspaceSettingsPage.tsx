@@ -8,10 +8,12 @@ import {
   inviteMember,
   leaveWorkspace,
   listActivity,
+  listMembers,
   removeMember,
   verifyDriveAccess,
   type ActivityRow,
   type WorkspaceDetail,
+  type WorkspaceMember,
   type WorkspaceRole,
 } from "../api/workspaces";
 import { Button } from "@/components/ui/button";
@@ -23,6 +25,7 @@ export default function WorkspaceSettingsPage() {
   const { workspaceSlug } = useParams<{ workspaceSlug: string }>();
   const navigate = useNavigate();
   const [ws, setWs] = useState<WorkspaceDetail | null>(null);
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [saEmail, setSaEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -39,6 +42,7 @@ export default function WorkspaceSettingsPage() {
   useEffect(() => {
     if (!workspaceSlug) return;
     getWorkspace(workspaceSlug).then(setWs).catch((e) => setError(String((e as Error).message)));
+    listMembers(workspaceSlug).then(setMembers).catch(() => {});
     getDriveConfig().then((c) => setSaEmail(c.service_account_email)).catch(() => {});
     // Auto-verify on page load to surface drive-access-broken state.
     verifyDriveAccess(workspaceSlug)
@@ -47,7 +51,7 @@ export default function WorkspaceSettingsPage() {
   }, [workspaceSlug, reload]);
 
   useEffect(() => {
-    if (!workspaceSlug || !ws || ws.my_role !== "owner") return;
+    if (!workspaceSlug || !ws || ws.role !== "owner") return;
     listActivity(workspaceSlug).then(setActivity).catch(() => {});
   }, [workspaceSlug, ws, reload]);
 
@@ -55,7 +59,7 @@ export default function WorkspaceSettingsPage() {
   if (error) return <div className="p-6 text-destructive">{error}</div>;
   if (!ws) return <div className="p-6 text-muted-foreground">Loading…</div>;
 
-  const myRole = ws.my_role;
+  const myRole = ws.role;
   const isOwner = myRole === "owner";
 
   async function handleInvite() {
@@ -107,7 +111,7 @@ export default function WorkspaceSettingsPage() {
 
   async function handleLeave() {
     if (!ws) return;
-    if (!confirm(`Leave the workspace "${ws.display_name}"?`)) return;
+    if (!confirm(`Leave the workspace "${ws.name}"?`)) return;
     setError(null);
     try {
       await leaveWorkspace(workspaceSlug!);
@@ -119,7 +123,7 @@ export default function WorkspaceSettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="text-2xl font-semibold text-foreground">{ws.display_name}</h1>
+      <h1 className="text-2xl font-semibold text-foreground">{ws.name}</h1>
       <p className="text-sm text-muted-foreground">/{ws.slug}</p>
 
       {driveBroken && (
@@ -164,16 +168,16 @@ export default function WorkspaceSettingsPage() {
             </tr>
           </thead>
           <tbody>
-            {ws.members.map((m) => (
-              <tr key={m.user_email} className="border-b border-border">
-                <td className="py-2 text-foreground">{m.user_email}</td>
-                <td className="py-2 text-muted-foreground">{m.user_display_name}</td>
+            {members.map((m) => (
+              <tr key={m.user.email} className="border-b border-border">
+                <td className="py-2 text-foreground">{m.user.email}</td>
+                <td className="py-2 text-muted-foreground">{m.user.display_name ?? m.user.email}</td>
                 <td className="py-2">
                   {isOwner ? (
                     <select
                       value={m.role}
                       onChange={(e) =>
-                        handleRoleChange(m.user_id, e.target.value as WorkspaceRole)
+                        handleRoleChange(m.user.id, e.target.value as WorkspaceRole)
                       }
                       className="rounded border border-input bg-background px-2 py-1 text-xs"
                     >
@@ -192,7 +196,7 @@ export default function WorkspaceSettingsPage() {
                   {isOwner && m.role !== "owner" && (
                     <button
                       type="button"
-                      onClick={() => handleRemove(m.user_email, m.user_id)}
+                      onClick={() => handleRemove(m.user.email, m.user.id)}
                       className="text-xs text-destructive hover:underline"
                     >
                       Remove

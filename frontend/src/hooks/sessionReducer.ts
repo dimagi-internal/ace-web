@@ -1,4 +1,4 @@
-import type { Draft, Message, SessionState, WsEvent } from "../api/types";
+import type { Draft, Message, SessionState, WsEvent } from "../api/types.ws";
 
 // Pure reducer for SessionState — extracted from useSessionSocket so it
 // can be unit-tested without WebSocket plumbing. Side-effect events

@@ -1,6 +1,6 @@
 import { AlertTriangle, OctagonX } from "lucide-react";
 
-import type { Message } from "../api/types";
+import type { Message } from "../api/types.ws";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ToolCallPair } from "./chat/ToolCallPair";
 

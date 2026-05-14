@@ -1,4 +1,4 @@
-import type { Draft } from "../api/types";
+import type { Draft } from "../api/types.ws";
 
 export const IDLE_THRESHOLD_MS = 2_000;
 

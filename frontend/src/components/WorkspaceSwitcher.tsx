@@ -27,8 +27,8 @@ export function WorkspaceSwitcher() {
   const switcherTitle =
     all.length > 1
       ? `Switch workspace (${all.length} available)`
-      : current?.display_name
-        ? `Workspace: ${current.display_name}`
+      : current?.name
+        ? `Workspace: ${current.name}`
         : "Workspace";
   return (
     <div className="flex items-center gap-1.5">
@@ -47,11 +47,11 @@ export function WorkspaceSwitcher() {
           title={switcherTitle}
         >
           <option value="" disabled>
-            {current ? current.display_name : "Pick a workspace"}
+            {current ? current.name : "Pick a workspace"}
           </option>
           {all.map((w) => (
             <option key={w.slug} value={w.slug}>
-              {w.display_name}
+              {w.name}
             </option>
           ))}
         </select>

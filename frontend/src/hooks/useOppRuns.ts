@@ -1,5 +1,5 @@
 import { listOppRuns } from "../api/opps";
-import type { RunSummary } from "../api/types";
+import type { RunSummary } from "../api/types.ws";
 import { useApi } from "./useApi";
 
 /**

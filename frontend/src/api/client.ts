@@ -1,4 +1,4 @@
-import { type ApiEnvelope } from "./types";
+import { type ApiEnvelope } from "./types.ws";
 
 export class ApiError extends Error {
   constructor(public code: string, message: string) {

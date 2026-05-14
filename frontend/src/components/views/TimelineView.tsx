@@ -65,7 +65,7 @@ export function TimelineView({ oppSlug }: Props) {
     setDriveLoading(false);
 
     if (wantChat) {
-      fetchActivityFeed({ opp: oppSlug, type: "chat" })
+      fetchActivityFeed({ workspaceSlug, opp: oppSlug, type: "chat" })
         .then((p) => setChatEvents(p.items))
         .catch((e) => setError(String((e as Error)?.message ?? e)));
     } else {
@@ -74,7 +74,7 @@ export function TimelineView({ oppSlug }: Props) {
 
     if (wantDrive) {
       setDriveLoading(true);
-      fetchActivityFeed({ opp: oppSlug, type: driveTypesArg })
+      fetchActivityFeed({ workspaceSlug, opp: oppSlug, type: driveTypesArg })
         .then((p) => setDriveEvents(p.items))
         .catch((e) => setError(String((e as Error)?.message ?? e)))
         .finally(() => setDriveLoading(false));

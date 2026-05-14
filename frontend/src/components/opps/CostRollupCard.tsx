@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { CostRollup } from "../../api/types";
+import type { CostRollup } from "../../api/types.ws";
 import { formatDuration, formatUsd } from "../../lib/format";
 import { CostRollupDialog } from "./CostRollupDialog";
 

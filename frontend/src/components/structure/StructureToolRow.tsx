@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 
-import type { StructureToolNode } from "../../api/types";
+import type { StructureToolNode } from "../../api/types.ws";
 import { formatDuration } from "../../lib/format";
 import { StatusIcon } from "./StatusIcon";
 

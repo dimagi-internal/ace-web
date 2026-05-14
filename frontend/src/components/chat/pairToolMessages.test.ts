@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Message } from "../../api/types";
+import type { Message } from "../../api/types.ws";
 import {
   deriveToolStatus,
   pairToolMessages,

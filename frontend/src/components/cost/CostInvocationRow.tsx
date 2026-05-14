@@ -1,4 +1,4 @@
-import type { CostInvocation } from "../../api/types";
+import type { CostInvocation } from "../../api/types.ws";
 import { formatDuration, formatTokens, formatUsd, totalTokens } from "../../lib/format";
 
 interface Props {

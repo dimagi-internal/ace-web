@@ -4,7 +4,7 @@ import { ArrowDownUp, Plus, X } from "lucide-react";
 
 import { listOpps } from "../api/opps";
 import { ApiError } from "../api/client";
-import type { OppCard } from "../api/types";
+import type { OppCard } from "../api/types.ws";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { CompareWithDialog } from "../components/opps/CompareWithDialog";
 import { DeleteOppDialog } from "../components/opps/DeleteOppDialog";

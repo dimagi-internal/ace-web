@@ -8,7 +8,7 @@
 // chip helpers.
 import { AlertTriangle, ExternalLink, RotateCcw } from "lucide-react";
 
-import type { JudgeCriterionValue, Step } from "@/api/types";
+import type { JudgeCriterionValue, Step } from "@/api/types.ws";
 import { cn } from "@/lib/utils";
 
 export function ProducerSection({ step }: { step: Step }) {

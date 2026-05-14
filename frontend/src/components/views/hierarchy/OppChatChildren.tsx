@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { MessageSquare } from "lucide-react";
 
 import { listSessions } from "@/api/sessions";
-import type { Session } from "@/api/types";
+import type { Session } from "@/api/types.ws";
 import { relativeTime } from "@/lib/relativeTime";
 
 interface Props {
