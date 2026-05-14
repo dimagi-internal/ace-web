@@ -21,6 +21,7 @@ dependencies = [
     "pydantic>=2.8,<3.0",
     "email-validator>=2.0",
     "pyyaml>=6.0",
+    "ruamel.yaml>=0.18",
     "uvicorn[standard]>=0.30",
     "whitenoise>=6.7",
     "fastmcp>=0.4",

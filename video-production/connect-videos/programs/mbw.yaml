@@ -1,0 +1,59 @@
+slug: mbw
+workspace: dimagi-team
+name: Mother-Baby Wellness
+country_focus: Nigeria
+status: Piloting 2026
+tagline: "Breastfeeding promotion and maternal mental health."
+program_url: https://labs.connect.dimagi.com/
+
+scene:
+  clips:
+    - assets/programs/mbw/drone-village.mp4
+    - assets/programs/mbw/mother-baby-01.jpg
+    - assets/programs/mbw/flw-home-visit.mp4
+  lower_third: "Nigeria · 2026 pilot"
+
+problem:
+  big: "29%"
+  caption: "exclusive breastfeeding rate in Nigeria, under 6 months"
+  source: "NDHS 2018"
+
+product:
+  beats:
+    - asset: assets/programs/mbw/learn-cert.mp4
+      caption: "FLW certified on EBF counseling"
+    - asset: assets/programs/mbw/deliver-visit.mp4
+      caption: "Home visit guided, GPS-stamped"
+    - asset: assets/programs/mbw/payment-notif.mp4
+      caption: "Paid on verification"
+
+impact:
+  - big: "$320K"
+    caption: "GiveWell pilot grant"
+  - big: "2,000"
+    caption: "mother–baby pairs in pilot cohort"
+
+narration:
+  generator: manual
+  prompt_version: v2
+  start_seconds: 0
+  script: |
+    Connect by Dimagi pays for verified service delivery —
+    not promises, not effort.
+    Frontline Workers learn the protocol.
+    Deliver visits in their community.
+    Verify with photos and GPS.
+    Get paid the moment delivery confirms.
+    In Nigeria, fewer than three in ten babies are exclusively
+    breastfed in their first six months — a gap with lifelong consequences.
+    The Mother-Baby Wellness pilot is closing it, one home visit at a time.
+    Backed by a three-hundred-and-twenty-thousand-dollar GiveWell grant.
+    Two thousand mother–baby pairs in the first cohort.
+
+voice:
+  # Charlotte — soft, warm female; works for documentary narration.
+  # Other soft options to try: Lily (pFZP5JQG7iQjIQuC4Bku),
+  # Sarah (EXAVITQu4vr4xnSDxMaL), Alice (Xb7hH8MSUJpSbSDYk0k2).
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

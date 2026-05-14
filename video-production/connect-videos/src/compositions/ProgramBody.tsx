@@ -1,0 +1,148 @@
+import { AbsoluteFill, Sequence, Video, staticFile, useVideoConfig } from "remotion";
+import { theme } from "../theme";
+import { Lower3rd } from "../components/Lower3rd";
+import { KenBurns } from "../components/KenBurns";
+import { StatCard } from "../components/StatCard";
+import { AppScreen } from "../components/AppScreen";
+import {
+  asResolvedClip,
+  distributeClipDurations,
+  type ProgramSpec,
+} from "../lib/spec";
+import type { ResolvedBeat } from "../lib/beats";
+
+interface Props {
+  spec: ProgramSpec;
+  bodyBeats: ResolvedBeat[]; // scene, problem, product, impact (order from defaults)
+}
+
+const isVideo = (s: string) => /\.(mp4|webm|mov)$/i.test(s);
+
+const Scene: React.FC<{ spec: ProgramSpec; durationFrames: number }> = ({
+  spec,
+  durationFrames,
+}) => {
+  const { fps } = useVideoConfig();
+  const totalSec = durationFrames / fps;
+  const clips = spec.scene.clips.map(asResolvedClip);
+  const durations = distributeClipDurations(clips, totalSec);
+  let cursor = 0;
+  return (
+    <AbsoluteFill style={{ background: theme.colors.foreground }}>
+      {clips.map((clip, i) => {
+        const startFrame = Math.round(cursor * fps);
+        const lengthFrames = Math.max(1, Math.round(durations[i] * fps));
+        cursor += durations[i];
+        const src = clip.asset.startsWith("http") ? clip.asset : staticFile(clip.asset);
+        const startFrom = Math.round(clip.start_seconds * fps);
+        return (
+          <Sequence key={i} from={startFrame} durationInFrames={lengthFrames}>
+            {isVideo(clip.asset) ? (
+              <AbsoluteFill>
+                <Video
+                  src={src}
+                  startFrom={startFrom}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  onError={() => {
+                    /* Missing asset — render blank; drop real file in cache to fix */
+                  }}
+                />
+              </AbsoluteFill>
+            ) : (
+              <KenBurns src={src} durationFrames={lengthFrames} />
+            )}
+          </Sequence>
+        );
+      })}
+      <Lower3rd text={spec.scene.lower_third} />
+    </AbsoluteFill>
+  );
+};
+
+const ProductBeats: React.FC<{ spec: ProgramSpec; durationFrames: number }> = ({
+  spec,
+  durationFrames,
+}) => {
+  const { fps } = useVideoConfig();
+  const totalSec = durationFrames / fps;
+  // Reuse the same distribution helper by mapping product beats into a
+  // ResolvedClipRef-shaped array.
+  const refs = spec.product.beats.map((b) => ({
+    asset: b.asset,
+    start_seconds: b.start_seconds ?? 0,
+    duration_seconds: b.duration_seconds,
+  }));
+  const durations = distributeClipDurations(refs, totalSec);
+  let cursor = 0;
+  return (
+    <AbsoluteFill style={{ background: theme.colors.background }}>
+      {spec.product.beats.map((b, i) => {
+        const startFrame = Math.round(cursor * fps);
+        const lengthFrames = Math.max(1, Math.round(durations[i] * fps));
+        cursor += durations[i];
+        return (
+          <Sequence key={i} from={startFrame} durationInFrames={lengthFrames}>
+            <AppScreen
+              asset={b.asset}
+              caption={b.caption}
+              startSeconds={b.start_seconds ?? 0}
+            />
+          </Sequence>
+        );
+      })}
+    </AbsoluteFill>
+  );
+};
+
+const ImpactStats: React.FC<{ spec: ProgramSpec; durationFrames: number }> = ({
+  spec,
+  durationFrames,
+}) => {
+  const slot = Math.floor(durationFrames / spec.impact.length);
+  return (
+    <AbsoluteFill>
+      {spec.impact.map((s, i) => (
+        <Sequence key={i} from={i * slot} durationInFrames={slot}>
+          <StatCard big={s.big} caption={s.caption} source={s.source} />
+        </Sequence>
+      ))}
+    </AbsoluteFill>
+  );
+};
+
+export const ProgramBody: React.FC<Props> = ({ spec, bodyBeats }) => {
+  const bodyStart = bodyBeats[0].startFrame;
+  const renderBeat = (b: ResolvedBeat) => {
+    switch (b.kind) {
+      case "body_scene":
+        return <Scene spec={spec} durationFrames={b.durationFrames} />;
+      case "body_problem_stat":
+        return (
+          <StatCard
+            big={spec.problem.big}
+            caption={spec.problem.caption}
+            source={spec.problem.source}
+          />
+        );
+      case "body_product_beats":
+        return <ProductBeats spec={spec} durationFrames={b.durationFrames} />;
+      case "body_impact_stats":
+        return <ImpactStats spec={spec} durationFrames={b.durationFrames} />;
+      default:
+        return null;
+    }
+  };
+  return (
+    <>
+      {bodyBeats.map((b) => (
+        <Sequence
+          key={b.id}
+          from={b.startFrame - bodyStart}
+          durationInFrames={b.durationFrames}
+        >
+          {renderBeat(b)}
+        </Sequence>
+      ))}
+    </>
+  );
+};

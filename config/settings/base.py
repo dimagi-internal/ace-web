@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "apps.workspaces.apps.WorkspacesConfig",
     "apps.activity.apps.ActivityConfig",
     "apps.mobile.apps.MobileConfig",
+    "apps.videos.apps.VideosConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -213,6 +214,17 @@ if not _DEFAULT_PLUGIN_PATH.is_dir():
             _DEFAULT_PLUGIN_PATH = _maybe
             break
 ACE_PLUGIN_PATH = env.str("ACE_PLUGIN_PATH", default=str(_DEFAULT_PLUGIN_PATH))
+
+# --- Videos (clip-explorer) ---
+# Root of the connect-videos Node project that ships the clip-explorer
+# tooling. Django reads through to its programs/*.yaml and the generated
+# out/clip-explorer/<slug>/ artifacts; renders shell out to its
+# `npm run …` scripts. Default points at the bundled checkout under this
+# repo; override in CI/sandbox setups via the env var.
+ACE_VIDEOS_ROOT = env.str(
+    "ACE_VIDEOS_ROOT",
+    default=str(BASE_DIR / "video-production" / "connect-videos"),
+)
 
 # --- Google Drive service account ---
 # SA JSON key for the shared ACE Drive (read/write on the Shared Drive

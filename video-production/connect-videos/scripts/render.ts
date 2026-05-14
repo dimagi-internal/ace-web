@@ -1,0 +1,253 @@
+#!/usr/bin/env tsx
+import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
+import { execSync } from "node:child_process";
+import { loadProgramSpec } from "../src/lib/spec.node";
+import { loadDefaults, resolveBeats } from "../src/lib/beats.node";
+import { synthesize, synthesizePerBeat, type PerBeatNarration } from "../src/lib/voiceover";
+import { estimateCaptionTimeline, captionsFromBeats } from "../src/lib/captions";
+import { resolveAssetRefs, formatMissingError } from "../src/lib/asset-resolver.node";
+
+interface CliArgs {
+  program: string;
+  draft: boolean;
+  noVoice: boolean;
+  noCaptions: boolean;
+}
+
+function parseArgs(): CliArgs {
+  const args = process.argv.slice(2);
+  const program = args.find((a) => a.startsWith("--program="))?.split("=")[1];
+  if (!program) {
+    console.error(
+      "Usage: npm run render -- --program=<slug> [--draft] [--no-voice] [--no-captions]"
+    );
+    process.exit(2);
+  }
+  return {
+    program,
+    draft: args.includes("--draft"),
+    noVoice: args.includes("--no-voice"),
+    noCaptions: args.includes("--no-captions"),
+  };
+}
+
+async function main() {
+  const cli = parseArgs();
+  const root = process.cwd();
+  const defaults = loadDefaults(path.join(root, "programs/_defaults.yaml"));
+  const rawSpec = loadProgramSpec(path.join(root, `programs/${cli.program}.yaml`));
+
+  // Resolve @manifest aliases -> concrete asset paths and materialize cache
+  // entries as symlinks under public/assets/programs/<slug>/. If anything is
+  // missing, bail out with a clear hydrate instruction.
+  const { spec, missing } = resolveAssetRefs(rawSpec, {
+    programSlug: cli.program,
+    publicRoot: path.join(root, "public"),
+  });
+  if (missing.length > 0) {
+    console.error(formatMissingError(missing, cli.program));
+    process.exit(1);
+  }
+
+  const timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
+
+  if (!spec.narration.script.trim()) {
+    console.error(
+      `programs/${cli.program}.yaml has empty narration.script. Run "npm run narrate -- --program=${cli.program}" first, or set it manually.`
+    );
+    process.exit(1);
+  }
+
+  // Voiceover — two paths:
+  //   - by_beat: synthesize one audio file per beat with non-empty text.
+  //     Each beat's audio is placed at its beat's start time. Solves the
+  //     "voice ends before video ends" issue because narration is now
+  //     anchored to visual structure, not a single packed-from-start blob.
+  //   - script-only (legacy): one big VO clip, delayed by start_seconds.
+  let voicePath: string | null = null;
+  let perBeat: PerBeatNarration[] = [];
+  if (!cli.noVoice && spec.voice.provider === "elevenlabs") {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) {
+      console.warn(
+        "ELEVENLABS_API_KEY not set; rendering silent video. Pass --no-voice to silence this warning."
+      );
+    } else if (spec.narration.by_beat) {
+      console.log("Synthesizing per-beat voiceover…");
+      perBeat = await synthesizePerBeat({
+        byBeat: spec.narration.by_beat,
+        voiceId: spec.voice.voice_id,
+        model: spec.voice.model,
+        cacheDir: path.join(root, "assets/audio"),
+        apiKey,
+      });
+      console.log(`Per-beat VO ready: ${perBeat.length} clips`);
+    } else {
+      console.log("Synthesizing voiceover…");
+      voicePath = await synthesize({
+        script: spec.narration.script,
+        voiceId: spec.voice.voice_id,
+        model: spec.voice.model,
+        cacheDir: path.join(root, "assets/audio"),
+        apiKey,
+      });
+      console.log(`Voiceover ready: ${path.relative(root, voicePath)}`);
+    }
+  }
+
+  // Narration window — defaults to the full pre-outro span so the VO can
+  // start at frame 1 if narration.start_seconds is 0.
+  const outroBeat = timeline.beats.find((b) => b.kind === "outro_cta");
+  const outroSeconds = outroBeat ? outroBeat.durationFrames / timeline.fps : 0;
+  const totalSeconds = timeline.totalFrames / timeline.fps;
+  const narrationStartSec = spec.narration.start_seconds;
+  const narrationDurationSec =
+    spec.narration.duration_seconds ?? Math.max(1, totalSeconds - outroSeconds - narrationStartSec);
+  const narrationStartFrame = Math.round(narrationStartSec * timeline.fps);
+  // Captions: prefer per-beat text when provided (narration.by_beat) for
+  // tight visual-caption sync. Otherwise fall back to the older
+  // sentence-proportional estimator over the full narration window.
+  const captions = cli.noCaptions
+    ? []
+    : spec.narration.by_beat
+      ? captionsFromBeats(timeline.beats, spec.narration.by_beat)
+      : estimateCaptionTimeline({
+          script: spec.narration.script,
+          durationSeconds: narrationDurationSec,
+          fps: timeline.fps,
+          startFrame: narrationStartFrame,
+        });
+
+  // Compose props for Remotion.
+  // Write props to a temp JSON file so minimist doesn't mis-parse JSON arrays
+  // (e.g., `--props={"captions":[]}` confuses minimist's [] detection).
+  const props = { programSlug: cli.program, captions };
+  const tmpPropsFile = path.join(os.tmpdir(), `remotion-props-${Date.now()}.json`);
+  fs.writeFileSync(tmpPropsFile, JSON.stringify(props));
+  const propsArg = `--props=${JSON.stringify(tmpPropsFile)}`;
+  const gitSha = safeSha();
+  const outName = `${spec.slug}-${cli.draft ? "draft" : "v" + gitSha}.mp4`;
+  const outDir = path.join(root, "out");
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+  const outPath = path.join(outDir, outName);
+  const widthHeightArgs = cli.draft ? ["--width=1280", "--height=720"] : [];
+  const crf = cli.draft ? "--crf=28" : "--crf=22";
+
+  // Render via remotion CLI. Audio is muxed in a second step via ffmpeg
+  // (see below) so we keep the Remotion render purely visual.
+  const cmd = [
+    "npx remotion render src/Root.tsx ProgramVideo",
+    JSON.stringify(outPath),
+    propsArg,
+    ...widthHeightArgs,
+    crf,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  console.log(`Rendering → ${path.relative(root, outPath)}…`);
+  try {
+    execSync(cmd, { stdio: "inherit" });
+  } finally {
+    // Clean up temp props file
+    try { fs.unlinkSync(tmpPropsFile); } catch { /* ignore */ }
+  }
+
+  // Mux voiceover (mid-video) and optional music bed (full duration) into
+  // the silent Remotion render. Builds the ffmpeg filter graph dynamically
+  // based on which audio sources are present.
+  if (voicePath || perBeat.length > 0 || defaults.music_bed) {
+    const muxed = outPath.replace(/\.mp4$/, "-mux.mp4");
+    const voiceOffsetMs = Math.round(narrationStartSec * 1000);
+
+    const inputs: string[] = [`-i ${JSON.stringify(outPath)}`];
+    const filterParts: string[] = [];
+    const mixLabels: string[] = [];
+
+    if (perBeat.length > 0) {
+      // Map each beat narration to its beat's start time. Each clip is
+      // hard-capped to its beat duration via atrim so adjacent beats
+      // never overlap in the mix — overflow audio is preferred-cut at
+      // the beat boundary, which is loud-and-clear feedback to shorten
+      // that beat's caption text.
+      const beatById = new Map(timeline.beats.map((b) => [b.id, b]));
+      for (const n of perBeat) {
+        const beat = beatById.get(n.beatId);
+        if (!beat) continue;
+        const offsetMs = Math.round((beat.startFrame / timeline.fps) * 1000);
+        const beatDur = (beat.durationFrames / timeline.fps).toFixed(3);
+        inputs.push(`-i ${JSON.stringify(n.audioPath)}`);
+        const idx = inputs.length - 1;
+        const label = `[v${idx}]`;
+        filterParts.push(
+          `[${idx}:a]atrim=duration=${beatDur},asetpts=PTS-STARTPTS,adelay=${offsetMs}|${offsetMs},apad${label}`
+        );
+        mixLabels.push(label);
+      }
+    } else if (voicePath) {
+      inputs.push(`-i ${JSON.stringify(voicePath)}`);
+      const voIdx = inputs.length - 1;
+      filterParts.push(
+        `[${voIdx}:a]adelay=${voiceOffsetMs}|${voiceOffsetMs},apad[vo]`
+      );
+      mixLabels.push("[vo]");
+    }
+
+    if (defaults.music_bed) {
+      const mb = defaults.music_bed;
+      const musicAbs = path.isAbsolute(mb.asset) ? mb.asset : path.join(root, mb.asset);
+      if (!fs.existsSync(musicAbs)) {
+        console.warn(
+          `music_bed asset not found at ${musicAbs}; skipping music bed.`
+        );
+      } else {
+        inputs.push(`-i ${JSON.stringify(musicAbs)}`);
+        const mIdx = inputs.length - 1;
+        const dur = mb.duration_seconds ?? totalSeconds;
+        filterParts.push(
+          `[${mIdx}:a]atrim=start=${mb.start_seconds}:duration=${dur},asetpts=PTS-STARTPTS,volume=${mb.volume_db}dB[bg]`
+        );
+        mixLabels.push("[bg]");
+      }
+    }
+
+    const filterComplex =
+      mixLabels.length > 1
+        ? [
+            ...filterParts,
+            `${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0[mix]`,
+          ].join("; ")
+        : filterParts.join("; ");
+
+    const mapLabel = mixLabels.length > 1 ? "[mix]" : mixLabels[0];
+
+    const ffmpegCmd = [
+      "ffmpeg -y",
+      ...inputs,
+      `-filter_complex ${JSON.stringify(filterComplex)}`,
+      "-c:v copy -c:a aac",
+      `-map 0:v:0 -map ${JSON.stringify(mapLabel)}`,
+      `-t ${totalSeconds}`,
+      JSON.stringify(muxed),
+    ].join(" ");
+    console.log(`Muxing audio → ${path.relative(root, muxed)}…`);
+    execSync(ffmpegCmd, { stdio: "inherit" });
+  }
+
+  console.log("Done.");
+}
+
+function safeSha(): string {
+  try {
+    return execSync("git rev-parse --short HEAD").toString().trim();
+  } catch {
+    return "nogit";
+  }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

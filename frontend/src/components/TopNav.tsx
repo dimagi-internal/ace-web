@@ -9,6 +9,7 @@ const WORKSPACE_NAV = [
   { label: "Opps", subPath: "opps" },
   { label: "Sessions", subPath: "sessions" },
   { label: "Chat", subPath: "chat" },
+  { label: "Videos", subPath: "videos" },
 ];
 
 // "System" sounded operational and was the only entry into the
