@@ -22,7 +22,17 @@ from apps.common.schemas import StrictModel
 
 
 class ArtifactOut(StrictModel):
-    """One entry in the plugin's artifact-manifest.ts."""
+    """One entry in the plugin's artifact-manifest.ts.
+
+    Uses ``extra="allow"`` because the artifact manifest evolves with the
+    plugin (new fields like ``phase``, ``role``, etc. appear over time);
+    pinning the schema causes the System Overview to 500 every time the
+    plugin adds a metadata field. Tradeoff: drift not caught at schema
+    validation, but the System Overview is a read-through display and
+    new fields just get passed through to the frontend.
+    """
+
+    model_config = ConfigDict(extra="allow", from_attributes=True, str_strip_whitespace=True)
 
     path: str
     description: str = ""
@@ -114,7 +124,7 @@ class McpToolOut(StrictModel):
     model_config = ConfigDict(extra="allow", from_attributes=True, str_strip_whitespace=True)
 
     name: str
-    description: str = ""
+    description: str | None = None
     used_by: list[str] = []
 
 

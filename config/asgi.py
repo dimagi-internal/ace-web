@@ -43,12 +43,20 @@ _channels_app = ProtocolTypeRouter(
 # FastMCP ASGI app — mounted at /api/mcp.
 # ``make_asgi_app()`` calls ``FastMCP.from_openapi`` once at startup and
 # returns a Starlette app; the internal path is ``/mcp`` because Starlette's
-# Mount strips the ``/api/mcp`` prefix before passing the request through.
+# Mount strips the prefix before passing the request through.
+#
+# Path-prefix subtlety: ace-web runs behind nginx with FORCE_SCRIPT_NAME=/ace
+# on connect-labs. Django strips the /ace prefix internally via its
+# script-name handling, but the Starlette ``Router`` here runs BEFORE Django
+# — so the incoming path is ``/ace/api/mcp/...`` in prod and ``/api/mcp/...``
+# locally. Read the prefix from the env (same source as Django settings)
+# and prepend it to the Mount path so both environments resolve correctly.
+_SCRIPT_NAME = os.environ.get("FORCE_SCRIPT_NAME", "").rstrip("/")
 _mcp_app = make_asgi_app()
 
 application = Router(
     routes=[
-        Mount("/api/mcp", app=_mcp_app),
+        Mount(f"{_SCRIPT_NAME}/api/mcp", app=_mcp_app),
         # Catch-all: everything else → Channels / Django
         Mount("/", app=_channels_app),
     ],
