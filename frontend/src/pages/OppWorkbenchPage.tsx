@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { getOpp } from "../api/opps";
@@ -53,6 +53,7 @@ type LoadState =
 export default function OppWorkbenchPage() {
   const { slug = "", runId: pathRunId, skill, workspaceSlug } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   // ?run_id= query param takes precedence; fall back to :runId path segment
   // (kept for backwards-compat with existing /opps/:slug/runs/:runId routes).
   const runId = searchParams.get("run_id") ?? pathRunId;
@@ -143,12 +144,17 @@ export default function OppWorkbenchPage() {
         selectedRunId={snapshot.selected_run_id ?? null}
         onRunChange={(id) => setSearchParams({ run_id: id })}
         onRefresh={() => load()}
-        onRunDeleted={() => {
-          // The just-trashed run is gone from Drive but ?run_id=<deleted>
-          // is still in the URL — re-fetching with that id 404s and
-          // surfaces a confusing error. Clear the param so the page
-          // resolves to the new latest run (or to "Cycle hasn't
-          // started yet" if no runs remain).
+        onRunDeleted={(deletedRunId) => {
+          // The just-trashed run is gone from Drive. If the URL pins it
+          // (either as ?run_id= or as a /runs/<id> path segment), the next
+          // snapshot fetch 404s. Always clear ?run_id; ALSO navigate off
+          // the path segment when it matches the deleted run, otherwise
+          // load() to refresh the runs strip.
+          if (pathRunId && pathRunId === deletedRunId && workspaceSlug && slug) {
+            // navigate replaces the URL, which also clears any ?run_id query.
+            navigate(`/w/${workspaceSlug}/opps/${slug}`, { replace: true });
+            return;
+          }
           setSearchParams({}, { replace: true });
           load();
         }}

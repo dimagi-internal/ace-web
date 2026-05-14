@@ -15,8 +15,12 @@ interface RunSelectorProps {
   runs: RunSummary[];
   selectedRunId: string | null;
   onChange: (runId: string) => void;
-  /** Called after a run is trashed so the parent can refetch the snapshot. */
-  onRunDeleted?: () => void;
+  /**
+   * Called after a run is trashed so the parent can refetch the snapshot.
+   * Receives the runId of the trashed run so the caller can compare it to
+   * any URL-pinned run id and navigate off the now-404 path.
+   */
+  onRunDeleted?: (runId: string) => void;
 }
 
 // The plugin uses YYYYMMDD-HHMM as the run id (e.g. "20260503-0835").
@@ -116,9 +120,9 @@ export function RunSelector({
           oppSlug={oppSlug}
           runId={deleteTarget.run_id}
           runLabel={formatRunId(deleteTarget.run_id)}
-          onDeleted={() => {
+          onDeleted={(deletedRunId) => {
             setDeleteTarget(null);
-            onRunDeleted?.();
+            onRunDeleted?.(deletedRunId);
           }}
         />
       )}

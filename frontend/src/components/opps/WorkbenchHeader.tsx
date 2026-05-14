@@ -38,7 +38,7 @@ interface Props {
    * clear the ``?run_id=`` URL param when the active run gets deleted —
    * otherwise the next snapshot fetch 404s on the now-gone run.
    */
-  onRunDeleted?: () => void;
+  onRunDeleted?: (runId: string) => void;
   /**
    * Caller-fetched cost rollup. Lifted from inside CostRollupCard so the
    * lifecycle phase rows can share the same fetch via ``useOppCostRollup``
