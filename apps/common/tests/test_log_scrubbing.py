@@ -2,18 +2,16 @@ import logging
 
 import pytest
 from django.contrib.auth import get_user_model
-from rest_framework.test import APIClient
 
 REAL = "sk-ant-oat01-" + "Z" * 50  # distinctive enough to spot in any log line
 
 
 @pytest.mark.django_db
-def test_upload_does_not_log_full_token(caplog, monkeypatch):
+def test_upload_does_not_log_full_token(caplog, monkeypatch, client):
     """Capture all logs emitted during an upload and assert the full access token
     never appears as a substring. Only the 15-char prefix is allowed."""
     user = get_user_model().objects.create_user(email="log@dimagi.com")
-    client = APIClient()
-    client.force_authenticate(user=user)
+    client.force_login(user)
 
     # Stub the live probe so we don't run claude in CI.
     from apps.common import auth_flow
@@ -22,10 +20,11 @@ def test_upload_does_not_log_full_token(caplog, monkeypatch):
     )
 
     with caplog.at_level(logging.DEBUG):
+        import json
         resp = client.post(
-            "/api/auth/cli/upload",
-            {"claudeAiOauth": {"accessToken": REAL, "refreshToken": "r"}},
-            format="json",
+            "/api/v2/auth/cli/upload",
+            data=json.dumps({"claudeAiOauth": {"accessToken": REAL, "refreshToken": "r"}}),
+            content_type="application/json",
         )
         assert resp.status_code == 200
 

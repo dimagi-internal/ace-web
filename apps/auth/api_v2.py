@@ -13,6 +13,8 @@ from apps.api_v2.auth import session_auth
 from apps.api_v2.errors import TYPE_FORBIDDEN, ProblemError
 
 from .schemas import (
+    CliAuthExpectedShapeOut,
+    CliAuthPromoteOut,
     CliAuthStatusOut,
     CliAuthUploadOut,
     E2ELoginIn,
@@ -316,3 +318,91 @@ def nova_auth_disconnect(request: HttpRequest) -> HttpResponse:
     nova_auth_flow.clear_blob()
     log.info("nova: cleared global blob (admin=%s)", request.user.email)
     return JsonResponse({"disconnected": True})
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/cli/promote — promote user credential blob to global scope
+# ---------------------------------------------------------------------------
+
+
+def promote_cli_credentials(user) -> dict:
+    """Copy the caller's UserCredential blob to the global SystemConfig row.
+
+    The monkeypatch target in contract tests is this module-level function.
+    """
+    import json as _json
+
+    from apps.common import auth_flow
+    from apps.common.auth_views import _can_write_global
+    from apps.common.models import UserCredential
+
+    if not _can_write_global(user):
+        raise ProblemError(
+            403,
+            "Promote requires staff or automation account",
+            type_=TYPE_FORBIDDEN,
+        )
+
+    cred = UserCredential.objects.filter(user=user).first()
+    if cred is None:
+        raise ProblemError(400, "No personal blob to promote — upload one first")
+
+    try:
+        blob = _json.loads(cred.blob_encrypted)
+    except ValueError as exc:
+        raise ProblemError(400, "Personal blob is corrupt") from exc
+
+    try:
+        auth_flow.store_credentials_blob(blob)
+        authenticated = auth_flow.validate_stored_token()
+    except ValueError as exc:
+        raise ProblemError(400, str(exc)) from exc
+
+    return {
+        "promoted": True,
+        "authenticated": authenticated,
+        "token_prefix": cred.token_prefix,
+    }
+
+
+@router.post(
+    "/cli/promote",
+    auth=session_auth,
+    response={200: CliAuthPromoteOut},
+    summary="Promote user CLI credential to global scope (staff/automation only)",
+)
+def cli_auth_promote(request: HttpRequest) -> HttpResponse:
+    from django.http import JsonResponse
+
+    result = promote_cli_credentials(request.user)
+    payload = CliAuthPromoteOut.model_validate(result).model_dump(mode="json")
+    return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# GET /auth/cli/expected-shape — public schema introspection
+# ---------------------------------------------------------------------------
+
+_EXPECTED_BLOB_SHAPE = {
+    "claudeAiOauth": {
+        "accessToken": "sk-ant-oat01-<...>",
+        "refreshToken": "<...>",
+        "expiresAt": 0,
+        "scopes": [],
+    },
+}
+
+
+@router.get(
+    "/cli/expected-shape",
+    auth=None,
+    response={200: CliAuthExpectedShapeOut},
+    summary="Expected CLI credential blob shape (public)",
+)
+def cli_auth_expected_shape(request: HttpRequest) -> HttpResponse:
+    from django.http import JsonResponse
+
+    payload = CliAuthExpectedShapeOut.model_validate({"shape": _EXPECTED_BLOB_SHAPE}).model_dump(
+        mode="json"
+    )
+    return JsonResponse(payload)

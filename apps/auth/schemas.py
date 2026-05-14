@@ -71,6 +71,20 @@ class CliAuthUploadOut(StrictModel):
     scope: str  # "user" | "global"
 
 
+class CliAuthPromoteOut(StrictModel):
+    """POST /api/auth/cli/promote — promote user blob to global scope."""
+
+    promoted: bool
+    authenticated: bool
+    token_prefix: str | None = None
+
+
+class CliAuthExpectedShapeOut(StrictModel):
+    """GET /api/auth/cli/expected-shape — schema introspection (public)."""
+
+    shape: dict
+
+
 # ── E2E login (automation) ────────────────────────────────────────────────────
 
 

@@ -1,4 +1,3 @@
-import { apiFetch } from "./client";
 import { apiV2 } from "./client.v2";
 import type { components } from "./generated";
 import type { CliAuthPromoteResult, CliAuthStatus, NovaAuthStatus } from "./types.ws";
@@ -17,10 +16,12 @@ export const cliAuthStatus = async (): Promise<CliAuthStatus> => {
   };
 };
 
-// /api/auth/cli/promote is a legacy DRF endpoint not yet in v2 — keep using
-// legacy client until v2 adds it.
-export const promoteCliAuthToGlobal = (): Promise<CliAuthPromoteResult> =>
-  apiFetch<CliAuthPromoteResult>("/api/auth/cli/promote", { method: "POST" });
+export const promoteCliAuthToGlobal = async (): Promise<CliAuthPromoteResult> => {
+  const { response } = await apiV2.POST("/api/v2/auth/cli/promote", {});
+  if (!response.ok) throw new Error(`Promote failed: ${response.status}`);
+  const data = (await response.json()) as CliAuthPromoteResult;
+  return data;
+};
 
 export const novaAuthStatus = async (): Promise<NovaAuthStatus> => {
   const { data, error } = await apiV2.GET("/api/v2/auth/nova/status");
