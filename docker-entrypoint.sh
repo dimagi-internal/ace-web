@@ -97,4 +97,53 @@ elif [ ! -f "$ACE_ENV_TPL" ]; then
     echo "[entrypoint] No .env.tpl found at $ACE_ENV_TPL — skipping op inject. Did the ACE plugin clone succeed?"
 fi
 
+# Register the user-scope Nova MCP shadow override.
+#
+# The Nova plugin's bundled MCP entry is OAuth-only. ace-web injects a
+# refreshed OAuth bearer token into the plugin's rewritten .mcp.json via
+# ``${NOVA_BEARER_TOKEN:-}`` (see Dockerfile + CLIBackend._stage_env_for),
+# but that approach has two known problems on the production stack:
+#
+#   1. nova-plugin#2 — architect subagents dispatched via Agent
+#      occasionally halt at turn 0 with zero tool calls; the headersHelper-
+#      based OAuth flow doesn't reliably bind ``mcp__plugin_nova_nova__*``
+#      tools to subagent contexts.
+#   2. nova-plugin#13 — when both auth paths are visible, the architect
+#      subagent uses a different Nova identity than the level-0 PAT,
+#      producing apps invisible to ``upload_to_hq``.
+#
+# The same hack ``bin/ace-setup`` runs on local operator machines is the
+# documented workaround until nova-plugin#16 ships first-class PAT
+# support: register a user-scope MCP entry at the same URL with a bearer
+# header. Claude Code's URL-signature dedup picks the user-scope entry
+# over the plugin's OAuth entry; tools surface as ``mcp__nova__*`` and
+# the architect subagent sees them. The plugin's OAuth entry continues
+# to be the fallback when NOVA_API_KEY is unset.
+#
+# Writes to ``$HOME/.claude.json``. CLIBackend._stage_env_for symlinks
+# this file into each per-session staged HOME so subprocess Claude Code
+# instances inherit the override.
+NOVA_KEY=""
+if [ -f "$ACE_ENV_PATH" ]; then
+    NOVA_KEY="$(grep -E '^NOVA_API_KEY=' "$ACE_ENV_PATH" | head -1 \
+        | sed -E 's/^NOVA_API_KEY=//' | sed -E 's/^"(.*)"$/\1/')"
+fi
+if [ -z "$NOVA_KEY" ] || [ "${NOVA_KEY#op://}" != "$NOVA_KEY" ]; then
+    echo "[entrypoint] nova_mcp: NOVA_API_KEY not resolved — Nova MCP will fall back to OAuth flow (architect subagents may halt at turn 0; see nova-plugin#2)"
+elif ! command -v claude >/dev/null 2>&1; then
+    echo "[entrypoint] nova_mcp: claude CLI not on PATH — cannot register user-scope override"
+else
+    # Idempotent: remove any prior user-scope entry (e.g. stale token from
+    # a previous container generation), then re-add with the current key.
+    claude mcp remove nova --scope user >/dev/null 2>&1 || true
+    if claude mcp add nova "https://mcp.commcare.app/mcp" \
+            --transport http \
+            --scope user \
+            --header "Authorization: Bearer $NOVA_KEY" >/dev/null 2>&1; then
+        echo "[entrypoint] nova_mcp: user-scope bearer override registered at https://mcp.commcare.app/mcp"
+    else
+        echo "[entrypoint] nova_mcp: claude mcp add failed — Nova MCP will fall back to OAuth flow"
+    fi
+fi
+
 exec "$@"
