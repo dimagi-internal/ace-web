@@ -85,7 +85,7 @@ def test_post_creates_token_and_redirects(client, user):
     assert token.revoked_at is None
 
     # Redirect target preserves cb host + path, includes token + state, omits cb/label.
-    location = urlparse(resp["Location"])
+    location = urlparse(resp["Location"])  # pyright: ignore[reportIndexIssue]
     assert location.scheme == "http"
     assert location.netloc == "127.0.0.1:54321"
     assert location.path == "/cb"
@@ -103,7 +103,7 @@ def test_unauthenticated_redirects_to_login():
     resp = c.get(reverse("auth:cli_authorize"), _qs())
     # @login_required → 302 to login page, ?next= preserves the query string.
     assert resp.status_code == 302
-    location = urlparse(resp["Location"])
+    location = urlparse(resp["Location"])  # pyright: ignore[reportIndexIssue]
     assert location.path == reverse("auth:login")
     next_param = parse_qs(location.query)["next"][0]
     assert "/auth/cli/authorize/" in next_param

@@ -122,7 +122,7 @@ CHANNEL_LAYERS = {
 # in config/settings/test.py anyway).
 if REDIS_URL:
     _cache_url = REDIS_URL
-    if "?db=" not in _cache_url and "/0" in _cache_url:
+    if "?db=" not in _cache_url and "/0" in _cache_url:  # pyright: ignore[reportOperatorIssue]
         _cache_url = _cache_url.replace("/0", "/1", 1)
     CACHES = {
         "default": {

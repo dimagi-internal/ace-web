@@ -1,0 +1,16 @@
+name: Type check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  basedpyright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.11
+      - run: uv sync --extra dev
+      - run: uv run basedpyright apps/ config/

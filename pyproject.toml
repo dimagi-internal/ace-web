@@ -28,6 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "basedpyright>=1.20",
     "fakeredis[aiohttp]>=2.23",
     "pytest>=8.0",
     "pytest-django>=4.8",
@@ -69,6 +70,66 @@ extend-exclude = ["**/migrations/*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.basedpyright]
+include = ["apps", "config"]
+exclude = ["**/migrations", "**/__pycache__", "**/node_modules"]
+pythonVersion = "3.11"
+# ── Missing stubs context ────────────────────────────────────────────────────
+# Running at "standard" / "basic" without django-stubs, django-environ stubs,
+# or redis-asyncio stubs produces ~1000 false-positive errors. We selectively
+# suppress the rules that are 100% noise from missing stubs and keep the rules
+# that catch real code bugs. Path to tighten: add django-stubs + raise to
+# "standard", then re-enable the suppressed rules one by one.
+typeCheckingMode = "basic"
+reportMissingImports = "error"
+reportMissingTypeStubs = "warning"
+# ── Suppressed: Django ORM dynamic attrs ─────────────────────────────────────
+# Django generates per-model field accessors at runtime; without django-stubs
+# basedpyright cannot see them (626 false-positive errors).
+reportAttributeAccessIssue = "none"
+# ── Suppressed: django-environ overload gap ──────────────────────────────────
+# django-environ's Env.__call__ / .list() overloads aren't typed to accept
+# default= args; 149 false-positive reportArgumentType errors.
+reportArgumentType = "none"
+# ── Suppressed: Django Manager / Q() variadics ───────────────────────────────
+# Manager.filter() / .values() / Q() use **kwargs; 117 false-positives.
+reportCallIssue = "none"
+# ── Suppressed: transaction.atomic() + redis-asyncio context managers ────────
+# Django's transaction.atomic() is both a context manager and a decorator;
+# without django-stubs basedpyright sees it as a plain function, not a CM.
+# redis.asyncio commands return opaque Awaitable types without stubs.
+# Both generate reportGeneralTypeIssues false-positives (33 errors).
+reportGeneralTypeIssues = "none"
+# ── Suppressed: test-client .json() subscript ────────────────────────────────
+# Django test client response.json() returns dict but basedpyright sees it
+# as None in some call paths without Django stubs (40 false-positives).
+reportOptionalSubscript = "none"
+# ── Suppressed: channels WebSocket scope TypedDict ───────────────────────────
+# channels' _ChannelScope TypedDict marks url_route as NotRequired; our
+# consumers always have it, but without channels stubs the access errors.
+reportTypedDictNotRequiredAccess = "none"
+# ── Suppressed: channels/redis optional member access ────────────────────────
+# channels InMemoryChannelLayer.group_send / .receive and redis-asyncio
+# commands are not typed; 19 false-positive reportOptionalMemberAccess.
+reportOptionalMemberAccess = "none"
+# ── Suppressed: complex union return types in Ninja endpoints ─────────────────
+# mobile/api_v2.py Ninja router returns complex union types that basedpyright
+# can't resolve without fastmcp + django-ninja stubs (13 false-positives).
+reportReturnType = "none"
+# ── Suppressed: Django AppConfig.default_auto_field assignment ───────────────
+# AppConfig.default_auto_field = "django.db.models.BigAutoField" is typed
+# as AppConfig.default_auto_field: str | None in Django stubs but
+# basedpyright infers a Literal narrowing conflict (10 false-positives).
+reportAssignmentType = "none"
+# ── Suppressed: optional iterable (redis pipeline / channels) ────────────────
+reportOptionalIterable = "none"
+# ── Suppressed: abstract class instantiation in tests ────────────────────────
+# Tests instantiate Protocol/ABC base classes via mock; fine in test context.
+reportAbstractUsage = "none"
+# ── Keep active ───────────────────────────────────────────────────────────────
+# reportMissingImports = "error"   (set above — catches real import errors)
+# reportIndexIssue stays active for genuine subscript issues on known types.
 
 [tool.ruff.lint.per-file-ignores]
 # Test fixtures embed wide markdown tables and intervention prose verbatim
