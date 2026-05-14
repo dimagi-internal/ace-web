@@ -5,8 +5,10 @@ from apps.opps.schemas import (  # noqa: F401 — import-existence smoke test
     ForkProgress,
     GateOut,
     OppCardOut,
+    OppCreateIn,
     OppForkIn,
     OppForkOut,
+    OppPatchIn,
     OppRunOut,
     OppSnapshotOut,
     ScorecardOut,
@@ -62,3 +64,40 @@ def test_verdict_and_gate_minimum_fields():
             "note": None,
         }
     )
+
+
+def test_opp_create_in_round_trip():
+    obj = OppCreateIn.model_validate({
+        "title": "Literacy Onboarding",
+        "slug": "lit-onboard-20260514",
+        "idea": "Start with a simple idea.",
+        "mode": "review",
+    })
+    assert obj.title == "Literacy Onboarding"
+    assert obj.slug == "lit-onboard-20260514"
+    assert obj.mode == "review"
+    assert obj.pdd == ""
+
+
+def test_opp_create_in_requires_title():
+    with pytest.raises(ValueError):
+        OppCreateIn.model_validate({"title": "", "slug": "lit-onboard"})
+
+
+def test_opp_create_in_requires_slug():
+    with pytest.raises(ValueError):
+        OppCreateIn.model_validate({"title": "My Opp", "slug": "x"})  # too short
+
+
+def test_opp_patch_in_round_trip():
+    # All fields optional — empty body is valid.
+    obj = OppPatchIn.model_validate({})
+    assert obj.title is None
+
+    obj2 = OppPatchIn.model_validate({"title": "Updated Title"})
+    assert obj2.title == "Updated Title"
+
+
+def test_opp_patch_in_rejects_empty_title():
+    with pytest.raises(ValueError):
+        OppPatchIn.model_validate({"title": ""})

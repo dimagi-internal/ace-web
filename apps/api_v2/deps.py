@@ -14,7 +14,7 @@ from django.http import HttpRequest
 
 from apps.workspaces.models import Workspace, WorkspaceMembership
 
-from .errors import TYPE_NOT_FOUND, ProblemError
+from .errors import TYPE_FORBIDDEN, TYPE_NOT_FOUND, ProblemError
 
 
 def resolve_workspace_for_member(request: HttpRequest, slug: str) -> Workspace:
@@ -32,3 +32,16 @@ def resolve_workspace_for_member(request: HttpRequest, slug: str) -> Workspace:
     if not is_member:
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
     return workspace
+
+
+def require_write_global(request: HttpRequest) -> None:
+    """Raise ProblemError(403) if the user cannot perform global write operations.
+
+    Mirrors ``apps.common.auth_views._can_write_global``: staff users and
+    accounts in the ``@dimagi-ai.com`` automation domain are permitted;
+    everyone else gets 403.
+    """
+    from apps.common.auth_views import _can_write_global
+
+    if not _can_write_global(request.user):
+        raise ProblemError(403, "Forbidden", type_=TYPE_FORBIDDEN)

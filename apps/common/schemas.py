@@ -43,3 +43,22 @@ class WorkspaceRefOut(StrictModel):
 
     slug: str
     name: str
+
+
+class HealthCheckOut(StrictModel):
+    """One subsystem check result."""
+
+    ok: bool
+    error: str | None = None
+
+
+class HealthOut(StrictModel):
+    """GET /api/v2/health response.
+
+    ``healthy`` is True when all subsystem checks pass.
+    ``status`` is ``"ok"`` or ``"unhealthy"`` for human readability.
+    """
+
+    status: str
+    healthy: bool
+    checks: dict[str, HealthCheckOut]
