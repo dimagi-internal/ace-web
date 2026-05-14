@@ -2,8 +2,6 @@
 import os
 import warnings
 
-import logfire
-
 if not os.environ.get("ACE_FIELD_ENCRYPTION_KEY"):
     raise RuntimeError(
         "ACE_FIELD_ENCRYPTION_KEY must be set in production. "
@@ -56,21 +54,81 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 X_FRAME_OPTIONS = "DENY"
 
-# --- Observability (Logfire) ---
-# Wire Logfire for request tracing, Pydantic validation spans, and httpx calls.
-# When LOGFIRE_TOKEN is absent (e.g. local dev, CI), send_to_logfire="if-token-present"
-# makes Logfire a complete no-op — no network calls, no errors, no perf hit.
+# ---------------------------------------------------------------------------
+# Structured JSON logging → CloudWatch Logs
 #
-# To activate on the deployed instance:
-#   1. Create a project at https://logfire.pydantic.dev/
-#   2. Add LOGFIRE_TOKEN to AWS Secrets Manager and task-definition.json
-#   3. Redeploy — tracing starts automatically.
-logfire.configure(
-    token=os.environ.get("LOGFIRE_TOKEN"),
-    service_name="ace-web",
-    service_version=os.environ.get("LOGFIRE_SERVICE_VERSION", "dev"),
-    send_to_logfire="if-token-present",
+# Container stdout is captured by ECS's awslogs log driver and lands in the
+# CloudWatch log group configured in the task definition (typically
+# /ecs/ace-web). JSON formatting makes every record queryable via Logs
+# Insights, e.g.:
+#
+#   fields @timestamp, request_id, level, name, message
+#   | filter level = "ERROR"
+#   | sort @timestamp desc
+#
+# ``request_id`` is injected by ``RequestIDMiddleware`` (apps/common/
+# logging_middleware.py) which is wired into MIDDLEWARE in base.py.
+# ---------------------------------------------------------------------------
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "request_id": {
+            "()": "apps.common.logging_middleware.RequestIDFilter",
+        },
+    },
+    "formatters": {
+        "json": {
+            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "format": "%(asctime)s %(levelname)s %(name)s %(request_id)s %(message)s",
+            "rename_fields": {"asctime": "timestamp", "levelname": "level"},
+            "json_ensure_ascii": False,
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+            "filters": ["request_id"],
+        },
+    },
+    "loggers": {
+        "django.request": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.server": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+}
+
+# ---------------------------------------------------------------------------
+# AWS X-Ray distributed tracing
+#
+# Emits segments to the X-Ray daemon, which should run as a sidecar in the
+# ECS task definition. Standard pattern: add an `xray-daemon` container
+# (public.ecr.aws/xray/aws-xray-daemon) alongside the app and frontend
+# containers, with UDP port 2000 exposed on localhost.
+#
+# ``context_missing="LOG_ERROR"`` ensures the SDK is non-fatal when no
+# daemon is present (e.g. local dev, CI) — it logs an error and continues.
+# ---------------------------------------------------------------------------
+from aws_xray_sdk.core import patch_all, xray_recorder  # noqa: E402
+
+xray_recorder.configure(
+    service="ace-web",
+    daemon_address=os.environ.get("AWS_XRAY_DAEMON_ADDRESS", "127.0.0.1:2000"),
+    context_missing="LOG_ERROR",  # don't crash when no daemon is reachable
 )
-logfire.instrument_django()
-logfire.instrument_httpx()
-logfire.instrument_pydantic()
+patch_all()  # instruments httpx, requests, psycopg, boto3, etc.
+
+# X-Ray Django middleware — prepend so it wraps all other middleware.
+MIDDLEWARE = ["aws_xray_sdk.ext.django.middleware.XRayMiddleware"] + MIDDLEWARE  # noqa: F405

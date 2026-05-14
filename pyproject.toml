@@ -24,7 +24,8 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "whitenoise>=6.7",
     "fastmcp>=0.4",
-    "logfire[django,httpx]>=0.50",
+    "python-json-logger>=2.0",
+    "aws-xray-sdk>=2.14",
 ]
 
 [project.optional-dependencies]
