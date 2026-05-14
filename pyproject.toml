@@ -32,6 +32,7 @@ dev = [
     "pytest-django>=4.8",
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
+    "schemathesis>=3.30",
     "ipython",
 ]
 walkthrough = [
@@ -49,6 +50,12 @@ exclude = ["frontend*", "staticfiles*", "tests*", "docs*"]
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = "test_*.py"
 asyncio_mode = "auto"
+# Default-skip contract tests; the dedicated contract-tests workflow opts in
+# via `-m contract`. Local devs can run them explicitly with `-m contract`.
+addopts = "-m 'not contract'"
+markers = [
+    "contract: property-based contract tests (schemathesis, slower)",
+]
 
 [project.scripts]
 ace-upload = "apps.ingest.cli:main"

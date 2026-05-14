@@ -2,6 +2,10 @@
 from .base import *  # noqa: F401, F403
 
 DEBUG = False
+# Allow testserver (Django test client default) and localhost (werkzeug / schemathesis
+# from_wsgi default). Empty list in base.py blocks all hosts, which is correct for
+# production but breaks the Werkzeug-backed WSGI test client used by schemathesis.
+ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
