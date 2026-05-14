@@ -16,7 +16,6 @@ urlpatterns = [
     path("api/redoc/", redoc_docs, name="api_docs_redoc"),
     path("api/", include("apps.common.urls")),
     path("api/", include("apps.sessions.urls")),
-    path("api/ingest/", include("apps.ingest.urls")),
     # Opps endpoints. Workspace identity is resolved via the
     # `X-ACE-Workspace` header (auto-injected by the frontend's
     # `apiFetch` from the URL pathname). A workspace-scoped URL
