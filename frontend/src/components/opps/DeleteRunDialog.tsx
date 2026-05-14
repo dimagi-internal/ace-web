@@ -10,7 +10,8 @@ interface Props {
   runId: string;
   /** Display label for the run (e.g. "May 9, 4:55 AM"). Falls back to runId. */
   runLabel?: string;
-  onDeleted?: () => void;
+  /** Receives the just-deleted runId so the caller can compare it to the URL-pinned run. */
+  onDeleted?: (runId: string) => void;
 }
 
 /**
@@ -53,7 +54,7 @@ export function DeleteRunDialog({
         // the server (which will re-list the runs/ folder from Drive
         // minus this run).
         dropOpp(oppSlug);
-        onDeleted?.();
+        onDeleted?.(runId);
       }}
     />
   );
