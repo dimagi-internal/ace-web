@@ -39,7 +39,7 @@ def test_health_200_when_healthy(anon_client, monkeypatch):
         "apps.common.api_v2.get_health_status",
         lambda: _FAKE_HEALTH_OK,
     )
-    resp = anon_client.get("/api/v2/health")
+    resp = anon_client.get("/api/health")
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
@@ -53,7 +53,7 @@ def test_health_503_when_unhealthy(anon_client, monkeypatch):
         "apps.common.api_v2.get_health_status",
         lambda: _FAKE_HEALTH_UNHEALTHY,
     )
-    resp = anon_client.get("/api/v2/health")
+    resp = anon_client.get("/api/health")
     assert resp.status_code == 503
     body = resp.json()
     assert body["status"] == "unhealthy"
@@ -68,5 +68,5 @@ def test_health_accessible_without_auth(anon_client, monkeypatch):
         lambda: _FAKE_HEALTH_OK,
     )
     # anon client — no login
-    resp = anon_client.get("/api/v2/health")
+    resp = anon_client.get("/api/health")
     assert resp.status_code == 200

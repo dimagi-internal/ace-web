@@ -52,7 +52,7 @@ export const fetchActivityFeed = async (params: ActivityFeedParams): Promise<Act
       : params.type
     : undefined;
 
-  const { response, error } = await apiV2.GET("/api/v2/w/{workspace_slug}/activity", {
+  const { response, error } = await apiV2.GET("/api/w/{workspace_slug}/activity", {
     params: {
       path: { workspace_slug: params.workspaceSlug },
       query: {

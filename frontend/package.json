@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:api": "openapi-typescript http://localhost:8000/api/v2/openapi.json --output src/api/generated.ts --immutable"
+    "gen:api": "openapi-typescript http://localhost:8000/api/openapi.json --output src/api/generated.ts --immutable"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

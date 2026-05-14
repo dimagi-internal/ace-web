@@ -1,43 +1,57 @@
 import { apiV2 } from "./client.v2";
-import { apiFetch } from "./client";
 import type { ShareTokenInfo, ShareTokenListItem, SharedSession } from "./types.ws";
 
 /**
- * share.ts — share-token API client.
+ * share.ts — share-token API client (v2 only).
  *
- * v2 coverage:
- *   - GET  /api/v2/w/{workspace_slug}/sessions/{slug}/share — list share tokens
- *
- * Legacy DRF coverage (not yet in v2 schema):
- *   - POST   /api/sessions/{slug}/share         — create share token
- *   - DELETE /api/sessions/{slug}/share/{token} — revoke share token
- *   - GET    /api/share/{token}                 — public shared session view
+ * All endpoints are now served by the v2 Ninja router:
+ *   - GET    /api/w/{workspace_slug}/sessions/{slug}/share         — list share tokens
+ *   - POST   /api/w/{workspace_slug}/sessions/{slug}/share         — create share token
+ *   - DELETE /api/w/{workspace_slug}/sessions/{slug}/share/{token} — revoke share token
+ *   - GET    /api/share/{token}                                    — public shared session
  */
 
-export const createShareToken = (slug: string): Promise<ShareTokenInfo> =>
-  apiFetch<ShareTokenInfo>(`/api/sessions/${slug}/share`, { method: "POST" });
+export const createShareToken = async (
+  slug: string,
+  workspaceSlug: string,
+): Promise<ShareTokenInfo> => {
+  const { response } = await apiV2.POST(
+    "/api/w/{workspace_slug}/sessions/{slug}/share" as never,
+    { params: { path: { workspace_slug: workspaceSlug, slug } } } as never,
+  );
+  if (!response.ok) throw new Error(`Failed to create share token: ${response.status}`);
+  return (await response.json()) as ShareTokenInfo;
+};
 
 export const listShareTokens = async (
   slug: string,
-  workspaceSlug?: string,
+  workspaceSlug: string,
 ): Promise<ShareTokenListItem[]> => {
-  // Use v2 when workspace slug is available (workspace-scoped path).
-  if (workspaceSlug) {
-    const { response } = await apiV2.GET(
-      "/api/v2/w/{workspace_slug}/sessions/{slug}/share",
-      { params: { path: { workspace_slug: workspaceSlug, slug } } },
-    );
-    if (!response.ok) throw new Error(`Failed to list share tokens: ${response.status}`);
-    return (await response.json()) as ShareTokenListItem[];
-  }
-  // Fallback to legacy path (e.g. from share popover without workspace context).
-  return apiFetch<ShareTokenListItem[]>(`/api/sessions/${slug}/share`);
+  const { response } = await apiV2.GET(
+    "/api/w/{workspace_slug}/sessions/{slug}/share",
+    { params: { path: { workspace_slug: workspaceSlug, slug } } },
+  );
+  if (!response.ok) throw new Error(`Failed to list share tokens: ${response.status}`);
+  return (await response.json()) as ShareTokenListItem[];
 };
 
-export const revokeShareToken = (slug: string, token: string): Promise<ShareTokenListItem> =>
-  apiFetch<ShareTokenListItem>(`/api/sessions/${slug}/share/${token}`, {
-    method: "DELETE",
-  });
+export const revokeShareToken = async (
+  slug: string,
+  token: string,
+  workspaceSlug: string,
+): Promise<ShareTokenListItem> => {
+  const { response } = await apiV2.DELETE(
+    "/api/w/{workspace_slug}/sessions/{slug}/share/{token_key}" as never,
+    { params: { path: { workspace_slug: workspaceSlug, slug, token_key: token } } } as never,
+  );
+  if (!response.ok) throw new Error(`Failed to revoke share token: ${response.status}`);
+  return (await response.json()) as ShareTokenListItem;
+};
 
-export const getSharedSession = (token: string): Promise<SharedSession> =>
-  apiFetch<SharedSession>(`/api/share/${token}`);
+export const getSharedSession = async (token: string): Promise<SharedSession> => {
+  const { response } = await apiV2.GET("/api/share/{token}" as never, {
+    params: { path: { token } },
+  } as never);
+  if (!response.ok) throw new Error(`Failed to load shared session: ${response.status}`);
+  return (await response.json()) as SharedSession;
+};

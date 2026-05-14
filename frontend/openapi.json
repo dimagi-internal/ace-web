@@ -6,7 +6,7 @@
     "description": "Modern Pydantic-typed API surface for ace-web. Replaces the legacy `/api/` DRF endpoints. Errors are RFC 7807 application/problem+json."
   },
   "paths": {
-    "/api/v2/_auth_smoke/": {
+    "/api/_auth_smoke/": {
       "get": {
         "operationId": "apps_api_v2_api__auth_smoke",
         "summary": " Auth Smoke",
@@ -33,7 +33,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps": {
+    "/api/w/{workspace_slug}/opps": {
       "get": {
         "operationId": "apps_opps_api_v2_list_opps",
         "summary": "List opps in workspace",
@@ -128,7 +128,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}": {
+    "/api/w/{workspace_slug}/opps/{slug}": {
       "get": {
         "operationId": "apps_opps_api_v2_get_opp",
         "summary": "Opp Workbench snapshot",
@@ -267,7 +267,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/runs": {
+    "/api/w/{workspace_slug}/opps/{slug}/runs": {
       "get": {
         "operationId": "apps_opps_api_v2_list_runs",
         "summary": "List runs for opp",
@@ -333,7 +333,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/runs/{run_id}": {
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}": {
       "get": {
         "operationId": "apps_opps_api_v2_get_run",
         "summary": "Run detail",
@@ -434,7 +434,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
+    "/api/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
       "get": {
         "operationId": "apps_opps_api_v2_get_step",
         "summary": "Step detail",
@@ -505,7 +505,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}": {
+    "/api/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}": {
       "get": {
         "operationId": "apps_opps_api_v2_get_artifact",
         "summary": "Artifact metadata",
@@ -576,7 +576,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}/download": {
+    "/api/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}/download": {
       "get": {
         "operationId": "apps_opps_api_v2_download_artifact",
         "summary": "Download artifact binary",
@@ -624,7 +624,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/fork": {
+    "/api/w/{workspace_slug}/opps/{slug}/fork": {
       "post": {
         "operationId": "apps_opps_api_v2_fork_opp_endpoint",
         "summary": "Fork opp run",
@@ -673,7 +673,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/fork/status": {
+    "/api/w/{workspace_slug}/opps/{slug}/fork/status": {
       "get": {
         "operationId": "apps_opps_api_v2_fork_status",
         "summary": "Fork progress",
@@ -729,7 +729,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/scorecard": {
+    "/api/w/{workspace_slug}/opps/{slug}/scorecard": {
       "get": {
         "operationId": "apps_opps_api_v2_get_scorecard",
         "summary": "Opp-eval scorecard",
@@ -784,7 +784,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/gates/{skill}": {
+    "/api/w/{workspace_slug}/opps/{slug}/gates/{skill}": {
       "post": {
         "operationId": "apps_opps_api_v2_record_gate",
         "summary": "Record gate decision",
@@ -842,7 +842,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/compare": {
+    "/api/w/{workspace_slug}/opps/{slug}/compare": {
       "get": {
         "operationId": "apps_opps_api_v2_compare_runs",
         "summary": "Multi-run comparison",
@@ -909,7 +909,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/actions/seed-chat": {
+    "/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat": {
       "post": {
         "operationId": "apps_opps_api_v2_seed_chat",
         "summary": "Seed chat from step",
@@ -958,7 +958,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/health": {
+    "/api/w/{workspace_slug}/opps/{slug}/health": {
       "get": {
         "operationId": "apps_opps_api_v2_opp_health",
         "summary": "Drive health probe",
@@ -1004,7 +1004,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/opps/{slug}/snapshot/invalidate": {
+    "/api/w/{workspace_slug}/opps/{slug}/snapshot/invalidate": {
       "post": {
         "operationId": "apps_opps_api_v2_invalidate_snapshot",
         "summary": "Invalidate snapshot cache (admin)",
@@ -1043,7 +1043,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/sessions": {
+    "/api/w/{workspace_slug}/sessions": {
       "get": {
         "operationId": "apps_sessions_api_v2_list_sessions",
         "summary": "List sessions in workspace",
@@ -1164,7 +1164,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/sessions/{slug}": {
+    "/api/w/{workspace_slug}/sessions/{slug}": {
       "get": {
         "operationId": "apps_sessions_api_v2_get_session",
         "summary": "Session detail",
@@ -1287,7 +1287,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/sessions/{slug}/messages": {
+    "/api/w/{workspace_slug}/sessions/{slug}/messages": {
       "get": {
         "operationId": "apps_sessions_api_v2_list_messages",
         "summary": "Message history",
@@ -1346,7 +1346,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/sessions/{slug}/participants": {
+    "/api/w/{workspace_slug}/sessions/{slug}/participants": {
       "get": {
         "operationId": "apps_sessions_api_v2_list_participants",
         "summary": "Participant list",
@@ -1385,7 +1385,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/sessions/{slug}/turn-state": {
+    "/api/w/{workspace_slug}/sessions/{slug}/turn-state": {
       "get": {
         "operationId": "apps_sessions_api_v2_session_turn_state",
         "summary": "Turn state (polling)",
@@ -1424,7 +1424,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/sessions/{slug}/cost": {
+    "/api/w/{workspace_slug}/sessions/{slug}/cost": {
       "get": {
         "operationId": "apps_sessions_api_v2_session_cost",
         "summary": "Cost breakdown",
@@ -1463,7 +1463,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/sessions/{slug}/structure": {
+    "/api/w/{workspace_slug}/sessions/{slug}/structure": {
       "get": {
         "operationId": "apps_sessions_api_v2_session_structure",
         "summary": "Session structure tree",
@@ -1502,7 +1502,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/sessions/{slug}/share": {
+    "/api/w/{workspace_slug}/sessions/{slug}/share": {
       "get": {
         "operationId": "apps_sessions_api_v2_list_share",
         "summary": "List share tokens",
@@ -1541,7 +1541,7 @@
         ]
       }
     },
-    "/api/v2/w/{workspace_slug}/activity": {
+    "/api/w/{workspace_slug}/activity": {
       "get": {
         "operationId": "apps_activity_api_v2_activity_feed",
         "summary": "Workspace activity feed",
@@ -1614,7 +1614,7 @@
         ]
       }
     },
-    "/api/v2/workspaces": {
+    "/api/workspaces": {
       "get": {
         "operationId": "apps_workspaces_api_v2_list_workspaces",
         "summary": "List my workspaces",
@@ -1673,7 +1673,7 @@
         ]
       }
     },
-    "/api/v2/workspaces/{slug}": {
+    "/api/workspaces/{slug}": {
       "get": {
         "operationId": "apps_workspaces_api_v2_workspace_detail",
         "summary": "Workspace detail",
@@ -1755,7 +1755,7 @@
         ]
       }
     },
-    "/api/v2/workspaces/{slug}/members": {
+    "/api/workspaces/{slug}/members": {
       "get": {
         "operationId": "apps_workspaces_api_v2_list_members",
         "summary": "List workspace members",
@@ -1796,7 +1796,7 @@
         ]
       }
     },
-    "/api/v2/workspaces/{slug}/members/invite": {
+    "/api/workspaces/{slug}/members/invite": {
       "post": {
         "operationId": "apps_workspaces_api_v2_invite_member",
         "summary": "Invite a member",
@@ -1843,7 +1843,7 @@
         ]
       }
     },
-    "/api/v2/workspaces/{slug}/members/{user_id}": {
+    "/api/workspaces/{slug}/members/{user_id}": {
       "delete": {
         "operationId": "apps_workspaces_api_v2_remove_member",
         "summary": "Remove member",
@@ -1882,7 +1882,7 @@
         ]
       }
     },
-    "/api/v2/workspaces/{slug}/leave": {
+    "/api/workspaces/{slug}/leave": {
       "post": {
         "operationId": "apps_workspaces_api_v2_leave_workspace",
         "summary": "Leave workspace",
@@ -1912,7 +1912,7 @@
         ]
       }
     },
-    "/api/v2/workspaces/{slug}/activity": {
+    "/api/workspaces/{slug}/activity": {
       "get": {
         "operationId": "apps_workspaces_api_v2_workspace_activity",
         "summary": "Workspace audit log (owner only)",
@@ -1942,7 +1942,7 @@
         ]
       }
     },
-    "/api/v2/workspaces/{slug}/drive-config/verify": {
+    "/api/workspaces/{slug}/drive-config/verify": {
       "post": {
         "operationId": "apps_workspaces_api_v2_verify_drive_access",
         "summary": "Verify Drive access",
@@ -1972,7 +1972,7 @@
         ]
       }
     },
-    "/api/v2/ingest/upload": {
+    "/api/ingest/upload": {
       "post": {
         "operationId": "apps_ingest_api_v2_upload",
         "summary": "Upload a JSONL transcript",
@@ -2075,7 +2075,7 @@
         ]
       }
     },
-    "/api/v2/mobile/status": {
+    "/api/mobile/status": {
       "get": {
         "operationId": "apps_mobile_api_v2_status",
         "summary": "Emulator status config",
@@ -2102,7 +2102,7 @@
         ]
       }
     },
-    "/api/v2/mobile/ensure-running": {
+    "/api/mobile/ensure-running": {
       "post": {
         "operationId": "apps_mobile_api_v2_ensure_running",
         "summary": "Ensure emulator is running",
@@ -2139,7 +2139,7 @@
         ]
       }
     },
-    "/api/v2/mobile/stop": {
+    "/api/mobile/stop": {
       "post": {
         "operationId": "apps_mobile_api_v2_stop",
         "summary": "Stop emulator",
@@ -2170,7 +2170,7 @@
         ]
       }
     },
-    "/api/v2/mobile/diagnose": {
+    "/api/mobile/diagnose": {
       "get": {
         "operationId": "apps_mobile_api_v2_diagnose",
         "summary": "Diagnose emulator",
@@ -2197,7 +2197,7 @@
         ]
       }
     },
-    "/api/v2/mobile/states": {
+    "/api/mobile/states": {
       "get": {
         "operationId": "apps_mobile_api_v2_states",
         "summary": "List emulator states",
@@ -2224,7 +2224,7 @@
         ]
       }
     },
-    "/api/v2/mobile/states/select": {
+    "/api/mobile/states/select": {
       "post": {
         "operationId": "apps_mobile_api_v2_select_state",
         "summary": "Select active state",
@@ -2254,7 +2254,7 @@
         ]
       }
     },
-    "/api/v2/mobile/snapshots/save": {
+    "/api/mobile/snapshots/save": {
       "post": {
         "operationId": "apps_mobile_api_v2_save_snapshot",
         "summary": "Save emulator snapshot",
@@ -2284,7 +2284,7 @@
         ]
       }
     },
-    "/api/v2/mobile/snapshots/load": {
+    "/api/mobile/snapshots/load": {
       "post": {
         "operationId": "apps_mobile_api_v2_load_snapshot",
         "summary": "Load emulator snapshot",
@@ -2314,7 +2314,7 @@
         ]
       }
     },
-    "/api/v2/mobile/run-recipe": {
+    "/api/mobile/run-recipe": {
       "post": {
         "operationId": "apps_mobile_api_v2_run_recipe",
         "summary": "Submit recipe for async execution",
@@ -2351,7 +2351,7 @@
         ]
       }
     },
-    "/api/v2/mobile/jobs/{job_id}": {
+    "/api/mobile/jobs/{job_id}": {
       "get": {
         "operationId": "apps_mobile_api_v2_get_job",
         "summary": "Poll async job status",
@@ -2388,7 +2388,7 @@
         ]
       }
     },
-    "/api/v2/mobile/apk/install": {
+    "/api/mobile/apk/install": {
       "post": {
         "operationId": "apps_mobile_api_v2_install_apk",
         "summary": "Install APK",
@@ -2418,7 +2418,7 @@
         ]
       }
     },
-    "/api/v2/mobile/capture-ui-dump": {
+    "/api/mobile/capture-ui-dump": {
       "post": {
         "operationId": "apps_mobile_api_v2_capture_ui_dump",
         "summary": "Capture UI dump",
@@ -2438,7 +2438,7 @@
         ]
       }
     },
-    "/api/v2/mobile/screenshot": {
+    "/api/mobile/screenshot": {
       "post": {
         "operationId": "apps_mobile_api_v2_screenshot",
         "summary": "Take screenshot",
@@ -2458,7 +2458,7 @@
         ]
       }
     },
-    "/api/v2/mobile/restart-runner": {
+    "/api/mobile/restart-runner": {
       "post": {
         "operationId": "apps_mobile_api_v2_restart_runner",
         "summary": "Restart the in-VM mobile runner",
@@ -2489,7 +2489,7 @@
         ]
       }
     },
-    "/api/v2/mobile/admin/patch-launch-script": {
+    "/api/mobile/admin/patch-launch-script": {
       "post": {
         "operationId": "apps_mobile_api_v2_admin_patch_launch_script",
         "summary": "Admin: patch in-VM launch script",
@@ -2526,7 +2526,7 @@
         ]
       }
     },
-    "/api/v2/mobile/admin/launch-script-patches": {
+    "/api/mobile/admin/launch-script-patches": {
       "get": {
         "operationId": "apps_mobile_api_v2_admin_list_launch_script_patches",
         "summary": "Admin: list launch script patches",
@@ -2567,7 +2567,7 @@
         ]
       }
     },
-    "/api/v2/system/overview": {
+    "/api/system/overview": {
       "get": {
         "operationId": "apps_system_api_v2_overview",
         "summary": "Full system overview",
@@ -2594,7 +2594,7 @@
         ]
       }
     },
-    "/api/v2/system/skills": {
+    "/api/system/skills": {
       "get": {
         "operationId": "apps_system_api_v2_list_skills",
         "summary": "List skills",
@@ -2625,7 +2625,7 @@
         ]
       }
     },
-    "/api/v2/system/skills/{name}": {
+    "/api/system/skills/{name}": {
       "get": {
         "operationId": "apps_system_api_v2_skill_detail",
         "summary": "Skill detail",
@@ -2662,7 +2662,7 @@
         ]
       }
     },
-    "/api/v2/system/agents": {
+    "/api/system/agents": {
       "get": {
         "operationId": "apps_system_api_v2_list_agents",
         "summary": "List agents",
@@ -2693,7 +2693,7 @@
         ]
       }
     },
-    "/api/v2/system/agents/{name}": {
+    "/api/system/agents/{name}": {
       "get": {
         "operationId": "apps_system_api_v2_agent_detail",
         "summary": "Agent detail",
@@ -2730,7 +2730,7 @@
         ]
       }
     },
-    "/api/v2/system/version": {
+    "/api/system/version": {
       "get": {
         "operationId": "apps_system_api_v2_version",
         "summary": "Plugin version check",
@@ -2757,7 +2757,7 @@
         ]
       }
     },
-    "/api/v2/system/cli-diag": {
+    "/api/system/cli-diag": {
       "post": {
         "operationId": "apps_system_api_v2_cli_diag",
         "summary": "CLI diagnostic (admin)",
@@ -2811,7 +2811,7 @@
         ]
       }
     },
-    "/api/v2/tokens": {
+    "/api/tokens": {
       "get": {
         "operationId": "apps_service_accounts_api_v2_list_tokens",
         "summary": "List my personal tokens",
@@ -2877,7 +2877,7 @@
         ]
       }
     },
-    "/api/v2/tokens/{token_id}": {
+    "/api/tokens/{token_id}": {
       "delete": {
         "operationId": "apps_service_accounts_api_v2_delete_token",
         "summary": "Revoke a personal token",
@@ -2907,7 +2907,7 @@
         ]
       }
     },
-    "/api/v2/auth/me": {
+    "/api/auth/me": {
       "get": {
         "operationId": "apps_auth_api_v2_me",
         "summary": "Current user info",
@@ -2934,7 +2934,7 @@
         ]
       }
     },
-    "/api/v2/auth/logout": {
+    "/api/auth/logout": {
       "post": {
         "operationId": "apps_auth_api_v2_logout",
         "summary": "Logout",
@@ -2954,7 +2954,7 @@
         ]
       }
     },
-    "/api/v2/auth/e2e-login": {
+    "/api/auth/e2e-login": {
       "post": {
         "operationId": "apps_auth_api_v2_e2e_login",
         "summary": "Automation login (token-gated)",
@@ -2986,7 +2986,7 @@
         }
       }
     },
-    "/api/v2/auth/cli/status": {
+    "/api/auth/cli/status": {
       "get": {
         "operationId": "apps_auth_api_v2_cli_auth_status",
         "summary": "CLI auth status",
@@ -3013,7 +3013,7 @@
         ]
       }
     },
-    "/api/v2/auth/cli/upload": {
+    "/api/auth/cli/upload": {
       "post": {
         "operationId": "apps_auth_api_v2_cli_auth_upload",
         "summary": "Upload CLI credentials",
@@ -3051,7 +3051,7 @@
         ]
       }
     },
-    "/api/v2/auth/nova/status": {
+    "/api/auth/nova/status": {
       "get": {
         "operationId": "apps_auth_api_v2_nova_auth_status",
         "summary": "Nova OAuth status",
@@ -3078,7 +3078,7 @@
         ]
       }
     },
-    "/api/v2/auth/nova/disconnect": {
+    "/api/auth/nova/disconnect": {
       "post": {
         "operationId": "apps_auth_api_v2_nova_auth_disconnect",
         "summary": "Disconnect Nova OAuth (admin)",
@@ -3098,7 +3098,7 @@
         ]
       }
     },
-    "/api/v2/health": {
+    "/api/health": {
       "get": {
         "operationId": "apps_common_api_v2_health",
         "summary": "Health check (public)",
@@ -4223,7 +4223,7 @@
       },
       "ActivityFeedOut": {
         "additionalProperties": false,
-        "description": "Response wrapper for GET /api/v2/activity/.",
+        "description": "Response wrapper for GET /api/activity/.",
         "properties": {
           "items": {
             "items": {
@@ -4757,7 +4757,7 @@
       },
       "IngestUploadOut": {
         "additionalProperties": false,
-        "description": "201 response from POST /api/v2/ingest/upload.\n\n``cost_breakdown`` is null for sessions where the JSONL contained no\ncost-bearing assistant turns (empty or tool-only transcripts).\n``opp_slug``, ``opp_run_id``, and ``opp_step_skill`` are null when the\nupload is an orphan (no opp linkage provided in the multipart body).",
+        "description": "201 response from POST /api/ingest/upload.\n\n``cost_breakdown`` is null for sessions where the JSONL contained no\ncost-bearing assistant turns (empty or tool-only transcripts).\n``opp_slug``, ``opp_run_id``, and ``opp_step_skill`` are null when the\nupload is an orphan (no opp linkage provided in the multipart body).",
         "properties": {
           "session_slug": {
             "title": "Session Slug",
@@ -5543,7 +5543,7 @@
       },
       "SystemOverviewOut": {
         "additionalProperties": false,
-        "description": "Full system snapshot returned by GET /api/v2/system/overview.",
+        "description": "Full system snapshot returned by GET /api/system/overview.",
         "properties": {
           "skills": {
             "items": {
@@ -5637,7 +5637,7 @@
       },
       "SkillDetailOut": {
         "additionalProperties": false,
-        "description": "Single-skill detail \u2014 adds full markdown body.\n\nReturned by GET /api/v2/system/skills/<name>.",
+        "description": "Single-skill detail \u2014 adds full markdown body.\n\nReturned by GET /api/system/skills/<name>.",
         "properties": {
           "name": {
             "title": "Name",
@@ -5726,7 +5726,7 @@
       },
       "AgentDetailOut": {
         "additionalProperties": false,
-        "description": "Single-agent detail \u2014 adds full markdown body.\n\nReturned by GET /api/v2/system/agents/<name>.",
+        "description": "Single-agent detail \u2014 adds full markdown body.\n\nReturned by GET /api/system/agents/<name>.",
         "properties": {
           "name": {
             "title": "Name",
@@ -5756,7 +5756,7 @@
       },
       "VersionOut": {
         "additionalProperties": false,
-        "description": "Plugin version + remote comparison.\n\nReturned by GET /api/v2/system/version and embedded in SystemOverviewOut.\n``update_available`` is null when the remote check failed (network error\nor rate limit).",
+        "description": "Plugin version + remote comparison.\n\nReturned by GET /api/system/version and embedded in SystemOverviewOut.\n``update_available`` is null when the remote check failed (network error\nor rate limit).",
         "properties": {
           "plugin_found": {
             "title": "Plugin Found",
@@ -5809,7 +5809,7 @@
       },
       "CliDiagOut": {
         "additionalProperties": true,
-        "description": "Response from POST /api/v2/system/cli-diag.\n\nThe shape is intentionally open (``extra=\"allow\"``) because the\ndiagnostic response embeds raw subprocess output, plugin probes, and\nenvironment snapshots whose exact keys evolve with the CLI version.\nConsumers should access known top-level keys (elapsed_seconds,\nreturncode, init_summary) and treat the rest as opaque diagnostic data.",
+        "description": "Response from POST /api/system/cli-diag.\n\nThe shape is intentionally open (``extra=\"allow\"``) because the\ndiagnostic response embeds raw subprocess output, plugin probes, and\nenvironment snapshots whose exact keys evolve with the CLI version.\nConsumers should access known top-level keys (elapsed_seconds,\nreturncode, init_summary) and treat the rest as opaque diagnostic data.",
         "properties": {
           "elapsed_seconds": {
             "title": "Elapsed Seconds",
@@ -5941,7 +5941,7 @@
       },
       "PersonalTokenCreateIn": {
         "additionalProperties": false,
-        "description": "POST /api/v2/auth/tokens \u2014 create a new personal token.",
+        "description": "POST /api/auth/tokens \u2014 create a new personal token.",
         "properties": {
           "name": {
             "title": "Name",
@@ -5956,7 +5956,7 @@
       },
       "MeOut": {
         "additionalProperties": false,
-        "description": "GET /api/v2/auth/me \u2014 minimal current-user info.\n\n``workspaces`` lists every workspace the user is a member of,\nordered by the workspace display name.  Useful for workspace\nselectors, nav headers, and determining default workspace slug.",
+        "description": "GET /api/auth/me \u2014 minimal current-user info.\n\n``workspaces`` lists every workspace the user is a member of,\nordered by the workspace display name.  Useful for workspace\nselectors, nav headers, and determining default workspace slug.",
         "properties": {
           "id": {
             "title": "Id",
@@ -6189,7 +6189,7 @@
       },
       "HealthOut": {
         "additionalProperties": false,
-        "description": "GET /api/v2/health response.\n\n``healthy`` is True when all subsystem checks pass.\n``status`` is ``\"ok\"`` or ``\"unhealthy\"`` for human readability.",
+        "description": "GET /api/health response.\n\n``healthy`` is True when all subsystem checks pass.\n``status`` is ``\"ok\"`` or ``\"unhealthy\"`` for human readability.",
         "properties": {
           "status": {
             "title": "Status",

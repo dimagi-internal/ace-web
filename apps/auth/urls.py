@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.urls import path
 
-from . import cli_authorize_views, nova_oauth_views, oauth_views, token_views
+from . import cli_authorize_views, nova_oauth_views, oauth_views
 
 app_name = "auth"
 
@@ -16,10 +16,8 @@ urlpatterns = [
     path("cli/authorize/", cli_authorize_views.cli_authorize, name="cli_authorize"),
 ]
 
-token_urlpatterns = [
-    path("tokens", token_views.token_collection, name="token_collection"),
-    path("tokens/<int:pk>", token_views.token_detail, name="token_detail"),
-]
+# token_urlpatterns removed — personal-token CRUD now lives at
+# /api/tokens/ via apps/service_accounts/api_v2.py.
 
 # Dev-only test-login endpoint. The URL is only registered when BOTH
 # ACE_ALLOW_TEST_LOGIN and DEBUG are True. In production.py / connectlabs.py

@@ -1,15 +1,9 @@
-"""Workspace-wide activity feed for the Timeline view.
+"""Workspace-wide activity feed helpers.
 
-Aggregates events from two sources:
-
-  1. Postgres — chats (Session creation timestamps; opp linkage carried
-     via Session.opp_slug / opp_step_skill).
-  2. Drive — per-opp verdict YAMLs (judge.evaluated_at).
-
-Drive aggregation is the hot path: a workspace-wide call iterates every
-opp in the workspace and calls ``load_opp`` for each. We rely on the
-opps sync module's existing Drive client + structures rather than
-re-implementing the listing here.
+The DRF ``activity_feed`` view was removed in the Phase 5 API
+modernisation — all traffic now flows through the Ninja v2 router
+(``apps/activity/api_v2.py``).  This module retains the pure helper
+functions so that ``api_v2`` can import them without pulling in DRF.
 
 Out-of-scope for v1:
   - Artifact mtimes (they'd require a per-opp file walk; skipped because
@@ -19,17 +13,8 @@ Out-of-scope for v1:
 from __future__ import annotations
 
 from django.core.cache import cache
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.request import Request
-from rest_framework.response import Response
+from django.http import HttpRequest
 
-from apps.common.envelope import success_response
-from apps.opps.access import (
-    require_drive,
-    resolve_ace_root_folder_id,
-    resolve_workspace,
-)
 from apps.opps.sync import list_opp_events_lean
 from apps.sessions.models import Session
 from apps.sessions.views import _scope_sessions_to_user
@@ -48,73 +33,7 @@ MAX_LIMIT = 500
 DRIVE_CACHE_SECONDS = 60
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def activity_feed(request: Request) -> Response:
-    """Aggregate chats + verdicts as a single timeline.
-
-    Query params:
-      - ``opp``: limit to one opp slug (else all opps in the workspace
-        the user is currently scoped to via X-ACE-Workspace).
-      - ``type``: comma-separated list of event kinds to include.
-        Default: all (``chat,verdict``).
-      - ``limit``: max events to return (default 200, max 500).
-    """
-    opp_slug = request.query_params.get("opp", "").strip() or None
-    requested_types = {
-        t.strip()
-        for t in request.query_params.get("type", "chat,verdict").split(",")
-        if t.strip()
-    }
-    try:
-        limit = max(1, min(MAX_LIMIT, int(request.query_params.get("limit", DEFAULT_LIMIT))))
-    except ValueError:
-        limit = DEFAULT_LIMIT
-
-    needs_drive = "verdict" in requested_types
-
-    # Workspace resolution is always required (membership gate); Drive
-    # client creation only fires when verdicts are requested. This lets
-    # the chat-only path work in environments where Drive isn't
-    # configured (e.g. dev sandboxes, the test harness without
-    # service-account fixtures).
-    if needs_drive:
-        ws, client, err = require_drive(request)
-        if err is not None:
-            return err
-    else:
-        ws, err = resolve_workspace(request)
-        if err is not None:
-            return err
-        client = None
-
-    events: list[dict] = []
-
-    # 1. Chats from Postgres. Cheap, indexed, no Drive cost.
-    if "chat" in requested_types:
-        events.extend(_chat_events(request, ws.slug, opp_slug))
-
-    # 2. Verdicts from Drive. Iterate the opp set in scope.
-    if needs_drive:
-        ace_folder_id = resolve_ace_root_folder_id(ws)
-        if ace_folder_id is not None and client is not None:
-            drive_events = _drive_events_cached(
-                ws.slug,
-                ace_folder_id,
-                opp_slug,
-                client,
-            )
-            events.extend(drive_events)
-
-    # Sort newest-first by ts (string ISO-8601 sorts lexically when
-    # timestamps share format; everything we emit uses UTC ISO).
-    events.sort(key=lambda e: e.get("ts", ""), reverse=True)
-    events = events[:limit]
-
-    return Response(success_response({"items": events, "total": len(events)}))
-
-
-def _chat_events(request: Request, workspace_slug: str, opp_slug: str | None) -> list[dict]:
+def _chat_events(request: HttpRequest, workspace_slug: str, opp_slug: str | None) -> list[dict]:
     qs = _scope_sessions_to_user(Session.objects.all(), request.user)
     if opp_slug:
         qs = qs.filter(opp_slug=opp_slug)

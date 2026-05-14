@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    readonly "/api/v2/_auth_smoke/": {
+    readonly "/api/_auth_smoke/": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -24,7 +24,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps": {
+    readonly "/api/w/{workspace_slug}/opps": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -42,7 +42,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -61,7 +61,7 @@ export interface paths {
         readonly patch: operations["apps_opps_api_v2_update_opp"];
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/runs": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/runs": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -78,7 +78,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/runs/{run_id}": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -96,7 +96,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -113,7 +113,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -130,7 +130,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}/download": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}/download": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -147,7 +147,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/fork": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/fork": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -164,7 +164,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/fork/status": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/fork/status": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -181,7 +181,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/scorecard": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/scorecard": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -198,7 +198,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/gates/{skill}": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/gates/{skill}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -215,7 +215,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/compare": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/compare": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -232,7 +232,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/actions/seed-chat": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -249,7 +249,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/health": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/health": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -266,7 +266,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/opps/{slug}/snapshot/invalidate": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/snapshot/invalidate": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -283,7 +283,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/sessions": {
+    readonly "/api/w/{workspace_slug}/sessions": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -301,7 +301,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/sessions/{slug}": {
+    readonly "/api/w/{workspace_slug}/sessions/{slug}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -320,7 +320,7 @@ export interface paths {
         readonly patch: operations["apps_sessions_api_v2_update_session"];
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/sessions/{slug}/messages": {
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/messages": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -337,7 +337,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/sessions/{slug}/participants": {
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/participants": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -354,7 +354,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/sessions/{slug}/turn-state": {
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/turn-state": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -371,7 +371,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/sessions/{slug}/cost": {
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/cost": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -388,7 +388,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/sessions/{slug}/structure": {
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/structure": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -405,7 +405,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/sessions/{slug}/share": {
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/share": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -415,14 +415,32 @@ export interface paths {
         /** List share tokens */
         readonly get: operations["apps_sessions_api_v2_list_share"];
         readonly put?: never;
-        readonly post?: never;
+        /** Create share token */
+        readonly post: operations["apps_sessions_api_v2_create_share_token"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/w/{workspace_slug}/activity": {
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/share/{token_key}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** Revoke share token */
+        readonly delete: operations["apps_sessions_api_v2_revoke_share_token"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/activity": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -439,7 +457,27 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/workspaces": {
+    readonly "/api/share/{token}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Public shared session view
+         * @description Return a shared session's messages.  No auth required.
+         */
+        readonly get: operations["apps_sessions_api_v2_public_share_view"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/workspaces": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -457,7 +495,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/workspaces/{slug}": {
+    readonly "/api/workspaces/{slug}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -475,7 +513,7 @@ export interface paths {
         readonly patch: operations["apps_workspaces_api_v2_update_workspace"];
         readonly trace?: never;
     };
-    readonly "/api/v2/workspaces/{slug}/members": {
+    readonly "/api/workspaces/{slug}/members": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -492,7 +530,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/workspaces/{slug}/members/invite": {
+    readonly "/api/workspaces/{slug}/members/invite": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -509,7 +547,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/workspaces/{slug}/members/{user_id}": {
+    readonly "/api/workspaces/{slug}/members/{user_id}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -523,10 +561,11 @@ export interface paths {
         readonly delete: operations["apps_workspaces_api_v2_remove_member"];
         readonly options?: never;
         readonly head?: never;
-        readonly patch?: never;
+        /** Change member role */
+        readonly patch: operations["apps_workspaces_api_v2_change_member_role"];
         readonly trace?: never;
     };
-    readonly "/api/v2/workspaces/{slug}/leave": {
+    readonly "/api/workspaces/{slug}/leave": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -543,7 +582,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/workspaces/{slug}/activity": {
+    readonly "/api/workspaces/{slug}/activity": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -560,7 +599,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/workspaces/{slug}/drive-config/verify": {
+    readonly "/api/workspaces/{slug}/drive-config/verify": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -577,7 +616,64 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/ingest/upload": {
+    readonly "/api/workspaces/drive-config": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Drive service-account email
+         * @description Returns the Google service-account email used for Drive access.
+         *
+         *     Callers display this so the user knows which account to share their
+         *     Drive folder with.
+         */
+        readonly get: operations["apps_workspaces_api_v2_get_drive_config"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/invites/{token}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Invite preview (public) */
+        readonly get: operations["apps_workspaces_api_v2_invite_preview"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/invites/{token}/accept": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Accept workspace invite */
+        readonly post: operations["apps_workspaces_api_v2_invite_accept"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/ingest/upload": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -594,7 +690,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/status": {
+    readonly "/api/mobile/status": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -611,7 +707,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/ensure-running": {
+    readonly "/api/mobile/ensure-running": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -628,7 +724,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/stop": {
+    readonly "/api/mobile/stop": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -645,7 +741,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/diagnose": {
+    readonly "/api/mobile/diagnose": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -662,7 +758,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/states": {
+    readonly "/api/mobile/states": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -679,7 +775,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/states/select": {
+    readonly "/api/mobile/states/select": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -696,7 +792,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/snapshots/save": {
+    readonly "/api/mobile/snapshots/save": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -713,7 +809,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/snapshots/load": {
+    readonly "/api/mobile/snapshots/load": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -730,7 +826,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/run-recipe": {
+    readonly "/api/mobile/run-recipe": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -747,7 +843,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/jobs/{job_id}": {
+    readonly "/api/mobile/jobs/{job_id}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -764,7 +860,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/apk/install": {
+    readonly "/api/mobile/apk/install": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -781,7 +877,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/capture-ui-dump": {
+    readonly "/api/mobile/capture-ui-dump": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -798,7 +894,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/screenshot": {
+    readonly "/api/mobile/screenshot": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -815,7 +911,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/restart-runner": {
+    readonly "/api/mobile/restart-runner": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -832,7 +928,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/admin/patch-launch-script": {
+    readonly "/api/mobile/admin/patch-launch-script": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -849,7 +945,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/mobile/admin/launch-script-patches": {
+    readonly "/api/mobile/admin/launch-script-patches": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -866,7 +962,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/system/overview": {
+    readonly "/api/system/overview": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -883,7 +979,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/system/skills": {
+    readonly "/api/system/skills": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -900,7 +996,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/system/skills/{name}": {
+    readonly "/api/system/skills/{name}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -917,7 +1013,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/system/agents": {
+    readonly "/api/system/agents": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -934,7 +1030,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/system/agents/{name}": {
+    readonly "/api/system/agents/{name}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -951,7 +1047,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/system/version": {
+    readonly "/api/system/version": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -968,7 +1064,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/system/cli-diag": {
+    readonly "/api/system/cli-diag": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -985,7 +1081,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/tokens": {
+    readonly "/api/tokens": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1003,7 +1099,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/tokens/{token_id}": {
+    readonly "/api/tokens/{token_id}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1020,7 +1116,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/auth/me": {
+    readonly "/api/auth/me": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1037,7 +1133,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/auth/logout": {
+    readonly "/api/auth/logout": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1054,7 +1150,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/auth/e2e-login": {
+    readonly "/api/auth/e2e-login": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1071,7 +1167,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/auth/cli/status": {
+    readonly "/api/auth/cli/status": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1088,7 +1184,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/auth/cli/upload": {
+    readonly "/api/auth/cli/upload": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1105,7 +1201,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/auth/nova/status": {
+    readonly "/api/auth/nova/status": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1122,7 +1218,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/auth/nova/disconnect": {
+    readonly "/api/auth/nova/disconnect": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1139,7 +1235,41 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/v2/health": {
+    readonly "/api/auth/cli/promote": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Promote user CLI credential to global scope (staff/automation only) */
+        readonly post: operations["apps_auth_api_v2_cli_auth_promote"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/auth/cli/expected-shape": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Expected CLI credential blob shape (public) */
+        readonly get: operations["apps_auth_api_v2_cli_auth_expected_shape"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/health": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1605,7 +1735,7 @@ export interface components {
         };
         /**
          * ActivityFeedOut
-         * @description Response wrapper for GET /api/v2/activity/.
+         * @description Response wrapper for GET /api/activity/.
          */
         readonly ActivityFeedOut: {
             /** Items */
@@ -1716,6 +1846,43 @@ export interface components {
         readonly WorkspaceInviteIn: {
             /** Email */
             readonly email: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            readonly role: "owner" | "editor" | "viewer";
+        };
+        /**
+         * InvitePreviewOut
+         * @description GET /api/invites/{token} — public invite preview (no auth required).
+         */
+        readonly InvitePreviewOut: {
+            /** Workspace Slug */
+            readonly workspace_slug: string;
+            /** Workspace Display Name */
+            readonly workspace_display_name: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            readonly role: "owner" | "editor" | "viewer";
+            /** Invited By Email */
+            readonly invited_by_email: string;
+            /** Email */
+            readonly email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            readonly expires_at: string;
+        };
+        /**
+         * InviteAcceptOut
+         * @description POST /api/invites/{token}/accept — accept an invite.
+         */
+        readonly InviteAcceptOut: {
+            /** Workspace Slug */
+            readonly workspace_slug: string;
             /**
              * Role
              * @enum {string}
@@ -1893,7 +2060,7 @@ export interface components {
         };
         /**
          * IngestUploadOut
-         * @description 201 response from POST /api/v2/ingest/upload.
+         * @description 201 response from POST /api/ingest/upload.
          *
          *     ``cost_breakdown`` is null for sessions where the JSONL contained no
          *     cost-bearing assistant turns (empty or tool-only transcripts).
@@ -2305,7 +2472,7 @@ export interface components {
         };
         /**
          * SystemOverviewOut
-         * @description Full system snapshot returned by GET /api/v2/system/overview.
+         * @description Full system snapshot returned by GET /api/system/overview.
          */
         readonly SystemOverviewOut: {
             /** Skills */
@@ -2331,7 +2498,7 @@ export interface components {
          * SkillDetailOut
          * @description Single-skill detail — adds full markdown body.
          *
-         *     Returned by GET /api/v2/system/skills/<name>.
+         *     Returned by GET /api/system/skills/<name>.
          */
         readonly SkillDetailOut: {
             /** Name */
@@ -2379,7 +2546,7 @@ export interface components {
          * AgentDetailOut
          * @description Single-agent detail — adds full markdown body.
          *
-         *     Returned by GET /api/v2/system/agents/<name>.
+         *     Returned by GET /api/system/agents/<name>.
          */
         readonly AgentDetailOut: {
             /** Name */
@@ -2404,7 +2571,7 @@ export interface components {
          * VersionOut
          * @description Plugin version + remote comparison.
          *
-         *     Returned by GET /api/v2/system/version and embedded in SystemOverviewOut.
+         *     Returned by GET /api/system/version and embedded in SystemOverviewOut.
          *     ``update_available`` is null when the remote check failed (network error
          *     or rate limit).
          */
@@ -2425,7 +2592,7 @@ export interface components {
         };
         /**
          * CliDiagOut
-         * @description Response from POST /api/v2/system/cli-diag.
+         * @description Response from POST /api/system/cli-diag.
          *
          *     The shape is intentionally open (``extra="allow"``) because the
          *     diagnostic response embeds raw subprocess output, plugin probes, and
@@ -2507,7 +2674,7 @@ export interface components {
         };
         /**
          * PersonalTokenCreateIn
-         * @description POST /api/v2/auth/tokens — create a new personal token.
+         * @description POST /api/auth/tokens — create a new personal token.
          */
         readonly PersonalTokenCreateIn: {
             /** Name */
@@ -2515,7 +2682,7 @@ export interface components {
         };
         /**
          * MeOut
-         * @description GET /api/v2/auth/me — minimal current-user info.
+         * @description GET /api/auth/me — minimal current-user info.
          *
          *     ``workspaces`` lists every workspace the user is a member of,
          *     ordered by the workspace display name.  Useful for workspace
@@ -2621,6 +2788,10 @@ export interface components {
          *
          *     ``can_manage`` is True for staff + automation accounts — they get
          *     the Connect/Disconnect controls in the UI.
+         *
+         *     ``expires_at`` is an ISO-8601 string when present.  The blob may store
+         *     either an ISO string or a unix-epoch integer; the view normalises to
+         *     string before validation.
          */
         readonly NovaAuthStatusOut: {
             /** Connected */
@@ -2638,6 +2809,28 @@ export interface components {
             readonly can_manage: boolean;
         };
         /**
+         * CliAuthPromoteOut
+         * @description POST /api/auth/cli/promote — promote user blob to global scope.
+         */
+        readonly CliAuthPromoteOut: {
+            /** Promoted */
+            readonly promoted: boolean;
+            /** Authenticated */
+            readonly authenticated: boolean;
+            /** Token Prefix */
+            readonly token_prefix?: string | null;
+        };
+        /**
+         * CliAuthExpectedShapeOut
+         * @description GET /api/auth/cli/expected-shape — schema introspection (public).
+         */
+        readonly CliAuthExpectedShapeOut: {
+            /** Shape */
+            readonly shape: {
+                readonly [key: string]: unknown;
+            };
+        };
+        /**
          * HealthCheckOut
          * @description One subsystem check result.
          */
@@ -2649,7 +2842,7 @@ export interface components {
         };
         /**
          * HealthOut
-         * @description GET /api/v2/health response.
+         * @description GET /api/health response.
          *
          *     ``healthy`` is True when all subsystem checks pass.
          *     ``status`` is ``"ok"`` or ``"unhealthy"`` for human readability.
@@ -3401,6 +3594,49 @@ export interface operations {
             };
         };
     };
+    readonly apps_sessions_api_v2_create_share_token: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_v2_revoke_share_token: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+                readonly token_key: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     readonly apps_activity_api_v2_activity_feed: {
         readonly parameters: {
             readonly query?: {
@@ -3424,6 +3660,26 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["ActivityFeedOut"];
                 };
+            };
+        };
+    };
+    readonly apps_sessions_api_v2_public_share_view: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly token: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -3586,6 +3842,29 @@ export interface operations {
             };
         };
     };
+    readonly apps_workspaces_api_v2_change_member_role: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly slug: string;
+                readonly user_id: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkspaceMemberOut"];
+                };
+            };
+        };
+    };
     readonly apps_workspaces_api_v2_leave_workspace: {
         readonly parameters: {
             readonly query?: never;
@@ -3643,6 +3922,68 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly apps_workspaces_api_v2_get_drive_config: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_workspaces_api_v2_invite_preview: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly token: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InvitePreviewOut"];
+                };
+            };
+        };
+    };
+    readonly apps_workspaces_api_v2_invite_accept: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly token: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InviteAcceptOut"];
+                };
             };
         };
     };
@@ -4367,6 +4708,46 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly apps_auth_api_v2_cli_auth_promote: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CliAuthPromoteOut"];
+                };
+            };
+        };
+    };
+    readonly apps_auth_api_v2_cli_auth_expected_shape: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CliAuthExpectedShapeOut"];
+                };
             };
         };
     };

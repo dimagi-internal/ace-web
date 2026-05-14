@@ -45,7 +45,7 @@ class PersonalTokenOut(StrictModel):
 
 
 class PersonalTokenCreateIn(StrictModel):
-    """POST /api/v2/auth/tokens — create a new personal token."""
+    """POST /api/auth/tokens — create a new personal token."""
 
     name: str               # maps to PersonalToken.label in the ORM
 
@@ -65,7 +65,7 @@ class PersonalTokenCreatedOut(PersonalTokenOut):
 
 
 class ShareTokenCreateIn(StrictModel):
-    """POST /api/v2/sessions/<slug>/share-tokens — create a share link.
+    """POST /api/sessions/<slug>/share-tokens — create a share link.
 
     No body fields are required for the current implementation; the
     schema exists so Phase 2 can extend it (e.g. ``expires_in_days``)

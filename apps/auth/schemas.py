@@ -25,7 +25,7 @@ from apps.common.schemas import StrictModel, WorkspaceRefOut
 
 
 class MeOut(StrictModel):
-    """GET /api/v2/auth/me — minimal current-user info.
+    """GET /api/auth/me — minimal current-user info.
 
     ``workspaces`` lists every workspace the user is a member of,
     ordered by the workspace display name.  Useful for workspace
@@ -71,6 +71,20 @@ class CliAuthUploadOut(StrictModel):
     scope: str  # "user" | "global"
 
 
+class CliAuthPromoteOut(StrictModel):
+    """POST /api/auth/cli/promote — promote user blob to global scope."""
+
+    promoted: bool
+    authenticated: bool
+    token_prefix: str | None = None
+
+
+class CliAuthExpectedShapeOut(StrictModel):
+    """GET /api/auth/cli/expected-shape — schema introspection (public)."""
+
+    shape: dict
+
+
 # ── E2E login (automation) ────────────────────────────────────────────────────
 
 
@@ -102,11 +116,22 @@ class NovaAuthStatusOut(StrictModel):
 
     ``can_manage`` is True for staff + automation accounts — they get
     the Connect/Disconnect controls in the UI.
+
+    ``expires_at`` is an ISO-8601 string when present.  The blob may store
+    either an ISO string or a unix-epoch integer; the view normalises to
+    string before validation.
     """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        from_attributes=True,
+        str_strip_whitespace=True,
+        populate_by_name=True,
+    )
 
     connected: bool
     valid: bool
-    expires_at: str | None = None  # ISO-8601 string from the blob
+    expires_at: str | None = None  # ISO-8601 string (normalised from blob)
     scope: str | None = None
     can_manage: bool = False
 

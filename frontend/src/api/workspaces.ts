@@ -1,5 +1,4 @@
 import { apiV2 } from "./client.v2";
-import { apiFetch } from "./client";
 import type { components } from "./generated";
 
 // ---------------------------------------------------------------------------
@@ -15,7 +14,7 @@ export type WorkspaceMember = components["schemas"]["WorkspaceMemberOut"];
 export type WorkspaceRole = "owner" | "editor" | "viewer";
 
 // ---------------------------------------------------------------------------
-// Legacy-only types not in v2 schema (DRF endpoints still serve these)
+// Types for endpoints not yet in the generated schema
 // ---------------------------------------------------------------------------
 
 export interface DriveConfig {
@@ -64,7 +63,7 @@ export interface ActivityRow {
 // ---------------------------------------------------------------------------
 
 export async function listWorkspaces(): Promise<WorkspaceSummary[]> {
-  const { data, error } = await apiV2.GET("/api/v2/workspaces");
+  const { data, error } = await apiV2.GET("/api/workspaces");
   if (error) throw new Error((error as { title?: string }).title || "Failed to list workspaces");
   return data as WorkspaceSummary[];
 }
@@ -79,14 +78,14 @@ export async function createWorkspace(input: {
     name: input.name,
     drive_root_folder_id: input.drive_root_folder_id,
   };
-  const { data, error, response } = await apiV2.POST("/api/v2/workspaces", { body });
+  const { data, error, response } = await apiV2.POST("/api/workspaces", { body });
   if (error) throw new Error((error as { title?: string }).title || "Failed to create workspace");
   if (data) return data as WorkspaceDetail;
   return (await response.json()) as WorkspaceDetail;
 }
 
 export async function getWorkspace(slug: string): Promise<WorkspaceDetail> {
-  const { data, error } = await apiV2.GET("/api/v2/workspaces/{slug}", {
+  const { data, error } = await apiV2.GET("/api/workspaces/{slug}", {
     params: { path: { slug } },
   });
   if (error) throw new Error((error as { title?: string }).title || "Failed to get workspace");
@@ -97,7 +96,7 @@ export async function updateWorkspace(
   slug: string,
   input: { name?: string; drive_root_folder_id?: string },
 ): Promise<WorkspaceDetail> {
-  const { data, error } = await apiV2.PATCH("/api/v2/workspaces/{slug}", {
+  const { data, error } = await apiV2.PATCH("/api/workspaces/{slug}", {
     params: { path: { slug } },
     body: input,
   });
@@ -106,7 +105,7 @@ export async function updateWorkspace(
 }
 
 export async function listMembers(slug: string): Promise<WorkspaceMember[]> {
-  const { data, error } = await apiV2.GET("/api/v2/workspaces/{slug}/members", {
+  const { data, error } = await apiV2.GET("/api/workspaces/{slug}/members", {
     params: { path: { slug } },
   });
   if (error) throw new Error((error as { title?: string }).title || "Failed to list members");
@@ -122,7 +121,7 @@ export async function inviteMember(
     role: input.role,
   };
   const { data, error } = await apiV2.POST(
-    "/api/v2/workspaces/{slug}/members/invite",
+    "/api/workspaces/{slug}/members/invite",
     { params: { path: { slug } }, body },
   );
   if (error) throw new Error((error as { title?: string }).title || "Failed to invite member");
@@ -138,7 +137,7 @@ export async function inviteMember(
 }
 
 export async function removeMember(slug: string, userId: number): Promise<void> {
-  const { response } = await apiV2.DELETE("/api/v2/workspaces/{slug}/members/{user_id}", {
+  const { response } = await apiV2.DELETE("/api/workspaces/{slug}/members/{user_id}", {
     params: { path: { slug, user_id: userId } },
   });
   if (!response.ok && response.status !== 204) {
@@ -151,15 +150,19 @@ export async function changeMemberRole(
   userId: number,
   role: WorkspaceRole,
 ): Promise<WorkspaceMember> {
-  // v2 doesn't have a PATCH member endpoint — keep using legacy DRF.
-  return apiFetch<WorkspaceMember>(`/api/workspaces/${slug}/members/${userId}/`, {
-    method: "PATCH",
-    body: JSON.stringify({ role }),
-  }) as Promise<WorkspaceMember>;
+  const { response } = await apiV2.PATCH(
+    "/api/workspaces/{slug}/members/{user_id}" as never,
+    {
+      params: { path: { slug, user_id: userId } },
+      body: { role },
+    } as never,
+  );
+  if (!response.ok) throw new Error(`Change role failed: ${response.status}`);
+  return (await response.json()) as WorkspaceMember;
 }
 
 export async function leaveWorkspace(slug: string): Promise<void> {
-  const { response } = await apiV2.POST("/api/v2/workspaces/{slug}/leave", {
+  const { response } = await apiV2.POST("/api/workspaces/{slug}/leave", {
     params: { path: { slug } },
   });
   if (!response.ok && response.status !== 204) {
@@ -167,27 +170,43 @@ export async function leaveWorkspace(slug: string): Promise<void> {
   }
 }
 
-export function getInvitePreview(token: string): Promise<InvitePreview> {
-  return apiFetch<InvitePreview>(`/api/invites/${token}/`);
+export async function getInvitePreview(token: string): Promise<InvitePreview> {
+  const { response } = await apiV2.GET("/api/invites/{token}" as never, {
+    params: { path: { token } },
+  } as never);
+  if (!response.ok) throw new Error(`Invite not found: ${response.status}`);
+  return (await response.json()) as InvitePreview;
 }
 
-export function acceptInvite(token: string): Promise<AcceptResult> {
-  return apiFetch<AcceptResult>(`/api/invites/${token}/accept/`, { method: "POST" });
+export async function acceptInvite(token: string): Promise<AcceptResult> {
+  const { response } = await apiV2.POST("/api/invites/{token}/accept" as never, {
+    params: { path: { token } },
+  } as never);
+  if (!response.ok) throw new Error(`Accept invite failed: ${response.status}`);
+  return (await response.json()) as AcceptResult;
 }
 
-export function getDriveConfig(): Promise<DriveConfig> {
-  return apiFetch<DriveConfig>("/api/workspaces/drive-config/");
+export async function getDriveConfig(): Promise<DriveConfig> {
+  const { response } = await apiV2.GET("/api/workspaces/drive-config" as never, {} as never);
+  if (!response.ok) throw new Error(`Drive config failed: ${response.status}`);
+  return (await response.json()) as DriveConfig;
 }
 
-export function verifyDriveAccess(slug: string): Promise<VerifyResult> {
-  // v2 endpoint exists but content?: never — use legacy for now
-  return apiFetch<VerifyResult>(`/api/workspaces/${slug}/verify-drive-access/`, {
-    method: "POST",
+export async function verifyDriveAccess(slug: string): Promise<VerifyResult> {
+  const { response } = await apiV2.POST("/api/workspaces/{slug}/drive-config/verify", {
+    params: { path: { slug } },
   });
+  if (!response.ok) throw new Error(`Drive verify failed: ${response.status}`);
+  return (await response.json()) as VerifyResult;
 }
 
-export function listActivity(slug: string): Promise<ActivityRow[]> {
-  return apiFetch<ActivityRow[]>(`/api/workspaces/${slug}/activity/`);
+export async function listActivity(slug: string): Promise<ActivityRow[]> {
+  const { response } = await apiV2.GET("/api/workspaces/{slug}/activity" as never, {
+    params: { path: { slug } },
+  } as never);
+  if (!response.ok) throw new Error(`List activity failed: ${response.status}`);
+  const body = (await response.json()) as { items: ActivityRow[]; total: number };
+  return body.items;
 }
 
 // ---------------------------------------------------------------------------

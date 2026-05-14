@@ -11,9 +11,10 @@ import type { ShareTokenListItem } from "../api/types.ws";
 
 interface Props {
   slug: string;
+  workspaceSlug: string;
 }
 
-export function SharePopover({ slug }: Props) {
+export function SharePopover({ slug, workspaceSlug }: Props) {
   const [open, setOpen] = useState(false);
   const [tokens, setTokens] = useState<ShareTokenListItem[]>([]);
   const [copyUrl, setCopyUrl] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export function SharePopover({ slug }: Props) {
 
   const loadTokens = async () => {
     try {
-      const result = await listShareTokens(slug);
+      const result = await listShareTokens(slug, workspaceSlug);
       setTokens(result);
     } catch {
       // Silently fail — the list just stays empty
@@ -40,7 +41,7 @@ export function SharePopover({ slug }: Props) {
     setError(null);
     setCopyUrl(null);
     try {
-      const result = await createShareToken(slug);
+      const result = await createShareToken(slug, workspaceSlug);
       // Try to copy to clipboard, but don't fail the whole flow if the
       // browser denies clipboard access (headless, restricted contexts).
       let copied = false;
@@ -61,7 +62,7 @@ export function SharePopover({ slug }: Props) {
 
   const handleRevoke = async (token: string) => {
     try {
-      await revokeShareToken(slug, token);
+      await revokeShareToken(slug, token, workspaceSlug);
       setCopyUrl(null);
       await loadTokens();
     } catch (e) {

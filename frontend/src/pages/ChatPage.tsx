@@ -112,7 +112,7 @@ export function ChatPage() {
               Structure
             </Link>
             <AddTeammateButton slug={slug} />
-            <SharePopover slug={slug} />
+            <SharePopover slug={slug} workspaceSlug={workspaceSlug} />
           </div>
         </header>
         <div className="flex-1 overflow-hidden">

@@ -104,7 +104,7 @@ def test_list_opps_returns_pydantic_validated_payload(member_client, monkeypatch
         "apps.opps.api_v2.list_opp_cards", lambda workspace: fake_cards
     )
 
-    response = client.get("/api/v2/w/ws1/opps")
+    response = client.get("/api/w/ws1/opps")
     assert response.status_code == 200
     body = response.json()
     assert "items" in body
@@ -121,7 +121,7 @@ def test_list_opps_404s_non_member(non_member_client):
         slug="ws2", display_name="WS2", drive_root_folder_id="folder-2",
         created_by=creator,
     )
-    response = client.get("/api/v2/w/ws2/opps")
+    response = client.get("/api/w/ws2/opps")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
     body = response.json()
@@ -136,7 +136,7 @@ def test_list_opps_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=creator,
     )
-    response = client.get("/api/v2/w/ws1/opps")
+    response = client.get("/api/w/ws1/opps")
     assert response.status_code == 401
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -153,7 +153,7 @@ def test_get_opp_returns_snapshot_with_etag(member_client, monkeypatch):
         "apps.opps.api_v2.load_opp_snapshot",
         lambda workspace, slug, run_id=None: _FAKE_SNAPSHOT,
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1")
+    response = client.get("/api/w/ws1/opps/opp-1")
     assert response.status_code == 200
     assert "ETag" in response
     body = response.json()
@@ -169,18 +169,18 @@ def test_get_opp_304_on_matching_etag(member_client, monkeypatch):
         lambda workspace, slug, run_id=None: _FAKE_SNAPSHOT,
     )
     # First request — get the ETag.
-    r1 = client.get("/api/v2/w/ws1/opps/opp-1")
+    r1 = client.get("/api/w/ws1/opps/opp-1")
     assert r1.status_code == 200
     etag = r1["ETag"]
     # Second request with matching If-None-Match → 304.
-    r2 = client.get("/api/v2/w/ws1/opps/opp-1", HTTP_IF_NONE_MATCH=etag)
+    r2 = client.get("/api/w/ws1/opps/opp-1", HTTP_IF_NONE_MATCH=etag)
     assert r2.status_code == 304
 
 
 @pytest.mark.django_db
 def test_get_opp_404_non_member(non_member_client, monkeypatch):
     client, _, _ = non_member_client
-    response = client.get("/api/v2/w/ws1/opps/opp-1")
+    response = client.get("/api/w/ws1/opps/opp-1")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -191,7 +191,7 @@ def test_get_opp_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator5@example.com"),
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1")
+    response = client.get("/api/w/ws1/opps/opp-1")
     assert response.status_code == 401
 
 
@@ -202,7 +202,7 @@ def test_get_opp_404_unknown_slug(member_client, monkeypatch):
         "apps.opps.api_v2.load_opp_snapshot",
         lambda workspace, slug, run_id=None: None,
     )
-    response = client.get("/api/v2/w/ws1/opps/no-such-opp")
+    response = client.get("/api/w/ws1/opps/no-such-opp")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
     body = response.json()
@@ -222,7 +222,7 @@ def test_create_opp_happy_path(member_client, monkeypatch):
         lambda workspace, user, body: _FAKE_CARD,
     )
     response = client.post(
-        "/api/v2/w/ws1/opps",
+        "/api/w/ws1/opps",
         data={"title": "New Opp", "slug": "new-opp", "idea": "An idea."},
         content_type="application/json",
     )
@@ -235,7 +235,7 @@ def test_create_opp_happy_path(member_client, monkeypatch):
 def test_create_opp_404_non_member(non_member_client):
     client, _, _ = non_member_client
     response = client.post(
-        "/api/v2/w/ws1/opps",
+        "/api/w/ws1/opps",
         data={"title": "New Opp", "slug": "new-opp", "idea": "An idea."},
         content_type="application/json",
     )
@@ -250,7 +250,7 @@ def test_create_opp_401_anonymous(db, client):
         created_by=User.objects.create_user(email="creator6@example.com"),
     )
     response = client.post(
-        "/api/v2/w/ws1/opps",
+        "/api/w/ws1/opps",
         data={"title": "New Opp", "slug": "new-opp", "idea": "An idea."},
         content_type="application/json",
     )
@@ -261,7 +261,7 @@ def test_create_opp_401_anonymous(db, client):
 def test_create_opp_400_empty_title(member_client):
     client, workspace, _ = member_client
     response = client.post(
-        "/api/v2/w/ws1/opps",
+        "/api/w/ws1/opps",
         data={"title": "", "slug": "new-opp", "idea": "An idea."},
         content_type="application/json",
     )
@@ -278,7 +278,7 @@ def test_create_opp_409_duplicate_slug(member_client, monkeypatch):
 
     monkeypatch.setattr("apps.opps.api_v2.create_opp_and_return_card", _raise_conflict)
     response = client.post(
-        "/api/v2/w/ws1/opps",
+        "/api/w/ws1/opps",
         data={"title": "New Opp", "slug": "new-opp", "idea": "An idea."},
         content_type="application/json",
     )
@@ -299,7 +299,7 @@ def test_patch_opp_happy_path(member_client, monkeypatch):
         lambda workspace, slug, body: _FAKE_CARD,
     )
     response = client.patch(
-        "/api/v2/w/ws1/opps/opp-1",
+        "/api/w/ws1/opps/opp-1",
         data={"title": "Updated Title"},
         content_type="application/json",
     )
@@ -312,7 +312,7 @@ def test_patch_opp_happy_path(member_client, monkeypatch):
 def test_patch_opp_404_non_member(non_member_client):
     client, _, _ = non_member_client
     response = client.patch(
-        "/api/v2/w/ws1/opps/opp-1",
+        "/api/w/ws1/opps/opp-1",
         data={"title": "Updated Title"},
         content_type="application/json",
     )
@@ -327,7 +327,7 @@ def test_patch_opp_401_anonymous(db, client):
         created_by=User.objects.create_user(email="creator7@example.com"),
     )
     response = client.patch(
-        "/api/v2/w/ws1/opps/opp-1",
+        "/api/w/ws1/opps/opp-1",
         data={"title": "Updated"},
         content_type="application/json",
     )
@@ -344,7 +344,7 @@ def test_patch_opp_404_unknown_slug(member_client, monkeypatch):
 
     monkeypatch.setattr("apps.opps.api_v2.patch_opp_and_return_card", _raise_not_found)
     response = client.patch(
-        "/api/v2/w/ws1/opps/no-such-opp",
+        "/api/w/ws1/opps/no-such-opp",
         data={"title": "Updated"},
         content_type="application/json",
     )
@@ -356,7 +356,7 @@ def test_patch_opp_404_unknown_slug(member_client, monkeypatch):
 def test_patch_opp_400_empty_title(member_client):
     client, workspace, _ = member_client
     response = client.patch(
-        "/api/v2/w/ws1/opps/opp-1",
+        "/api/w/ws1/opps/opp-1",
         data={"title": ""},
         content_type="application/json",
     )
@@ -375,14 +375,14 @@ def test_delete_opp_happy_path(member_client, monkeypatch):
         "apps.opps.api_v2.delete_opp_by_slug",
         lambda workspace, slug: None,
     )
-    response = client.delete("/api/v2/w/ws1/opps/opp-1")
+    response = client.delete("/api/w/ws1/opps/opp-1")
     assert response.status_code == 204
 
 
 @pytest.mark.django_db
 def test_delete_opp_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.delete("/api/v2/w/ws1/opps/opp-1")
+    response = client.delete("/api/w/ws1/opps/opp-1")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -393,7 +393,7 @@ def test_delete_opp_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator8@example.com"),
     )
-    response = client.delete("/api/v2/w/ws1/opps/opp-1")
+    response = client.delete("/api/w/ws1/opps/opp-1")
     assert response.status_code == 401
 
 
@@ -405,7 +405,7 @@ def test_delete_opp_404_unknown_slug(member_client, monkeypatch):
         raise FileNotFoundError(f"no opp named {slug!r}")
 
     monkeypatch.setattr("apps.opps.api_v2.delete_opp_by_slug", _raise_not_found)
-    response = client.delete("/api/v2/w/ws1/opps/no-such-opp")
+    response = client.delete("/api/w/ws1/opps/no-such-opp")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -502,7 +502,7 @@ def test_list_runs_happy_path(member_client, monkeypatch):
         "apps.opps.api_v2.list_opp_runs_for_workspace",
         lambda workspace, slug: _FAKE_RUNS,
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/runs")
+    response = client.get("/api/w/ws1/opps/opp-1/runs")
     assert response.status_code == 200
     body = response.json()
     assert "items" in body
@@ -513,7 +513,7 @@ def test_list_runs_happy_path(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_list_runs_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.get("/api/v2/w/ws1/opps/opp-1/runs")
+    response = client.get("/api/w/ws1/opps/opp-1/runs")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -524,7 +524,7 @@ def test_list_runs_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator-r1@example.com"),
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/runs")
+    response = client.get("/api/w/ws1/opps/opp-1/runs")
     assert response.status_code == 401
 
 
@@ -535,7 +535,7 @@ def test_list_runs_empty_for_unknown_slug(member_client, monkeypatch):
         "apps.opps.api_v2.list_opp_runs_for_workspace",
         lambda workspace, slug: [],
     )
-    response = client.get("/api/v2/w/ws1/opps/no-such/runs")
+    response = client.get("/api/w/ws1/opps/no-such/runs")
     assert response.status_code == 200
     assert response.json()["total"] == 0
 
@@ -552,7 +552,7 @@ def test_get_run_happy_path(member_client, monkeypatch):
         "apps.opps.api_v2.list_opp_runs_for_workspace",
         lambda workspace, slug: _FAKE_RUNS,
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/runs/run-001")
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001")
     assert response.status_code == 200
     OppRunOut.model_validate(response.json())
     assert response.json()["run_id"] == "run-001"
@@ -561,7 +561,7 @@ def test_get_run_happy_path(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_get_run_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.get("/api/v2/w/ws1/opps/opp-1/runs/run-001")
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001")
     assert response.status_code == 404
 
 
@@ -571,7 +571,7 @@ def test_get_run_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator-r2@example.com"),
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/runs/run-001")
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001")
     assert response.status_code == 401
 
 
@@ -582,7 +582,7 @@ def test_get_run_404_unknown_run_id(member_client, monkeypatch):
         "apps.opps.api_v2.list_opp_runs_for_workspace",
         lambda workspace, slug: _FAKE_RUNS,
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/runs/run-999")
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-999")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -594,7 +594,7 @@ def test_get_run_404_unknown_slug(member_client, monkeypatch):
         "apps.opps.api_v2.list_opp_runs_for_workspace",
         lambda workspace, slug: [],
     )
-    response = client.get("/api/v2/w/ws1/opps/no-such/runs/run-001")
+    response = client.get("/api/w/ws1/opps/no-such/runs/run-001")
     assert response.status_code == 404
 
 
@@ -610,14 +610,14 @@ def test_delete_run_happy_path(member_client, monkeypatch):
         "apps.opps.api_v2.delete_run_by_id",
         lambda workspace, slug, run_id: None,
     )
-    response = client.delete("/api/v2/w/ws1/opps/opp-1/runs/run-001")
+    response = client.delete("/api/w/ws1/opps/opp-1/runs/run-001")
     assert response.status_code == 204
 
 
 @pytest.mark.django_db
 def test_delete_run_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.delete("/api/v2/w/ws1/opps/opp-1/runs/run-001")
+    response = client.delete("/api/w/ws1/opps/opp-1/runs/run-001")
     assert response.status_code == 404
 
 
@@ -627,7 +627,7 @@ def test_delete_run_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator-r3@example.com"),
     )
-    response = client.delete("/api/v2/w/ws1/opps/opp-1/runs/run-001")
+    response = client.delete("/api/w/ws1/opps/opp-1/runs/run-001")
     assert response.status_code == 401
 
 
@@ -639,7 +639,7 @@ def test_delete_run_404_unknown_run(member_client, monkeypatch):
         raise FileNotFoundError("no run named 'run-999'")
 
     monkeypatch.setattr("apps.opps.api_v2.delete_run_by_id", _raise)
-    response = client.delete("/api/v2/w/ws1/opps/opp-1/runs/run-999")
+    response = client.delete("/api/w/ws1/opps/opp-1/runs/run-999")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -656,7 +656,7 @@ def test_get_step_happy_path(member_client, monkeypatch):
         "apps.opps.api_v2.load_step_snapshot",
         lambda workspace, slug, skill, run_id=None: _FAKE_STEP,
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/steps/idea-to-pdd")
+    response = client.get("/api/w/ws1/opps/opp-1/steps/idea-to-pdd")
     assert response.status_code == 200
     StepSnapshotOut.model_validate(response.json())
     assert response.json()["skill"] == "idea-to-pdd"
@@ -665,7 +665,7 @@ def test_get_step_happy_path(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_get_step_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.get("/api/v2/w/ws1/opps/opp-1/steps/idea-to-pdd")
+    response = client.get("/api/w/ws1/opps/opp-1/steps/idea-to-pdd")
     assert response.status_code == 404
 
 
@@ -675,7 +675,7 @@ def test_get_step_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator-s1@example.com"),
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/steps/idea-to-pdd")
+    response = client.get("/api/w/ws1/opps/opp-1/steps/idea-to-pdd")
     assert response.status_code == 401
 
 
@@ -686,7 +686,7 @@ def test_get_step_404_unknown_opp(member_client, monkeypatch):
         "apps.opps.api_v2.load_step_snapshot",
         lambda workspace, slug, skill, run_id=None: None,
     )
-    response = client.get("/api/v2/w/ws1/opps/no-such/steps/idea-to-pdd")
+    response = client.get("/api/w/ws1/opps/no-such/steps/idea-to-pdd")
     assert response.status_code == 404
 
 
@@ -697,7 +697,7 @@ def test_get_step_404_unknown_skill(member_client, monkeypatch):
         "apps.opps.api_v2.load_step_snapshot",
         lambda workspace, slug, skill, run_id=None: {"_not_found": "skill"},
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/steps/no-such-skill")
+    response = client.get("/api/w/ws1/opps/opp-1/steps/no-such-skill")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -714,7 +714,7 @@ def test_get_artifact_happy_path(member_client, monkeypatch):
         "apps.opps.api_v2.load_artifact_meta",
         lambda workspace, slug, artifact_id, run_id=None: _FAKE_ARTIFACT,
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/artifacts/file-abc")
+    response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc")
     assert response.status_code == 200
     ArtifactOut.model_validate(response.json())
     assert response.json()["id"] == "file-abc"
@@ -723,7 +723,7 @@ def test_get_artifact_happy_path(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_get_artifact_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.get("/api/v2/w/ws1/opps/opp-1/artifacts/file-abc")
+    response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc")
     assert response.status_code == 404
 
 
@@ -733,7 +733,7 @@ def test_get_artifact_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator-a1@example.com"),
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/artifacts/file-abc")
+    response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc")
     assert response.status_code == 401
 
 
@@ -744,7 +744,7 @@ def test_get_artifact_404_unknown(member_client, monkeypatch):
         "apps.opps.api_v2.load_artifact_meta",
         lambda workspace, slug, artifact_id, run_id=None: {"_not_found": True},
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/artifacts/no-such")
+    response = client.get("/api/w/ws1/opps/opp-1/artifacts/no-such")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -761,7 +761,7 @@ def test_download_artifact_happy_path(member_client, monkeypatch):
         "apps.opps.api_v2.download_artifact_bytes",
         lambda workspace, slug, artifact_id: (b"hello world", "text/plain"),
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/artifacts/file-abc/download")
+    response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc/download")
     assert response.status_code == 200
     assert response["Content-Type"] == "text/plain"
     assert response.content == b"hello world"
@@ -773,7 +773,7 @@ def test_download_artifact_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator-a2@example.com"),
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/artifacts/file-abc/download")
+    response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc/download")
     assert response.status_code == 401
 
 
@@ -785,7 +785,7 @@ def test_download_artifact_404_unknown(member_client, monkeypatch):
         raise FileNotFoundError("artifact not found")
 
     monkeypatch.setattr("apps.opps.api_v2.download_artifact_bytes", _raise)
-    response = client.get("/api/v2/w/ws1/opps/opp-1/artifacts/no-such/download")
+    response = client.get("/api/w/ws1/opps/opp-1/artifacts/no-such/download")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -803,7 +803,7 @@ def test_fork_opp_happy_path(member_client, monkeypatch):
         lambda workspace, user, slug, body: _FAKE_FORK_RESULT,
     )
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/fork",
+        "/api/w/ws1/opps/opp-1/fork",
         data={"fork_at_phase": "design"},
         content_type="application/json",
     )
@@ -816,7 +816,7 @@ def test_fork_opp_happy_path(member_client, monkeypatch):
 def test_fork_opp_404_non_member(non_member_client):
     client, _, _ = non_member_client
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/fork",
+        "/api/w/ws1/opps/opp-1/fork",
         data={"fork_at_phase": "design"},
         content_type="application/json",
     )
@@ -830,7 +830,7 @@ def test_fork_opp_401_anonymous(db, client):
         created_by=User.objects.create_user(email="creator-f1@example.com"),
     )
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/fork",
+        "/api/w/ws1/opps/opp-1/fork",
         data={"fork_at_phase": "design"},
         content_type="application/json",
     )
@@ -848,7 +848,7 @@ def test_fork_opp_400_invalid_phase(member_client, monkeypatch):
 
     monkeypatch.setattr("apps.opps.api_v2.fork_opp_and_return", _raise)
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/fork",
+        "/api/w/ws1/opps/opp-1/fork",
         data={"fork_at_phase": "bad-phase"},
         content_type="application/json",
     )
@@ -867,7 +867,7 @@ def test_fork_opp_409_no_runs(member_client, monkeypatch):
 
     monkeypatch.setattr("apps.opps.api_v2.fork_opp_and_return", _raise)
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/fork",
+        "/api/w/ws1/opps/opp-1/fork",
         data={"fork_at_phase": "design"},
         content_type="application/json",
     )
@@ -886,7 +886,7 @@ def test_fork_opp_404_unknown_run(member_client, monkeypatch):
 
     monkeypatch.setattr("apps.opps.api_v2.fork_opp_and_return", _raise)
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/fork",
+        "/api/w/ws1/opps/opp-1/fork",
         data={"fork_at_phase": "design", "source_run_id": "run-999"},
         content_type="application/json",
     )
@@ -906,7 +906,7 @@ def test_fork_status_happy_path(member_client, monkeypatch):
         "django.core.cache.cache.get",
         lambda key: fake_progress,
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/fork/status?source_run_id=run-001")
+    response = client.get("/api/w/ws1/opps/opp-1/fork/status?source_run_id=run-001")
     assert response.status_code == 200
     ForkProgress.model_validate(response.json())
     assert response.json()["status"] == "copying"
@@ -916,7 +916,7 @@ def test_fork_status_happy_path(member_client, monkeypatch):
 def test_fork_status_unknown_when_no_cache(member_client):
     client, _, _ = member_client
     # No monkeypatch — cache.get returns None → status="unknown"
-    response = client.get("/api/v2/w/ws1/opps/opp-1/fork/status?source_run_id=run-999")
+    response = client.get("/api/w/ws1/opps/opp-1/fork/status?source_run_id=run-999")
     assert response.status_code == 200
     assert response.json()["status"] == "unknown"
 
@@ -927,14 +927,14 @@ def test_fork_status_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator-fs1@example.com"),
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/fork/status")
+    response = client.get("/api/w/ws1/opps/opp-1/fork/status")
     assert response.status_code == 401
 
 
 @pytest.mark.django_db
 def test_fork_status_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.get("/api/v2/w/ws1/opps/opp-1/fork/status")
+    response = client.get("/api/w/ws1/opps/opp-1/fork/status")
     assert response.status_code == 404
 
 
@@ -950,7 +950,7 @@ def test_get_scorecard_happy_path(member_client, monkeypatch):
         "apps.opps.api_v2.load_scorecard_for_opp",
         lambda workspace, slug: _FAKE_SCORECARD,
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/scorecard")
+    response = client.get("/api/w/ws1/opps/opp-1/scorecard")
     assert response.status_code == 200
     ScorecardOut.model_validate(response.json())
     assert response.json()["score"] == 87
@@ -963,7 +963,7 @@ def test_get_scorecard_null_when_no_scorecard(member_client, monkeypatch):
         "apps.opps.api_v2.load_scorecard_for_opp",
         lambda workspace, slug: {},
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/scorecard")
+    response = client.get("/api/w/ws1/opps/opp-1/scorecard")
     assert response.status_code == 200
     assert response.json() is None
 
@@ -971,7 +971,7 @@ def test_get_scorecard_null_when_no_scorecard(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_get_scorecard_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.get("/api/v2/w/ws1/opps/opp-1/scorecard")
+    response = client.get("/api/w/ws1/opps/opp-1/scorecard")
     assert response.status_code == 404
 
 
@@ -981,7 +981,7 @@ def test_get_scorecard_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator-sc1@example.com"),
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/scorecard")
+    response = client.get("/api/w/ws1/opps/opp-1/scorecard")
     assert response.status_code == 401
 
 
@@ -992,7 +992,7 @@ def test_get_scorecard_404_unknown_opp(member_client, monkeypatch):
         "apps.opps.api_v2.load_scorecard_for_opp",
         lambda workspace, slug: None,
     )
-    response = client.get("/api/v2/w/ws1/opps/no-such/scorecard")
+    response = client.get("/api/w/ws1/opps/no-such/scorecard")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -1010,7 +1010,7 @@ def test_record_gate_happy_path(member_client, monkeypatch):
         lambda workspace, slug, skill, body, user: _FAKE_GATE,
     )
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/gates/idea-to-pdd",
+        "/api/w/ws1/opps/opp-1/gates/idea-to-pdd",
         data={"decision": "approved"},
         content_type="application/json",
     )
@@ -1023,7 +1023,7 @@ def test_record_gate_happy_path(member_client, monkeypatch):
 def test_record_gate_404_non_member(non_member_client):
     client, _, _ = non_member_client
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/gates/idea-to-pdd",
+        "/api/w/ws1/opps/opp-1/gates/idea-to-pdd",
         data={"decision": "approved"},
         content_type="application/json",
     )
@@ -1037,7 +1037,7 @@ def test_record_gate_401_anonymous(db, client):
         created_by=User.objects.create_user(email="creator-g1@example.com"),
     )
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/gates/idea-to-pdd",
+        "/api/w/ws1/opps/opp-1/gates/idea-to-pdd",
         data={"decision": "approved"},
         content_type="application/json",
     )
@@ -1048,7 +1048,7 @@ def test_record_gate_401_anonymous(db, client):
 def test_record_gate_422_invalid_decision(member_client):
     client, _, _ = member_client
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/gates/idea-to-pdd",
+        "/api/w/ws1/opps/opp-1/gates/idea-to-pdd",
         data={"decision": "maybe"},
         content_type="application/json",
     )
@@ -1064,7 +1064,7 @@ def test_record_gate_404_unknown_opp(member_client, monkeypatch):
 
     monkeypatch.setattr("apps.opps.api_v2.record_gate_decision", _raise)
     response = client.post(
-        "/api/v2/w/ws1/opps/no-such/gates/idea-to-pdd",
+        "/api/w/ws1/opps/no-such/gates/idea-to-pdd",
         data={"decision": "approved"},
         content_type="application/json",
     )
@@ -1090,7 +1090,7 @@ def test_compare_runs_happy_path(member_client, monkeypatch):
         lambda workspace, slug, run_ids: fake_compare,
     )
     response = client.get(
-        "/api/v2/w/ws1/opps/opp-1/compare",
+        "/api/w/ws1/opps/opp-1/compare",
         {"run_ids": ["run-001", "run-002"]},
     )
     assert response.status_code == 200
@@ -1101,14 +1101,14 @@ def test_compare_runs_happy_path(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_compare_runs_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.get("/api/v2/w/ws1/opps/opp-1/compare?run_ids=run-001&run_ids=run-002")
+    response = client.get("/api/w/ws1/opps/opp-1/compare?run_ids=run-001&run_ids=run-002")
     assert response.status_code == 404
 
 
 @pytest.mark.django_db
 def test_compare_runs_400_too_few_run_ids(member_client):
     client, _, _ = member_client
-    response = client.get("/api/v2/w/ws1/opps/opp-1/compare?run_ids=run-001")
+    response = client.get("/api/w/ws1/opps/opp-1/compare?run_ids=run-001")
     assert response.status_code == 400
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -1126,7 +1126,7 @@ def test_seed_chat_happy_path(member_client, monkeypatch):
         lambda workspace, slug, user, body: {"session_slug": "sess-abc"},
     )
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/actions/seed-chat",
+        "/api/w/ws1/opps/opp-1/actions/seed-chat",
         data={"step_skill": "idea-to-pdd"},
         content_type="application/json",
     )
@@ -1139,7 +1139,7 @@ def test_seed_chat_happy_path(member_client, monkeypatch):
 def test_seed_chat_404_non_member(non_member_client):
     client, _, _ = non_member_client
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/actions/seed-chat",
+        "/api/w/ws1/opps/opp-1/actions/seed-chat",
         data={"step_skill": "idea-to-pdd"},
         content_type="application/json",
     )
@@ -1153,7 +1153,7 @@ def test_seed_chat_401_anonymous(db, client):
         created_by=User.objects.create_user(email="creator-seed1@example.com"),
     )
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/actions/seed-chat",
+        "/api/w/ws1/opps/opp-1/actions/seed-chat",
         data={"step_skill": "idea-to-pdd"},
         content_type="application/json",
     )
@@ -1164,7 +1164,7 @@ def test_seed_chat_401_anonymous(db, client):
 def test_seed_chat_422_empty_step_skill(member_client):
     client, _, _ = member_client
     response = client.post(
-        "/api/v2/w/ws1/opps/opp-1/actions/seed-chat",
+        "/api/w/ws1/opps/opp-1/actions/seed-chat",
         data={"step_skill": ""},
         content_type="application/json",
     )
@@ -1180,7 +1180,7 @@ def test_seed_chat_404_opp_not_found(member_client, monkeypatch):
 
     monkeypatch.setattr("apps.opps.api_v2.seed_chat_for_step", _raise)
     response = client.post(
-        "/api/v2/w/ws1/opps/no-such/actions/seed-chat",
+        "/api/w/ws1/opps/no-such/actions/seed-chat",
         data={"step_skill": "idea-to-pdd"},
         content_type="application/json",
     )
@@ -1201,7 +1201,7 @@ def test_opp_health_reachable(member_client, monkeypatch):
         "apps.opps.api_v2.probe_opp_health",
         lambda workspace, slug: {"reachable": True, "last_checked_at": now, "error": None},
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/health")
+    response = client.get("/api/w/ws1/opps/opp-1/health")
     assert response.status_code == 200
     result = OppHealthOut.model_validate(response.json())
     assert result.reachable is True
@@ -1218,7 +1218,7 @@ def test_opp_health_unreachable(member_client, monkeypatch):
             "reachable": False, "last_checked_at": now, "error": "connection refused",
         },
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/health")
+    response = client.get("/api/w/ws1/opps/opp-1/health")
     assert response.status_code == 200
     result = OppHealthOut.model_validate(response.json())
     assert result.reachable is False
@@ -1228,7 +1228,7 @@ def test_opp_health_unreachable(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_opp_health_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.get("/api/v2/w/ws1/opps/opp-1/health")
+    response = client.get("/api/w/ws1/opps/opp-1/health")
     assert response.status_code == 404
 
 
@@ -1238,7 +1238,7 @@ def test_opp_health_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator-h1@example.com"),
     )
-    response = client.get("/api/v2/w/ws1/opps/opp-1/health")
+    response = client.get("/api/w/ws1/opps/opp-1/health")
     assert response.status_code == 401
 
 
@@ -1263,7 +1263,7 @@ def test_invalidate_snapshot_happy_path(db, client, monkeypatch):
         "apps.opps.api_v2.invalidate_opp_snapshot_cache",
         lambda workspace: None,
     )
-    response = client.post("/api/v2/w/ws1/opps/opp-1/snapshot/invalidate")
+    response = client.post("/api/w/ws1/opps/opp-1/snapshot/invalidate")
     assert response.status_code == 204
 
 
@@ -1275,7 +1275,7 @@ def test_invalidate_snapshot_403_non_admin(member_client, monkeypatch):
         "apps.opps.api_v2.invalidate_opp_snapshot_cache",
         lambda workspace: None,
     )
-    response = client.post("/api/v2/w/ws1/opps/opp-1/snapshot/invalidate")
+    response = client.post("/api/w/ws1/opps/opp-1/snapshot/invalidate")
     assert response.status_code == 403
     assert response["Content-Type"].startswith("application/problem+json")
 
@@ -1286,5 +1286,5 @@ def test_invalidate_snapshot_401_anonymous(db, client):
         slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
         created_by=User.objects.create_user(email="creator-inv1@example.com"),
     )
-    response = client.post("/api/v2/w/ws1/opps/opp-1/snapshot/invalidate")
+    response = client.post("/api/w/ws1/opps/opp-1/snapshot/invalidate")
     assert response.status_code == 401

@@ -11,7 +11,7 @@ _SCALAR_HTML = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </head>
 <body>
-  <script id="api-reference" data-url="/api/v2/openapi.json"></script>
+  <script id="api-reference" data-url="/api/openapi.json"></script>
   <script>
     var configuration = {
       theme: "default",
@@ -36,7 +36,7 @@ _REDOC_HTML = """<!doctype html>
   <style>body { margin: 0; padding: 0; }</style>
 </head>
 <body>
-  <redoc spec-url="/api/v2/openapi.json"></redoc>
+  <redoc spec-url="/api/openapi.json"></redoc>
   <script src="https://cdn.jsdelivr.net/npm/redoc/bundles/redoc.standalone.js"></script>
 </body>
 </html>

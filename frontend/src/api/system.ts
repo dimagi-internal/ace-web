@@ -105,13 +105,13 @@ function mapAgentDetail(out: AgentDetailOut): AgentDetail {
 }
 
 export async function getSystemOverview(): Promise<SystemSnapshot> {
-  const { data, error } = await apiV2.GET("/api/v2/system/overview");
+  const { data, error } = await apiV2.GET("/api/system/overview");
   if (error) throw new Error((error as { title?: string }).title || "Failed to get system overview");
   return mapOverview(data as SystemOverviewOut);
 }
 
 export async function getSkillDetail(name: string): Promise<SkillDetail> {
-  const { data, error } = await apiV2.GET("/api/v2/system/skills/{name}", {
+  const { data, error } = await apiV2.GET("/api/system/skills/{name}", {
     params: { path: { name } },
   });
   if (error) throw new Error((error as { title?: string }).title || "Failed to get skill detail");
@@ -119,7 +119,7 @@ export async function getSkillDetail(name: string): Promise<SkillDetail> {
 }
 
 export async function getAgentDetail(name: string): Promise<AgentDetail> {
-  const { data, error } = await apiV2.GET("/api/v2/system/agents/{name}", {
+  const { data, error } = await apiV2.GET("/api/system/agents/{name}", {
     params: { path: { name } },
   });
   if (error) throw new Error((error as { title?: string }).title || "Failed to get agent detail");

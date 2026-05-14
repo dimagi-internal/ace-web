@@ -112,7 +112,7 @@ def test_list_workspaces_returns_list(owner_client, monkeypatch):
         "apps.workspaces.api_v2.list_my_workspaces",
         lambda u: [_FAKE_WORKSPACE],
     )
-    resp = client.get("/api/v2/workspaces")
+    resp = client.get("/api/workspaces")
     assert resp.status_code == 200
     body = resp.json()
     assert isinstance(body, list)
@@ -122,7 +122,7 @@ def test_list_workspaces_returns_list(owner_client, monkeypatch):
 @pytest.mark.django_db
 def test_list_workspaces_anon_401(anon_client):
     client, _ = anon_client
-    resp = client.get("/api/v2/workspaces")
+    resp = client.get("/api/workspaces")
     assert resp.status_code == 401
 
 
@@ -139,7 +139,7 @@ def test_create_workspace_201(owner_client, monkeypatch):
         lambda u, body: {**_FAKE_WORKSPACE, "name": body.name},
     )
     resp = client.post(
-        "/api/v2/workspaces",
+        "/api/workspaces",
         {"slug": "new-ws", "name": "New WS", "drive_root_folder_id": "folder-new"},
         content_type="application/json",
     )
@@ -151,7 +151,7 @@ def test_create_workspace_201(owner_client, monkeypatch):
 def test_create_workspace_anon_401(anon_client):
     client, _ = anon_client
     resp = client.post(
-        "/api/v2/workspaces",
+        "/api/workspaces",
         {"slug": "x", "name": "X", "drive_root_folder_id": "folder-x"},
         content_type="application/json",
     )
@@ -170,7 +170,7 @@ def test_workspace_detail_happy(owner_client, monkeypatch):
         "apps.workspaces.api_v2._workspace_to_dict",
         lambda ws, user: _FAKE_WORKSPACE,
     )
-    resp = client.get(f"/api/v2/workspaces/{workspace.slug}")
+    resp = client.get(f"/api/workspaces/{workspace.slug}")
     assert resp.status_code == 200
     assert resp.json()["slug"] == "test-ws"
 
@@ -178,14 +178,14 @@ def test_workspace_detail_happy(owner_client, monkeypatch):
 @pytest.mark.django_db
 def test_workspace_detail_non_member_404(non_member_client):
     client, workspace, _ = non_member_client
-    resp = client.get(f"/api/v2/workspaces/{workspace.slug}")
+    resp = client.get(f"/api/workspaces/{workspace.slug}")
     assert resp.status_code == 404
 
 
 @pytest.mark.django_db
 def test_workspace_detail_anon_401(anon_client):
     client, workspace = anon_client
-    resp = client.get(f"/api/v2/workspaces/{workspace.slug}")
+    resp = client.get(f"/api/workspaces/{workspace.slug}")
     assert resp.status_code == 401
 
 
@@ -202,7 +202,7 @@ def test_patch_workspace_owner(owner_client, monkeypatch):
         lambda ws, user: {**_FAKE_WORKSPACE, "name": ws.display_name},
     )
     resp = client.patch(
-        f"/api/v2/workspaces/{workspace.slug}",
+        f"/api/workspaces/{workspace.slug}",
         {"name": "Updated"},
         content_type="application/json",
     )
@@ -213,7 +213,7 @@ def test_patch_workspace_owner(owner_client, monkeypatch):
 def test_patch_workspace_member_403(member_client, monkeypatch):
     client, workspace, _ = member_client
     resp = client.patch(
-        f"/api/v2/workspaces/{workspace.slug}",
+        f"/api/workspaces/{workspace.slug}",
         {"name": "Nope"},
         content_type="application/json",
     )
@@ -232,7 +232,7 @@ def test_list_members_happy(member_client, monkeypatch):
         "apps.workspaces.api_v2.list_members_in_workspace",
         lambda ws: [_FAKE_MEMBER],
     )
-    resp = client.get(f"/api/v2/workspaces/{workspace.slug}/members")
+    resp = client.get(f"/api/workspaces/{workspace.slug}/members")
     assert resp.status_code == 200
     body = resp.json()
     assert isinstance(body, list)
@@ -242,7 +242,7 @@ def test_list_members_happy(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_list_members_non_member_404(non_member_client):
     client, workspace, _ = non_member_client
-    resp = client.get(f"/api/v2/workspaces/{workspace.slug}/members")
+    resp = client.get(f"/api/workspaces/{workspace.slug}/members")
     assert resp.status_code == 404
 
 
@@ -259,7 +259,7 @@ def test_invite_member_owner_201(owner_client, monkeypatch):
         lambda ws, inviter, email, role: {**_FAKE_INVITE, "email": email},
     )
     resp = client.post(
-        f"/api/v2/workspaces/{workspace.slug}/members/invite",
+        f"/api/workspaces/{workspace.slug}/members/invite",
         {"email": "new@example.com", "role": "editor"},
         content_type="application/json",
     )
@@ -271,7 +271,7 @@ def test_invite_member_owner_201(owner_client, monkeypatch):
 def test_invite_member_non_owner_403(member_client, monkeypatch):
     client, workspace, _ = member_client
     resp = client.post(
-        f"/api/v2/workspaces/{workspace.slug}/members/invite",
+        f"/api/workspaces/{workspace.slug}/members/invite",
         {"email": "x@example.com", "role": "editor"},
         content_type="application/json",
     )
@@ -290,14 +290,14 @@ def test_remove_member_owner_204(owner_client, monkeypatch):
         "apps.workspaces.api_v2.remove_member_from_workspace",
         lambda ws, requester, uid: None,
     )
-    resp = client.delete(f"/api/v2/workspaces/{workspace.slug}/members/999")
+    resp = client.delete(f"/api/workspaces/{workspace.slug}/members/999")
     assert resp.status_code == 204
 
 
 @pytest.mark.django_db
 def test_remove_member_non_owner_403(member_client, monkeypatch):
     client, workspace, _ = member_client
-    resp = client.delete(f"/api/v2/workspaces/{workspace.slug}/members/999")
+    resp = client.delete(f"/api/workspaces/{workspace.slug}/members/999")
     assert resp.status_code == 403
 
 
@@ -313,7 +313,7 @@ def test_leave_workspace_204(member_client, monkeypatch):
         "apps.workspaces.api_v2.leave_workspace_op",
         lambda ws, user: None,
     )
-    resp = client.post(f"/api/v2/workspaces/{workspace.slug}/leave")
+    resp = client.post(f"/api/workspaces/{workspace.slug}/leave")
     assert resp.status_code == 204
 
 
@@ -329,7 +329,7 @@ def test_workspace_activity_owner(owner_client, monkeypatch):
         "apps.workspaces.api_v2.get_workspace_activity",
         lambda ws, user: [],
     )
-    resp = client.get(f"/api/v2/workspaces/{workspace.slug}/activity")
+    resp = client.get(f"/api/workspaces/{workspace.slug}/activity")
     assert resp.status_code == 200
     body = resp.json()
     assert "items" in body
@@ -339,7 +339,7 @@ def test_workspace_activity_owner(owner_client, monkeypatch):
 @pytest.mark.django_db
 def test_workspace_activity_member_403(member_client, monkeypatch):
     client, workspace, _ = member_client
-    resp = client.get(f"/api/v2/workspaces/{workspace.slug}/activity")
+    resp = client.get(f"/api/workspaces/{workspace.slug}/activity")
     assert resp.status_code == 403
 
 
@@ -355,6 +355,6 @@ def test_verify_drive_happy(owner_client, monkeypatch):
         "apps.workspaces.api_v2.verify_drive_access_for_workspace",
         lambda ws: {"ok": True, "sample_files": [], "total_visible": 0},
     )
-    resp = client.post(f"/api/v2/workspaces/{workspace.slug}/drive-config/verify")
+    resp = client.post(f"/api/workspaces/{workspace.slug}/drive-config/verify")
     assert resp.status_code == 200
     assert resp.json()["ok"] is True

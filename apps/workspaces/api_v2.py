@@ -17,6 +17,8 @@ from apps.api_v2.errors import (
 )
 
 from .schemas import (
+    InviteAcceptOut,
+    InvitePreviewOut,
     WorkspaceCreateIn,
     WorkspaceInviteIn,
     WorkspaceInviteOut,
@@ -26,6 +28,9 @@ from .schemas import (
 )
 
 router = Router(auth=session_auth, tags=["workspaces"])
+# Public invite router — no default auth (preview is unauthenticated,
+# accept requires session auth but we handle it inline).
+invites_router = Router(tags=["workspaces"])  # mounted at /invites
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -515,3 +520,173 @@ def verify_drive_access(
     ws = resolve_workspace_for_member(request, slug)
     result = verify_drive_access_for_workspace(ws)
     return JsonResponse(result)
+
+
+# ---------------------------------------------------------------------------
+# GET /workspaces/drive-config — service-account email (any member)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/drive-config", summary="Drive service-account email")
+def get_drive_config(request: HttpRequest) -> HttpResponse:
+    """Returns the Google service-account email used for Drive access.
+
+    Callers display this so the user knows which account to share their
+    Drive folder with.
+    """
+    import json
+
+    from django.http import JsonResponse
+
+    from apps.service_accounts.models import ServiceAccount
+
+    try:
+        sa = ServiceAccount.objects.get(name="ace-drive", is_active=True)
+        info = json.loads(sa.credential_json)
+        email = info.get("client_email", "")
+    except Exception:  # noqa: BLE001
+        email = ""
+    return JsonResponse({"service_account_email": email})
+
+
+# ---------------------------------------------------------------------------
+# PATCH /workspaces/{slug}/members/{user_id} — change member role
+# ---------------------------------------------------------------------------
+
+
+@router.patch(
+    "/{slug}/members/{user_id}",
+    response={200: WorkspaceMemberOut},
+    summary="Change member role",
+)
+def change_member_role(
+    request: HttpRequest,
+    slug: Annotated[str, Path()],
+    user_id: Annotated[int, Path()],
+) -> HttpResponse:
+    from django.http import JsonResponse
+
+    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.workspaces.models import WorkspaceMembership
+
+    ws = resolve_workspace_for_member(request, slug)
+    _require_owner_role(ws, request.user)
+    try:
+        membership = ws.memberships.select_related("user").get(user_id=user_id)
+    except WorkspaceMembership.DoesNotExist as exc:
+        raise ProblemError(404, "Member not found", type_=TYPE_NOT_FOUND) from exc
+
+    # Parse role from body
+    import json as _json
+
+    try:
+        body = _json.loads(request.body)
+        new_role = (body.get("role") or "").strip().lower()
+    except Exception:  # noqa: BLE001
+        new_role = ""
+
+    if new_role not in {"owner", "editor", "viewer"}:
+        raise ProblemError(400, "role must be owner, editor, or viewer", type_=TYPE_VALIDATION)
+
+    if membership.role == "owner" and new_role != "owner":
+        other_owners = ws.memberships.filter(role="owner").exclude(user_id=user_id).count()
+        if other_owners == 0:
+            raise ProblemError(
+                400,
+                "Cannot demote the last owner; promote another member first",
+                type_=TYPE_VALIDATION,
+            )
+    membership.role = new_role
+    membership.save(update_fields=["role"])
+    payload = WorkspaceMemberOut.model_validate(_membership_to_dict(membership)).model_dump(
+        mode="json"
+    )
+    return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# GET /invites/{token} — public invite preview (no auth required)
+# POST /invites/{token}/accept — accept invite (auth required)
+# ---------------------------------------------------------------------------
+
+
+@invites_router.get(
+    "/{token}",
+    auth=None,
+    response={200: InvitePreviewOut},
+    summary="Invite preview (public)",
+)
+def invite_preview(request: HttpRequest, token: str) -> HttpResponse:
+    from django.http import JsonResponse
+
+    from apps.workspaces.models import WorkspaceInvite
+
+    try:
+        invite = WorkspaceInvite.objects.select_related("workspace", "invited_by").get(
+            token=token
+        )
+    except WorkspaceInvite.DoesNotExist as exc:
+        raise ProblemError(404, "Invite not found", type_=TYPE_NOT_FOUND) from exc
+
+    if not invite.is_pending():
+        raise ProblemError(410, "This invite is no longer valid", type_=TYPE_NOT_FOUND)
+
+    payload = InvitePreviewOut.model_validate(
+        {
+            "workspace_slug": invite.workspace.slug,
+            "workspace_display_name": invite.workspace.display_name,
+            "role": invite.role,
+            "invited_by_email": invite.invited_by.email if invite.invited_by_id else "",
+            "email": invite.email,
+            "expires_at": invite.expires_at,
+        }
+    ).model_dump(mode="json")
+    return JsonResponse(payload)
+
+
+@invites_router.post(
+    "/{token}/accept",
+    auth=session_auth,
+    response={200: InviteAcceptOut},
+    summary="Accept workspace invite",
+)
+def invite_accept(request: HttpRequest, token: str) -> HttpResponse:
+    from django.db import transaction
+    from django.http import JsonResponse
+    from django.utils import timezone
+
+    from apps.workspaces.models import WorkspaceInvite, WorkspaceMembership
+
+    with transaction.atomic():
+        try:
+            invite = WorkspaceInvite.objects.select_for_update().select_related(
+                "workspace"
+            ).get(token=token)
+        except WorkspaceInvite.DoesNotExist as exc:
+            raise ProblemError(404, "Invite not found", type_=TYPE_NOT_FOUND) from exc
+
+        if not invite.is_pending():
+            raise ProblemError(410, "This invite is no longer valid", type_=TYPE_NOT_FOUND)
+
+        if invite.email.lower() != (request.user.email or "").lower():
+            raise ProblemError(
+                403,
+                "This invite is for a different email address",
+                type_=TYPE_FORBIDDEN,
+            )
+
+        membership, _ = WorkspaceMembership.objects.get_or_create(
+            workspace=invite.workspace,
+            user=request.user,
+            defaults={"role": invite.role, "invited_by": invite.invited_by},
+        )
+        invite.accepted_at = timezone.now()
+        invite.save(update_fields=["accepted_at"])
+
+    payload = InviteAcceptOut.model_validate(
+        {
+            "workspace_slug": invite.workspace.slug,
+            "role": membership.role,
+        }
+    ).model_dump(mode="json")
+    return JsonResponse(payload)

@@ -77,7 +77,7 @@ def test_overview_200(auth_client, monkeypatch):
         "apps.system.api_v2.get_system_overview",
         lambda: _FAKE_OVERVIEW,
     )
-    resp = auth_client.get("/api/v2/system/overview")
+    resp = auth_client.get("/api/system/overview")
     assert resp.status_code == 200
     body = resp.json()
     assert "skills" in body
@@ -86,7 +86,7 @@ def test_overview_200(auth_client, monkeypatch):
 
 @pytest.mark.django_db
 def test_overview_anon_401(anon_client):
-    resp = anon_client.get("/api/v2/system/overview")
+    resp = anon_client.get("/api/system/overview")
     assert resp.status_code == 401
 
 
@@ -101,7 +101,7 @@ def test_list_skills_200(auth_client, monkeypatch):
         "apps.system.api_v2.get_skills_list",
         lambda: [_FAKE_SKILL_SUMMARY],
     )
-    resp = auth_client.get("/api/v2/system/skills")
+    resp = auth_client.get("/api/system/skills")
     assert resp.status_code == 200
     body = resp.json()
     assert len(body) == 1
@@ -119,7 +119,7 @@ def test_skill_detail_200(auth_client, monkeypatch):
         "apps.system.api_v2.get_skill_detail",
         lambda name: _FAKE_SKILL if name == "app-summary" else None,
     )
-    resp = auth_client.get("/api/v2/system/skills/app-summary")
+    resp = auth_client.get("/api/system/skills/app-summary")
     assert resp.status_code == 200
     assert resp.json()["body_markdown"] == "# App Summary\n..."
 
@@ -130,7 +130,7 @@ def test_skill_detail_404(auth_client, monkeypatch):
         "apps.system.api_v2.get_skill_detail",
         lambda name: None,
     )
-    resp = auth_client.get("/api/v2/system/skills/nonexistent")
+    resp = auth_client.get("/api/system/skills/nonexistent")
     assert resp.status_code == 404
 
 
@@ -145,7 +145,7 @@ def test_list_agents_200(auth_client, monkeypatch):
         "apps.system.api_v2.get_agents_list",
         lambda: [_FAKE_AGENT_SUMMARY],
     )
-    resp = auth_client.get("/api/v2/system/agents")
+    resp = auth_client.get("/api/system/agents")
     assert resp.status_code == 200
     assert resp.json()[0]["name"] == "crispr-agent"
 
@@ -161,7 +161,7 @@ def test_agent_detail_200(auth_client, monkeypatch):
         "apps.system.api_v2.get_agent_detail",
         lambda name: _FAKE_AGENT if name == "crispr-agent" else None,
     )
-    resp = auth_client.get("/api/v2/system/agents/crispr-agent")
+    resp = auth_client.get("/api/system/agents/crispr-agent")
     assert resp.status_code == 200
     assert resp.json()["body_markdown"] == "# Agent\n..."
 
@@ -172,7 +172,7 @@ def test_agent_detail_404(auth_client, monkeypatch):
         "apps.system.api_v2.get_agent_detail",
         lambda name: None,
     )
-    resp = auth_client.get("/api/v2/system/agents/nonexistent")
+    resp = auth_client.get("/api/system/agents/nonexistent")
     assert resp.status_code == 404
 
 
@@ -187,7 +187,7 @@ def test_version_200(auth_client, monkeypatch):
         "apps.system.api_v2.get_version_info",
         lambda: _FAKE_VERSION,
     )
-    resp = auth_client.get("/api/v2/system/version")
+    resp = auth_client.get("/api/system/version")
     assert resp.status_code == 200
     body = resp.json()
     assert body["update_available"] is True
@@ -201,7 +201,7 @@ def test_version_200(auth_client, monkeypatch):
 
 @pytest.mark.django_db
 def test_cli_diag_non_admin_403(auth_client, monkeypatch):
-    resp = auth_client.post("/api/v2/system/cli-diag")
+    resp = auth_client.post("/api/system/cli-diag")
     assert resp.status_code == 403
 
 
@@ -220,6 +220,6 @@ def test_cli_diag_admin_200(db, client, monkeypatch):
             "tool_uses": [],
         },
     )
-    resp = client.post("/api/v2/system/cli-diag")
+    resp = client.post("/api/system/cli-diag")
     assert resp.status_code == 200
     assert resp.json()["returncode"] == 0

@@ -38,7 +38,7 @@ export const uploadSession = async (
   if (workspaceSlug) {
     formData.append("workspace_slug", workspaceSlug);
   }
-  const resp = await fetch(`${API_PREFIX}/api/v2/ingest/upload`, {
+  const resp = await fetch(`${API_PREFIX}/api/ingest/upload`, {
     method: "POST",
     body: formData,
     credentials: "same-origin",

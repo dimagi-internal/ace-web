@@ -63,7 +63,7 @@ class SkillSummaryOut(StrictModel):
 class SkillDetailOut(SkillSummaryOut):
     """Single-skill detail — adds full markdown body.
 
-    Returned by GET /api/v2/system/skills/<name>.
+    Returned by GET /api/system/skills/<name>.
     """
 
     body_markdown: str = ""
@@ -83,7 +83,7 @@ class AgentSummaryOut(StrictModel):
 class AgentDetailOut(AgentSummaryOut):
     """Single-agent detail — adds full markdown body.
 
-    Returned by GET /api/v2/system/agents/<name>.
+    Returned by GET /api/system/agents/<name>.
     """
 
     body_markdown: str = ""
@@ -133,7 +133,7 @@ class McpServerOut(StrictModel):
 class VersionOut(StrictModel):
     """Plugin version + remote comparison.
 
-    Returned by GET /api/v2/system/version and embedded in SystemOverviewOut.
+    Returned by GET /api/system/version and embedded in SystemOverviewOut.
     ``update_available`` is null when the remote check failed (network error
     or rate limit).
     """
@@ -149,7 +149,7 @@ class VersionOut(StrictModel):
 
 
 class SystemOverviewOut(StrictModel):
-    """Full system snapshot returned by GET /api/v2/system/overview."""
+    """Full system snapshot returned by GET /api/system/overview."""
 
     skills: list[SkillSummaryOut]
     agents: list[AgentSummaryOut]
@@ -166,7 +166,7 @@ class SystemOverviewOut(StrictModel):
 
 
 class CliDiagOut(StrictModel):
-    """Response from POST /api/v2/system/cli-diag.
+    """Response from POST /api/system/cli-diag.
 
     The shape is intentionally open (``extra="allow"``) because the
     diagnostic response embeds raw subprocess output, plugin probes, and

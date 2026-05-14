@@ -5,37 +5,12 @@ from django.views.generic import TemplateView
 
 from apps.api_v2.api import api as api_v2
 from apps.api_v2.views import redoc_docs, scalar_docs
-from apps.auth.urls import token_urlpatterns
-from apps.sessions.share_views import public_share_view
-from apps.workspaces import views as workspaces_views
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/v2/", api_v2.urls),
+    path("api/", api_v2.urls),
     path("api/docs/", scalar_docs, name="api_docs_scalar"),
     path("api/redoc/", redoc_docs, name="api_docs_redoc"),
-    path("api/", include("apps.common.urls")),
-    path("api/", include("apps.sessions.urls")),
-    path("api/ingest/", include("apps.ingest.urls")),
-    # Opps endpoints. Workspace identity is resolved via the
-    # `X-ACE-Workspace` header (auto-injected by the frontend's
-    # `apiFetch` from the URL pathname). A workspace-scoped URL
-    # mount was tried earlier but Django passes captured URL kwargs
-    # to view functions, which the opp views don't accept — header
-    # resolution is the simpler path.
-    path("api/opps/", include("apps.opps.urls")),
-    path("api/workspaces/", include("apps.workspaces.urls")),
-    path("api/invites/<str:token>/", workspaces_views.invite_preview, name="invite_preview"),
-    path(
-        "api/invites/<str:token>/accept/",
-        workspaces_views.invite_accept,
-        name="invite_accept",
-    ),
-    path("api/system/", include("apps.system.urls")),
-    path("api/activity/", include("apps.activity.urls")),
-    path("api/mobile/", include("apps.mobile.urls")),
-    path("api/auth/", include((token_urlpatterns, "auth_tokens"))),
-    path("api/share/<str:token>", public_share_view, name="public_share"),
     # React pages under /auth/ that must be served by the SPA, not by
     # Django's auth views. These are listed explicitly because the SPA
     # catch-all excludes the auth/ prefix entirely.

@@ -81,7 +81,7 @@ const authRedirectMiddleware: Middleware = {
 };
 
 export const apiV2 = createClient<paths>({
-  baseUrl: `${baseUrl.replace(/\/$/, "")}/api/v2`,
+  baseUrl: `${baseUrl.replace(/\/$/, "")}/api`,
   credentials: "include",
   headers: {
     "X-Requested-With": "XMLHttpRequest",

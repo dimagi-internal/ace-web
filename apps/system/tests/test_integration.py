@@ -28,9 +28,7 @@ def authed_client(db):
 def test_overview_endpoint_with_real_plugin(authed_client):
     resp = authed_client.get("/api/system/overview")
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["error"] is None
-    data = body["data"]
+    data = resp.json()
     # Real plugin has at least ~19 phase skills + 1-2 utility
     assert len(data["skills"]) >= 19
     # Real plugin has at least 6 agents (phase agents + orchestrator +
@@ -61,7 +59,7 @@ def test_overview_endpoint_with_real_plugin(authed_client):
 def test_skill_detail_with_real_plugin(authed_client):
     resp = authed_client.get("/api/system/skills/idea-to-pdd")
     assert resp.status_code == 200
-    data = resp.json()["data"]
+    data = resp.json()
     assert data["name"] == "idea-to-pdd"
     # Full markdown body should be substantial
     assert len(data["body_markdown"]) > 500
@@ -79,7 +77,7 @@ def test_agent_detail_with_real_plugin(authed_client):
     # how the phase agents get reshuffled.
     resp = authed_client.get("/api/system/agents/ace-orchestrator")
     assert resp.status_code == 200
-    data = resp.json()["data"]
+    data = resp.json()
     assert data["name"] == "ace-orchestrator"
     assert len(data["body_markdown"]) > 200
 
@@ -92,6 +90,6 @@ def test_agent_detail_with_real_plugin(authed_client):
 def test_version_endpoint_with_real_plugin(authed_client):
     resp = authed_client.get("/api/system/version")
     assert resp.status_code == 200
-    data = resp.json()["data"]
+    data = resp.json()
     assert data["plugin_found"] is True
     assert data["plugin_version"] is not None

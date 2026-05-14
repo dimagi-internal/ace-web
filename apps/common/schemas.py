@@ -53,7 +53,7 @@ class HealthCheckOut(StrictModel):
 
 
 class HealthOut(StrictModel):
-    """GET /api/v2/health response.
+    """GET /api/health response.
 
     ``healthy`` is True when all subsystem checks pass.
     ``status`` is ``"ok"`` or ``"unhealthy"`` for human readability.

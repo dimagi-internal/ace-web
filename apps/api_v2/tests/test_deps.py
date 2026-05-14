@@ -24,7 +24,7 @@ def test_resolve_workspace_returns_workspace_for_member(workspace_and_member, rf
     from apps.api_v2.deps import resolve_workspace_for_member
 
     workspace, user = workspace_and_member
-    request = rf.get("/api/v2/w/ws1/")
+    request = rf.get("/api/w/ws1/")
     request.user = user
     result = resolve_workspace_for_member(request, "ws1")
     assert result.pk == workspace.pk
@@ -37,7 +37,7 @@ def test_resolve_workspace_404s_for_non_member(workspace_and_member, rf):
 
     workspace, _ = workspace_and_member
     outsider = User.objects.create_user(email="b@example.com")
-    request = rf.get("/api/v2/w/ws1/")
+    request = rf.get("/api/w/ws1/")
     request.user = outsider
     with pytest.raises(ProblemError) as exc_info:
         resolve_workspace_for_member(request, "ws1")

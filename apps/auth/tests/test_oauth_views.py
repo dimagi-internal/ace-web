@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.contrib.auth import get_user_model
-from rest_framework.test import APIClient
+from django.test import Client
 
 pytestmark = pytest.mark.django_db
 User = get_user_model()
@@ -12,7 +12,7 @@ User = get_user_model()
 
 @pytest.fixture
 def client():
-    return APIClient()
+    return Client()
 
 
 @pytest.fixture(autouse=True)
