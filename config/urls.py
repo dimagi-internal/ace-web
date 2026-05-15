@@ -21,6 +21,7 @@ urlpatterns = [
         name="spa_auth_cli",
     ),
     path("auth/", include("apps.auth.urls")),
+    path("auth/slack/", include("apps.slack.auth_urls")),
     # Public per-run opp summary page. SPA shell served WITHOUT
     # login_required so anonymous viewers can hit the page directly
     # (the React app then fetches /api/opps/public/... which is also
