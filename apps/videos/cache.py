@@ -111,38 +111,6 @@ def invalidate_all_for_workspace(ws_slug: str) -> None:
     _cache.delete(_slugs_key(ws_slug))
 
 
-# ---------------------------------------------------------------------------
-# Media library
-# ---------------------------------------------------------------------------
-
-
-def _lib_video_key(ws_slug: str) -> str:
-    return f"videos:lib:video:{ws_slug}"
-
-
-def _lib_audio_key(ws_slug: str) -> str:
-    return f"videos:lib:audio:{ws_slug}"
-
-
-def get_lib_video(ws_slug: str):
-    return _cache.get(_lib_video_key(ws_slug))
-
-
-def set_lib_video(ws_slug: str, value) -> None:
-    _cache.set(_lib_video_key(ws_slug), value, _TTL_SECONDS)
-
-
-def invalidate_lib_video(ws_slug: str) -> None:
-    _cache.delete(_lib_video_key(ws_slug))
-
-
-def get_lib_audio(ws_slug: str):
-    return _cache.get(_lib_audio_key(ws_slug))
-
-
-def set_lib_audio(ws_slug: str, value) -> None:
-    _cache.set(_lib_audio_key(ws_slug), value, _TTL_SECONDS)
-
-
-def invalidate_lib_audio(ws_slug: str) -> None:
-    _cache.delete(_lib_audio_key(ws_slug))
+# Media library — no cache layer. The library reader now hits Postgres
+# directly (see apps.videos.library.reader), which is fast enough that
+# a TTL cache adds complexity without measurable benefit.
