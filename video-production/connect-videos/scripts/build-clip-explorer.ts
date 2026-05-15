@@ -156,7 +156,14 @@ function main() {
   // Mirror the final render
   const finalSrc = path.join(root, `out/${cli.program}-draft-mux.mp4`);
   const finalLink = path.join(mediaDir, "final.mp4");
-  if (existsSync(finalSrc)) symlinkSync(finalSrc, finalLink);
+  if (existsSync(finalSrc)) {
+    // Use a path relative to the symlink's own directory so the link
+    // resolves the same way on the host as it does inside ace-web's
+    // Docker container (where /app/video-production/ is bind-mounted
+    // but the original host's absolute path doesn't exist).
+    const relTarget = path.relative(mediaDir, finalSrc);
+    symlinkSync(relTarget, finalLink);
+  }
 
   // Resolve all assignments (scene + product). Walk the spec.
   const beatBlocks: BeatBlock[] = [];
@@ -217,7 +224,7 @@ function main() {
       // Symlink into media/ for the page
       const mediaName = `${alias}.${parsed.ext}`;
       const mediaLink = path.join(mediaDir, mediaName);
-      if (!existsSync(mediaLink)) symlinkSync(cachePath, mediaLink);
+      if (!existsSync(mediaLink)) symlinkSync(path.relative(mediaDir, cachePath), mediaLink);
       const probed = probe(cachePath);
       return {
         role,
@@ -310,7 +317,7 @@ function main() {
     }
     const mediaName = `${alias}.${parsed.ext}`;
     const mediaLink = path.join(mediaDir, mediaName);
-    if (!existsSync(mediaLink)) symlinkSync(cachePath, mediaLink);
+    if (!existsSync(mediaLink)) symlinkSync(path.relative(mediaDir, cachePath), mediaLink);
     const probed = probe(cachePath);
     return {
       alias,
@@ -355,7 +362,7 @@ function main() {
       if (cached) {
         const mediaName = `${alias}.${parsed.ext}`;
         const mediaLink = path.join(mediaDir, mediaName);
-        if (!existsSync(mediaLink)) symlinkSync(cachePath, mediaLink);
+        if (!existsSync(mediaLink)) symlinkSync(path.relative(mediaDir, cachePath), mediaLink);
         const probed = probe(cachePath);
         dur = probed.duration; res = `${probed.width}x${probed.height}`;
         sourcePath = `media/${mediaName}`;
