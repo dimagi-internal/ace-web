@@ -33,9 +33,13 @@ class SlackClient:
 
     def post_message(self, *, channel: str, blocks: list[dict],
                      text: str, thread_ts: str | None = None) -> str:
-        resp = self._web.chat_postMessage(
-            channel=channel, blocks=blocks, text=text, thread_ts=thread_ts,
-        )
+        try:
+            resp = self._web.chat_postMessage(
+                channel=channel, blocks=blocks, text=text, thread_ts=thread_ts,
+            )
+        except SlackApiError as e:
+            self._raise_typed(e)
+            raise  # unreachable but keeps the type checker happy
         return resp["ts"]
 
     def update_message(self, *, channel: str, ts: str,
@@ -58,9 +62,13 @@ class SlackClient:
                 blocks: list[dict] | None = None) -> str:
         opened = self._web.conversations_open(users=user)
         channel = opened["channel"]["id"]
-        resp = self._web.chat_postMessage(
-            channel=channel, text=text, blocks=blocks or [],
-        )
+        try:
+            resp = self._web.chat_postMessage(
+                channel=channel, text=text, blocks=blocks or [],
+            )
+        except SlackApiError as e:
+            self._raise_typed(e)
+            raise  # unreachable but keeps the type checker happy
         return resp["ts"]
 
     def open_view(self, *, trigger_id: str, view: dict) -> None:

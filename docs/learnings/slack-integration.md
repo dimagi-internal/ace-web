@@ -13,9 +13,10 @@ Practical traps caught while building the v1 Slack integration (2026-05-15).
 
 - **`asyncio.get_running_loop()`, not `get_event_loop()`** — `get_event_loop()`
   is deprecated in Python 3.10+ and raises `DeprecationWarning` (soon an error)
-  when there is no current event loop. In the ASGI startup context used by
-  `SlackConfig.ready()`, the running loop is always accessible via
-  `asyncio.get_running_loop()`. Use that.
+  when there is no current event loop. The Slack worker is now wired via the
+  ASGI lifespan in `config/asgi.py` (not `SlackConfig.ready()`), where a
+  running loop is always guaranteed. Avoid spawning async tasks from
+  `AppConfig.ready()` — no event loop is available there.
 
 ## Slack API behavior
 
@@ -49,10 +50,11 @@ Practical traps caught while building the v1 Slack integration (2026-05-15).
 
 ## Model field names (test trap)
 
-- **`Workspace.display_name` does not exist — the field is `name`.**  Multiple
-  plan-provided test fixtures used `display_name` for `Workspace` and caused
-  `TypeError` on `.objects.create(...)`. The correct field is `name`, matching
-  the `Workspace` model definition in `apps/workspaces/models.py`.
+- **Plan test fixtures used `Workspace(name=...)` but the model field is
+  `display_name`.** Multiple plan-provided test fixtures passed `name=` to
+  `Workspace.objects.create(...)` and caused `TypeError`. The correct field is
+  `display_name`, matching the `Workspace` model definition in
+  `apps/workspaces/models.py`.
 
 - **`SlackInstallation` has no `set_bot_token` method — assign the property
   directly.** Plan drafts referenced `inst.set_bot_token("xoxb-...")` but the
@@ -62,11 +64,11 @@ Practical traps caught while building the v1 Slack integration (2026-05-15).
 
 ## Snapshot access path
 
-- **Use `load_opp_snapshot` from `apps.opps.access`, not `get_snapshot`.**  The
+- **Use `load_opp_snapshot` from `apps.opps.api`, not `get_snapshot`.**  The
   dispatcher's `_load_snapshot` helper wraps
-  `apps.opps.access.load_opp_snapshot(opp_slug, workspace)`. Earlier plan
+  `apps.opps.api.load_opp_snapshot(workspace, slug, run_id=...)`. Earlier plan
   drafts referenced a non-existent `get_snapshot` primitive. The real function
-  path is `apps/opps/access.py::load_opp_snapshot`.
+  path is `apps/opps/api.py::load_opp_snapshot`.
 
 ## Run ID format
 

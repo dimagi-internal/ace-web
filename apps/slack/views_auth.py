@@ -25,7 +25,7 @@ def _replay_command(payload: dict) -> None:
     from .handlers import dispatch_slash_command
     try:
         dispatch_slash_command(
-            text=payload["command_text"].lstrip("/ace ").strip(),
+            text=payload["command_text"].removeprefix("/ace ").strip(),
             slack_user_id=payload["slack_user_id"],
             team_id=payload["team_id"],
             channel_id=payload["channel_id"],

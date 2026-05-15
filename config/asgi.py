@@ -10,6 +10,7 @@ The split is done with a Starlette ``Mount`` + ``Router`` wrapping the
 Channels application.  Django URL conf is NOT used for the MCP mount because
 ``mcp.http_app()`` returns a Starlette ASGI application, not a Django view.
 """
+import contextlib
 import os
 
 from channels.routing import ProtocolTypeRouter, URLRouter
@@ -54,11 +55,39 @@ _channels_app = ProtocolTypeRouter(
 _SCRIPT_NAME = os.environ.get("FORCE_SCRIPT_NAME", "").rstrip("/")
 _mcp_app = make_asgi_app()
 
+
+@contextlib.asynccontextmanager
+async def _composed_lifespan(app):
+    """Compose the MCP server lifespan with the Slack worker.
+
+    1. MCP lifespan (existing) — yields when the MCP server is ready.
+    2. Slack worker — runs in the background until app shutdown.
+
+    Set DJANGO_SLACK_DISABLE_WORKER=1 to suppress the worker (e.g. in ASGI
+    smoke tests or management commands that mount the app without Redis).
+    """
+    import asyncio
+    from apps.slack.dispatcher import run_worker_forever
+
+    slack_task: asyncio.Task | None = None
+    if os.environ.get("DJANGO_SLACK_DISABLE_WORKER") != "1":
+        slack_task = asyncio.create_task(run_worker_forever())
+
+    async with _mcp_app.lifespan(app):
+        try:
+            yield
+        finally:
+            if slack_task is not None:
+                slack_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await slack_task
+
+
 application = Router(
     routes=[
         Mount(f"{_SCRIPT_NAME}/api/mcp", app=_mcp_app),
         # Catch-all: everything else → Channels / Django
         Mount("/", app=_channels_app),
     ],
-    lifespan=_mcp_app.lifespan,
+    lifespan=_composed_lifespan,
 )

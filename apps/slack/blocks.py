@@ -16,8 +16,9 @@ from __future__ import annotations
 import hashlib
 import json
 
+from django.conf import settings
+
 _BAR_WIDTH = 10
-_PROD_BASE_URL = "https://labs.connect.dimagi.com/ace"
 
 
 def render_progress_bar(complete: int, total: int) -> str:
@@ -95,7 +96,7 @@ def render_phase_tile(snapshot: dict, *, phase_name: str,
     action_elements = [{
         "type": "button",
         "text": {"type": "plain_text", "text": "View phase ↗"},
-        "url": f"{_PROD_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}",
+        "url": f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}",
         "action_id": f"view_phase:{opp_slug}:{phase_name}",
     }]
     if stats["has_any_complete"]:
@@ -142,7 +143,7 @@ def render_parent_card(snapshot: dict, *, opp_slug: str, workspace_slug: str,
         {"type": "actions", "elements": [
             {"type": "button",
              "text": {"type": "plain_text", "text": "Open in ace-web ↗"},
-             "url": f"{_PROD_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}"},
+             "url": f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}"},
         ]},
     ]
 

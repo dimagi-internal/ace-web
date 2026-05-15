@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import logging
 
+from django.conf import settings
+
 from .blocks import render_parent_card
 from .models import SlackRunThread
 from .run_starter import RunStartError, start_run_from_slack
@@ -50,7 +52,7 @@ def handle_run(*, installation, user_link, rest: str, channel_id: str,
                 opp_slug=slug, run_id=run_id,
             ).first()
             permalink = (
-                f"https://labs.connect.dimagi.com/ace/w/"
+                f"{settings.ACE_PUBLIC_BASE_URL}/w/"
                 f"{workspace.slug}/opps/{slug}"
             )
             return {
@@ -101,17 +103,6 @@ def handle_run(*, installation, user_link, rest: str, channel_id: str,
         run_id=run_id,
         ace_user=user,
     )
-    # Subscribe the worker to this run's group. Best-effort.
-    try:
-        from channels.layers import get_channel_layer  # noqa: F401
-        from asgiref.sync import async_to_sync  # noqa: F401
-        from .dispatcher import _opp_group  # noqa: F401
-        # The worker rediscovers subscriptions on every event; we don't
-        # need to know the worker's channel_name here. The 60s sweep
-        # (Task 14) is the belt-and-suspenders that catches everything.
-    except Exception:
-        logger.exception("could not request slack worker subscription")
-
     return {
         "response_type": "ephemeral",
         "text": (

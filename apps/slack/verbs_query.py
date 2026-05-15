@@ -4,16 +4,18 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from django.conf import settings
+
 from .blocks import render_parent_card
 from .models import SlackRunThread
 
 logger = logging.getLogger(__name__)
 
 
-def _load_snapshot(slug: str, workspace) -> dict | None:
+def _load_snapshot(slug: str, workspace, run_id: str | None = None) -> dict | None:
     """Indirection so tests can patch."""
     from apps.opps.api import load_opp_snapshot
-    return load_opp_snapshot(workspace, slug)
+    return load_opp_snapshot(workspace, slug, run_id=run_id)
 
 
 def handle_status(*, installation, user_link, rest: str, channel_id: str) -> dict:
@@ -33,7 +35,7 @@ def handle_status(*, installation, user_link, rest: str, channel_id: str) -> dic
         return {"response_type": "ephemeral",
                 "text": "You have no active runs. Try `/ace run <slug>`."}
 
-    snap = _load_snapshot(thread.opp_slug, workspace)
+    snap = _load_snapshot(thread.opp_slug, workspace, run_id=thread.run_id or None)
     if snap is None:
         return {"response_type": "ephemeral",
                 "text": f"Could not load snapshot for `{thread.opp_slug}`."}
@@ -57,7 +59,7 @@ def handle_list(*, installation, user_link, channel_id: str) -> dict:
         return {"response_type": "ephemeral",
                 "text": "You have no active runs. Try `/ace run <slug>`."}
     lines = [f"• `{t.opp_slug}` ({t.run_id}) — "
-             f"<https://labs.connect.dimagi.com/ace/w/"
+             f"<{settings.ACE_PUBLIC_BASE_URL}/w/"
              f"{installation.ace_workspace.slug}/opps/{t.opp_slug}|open ↗>"
              for t in threads]
     return {"response_type": "ephemeral",
