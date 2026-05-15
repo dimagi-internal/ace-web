@@ -22,6 +22,9 @@ _HELP_TEXT = (
     "*ACE bot* — Run and monitor ACE opportunities from Slack.\n\n"
     "`/ace run <pdd-link-or-opp-slug>` — Start the full ACE lifecycle.\n"
     "`/ace new` — Open a modal to create a new opp from an idea.\n"
+    "`/ace track <slug>[/<run_id>]` — Mirror an existing run (e.g. one you're "
+    "driving from your laptop) into this channel.\n"
+    "`/ace untrack <slug>` — Stop mirroring a run.\n"
     "`/ace status [<slug>]` — Show the current state of a run.\n"
     "`/ace list` — Show your 5 most recent active runs.\n"
     "`/ace link` — (Re)link your Slack identity to ace-web.\n"
@@ -128,6 +131,14 @@ def dispatch_slash_command(*, text: str, slack_user_id: str, team_id: str,
         from .verbs_query import handle_list
         return handle_list(installation=installation, user_link=user_link,
                            channel_id=channel_id)
+    if verb == "track":
+        from .verbs_track import handle_track
+        return handle_track(installation=installation, user_link=user_link,
+                            rest=rest, channel_id=channel_id)
+    if verb == "untrack":
+        from .verbs_track import handle_untrack
+        return handle_untrack(installation=installation, user_link=user_link,
+                              rest=rest)
 
     return _ephemeral(f"Unknown subcommand `{verb}`. {_HELP_TEXT}")
 
@@ -145,11 +156,38 @@ def dispatch_interaction(payload: dict) -> dict:
         action_id = action.get("action_id", "")
         if action_id == "fork_from_phase":
             return _fork_redirect(payload, action)
+        if action_id == "stop_watching":
+            return _stop_watching(payload, action)
         if action_id == "link_account":
             return {}  # button has its own url; nothing to do server-side
         # Unknown actions — silently 200.
         return {}
     return {}
+
+
+def _stop_watching(payload: dict, action: dict) -> dict:
+    from .models import SlackRunThread
+    from .verbs_track import _stop_thread
+
+    thread_id = action.get("value", "")
+    team_id = payload.get("team", {}).get("id", "")
+    installation = _get_installation(team_id)
+    if installation is None:
+        return {"response_type": "ephemeral", "text": ":x: workspace not installed"}
+    try:
+        thread = SlackRunThread.objects.get(pk=thread_id, installation=installation)
+    except (SlackRunThread.DoesNotExist, ValueError):
+        return {"response_type": "ephemeral",
+                "text": ":x: That run isn't being tracked anymore."}
+    if thread.stopped_at is not None:
+        return {"response_type": "ephemeral",
+                "text": "Already stopped."}
+    slack_user_id = payload.get("user", {}).get("id", "")
+    user_link = _get_user_link(installation, slack_user_id) if slack_user_id else None
+    stopper = user_link.ace_user if user_link else None
+    _stop_thread(thread, stopper=stopper, installation=installation)
+    return {"response_type": "ephemeral",
+            "text": f":octagonal_sign: Stopped mirroring `{thread.opp_slug}/{thread.run_id}`."}
 
 
 def _fork_redirect(payload: dict, action: dict) -> dict:

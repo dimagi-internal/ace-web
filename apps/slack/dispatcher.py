@@ -26,6 +26,12 @@ from .slack_client import SlackChannelGone, SlackRateLimited, client_for
 
 logger = logging.getLogger(__name__)
 
+# Sweep cadence. Tracked threads (laptop-driven runs) have no opp.updated
+# push signal, so the sweep is their only progress source. 30s strikes a
+# balance: each tick costs ~N × ~30ms (one Drive Changes poll per active
+# thread); 30s gives the user reasonable freshness without thrashing.
+_SWEEP_INTERVAL_SECONDS = 30
+
 
 def _opp_group(slug: str, run_id: str) -> str:
     return f"opp.{slug}.{run_id or 'default'}"
@@ -52,7 +58,7 @@ def dispatch_tick(*, thread_id) -> None:
         ).get(pk=thread_id)
     except SlackRunThread.DoesNotExist:
         return
-    if thread.broken_at is not None:
+    if thread.broken_at is not None or thread.stopped_at is not None:
         return
 
     from django.core.cache import cache
@@ -118,6 +124,7 @@ def dispatch_tick(*, thread_id) -> None:
                 snapshot, opp_slug=thread.opp_slug,
                 workspace_slug=workspace.slug,
                 triggerer_display=triggerer_display, elapsed_seconds=elapsed,
+                thread_id=str(thread.pk),
             )
             try:
                 client.update_message(channel=thread.channel_id, ts=thread.parent_ts,
@@ -138,18 +145,20 @@ def dispatch_tick(*, thread_id) -> None:
 
 
 async def _periodic_sweep() -> None:
-    """Belt-and-suspenders: every 60s, dispatch_tick all active threads.
+    """Belt-and-suspenders sweep. Every _SWEEP_INTERVAL_SECONDS, dispatch_tick
+    every still-watched thread.
 
-    Catches missed opp.updated events (worker restart, lost event) and
-    drives phase 1 of newly-created threads that haven't received their
-    first opp.updated yet (snapshot not yet populated → first sweep
-    after Drive writes lands a phase tile)."""
+    For tracked (laptop-driven) runs this is the *only* progress signal —
+    no opp.updated event fires for runs outside ace-web's turn_driver.
+    For web-driven runs it catches missed pushes (worker restart, lost
+    event). Threads with `broken_at` or `stopped_at` set are skipped."""
     while True:
-        await asyncio.sleep(60)
+        await asyncio.sleep(_SWEEP_INTERVAL_SECONDS)
         try:
             ids = await sync_to_async(list)(
-                SlackRunThread.objects.filter(broken_at__isnull=True)
-                .values_list("pk", flat=True)
+                SlackRunThread.objects.filter(
+                    broken_at__isnull=True, stopped_at__isnull=True,
+                ).values_list("pk", flat=True)
             )
             for tid in ids:
                 await sync_to_async(dispatch_tick)(thread_id=tid)
@@ -158,10 +167,13 @@ async def _periodic_sweep() -> None:
 
 
 def _find_thread_pk(slug: str, run_id: str):
-    """Sync helper for the async worker: thread pk for (slug, run_id) or None."""
+    """Sync helper for the async worker: thread pk for (slug, run_id) or None.
+
+    Returns only active threads (neither broken nor stopped)."""
     return (
         SlackRunThread.objects.filter(
-            opp_slug=slug, run_id=run_id, broken_at__isnull=True,
+            opp_slug=slug, run_id=run_id,
+            broken_at__isnull=True, stopped_at__isnull=True,
         )
         .values_list("pk", flat=True)
         .first()
@@ -181,7 +193,7 @@ async def _run_worker() -> None:
 
     async def _refresh_subscriptions():
         threads = await sync_to_async(list)(
-            SlackRunThread.objects.filter(broken_at__isnull=True)
+            SlackRunThread.objects.filter(broken_at__isnull=True, stopped_at__isnull=True)
             .values_list("opp_slug", "run_id", "pk")
         )
         wanted_groups = {_opp_group(s, r) for s, r, _ in threads}
@@ -204,7 +216,9 @@ async def _run_worker() -> None:
     await _refresh_subscriptions()
     # On boot, run a one-shot tick across all active threads.
     threads = await sync_to_async(list)(
-        SlackRunThread.objects.filter(broken_at__isnull=True).values_list("pk", flat=True)
+        SlackRunThread.objects.filter(
+            broken_at__isnull=True, stopped_at__isnull=True,
+        ).values_list("pk", flat=True)
     )
     for tid in threads:
         await sync_to_async(dispatch_tick)(thread_id=tid)

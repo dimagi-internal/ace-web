@@ -91,7 +91,23 @@ class SlackRunThread(models.Model):
     triggered_at = models.DateTimeField(auto_now_add=True)
     phase_messages = models.JSONField(default=dict)
     parent_state_hash = models.CharField(max_length=64, blank=True, default="")
+    # broken_at: Slack-side failure (channel_not_found, archived, etc.) — dispatcher stops.
     broken_at = models.DateTimeField(null=True, blank=True)
+    # stopped_at: user clicked "Stop watching" or ran `/ace untrack`. Differs from
+    # broken_at semantically — the run itself may still be running fine; we just
+    # don't mirror it anymore. Both fields cause the sweep to skip the thread.
+    stopped_at = models.DateTimeField(null=True, blank=True)
+    stopped_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    # source: how this thread was created — "run" (Slack triggered the run via
+    # /ace run), "new" (via the modal), or "track" (someone asked us to mirror
+    # an existing run, possibly driven on a laptop).
+    source = models.CharField(max_length=16, default="run")
 
     class Meta:
         db_table = "slack_run_threads"

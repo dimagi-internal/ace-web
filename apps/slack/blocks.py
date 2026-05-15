@@ -120,8 +120,26 @@ def _active_phase(snapshot: dict) -> dict | None:
     return None
 
 
-def render_parent_card(snapshot: dict, *, opp_slug: str, workspace_slug: str,
-                       triggerer_display: str, elapsed_seconds: int) -> list[dict]:
+def render_parent_card(
+    snapshot: dict,
+    *,
+    opp_slug: str,
+    workspace_slug: str,
+    triggerer_display: str,
+    elapsed_seconds: int,
+    thread_id: str | None = None,
+    stopped_by_display: str | None = None,
+) -> list[dict]:
+    """Render the parent-card Block Kit.
+
+    `thread_id` (UUID string of the SlackRunThread row) gets embedded as the
+    `value` of the *Stop watching* button so the action handler knows which
+    row to stop. When omitted, the button is hidden — useful for `/ace status`
+    ephemeral renders that aren't tied to a specific tracked thread.
+
+    `stopped_by_display`, when set, prepends a "⏸ Stopped by …" line and
+    suppresses the Stop button.
+    """
     active = _active_phase(snapshot)
     elapsed_min = elapsed_seconds // 60
     run_id = snapshot["current_run"]["run_id"]
@@ -133,18 +151,42 @@ def render_parent_card(snapshot: dict, *, opp_slug: str, workspace_slug: str,
     else:
         active_line = "All phases complete · awaiting cleanup"
 
-    text = (f"*{snapshot['display_name']}* — `{run_id}`\n"
-            f"Triggered by {triggerer_display} · {elapsed_min}m elapsed\n"
-            f"{active_line}")
+    status_marker = "⏸ Stopped" if stopped_by_display else "🟡"
+    lines = [
+        f"{status_marker} *{snapshot['display_name']}* — `{run_id}`",
+        f"Triggered by {triggerer_display} · {elapsed_min}m elapsed",
+        active_line,
+    ]
+    if stopped_by_display:
+        lines.append(f"_Stopped by {stopped_by_display}_")
+    text = "\n".join(lines)
+
+    action_elements: list[dict] = [{
+        "type": "button",
+        "text": {"type": "plain_text", "text": "Open in ace-web ↗"},
+        "url": f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}",
+    }]
+    if thread_id and not stopped_by_display:
+        action_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "⏸ Stop watching"},
+            "action_id": "stop_watching",
+            "value": str(thread_id),
+            "style": "danger",
+            "confirm": {
+                "title": {"type": "plain_text", "text": "Stop watching this run?"},
+                "text": {"type": "mrkdwn",
+                         "text": (f"I'll stop posting updates for `{opp_slug}` "
+                                  f"in this thread. The run itself keeps going.")},
+                "confirm": {"type": "plain_text", "text": "Stop"},
+                "deny": {"type": "plain_text", "text": "Cancel"},
+            },
+        })
 
     return [
         {"type": "section",
          "text": {"type": "mrkdwn", "text": text}},
-        {"type": "actions", "elements": [
-            {"type": "button",
-             "text": {"type": "plain_text", "text": "Open in ace-web ↗"},
-             "url": f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}"},
-        ]},
+        {"type": "actions", "elements": action_elements},
     ]
 
 
