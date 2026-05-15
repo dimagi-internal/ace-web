@@ -78,3 +78,57 @@ def test_link_subcommand_resends_link(setup):
         )
     mock.dm_user.assert_called_once()
     assert resp["response_type"] == "ephemeral"
+
+
+@pytest.mark.django_db
+def test_status_returns_parent_card_for_user_recent_run(setup):
+    inst, jj = setup
+    from apps.slack.models import SlackRunThread
+    SlackRunThread.objects.create(
+        installation=inst, channel_id="C1", parent_ts="1.1",
+        opp_slug="my-opp", run_id="run-001", ace_user=jj,
+    )
+    from unittest.mock import patch
+    with patch("apps.slack.verbs_query._load_snapshot") as load:
+        load.return_value = {
+            "display_name": "My Opp",
+            "current_run": {"run_id": "run-001", "steps": [], "decisions": []},
+            "phases": [],
+        }
+        from apps.slack.handlers import dispatch_slash_command
+        resp = dispatch_slash_command(
+            text="status", slack_user_id="U_JJ", team_id="T1",
+            channel_id="C1", trigger_id="", response_url="",
+        )
+    assert resp["response_type"] == "ephemeral"
+    assert "My Opp" in repr(resp.get("blocks", [])) or "My Opp" in resp.get("text", "")
+
+
+@pytest.mark.django_db
+def test_status_with_no_runs_returns_message(setup):
+    from apps.slack.handlers import dispatch_slash_command
+    resp = dispatch_slash_command(
+        text="status", slack_user_id="U_JJ", team_id="T1",
+        channel_id="C1", trigger_id="", response_url="",
+    )
+    assert resp["response_type"] == "ephemeral"
+    assert "no active runs" in resp["text"].lower()
+
+
+@pytest.mark.django_db
+def test_list_shows_user_runs(setup):
+    inst, jj = setup
+    from apps.slack.models import SlackRunThread
+    for i in range(3):
+        SlackRunThread.objects.create(
+            installation=inst, channel_id=f"C{i}", parent_ts=f"{i}.0",
+            opp_slug=f"opp-{i}", run_id="run-001", ace_user=jj,
+        )
+    from apps.slack.handlers import dispatch_slash_command
+    resp = dispatch_slash_command(
+        text="list", slack_user_id="U_JJ", team_id="T1",
+        channel_id="C1", trigger_id="", response_url="",
+    )
+    assert resp["response_type"] == "ephemeral"
+    body = repr(resp.get("blocks", [])) + resp.get("text", "")
+    assert "opp-0" in body and "opp-1" in body and "opp-2" in body
