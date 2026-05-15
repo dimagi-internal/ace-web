@@ -79,6 +79,8 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
 
   const dirty = draft.start !== initial.start || draft.duration !== initial.duration;
 
+  const ready = sourceDuration > 0;
+
   return (
     <div className="flex flex-col gap-3">
       {src && (
@@ -87,23 +89,37 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
           src={src}
           controls
           preload="metadata"
-          className="aspect-video w-full rounded bg-black"
+          // Cap the preview height so the trim controls stay in view.
+          // The 480px-wide drawer at aspect-video was ~270px tall — too
+          // dominant when the rest of the panel is what the user is
+          // actually adjusting.
+          className="max-h-48 w-full rounded bg-black object-contain"
         />
       )}
-      <TrimBar
-        sourceDuration={sourceDuration || 1}
-        start={draft.start}
-        duration={draft.duration || sourceDuration}
-        onChange={(next) => setDraft({ ...draft, start: next.start_seconds, duration: next.duration_seconds })}
-      />
+      {ready ? (
+        <TrimBar
+          sourceDuration={sourceDuration}
+          start={draft.start}
+          duration={draft.duration || sourceDuration}
+          onChange={(next) => setDraft({ ...draft, start: next.start_seconds, duration: next.duration_seconds })}
+        />
+      ) : (
+        // Skeleton — empty handles at 0% with "0.00s / 0.00s" inputs
+        // looked broken. Show a clear loading state until the video
+        // probe finishes.
+        <div className="flex h-9 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+          Loading clip…
+        </div>
+      )}
       <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground">
         <label className="flex items-center gap-1">
           start
           <input
             type="number" step="0.1" min={0} max={sourceDuration}
+            disabled={!ready}
             value={draft.start.toFixed(2)}
             onChange={(e) => setDraft({ ...draft, start: parseFloat(e.target.value) || 0 })}
-            className="w-20 rounded border bg-background px-1 py-0.5"
+            className="w-20 rounded border bg-background px-1 py-0.5 disabled:opacity-50"
           />
           s
         </label>
@@ -111,12 +127,18 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
           duration
           <input
             type="number" step="0.1" min={0.3} max={sourceDuration}
+            disabled={!ready}
             value={(draft.duration || sourceDuration).toFixed(2)}
             onChange={(e) => setDraft({ ...draft, duration: parseFloat(e.target.value) || 0 })}
-            className="w-20 rounded border bg-background px-1 py-0.5"
+            className="w-20 rounded border bg-background px-1 py-0.5 disabled:opacity-50"
           />
           s
         </label>
+        {ready && (
+          <span className="ml-auto text-xs">
+            source clip: {sourceDuration.toFixed(1)}s
+          </span>
+        )}
       </div>
       <div className="mt-2 flex justify-end gap-2">
         <button type="button" onClick={onCancel}

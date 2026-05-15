@@ -130,6 +130,11 @@ def main() -> int:
         page.wait_for_timeout(500)
         shot(page, "05-dirty-state")
 
+        # 05b — pending-edits tooltip on TopBar hover
+        page.get_by_text("edit pending", exact=False).hover()
+        page.wait_for_timeout(400)
+        shot(page, "05b-pending-tooltip")
+
         # 08 — discard confirm
         page.get_by_role("button", name="Discard all").click()
         page.wait_for_timeout(300)

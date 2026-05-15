@@ -1,15 +1,44 @@
 import { useEffect, useRef, useState } from "react";
 import { useBeatEditor } from "./BeatEditorContext";
+import { sectionLabel } from "./sectionLabels";
 import { submitEditBatch, getVideoRun } from "@/api/videos";
-import type { ProgramSpec } from "./types";
+import type { PendingChange, ProgramSpec } from "./types";
+
+// Map an op to a human label + the beat-card it lives in (for scroll-to).
+function describeOp(op: PendingChange, spec: ProgramSpec): { beatId: string; label: string } {
+  if (op.op === "set-narration") {
+    return { beatId: op.beatId, label: `Voiceover — ${sectionLabel(op.beatId).name}` };
+  }
+  if (op.op === "set-stat") {
+    if (op.path === "problem") return { beatId: "problem", label: `${sectionLabel("problem").name} — Big number` };
+    const m = /^impact\[(\d+)\]$/.exec(op.path);
+    if (m) return { beatId: "impact", label: `${sectionLabel("impact").name} — Big number ${parseInt(m[1], 10) + 1}` };
+    return { beatId: "impact", label: `Stat (${op.path})` };
+  }
+  // set-clip-trim / set-clip-asset
+  const beatId = op.kind === "scene-clip" ? "scene" : "product";
+  const totalSlots = op.kind === "scene-clip"
+    ? (spec.scene?.clips?.length ?? 0)
+    : (spec.product?.beats?.length ?? 0);
+  const which = totalSlots > 1 ? ` clip ${op.index + 1} of ${totalSlots}` : " clip";
+  const action = op.op === "set-clip-asset" ? "Swap" : "Trim";
+  return { beatId, label: `${action} ${sectionLabel(beatId).name}${which}` };
+}
+
+function scrollToBeat(beatId: string): void {
+  document
+    .querySelector(`[data-beat-id="${beatId}"]`)
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 interface Props {
   onSpecRefetched?: (s: ProgramSpec) => void;
 }
 
 export function BeatEditorTopBar({ onSpecRefetched }: Props) {
-  const { state, dispatch, workspaceSlug, programSlug, runId } = useBeatEditor();
+  const { state, effectiveSpec, dispatch, workspaceSlug, programSlug, runId } = useBeatEditor();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [showPending, setShowPending] = useState(false);
 
   const dirty = state.buffer.length > 0;
   const saveState = state.saveState;
@@ -75,10 +104,57 @@ export function BeatEditorTopBar({ onSpecRefetched }: Props) {
     label = "No unsaved changes";
   }
 
+  // Resolve pending ops to {beatId, label} for the hover-list.
+  const pendingItems = dirty
+    ? state.buffer.map((op) => describeOp(op, effectiveSpec))
+    : [];
+
   return (
     <div className="sticky top-0 z-30 flex items-center gap-3 rounded-md border bg-background p-3 shadow-sm">
-      <div className={dirty ? "text-sm font-medium text-amber-700" : "text-sm text-muted-foreground"}>
-        {label}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => dirty && setShowPending((v) => !v)}
+          onMouseEnter={() => dirty && setShowPending(true)}
+          onMouseLeave={() => setShowPending(false)}
+          disabled={!dirty}
+          className={
+            "rounded px-1 py-0.5 text-sm " +
+            (dirty
+              ? "cursor-pointer font-medium text-amber-700 hover:bg-amber-100/50"
+              : "cursor-default text-muted-foreground")
+          }
+        >
+          {label}
+        </button>
+        {dirty && showPending && pendingItems.length > 0 && (
+          <div
+            role="tooltip"
+            className="absolute left-0 top-full z-40 mt-1 w-80 rounded-md border bg-background p-2 text-sm shadow-lg"
+            onMouseEnter={() => setShowPending(true)}
+            onMouseLeave={() => setShowPending(false)}
+          >
+            <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
+              Pending edits — click to jump
+            </div>
+            <ul className="flex flex-col gap-0.5">
+              {pendingItems.map((item, i) => (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      scrollToBeat(item.beatId);
+                      setShowPending(false);
+                    }}
+                    className="block w-full truncate rounded px-2 py-1 text-left text-sm hover:bg-accent"
+                  >
+                    {item.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
       {dirty && (
         <>
