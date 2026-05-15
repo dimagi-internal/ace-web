@@ -299,6 +299,7 @@ def get_run(
         has_explorer_build=record.has_explorer_build,
         explorer_url=_explorer_url(workspace_slug, program_slug, run_id),
         yaml_path=record.yaml_path,
+        spec=service.read_parsed_spec(workspace, program_slug, run_id),
     )
 
 

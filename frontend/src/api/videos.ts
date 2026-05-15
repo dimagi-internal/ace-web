@@ -13,6 +13,8 @@
  *   GET    /programs/{slug}/runs/{run_id}/media/{name}
  */
 
+import type { ProgramSpec } from "@/components/videos/types";
+
 const API_PREFIX = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
 function getCsrfToken(): string {
@@ -93,6 +95,7 @@ export interface RunDetail {
   has_explorer_build: boolean;
   explorer_url: string;
   yaml_path: string;
+  spec: ProgramSpec | null;
 }
 
 export interface RenderStatus {

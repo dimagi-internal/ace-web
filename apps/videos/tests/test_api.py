@@ -136,6 +136,17 @@ def test_get_run_detail(member_client, videos_root):
 
 
 @pytest.mark.django_db
+def test_get_run_detail_includes_parsed_spec(member_client, videos_root, fake_drive):
+    client, _ = member_client
+    resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-001")
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert "spec" in body
+    assert body["spec"]["slug"] == "demo"
+    assert "scene" in body["spec"]
+
+
+@pytest.mark.django_db
 def test_get_run_404_unknown_run(member_client, videos_root):
     client, _ = member_client
     resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-999")

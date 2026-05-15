@@ -263,6 +263,29 @@ def load_program_run(workspace: Workspace, slug: str, run_id: str) -> ProgramRec
     return _record_from_yaml(slug, run_id, spec_yaml)
 
 
+def read_parsed_spec(workspace: Workspace, slug: str, run_id: str) -> dict | None:
+    """Return the spec.yaml parsed via ruamel (round-trip safe). None if
+    the spec doesn't exist.
+
+    Used by the run-detail endpoint to ship the full spec down to the
+    frontend beat editor — the editor needs the whole document (not just
+    the metadata that ProgramRecord exposes via properties).
+    """
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        return None
+    layout, client = layout_for(workspace)
+    raw = drive.read_spec(layout, client, slug, run_id)
+    if raw is None:
+        return None
+    try:
+        parsed = _yaml().load(raw)
+    except Exception:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
 def load_program(workspace: Workspace, slug: str, run_id: str | None = None) -> ProgramRecord | None:
     """Load a program — defaults to its latest run when run_id is None."""
     if not is_valid_slug(slug):

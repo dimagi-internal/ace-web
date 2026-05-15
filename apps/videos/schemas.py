@@ -8,7 +8,7 @@ copies it into a new run dir.
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -63,6 +63,7 @@ class RunDetailOut(StrictModel):
     has_explorer_build: bool
     explorer_url: str  # /api/w/<ws>/videos/programs/<slug>/runs/<run>/explorer.html
     yaml_path: str  # repo-relative for surfacing in the UI
+    spec: dict[str, Any] | None = None  # full parsed spec.yaml — feeds the beat editor
 
 
 class LibraryEntryOut(StrictModel):
