@@ -342,7 +342,7 @@ def main() -> int:
                     pub_browser = p.chromium.launch(headless=True)
                     pub_ctx = pub_browser.new_context(viewport={"width": 1280, "height": 900})
                     path = f"/opps/{WORKSPACE}/{slug}/runs/{run_id}/summary"
-                    print(f"\n=== Public summary (no auth) ===")
+                    print("\n=== Public summary (no auth) ===")
                     r = visit(pub_ctx, "public-summary", path)
                     results.append(r)
                     mark = "✓" if r.verdict == "ok" else "✗"
