@@ -150,6 +150,17 @@ return a draft you know is over budget and hope the operator fixes
 it — operators rarely look until the audio gets cut mid-word at
 render time.
 
+### What about `narration.script`?
+
+You only fill the per-beat narration fields in the JSON output. The
+server-side `create_program_from_spec` endpoint auto-derives
+`narration.script` by joining your `by_beat` values into a single
+paragraph before persisting. That joined value is what
+`narration.script` becomes in Drive — the Remotion renderer's
+precondition check passes, and per-beat VO synthesis (the real
+audio path) still reads `by_beat` directly. You do not need to
+output a separate `narration_script` key.
+
 ## How to choose problem.big and impact[]
 
 - `problem.big` is one headline number that frames the scale of need

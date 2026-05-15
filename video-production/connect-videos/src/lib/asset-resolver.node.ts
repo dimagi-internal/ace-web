@@ -26,6 +26,7 @@ import {
   lstatSync,
   unlinkSync,
   statSync,
+  copyFileSync,
 } from "node:fs";
 import os from "node:os";
 import type { ProgramSpec } from "./spec";
@@ -133,7 +134,21 @@ function rewriteAsset(value: string, ctx: ResolveCtx): string {
       unlinkSync(publicAbs);
     }
     if (!existsSync(publicAbs)) {
-      linkSync(cachePath, publicAbs);
+      try {
+        linkSync(cachePath, publicAbs);
+      } catch (err) {
+        // Cross-device link not permitted (EXDEV) — happens when the
+        // cache is on a bind-mounted host volume (Docker dev) and the
+        // public/ dir is on the container filesystem. Fall back to a
+        // file copy: Remotion's bundler reads the bytes either way, and
+        // the duplication cost is bounded by the program's clip count.
+        const e = err as NodeJS.ErrnoException;
+        if (e?.code === "EXDEV") {
+          copyFileSync(cachePath, publicAbs);
+        } else {
+          throw err;
+        }
+      }
     }
   }
   return publicRel;

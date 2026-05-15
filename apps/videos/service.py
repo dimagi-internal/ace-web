@@ -340,6 +340,14 @@ def create_program_from_spec(workspace: Workspace, slug: str, spec_yaml: str) ->
             f"spec_yaml.workspace ({doc.get('workspace')!r}) must match the URL workspace ({workspace.slug!r})"
         )
 
+    # Auto-derive narration.script from by_beat if the spec author left
+    # it empty. The Remotion renderer aborts if narration.script is
+    # empty (its precondition check), but the actual VO synthesis uses
+    # by_beat when present — so script just needs to be non-empty
+    # plausible text. Joining the per-beat values is the obvious thing
+    # and saves the agent from writing the same content twice.
+    spec_yaml = _autofill_narration_script(spec_yaml, doc)
+
     layout, client = layout_for(workspace)
     existing = drive.program_folder_id(layout, client, slug)
     if existing is not None:
@@ -350,6 +358,38 @@ def create_program_from_spec(workspace: Workspace, slug: str, spec_yaml: str) ->
     cache.invalidate_program(workspace.slug, slug)
     cache.set_spec(workspace.slug, slug, "run-001", spec_yaml)
     return file_id
+
+
+def _autofill_narration_script(spec_yaml: str, doc: dict) -> str:
+    """If narration.script is empty but narration.by_beat is populated,
+    join the per-beat values into a flowing script. Returns the spec
+    text with the script substituted in (or unchanged if not needed).
+
+    Round-trips through ruamel.yaml to preserve comments and quoting
+    style on every other field. Only narration.script changes.
+    """
+    narration = doc.get("narration") if isinstance(doc, dict) else None
+    if not isinstance(narration, dict):
+        return spec_yaml
+    script = narration.get("script")
+    if isinstance(script, str) and script.strip():
+        return spec_yaml  # author provided a script, respect it
+    by_beat = narration.get("by_beat")
+    if not isinstance(by_beat, dict):
+        return spec_yaml
+    parts = [str(v).strip() for v in by_beat.values() if str(v).strip()]
+    if not parts:
+        return spec_yaml
+    joined = "\n".join(parts) + "\n"
+    # Round-trip preserves quotes/comments on every other key.
+    rt = YAML()
+    rt.preserve_quotes = True
+    rt.width = 4096
+    parsed = rt.load(spec_yaml)
+    parsed["narration"]["script"] = joined
+    buf = io.StringIO()
+    rt.dump(parsed, buf)
+    return buf.getvalue()
 
 
 def copy_run(workspace: Workspace, slug: str, from_run_id: str) -> str:

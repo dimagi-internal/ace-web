@@ -5,6 +5,19 @@ interface Props {
 }
 
 /**
+ * Vertical pixels reserved at the bottom of the frame for the
+ * narration caption. Other on-screen text (lower-thirds, stat-card
+ * captions, etc) MUST start above frame.height - CAPTION_RESERVED_BOTTOM
+ * to avoid collision with the caption. Single source of truth — every
+ * other component that pins to the bottom references this constant.
+ *
+ * Sized for a 2-line caption at fontSize 36 / lineHeight 1.22 plus a
+ * small floor margin. Bumping the caption font size or line count
+ * means bumping this constant.
+ */
+export const CAPTION_RESERVED_BOTTOM = 160;
+
+/**
  * Modern caption — Inter 800, tight letter-spacing, white fill with a
  * thin black stroke (paint-order:stroke fill so the stroke sits behind
  * the letterforms rather than thickening them) and a soft drop shadow
