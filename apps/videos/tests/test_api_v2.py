@@ -230,7 +230,9 @@ def test_feedback_get_post_roundtrip(member_client, videos_root):
 def test_render_status_reads_redis(member_client, videos_root):
     client, _ = member_client
     fake_redis = mock.MagicMock()
-    fake_redis.get.side_effect = lambda k: "1" if k.endswith(":busy") else "2026-05-14T17:00:00+00:00"
+    fake_redis.get.side_effect = (
+        lambda k: "1" if k.endswith(":busy") else "2026-05-14T17:00:00+00:00"
+    )
     with mock.patch("apps.videos.service._get_redis", return_value=fake_redis):
         resp = client.get("/api/w/ws1/videos/programs/demo/render-status")
     assert resp.status_code == 200, resp.content

@@ -354,7 +354,10 @@ def trigger_rerender(slug: str, *, needs_hydrate: bool) -> bool:
     # We rely on the busy-flag TTL to clear itself; a stale flag for an
     # hour is fine (it's UX hint, not correctness).
     chain = " && ".join(cmd_parts)
-    log.info("videos.trigger_rerender: spawning chain for %s (needs_hydrate=%s)", slug, needs_hydrate)
+    log.info(
+        "videos.trigger_rerender: spawning chain for %s (needs_hydrate=%s)",
+        slug, needs_hydrate,
+    )
     try:
         subprocess.Popen(  # noqa: S602 — intentional shell wrapper; slug is validated upstream
             ["sh", "-c", chain],
