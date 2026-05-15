@@ -85,9 +85,61 @@ specific dashboard metric.
    populate the `manifest:` and the `scene.clips[]` / `product.beats[]`
    asset references. When in doubt, drop the gdrive_media block out;
    the operator can hand-attach later.
-4. **`brand`** — Connect's brand defaults (tagline, cycle steps, cta).
+4. **`available_video_clips`** *(optional)* — a flat list of items in
+   the workspace's curated media library. See the "Picking clips from
+   the media library" section below for the shape and how to use it.
+5. **`brand`** — Connect's brand defaults (tagline, cycle steps, cta).
    The hook narration MUST mirror `brand.tagline` (paraphrase or use
    verbatim; do not invent a different tagline).
+
+## Picking clips from the media library
+
+The workspace has a curated **media library** at `videos/library/` in
+Drive. Each video file there has a JSON sidecar with `name`, `tags`, and
+an optional `description`. Items are referenced from `manifest:` using
+the `library:video/<subfolder>/<filename>` syntax — stable across runs,
+preferred over raw `gdrive:<id>.<ext>` IDs.
+
+When the orchestrator injects `available_video_clips` into your prompt
+context, each entry has this shape:
+
+```yaml
+- ref: "library:video/<subfolder>/<filename>"
+  name: "<human label>"
+  tags: ["<tag>", ...]
+  description: "<optional>"
+```
+
+If you'd otherwise drop a clip into `manifest:` (or its `scene.clips[]`
+/ `product.beats[]` referrers) via `gdrive_media`, first scan
+`available_video_clips`:
+
+1. Identify what the slot is for (scene = field footage; product = app
+   screenshot — see the `spec.template.yaml` comment block at the top).
+2. Look for a library item whose tags match the program's
+   topic/country AND the slot's role.
+3. If a fit exists, prefer its `ref` over the raw `gdrive:` form.
+4. If nothing fits, fall back to `gdrive_media` or leave empty for
+   hand-edit.
+
+The library refs are also MCP-callable any time via
+`videos_list_library_video` if you need to refresh mid-generation.
+
+**Tag conventions** (advisory, not enforced):
+
+- **Topic/identity:** `uganda`, `kenya`, `kangaroo-care`,
+  `midwifery`, …
+- **Role:** `field-footage`, `app-screenshot`, `b-roll`,
+  `establishing`, `drone`, `closeup`, …
+
+A scene-clip slot is looking for `field-footage` + the program's
+country. A product-clip slot is looking for `app-screenshot` + the
+program's app.
+
+**Audio is implicit.** The audio library grows when the renderer
+synthesizes voiceover from your `narration_*` fields below — you don't
+pick from it directly. Identical text + voice config returns the same
+cached clip, so reusing exact strings across programs reuses the audio.
 
 ## Brand voice
 
