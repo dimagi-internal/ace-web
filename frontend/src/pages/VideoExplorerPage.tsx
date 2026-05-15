@@ -262,15 +262,21 @@ export default function VideoExplorerPage() {
           Loading…
         </div>
       ) : run.spec && workspaceSlug && programSlug && resolvedRunId ? (
-        <BeatEditor
-          key={`${workspaceSlug}-${programSlug}-${resolvedRunId}`}
-          workspaceSlug={workspaceSlug}
-          programSlug={programSlug}
-          runId={resolvedRunId}
-          spec={run.spec}
-          onSpecRefetched={(s) => setRun((rd) => (rd ? { ...rd, spec: s } : rd))}
-          onRerender={handleRender}
-        />
+        // The page is locked at h-[calc(100vh-3rem)] so the inner editor
+        // must own its own vertical scroll — otherwise BeatList overflow
+        // gets clipped at the page bottom. The iframe path used flex-1
+        // for the same reason; React tree needs an overflow-y-auto wrapper.
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <BeatEditor
+            key={`${workspaceSlug}-${programSlug}-${resolvedRunId}`}
+            workspaceSlug={workspaceSlug}
+            programSlug={programSlug}
+            runId={resolvedRunId}
+            spec={run.spec}
+            onSpecRefetched={(s) => setRun((rd) => (rd ? { ...rd, spec: s } : rd))}
+            onRerender={handleRender}
+          />
+        </div>
       ) : (
         // Fallback only when the run pre-dates the parsed-spec endpoint
         // (no `spec` field on the response). Renders the legacy clip
