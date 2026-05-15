@@ -160,12 +160,14 @@ def test_media_traversal_rejected(member_client, videos_root):
 
 
 @pytest.mark.django_db
-def test_post_edit_mutates_spec_and_triggers_render(member_client, videos_root):
+def test_post_edit_saves_spec_without_triggering_render(member_client, videos_root):
+    """POST /edit just saves the YAML — render is an explicit /build call.
+
+    Splits the two so the operator can batch edits before paying the
+    multi-second render cost.
+    """
     client, _ = member_client
-    fake_redis = mock.MagicMock()
-    fake_redis.set.return_value = True
-    with mock.patch("apps.videos.service._get_redis", return_value=fake_redis), \
-         mock.patch("apps.videos.service.subprocess.Popen") as popen:
+    with mock.patch("apps.videos.service.subprocess.Popen") as popen:
         resp = client.post(
             "/api/w/ws1/videos/programs/demo/runs/run-001/edit",
             data={"op": "set-narration", "beatId": "intro", "text": "Hi"},
@@ -174,10 +176,8 @@ def test_post_edit_mutates_spec_and_triggers_render(member_client, videos_root):
     assert resp.status_code == 200, resp.content
     body = resp.json()
     assert body["ok"] is True
-    assert body["rerender_triggered"] is True
-    assert popen.call_count == 1
-    chain = popen.call_args[0][0][2]
-    assert "--run=run-001" in chain
+    assert body["rerender_triggered"] is False
+    assert popen.call_count == 0  # save only, no subprocess
     raw = (videos_root / "programs" / "demo" / "runs" / "run-001" / "spec.yaml").read_text()
     assert "intro: Hi" in raw
 
