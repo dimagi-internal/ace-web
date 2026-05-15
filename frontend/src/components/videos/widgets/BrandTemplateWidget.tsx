@@ -21,14 +21,9 @@ export function BrandTemplateWidget({ kind }: Props) {
       <p className="text-sm text-muted-foreground">
         {BRAND_DESCRIPTIONS[kind] ?? "Brand-template beat — no per-program content."}
       </p>
-      <button
-        type="button"
-        disabled
-        title="Brand strings live in programs/_defaults.yaml. Per-program override coming later."
-        className="mt-2 cursor-not-allowed text-xs text-muted-foreground underline opacity-60"
-      >
-        Edit globally
-      </button>
+      <p className="mt-1 text-xs text-muted-foreground/70">
+        Strings live in <code className="rounded bg-muted px-1">programs/_defaults.yaml</code>.
+      </p>
     </div>
   );
 }

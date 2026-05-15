@@ -17,7 +17,9 @@ export function StatsWidget({ beatId, path }: { beatId: string; path: string }) 
   if (!stat) return null;
   return (
     <div
-      className="cursor-pointer rounded border bg-muted/20 p-3 hover:border-primary"
+      data-testid="stats-widget"
+      data-stat-path={path}
+      className="group cursor-pointer rounded border bg-muted/20 p-3 hover:border-primary"
       onClick={() => dispatch({ type: "OPEN_DRAWER", target: { kind: "stat", beatId, path } })}
     >
       <div className="flex items-baseline gap-3">
@@ -28,7 +30,9 @@ export function StatsWidget({ beatId, path }: { beatId: string; path: string }) 
             <div className="mt-0.5 text-xs text-muted-foreground">source: {stat.source}</div>
           )}
         </div>
-        <span className="text-xs text-muted-foreground">click to edit</span>
+        <span aria-hidden className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+          ✏ Edit
+        </span>
       </div>
     </div>
   );
