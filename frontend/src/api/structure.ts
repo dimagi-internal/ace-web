@@ -17,5 +17,5 @@ export async function getSessionStructure(
     { params: { path: { workspace_slug: workspaceSlug, slug } } },
   );
   if (!response.ok) throw new Error(`Failed to get session structure: ${response.status}`);
-  return (await response.json()) as StructureTree;
+  return (await response.clone().json()) as StructureTree;
 }

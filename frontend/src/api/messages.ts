@@ -18,6 +18,6 @@ export const listMessages = async (
   );
   if (!response.ok) throw new Error(`Failed to list messages: ${response.status}`);
   // v2 returns a Page shape: { items, total, offset, limit }
-  const page = (await response.json()) as { items: Message[] };
+  const page = (await response.clone().json()) as { items: Message[] };
   return page.items;
 };

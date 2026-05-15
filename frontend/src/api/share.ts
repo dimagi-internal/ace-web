@@ -20,7 +20,7 @@ export const createShareToken = async (
     { params: { path: { workspace_slug: workspaceSlug, slug } } } as never,
   );
   if (!response.ok) throw new Error(`Failed to create share token: ${response.status}`);
-  return (await response.json()) as ShareTokenInfo;
+  return (await response.clone().json()) as ShareTokenInfo;
 };
 
 export const listShareTokens = async (
@@ -32,7 +32,7 @@ export const listShareTokens = async (
     { params: { path: { workspace_slug: workspaceSlug, slug } } },
   );
   if (!response.ok) throw new Error(`Failed to list share tokens: ${response.status}`);
-  return (await response.json()) as ShareTokenListItem[];
+  return (await response.clone().json()) as ShareTokenListItem[];
 };
 
 export const revokeShareToken = async (
@@ -45,7 +45,7 @@ export const revokeShareToken = async (
     { params: { path: { workspace_slug: workspaceSlug, slug, token_key: token } } } as never,
   );
   if (!response.ok) throw new Error(`Failed to revoke share token: ${response.status}`);
-  return (await response.json()) as ShareTokenListItem;
+  return (await response.clone().json()) as ShareTokenListItem;
 };
 
 export const getSharedSession = async (token: string): Promise<SharedSession> => {
@@ -53,5 +53,5 @@ export const getSharedSession = async (token: string): Promise<SharedSession> =>
     params: { path: { token } },
   } as never);
   if (!response.ok) throw new Error(`Failed to load shared session: ${response.status}`);
-  return (await response.json()) as SharedSession;
+  return (await response.clone().json()) as SharedSession;
 };
