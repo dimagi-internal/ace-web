@@ -254,19 +254,27 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     if bucket_key not in phase_orch_first_ts:
                         phase_orch_first_ts[bucket_key] = event.timestamp
                     phase_orch_last_ts[bucket_key] = event.timestamp
-                turn_tokens = empty_tokens()
-                add_usage(turn_tokens, event.usage)
-                phase_orch_turns.setdefault(bucket_key, []).append({
-                    "kind": "direct_turn",
-                    "started_at": (
-                        event.timestamp.isoformat() if event.timestamp else None
-                    ),
-                    "model": event.model,
-                    "estimated_cost_usd": round(cost, 6) if cost is not None else 0.0,
-                    "cost_is_partial": cost is None,
-                    "tokens": turn_tokens,
-                    "text_preview": event.text_preview,
-                })
+                # Only surface the turn as its own row when there's narration
+                # worth reading. Pure tool-firing turns (no text blocks) have
+                # nothing to show — their tools already appear in the tree as
+                # orchestrator-level tool rows. The cost still rolls into the
+                # synthetic skill's total either way, so no spend is lost.
+                if event.text_preview:
+                    turn_tokens = empty_tokens()
+                    add_usage(turn_tokens, event.usage)
+                    phase_orch_turns.setdefault(bucket_key, []).append({
+                        "kind": "direct_turn",
+                        "started_at": (
+                            event.timestamp.isoformat() if event.timestamp else None
+                        ),
+                        "model": event.model,
+                        "estimated_cost_usd": (
+                            round(cost, 6) if cost is not None else 0.0
+                        ),
+                        "cost_is_partial": cost is None,
+                        "tokens": turn_tokens,
+                        "text_preview": event.text_preview,
+                    })
             continue
 
         if event.kind == "tool_use":
