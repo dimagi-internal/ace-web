@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { probeDurationSeconds } from "./probe";
 
 export function cacheKey(script: string, voiceId: string, model: string): string {
   return createHash("sha256")
@@ -22,39 +23,60 @@ export async function synthesize(args: SynthesizeArgs): Promise<string> {
   const { script, voiceId, model, cacheDir, apiKey } = args;
   const key = cacheKey(script, voiceId, model);
   mkdirSync(cacheDir, { recursive: true });
-  const outPath = path.join(cacheDir, `${key}.mp3`);
-  if (existsSync(outPath)) return outPath;
-  const fetchImpl = args.fetchImpl ?? fetch;
-  const resp = await fetchImpl(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-    {
-      method: "POST",
-      headers: {
-        "xi-api-key": apiKey,
-        "content-type": "application/json",
-        accept: "audio/mpeg",
-      },
-      body: JSON.stringify({
-        text: script,
-        model_id: model,
-        // Softer, more documentary-style delivery: higher stability for
-        // calmer pacing, lower similarity_boost for a more natural read,
-        // small style nudge away from a flat baseline.
-        voice_settings: {
-          stability: 0.6,
-          similarity_boost: 0.45,
-          style: 0.2,
-          use_speaker_boost: true,
+  const mp3Path = path.join(cacheDir, `${key}.mp3`);
+  const jsonPath = path.join(cacheDir, `${key}.json`);
+  if (existsSync(mp3Path) && existsSync(jsonPath)) return mp3Path;
+
+  if (!existsSync(mp3Path)) {
+    const fetchImpl = args.fetchImpl ?? fetch;
+    const resp = await fetchImpl(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: "POST",
+        headers: {
+          "xi-api-key": apiKey,
+          "content-type": "application/json",
+          accept: "audio/mpeg",
         },
-      }),
+        body: JSON.stringify({
+          text: script,
+          model_id: model,
+          // Softer, more documentary-style delivery: higher stability for
+          // calmer pacing, lower similarity_boost for a more natural read,
+          // small style nudge away from a flat baseline.
+          voice_settings: {
+            stability: 0.6,
+            similarity_boost: 0.45,
+            style: 0.2,
+            use_speaker_boost: true,
+          },
+        }),
+      }
+    );
+    if (!resp.ok) {
+      throw new Error(`ElevenLabs HTTP ${resp.status}: ${await safeText(resp)}`);
     }
-  );
-  if (!resp.ok) {
-    throw new Error(`ElevenLabs HTTP ${resp.status}: ${await safeText(resp)}`);
+    const buf = Buffer.from(await resp.arrayBuffer());
+    writeFileSync(mp3Path, buf);
   }
-  const buf = Buffer.from(await resp.arrayBuffer());
-  writeFileSync(outPath, buf);
-  return outPath;
+
+  // Always (re)write the sidecar when missing — covers (a) brand-new
+  // synthesis and (b) pre-sidecar mp3s left over from an earlier render.
+  writeFileSync(
+    jsonPath,
+    JSON.stringify(
+      {
+        voice_id: voiceId,
+        model,
+        text: script,
+        duration_sec: probeDurationSeconds(mp3Path),
+        generated_at: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
+  return mp3Path;
 }
 
 async function safeText(r: Response): Promise<string> {
