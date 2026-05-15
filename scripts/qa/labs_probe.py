@@ -185,6 +185,8 @@ CORE_SURFACES = [
     ("10-system-mcps",        "/system?tab=mcps"),
     ("11-auth-cli",           "/auth/cli"),
     ("12-videos-list",        f"/w/{WORKSPACE}/videos"),
+    ("13-media-library",      f"/w/{WORKSPACE}/videos/library"),
+    ("14-media-library-audio", f"/w/{WORKSPACE}/videos/library?type=audio"),
 ]
 
 
