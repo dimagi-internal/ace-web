@@ -31,7 +31,13 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** List opps in workspace */
+        /**
+         * List opps in workspace
+         * @description Return the full legacy OppCard shape (display_name, tags, labels,
+         *     eval_score, etc.) the frontend expects. We bypass OppCardOut's strict
+         *     Pydantic schema and return the rich dict directly — the v2 minimal
+         *     schema was a Phase 1 over-simplification.
+         */
         readonly get: operations["apps_opps_api_v2_list_opps"];
         readonly put?: never;
         /** Create opp */
@@ -49,7 +55,13 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Opp Workbench snapshot */
+        /**
+         * Opp Workbench snapshot
+         * @description Return the full Workbench payload — opp + current_run with steps +
+         *     decisions + phases + pdd_body. Uses the legacy serializer which
+         *     matches the frontend's OppSnapshot shape (the v2 minimal
+         *     OppSnapshotOut schema was a Phase 1 over-simplification).
+         */
         readonly get: operations["apps_opps_api_v2_get_opp"];
         readonly put?: never;
         readonly post?: never;
@@ -1461,37 +1473,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** OppCardOut */
-        readonly OppCardOut: {
-            /** Slug */
-            readonly slug: string;
-            /** Title */
-            readonly title: string;
-            /** Current Phase */
-            readonly current_phase?: string | null;
-            /** Current Skill */
-            readonly current_skill?: string | null;
-            /** Run Count */
-            readonly run_count: number;
-            /** Last Run Id */
-            readonly last_run_id?: string | null;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
-        };
-        /** Page[OppCardOut] */
-        readonly Page_OppCardOut_: {
-            /** Items */
-            readonly items: readonly components["schemas"]["OppCardOut"][];
-            /** Total */
-            readonly total: number;
-            /** Offset */
-            readonly offset: number;
-            /** Limit */
-            readonly limit: number;
-        };
         /**
          * OppCreateIn
          * @description Request body for POST /w/{workspace_slug}/opps.
@@ -3259,7 +3240,9 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["Page_OppCardOut_"];
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
                 };
             };
         };
