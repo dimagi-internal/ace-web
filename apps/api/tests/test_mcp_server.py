@@ -44,6 +44,8 @@ _EXPECTED_TOOL_NAMES = {
     "apps_videos_api_get_feedback",
     "apps_videos_api_list_video_templates",
     "apps_videos_api_get_video_template",
+    "apps_videos_api_list_media_library_video",
+    "apps_videos_api_list_media_library_audio",
 }
 
 
