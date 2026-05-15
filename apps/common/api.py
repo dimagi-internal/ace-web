@@ -70,28 +70,3 @@ def health(request: HttpRequest) -> HttpResponse:
     payload = HealthOut.model_validate(result).model_dump(mode="json")
     status_code = 200 if result["healthy"] else 503
     return JsonResponse(payload, status=status_code)
-
-
-# ---------------------------------------------------------------------------
-# GET /settings — public-safe Django settings exposed to the SPA
-# ---------------------------------------------------------------------------
-#
-# The SPA reads this once on boot (via frontend/src/lib/features.ts) to pick up
-# feature flags. Only allowlisted, non-sensitive keys are returned — never dump
-# `dir(settings)` here. Keep additions narrow and intentional.
-@router.get(
-    "/settings",
-    auth=None,
-    response={200: dict},
-    summary="Public-safe settings + feature flags for the SPA",
-)
-def public_settings(request: HttpRequest) -> HttpResponse:
-    from django.conf import settings
-    from django.http import JsonResponse
-
-    payload = {
-        "ACE_VIDEO_BEAT_EDITOR_REACT": bool(
-            getattr(settings, "ACE_VIDEO_BEAT_EDITOR_REACT", False)
-        ),
-    }
-    return JsonResponse(payload)
