@@ -41,18 +41,49 @@ specific. Read like a quiet documentary lower-third, not a TV ad.
 
 Each beat is a fixed duration (4 / 8 / 3 / 7 / 10 / 12 / 8 / 8s @ ~150wpm).
 The narration synthesizer is hard-capped by beat duration, so going
-long means the audio gets cut mid-word. Stay within ±2 words.
+long means the audio gets cut mid-word. **Stay within ±2 words of the
+target.** Count words before returning.
 
-| Beat       | Target words | What it says |
-|------------|--------------|-------------|
-| hook       | ~10          | Mirror Connect's tagline. |
-| cycle      | ~20          | Walk Learn → Deliver → Verify → Pay in plain language. |
-| handoff    | ~8           | "Here's how that works for {program_name}." |
-| scene      | ~20          | Describe what field footage shows. |
-| problem    | ~25          | Frame the headline stat in human terms. |
-| product    | ~30          | Walk the app screenshots. |
-| impact     | ~20          | Read out the two impact stats. |
-| cta        | 0            | Leave empty. Outro plays brand CTA card. |
+| Beat       | Target | Min | Max | What it says |
+|------------|--------|-----|-----|-------------|
+| hook       | 10     |  8  | 12  | Paraphrase Connect's tagline. |
+| cycle      | 20     | 18  | 22  | Walk Learn → Deliver → Verify → Pay in plain language. |
+| handoff    | 8      |  6  | 10  | Hand off to this specific program. |
+| scene      | 20     | 18  | 22  | Describe what field footage shows. |
+| problem    | 25     | 23  | 27  | Frame the headline stat in human terms. |
+| product    | 30     | 28  | 32  | Walk the app screenshots. |
+| impact     | 20     | 18  | 22  | Read out the two impact stats. |
+| cta        | 0      |  0  |  0  | **Leave empty.** Outro plays brand CTA card. |
+
+### Calibration: too long vs right length
+
+These are real examples to anchor your sense of "right":
+
+**hook** (target 10, max 12) —
+- ✅ Right (8): "Pay for verified service delivery, not planned activity."
+- ✅ Right (10): "Connect pays for verified service delivery, not planned activity."
+- ❌ Too long (16): "Connect by Dimagi pays community health workers for verified service delivery, not for planned activity."
+
+**problem** (target 25, max 27) —
+- ✅ Right (23): "Eighty percent of neonatal deaths happen after discharge — at home, without follow-up. Newborns need structured care in their first sixty days."
+- ❌ Too long (33): "Eighty percent of newborn deaths happen after the baby leaves the hospital, in homes without any follow-up care from a trained health worker, leaving small and vulnerable newborns without structured care in their first sixty days."
+
+**product** (target 30, max 32) —
+- ✅ Right (28): "FLWs use the mobile app to record weight, temperature, oxygen, and breathing rate. They screen for danger signs, observe a breastfeed, and coach skin-to-skin Kangaroo positioning."
+- ❌ Too long (43): "Frontline workers open the Connect mobile app and, at every home visit, carefully record the baby's weight using calibrated scales, axillary temperature, oxygen saturation via pulse oximeter, and respiratory rate, then screen for any danger signs."
+
+**The pattern**: drop adjectives, drop redundant qualifiers, prefer the
+noun over the noun phrase ("the baby" not "the small newborn baby").
+Each beat should read like a documentary lower-third, not a sentence
+from a grant report.
+
+### Self-check before returning
+
+For every narration field, count the words in your draft. If it's
+over `Max` for that beat, trim **before** returning the JSON. Do not
+return a draft you know is over budget and hope the operator fixes
+it — operators rarely look until the audio gets cut mid-word at
+render time.
 
 ## How to choose problem.big and impact[]
 
@@ -83,6 +114,8 @@ Return ONLY a single JSON object — no prose, no markdown fences. Keys:
   "status": str,
   "program_tagline": str,
   "program_url": str,
+  "template_id": str,        # echo the template id you fetched ("60s-campaign-overview")
+  "generated_at": str,       # ISO-8601 UTC at fill time (e.g. "2026-05-15T12:34:00Z")
   "scene_lower_third": str,
   "problem_big": str,
   "problem_caption": str,
@@ -101,5 +134,9 @@ Return ONLY a single JSON object — no prose, no markdown fences. Keys:
   "narration_cta": str
 }
 ```
+
+`template_id` and `generated_at` populate a `provenance:` block at the
+top of the generated spec so editors and downstream tools can trace a
+spec back to the URL and run that produced it.
 
 Every value is a string. No nested objects. No arrays. No comments.

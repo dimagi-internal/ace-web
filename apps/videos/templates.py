@@ -83,11 +83,38 @@ def load_template(template_id: str) -> TemplateBundle | None:
     prompt_path = root / "generate.prompt.md"
     if not meta_path.exists() or not spec_path.exists() or not prompt_path.exists():
         return None
+    raw_skeleton = spec_path.read_text(encoding="utf-8")
     return TemplateBundle(
         meta=_load_meta(template_id, meta_path),
-        skeleton_yaml=spec_path.read_text(encoding="utf-8"),
+        skeleton_yaml=_strip_leading_doc_comments(raw_skeleton),
         prompt_md=prompt_path.read_text(encoding="utf-8"),
     )
+
+
+def _strip_leading_doc_comments(skeleton: str) -> str:
+    """Drop the skeleton's authoring-time doc header before returning it.
+
+    The on-disk ``spec.template.yaml`` opens with a comment block that
+    documents every ``{{placeholder}}`` — useful for template authors,
+    but harmful in the generated output because the substitution
+    replaces those documentation references too, leaving a garbled
+    header like::
+
+        #   kangaroo-mother-care            slug, lowercase + hyphens (e.g. "kangaroo-care")
+
+    Strip everything from the start of the file up to (and including)
+    the first blank line that follows a comment run. The remaining
+    skeleton starts directly at the first real YAML field. Templates
+    that don't have a leading comment block are returned unchanged.
+    """
+    lines = skeleton.splitlines(keepends=True)
+    if not lines or not lines[0].lstrip().startswith("#"):
+        return skeleton
+    i = 0
+    n = len(lines)
+    while i < n and (lines[i].lstrip().startswith("#") or lines[i].strip() == ""):
+        i += 1
+    return "".join(lines[i:])
 
 
 def _load_meta(template_id: str, meta_path: Path) -> TemplateMeta:

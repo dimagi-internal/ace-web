@@ -1,45 +1,52 @@
 # 60-second campaign overview — spec skeleton.
 #
-# The generator instantiates this by substituting {{placeholders}} with
-# program-specific values it extracts from the source URL / Drive folder.
-# Anything not substituted is left intact — including the brand-tagline
-# narration default, which mirrors the on-screen text from
-# `_defaults.yaml`'s `brand` section.
+# Author-time docs only; the template loader (apps/videos/templates.py)
+# strips this leading comment block before returning skeleton_yaml so
+# placeholder *references* inside doc text don't get substituted into
+# the generated spec.
 #
 # Placeholders the generator must fill:
-#   {{program_slug}}            slug, lowercase + hyphens (e.g. "kangaroo-care")
-#   {{workspace_slug}}          which ace-web workspace owns this program
-#   {{program_name}}            display name (e.g. "Kangaroo Care")
-#   {{country_focus}}           primary country (e.g. "Uganda")
-#   {{status}}                  short status line (e.g. "Active in 4 countries")
-#   {{program_tagline}}         one-line program-level tagline (NOT Connect's tagline)
-#   {{program_url}}             canonical URL for the program page
 #
-#   Per-section content placeholders, all subject to LLM generation:
-#   {{scene_lower_third}}       e.g. "Uganda · Kangaroo Care"
-#   {{problem_big}}             headline number (e.g. "350K")
-#   {{problem_caption}}         one-line problem framing
-#   {{problem_source}}          attribution (e.g. "labs.connect.dimagi.com")
-#   {{impact_1_big}}            first impact number (e.g. "$1.40")
-#   {{impact_1_caption}}        first impact line
-#   {{impact_2_big}}            second impact number
-#   {{impact_2_caption}}        second impact line
+#   Identity (the operator-known facts):
+#     {{program_slug}}        slug — lowercase + hyphens (e.g. "kangaroo-care")
+#     {{workspace_slug}}      which ace-web workspace owns this program
+#     {{program_name}}        display name (e.g. "Kangaroo Care")
+#     {{country_focus}}       primary country (e.g. "Uganda")
+#     {{status}}              short status line (e.g. "Active in 4 countries")
+#     {{program_tagline}}     one-line program-level tagline (NOT Connect's tagline)
+#     {{program_url}}         canonical URL for the program page
+#     {{template_id}}         echoed back — fill with the template id you fetched
+#     {{generated_at}}        ISO-8601 UTC timestamp at fill time
 #
-#   Per-beat narration placeholders (each ~ word-budget noted, room for ±2):
-#   {{narration_hook}}          ~10 words. Mirrors the on-screen tagline:
-#                               "Pay for verified service delivery, not planned activity."
-#   {{narration_cycle}}         ~20 words. Plain-language walkthrough of the
-#                               four-step cycle (Learn / Deliver / Verify / Pay).
-#   {{narration_handoff}}       ~8 words. Hands off to the specific program.
-#   {{narration_scene}}         ~20 words. What field footage is showing.
-#   {{narration_problem}}       ~25 words. Frames the headline stat in human terms.
-#   {{narration_product}}       ~30 words. Walks the app screenshots.
-#   {{narration_impact}}        ~20 words. Reads out the impact stats.
-#   {{narration_cta}}           leave empty — outro plays under brand cta.
+#   Per-section content (LLM-generated from the source page):
+#     {{scene_lower_third}}   e.g. "Uganda · Kangaroo Care"
+#     {{problem_big}}         headline number (e.g. "350K")
+#     {{problem_caption}}     one-line problem framing
+#     {{problem_source}}      attribution (e.g. "labs.connect.dimagi.com")
+#     {{impact_1_big}}        first impact number (e.g. "$1.40")
+#     {{impact_1_caption}}    first impact line
+#     {{impact_2_big}}        second impact number
+#     {{impact_2_caption}}    second impact line
 #
-# Manifest entries (clips) are NOT filled by this template's placeholders —
-# the generator separately discovers Drive media (or leaves the manifest
-# empty for hand-edit) and writes manifest: + scene/product asset refs.
+#   Per-beat narration (each ±2 words from target — over-budget gets cut mid-word):
+#     {{narration_hook}}      ~10 words. Paraphrase Connect's tagline.
+#     {{narration_cycle}}     ~20 words. Walk Learn / Deliver / Verify / Pay.
+#     {{narration_handoff}}   ~8 words. Hand off to this specific program.
+#     {{narration_scene}}     ~20 words. What field footage is showing.
+#     {{narration_problem}}   ~25 words. Frame the headline stat in human terms.
+#     {{narration_product}}   ~30 words. Walk the app screenshots.
+#     {{narration_impact}}    ~20 words. Read out the impact stats.
+#     {{narration_cta}}       Leave empty — outro plays under brand CTA card.
+#
+# Manifest entries are NOT placeholders — the generator discovers Drive media
+# separately and either populates manifest:/scene/product or leaves them empty
+# for hand-edit.
+
+provenance:
+  generator: video-from-program-page
+  template: "{{template_id}}"
+  generated_from: "{{program_url}}"
+  generated_at: "{{generated_at}}"
 
 slug: "{{program_slug}}"
 workspace: "{{workspace_slug}}"
