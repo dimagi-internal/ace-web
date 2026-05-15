@@ -28,7 +28,7 @@ def list_opps(...):
     ...
 ```
 
-The `route_map_fn` in `apps/api_v2/mcp_server.py` checks
+The `route_map_fn` in `apps/api/mcp_server.py` checks
 `route.extensions.get("x-mcp-expose")` and maps matching routes to
 `MCPType.TOOL`; everything else is `MCPType.EXCLUDE`.  Restart the
 server after adding the flag (schema is loaded once at ASGI startup).
@@ -39,7 +39,7 @@ MCP tools authenticate via Bearer tokens (`PersonalToken`).  The MCP client
 provides `Authorization: Bearer <token>` in its HTTP request to `/api/mcp/`.
 FastMCP's HTTP transport passes the header through to every loopback `httpx`
 request via the `_BearerPassthrough` auth class, and the standard
-`DjangoSessionAuth` Bearer path in `apps/api_v2/auth.py` validates it
+`DjangoSessionAuth` Bearer path in `apps/api/auth.py` validates it
 normally.
 
 Per-call workspace membership and role checks still apply — the MCP tool
@@ -52,15 +52,15 @@ not susceptible to cross-site forgery).
 
 | Tool name | Method | Path | Summary |
 |---|---|---|---|
-| `apps_opps_api_v2_list_opps` | GET | `/api/w/{workspace_slug}/opps` | List opps in workspace |
-| `apps_opps_api_v2_get_opp` | GET | `/api/w/{workspace_slug}/opps/{slug}` | Opp Workbench snapshot |
-| `apps_opps_api_v2_list_runs` | GET | `/api/w/{workspace_slug}/opps/{slug}/runs` | List runs for opp |
-| `apps_opps_api_v2_get_run` | GET | `/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}` | Run detail |
-| `apps_opps_api_v2_get_step` | GET | `/api/w/{workspace_slug}/opps/{slug}/steps/{skill}` | Step detail |
-| `apps_opps_api_v2_get_artifact` | GET | `/api/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}` | Artifact metadata |
-| `apps_opps_api_v2_get_scorecard` | GET | `/api/w/{workspace_slug}/opps/{slug}/scorecard` | Opp-eval scorecard |
-| `apps_sessions_api_v2_list_sessions` | GET | `/api/w/{workspace_slug}/sessions` | List sessions in workspace |
-| `apps_sessions_api_v2_get_session` | GET | `/api/w/{workspace_slug}/sessions/{slug}` | Session detail |
+| `apps_opps_api_list_opps` | GET | `/api/w/{workspace_slug}/opps` | List opps in workspace |
+| `apps_opps_api_get_opp` | GET | `/api/w/{workspace_slug}/opps/{slug}` | Opp Workbench snapshot |
+| `apps_opps_api_list_runs` | GET | `/api/w/{workspace_slug}/opps/{slug}/runs` | List runs for opp |
+| `apps_opps_api_get_run` | GET | `/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}` | Run detail |
+| `apps_opps_api_get_step` | GET | `/api/w/{workspace_slug}/opps/{slug}/steps/{skill}` | Step detail |
+| `apps_opps_api_get_artifact` | GET | `/api/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}` | Artifact metadata |
+| `apps_opps_api_get_scorecard` | GET | `/api/w/{workspace_slug}/opps/{slug}/scorecard` | Opp-eval scorecard |
+| `apps_sessions_api_list_sessions` | GET | `/api/w/{workspace_slug}/sessions` | List sessions in workspace |
+| `apps_sessions_api_get_session` | GET | `/api/w/{workspace_slug}/sessions/{slug}` | Session detail |
 
 All are read-only.  Write actions (fork, gate decisions) are intentionally
 kept manual for now; expose them by adding `openapi_extra={"x-mcp-expose": True}`
@@ -104,8 +104,8 @@ or the task's internal address.
 
 ## Key files
 
-- `apps/api_v2/mcp_server.py` — `build_mcp()`, `make_asgi_app()`,
+- `apps/api/mcp_server.py` — `build_mcp()`, `make_asgi_app()`,
   `_route_map_fn`, `_stringify_response_codes`, `_BearerPassthrough`
 - `config/asgi.py` — Starlette `Mount("/api/mcp", app=_mcp_app)`
-- `apps/api_v2/tests/test_mcp_server.py` — unit tests for tool registration
+- `apps/api/tests/test_mcp_server.py` — unit tests for tool registration
   and filter logic
