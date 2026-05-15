@@ -127,6 +127,19 @@ def _screenshot(page: Page, name: str) -> str:
     return str(path.relative_to(REPO))
 
 
+def _csrf_headers(ctx) -> dict[str, str]:
+    """Read csrftoken_ace from the request context's cookie jar.
+
+    Django's CsrfViewMiddleware accepts the token via X-CSRFToken header;
+    Playwright's request.post() doesn't auto-include it. Cookie is set
+    by /auth/test-login/ and /auth/e2e-login/ as part of session bootstrap.
+    """
+    for c in ctx.cookies():
+        if c.get("name") == "csrftoken_ace" or c.get("name") == "csrftoken":
+            return {"X-CSRFToken": c.get("value", "")}
+    return {}
+
+
 def login(ctx) -> bool:
     """Hit /auth/e2e-login/ (labs) or /auth/test-login/ (dev) for a session cookie."""
     if TOKEN:
@@ -186,7 +199,7 @@ def ensure_program(ctx) -> StepResult:
     resp = ctx.request.post(
         f"{BASE}/api/w/{WORKSPACE}/videos/programs",
         data=json.dumps({"slug": SLUG, "spec_yaml": spec_yaml}),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", **_csrf_headers(ctx)},
     )
     if resp.status not in (200, 201):
         r.verdict = "fatal"
@@ -379,7 +392,7 @@ def step_trigger_rerender(ctx) -> StepResult:
     resp = ctx.request.post(
         f"{BASE}/api/w/{WORKSPACE}/videos/programs/{SLUG}/runs/run-001/build",
         data=json.dumps({"mode": "render"}),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", **_csrf_headers(ctx)},
     )
     if resp.status != 200:
         r.verdict = "broken"
