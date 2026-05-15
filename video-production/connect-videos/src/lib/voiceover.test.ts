@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { existsSync, rmSync, readFileSync } from "node:fs";
+import { existsSync, rmSync, readFileSync, mkdtempSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { tmpdir } from "node:os";
 import { synthesize, cacheKey } from "./voiceover";
 
 let tmpDir: string;
@@ -59,5 +60,62 @@ describe("synthesize", () => {
     await synthesize(args);
     await synthesize(args);
     expect(fakeFetch).toHaveBeenCalledOnce();
+  });
+
+  it("writes a sidecar JSON next to the mp3", async () => {
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "voiceover-sidecar-"));
+    try {
+      const fakeFetch: typeof fetch = async () =>
+        new Response(new Uint8Array([0xff, 0xfb, 0x10, 0xc0]), {
+          status: 200,
+          headers: { "content-type": "audio/mpeg" },
+        });
+      const out = await synthesize({
+        script: "Hello world",
+        voiceId: "voiceA",
+        model: "modelB",
+        cacheDir,
+        apiKey: "key",
+        fetchImpl: fakeFetch,
+      });
+      const stem = path.basename(out, ".mp3");
+      const sidecarPath = path.join(cacheDir, `${stem}.json`);
+      expect(existsSync(sidecarPath)).toBe(true);
+      const parsed = JSON.parse(readFileSync(sidecarPath, "utf8"));
+      expect(parsed.voice_id).toBe("voiceA");
+      expect(parsed.model).toBe("modelB");
+      expect(parsed.text).toBe("Hello world");
+      expect(typeof parsed.generated_at).toBe("string");
+      expect(
+        parsed.duration_sec === null || typeof parsed.duration_sec === "number",
+      ).toBe(true);
+    } finally {
+      rmSync(cacheDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns cached path when both mp3 and sidecar exist", async () => {
+    const cacheDir = mkdtempSync(path.join(tmpdir(), "voiceover-cached-"));
+    try {
+      let fetchCalls = 0;
+      const fakeFetch: typeof fetch = async () => {
+        fetchCalls++;
+        return new Response(new Uint8Array([0xff, 0xfb]), {
+          status: 200,
+          headers: { "content-type": "audio/mpeg" },
+        });
+      };
+      await synthesize({
+        script: "Twice", voiceId: "v", model: "m",
+        cacheDir, apiKey: "key", fetchImpl: fakeFetch,
+      });
+      await synthesize({
+        script: "Twice", voiceId: "v", model: "m",
+        cacheDir, apiKey: "key", fetchImpl: fakeFetch,
+      });
+      expect(fetchCalls).toBe(1);
+    } finally {
+      rmSync(cacheDir, { recursive: true, force: true });
+    }
   });
 });
