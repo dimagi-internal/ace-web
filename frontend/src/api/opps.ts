@@ -7,6 +7,7 @@ import type {
   LinkedChat,
   MultiRunSummary,
   OppCard,
+  OppCompare,
   OppSnapshot,
   RunSummary,
   Scorecard,
@@ -144,14 +145,19 @@ export async function getOpp(
   return data;
 }
 
-/** Cross-opp comparison has no v2 endpoint — will be addressed in a future PR. */
-export function getOppCompare(_slugA: string, _slugB: string): Promise<never> {
-  return Promise.reject(
-    new Error(
-      "getOppCompare: cross-opp comparison endpoint not available in v2 — " +
-        "see /api/w/{workspace_slug}/opps/{slug}/compare for within-opp run comparison",
-    ),
-  );
+/** Cross-opp comparison — restored as /opps/cross-compare/{a}/{b}
+ * (distinct from within-opp /opps/{slug}/compare which compares runs of
+ * the same opp). */
+export async function getOppCompare(
+  workspaceSlug: string,
+  slugA: string,
+  slugB: string,
+): Promise<OppCompare> {
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const url = `${base}/api/w/${encodeURIComponent(workspaceSlug)}/opps/cross-compare/${encodeURIComponent(slugA)}/${encodeURIComponent(slugB)}`;
+  const resp = await fetch(url, { credentials: "include" });
+  if (!resp.ok) throw new Error(`getOppCompare: ${resp.status}`);
+  return (await resp.json()) as OppCompare;
 }
 
 export async function getScorecard(workspaceSlug: string, slug: string): Promise<Scorecard> {

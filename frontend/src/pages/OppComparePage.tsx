@@ -32,7 +32,7 @@ export default function OppComparePage() {
   useEffect(() => {
     if (!slugA || !slugB) return;
     setState({ kind: "loading" });
-    getOppCompare(slugA, slugB)
+    getOppCompare(workspaceSlug ?? "", slugA, slugB)
       .then((payload) => setState({ kind: "loaded", payload }))
       .catch((err) => setState(errorState(err)));
   }, [slugA, slugB]);
@@ -48,7 +48,7 @@ export default function OppComparePage() {
         onRetry={() => {
           if (!slugA || !slugB) return;
           setState({ kind: "loading" });
-          getOppCompare(slugA, slugB)
+          getOppCompare(workspaceSlug ?? "", slugA, slugB)
             .then((payload) => setState({ kind: "loaded", payload }))
             .catch((err) => setState(errorState(err)));
         }}
