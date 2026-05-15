@@ -47,6 +47,7 @@ from .schemas import (
     LibraryOut,
     ProgramCardOut,
     ProgramDetailOut,
+    RenderLogOut,
     RenderStatusOut,
     RunDetailOut,
     RunSummaryOut,
@@ -341,6 +342,42 @@ def get_render_status(
     workspace = resolve_workspace_for_member(request, workspace_slug)
     _require_run(workspace, program_slug, run_id)
     return RenderStatusOut.model_validate(service.render_status(program_slug, run_id))
+
+
+@router.get(
+    "/programs/{program_slug}/runs/{run_id}/render-log",
+    response=RenderLogOut,
+    summary="Captured stdout+stderr of the most recent render chain",
+    openapi_extra={"x-mcp-expose": True},
+)
+def get_render_log(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    program_slug: Annotated[str, PathParam()],
+    run_id: Annotated[str, PathParam()],
+) -> RenderLogOut:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
+    log_path = service.render_log_path(program_slug, run_id)
+    if log_path.is_file():
+        try:
+            body = log_path.read_text(encoding="utf-8", errors="replace")
+            size = log_path.stat().st_size
+        except OSError:
+            body = ""
+            size = 0
+    else:
+        body = ""
+        size = 0
+    status = service.render_status(program_slug, run_id)
+    return RenderLogOut(
+        program_slug=program_slug,
+        run_id=run_id,
+        started_at=status.get("started_at"),
+        log=body,
+        size_bytes=size,
+        busy=bool(status.get("busy")),
+    )
 
 
 @router.get(

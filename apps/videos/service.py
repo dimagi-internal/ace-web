@@ -987,6 +987,26 @@ def _publish_artifacts_subcommand(
     )
 
 
+def render_log_path(slug: str, run_id: str) -> Path:
+    """LOCAL path where the spawned render chain's stdout+stderr is captured.
+    Persistent per-run; overwritten on each new render."""
+    return run_dir(slug, run_id) / "render.log"
+
+
+def _open_render_log(slug: str, run_id: str):
+    """Open the run's render.log for writing (truncates any prior log).
+    Returns a file handle the caller passes to subprocess.Popen as
+    stdout/stderr. Any I/O error here is logged but doesn't fail the
+    render — a render with no log is still better than no render."""
+    log_path = render_log_path(slug, run_id)
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        return log_path.open("wb")
+    except OSError as e:
+        log.warning("videos: failed to open render.log at %s: %s", log_path, e)
+        return None
+
+
 def trigger_build_only(workspace: Workspace, slug: str, run_id: str) -> bool:
     """Spawn build-clip-explorer (no render). Sub-second."""
     if not is_valid_slug(slug) or not is_valid_run_id(run_id):
@@ -1006,15 +1026,18 @@ def trigger_build_only(workspace: Workspace, slug: str, run_id: str) -> bool:
         return False
     chain = f"npm run build-clip-explorer -- --program={slug} --run={run_id}"
     log.info("videos.trigger_build_only: spawning for %s/%s", slug, run_id)
+    log_handle = _open_render_log(slug, run_id)
     try:
         subprocess.Popen(  # noqa: S602
             ["sh", "-c", chain],
             cwd=str(_root()),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_handle if log_handle else subprocess.DEVNULL,
+            stderr=subprocess.STDOUT if log_handle else subprocess.DEVNULL,
             start_new_session=True,
         )
     except FileNotFoundError:
+        if log_handle:
+            log_handle.close()
         r.delete(_busy_key(slug, run_id), _started_key(slug, run_id))
         return False
     return True
@@ -1048,15 +1071,18 @@ def trigger_rerender(workspace: Workspace, slug: str, run_id: str, *, needs_hydr
     parts.append(_publish_artifacts_subcommand(workspace, slug, run_id))
     chain = " && ".join(parts)
     log.info("videos.trigger_rerender: spawning for %s/%s (needs_hydrate=%s)", slug, run_id, needs_hydrate)
+    log_handle = _open_render_log(slug, run_id)
     try:
         subprocess.Popen(  # noqa: S602
             ["sh", "-c", chain],
             cwd=str(_root()),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_handle if log_handle else subprocess.DEVNULL,
+            stderr=subprocess.STDOUT if log_handle else subprocess.DEVNULL,
             start_new_session=True,
         )
     except FileNotFoundError:
+        if log_handle:
+            log_handle.close()
         r.delete(_busy_key(slug, run_id), _started_key(slug, run_id))
         return False
     return True
