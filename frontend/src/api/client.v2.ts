@@ -95,13 +95,38 @@ const authRedirectMiddleware: Middleware = {
 // that way because the API is mounted at "/api/"). So the client baseUrl is
 // just the Vite BASE_URL — no extra "/api" segment, otherwise every URL
 // becomes /ace/api/api/<path>.
-export const apiV2 = createClient<paths>({
+const _client = createClient<paths>({
   baseUrl: baseUrl.replace(/\/$/, ""),
   credentials: "include",
   headers: {
     "X-Requested-With": "XMLHttpRequest",
   },
 });
+
+// Wrap each HTTP method so we can inject parseAs: "stream" globally.
+// Without this, openapi-fetch consumes the response body to populate
+// the `data` field — which makes our callers' pattern of
+// `const { response } = ...; await response.clone().json()` blow up with
+// "Response body is already used". `parseAs: "stream"` tells openapi-fetch
+// to leave the body alone so callers can read it themselves.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function withStream<F extends (...args: any[]) => any>(fn: F): F {
+  return ((path: unknown, opts?: Record<string, unknown>) =>
+    fn(path, { ...(opts ?? {}), parseAs: "stream" })) as F;
+}
+
+export const apiV2 = {
+  GET: withStream(_client.GET),
+  POST: withStream(_client.POST),
+  PUT: withStream(_client.PUT),
+  PATCH: withStream(_client.PATCH),
+  DELETE: withStream(_client.DELETE),
+  HEAD: withStream(_client.HEAD),
+  OPTIONS: withStream(_client.OPTIONS),
+  TRACE: withStream(_client.TRACE),
+  use: _client.use.bind(_client),
+  eject: _client.eject.bind(_client),
+};
 
 apiV2.use(headersMiddleware);
 apiV2.use(authRedirectMiddleware);
