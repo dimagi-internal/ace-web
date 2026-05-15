@@ -92,6 +92,20 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
 
   const ready = sourceDuration > 0;
 
+  // Clamp helper used by both numeric inputs so a user typing 999 into
+  // duration doesn't silently bypass [0, sourceDuration]. The TrimBar
+  // already clamps via its onChange path; this mirrors the same bounds
+  // for the keyboard entry path.
+  const MIN_DURATION = 0.3;
+  function clampStart(v: number): number {
+    if (!ready) return v;
+    return Math.max(0, Math.min(sourceDuration - MIN_DURATION, v));
+  }
+  function clampDuration(v: number, start: number): number {
+    if (!ready) return v;
+    return Math.max(MIN_DURATION, Math.min(sourceDuration - start, v));
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {src && (
@@ -129,7 +143,11 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
             type="number" step="0.1" min={0} max={sourceDuration}
             disabled={!ready}
             value={draft.start.toFixed(2)}
-            onChange={(e) => setDraft({ ...draft, start: parseFloat(e.target.value) || 0 })}
+            onChange={(e) => {
+              const raw = parseFloat(e.target.value) || 0;
+              const start = clampStart(raw);
+              setDraft({ ...draft, start, duration: clampDuration(draft.duration || sourceDuration, start) });
+            }}
             className="w-20 rounded border bg-background px-1 py-0.5 disabled:opacity-50"
           />
           s
@@ -140,7 +158,10 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
             type="number" step="0.1" min={0.3} max={sourceDuration}
             disabled={!ready}
             value={(draft.duration || sourceDuration).toFixed(2)}
-            onChange={(e) => setDraft({ ...draft, duration: parseFloat(e.target.value) || 0 })}
+            onChange={(e) => {
+              const raw = parseFloat(e.target.value) || 0;
+              setDraft({ ...draft, duration: clampDuration(raw, draft.start) });
+            }}
             className="w-20 rounded border bg-background px-1 py-0.5 disabled:opacity-50"
           />
           s

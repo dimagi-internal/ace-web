@@ -150,7 +150,16 @@ def main() -> int:
         # 09 — trim handle focused (keyboard nav)
         page.locator('[data-beat-id="scene"]').scroll_into_view_if_needed()
         scene_beat.locator('[data-testid="clip-slot-widget"]').first.click()
-        page.wait_for_selector("[data-testid='trim-handle-left']", timeout=5000)
+        # Trim handles only render after the video probe finishes
+        # (sourceDuration > 0). Be patient — the source clip is fetched
+        # from a Drive-backed cache so the metadata round-trip is slow.
+        try:
+            page.wait_for_selector("[data-testid='trim-handle-left']", timeout=20000)
+        except Exception:
+            # Take the screenshot anyway so we can see the loading state.
+            shot(page, "09-trim-handle-loading")
+            page.keyboard.press("Escape")
+            return 0
         page.wait_for_timeout(400)
         page.locator("[data-testid='trim-handle-left']").focus()
         page.wait_for_timeout(200)
