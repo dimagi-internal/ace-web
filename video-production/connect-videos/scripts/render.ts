@@ -213,27 +213,40 @@ async function main() {
       }
     }
 
-    const filterComplex =
-      mixLabels.length > 1
-        ? [
-            ...filterParts,
-            `${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0[mix]`,
-          ].join("; ")
-        : filterParts.join("; ");
+    if (mixLabels.length === 0) {
+      // We entered the mux branch because the spec referenced audio
+      // sources, but every one of them resolved away (e.g. narration
+      // generator is "manual" so no voicePath, perBeat empty, music_bed
+      // file missing on disk). Fall back to copying the silent render
+      // through as the muxed output so the clip-explorer still has a
+      // playable preview at out/<slug>-draft-mux.mp4.
+      console.warn(
+        `No audio sources resolved — copying silent render → ${path.relative(root, muxed)}.`
+      );
+      fs.copyFileSync(outPath, muxed);
+    } else {
+      const filterComplex =
+        mixLabels.length > 1
+          ? [
+              ...filterParts,
+              `${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0[mix]`,
+            ].join("; ")
+          : filterParts.join("; ");
 
-    const mapLabel = mixLabels.length > 1 ? "[mix]" : mixLabels[0];
+      const mapLabel = mixLabels.length > 1 ? "[mix]" : mixLabels[0];
 
-    const ffmpegCmd = [
-      "ffmpeg -y",
-      ...inputs,
-      `-filter_complex ${JSON.stringify(filterComplex)}`,
-      "-c:v copy -c:a aac",
-      `-map 0:v:0 -map ${JSON.stringify(mapLabel)}`,
-      `-t ${totalSeconds}`,
-      JSON.stringify(muxed),
-    ].join(" ");
-    console.log(`Muxing audio → ${path.relative(root, muxed)}…`);
-    execSync(ffmpegCmd, { stdio: "inherit" });
+      const ffmpegCmd = [
+        "ffmpeg -y",
+        ...inputs,
+        `-filter_complex ${JSON.stringify(filterComplex)}`,
+        "-c:v copy -c:a aac",
+        `-map 0:v:0 -map ${JSON.stringify(mapLabel)}`,
+        `-t ${totalSeconds}`,
+        JSON.stringify(muxed),
+      ].join(" ");
+      console.log(`Muxing audio → ${path.relative(root, muxed)}…`);
+      execSync(ffmpegCmd, { stdio: "inherit" });
+    }
   }
 
   console.log("Done.");

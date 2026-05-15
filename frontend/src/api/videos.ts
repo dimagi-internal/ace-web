@@ -90,3 +90,21 @@ export function getRenderStatus(
 ): Promise<RenderStatus> {
   return v2Fetch<RenderStatus>(`${base(workspaceSlug)}/programs/${programSlug}/render-status`);
 }
+
+export interface BuildResult {
+  ok: boolean;
+  triggered: boolean;
+  mode: "render" | "build-only";
+  message: string;
+}
+
+export function triggerBuild(
+  workspaceSlug: string,
+  programSlug: string,
+  mode: "render" | "build-only" = "render",
+): Promise<BuildResult> {
+  return v2Fetch<BuildResult>(`${base(workspaceSlug)}/programs/${programSlug}/build`, {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+}

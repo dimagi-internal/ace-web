@@ -329,6 +329,35 @@ def _started_key(slug: str) -> str:
     return f"videos:render:{slug}:started_at"
 
 
+def trigger_build_only(slug: str) -> bool:
+    """Spawn just `build-clip-explorer` (no render) to refresh the explorer
+    HTML after a YAML edit when the operator doesn't want to wait for a
+    full re-render. Returns False if a render/build is already busy.
+    """
+    if not is_valid_slug(slug):
+        raise ValueError(f"Invalid program slug: {slug!r}")
+    r = _get_redis()
+    acquired = r.set(_busy_key(slug), "1", nx=True, ex=_RENDER_BUSY_TTL_SECONDS)
+    if not acquired:
+        return False
+    now = dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
+    r.set(_started_key(slug), now, ex=_RENDER_BUSY_TTL_SECONDS)
+    chain = f"npm run build-clip-explorer -- --program={slug}"
+    log.info("videos.trigger_build_only: spawning for %s", slug)
+    try:
+        subprocess.Popen(  # noqa: S602 — slug is validated above
+            ["sh", "-c", chain],
+            cwd=str(_root()),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except FileNotFoundError:
+        r.delete(_busy_key(slug), _started_key(slug))
+        return False
+    return True
+
+
 def trigger_rerender(slug: str, *, needs_hydrate: bool) -> bool:
     """Spawn the appropriate npm chain in the background.
 
@@ -493,4 +522,46 @@ def rewrite_explorer_html(html: str, *, prefix: str, csrf_cookie_name: str) -> s
         "};"
         "})();</script>"
     )
-    return html.replace("<head>", "<head>" + wrapper, 1)
+
+    # Inject a dark-theme override so the iframe matches ace-web's shell.
+    # The explorer was authored against a light palette via CSS variables
+    # under :root; flipping those is enough to recolour 95% of the page.
+    # The remaining hard-coded ``background: white`` / ``color: white``
+    # rules get explicit overrides below.
+    theme = """
+<style id="ace-web-dark-theme">
+:root {
+  --paper: #0e0f12 !important;
+  --paper-2: #161821 !important;
+  --ink: #f3f4f6 !important;
+  --ink-2: #e5e7eb !important;
+  --ink-3: #cbd2dd !important;
+  --line: #262833 !important;
+  --rule: #353846 !important;
+  --indigo-soft: #1d2540 !important;
+  --sky-tint: #1a2030 !important;
+  --muted: #9ca3af !important;
+}
+html, body { background: #0e0f12; color: #e5e7eb; }
+.lib-card,
+.range-row,
+.nav-tabs a:not(.active),
+[data-trim],
+.card,
+.assignments,
+.beat,
+.no-asset { background: #161821 !important; border-color: #262833 !important; color: #e5e7eb !important; }
+.lead { background: linear-gradient(120deg, #161821 0%, #1a2030 100%) !important; color: #e5e7eb !important; }
+.lib-meta code { background: #0e0f12 !important; color: #cbd2dd !important; }
+.lib-placeholder { background: #0e0f12 !important; color: #9ca3af !important; }
+input[type="text"], textarea, input[type="range"] { background: #0e0f12 !important; color: #e5e7eb !important; border-color: #262833 !important; }
+.range-row button.btn-save-range,
+.trim-save,
+.nav-tabs a.active { color: #fff !important; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #2a2c34; border-radius: 6px; }
+::-webkit-scrollbar-track { background: #0e0f12; }
+</style>
+"""
+
+    return html.replace("<head>", "<head>" + wrapper + theme, 1)

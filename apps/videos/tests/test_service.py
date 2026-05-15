@@ -210,3 +210,15 @@ def test_trigger_rerender_marks_busy_then_skips_duplicate(videos_root: Path):
 def test_trigger_rerender_rejects_bad_slug():
     with pytest.raises(ValueError):
         service.trigger_rerender("../evil", needs_hydrate=False)
+
+
+def test_trigger_build_only_spawns_only_build_step(videos_root: Path):
+    fake_redis = mock.MagicMock()
+    fake_redis.set.return_value = True
+    with mock.patch.object(service, "_get_redis", return_value=fake_redis), \
+         mock.patch.object(service.subprocess, "Popen") as popen:
+        ok = service.trigger_build_only("demo")
+    assert ok is True
+    chain = popen.call_args[0][0][2]
+    assert "build-clip-explorer" in chain
+    assert "render" not in chain

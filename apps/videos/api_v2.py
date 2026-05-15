@@ -25,6 +25,8 @@ from apps.api_v2.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
 
 from . import service
 from .schemas import (
+    BuildTriggerIn,
+    BuildTriggerOut,
     ClipEditIn,
     ClipEditOut,
     FeedbackLogOut,
@@ -205,6 +207,35 @@ def post_feedback(
     with path.open("a", encoding="utf-8") as f:
         f.write(line)
     return FeedbackPostOut(ok=True, timestamp=ts)
+
+
+@router.post(
+    "/programs/{program_slug}/build",
+    response=BuildTriggerOut,
+    summary="Trigger a fresh draft render or just rebuild the explorer HTML",
+)
+def post_build(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    program_slug: Annotated[str, PathParam()],
+    body: BuildTriggerIn,
+) -> BuildTriggerOut:
+    resolve_workspace_for_member(request, workspace_slug)
+    _require_program(workspace_slug, program_slug)
+    if body.mode == "build-only":
+        triggered = service.trigger_build_only(program_slug)
+    else:
+        triggered = service.trigger_rerender(program_slug, needs_hydrate=False)
+    return BuildTriggerOut(
+        ok=True,
+        triggered=triggered,
+        mode=body.mode,
+        message=(
+            "Kicked off in background; refresh in a few seconds."
+            if triggered else
+            "Render already in flight; skipped duplicate."
+        ),
+    )
 
 
 @router.post(

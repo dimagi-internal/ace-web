@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AlertTriangle, ChevronLeft, Loader2 } from "lucide-react";
+import { AlertTriangle, ChevronLeft, Hammer, Loader2, RefreshCw } from "lucide-react";
 
 import {
   getRenderStatus,
   getVideoProgram,
+  triggerBuild,
   type RenderStatus,
   type VideoProgramDetail,
 } from "@/api/videos";
@@ -19,6 +20,10 @@ export default function VideoExplorerPage() {
   const [detail, setDetail] = useState<VideoProgramDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<RenderStatus | null>(null);
+  const [buildMsg, setBuildMsg] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<"render" | "build-only" | null>(null);
+  const wasBusyRef = useRef(false);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
     if (!workspaceSlug || !programSlug) return;
@@ -44,7 +49,18 @@ export default function VideoExplorerPage() {
       if (cancelled) return;
       try {
         const next = await getRenderStatus(workspaceSlug!, programSlug!);
-        if (!cancelled) setStatus(next);
+        if (!cancelled) {
+          // Auto-refresh the iframe once a render finishes — the
+          // generated HTML (and the embedded final.mp4) will have been
+          // rewritten while it was running, so the operator wants to
+          // see the new output immediately. Compare against the prior
+          // busy state to fire exactly once on the trailing edge.
+          if (wasBusyRef.current && !next.busy && iframeRef.current) {
+            iframeRef.current.src = iframeRef.current.src;
+          }
+          wasBusyRef.current = next.busy;
+          setStatus(next);
+        }
       } catch {
         /* swallow — UI just won't surface status this tick */
       }
@@ -57,6 +73,30 @@ export default function VideoExplorerPage() {
       window.clearInterval(id);
     };
   }, [workspaceSlug, programSlug]);
+
+  async function handleBuild(mode: "render" | "build-only") {
+    if (!workspaceSlug || !programSlug) return;
+    setBusyAction(mode);
+    setBuildMsg(null);
+    try {
+      const r = await triggerBuild(workspaceSlug, programSlug, mode);
+      setBuildMsg(r.message);
+      // Optimistically mark busy so the spinner shows up before the
+      // next poll tick lands.
+      if (r.triggered) {
+        wasBusyRef.current = true;
+        setStatus({
+          program_slug: programSlug,
+          busy: true,
+          started_at: new Date().toISOString(),
+        });
+      }
+    } catch (e) {
+      setBuildMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyAction(null);
+    }
+  }
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col">
@@ -78,17 +118,45 @@ export default function VideoExplorerPage() {
             </code>
           )}
         </div>
-        {status?.busy && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Re-render in progress
-            {status.started_at && (
-              <span className="text-muted-foreground/70">
-                · started {new Date(status.started_at).toLocaleTimeString()}
-              </span>
-            )}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {buildMsg && !status?.busy && (
+            <span className="text-xs text-muted-foreground">{buildMsg}</span>
+          )}
+          {status?.busy ? (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Re-render in progress
+              {status.started_at && (
+                <span className="text-muted-foreground/70">
+                  · started {new Date(status.started_at).toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={busyAction !== null}
+                onClick={() => handleBuild("build-only")}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                title="Regenerate the explorer HTML against the current YAML — fast, no re-render."
+              >
+                <Hammer className="h-3 w-3" />
+                Rebuild HTML
+              </button>
+              <button
+                type="button"
+                disabled={busyAction !== null}
+                onClick={() => handleBuild("render")}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                title="Run npm run render — produces a fresh draft MP4, then rebuilds the explorer."
+              >
+                <RefreshCw className="h-3 w-3" />
+                Render draft
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
       {error ? (
@@ -107,10 +175,12 @@ export default function VideoExplorerPage() {
         </div>
       ) : (
         <iframe
+          ref={iframeRef}
           // The explorer HTML is generated by `npm run build-clip-explorer`
-          // and served (with URL rewrites + CSRF wrapper) by the Django
-          // app. We embed it here so it inherits ace-web's chrome and
-          // auth. Same-origin so cookies + workspace gating apply.
+          // and served (with URL rewrites + CSRF wrapper + dark-theme
+          // injection) by the Django app. We embed it here so it
+          // inherits ace-web's chrome and auth. Same-origin so cookies +
+          // workspace gating apply.
           // Backend returns a bare /api/... path; we prefix BASE_URL so
           // the iframe's relative fetches (library.json, edit, feedback)
           // resolve under the SPA's URL prefix (/ace/ in prod-parity dev,

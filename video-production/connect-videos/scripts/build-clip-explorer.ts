@@ -942,7 +942,24 @@ function renderHtml(args: {
     const initial = readState();
     let dirty = false;
 
-    function update(start, dur) {
+    // Live-seek the card's source preview so the operator sees the
+    // frame at the dragged position — closes the "I have to save and
+    // wait to see what I picked" gap. Last-mode tracked because the
+    // right handle should park the playhead at the OUT point, not the
+    // IN point.
+    const cardVideo = card.querySelector('video.clip-video');
+    function seekPreview(mode, start, dur) {
+      if (!cardVideo) return;
+      if (cardVideo.readyState < 1) return;  // metadata not loaded yet
+      if (!cardVideo.paused) cardVideo.pause();
+      const t = mode === 'right' ? start + dur : start;
+      // Clamp into [0, duration] so we never seek past the end (some
+      // browsers stall on out-of-range seeks).
+      const safe = Math.max(0, Math.min((cardVideo.duration || sourceDur) - 0.05, t));
+      cardVideo.currentTime = safe;
+    }
+
+    function update(start, dur, seekMode) {
       const clampedStart = Math.max(0, Math.min(sourceDur - 0.1, start));
       const maxDur = sourceDur - clampedStart;
       const clampedDur = Math.max(0.3, Math.min(maxDur, dur));
@@ -954,6 +971,7 @@ function renderHtml(args: {
       const changed = Math.abs(clampedStart - initial.start) > 0.05 || Math.abs(clampedDur - initial.dur) > 0.05;
       saveBtn.disabled = !changed;
       dirty = changed;
+      if (seekMode) seekPreview(seekMode, clampedStart, clampedDur);
     }
 
     function makeDrag(target, mode) {
@@ -971,11 +989,11 @@ function renderHtml(args: {
           if (mode === 'left') {
             const newStart = startStart + dSec;
             const newDur = startDur - dSec;
-            update(newStart, newDur);
+            update(newStart, newDur, 'left');
           } else if (mode === 'right') {
-            update(startStart, startDur + dSec);
+            update(startStart, startDur + dSec, 'right');
           } else {
-            update(startStart + dSec, startDur);
+            update(startStart + dSec, startDur, 'left');
           }
         }
         function onUp() {

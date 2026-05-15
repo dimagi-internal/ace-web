@@ -227,6 +227,57 @@ def test_feedback_get_post_roundtrip(member_client, videos_root):
 
 
 @pytest.mark.django_db
+def test_post_build_render_mode_triggers_full_chain(member_client, videos_root):
+    client, _ = member_client
+    fake_redis = mock.MagicMock()
+    fake_redis.set.return_value = True
+    with mock.patch("apps.videos.service._get_redis", return_value=fake_redis), \
+         mock.patch("apps.videos.service.subprocess.Popen") as popen:
+        resp = client.post(
+            "/api/w/ws1/videos/programs/demo/build",
+            data={"mode": "render"},
+            content_type="application/json",
+        )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["triggered"] is True
+    assert body["mode"] == "render"
+    chain = popen.call_args[0][0][2]
+    assert "npm run render -- --program=demo --draft" in chain
+    assert "npm run build-clip-explorer -- --program=demo" in chain
+
+
+@pytest.mark.django_db
+def test_post_build_build_only_mode_skips_render(member_client, videos_root):
+    client, _ = member_client
+    fake_redis = mock.MagicMock()
+    fake_redis.set.return_value = True
+    with mock.patch("apps.videos.service._get_redis", return_value=fake_redis), \
+         mock.patch("apps.videos.service.subprocess.Popen") as popen:
+        resp = client.post(
+            "/api/w/ws1/videos/programs/demo/build",
+            data={"mode": "build-only"},
+            content_type="application/json",
+        )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["mode"] == "build-only"
+    chain = popen.call_args[0][0][2]
+    assert "npm run render" not in chain
+    assert "npm run build-clip-explorer -- --program=demo" in chain
+
+
+@pytest.mark.django_db
+def test_post_build_404_non_member(non_member_client, videos_root):
+    resp = non_member_client.post(
+        "/api/w/ws1/videos/programs/demo/build",
+        data={"mode": "render"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
 def test_render_status_reads_redis(member_client, videos_root):
     client, _ = member_client
     fake_redis = mock.MagicMock()

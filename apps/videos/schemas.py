@@ -112,3 +112,17 @@ class FeedbackPostIn(StrictModel):
 class FeedbackPostOut(StrictModel):
     ok: bool
     timestamp: str  # ISO-8601 truncated to seconds
+
+
+class BuildTriggerIn(StrictModel):
+    """POST /build body — opt into the full re-render or just rebuild the
+    explorer HTML against the current YAML."""
+
+    mode: Literal["render", "build-only"] = "render"
+
+
+class BuildTriggerOut(StrictModel):
+    ok: bool
+    triggered: bool
+    mode: Literal["render", "build-only"]
+    message: str
