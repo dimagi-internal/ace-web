@@ -543,6 +543,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/build": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Trigger a fresh draft render or just rebuild the explorer HTML */
+        readonly post: operations["apps_videos_api_v2_post_build"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/edit": {
         readonly parameters: {
             readonly query?: never;
@@ -2015,6 +2032,33 @@ export interface components {
             readonly timestampSec?: number | null;
             /** Note */
             readonly note: string;
+        };
+        /** BuildTriggerOut */
+        readonly BuildTriggerOut: {
+            /** Ok */
+            readonly ok: boolean;
+            /** Triggered */
+            readonly triggered: boolean;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            readonly mode: "render" | "build-only";
+            /** Message */
+            readonly message: string;
+        };
+        /**
+         * BuildTriggerIn
+         * @description POST /build body — opt into the full re-render or just rebuild the
+         *     explorer HTML against the current YAML.
+         */
+        readonly BuildTriggerIn: {
+            /**
+             * Mode
+             * @default render
+             * @enum {string}
+             */
+            readonly mode: "render" | "build-only";
         };
         /** ClipEditOut */
         readonly ClipEditOut: {
@@ -4107,6 +4151,33 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["FeedbackPostOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_v2_post_build: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["BuildTriggerIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["BuildTriggerOut"];
                 };
             };
         };
