@@ -17,7 +17,6 @@ from apps.api_v2.errors import (
     ProblemError,
 )
 from apps.api_v2.etag import compute_etag, maybe_not_modified
-from apps.api_v2.pagination import Page, paginate
 
 from .schemas import (
     ArtifactOut,
@@ -681,9 +680,18 @@ def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
 
     runs = list_opp_runs(drive, ace_root_folder_id=ace_folder_id, opp_slug=slug)
     out: list[dict] = []
+    from dataclasses import asdict
     for r in runs:
-        started_at: dt.datetime
+        # Dump the FULL RunSummary dataclass so the frontend gets
+        # current_phase / current_phase_display / phases_done /
+        # phases_total / last_actor_at / lifecycle_status etc.
+        rich = asdict(r)
+        # Drop the internal folder_id — frontend doesn't need it and the
+        # legacy RunSummary type doesn't declare it.
+        rich.pop("folder_id", None)
+        # Add the lighter v2-style fields too (some consumers still use them).
         raw = r.last_actor_at
+        started_at: dt.datetime
         if raw and isinstance(raw, str):
             try:
                 started_at = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
@@ -693,14 +701,12 @@ def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
             started_at = raw
         else:
             started_at = _EPOCH
-        out.append({
-            "run_id": r.run_id,
-            "label": r.run_id,
-            "started_at": started_at,
-            "finished_at": None,
-            "is_active": (r.lifecycle_status != "complete"),
-            "scorecard": None,
-        })
+        rich["label"] = r.run_id
+        rich["started_at"] = started_at
+        rich["finished_at"] = None
+        rich["is_active"] = (r.lifecycle_status != "complete")
+        rich["scorecard"] = None
+        out.append(rich)
     return out
 
 
@@ -711,7 +717,7 @@ def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
 
 @router.get(
     "/{slug}/runs",
-    response=Page[OppRunOut],
+    response={200: dict},
     summary="List runs for opp",
     openapi_extra={"x-mcp-expose": True},
 )
@@ -721,14 +727,20 @@ def list_runs(
     slug: Annotated[str, Path()],
     offset: int = 0,
     limit: int = 50,
-) -> Page[OppRunOut]:
+) -> HttpResponse:
+    """Return the full RunSummary shape (current_phase + phases_done +
+    last_actor_at + lifecycle_status + ...) the frontend renders for
+    each row in the opp card's expanded RUNS panel. Bypasses OppRunOut's
+    thin schema — the Phase 1 v2 shape was over-simplified."""
     workspace = resolve_workspace_for_member(request, workspace_slug)
     runs = list_opp_runs_for_workspace(workspace, slug)
-    return paginate(
-        [OppRunOut.model_validate(r) for r in runs],
-        offset=offset,
-        limit=limit,
-    )
+    items = list(runs[offset:offset + limit])
+    return JsonResponse({
+        "items": items,
+        "total": len(runs),
+        "offset": offset,
+        "limit": limit,
+    })
 
 
 # ---------------------------------------------------------------------------
