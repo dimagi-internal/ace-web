@@ -258,6 +258,25 @@ class FakeDriveClient(DriveClient):
         self._record_mutation(nid)
         return nid
 
+    def move_file(self, file_id: str, new_parent_id: str) -> None:
+        node = self._nodes_by_id.get(file_id)
+        if node is None:
+            raise ValueError(f"Unknown file id: {file_id}")
+        if node.mime_type == self.FOLDER_MIME:
+            raise ValueError(f"{node.name} is a folder; move_file moves files only")
+        new_parent = self._nodes_by_id.get(new_parent_id)
+        if new_parent is None or new_parent.mime_type != self.FOLDER_MIME:
+            raise ValueError(f"{new_parent_id} is not a folder")
+        # Detach from old parent.
+        if node.parent_id is not None:
+            old_parent = self._nodes_by_id.get(node.parent_id)
+            if old_parent is not None:
+                old_parent.children.pop(node.name, None)
+        # Attach to new parent.
+        new_parent.children[node.name] = node
+        node.parent_id = new_parent.id
+        self._record_mutation(file_id)
+
     def trash_folder(self, folder_id: str) -> None:
         node = self._nodes_by_id.get(folder_id)
         if node is None or node.parent_id is None:

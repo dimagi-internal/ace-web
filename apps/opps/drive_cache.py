@@ -197,6 +197,14 @@ class CachedDriveClient(DriveClient):
         _invalidate_folder_listings(new_parent_id)
         return result
 
+    def move_file(self, file_id: str, new_parent_id: str) -> None:
+        self._inner.move_file(file_id, new_parent_id)
+        # The file's old parent listing is now stale, but we don't know it
+        # without an extra Drive lookup. Best-effort: invalidate new parent
+        # and the file_id itself; the old parent's TTL will expire shortly.
+        _invalidate_folder_listings(new_parent_id)
+        _invalidate_file(file_id)
+
     def trash_folder(self, folder_id: str) -> None:
         self._inner.trash_folder(folder_id)
         # Best-effort: invalidate the trashed folder + any recursive listing

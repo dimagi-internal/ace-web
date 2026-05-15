@@ -96,6 +96,9 @@ class _FakeDriveClient(DriveClient):
     def copy_file(self, file_id, new_parent_id, new_name=None):
         return f"copy-{file_id}"
 
+    def move_file(self, file_id, new_parent_id):
+        pass
+
     def trash_folder(self, folder_id):
         pass
 
