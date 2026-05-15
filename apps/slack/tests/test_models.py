@@ -1,6 +1,7 @@
 import pytest
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
+from django.utils import timezone
 
 from apps.slack.models import SlackInstallation, SlackRunThread, SlackUserLink
 from apps.workspaces.models import Workspace
@@ -23,7 +24,7 @@ def test_installation_round_trip_encrypts_token():
         ace_workspace=ws,
         installed_by_user=user,
     )
-    inst.set_bot_token("xoxb-secret-token")
+    inst.bot_token = "xoxb-secret-token"
     inst.save()
 
     refetched = SlackInstallation.objects.get(pk=inst.pk)
@@ -102,3 +103,45 @@ def test_run_thread_unique_per_slug_and_run_id():
             run_id="run-001",
             ace_user=user,
         )
+
+
+@pytest.mark.django_db
+def test_user_link_can_relink_after_unlink():
+    """Partial index allows a new active link after a prior link is soft-deleted."""
+    User = get_user_model()
+    user = User.objects.create(email="jj@dimagi.com")
+    ws = Workspace.objects.create(
+        slug="dimagi-team",
+        display_name="Dimagi Team",
+        drive_root_folder_id="folder-1",
+        created_by=user,
+    )
+    inst = SlackInstallation.objects.create(
+        slack_team_id="T0001",
+        slack_team_name="Dimagi",
+        bot_user_id="U_BOT",
+        ace_workspace=ws,
+        installed_by_user=user,
+    )
+    # Create the initial active link.
+    original = SlackUserLink.objects.create(
+        installation=inst,
+        slack_user_id="U_JJ",
+        ace_user=user,
+        slack_email="jj@dimagi.com",
+        slack_real_name="JJ",
+    )
+    # Soft-delete it (simulate unlink).
+    original.unlinked_at = timezone.now()
+    original.save()
+
+    # Re-linking with the same (installation, slack_user_id) must not raise.
+    new_link = SlackUserLink.objects.create(
+        installation=inst,
+        slack_user_id="U_JJ",
+        ace_user=user,
+        slack_email="jj@dimagi.com",
+        slack_real_name="JJ",
+    )
+    assert new_link.pk is not None
+    assert new_link.unlinked_at is None

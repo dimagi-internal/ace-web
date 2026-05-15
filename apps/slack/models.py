@@ -25,11 +25,15 @@ class SlackInstallation(models.Model):
         related_name="slack_installations",
     )
 
+    class Meta:
+        db_table = "slack_installations"
+
     @property
     def bot_token(self) -> str:
         return decrypt(self.bot_token_encrypted)
 
-    def set_bot_token(self, plaintext: str) -> None:
+    @bot_token.setter
+    def bot_token(self, plaintext: str) -> None:
         self.bot_token_encrypted = encrypt(plaintext)
 
     def __str__(self):
@@ -55,9 +59,11 @@ class SlackUserLink(models.Model):
     unlinked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        db_table = "slack_user_links"
         constraints = [
             models.UniqueConstraint(
                 fields=["installation", "slack_user_id"],
+                condition=models.Q(unlinked_at__isnull=True),
                 name="uniq_slack_user_per_installation",
             ),
         ]
@@ -88,6 +94,7 @@ class SlackRunThread(models.Model):
     broken_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        db_table = "slack_run_threads"
         constraints = [
             models.UniqueConstraint(
                 fields=["opp_slug", "run_id"],
