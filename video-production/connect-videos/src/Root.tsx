@@ -22,6 +22,14 @@ interface VideoProps {
    * this and falls back to PROGRAMS_REGISTRY for the bundled programs.
    */
   specYaml?: string;
+  /**
+   * Per-beat duration overrides computed by the render CLI from the
+   * actual synthesized audio (see render.ts::realignTimelineToAudio).
+   * Merged with spec.beat_overrides before resolveBeats so the visual
+   * track matches the mux step's per-beat audio placement. Studio
+   * preview omits this — preview uses spec.beat_overrides as-is.
+   */
+  beatOverrides?: Record<string, { seconds?: number }>;
   captions?: { startFrame: number; endFrame: number; text: string }[];
 }
 
@@ -48,7 +56,12 @@ const brand = defaults.brand
     }
   : BRAND_FALLBACK;
 
-const ProgramVideo: React.FC<VideoProps> = ({ programSlug, specYaml, captions = [] }) => {
+const ProgramVideo: React.FC<VideoProps> = ({
+  programSlug,
+  specYaml,
+  beatOverrides,
+  captions = [],
+}) => {
   // Render-CLI path: spec passed verbatim via props. Studio-preview
   // path: look up the slug in the bundled registry. The render CLI
   // wins so new programs created via /ace:video-from-program-page
@@ -62,7 +75,10 @@ const ProgramVideo: React.FC<VideoProps> = ({ programSlug, specYaml, captions = 
     );
   }
   const spec: ProgramSpec = applyManifestRefs(parseProgramSpec(yamlText));
-  const timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
+  // Merge: per-prop overrides (from render-CLI's audio-alignment pass)
+  // win over spec.beat_overrides win over defaults.
+  const mergedOverrides = { ...(spec.beat_overrides ?? {}), ...(beatOverrides ?? {}) };
+  const timeline = resolveBeats(defaults, mergedOverrides);
   const byId = Object.fromEntries(timeline.beats.map((b) => [b.id, b])) as Record<
     string,
     ResolvedBeat

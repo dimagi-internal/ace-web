@@ -20,7 +20,6 @@ import {
   type VideoProgramDetail,
 } from "@/api/videos";
 import { BeatEditor } from "@/components/videos/BeatEditor";
-import { useFeatures } from "@/lib/features";
 
 const POLL_INTERVAL_MS = 4000;
 
@@ -41,12 +40,6 @@ export default function VideoExplorerPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const wasBusyRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-
-  // Feature flag — gates the new React BeatEditor below. Returns null while
-  // loading, in which case we fall through to the iframe path (the safe
-  // default). See frontend/src/lib/features.ts.
-  const features = useFeatures();
-  const useReactBeatEditor = Boolean(features?.ACE_VIDEO_BEAT_EDITOR_REACT);
 
   // Resolve which run to view: explicit runId in URL, else the program's latest.
   const resolvedRunId = useMemo(() => {
@@ -306,7 +299,7 @@ export default function VideoExplorerPage() {
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
           Loading…
         </div>
-      ) : useReactBeatEditor && run.spec && workspaceSlug && programSlug && resolvedRunId ? (
+      ) : run.spec && workspaceSlug && programSlug && resolvedRunId ? (
         <BeatEditor
           key={`${workspaceSlug}-${programSlug}-${resolvedRunId}`}
           workspaceSlug={workspaceSlug}
@@ -316,6 +309,9 @@ export default function VideoExplorerPage() {
           onSpecRefetched={(s) => setRun((rd) => (rd ? { ...rd, spec: s } : rd))}
         />
       ) : (
+        // Fallback only when the run pre-dates the parsed-spec endpoint
+        // (no `spec` field on the response). Renders the legacy clip
+        // explorer iframe so the run isn't unusable.
         <iframe
           ref={iframeRef}
           src={

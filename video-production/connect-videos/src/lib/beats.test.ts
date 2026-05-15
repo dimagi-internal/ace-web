@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { resolveBeats } from "./beats";
 
 const defaults = {
@@ -30,8 +30,25 @@ describe("resolveBeats", () => {
     expect(hook.durationFrames).toBe(9 * 30);
   });
 
-  it("throws if overridden beats no longer sum to total_seconds", () => {
-    expect(() => resolveBeats(defaults, { scene: { seconds: 50 } }))
-      .toThrowError(/sum/);
+  it("accepts overridden beats that deviate from total_seconds and uses the new sum", () => {
+    // Before the audio-alignment pass this threw; now it's a soft signal
+    // because legitimate audio-alignment in render.ts intentionally
+    // extends beats beyond the default total. See beats.ts comment.
+    const resolved = resolveBeats(defaults, { scene: { seconds: 50 } });
+    // Total frames reflect the new sum (4 + 8 + 50 + 8 = 70 seconds).
+    expect(resolved.totalFrames).toBe(70 * 30);
+    const scene = resolved.beats.find((b) => b.id === "scene")!;
+    expect(scene.durationFrames).toBe(50 * 30);
+  });
+
+  it("warns (but does not throw) on wildly-off override sums", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // 100s scene means the sum is 120 vs default 60 — diff > 30s.
+      resolveBeats(defaults, { scene: { seconds: 100 } });
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/sum to/));
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
