@@ -9,6 +9,7 @@ from apps.api.views import redoc_docs, scalar_docs
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", api.urls),
+    path("api/slack/", include("apps.slack.urls")),
     path("api/docs/", scalar_docs, name="api_docs_scalar"),
     path("api/redoc/", redoc_docs, name="api_docs_redoc"),
     # React pages under /auth/ that must be served by the SPA, not by
@@ -20,6 +21,7 @@ urlpatterns = [
         name="spa_auth_cli",
     ),
     path("auth/", include("apps.auth.urls")),
+    path("auth/slack/", include("apps.slack.auth_urls")),
     # Public per-run opp summary page. SPA shell served WITHOUT
     # login_required so anonymous viewers can hit the page directly
     # (the React app then fetches /api/opps/public/... which is also

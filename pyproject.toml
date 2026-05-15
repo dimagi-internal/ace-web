@@ -22,6 +22,7 @@ dependencies = [
     "email-validator>=2.0",
     "pyyaml>=6.0",
     "ruamel.yaml>=0.18",
+    "slack-sdk>=3.27,<4",
     "uvicorn[standard]>=0.30",
     "whitenoise>=6.7",
     "fastmcp>=0.4",

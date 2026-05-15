@@ -6,6 +6,7 @@ import { getOpp } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
 import { ApiError } from "../api/client";
 import type { OppSnapshot, Step } from "../api/types.ws";
+import { ForkOppDialog } from "../components/opps/ForkOppDialog";
 import { HeatmapView } from "../components/views/HeatmapView";
 import { PhaseView } from "../components/views/PhaseView";
 import { RunDiffView } from "../components/views/RunDiffView";
@@ -61,6 +62,29 @@ export default function OppWorkbenchPage() {
   const costRollup = useOppCostRollup(slug, workspaceSlug);
   const { collapsed: chatCollapsed, toggle: toggleChatCollapsed } =
     useChatPaneCollapsed();
+
+  // ?fork=<phase> — auto-open ForkOppDialog when a Slack deep-link lands here.
+  const forkPhaseQuery = searchParams.get("fork");
+  const [autoForkOpen, setAutoForkOpen] = useState(false);
+
+  useEffect(() => {
+    if (forkPhaseQuery && state.kind === "loaded") {
+      setAutoForkOpen(true);
+    }
+  }, [forkPhaseQuery, state.kind]);
+
+  const handleAutoForkClose = useCallback(
+    (next: boolean) => {
+      setAutoForkOpen(next);
+      if (!next) {
+        // Clear ?fork= so a later refetch doesn't re-open the dialog.
+        const params = new URLSearchParams(searchParams);
+        params.delete("fork");
+        setSearchParams(params, { replace: true });
+      }
+    },
+    [searchParams, setSearchParams],
+  );
 
   const load = useCallback(
     (opts: { silent?: boolean; force?: boolean } = {}) => {
@@ -260,6 +284,20 @@ export default function OppWorkbenchPage() {
         <div className="min-h-0 flex-1">
           <RunDiffView oppSlug={slug} workspaceSlug={workspaceSlug} />
         </div>
+      )}
+      {forkPhaseQuery && (
+        <ForkOppDialog
+          open={autoForkOpen}
+          onOpenChange={handleAutoForkClose}
+          sourceSlug={snapshot.opp.slug}
+          sourceRunId={snapshot.current_run.run_id}
+          forkAtPhase={forkPhaseQuery}
+          forkAtPhaseDisplay={
+            snapshot.phases.find((p) => p.name === forkPhaseQuery)?.display_name ??
+            forkPhaseQuery
+          }
+          sourceLastActorAt={null}
+        />
       )}
     </div>
   );
