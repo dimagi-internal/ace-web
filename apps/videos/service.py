@@ -263,6 +263,29 @@ def load_program_run(workspace: Workspace, slug: str, run_id: str) -> ProgramRec
     return _record_from_yaml(slug, run_id, spec_yaml)
 
 
+def read_parsed_spec(workspace: Workspace, slug: str, run_id: str) -> dict | None:
+    """Return the spec.yaml parsed via ruamel (round-trip safe). None if
+    the spec doesn't exist.
+
+    Used by the run-detail endpoint to ship the full spec down to the
+    frontend beat editor — the editor needs the whole document (not just
+    the metadata that ProgramRecord exposes via properties).
+    """
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        return None
+    layout, client = layout_for(workspace)
+    raw = drive.read_spec(layout, client, slug, run_id)
+    if raw is None:
+        return None
+    try:
+        parsed = _yaml().load(raw)
+    except Exception:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
 def load_program(workspace: Workspace, slug: str, run_id: str | None = None) -> ProgramRecord | None:
     """Load a program — defaults to its latest run when run_id is None."""
     if not is_valid_slug(slug):
@@ -441,35 +464,22 @@ class EditResult:
     message: str
 
 
-def apply_edit(workspace: Workspace, slug: str, run_id: str, body: dict[str, Any]) -> EditResult:
-    """Apply one of four ops to the run's spec.yaml in Drive (round-trip
-    via ruamel.yaml to preserve comments).
-    """
-    layout, client = layout_for(workspace)
-    spec_yaml = drive.read_spec(layout, client, slug, run_id)
-    if spec_yaml is None:
-        return EditResult(False, f"Spec not found for {slug}/{run_id}")
+def _apply_single_op(doc: Any, op: dict[str, Any]) -> EditResult:
+    """Apply one edit op to an in-memory ruamel YAML doc. Pure mutation,
+    no I/O. Returns ok=False on validation failure (caller decides whether
+    to abort the whole batch)."""
+    name = op.get("op")
 
-    y = _yaml()
-    doc = y.load(spec_yaml)
-    op = body.get("op")
-
-    def _save() -> None:
-        new_yaml = _dump_yaml(doc)
-        drive.write_spec(layout, client, slug, run_id, new_yaml)
-        # Drop the cached old spec so the next read sees the edit.
-        cache.set_spec(workspace.slug, slug, run_id, new_yaml)
-
-    if op in {"set-clip-start", "set-clip-trim", "set-clip-asset"}:
-        index = body.get("index")
-        kind = body.get("kind")
+    if name in {"set-clip-start", "set-clip-trim", "set-clip-asset"}:
+        index = op.get("index")
+        kind = op.get("kind")
         if not isinstance(index, int):
             return EditResult(False, "index must be an integer")
         keys = _clip_path_keys(kind, index)
         node = _get_in(doc, keys)
 
-        if op == "set-clip-start":
-            start_seconds = body.get("start_seconds")
+        if name == "set-clip-start":
+            start_seconds = op.get("start_seconds")
             if not isinstance(start_seconds, (int, float)):
                 return EditResult(False, "start_seconds must be a number")
             if isinstance(node, str):
@@ -478,12 +488,11 @@ def apply_edit(workspace: Workspace, slug: str, run_id: str, body: dict[str, Any
                 node["start_seconds"] = float(start_seconds)
             else:
                 return EditResult(False, f"Could not find {kind}[{index}]")
-            _save()
             return EditResult(True, f"Set {kind}[{index}].start_seconds = {start_seconds}")
 
-        if op == "set-clip-trim":
-            start_seconds = body.get("start_seconds")
-            duration_seconds = body.get("duration_seconds")
+        if name == "set-clip-trim":
+            start_seconds = op.get("start_seconds")
+            duration_seconds = op.get("duration_seconds")
             if not isinstance(start_seconds, (int, float)):
                 return EditResult(False, "start_seconds must be a number")
             if not isinstance(duration_seconds, (int, float)):
@@ -499,11 +508,10 @@ def apply_edit(workspace: Workspace, slug: str, run_id: str, body: dict[str, Any
                 node["duration_seconds"] = float(duration_seconds)
             else:
                 return EditResult(False, f"Could not find {kind}[{index}]")
-            _save()
             return EditResult(True, f"Set {kind}[{index}] trim window")
 
-        if op == "set-clip-asset":
-            alias = body.get("alias")
+        if name == "set-clip-asset":
+            alias = op.get("alias")
             if not isinstance(alias, str) or not alias:
                 return EditResult(False, "alias must be a non-empty string")
             new_ref = f"@{alias}"
@@ -516,12 +524,11 @@ def apply_edit(workspace: Workspace, slug: str, run_id: str, body: dict[str, Any
                 node["asset"] = new_ref
             else:
                 return EditResult(False, f"Could not find {kind}[{index}]")
-            _save()
             return EditResult(True, f"Swapped {kind}[{index}] -> @{alias}")
 
-    if op == "set-narration":
-        beat_id = body.get("beatId")
-        text = body.get("text")
+    if name == "set-narration":
+        beat_id = op.get("beatId")
+        text = op.get("text")
         if not isinstance(beat_id, str) or not beat_id:
             return EditResult(False, "beatId must be a non-empty string")
         if not isinstance(text, str):
@@ -529,10 +536,112 @@ def apply_edit(workspace: Workspace, slug: str, run_id: str, body: dict[str, Any
         narration = doc.setdefault("narration", {})
         by_beat = narration.setdefault("by_beat", {})
         by_beat[beat_id] = text
-        _save()
         return EditResult(True, f"Updated narration.by_beat.{beat_id}")
 
-    return EditResult(False, f"Unknown op or missing args: {op!r}")
+    if name == "set-stat":
+        import re
+        path = op.get("path")
+        if not isinstance(path, str):
+            return EditResult(False, "path must be a string")
+
+        if path == "problem":
+            node = doc.get("problem")
+            if not isinstance(node, dict):
+                return EditResult(False, "spec has no `problem` section")
+        else:
+            m = re.fullmatch(r"impact\[(\d+)\]", path)
+            if not m:
+                return EditResult(False, f"unknown path {path!r}; expected 'problem' or 'impact[N]'")
+            idx = int(m.group(1))
+            impact = doc.get("impact")
+            if not isinstance(impact, list):
+                return EditResult(False, "spec has no `impact` section")
+            if idx < 0 or idx >= len(impact):
+                return EditResult(False, f"impact index {idx} out of range (len={len(impact)})")
+            node = impact[idx]
+            if not isinstance(node, dict):
+                return EditResult(False, f"impact[{idx}] is not a mapping")
+
+        for field in ("big", "caption"):
+            val = op.get(field)
+            if val is None:
+                continue  # field absent → no change
+            if not isinstance(val, str):
+                return EditResult(False, f"{field} must be a string")
+            node[field] = val
+
+        # `source` has tri-state semantics: absent → no change, "" → clear, str → set
+        if "source" in op:
+            val = op["source"]
+            if val is None or val == "":
+                node.pop("source", None)
+            elif isinstance(val, str):
+                node["source"] = val
+            else:
+                return EditResult(False, "source must be a string")
+
+        return EditResult(True, f"Updated stat {path}")
+
+    return EditResult(False, f"Unknown op: {name!r}")
+
+
+def apply_edit(workspace: Workspace, slug: str, run_id: str, body: dict[str, Any]) -> EditResult:
+    """Single-op edit — load, apply one op, save. Backward compat wrapper
+    around `_apply_single_op`. Used by the existing `POST /edit` endpoint."""
+    layout, client = layout_for(workspace)
+    spec_yaml = drive.read_spec(layout, client, slug, run_id)
+    if spec_yaml is None:
+        return EditResult(False, f"Spec not found for {slug}/{run_id}")
+    y = _yaml()
+    doc = y.load(spec_yaml)
+    result = _apply_single_op(doc, body)
+    if not result.ok:
+        return result
+    new_yaml = _dump_yaml(doc)
+    drive.write_spec(layout, client, slug, run_id, new_yaml)
+    cache.set_spec(workspace.slug, slug, run_id, new_yaml)
+    return result
+
+
+@dataclass(frozen=True)
+class BatchResult:
+    ok: bool
+    applied: int
+    message: str
+
+
+def apply_edit_batch(
+    workspace: Workspace,
+    slug: str,
+    run_id: str,
+    ops: list[dict[str, Any]],
+) -> BatchResult:
+    """Apply N edit ops to spec.yaml in one Drive round-trip. All-or-nothing:
+    if any op fails validation, the doc is not saved and ``applied=0``.
+
+    Empty batch is a no-op (returns ok=True, applied=0) with no Drive I/O.
+    """
+    if not ops:
+        return BatchResult(True, 0, "no-op (empty batch)")
+
+    layout, client = layout_for(workspace)
+    spec_yaml = drive.read_spec(layout, client, slug, run_id)
+    if spec_yaml is None:
+        return BatchResult(False, 0, f"Spec not found for {slug}/{run_id}")
+
+    y = _yaml()
+    doc = y.load(spec_yaml)
+    messages: list[str] = []
+    for i, op in enumerate(ops):
+        result = _apply_single_op(doc, op)
+        if not result.ok:
+            return BatchResult(False, 0, f"op[{i}] failed: {result.message}")
+        messages.append(result.message)
+
+    new_yaml = _dump_yaml(doc)
+    drive.write_spec(layout, client, slug, run_id, new_yaml)
+    cache.set_spec(workspace.slug, slug, run_id, new_yaml)
+    return BatchResult(True, len(ops), "; ".join(messages))
 
 
 # ---------------------------------------------------------------------------

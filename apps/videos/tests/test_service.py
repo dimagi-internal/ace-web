@@ -353,3 +353,24 @@ def test_rewrite_explorer_html_injects_dark_theme():
     assert "ace-web-dark-theme" in out
     assert "X-CSRFToken" in out
     assert "fetch('edit'" in out
+
+
+def test_apply_single_op_returns_result_without_saving(monkeypatch):
+    from apps.videos import service
+    from ruamel.yaml import YAML
+    yaml = YAML(typ="rt")
+    yaml.preserve_quotes = True
+    from io import StringIO
+
+    doc = yaml.load(StringIO("""\
+scene:
+  clips:
+    - "@alpha"
+narration:
+  by_beat: {}
+"""))
+    result = service._apply_single_op(doc, {
+        "op": "set-narration", "beatId": "hook", "text": "Hello"
+    })
+    assert result.ok
+    assert doc["narration"]["by_beat"]["hook"] == "Hello"

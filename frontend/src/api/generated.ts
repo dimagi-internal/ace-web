@@ -301,6 +301,27 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/cross-compare/{slug_a}/{slug_b}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Side-by-side comparison of two opps in the same workspace
+         * @description Returns both OppSnapshots + a small summary with eval-score delta.
+         *     Used by the cross-opp compare page (frontend OppComparePage).
+         */
+        readonly get: operations["apps_opps_api_cross_opp_compare"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/sessions": {
         readonly parameters: {
             readonly query?: never;
@@ -655,6 +676,27 @@ export interface paths {
          *     "Re-render" button in the UI is the single canonical render entry.
          */
         readonly post: operations["apps_videos_api_post_edit"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/edit-batch": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Save N edits to spec.yaml in one Drive round-trip (save only — does NOT render)
+         * @description Atomic batch edit. All ops are validated and applied in order;
+         *     if any fails, the spec is not saved (all-or-nothing).
+         */
+        readonly post: operations["apps_videos_api_post_edit_batch"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1582,6 +1624,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/settings": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Public-safe settings + feature flags for the SPA */
+        readonly get: operations["apps_common_api_public_settings"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2146,6 +2205,10 @@ export interface components {
             readonly explorer_url: string;
             /** Yaml Path */
             readonly yaml_path: string;
+            /** Spec */
+            readonly spec?: {
+                readonly [key: string]: unknown;
+            } | null;
         };
         /** LibraryEntryOut */
         readonly LibraryEntryOut: {
@@ -2222,7 +2285,7 @@ export interface components {
              * Op
              * @enum {string}
              */
-            readonly op: "set-clip-start" | "set-clip-trim" | "set-clip-asset" | "set-narration";
+            readonly op: "set-clip-start" | "set-clip-trim" | "set-clip-asset" | "set-narration" | "set-stat";
             /** Kind */
             readonly kind?: ("scene-clip" | "product-beat") | null;
             /** Index */
@@ -2231,12 +2294,34 @@ export interface components {
             readonly start_seconds?: number | null;
             /** Duration Seconds */
             readonly duration_seconds?: number | null;
+            /** Alias */
+            readonly alias?: string | null;
             /** Beatid */
             readonly beatId?: string | null;
             /** Text */
             readonly text?: string | null;
-            /** Alias */
-            readonly alias?: string | null;
+            /** Path */
+            readonly path?: string | null;
+            /** Big */
+            readonly big?: string | null;
+            /** Caption */
+            readonly caption?: string | null;
+            /** Source */
+            readonly source?: string | null;
+        };
+        /** EditBatchOut */
+        readonly EditBatchOut: {
+            /** Ok */
+            readonly ok: boolean;
+            /** Applied */
+            readonly applied: number;
+            /** Message */
+            readonly message: string;
+        };
+        /** EditBatchIn */
+        readonly EditBatchIn: {
+            /** Ops */
+            readonly ops: readonly components["schemas"]["ClipEditIn"][];
         };
         /** BuildTriggerOut */
         readonly BuildTriggerOut: {
@@ -3866,6 +3951,32 @@ export interface operations {
             };
         };
     };
+    readonly apps_opps_api_cross_opp_compare: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug_a: string;
+                readonly slug_b: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     readonly apps_sessions_api_list_sessions: {
         readonly parameters: {
             readonly query?: {
@@ -4469,6 +4580,34 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ClipEditOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_post_edit_batch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["EditBatchIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["EditBatchOut"];
                 };
             };
         };
@@ -5707,6 +5846,28 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["HealthOut"];
+                };
+            };
+        };
+    };
+    readonly apps_common_api_public_settings: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
                 };
             };
         };
