@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBeatEditor } from "./BeatEditorContext";
 import { submitEditBatch, getVideoRun } from "@/api/videos";
 import type { ProgramSpec } from "./types";
@@ -14,6 +14,10 @@ export function BeatEditorTopBar({ onSpecRefetched }: Props) {
   const dirty = state.buffer.length > 0;
   const saveState = state.saveState;
   const status = saveState.status;
+
+  // Keep the latest onSave callable across renders so the global ⌘+S
+  // listener doesn't go stale between buffer changes.
+  const onSaveRef = useRef<() => void>(() => {});
 
   const onSave = async () => {
     if (!dirty || status === "saving") return;
@@ -33,6 +37,20 @@ export function BeatEditorTopBar({ onSpecRefetched }: Props) {
       dispatch({ type: "SAVE_ERROR", message: e instanceof Error ? e.message : String(e) });
     }
   };
+  onSaveRef.current = onSave;
+
+  // ⌘+S / Ctrl+S → Save changes when the buffer is dirty. Browser save
+  // dialog gets preventDefault-ed so the editor reclaims the shortcut.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "s" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        onSaveRef.current();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const onDiscard = () => {
     if (!confirmDiscard) {
@@ -68,6 +86,7 @@ export function BeatEditorTopBar({ onSpecRefetched }: Props) {
             type="button"
             onClick={onSave}
             disabled={status === "saving"}
+            title="Save changes (⌘+S)"
             className="ml-auto rounded bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           >
             Save changes

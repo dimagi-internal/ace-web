@@ -36,7 +36,10 @@ export function ClipSlotWidget({ beatId, clipKind, index }: Props) {
 
   return (
     <div
-      className="cursor-pointer rounded border bg-muted/40 p-3 hover:border-primary"
+      data-testid="clip-slot-widget"
+      data-clip-kind={clipKind}
+      data-index={index}
+      className="group cursor-pointer rounded border bg-muted/40 p-3 hover:border-primary"
       onClick={() =>
         dispatch({
           type: "OPEN_DRAWER",
@@ -46,7 +49,9 @@ export function ClipSlotWidget({ beatId, clipKind, index }: Props) {
     >
       <header className="mb-2 flex items-center gap-2">
         <code className="rounded bg-muted px-1.5 py-0.5 text-xs">@{alias}</code>
-        <span className="ml-auto text-xs text-muted-foreground">click to edit</span>
+        <span aria-hidden className="ml-auto text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+          ✏ Edit trim
+        </span>
       </header>
       {mediaUrl && (
         <video

@@ -269,7 +269,7 @@ def step_edit_narration(page: Page) -> StepResult:
     bad, errs = _capture(page)
     try:
         # First narration widget (every beat has one).
-        narration = page.locator("text=Voiceover").first
+        narration = page.locator('[data-testid="narration-widget"]').first
         narration.click()
         page.wait_for_timeout(400)
         textarea = page.locator("aside[role='dialog'] textarea, div[role='dialog'] textarea").first
@@ -300,14 +300,14 @@ def step_edit_stat(page: Page) -> StepResult:
         problem_beat = page.locator('[data-beat-id="problem"]')
         problem_beat.scroll_into_view_if_needed()
         page.wait_for_timeout(200)
-        # The BeatCard for "problem" contains TWO widgets: the always-
-        # rendered NarrationWidget (first child) and the StatsWidget
-        # (second child). Both have "click to edit" text — pick the
-        # second occurrence with .last() so we hit the stat widget.
-        stat_card = problem_beat.get_by_text("click to edit").last
+        # Stable testid avoids the previous ambiguity where the BeatCard's
+        # NarrationWidget would have been picked instead.
+        stat_card = problem_beat.locator('[data-testid="stats-widget"]').first
         stat_card.click()
         # Wait for the drawer to mount the StatPanel.
-        big_input = page.get_by_label("big", exact=False).first
+        # Match the input's aria-label exactly so we don't accidentally
+        # grab the drawer's aria-label (e.g. "Headline stat — Big number").
+        big_input = page.locator('input[aria-label="big"]').first
         big_input.wait_for(state="visible", timeout=5000)
         big_input.fill(STAT_TOKEN)
         page.get_by_role("button", name="Done").click()
