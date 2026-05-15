@@ -347,12 +347,11 @@ def test_trigger_rerender_rejects_bad_slug_or_run(workspace):
 
 
 def test_render_status_busy_true_when_no_sentinel_exists(seeded):
-    """No explorer/index.html + busy flag set → busy True (chain in
-    flight or failed before producing the sentinel)."""
+    """No explorer/index.html + recent started_at + busy flag set →
+    busy True (chain is in flight, not yet 'appears_failed')."""
+    started = dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
     fake_redis = mock.MagicMock()
-    fake_redis.get.side_effect = lambda k: (
-        "1" if k.endswith(":busy") else "2026-05-15T18:00:00+00:00"
-    )
+    fake_redis.get.side_effect = lambda k: ("1" if k.endswith(":busy") else started)
     # Wipe the sentinel from the fixture.
     sentinel = service.explorer_dir("demo", "run-001") / "index.html"
     if sentinel.exists():
@@ -360,7 +359,8 @@ def test_render_status_busy_true_when_no_sentinel_exists(seeded):
     with mock.patch.object(service, "_get_redis", return_value=fake_redis):
         status = service.render_status("demo", "run-001")
     assert status["busy"] is True
-    assert status["started_at"] == "2026-05-15T18:00:00+00:00"
+    assert status["appears_failed"] is False
+    assert status["started_at"] == started
 
 
 def test_render_status_busy_false_when_sentinel_newer_than_started(seeded):
@@ -402,6 +402,46 @@ def test_render_status_busy_false_when_redis_flag_absent(seeded):
         status = service.render_status("demo", "run-001")
     assert status["busy"] is False
     assert status["started_at"] is None
+    assert status["appears_failed"] is False
+
+
+def test_render_status_appears_failed_after_8_min_with_stale_sentinel(seeded):
+    """Redis still busy, sentinel old, started > 8 min ago → appears_failed."""
+    import os
+    # Backdate the sentinel so it's older than started_at.
+    sentinel = service.explorer_dir("demo", "run-001") / "index.html"
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    sentinel.write_text("<old>")
+    old = (dt.datetime.now() - dt.timedelta(minutes=30)).timestamp()
+    os.utime(sentinel, (old, old))
+    # Started 15 minutes ago — well past the 8-minute threshold.
+    started = (
+        dt.datetime.now(dt.UTC) - dt.timedelta(minutes=15)
+    ).replace(microsecond=0).isoformat()
+    fake_redis = mock.MagicMock()
+    fake_redis.get.side_effect = lambda k: ("1" if k.endswith(":busy") else started)
+    with mock.patch.object(service, "_get_redis", return_value=fake_redis):
+        status = service.render_status("demo", "run-001")
+    # busy reflects the user-visible signal: not "actually rendering."
+    assert status["busy"] is False
+    assert status["appears_failed"] is True
+
+
+def test_render_status_not_failed_within_8_min_window(seeded):
+    """Redis busy, no sentinel, started 3 min ago → still in flight,
+    not yet 'appears_failed'."""
+    sentinel = service.explorer_dir("demo", "run-001") / "index.html"
+    if sentinel.exists():
+        sentinel.unlink()
+    started = (
+        dt.datetime.now(dt.UTC) - dt.timedelta(minutes=3)
+    ).replace(microsecond=0).isoformat()
+    fake_redis = mock.MagicMock()
+    fake_redis.get.side_effect = lambda k: ("1" if k.endswith(":busy") else started)
+    with mock.patch.object(service, "_get_redis", return_value=fake_redis):
+        status = service.render_status("demo", "run-001")
+    assert status["busy"] is True
+    assert status["appears_failed"] is False
 
 
 # ---------------------------------------------------------------------------
