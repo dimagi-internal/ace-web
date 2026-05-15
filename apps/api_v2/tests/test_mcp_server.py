@@ -41,6 +41,8 @@ _EXPECTED_TOOL_NAMES = {
     "apps_videos_api_v2_get_library",
     "apps_videos_api_v2_get_render_status",
     "apps_videos_api_v2_get_feedback",
+    "apps_videos_api_v2_list_video_templates",
+    "apps_videos_api_v2_get_video_template",
 }
 
 

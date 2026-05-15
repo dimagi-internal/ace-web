@@ -1,0 +1,92 @@
+# 60-second campaign overview — spec skeleton.
+#
+# The generator instantiates this by substituting {{placeholders}} with
+# program-specific values it extracts from the source URL / Drive folder.
+# Anything not substituted is left intact — including the brand-tagline
+# narration default, which mirrors the on-screen text from
+# `_defaults.yaml`'s `brand` section.
+#
+# Placeholders the generator must fill:
+#   {{program_slug}}            slug, lowercase + hyphens (e.g. "kangaroo-care")
+#   {{workspace_slug}}          which ace-web workspace owns this program
+#   {{program_name}}            display name (e.g. "Kangaroo Care")
+#   {{country_focus}}           primary country (e.g. "Uganda")
+#   {{status}}                  short status line (e.g. "Active in 4 countries")
+#   {{program_tagline}}         one-line program-level tagline (NOT Connect's tagline)
+#   {{program_url}}             canonical URL for the program page
+#
+#   Per-section content placeholders, all subject to LLM generation:
+#   {{scene_lower_third}}       e.g. "Uganda · Kangaroo Care"
+#   {{problem_big}}             headline number (e.g. "350K")
+#   {{problem_caption}}         one-line problem framing
+#   {{problem_source}}          attribution (e.g. "labs.connect.dimagi.com")
+#   {{impact_1_big}}            first impact number (e.g. "$1.40")
+#   {{impact_1_caption}}        first impact line
+#   {{impact_2_big}}            second impact number
+#   {{impact_2_caption}}        second impact line
+#
+#   Per-beat narration placeholders (each ~ word-budget noted, room for ±2):
+#   {{narration_hook}}          ~10 words. Mirrors the on-screen tagline:
+#                               "Pay for verified service delivery, not planned activity."
+#   {{narration_cycle}}         ~20 words. Plain-language walkthrough of the
+#                               four-step cycle (Learn / Deliver / Verify / Pay).
+#   {{narration_handoff}}       ~8 words. Hands off to the specific program.
+#   {{narration_scene}}         ~20 words. What field footage is showing.
+#   {{narration_problem}}       ~25 words. Frames the headline stat in human terms.
+#   {{narration_product}}       ~30 words. Walks the app screenshots.
+#   {{narration_impact}}        ~20 words. Reads out the impact stats.
+#   {{narration_cta}}           leave empty — outro plays under brand cta.
+#
+# Manifest entries (clips) are NOT filled by this template's placeholders —
+# the generator separately discovers Drive media (or leaves the manifest
+# empty for hand-edit) and writes manifest: + scene/product asset refs.
+
+slug: "{{program_slug}}"
+workspace: "{{workspace_slug}}"
+name: "{{program_name}}"
+country_focus: "{{country_focus}}"
+status: "{{status}}"
+tagline: "{{program_tagline}}"
+program_url: "{{program_url}}"
+
+# Drive-backed asset manifest. The generator either pre-populates this
+# from a Drive folder listing or leaves it blank for hand-edit.
+manifest: {}
+
+scene:
+  clips: []
+  lower_third: "{{scene_lower_third}}"
+
+problem:
+  big: "{{problem_big}}"
+  caption: "{{problem_caption}}"
+  source: "{{problem_source}}"
+
+product:
+  beats: []
+
+impact:
+- big: "{{impact_1_big}}"
+  caption: "{{impact_1_caption}}"
+- big: "{{impact_2_big}}"
+  caption: "{{impact_2_caption}}"
+
+narration:
+  generator: manual
+  prompt_version: v3
+  start_seconds: 0
+  by_beat:
+    hook: "{{narration_hook}}"
+    cycle: "{{narration_cycle}}"
+    handoff: "{{narration_handoff}}"
+    scene: "{{narration_scene}}"
+    problem: "{{narration_problem}}"
+    product: "{{narration_product}}"
+    impact: "{{narration_impact}}"
+    cta: ""
+  script: ""
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

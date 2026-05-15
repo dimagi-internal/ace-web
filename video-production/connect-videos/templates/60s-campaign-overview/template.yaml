@@ -1,0 +1,21 @@
+# Template metadata. The generator service reads this to surface the
+# template in the picker and to know which prompt + skeleton to use.
+id: 60s-campaign-overview
+name: 60-second campaign overview
+description: |
+  Stakeholder-facing one-minute video that walks a single Connect
+  program from "this is the program" through "this is what we
+  measured." Eight beats: opening tagline, four-step cycle intro,
+  program handoff, field footage, one big headline stat,
+  three-shot app walkthrough, two impact stats, end card.
+expected_duration_seconds: 60
+intended_audience: |
+  Funders, partner organizations, and internal stakeholders being
+  introduced to a specific Connect program for the first time. Not
+  marketing-ad pacing — closer to a quiet documentary lower-third.
+when_to_use: |
+  - A new program reaches enough operational maturity to have field
+    footage + app screenshots + at least two reportable outcome stats.
+  - You need a single video to drop into a deck, a Drive folder, or
+    a Connect Network page. Bigger / longer / per-country cuts live
+    in other templates (none authored yet).

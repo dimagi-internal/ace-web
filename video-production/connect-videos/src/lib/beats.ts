@@ -21,7 +21,16 @@ export const MusicBedSchema = z.object({
 });
 export type MusicBed = z.infer<typeof MusicBedSchema>;
 
+export const BrandSchema = z.object({
+  tagline: z.string().min(1),
+  differentiator: z.string().min(1).optional(),
+  cycle_steps: z.array(z.string()).length(4),
+  cta: z.string().min(1).optional(),
+});
+export type Brand = z.infer<typeof BrandSchema>;
+
 export const DefaultsSchema = z.object({
+  brand: BrandSchema.optional(),
   fps: z.number().int().positive(),
   total_seconds: z.number().positive(),
   beats: z.array(

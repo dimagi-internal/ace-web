@@ -137,6 +137,46 @@ def next_run_id(slug: str) -> str:
     return f"run-{n + 1:03d}"
 
 
+def create_program_from_spec(slug: str, spec_yaml: str) -> Path:
+    """Create programs/<slug>/runs/run-001/spec.yaml with the supplied
+    YAML body. Validates: slug shape, slug doesn't collide, body parses
+    as a YAML mapping, and the `slug:` field inside the body matches
+    the path slug (catches the most common copy-paste mistake).
+
+    Returns the absolute path that was written.
+
+    Raises ``ValueError`` on validation failure and
+    ``FileExistsError`` when the program directory already exists —
+    the caller (API) translates these into RFC 7807 problem responses.
+    """
+    if not is_valid_slug(slug):
+        raise ValueError(f"Invalid program slug: {slug!r}")
+    pdir = program_dir(slug)
+    if pdir.exists():
+        raise FileExistsError(f"Program already exists: {pdir}")
+
+    # Parse the supplied YAML so we can sanity-check it before writing.
+    try:
+        doc = _yaml().load(spec_yaml)
+    except Exception as e:  # ruamel.yaml's own error types vary
+        raise ValueError(f"spec_yaml is not valid YAML: {e}") from e
+    if not isinstance(doc, dict):
+        raise ValueError("spec_yaml must parse to a YAML mapping at the top level")
+    yaml_slug = doc.get("slug")
+    if yaml_slug != slug:
+        raise ValueError(
+            f"spec_yaml.slug ({yaml_slug!r}) must match the URL slug ({slug!r})"
+        )
+    if not doc.get("workspace"):
+        raise ValueError("spec_yaml.workspace is required")
+
+    run_001 = run_dir(slug, "run-001")
+    run_001.mkdir(parents=True, exist_ok=True)
+    target = run_001 / "spec.yaml"
+    target.write_text(spec_yaml, encoding="utf-8")
+    return target
+
+
 def copy_run(slug: str, from_run_id: str) -> str:
     """Snapshot ``spec.yaml`` from ``from_run_id`` into a fresh
     ``run-NNN`` and return the new run id. Both runs stay mutable
