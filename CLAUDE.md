@@ -20,6 +20,8 @@ are the opp Workbench, the cloud mobile emulator, and the videos app.
   touching the relevant area)
 - **Architecture docs**: `docs/architecture/cli-credentials.md`,
   `docs/architecture/mcp-surface.md`
+- **QA**: `docs/qa/e2e-probe.md` — re-runnable Playwright probe of every UI
+  surface; lives at `scripts/qa/labs_probe.py`. Run it after every deploy.
 - **Deploy runbook**: `docs/deploy.md`
 - **Pattern source** for new backend code: `../canopy-web/` (sibling repo)
 - **Project Claude helpers**: `.claude/skills/ace-web/` and `.claude/commands/ace-web/`
@@ -97,7 +99,8 @@ ace-web/
 ├── config/              # Split settings (base, connectlabs, development, production, e2e, test)
 ├── frontend/src/        # api, components, hooks, pages, router (Vite + bun)
 ├── tests/               # Project-level tests (asgi smoke)
-├── docs/                # specs/, plans/, learnings/, architecture/, deploy.md
+├── docs/                # specs/, plans/, learnings/, architecture/, qa/, deploy.md
+├── scripts/qa/          # Re-runnable Playwright probe of the deployed UI
 ├── infra/mobile-ami/    # Packer bake for the mobile EC2 AMI + rebake.sh
 ├── deploy/aws/          # task-definition.json + one-time-setup.sh
 ├── .github/workflows/   # build-backend, build-frontend, deploy-ace-web-labs, ci,
@@ -107,9 +110,9 @@ ace-web/
 
 The sessions data model has 7 core tables: `users`, `sessions`,
 `session_participants`, `messages`, `drafts`, `share_tokens`, `ingest_uploads`.
-`apps/workspaces/` adds `Workspace`, `WorkspaceMember`, `WorkspaceInvite`, and
-audit-log tables. The `opps` and `videos` modules add **no ORM tables** — they
-read through to Google Drive.
+`apps/workspaces/` adds `Workspace`, `WorkspaceMembership`, `WorkspaceInvite`,
+and audit-log tables. The `opps` and `videos` modules add **no ORM tables** —
+they read through to Google Drive.
 
 ## Key architectural decisions
 
@@ -156,6 +159,15 @@ read through to Google Drive.
 - **Response envelope removed**: API errors return RFC 7807 `application/problem+json`;
   success responses return bare typed payloads. The legacy `{data, error}` envelope
   was retired in PR #352 along with DRF.
+- **Rich response shapes over strict Pydantic outputs**: opps list / opp
+  snapshot / runs list deliberately return `response={200: dict}` and let the
+  legacy `serialize_opp_*` shape flow through unchanged. The Phase 1 attempt at
+  thin Pydantic schemas (e.g. `OppCardOut` with just `{slug, title, run_count}`)
+  silently dropped fields the frontend rendered (`display_name`, `tags`,
+  `eval_score`, `current_run.decisions`, `phases[]`, …) and caused the
+  "Something went wrong" overlay everywhere. If you tighten any of these
+  endpoints, run `scripts/qa/labs_probe.py` first — it'll catch the
+  consumer-side fallout.
 - **Health check**: `/api/health` is public. See `docs/deploy.md`.
 - **Per-session and per-opp cost & timing breakdown**: ace-web aggregates wall
   time and token costs from uploaded JSONL transcripts at ingest time, persists
@@ -164,7 +176,7 @@ read through to Google Drive.
   plugin-derived registry. Aggregator: `apps/ingest/cost_aggregator.py`; pricing
   table: `apps/ingest/pricing.py` (refresh ~twice/year). Sidechain attribution
   gotcha: `sidechain-attribution.md`.
-- **Per-session Structure view** (dedicated page at `/structure/<slug>`):
+- **Per-session Structure view** (page at `/w/<workspace>/chat/<slug>/structure`):
   hierarchical session tree (phase → skill → tool, with subagent recursion +
   parallel-group clusters). Computed fresh per request from
   `IngestUpload.raw_jsonl_gz` (gzipped raw bytes persisted at ingest time);
@@ -234,11 +246,18 @@ run-level opp-eval scorecard + trend, a pending-gates banner, and a "Discuss in
 chat" CTA that seeds a new ace-web `Session` from a step's context.
 
 Drive is the source of truth — **no ORM tables** for opps / runs / steps /
-artifacts. The data lives as files under `ACE/<opp-slug>/` in Drive. The ACE
-plugin writes `state.yaml`, `pdd.md`, and skill-specific subfolders; which skill
-owns which file is declared in the plugin's `lib/artifact-manifest.ts`. ace-web
-parses that manifest and uses it for file-to-skill attribution
-(`apps/system/parsers.py`).
+artifacts. The data lives as files under `<workspace.drive_root_folder_id>/<opp-slug>/`
+in Drive. The ACE plugin writes `run_state.yaml`, `pdd.md`, and skill-specific
+subfolders; which skill owns which file is declared in the plugin's
+`lib/artifact-manifest.ts`. ace-web parses that manifest and uses it for
+file-to-skill attribution (`apps/system/parsers.py`).
+
+**Pre-run is a valid state.** An opp folder with `idea.md` / `pdd.md` /
+`opp.yaml` but no completed run (an empty `runs/` subfolder, or no
+`run_state.yaml`) is a normal intermediate — the Workbench renders an empty
+shell labelled "No runs yet" instead of 404ing. Fix landed in PR #390;
+the loader falls through to the flat-layout reader and synthesises a
+placeholder `RunDetail`. Don't tighten the loader to require a real run.
 
 **Multi-run per opp:** Each opp is expected to have multiple runs under
 `runs/run-001/`, `runs/run-002/`, … The Workbench reads them through the
@@ -301,6 +320,9 @@ Deploy & infrastructure:
 - [long-running-turns-vs-deploys](docs/learnings/long-running-turns-vs-deploys.md) — ECS task replacement kills in-flight `claude -p` subprocesses; Drive state is the durable source of truth.
 - [cloud-emulator-snapshot-persistence](docs/learnings/cloud-emulator-snapshot-persistence.md) — mobile AVD snapshot/restore semantics on the EC2 host; read before touching the rebake or in-VM launcher.
 
+QA / probe:
+- [e2e-probe](docs/qa/e2e-probe.md) — `scripts/qa/labs_probe.py` walks every UI surface + cross-checks the OpenAPI schema for orphan endpoints. Re-run after every deploy: `LABS_TOKEN=... uv run --extra walkthrough python scripts/qa/labs_probe.py`. Caught three Phase-5 regressions (public summary endpoint deleted, cross-opp compare deleted, empty-runs-folder 404) that nothing else surfaced.
+
 Repo / merge process:
 - [squash-merge-stale-branch-orphans-commits](docs/learnings/squash-merge-stale-branch-orphans-commits.md) — squash-merge from a topic branch that hasn't pulled an intervening merge silently overwrites the intervening commits on `main`. Repo defense set 2026-05-12: `allow_squash_merge=false`. Don't re-enable without "Always suggest updating PR branches" + a branch-protection rule.
 
@@ -310,6 +332,11 @@ Repo / merge process:
   `localhost:5434`. Backend hot-reload + working Vite dev server.
 - **Tests**: `pytest -v` from repo root (in-memory SQLite; fast hashers).
   Frontend: `bun run test` from `frontend/`.
+- **Post-deploy probe**: `LABS_TOKEN=... uv run --extra walkthrough python
+  scripts/qa/labs_probe.py` — walks every UI surface on labs + cross-checks the
+  OpenAPI schema for orphan endpoints. ~90s for ~40 steps. Writes
+  `qa-results/<UTC-iso>/report.{json,md}` + per-step PNGs. See
+  `docs/qa/e2e-probe.md`.
 - **Lint**: `ruff check .` — `line-length=100`, `target=py311`, rules `E,F,W,I,UP,B`.
 - **Typecheck**: `basedpyright` (CI-gated). Frontend: `bunx tsc -b` (stricter
   than `tsc --noEmit`; Docker build uses this).
