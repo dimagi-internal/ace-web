@@ -572,7 +572,7 @@ function renderHtml(args: {
   };
 
   const beatCardsHtml = beatBlocks
-    .map((blk) => renderBeatCard(blk, totalSec, beatColors[blk.kind] ?? "#3843D0"))
+    .map((blk) => renderBeatCard(blk, totalSec, beatColors[blk.kind] ?? "#3843D0", spec))
     .join("\n");
 
   const timelineHtml = beatBlocks
@@ -833,6 +833,27 @@ function renderHtml(args: {
   /* gdrive link styling — quieter than a bare link */
   .gdrive-link { color: var(--indigo-deep); text-decoration: none; border-bottom: 1px dotted var(--rule); }
   .gdrive-link:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Non-clip section panels — surfaces the YAML / template-driven
+   * content for sections that don't take video clips.
+   * ────────────────────────────────────────────────────────────────── */
+  .section-panel { background: white; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .section-panel-head { font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 12px; }
+  .section-panel-head code { font: 600 11px var(--mono); background: var(--paper); padding: 1px 6px; border-radius: 4px; color: var(--indigo-deep); }
+
+  .section-stats { display: grid; gap: 12px; }
+  .section-stats.one { grid-template-columns: 1fr; }
+  .section-stats.multi { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .section-stat { padding: 14px 16px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; text-align: center; }
+  .section-stat-big { font: 800 36px var(--sans); color: var(--indigo-deep); line-height: 1.0; margin-bottom: 6px; background: linear-gradient(90deg, var(--ink-2), var(--indigo) 60%, var(--sky-deep)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .section-stat-caption { font: 500 13px var(--sans); color: var(--ink-2); line-height: 1.4; }
+  .section-stat-source { font: 400 11px var(--mono); color: var(--muted); margin-top: 6px; }
+
+  .section-brand-fact { display: flex; gap: 12px; align-items: baseline; padding: 8px 0; }
+  .section-brand-label { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); flex-shrink: 0; min-width: 140px; }
+  .section-brand-value { font: 500 14px var(--sans); color: var(--ink); }
+  .section-brand-hint { font: 400 12px var(--sans); color: var(--muted); margin-top: 8px; line-height: 1.5; font-style: italic; }
 </style>
 </head>
 <body>
@@ -1259,23 +1280,19 @@ function renderHtml(args: {
 </html>`;
 }
 
-function renderBeatCard(blk: BeatBlock, _totalSec: number, dotColor: string): string {
+function renderBeatCard(
+  blk: BeatBlock,
+  _totalSec: number,
+  dotColor: string,
+  spec: ReturnType<typeof loadProgramSpec>,
+): string {
   const label = sectionLabel(blk.id);
-  const friendlyMissing = (m: string): string => {
-    if (m.includes("problem stat")) return "No video clip — this section is a big-number graphic.";
-    if (m.includes("impact stat")) return "No video clip — this section is two big-number graphics.";
-    return m;
-  };
   const cardsHtml =
     blk.assignments.length > 0
       ? blk.assignments
           .map((a) => renderAssignmentCard(a))
           .join("\n")
-      : blk.missingSlots.length > 0
-        ? blk.missingSlots
-            .map((m) => `<div class="no-asset">${escape(friendlyMissing(m))}</div>`)
-            .join("\n")
-        : `<div class="no-asset">No video clips for this section — it's rendered from the brand template (logo, animated graphics, no footage).</div>`;
+      : renderSectionContent(blk, spec);
 
   return `
     <div class="beat" data-beat-id="${blk.id}">
@@ -1307,6 +1324,91 @@ function renderBeatCard(blk: BeatBlock, _totalSec: number, dotColor: string): st
       </div>
       <div class="assignments">${cardsHtml}</div>
     </div>`;
+}
+
+/**
+ * For sections that don't take video clips, surface the YAML-driven
+ * content that DOES drive the render so the operator can see what
+ * will appear on screen.
+ *
+ * Each kind reads from spec.* and renders a labeled card. Editing the
+ * underlying values is currently done by hand in spec.yaml; the
+ * structured-editor follow-up plan covers full inline editing.
+ */
+function renderSectionContent(
+  blk: BeatBlock,
+  spec: ReturnType<typeof loadProgramSpec>,
+): string {
+  const statCard = (s: { big: string; caption: string; source?: string | null }) => `
+    <div class="section-stat">
+      <div class="section-stat-big">${escape(s.big)}</div>
+      <div class="section-stat-caption">${escape(s.caption)}</div>
+      ${s.source ? `<div class="section-stat-source">source: ${escape(s.source)}</div>` : ""}
+    </div>`;
+
+  if (blk.kind === "body_problem_stat" && spec.problem) {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">📊 Renders from <code>problem</code> in spec.yaml</div>
+      <div class="section-stats one">${statCard(spec.problem)}</div>
+    </div>`;
+  }
+
+  if (blk.kind === "body_impact_stats" && Array.isArray(spec.impact)) {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">📊 Renders from <code>impact[]</code> in spec.yaml</div>
+      <div class="section-stats multi">${spec.impact.map(statCard).join("")}</div>
+    </div>`;
+  }
+
+  if (blk.kind === "intro_handoff") {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">🎬 Brand template · uses <code>name</code> from spec.yaml</div>
+      <div class="section-brand-fact">
+        <div class="section-brand-label">Program name shown:</div>
+        <div class="section-brand-value">${escape(spec.name)}</div>
+      </div>
+    </div>`;
+  }
+
+  if (blk.kind === "outro_cta") {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">🎬 Brand template · CTA links to <code>program_url</code></div>
+      <div class="section-brand-fact">
+        <div class="section-brand-label">Link target:</div>
+        <div class="section-brand-value"><a class="gdrive-link" href="${escape(spec.program_url)}" target="_blank" rel="noopener">${escape(spec.program_url)} ↗</a></div>
+      </div>
+    </div>`;
+  }
+
+  if (blk.kind === "intro_hook") {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">🎬 Brand template · hardcoded animation</div>
+      <div class="section-brand-fact">
+        <div class="section-brand-label">On-screen text:</div>
+        <div class="section-brand-value">"Pay for verified service delivery, never effort alone"</div>
+      </div>
+      <div class="section-brand-hint">Animation graphics + this tagline come from Remotion's Intro/Hook component. The narration voiceover above plays under the animation.</div>
+    </div>`;
+  }
+
+  if (blk.kind === "intro_cycle") {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">🎬 Brand template · hardcoded 4-step animation</div>
+      <div class="section-brand-fact">
+        <div class="section-brand-label">Steps shown (in order):</div>
+        <div class="section-brand-value">Learn &nbsp;→&nbsp; Deliver &nbsp;→&nbsp; Verify &nbsp;→&nbsp; Pay</div>
+      </div>
+      <div class="section-brand-hint">Chips fade in sequentially across the section. Narration voiceover plays in parallel.</div>
+    </div>`;
+  }
+
+  return `<div class="no-asset">No video clips for this section — it's rendered from the brand template (logo, animated graphics, no footage).</div>`;
 }
 
 function renderAssignmentCard(a: ClipAssignment): string {

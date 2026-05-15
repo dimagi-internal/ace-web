@@ -589,7 +589,11 @@ html, body { background: #0e0f12; color: #e5e7eb; }
 .assignments,
 .beat,
 .narration-edit,
+.section-panel,
 .no-asset { background: #161821 !important; border-color: #262833 !important; color: #e5e7eb !important; }
+.section-stat { background: #0e0f12 !important; border-color: #262833 !important; color: #e5e7eb !important; }
+.section-stat-caption { color: #e5e7eb !important; }
+.section-brand-value { color: #f3f4f6 !important; }
 .lead { background: linear-gradient(120deg, #161821 0%, #1a2030 100%) !important; color: #e5e7eb !important; }
 .lib-meta code { background: #0e0f12 !important; color: #cbd2dd !important; }
 .lib-placeholder { background: #0e0f12 !important; color: #9ca3af !important; }
