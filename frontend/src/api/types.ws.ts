@@ -502,10 +502,21 @@ export interface StructureSkillNode {
   children: StructureChild[];
 }
 
+export interface StructureDirectTurnNode {
+  kind: "direct_turn";
+  started_at: string | null;
+  model: string | null;
+  estimated_cost_usd: number;
+  cost_is_partial: boolean;
+  tokens: StructureTokens;
+  text_preview: string | null;
+}
+
 export type StructureChild =
   | StructureToolNode
   | StructureParallelGroup
-  | StructureSkillNode;
+  | StructureSkillNode
+  | StructureDirectTurnNode;
 
 export interface StructurePhase {
   kind: "phase";
