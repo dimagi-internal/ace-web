@@ -49,10 +49,38 @@ export async function listOpps(
   if (!response.ok) throw new Error(`listOpps: ${response.status}`);
 
   const etag = response.headers.get("ETag") ?? "";
-  const page = (await response.json()) as { items: OppCard[] };
-  const data = page.items ?? (page as unknown as OppCard[]);
+  // The v2 OppCardOut shape is a subset of what the frontend's OppCard
+  // type expects (the frontend type carries legacy DRF fields like
+  // display_name/current_step/tags/labels/eval_score). Map field renames
+  // and fill missing fields with safe defaults so consumers don't crash
+  // on .display_name.toLowerCase() etc.
+  const page = (await response.json()) as { items: Array<Record<string, unknown>> };
+  const data: OppCard[] = (page.items ?? []).map((raw) => v2ToOppCard(raw));
   setCachedList(cacheKey, { data, etag });
   return data;
+}
+
+function v2ToOppCard(raw: Record<string, unknown>): OppCard {
+  const s = (v: unknown): string | null => (typeof v === "string" ? v : null);
+  return {
+    slug: (raw.slug as string) ?? "",
+    display_name: (raw.title as string) ?? (raw.slug as string) ?? "",
+    labels: [],
+    tags: [],
+    created_at: s(raw.updated_at),
+    created_by: null,
+    current_run_id: s(raw.last_run_id),
+    current_phase: s(raw.current_phase),
+    current_phase_display: s(raw.current_phase),
+    current_step: s(raw.current_skill),
+    current_step_display: s(raw.current_skill),
+    status: "active",
+    eval_score: null,
+    eval_score_pct: null,
+    eval_passed: null,
+    last_activity_at: s(raw.updated_at),
+    run_count: typeof raw.run_count === "number" ? raw.run_count : 0,
+  } as OppCard;
 }
 
 export async function createOpp(
