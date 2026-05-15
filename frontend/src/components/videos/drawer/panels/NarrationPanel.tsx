@@ -18,6 +18,12 @@ export function NarrationPanel({ beatId, onCommit, onCancel }: Props) {
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
   const estSec = Math.round((text.length / 15) * 10) / 10;
 
+  // The beat's allotted seconds in the final video. Used to warn when
+  // estimated read time overflows the slot (synth may get cut off).
+  const beat = (effectiveSpec.beats ?? []).find((b) => b.id === beatId);
+  const beatSeconds = beat?.seconds ?? 0;
+  const overflow = beatSeconds > 0 && estSec > beatSeconds + 0.3;
+
   const commit = () => {
     if (!dirty) return;
     dispatch({ type: "APPEND_OP", op: { op: "set-narration", beatId, text } });
@@ -44,8 +50,18 @@ export function NarrationPanel({ beatId, onCommit, onCancel }: Props) {
         rows={8}
         className="w-full rounded border bg-background p-2 font-sans text-sm"
       />
-      <div className="text-xs text-muted-foreground">
+      <div className={overflow ? "text-xs font-medium text-amber-700" : "text-xs text-muted-foreground"}>
         {wordCount} word{wordCount === 1 ? "" : "s"} · ~{estSec}s read
+        {beatSeconds > 0 && (
+          <span className="ml-2">
+            of <strong>{beatSeconds.toFixed(1)}s</strong> slot
+          </span>
+        )}
+        {overflow && (
+          <span className="ml-2">
+            ⚠ overflows — synth may get cut off
+          </span>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
         Identical text reuses the cached audio — no resynth on Re-render.

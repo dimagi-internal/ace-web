@@ -6,7 +6,6 @@ import {
   Copy,
   Loader2,
   RefreshCw,
-  Save,
 } from "lucide-react";
 
 import {
@@ -113,9 +112,6 @@ export default function VideoExplorerPage() {
 
   async function handleRender() {
     if (!workspaceSlug || !programSlug || !resolvedRunId) return;
-    // Commit any in-progress edits before kicking off the render so
-    // partial textbox content isn't silently lost.
-    await flushPendingEdits();
     setBusyAction("render");
     setActionMsg(null);
     try {
@@ -135,34 +131,6 @@ export default function VideoExplorerPage() {
     } finally {
       setBusyAction(null);
     }
-  }
-
-  type SaveAllResult = { saved: number; skipped: number; failed: number };
-  async function flushPendingEdits(): Promise<SaveAllResult> {
-    const fn = (iframeRef.current?.contentWindow as
-      | (Window & { saveAllPending?: () => Promise<SaveAllResult> })
-      | null
-    )?.saveAllPending;
-    if (typeof fn !== "function") return { saved: 0, skipped: 0, failed: 0 };
-    try {
-      return await fn();
-    } catch {
-      return { saved: 0, skipped: 0, failed: 1 };
-    }
-  }
-
-  async function handleSave() {
-    setBusyAction("save");
-    setActionMsg(null);
-    const r = await flushPendingEdits();
-    if (r.failed > 0) {
-      setActionMsg(`Save failed for ${r.failed} edit${r.failed === 1 ? "" : "s"}`);
-    } else if (r.saved > 0) {
-      setActionMsg(`Saved ${r.saved} edit${r.saved === 1 ? "" : "s"} · click Re-render to regenerate`);
-    } else {
-      setActionMsg("No pending edits to save");
-    }
-    setBusyAction(null);
   }
 
   async function handleCopyRun() {
@@ -260,21 +228,15 @@ export default function VideoExplorerPage() {
             </div>
           ) : (
             <>
-              <button
-                type="button"
-                disabled={busyAction !== null || !resolvedRunId}
-                onClick={handleSave}
-                title="Save every in-progress edit on this page to spec.yaml. Does not re-render."
-                className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
-              >
-                <Save className="h-3 w-3" />
-                {busyAction === "save" ? "Saving…" : "Save"}
-              </button>
+              {/* Save lives in the BeatEditor's sticky TopBar — only that button
+                  is wired to the React buffer + POST /edit-batch. The old
+                  page-header Save called window.saveAllPending on the iframe,
+                  which doesn't exist with the React tree. */}
               <button
                 type="button"
                 disabled={busyAction !== null || !resolvedRunId}
                 onClick={handleRender}
-                title="Save any pending edits and regenerate output.mp4 — the one button that produces a new render."
+                title="Regenerate output.mp4 from the current spec.yaml — the one button that produces a new render."
                 className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:opacity-90 disabled:opacity-50"
               >
                 <RefreshCw className="h-3.5 w-3.5" />

@@ -19,6 +19,17 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
     ? effectiveSpec.scene?.clips[index]
     : effectiveSpec.product?.beats[index];
 
+  // Compute the slot's duration in the FINAL video. The beat's total
+  // seconds is divided evenly across all clip slots — so a clip's
+  // trim window only affects which sub-region of the source plays;
+  // the on-screen duration is fixed at slotSeconds.
+  const beatId = clipKind === "scene-clip" ? "scene" : "product";
+  const beat = (effectiveSpec.beats ?? []).find((b) => b.id === beatId);
+  const totalSlots = clipKind === "scene-clip"
+    ? (effectiveSpec.scene?.clips?.length ?? 1)
+    : (effectiveSpec.product?.beats?.length ?? 1);
+  const slotSeconds = beat && totalSlots > 0 ? beat.seconds / totalSlots : 0;
+
   const initial = (() => {
     if (slot === undefined) return null;
     const obj = typeof slot === "string" ? { asset: slot } : slot;
@@ -136,10 +147,18 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
         </label>
         {ready && (
           <span className="ml-auto text-xs">
-            source clip: {sourceDuration.toFixed(1)}s
+            source: {sourceDuration.toFixed(1)}s
           </span>
         )}
       </div>
+      {slotSeconds > 0 && (
+        <p className="rounded border border-dashed bg-muted/20 p-2 text-xs text-muted-foreground">
+          The trim picks <strong className="text-foreground">where in the source clip</strong> the
+          slot reads from. The on-screen duration is fixed at{" "}
+          <strong className="text-foreground">{slotSeconds.toFixed(1)}s</strong>
+          {totalSlots > 1 && ` (1 of ${totalSlots} clips sharing the beat's ${(slotSeconds * totalSlots).toFixed(1)}s)`}.
+        </p>
+      )}
       <div className="mt-2 flex justify-end gap-2">
         <button type="button" onClick={onCancel}
                 className="rounded border px-3 py-1.5 text-sm">
