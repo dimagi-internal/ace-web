@@ -40,7 +40,7 @@ export async function listOpps(
   const cacheKey = `ws=${workspaceSlug}&tags=${(tags ?? []).join(",")}`;
   const cached = !opts?.force ? getCachedList(cacheKey) : undefined;
 
-  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps", {
+  const { data: responseData, response } = await apiV2.GET("/api/w/{workspace_slug}/opps", {
     params: { path: { workspace_slug: workspaceSlug } },
     headers: cached ? { "If-None-Match": cached.etag } : {},
   });
@@ -54,7 +54,7 @@ export async function listOpps(
   // display_name/current_step/tags/labels/eval_score). Map field renames
   // and fill missing fields with safe defaults so consumers don't crash
   // on .display_name.toLowerCase() etc.
-  const page = (await response.clone().json()) as { items: Array<Record<string, unknown>> };
+  const page = responseData as unknown as { items: Array<Record<string, unknown>> };
   const data: OppCard[] = (page.items ?? []).map((raw) => v2ToOppCard(raw));
   setCachedList(cacheKey, { data, etag });
   return data;
@@ -87,13 +87,13 @@ export async function createOpp(
   workspaceSlug: string,
   payload: CreateOppPayload,
 ): Promise<CreateOppResponse> {
-  const { response } = await apiV2.POST("/api/w/{workspace_slug}/opps", {
+  const { data, response } = await apiV2.POST("/api/w/{workspace_slug}/opps", {
     params: { path: { workspace_slug: workspaceSlug } },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     body: payload as any,
   });
   if (!response.ok) throw new Error(`createOpp: ${response.status}`);
-  return (await response.clone().json()) as CreateOppResponse;
+  return data as unknown as CreateOppResponse;
 }
 
 export async function deleteOpp(workspaceSlug: string, slug: string): Promise<void> {
@@ -110,13 +110,13 @@ export async function updateOppTags(
   slug: string,
   tags: string[],
 ): Promise<{ slug: string; tags: string[] }> {
-  const { response } = await apiV2.PATCH("/api/w/{workspace_slug}/opps/{slug}", {
+  const { data, response } = await apiV2.PATCH("/api/w/{workspace_slug}/opps/{slug}", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     body: { tags } as any,
   });
   if (!response.ok) throw new Error(`updateOppTags: ${response.status}`);
-  return (await response.clone().json()) as { slug: string; tags: string[] };
+  return data as unknown as { slug: string; tags: string[] };
 }
 
 export async function getOpp(
@@ -127,7 +127,7 @@ export async function getOpp(
 ): Promise<OppSnapshot> {
   const cached = !opts?.force ? getCachedSnapshot(slug, runId ?? null) : undefined;
 
-  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}", {
+  const { data: responseData, response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}", {
     params: {
       path: { workspace_slug: workspaceSlug, slug },
       query: runId ? { run_id: runId } : {},
@@ -139,7 +139,7 @@ export async function getOpp(
   if (!response.ok) throw new Error(`getOpp: ${response.status}`);
 
   const etag = response.headers.get("ETag") ?? "";
-  const data = (await response.clone().json()) as OppSnapshot;
+  const data = responseData as unknown as OppSnapshot;
   setCachedSnapshot(slug, runId ?? null, { data, etag });
   return data;
 }
@@ -155,11 +155,11 @@ export function getOppCompare(_slugA: string, _slugB: string): Promise<never> {
 }
 
 export async function getScorecard(workspaceSlug: string, slug: string): Promise<Scorecard> {
-  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/scorecard", {
+  const { data, response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/scorecard", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
   });
   if (!response.ok) throw new Error(`getScorecard: ${response.status}`);
-  return (await response.clone().json()) as Scorecard;
+  return data as unknown as Scorecard;
 }
 
 /** Multi-run summary has no v2 equivalent — will be addressed in a future PR. */
@@ -181,14 +181,14 @@ export async function getStepDetail(
   runId: string,
   skill: string,
 ): Promise<StepDetail> {
-  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/steps/{skill}", {
+  const { data, response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/steps/{skill}", {
     params: {
       path: { workspace_slug: workspaceSlug, slug, skill },
       query: { run_id: runId },
     },
   });
   if (!response.ok) throw new Error(`getStepDetail: ${response.status}`);
-  return (await response.clone().json()) as StepDetail;
+  return data as unknown as StepDetail;
 }
 
 /** getLinkedChats has no v2 endpoint — will be addressed in a future PR. */
@@ -208,21 +208,21 @@ export async function discussStep(
   runId: string,
   skill: string,
 ): Promise<DiscussResponse> {
-  const { response } = await apiV2.POST("/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat", {
+  const { data, response } = await apiV2.POST("/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
     body: { step_skill: skill, run_id: runId },
   });
   if (!response.ok) throw new Error(`discussStep: ${response.status}`);
-  return (await response.clone().json()) as DiscussResponse;
+  return data as unknown as DiscussResponse;
 }
 
 export async function listOppRuns(workspaceSlug: string, slug: string): Promise<RunSummary[]> {
-  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/runs", {
+  const { data, response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/runs", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
   });
   if (!response.ok) throw new Error(`listOppRuns: ${response.status}`);
-  const page = (await response.clone().json()) as { items: RunSummary[] };
-  return page.items ?? (page as unknown as RunSummary[]);
+  const page = data as unknown as { items: RunSummary[] };
+  return page.items ?? (data as unknown as RunSummary[]);
 }
 
 export async function deleteOppRun(
@@ -244,13 +244,13 @@ export async function forkOpp(
   slug: string,
   payload: { fork_at_phase: string; source_run_id?: string | null },
 ): Promise<{ slug: string; run_id: string; working_session_slug: string }> {
-  const { response } = await apiV2.POST("/api/w/{workspace_slug}/opps/{slug}/fork", {
+  const { data, response } = await apiV2.POST("/api/w/{workspace_slug}/opps/{slug}/fork", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     body: payload as any,
   });
   if (!response.ok) throw new Error(`forkOpp: ${response.status}`);
-  return (await response.clone().json()) as { slug: string; run_id: string; working_session_slug: string };
+  return data as unknown as { slug: string; run_id: string; working_session_slug: string };
 }
 
 export type ForkProgress =
@@ -270,14 +270,14 @@ export async function getForkStatus(
   slug: string,
   sourceRunId: string | null | undefined,
 ): Promise<ForkProgress> {
-  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/fork/status", {
+  const { data, response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/fork/status", {
     params: {
       path: { workspace_slug: workspaceSlug, slug },
       query: sourceRunId ? { source_run_id: sourceRunId } : {},
     },
   });
   if (!response.ok) throw new Error(`getForkStatus: ${response.status}`);
-  return (await response.clone().json()) as ForkProgress;
+  return data as unknown as ForkProgress;
 }
 
 /** getWorkingSession has no v2 endpoint — will be addressed in a future PR. */

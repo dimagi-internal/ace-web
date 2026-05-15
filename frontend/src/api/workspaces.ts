@@ -78,10 +78,9 @@ export async function createWorkspace(input: {
     name: input.name,
     drive_root_folder_id: input.drive_root_folder_id,
   };
-  const { data, error, response } = await apiV2.POST("/api/workspaces", { body });
+  const { data, error } = await apiV2.POST("/api/workspaces", { body });
   if (error) throw new Error((error as { title?: string }).title || "Failed to create workspace");
-  if (data) return data as WorkspaceDetail;
-  return (await response.clone().json()) as WorkspaceDetail;
+  return data as unknown as WorkspaceDetail;
 }
 
 export async function getWorkspace(slug: string): Promise<WorkspaceDetail> {
@@ -150,7 +149,7 @@ export async function changeMemberRole(
   userId: number,
   role: WorkspaceRole,
 ): Promise<WorkspaceMember> {
-  const { response } = await apiV2.PATCH(
+  const { data, response } = await apiV2.PATCH(
     "/api/workspaces/{slug}/members/{user_id}" as never,
     {
       params: { path: { slug, user_id: userId } },
@@ -158,7 +157,7 @@ export async function changeMemberRole(
     } as never,
   );
   if (!response.ok) throw new Error(`Change role failed: ${response.status}`);
-  return (await response.clone().json()) as WorkspaceMember;
+  return data as unknown as WorkspaceMember;
 }
 
 export async function leaveWorkspace(slug: string): Promise<void> {
@@ -171,41 +170,41 @@ export async function leaveWorkspace(slug: string): Promise<void> {
 }
 
 export async function getInvitePreview(token: string): Promise<InvitePreview> {
-  const { response } = await apiV2.GET("/api/invites/{token}" as never, {
+  const { data, response } = await apiV2.GET("/api/invites/{token}" as never, {
     params: { path: { token } },
   } as never);
   if (!response.ok) throw new Error(`Invite not found: ${response.status}`);
-  return (await response.clone().json()) as InvitePreview;
+  return data as unknown as InvitePreview;
 }
 
 export async function acceptInvite(token: string): Promise<AcceptResult> {
-  const { response } = await apiV2.POST("/api/invites/{token}/accept" as never, {
+  const { data, response } = await apiV2.POST("/api/invites/{token}/accept" as never, {
     params: { path: { token } },
   } as never);
   if (!response.ok) throw new Error(`Accept invite failed: ${response.status}`);
-  return (await response.clone().json()) as AcceptResult;
+  return data as unknown as AcceptResult;
 }
 
 export async function getDriveConfig(): Promise<DriveConfig> {
-  const { response } = await apiV2.GET("/api/workspaces/drive-config" as never, {} as never);
+  const { data, response } = await apiV2.GET("/api/workspaces/drive-config" as never, {} as never);
   if (!response.ok) throw new Error(`Drive config failed: ${response.status}`);
-  return (await response.clone().json()) as DriveConfig;
+  return data as unknown as DriveConfig;
 }
 
 export async function verifyDriveAccess(slug: string): Promise<VerifyResult> {
-  const { response } = await apiV2.POST("/api/workspaces/{slug}/drive-config/verify", {
+  const { data, response } = await apiV2.POST("/api/workspaces/{slug}/drive-config/verify", {
     params: { path: { slug } },
   });
   if (!response.ok) throw new Error(`Drive verify failed: ${response.status}`);
-  return (await response.clone().json()) as VerifyResult;
+  return data as unknown as VerifyResult;
 }
 
 export async function listActivity(slug: string): Promise<ActivityRow[]> {
-  const { response } = await apiV2.GET("/api/workspaces/{slug}/activity" as never, {
+  const { data, response } = await apiV2.GET("/api/workspaces/{slug}/activity" as never, {
     params: { path: { slug } },
   } as never);
   if (!response.ok) throw new Error(`List activity failed: ${response.status}`);
-  const body = (await response.clone().json()) as { items: ActivityRow[]; total: number };
+  const body = data as unknown as { items: ActivityRow[]; total: number };
   return body.items;
 }
 

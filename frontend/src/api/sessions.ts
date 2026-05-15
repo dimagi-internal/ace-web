@@ -11,7 +11,7 @@ import type { Session, SessionDetail, SessionListPage } from "./types.ws";
  *   PATCH  /api/w/{workspace_slug}/sessions/{slug}  — update
  *   DELETE /api/w/{workspace_slug}/sessions/{slug}  — delete
  *
- * All v2 responses have content?: never so we use response.json() casts.
+ * All v2 responses have content?: never so we cast the `data` field from apiV2.
  */
 
 export interface ListSessionsParams {
@@ -36,7 +36,7 @@ export const listSessions = async (params: ListSessionsParams = {}): Promise<Ses
   if (params.opp) query.opp_slug = params.opp;
   if (params.status === "archived") query.archived = true;
 
-  const { response } = await apiV2.GET(
+  const { data, response } = await apiV2.GET(
     "/api/w/{workspace_slug}/sessions",
     {
       params: {
@@ -46,12 +46,11 @@ export const listSessions = async (params: ListSessionsParams = {}): Promise<Ses
     },
   );
   if (!response.ok) throw new Error(`Failed to list sessions: ${response.status}`);
-  const page = (await response.clone().json()) as SessionListPage;
-  return page;
+  return data as unknown as SessionListPage;
 };
 
 export const createSession = async (workspaceSlug: string): Promise<Session> => {
-  const { response } = await apiV2.POST(
+  const { data, response } = await apiV2.POST(
     "/api/w/{workspace_slug}/sessions",
     {
       params: { path: { workspace_slug: workspaceSlug } },
@@ -59,16 +58,16 @@ export const createSession = async (workspaceSlug: string): Promise<Session> => 
     },
   );
   if (!response.ok) throw new Error(`Failed to create session: ${response.status}`);
-  return (await response.clone().json()) as Session;
+  return data as unknown as Session;
 };
 
 export const getSession = async (slug: string, workspaceSlug: string): Promise<SessionDetail> => {
-  const { response } = await apiV2.GET(
+  const { data, response } = await apiV2.GET(
     "/api/w/{workspace_slug}/sessions/{slug}",
     { params: { path: { workspace_slug: workspaceSlug, slug } } },
   );
   if (!response.ok) throw new Error(`Failed to get session: ${response.status}`);
-  return (await response.clone().json()) as SessionDetail;
+  return data as unknown as SessionDetail;
 };
 
 export const updateSession = async (
@@ -76,7 +75,7 @@ export const updateSession = async (
   updates: Partial<Session>,
   workspaceSlug: string,
 ): Promise<Session> => {
-  const { response } = await apiV2.PATCH(
+  const { data, response } = await apiV2.PATCH(
     "/api/w/{workspace_slug}/sessions/{slug}",
     {
       params: { path: { workspace_slug: workspaceSlug, slug } },
@@ -84,7 +83,7 @@ export const updateSession = async (
     },
   );
   if (!response.ok) throw new Error(`Failed to update session: ${response.status}`);
-  return (await response.clone().json()) as Session;
+  return data as unknown as Session;
 };
 
 export const deleteSession = async (slug: string, workspaceSlug: string): Promise<void> => {
