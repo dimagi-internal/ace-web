@@ -179,3 +179,49 @@ export function submitEditBatch(
     body: JSON.stringify({ ops }),
   });
 }
+
+// ───────── media library ─────────
+
+export interface MediaLibraryVideoItemOut {
+  ref: string;
+  drive_id: string;
+  drive_url: string;
+  filename: string;
+  name: string | null;
+  description: string | null;
+  tags: string[];
+  status: string;
+}
+
+export interface MediaLibraryVideoSubfolderOut {
+  subfolder: string;
+  items: MediaLibraryVideoItemOut[];
+}
+
+export interface MediaLibraryVideoOut {
+  subfolders: MediaLibraryVideoSubfolderOut[];
+}
+
+export interface MediaLibraryAudioItemOut {
+  hash: string;
+  drive_id: string;
+  drive_url: string;
+  voice_id: string | null;
+  model: string | null;
+  text: string | null;
+  duration_sec: number | null;
+  generated_at: string | null;
+  status: string;
+}
+
+export interface MediaLibraryAudioOut {
+  items: MediaLibraryAudioItemOut[];
+}
+
+export function listMediaLibraryVideo(ws: string): Promise<MediaLibraryVideoOut> {
+  return v2Fetch(`${base(ws)}/library/video`);
+}
+
+export function listMediaLibraryAudio(ws: string): Promise<MediaLibraryAudioOut> {
+  return v2Fetch(`${base(ws)}/library/audio`);
+}
