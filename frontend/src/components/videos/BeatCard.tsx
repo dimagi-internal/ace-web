@@ -1,7 +1,8 @@
+import { useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useBeatEditor } from "./BeatEditorContext";
 import { sectionLabel } from "./sectionLabels";
 import { opCoalesceKey, type PendingChange } from "./types";
-import type { ReactNode } from "react";
 
 interface Props {
   beatId: string;
@@ -33,6 +34,8 @@ export function BeatCard({ beatId, kind, startSec, endSec, children }: Props) {
   const { state } = useBeatEditor();
   const label = sectionLabel(beatId);
   const dirty = beatIsDirty(beatId, kind, state.buffer);
+  const [collapsed, setCollapsed] = useState(false);
+
   return (
     <section
       data-beat-id={beatId}
@@ -42,8 +45,28 @@ export function BeatCard({ beatId, kind, startSec, endSec, children }: Props) {
         outlineOffset: -2,
       }}
     >
-      <header className="mb-3 flex items-baseline gap-3">
-        <h3 className="text-base font-semibold">{label.name}</h3>
+      <header
+        className={
+          "flex items-baseline gap-3 " +
+          (collapsed ? "" : "mb-3")
+        }
+      >
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
+          aria-controls={`beat-body-${beatId}`}
+          title={collapsed ? "Expand" : "Collapse"}
+          className="-ml-1 flex h-6 w-6 flex-shrink-0 items-center justify-center self-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+        <h3
+          className="cursor-pointer text-base font-semibold"
+          onClick={() => setCollapsed((v) => !v)}
+        >
+          {label.name}
+        </h3>
         <span className="font-mono text-xs text-muted-foreground">
           {fmt(startSec)} → {fmt(endSec)} · {(endSec - startSec).toFixed(1)}s
         </span>
@@ -53,10 +76,14 @@ export function BeatCard({ beatId, kind, startSec, endSec, children }: Props) {
           </span>
         )}
       </header>
-      {label.subtitle && (
-        <p className="mb-3 text-sm text-muted-foreground">{label.subtitle}</p>
+      {!collapsed && (
+        <div id={`beat-body-${beatId}`}>
+          {label.subtitle && (
+            <p className="mb-3 text-sm text-muted-foreground">{label.subtitle}</p>
+          )}
+          <div className="flex flex-col gap-3">{children}</div>
+        </div>
       )}
-      <div className="flex flex-col gap-3">{children}</div>
     </section>
   );
 }
