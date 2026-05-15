@@ -52,7 +52,7 @@ export const fetchActivityFeed = async (params: ActivityFeedParams): Promise<Act
       : params.type
     : undefined;
 
-  const { response, error } = await apiV2.GET("/api/w/{workspace_slug}/activity", {
+  const { data, error, response } = await apiV2.GET("/api/w/{workspace_slug}/activity", {
     params: {
       path: { workspace_slug: params.workspaceSlug },
       query: {
@@ -65,7 +65,7 @@ export const fetchActivityFeed = async (params: ActivityFeedParams): Promise<Act
 
   if (error) throw new Error((error as { title?: string }).title || "Failed to fetch activity feed");
   if (!response.ok) throw new Error(`Failed to fetch activity feed: ${response.status}`);
-  const out = (await response.clone().json()) as ActivityFeedOut;
+  const out = data as unknown as ActivityFeedOut;
   return {
     items: out.items.map(mapEntry),
     total: out.total,
