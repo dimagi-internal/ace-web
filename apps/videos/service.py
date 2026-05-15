@@ -1009,11 +1009,71 @@ def _started_key(slug: str, run_id: str) -> str:
     return f"videos:render:{slug}:{run_id}:started_at"
 
 
+def _rewrite_library_refs_in_spec(workspace: Workspace, spec_yaml: str) -> str:
+    """Rewrite every ``library:<media>/[<sub>/]<file>`` manifest value to the
+    equivalent ``gdrive:<id>.<ext>`` form, leaving non-library values alone.
+
+    Performed on the local staged copy of spec.yaml before the renderer
+    sees it. The Drive-side spec keeps the stable ``library:`` refs.
+    Unresolvable refs are left as-is — the renderer will surface them as
+    missing assets and the operator can fix the library entry.
+
+    Uses ruamel.yaml for round-trip preservation of comments / order.
+    """
+    from io import StringIO
+
+    from apps.videos.library import refs as lib_refs
+
+    yaml = YAML(typ="rt")
+    yaml.preserve_quotes = True
+    doc = yaml.load(spec_yaml)
+    if not isinstance(doc, dict):
+        return spec_yaml
+    manifest = doc.get("manifest")
+    if not isinstance(manifest, dict):
+        return spec_yaml
+
+    changed = False
+    for alias, value in list(manifest.items()):
+        if not isinstance(value, str) or not lib_refs.is_library_ref(value):
+            continue
+        try:
+            resolved = lib_refs.resolve_library_ref(workspace, value)
+        except lib_refs.LibraryRefError:
+            log.warning(
+                "videos: malformed library ref %r in manifest entry %r", value, alias
+            )
+            continue
+        if resolved is None:
+            log.info("videos: library ref %r not found; leaving as-is", value)
+            continue
+        ext = Path(resolved.parsed.filename).suffix.lstrip(".")
+        if not ext:
+            log.warning("videos: library ref %r has no extension; cannot rewrite", value)
+            continue
+        manifest[alias] = f"gdrive:{resolved.drive_id}.{ext}"
+        changed = True
+
+    if not changed:
+        return spec_yaml
+    buf = StringIO()
+    yaml.dump(doc, buf)
+    return buf.getvalue()
+
+
 def _stage_spec(workspace: Workspace, slug: str, run_id: str) -> None:
     """Pull spec.yaml from Drive and write it to the local scratch path
-    so the npm toolchain sees the latest content."""
+    so the npm toolchain sees the latest content.
+
+    Rewrites ``library:`` manifest refs to ``gdrive:<id>.<ext>`` on the
+    way through — the renderer keeps parsing the stable ``gdrive:`` form.
+    """
     layout, client = layout_for(workspace)
-    drive.stage_spec_locally(layout, client, slug, run_id, _root())
+    target = drive.stage_spec_locally(layout, client, slug, run_id, _root())
+    original = target.read_text(encoding="utf-8")
+    rewritten = _rewrite_library_refs_in_spec(workspace, original)
+    if rewritten != original:
+        target.write_text(rewritten, encoding="utf-8")
 
 
 def _publish_artifacts_subcommand(
