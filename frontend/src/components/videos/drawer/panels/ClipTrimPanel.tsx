@@ -39,8 +39,11 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
     if (!v) return;
     const onMeta = () => {
       setSourceDuration(v.duration);
-      // If draft has no duration set (untrimmed clip), default to full clip.
-      setDraft((d) => d && d.duration === 0 ? { ...d, duration: v.duration } : d);
+      // Do NOT rewrite the draft here — keep draft.duration === 0 for
+      // untrimmed clips so `dirty` stays false until the user actually
+      // drags the TrimBar (or edits a numeric input). The TrimBar /
+      // inputs render `draft.duration || sourceDuration` so the UI still
+      // shows the full clip duration while initial state is preserved.
     };
     v.addEventListener("loadedmetadata", onMeta);
     return () => v.removeEventListener("loadedmetadata", onMeta);
@@ -90,7 +93,7 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
       <TrimBar
         sourceDuration={sourceDuration || 1}
         start={draft.start}
-        duration={draft.duration}
+        duration={draft.duration || sourceDuration}
         onChange={(next) => setDraft({ ...draft, start: next.start_seconds, duration: next.duration_seconds })}
       />
       <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground">
@@ -108,7 +111,7 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
           duration
           <input
             type="number" step="0.1" min={0.3} max={sourceDuration}
-            value={draft.duration.toFixed(2)}
+            value={(draft.duration || sourceDuration).toFixed(2)}
             onChange={(e) => setDraft({ ...draft, duration: parseFloat(e.target.value) || 0 })}
             className="w-20 rounded border bg-background px-1 py-0.5"
           />
