@@ -90,7 +90,7 @@ export function ForkOppDialog({
     let cancelled = false;
     const tick = async () => {
       try {
-        const p = await getForkStatus(sourceSlug, sourceRunId);
+        const p = await getForkStatus(workspaceSlug ?? "", sourceSlug, sourceRunId);
         if (!cancelled) setProgress(p);
       } catch {
         /* poll failures are non-fatal — keep trying */
@@ -109,7 +109,7 @@ export function ForkOppDialog({
   async function handleFork() {
     setSubmitting(true);
     try {
-      const result = await forkOpp(sourceSlug, {
+      const result = await forkOpp(workspaceSlug ?? "", sourceSlug, {
         fork_at_phase: forkAtPhase,
         source_run_id: sourceRunId || null,
       });

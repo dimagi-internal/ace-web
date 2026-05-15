@@ -57,16 +57,17 @@ function groupByOpp(sessions: Session[]): OppGroup[] {
 }
 
 export function RecentSessionsSidebar({ currentSlug }: Props) {
-  const { sessions, refresh } = useRecentSessions(10);
   const { workspaceSlug } = useParams<{ workspaceSlug?: string }>();
+  const { sessions, refresh } = useRecentSessions(10, workspaceSlug);
   const navigate = useNavigate();
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
 
   const handleNew = async () => {
-    const s = await createSession();
+    if (!workspaceSlug) return;
+    const s = await createSession(workspaceSlug);
     await refresh();
-    navigate(`/chat/${s.slug}`);
+    navigate(`/w/${workspaceSlug}/chat/${s.slug}`);
   };
 
   const startRename = (slug: string, title: string) => {
@@ -81,7 +82,7 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
     const original = sessions.find((s) => s.slug === slug)?.title ?? "";
     setEditingSlug(null);
     if (next && next !== original) {
-      await updateSession(slug, { title: next });
+      if (workspaceSlug) await updateSession(slug, { title: next }, workspaceSlug);
       notifySessionsUpdated();
     }
   };

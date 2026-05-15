@@ -7,6 +7,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  workspaceSlug: string;
   slug: string;
   displayName: string;
   onDeleted?: () => void;
@@ -15,6 +16,7 @@ interface Props {
 export function DeleteOppDialog({
   open,
   onOpenChange,
+  workspaceSlug,
   slug,
   displayName,
   onDeleted,
@@ -49,7 +51,7 @@ export function DeleteOppDialog({
       successToast={`Deleted ${displayName}`}
       errorToastPrefix="Delete failed"
       onConfirm={async () => {
-        await deleteOpp(slug);
+        await deleteOpp(workspaceSlug, slug);
         onDeleted?.();
       }}
     >

@@ -666,6 +666,29 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/workspaces/drive-config": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Drive service-account email
+         * @description Returns the Google service-account email used for Drive access.
+         *
+         *     Callers display this so the user knows which account to share their
+         *     Drive folder with.
+         */
+        readonly get: operations["apps_workspaces_api_v2_get_drive_config"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/workspaces/{slug}": {
         readonly parameters: {
             readonly query?: never;
@@ -781,29 +804,6 @@ export interface paths {
         readonly put?: never;
         /** Verify Drive access */
         readonly post: operations["apps_workspaces_api_v2_verify_drive_access"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/api/workspaces/drive-config": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /**
-         * Drive service-account email
-         * @description Returns the Google service-account email used for Drive access.
-         *
-         *     Callers display this so the user knows which account to share their
-         *     Drive folder with.
-         */
-        readonly get: operations["apps_workspaces_api_v2_get_drive_config"];
-        readonly put?: never;
-        readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -4335,6 +4335,24 @@ export interface operations {
             };
         };
     };
+    readonly apps_workspaces_api_v2_get_drive_config: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     readonly apps_workspaces_api_v2_workspace_detail: {
         readonly parameters: {
             readonly query?: never;
@@ -4522,24 +4540,6 @@ export interface operations {
             readonly path: {
                 readonly slug: string;
             };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    readonly apps_workspaces_api_v2_get_drive_config: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
             readonly cookie?: never;
         };
         readonly requestBody?: never;

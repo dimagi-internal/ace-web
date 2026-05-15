@@ -10,13 +10,14 @@ import {
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  workspaceSlug: string;
   slug: string;
   runId: string;
   skill: string;
   artifactName: string;
 }
 
-export function EditArtifactDialog({ open, onOpenChange, slug, runId, skill, artifactName }: Props) {
+export function EditArtifactDialog({ open, onOpenChange, workspaceSlug, slug, runId, skill, artifactName }: Props) {
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -25,7 +26,7 @@ export function EditArtifactDialog({ open, onOpenChange, slug, runId, skill, art
     if (!open) return;
     setLoading(true);
     let cancelled = false;
-    fetch(artifactBodyUrl(slug, runId, skill, artifactName), { credentials: "include" })
+    fetch(artifactBodyUrl(workspaceSlug, slug, runId, skill, artifactName), { credentials: "include" })
       .then((r) => r.text())
       .then((text) => {
         if (!cancelled) setContent(text);
@@ -44,7 +45,7 @@ export function EditArtifactDialog({ open, onOpenChange, slug, runId, skill, art
   async function save() {
     setSaving(true);
     try {
-      await writeArtifact(slug, runId, skill, artifactName, content);
+      await writeArtifact(workspaceSlug, slug, runId, skill, artifactName, content);
       toast.success(`${artifactName} saved`);
       onOpenChange(false);
     } catch (e) {

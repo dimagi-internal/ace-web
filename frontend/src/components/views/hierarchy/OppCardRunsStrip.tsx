@@ -28,7 +28,7 @@ interface Props {
  * subfolder (flat-layout) or while the fetch is in flight.
  */
 export function OppCardRunsStrip({ oppSlug, workspaceSlug }: Props) {
-  const runs = useOppRuns(oppSlug);
+  const runs = useOppRuns(workspaceSlug, oppSlug);
   if (runs === null || runs.length === 0) return null;
 
   return (

@@ -6,6 +6,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  workspaceSlug: string;
   oppSlug: string;
   runId: string;
   /** Display label for the run (e.g. "May 9, 4:55 AM"). Falls back to runId. */
@@ -22,6 +23,7 @@ interface Props {
 export function DeleteRunDialog({
   open,
   onOpenChange,
+  workspaceSlug,
   oppSlug,
   runId,
   runLabel,
@@ -49,7 +51,7 @@ export function DeleteRunDialog({
       successToast={`Trashed run ${display}`}
       errorToastPrefix="Trash failed"
       onConfirm={async () => {
-        await deleteOppRun(oppSlug, runId);
+        await deleteOppRun(workspaceSlug, oppSlug, runId);
         // Drop the in-memory opp cache so the next snapshot fetch hits
         // the server (which will re-list the runs/ folder from Drive
         // minus this run).

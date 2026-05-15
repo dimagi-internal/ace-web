@@ -65,7 +65,7 @@ export const fetchActivityFeed = async (params: ActivityFeedParams): Promise<Act
 
   if (error) throw new Error((error as { title?: string }).title || "Failed to fetch activity feed");
   if (!response.ok) throw new Error(`Failed to fetch activity feed: ${response.status}`);
-  const out = (await response.json()) as ActivityFeedOut;
+  const out = (await response.clone().json()) as ActivityFeedOut;
   return {
     items: out.items.map(mapEntry),
     total: out.total,

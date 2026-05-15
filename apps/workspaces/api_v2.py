@@ -178,6 +178,35 @@ def post_workspace(request: HttpRequest, body: WorkspaceCreateIn) -> HttpRespons
 
 
 # ---------------------------------------------------------------------------
+# GET /workspaces/drive-config — service-account email (any member)
+# Must be declared BEFORE /{slug} so Ninja doesn't treat "drive-config"
+# as a workspace slug and 404 with "workspace not found".
+# ---------------------------------------------------------------------------
+
+
+@router.get("/drive-config", summary="Drive service-account email")
+def get_drive_config(request: HttpRequest) -> HttpResponse:
+    """Returns the Google service-account email used for Drive access.
+
+    Callers display this so the user knows which account to share their
+    Drive folder with.
+    """
+    import json
+
+    from django.http import JsonResponse
+
+    from apps.service_accounts.models import ServiceAccount
+
+    try:
+        sa = ServiceAccount.objects.get(name="ace-drive", is_active=True)
+        info = json.loads(sa.credential_json)
+        email = info.get("client_email", "")
+    except Exception:  # noqa: BLE001
+        email = ""
+    return JsonResponse({"service_account_email": email})
+
+
+# ---------------------------------------------------------------------------
 # GET /workspaces/{slug} — workspace detail
 # ---------------------------------------------------------------------------
 
@@ -520,33 +549,6 @@ def verify_drive_access(
     ws = resolve_workspace_for_member(request, slug)
     result = verify_drive_access_for_workspace(ws)
     return JsonResponse(result)
-
-
-# ---------------------------------------------------------------------------
-# GET /workspaces/drive-config — service-account email (any member)
-# ---------------------------------------------------------------------------
-
-
-@router.get("/drive-config", summary="Drive service-account email")
-def get_drive_config(request: HttpRequest) -> HttpResponse:
-    """Returns the Google service-account email used for Drive access.
-
-    Callers display this so the user knows which account to share their
-    Drive folder with.
-    """
-    import json
-
-    from django.http import JsonResponse
-
-    from apps.service_accounts.models import ServiceAccount
-
-    try:
-        sa = ServiceAccount.objects.get(name="ace-drive", is_active=True)
-        info = json.loads(sa.credential_json)
-        email = info.get("client_email", "")
-    except Exception:  # noqa: BLE001
-        email = ""
-    return JsonResponse({"service_account_email": email})
 
 
 # ---------------------------------------------------------------------------

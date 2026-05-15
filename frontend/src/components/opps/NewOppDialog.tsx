@@ -27,9 +27,10 @@ function deriveSlug(name: string): string {
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  workspaceSlug: string;
 }
 
-export function NewOppDialog({ open, onOpenChange }: Props) {
+export function NewOppDialog({ open, onOpenChange, workspaceSlug }: Props) {
   const navigate = useNavigate();
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
@@ -51,8 +52,8 @@ export function NewOppDialog({ open, onOpenChange }: Props) {
     setError(null);
     setSubmitting(true);
     try {
-      const result = await createOpp({ slug, display_name: displayName, idea, mode });
-      navigate(`/opps/${encodeURIComponent(result.slug)}`);
+      const result = await createOpp(workspaceSlug, { slug, display_name: displayName, idea, mode });
+      navigate(`/w/${workspaceSlug}/opps/${encodeURIComponent(result.slug)}`);
     } catch (e) {
       setError(String((e as Error).message ?? e));
       setSubmitting(false);

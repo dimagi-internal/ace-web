@@ -11,6 +11,7 @@ const URL_RE = /^https?:\/\/\S+$/;
 const MAX_BYTES = 50 * 1024;
 
 interface Props {
+  workspaceSlug: string;
   slug: string;
   runId: string;
   skill: string;
@@ -19,7 +20,7 @@ interface Props {
   webViewLink?: string;
 }
 
-export function ArtifactBody({ slug, runId, skill, artifactName, mimeType, webViewLink }: Props) {
+export function ArtifactBody({ workspaceSlug, slug, runId, skill, artifactName, mimeType, webViewLink }: Props) {
   const [state, setState] = useState<
     | { kind: "loading" }
     | { kind: "error"; message: string }
@@ -34,7 +35,7 @@ export function ArtifactBody({ slug, runId, skill, artifactName, mimeType, webVi
 
   useEffect(() => {
     setState({ kind: "loading" });
-    const url = artifactBodyUrl(slug, runId, skill, artifactName);
+    const url = artifactBodyUrl(workspaceSlug, slug, runId, skill, artifactName);
     let cancelled = false;
     fetch(url, { credentials: "include" })
       .then(async (r) => {
@@ -72,7 +73,7 @@ export function ArtifactBody({ slug, runId, skill, artifactName, mimeType, webVi
     return () => {
       cancelled = true;
     };
-  }, [slug, runId, skill, artifactName, mimeType]);
+  }, [workspaceSlug, slug, runId, skill, artifactName, mimeType]);
 
   if (state.kind === "loading") {
     return (
