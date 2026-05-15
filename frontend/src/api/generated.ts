@@ -15,7 +15,7 @@ export interface paths {
          * Auth Smoke
          * @description Internal smoke route — verifies session auth works.
          */
-        readonly get: operations["apps_api_v2_api__auth_smoke"];
+        readonly get: operations["apps_api_api__auth_smoke"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -38,10 +38,10 @@ export interface paths {
          *     Pydantic schema and return the rich dict directly — the v2 minimal
          *     schema was a Phase 1 over-simplification.
          */
-        readonly get: operations["apps_opps_api_v2_list_opps"];
+        readonly get: operations["apps_opps_api_list_opps"];
         readonly put?: never;
         /** Create opp */
-        readonly post: operations["apps_opps_api_v2_create_opp_endpoint"];
+        readonly post: operations["apps_opps_api_create_opp_endpoint"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -62,15 +62,15 @@ export interface paths {
          *     matches the frontend's OppSnapshot shape (the v2 minimal
          *     OppSnapshotOut schema was a Phase 1 over-simplification).
          */
-        readonly get: operations["apps_opps_api_v2_get_opp"];
+        readonly get: operations["apps_opps_api_get_opp"];
         readonly put?: never;
         readonly post?: never;
         /** Delete opp */
-        readonly delete: operations["apps_opps_api_v2_delete_opp"];
+        readonly delete: operations["apps_opps_api_delete_opp"];
         readonly options?: never;
         readonly head?: never;
         /** Update opp */
-        readonly patch: operations["apps_opps_api_v2_update_opp"];
+        readonly patch: operations["apps_opps_api_update_opp"];
         readonly trace?: never;
     };
     readonly "/api/w/{workspace_slug}/opps/{slug}/runs": {
@@ -87,7 +87,7 @@ export interface paths {
          *     each row in the opp card's expanded RUNS panel. Bypasses OppRunOut's
          *     thin schema — the Phase 1 v2 shape was over-simplified.
          */
-        readonly get: operations["apps_opps_api_v2_list_runs"];
+        readonly get: operations["apps_opps_api_list_runs"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -104,11 +104,11 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Run detail */
-        readonly get: operations["apps_opps_api_v2_get_run"];
+        readonly get: operations["apps_opps_api_get_run"];
         readonly put?: never;
         readonly post?: never;
         /** Delete run */
-        readonly delete: operations["apps_opps_api_v2_delete_run"];
+        readonly delete: operations["apps_opps_api_delete_run"];
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -122,7 +122,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Step detail */
-        readonly get: operations["apps_opps_api_v2_get_step"];
+        readonly get: operations["apps_opps_api_get_step"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -139,7 +139,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Artifact metadata */
-        readonly get: operations["apps_opps_api_v2_get_artifact"];
+        readonly get: operations["apps_opps_api_get_artifact"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -156,7 +156,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Download artifact binary */
-        readonly get: operations["apps_opps_api_v2_download_artifact"];
+        readonly get: operations["apps_opps_api_download_artifact"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -175,7 +175,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Fork opp run */
-        readonly post: operations["apps_opps_api_v2_fork_opp_endpoint"];
+        readonly post: operations["apps_opps_api_fork_opp_endpoint"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -190,7 +190,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Fork progress */
-        readonly get: operations["apps_opps_api_v2_fork_status"];
+        readonly get: operations["apps_opps_api_fork_status"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -207,7 +207,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Opp-eval scorecard */
-        readonly get: operations["apps_opps_api_v2_get_scorecard"];
+        readonly get: operations["apps_opps_api_get_scorecard"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -226,7 +226,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Record gate decision */
-        readonly post: operations["apps_opps_api_v2_record_gate"];
+        readonly post: operations["apps_opps_api_record_gate"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -241,7 +241,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Multi-run comparison */
-        readonly get: operations["apps_opps_api_v2_compare_runs"];
+        readonly get: operations["apps_opps_api_compare_runs"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -260,7 +260,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Seed chat from step */
-        readonly post: operations["apps_opps_api_v2_seed_chat"];
+        readonly post: operations["apps_opps_api_seed_chat"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -275,7 +275,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Drive health probe */
-        readonly get: operations["apps_opps_api_v2_opp_health"];
+        readonly get: operations["apps_opps_api_opp_health"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -294,7 +294,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Invalidate snapshot cache (admin) */
-        readonly post: operations["apps_opps_api_v2_invalidate_snapshot"];
+        readonly post: operations["apps_opps_api_invalidate_snapshot"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -309,10 +309,10 @@ export interface paths {
             readonly cookie?: never;
         };
         /** List sessions in workspace */
-        readonly get: operations["apps_sessions_api_v2_list_sessions"];
+        readonly get: operations["apps_sessions_api_list_sessions"];
         readonly put?: never;
         /** Create session */
-        readonly post: operations["apps_sessions_api_v2_create_session"];
+        readonly post: operations["apps_sessions_api_create_session"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -327,15 +327,15 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Session detail */
-        readonly get: operations["apps_sessions_api_v2_get_session"];
+        readonly get: operations["apps_sessions_api_get_session"];
         readonly put?: never;
         readonly post?: never;
         /** Delete session */
-        readonly delete: operations["apps_sessions_api_v2_delete_session"];
+        readonly delete: operations["apps_sessions_api_delete_session"];
         readonly options?: never;
         readonly head?: never;
         /** Update session */
-        readonly patch: operations["apps_sessions_api_v2_update_session"];
+        readonly patch: operations["apps_sessions_api_update_session"];
         readonly trace?: never;
     };
     readonly "/api/w/{workspace_slug}/sessions/{slug}/messages": {
@@ -346,7 +346,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Message history */
-        readonly get: operations["apps_sessions_api_v2_list_messages"];
+        readonly get: operations["apps_sessions_api_list_messages"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -363,7 +363,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Participant list */
-        readonly get: operations["apps_sessions_api_v2_list_participants"];
+        readonly get: operations["apps_sessions_api_list_participants"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -380,7 +380,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Turn state (polling) */
-        readonly get: operations["apps_sessions_api_v2_session_turn_state"];
+        readonly get: operations["apps_sessions_api_session_turn_state"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -397,7 +397,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Cost breakdown */
-        readonly get: operations["apps_sessions_api_v2_session_cost"];
+        readonly get: operations["apps_sessions_api_session_cost"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -414,7 +414,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Session structure tree */
-        readonly get: operations["apps_sessions_api_v2_session_structure"];
+        readonly get: operations["apps_sessions_api_session_structure"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -431,10 +431,10 @@ export interface paths {
             readonly cookie?: never;
         };
         /** List share tokens */
-        readonly get: operations["apps_sessions_api_v2_list_share"];
+        readonly get: operations["apps_sessions_api_list_share"];
         readonly put?: never;
         /** Create share token */
-        readonly post: operations["apps_sessions_api_v2_create_share_token"];
+        readonly post: operations["apps_sessions_api_create_share_token"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -452,7 +452,7 @@ export interface paths {
         readonly put?: never;
         readonly post?: never;
         /** Revoke share token */
-        readonly delete: operations["apps_sessions_api_v2_revoke_share_token"];
+        readonly delete: operations["apps_sessions_api_revoke_share_token"];
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -466,7 +466,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Workspace activity feed */
-        readonly get: operations["apps_activity_api_v2_activity_feed"];
+        readonly get: operations["apps_activity_api_activity_feed"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -483,7 +483,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** List video programs in workspace (latest run per program) */
-        readonly get: operations["apps_videos_api_v2_list_programs"];
+        readonly get: operations["apps_videos_api_list_programs"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -500,7 +500,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Program detail including runs list */
-        readonly get: operations["apps_videos_api_v2_get_program"];
+        readonly get: operations["apps_videos_api_get_program"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -519,7 +519,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Snapshot the latest run into a new run (save-as; both stay mutable) */
-        readonly post: operations["apps_videos_api_v2_copy_run"];
+        readonly post: operations["apps_videos_api_copy_run"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -534,7 +534,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Run detail */
-        readonly get: operations["apps_videos_api_v2_get_run"];
+        readonly get: operations["apps_videos_api_get_run"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -551,7 +551,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Structured clip library for the explorer drawer */
-        readonly get: operations["apps_videos_api_v2_get_library"];
+        readonly get: operations["apps_videos_api_get_library"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -568,7 +568,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Background-render busy flag for a run */
-        readonly get: operations["apps_videos_api_v2_get_render_status"];
+        readonly get: operations["apps_videos_api_get_render_status"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -585,10 +585,10 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Read the run's feedback markdown log */
-        readonly get: operations["apps_videos_api_v2_get_feedback"];
+        readonly get: operations["apps_videos_api_get_feedback"];
         readonly put?: never;
         /** Append a note to the run's feedback markdown log */
-        readonly post: operations["apps_videos_api_v2_post_feedback"];
+        readonly post: operations["apps_videos_api_post_feedback"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -611,7 +611,7 @@ export interface paths {
          *     operator batch many edits before paying the render cost; the
          *     "Re-render" button in the UI is the single canonical render entry.
          */
-        readonly post: operations["apps_videos_api_v2_post_edit"];
+        readonly post: operations["apps_videos_api_post_edit"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -628,7 +628,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Trigger render or rebuild-only for this run */
-        readonly post: operations["apps_videos_api_v2_post_build"];
+        readonly post: operations["apps_videos_api_post_build"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -643,7 +643,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Serve the run's generated explorer index.html */
-        readonly get: operations["apps_videos_api_v2_serve_explorer"];
+        readonly get: operations["apps_videos_api_serve_explorer"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -660,7 +660,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Serve the run's generated library.html */
-        readonly get: operations["apps_videos_api_v2_serve_library_html"];
+        readonly get: operations["apps_videos_api_serve_library_html"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -677,7 +677,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Serve an MP4 from the run's explorer media directory (Range-aware) */
-        readonly get: operations["apps_videos_api_v2_serve_media"];
+        readonly get: operations["apps_videos_api_serve_media"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -697,7 +697,7 @@ export interface paths {
          * Public shared session view
          * @description Return a shared session's messages.  No auth required.
          */
-        readonly get: operations["apps_sessions_api_v2_public_share_view"];
+        readonly get: operations["apps_sessions_api_public_share_view"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -714,10 +714,10 @@ export interface paths {
             readonly cookie?: never;
         };
         /** List my workspaces */
-        readonly get: operations["apps_workspaces_api_v2_list_workspaces"];
+        readonly get: operations["apps_workspaces_api_list_workspaces"];
         readonly put?: never;
         /** Create workspace */
-        readonly post: operations["apps_workspaces_api_v2_post_workspace"];
+        readonly post: operations["apps_workspaces_api_post_workspace"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -738,7 +738,7 @@ export interface paths {
          *     Callers display this so the user knows which account to share their
          *     Drive folder with.
          */
-        readonly get: operations["apps_workspaces_api_v2_get_drive_config"];
+        readonly get: operations["apps_workspaces_api_get_drive_config"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -755,14 +755,14 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Workspace detail */
-        readonly get: operations["apps_workspaces_api_v2_workspace_detail"];
+        readonly get: operations["apps_workspaces_api_workspace_detail"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
         /** Update workspace */
-        readonly patch: operations["apps_workspaces_api_v2_update_workspace"];
+        readonly patch: operations["apps_workspaces_api_update_workspace"];
         readonly trace?: never;
     };
     readonly "/api/workspaces/{slug}/members": {
@@ -773,7 +773,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** List workspace members */
-        readonly get: operations["apps_workspaces_api_v2_list_members"];
+        readonly get: operations["apps_workspaces_api_list_members"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -792,7 +792,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Invite a member */
-        readonly post: operations["apps_workspaces_api_v2_invite_member"];
+        readonly post: operations["apps_workspaces_api_invite_member"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -810,11 +810,11 @@ export interface paths {
         readonly put?: never;
         readonly post?: never;
         /** Remove member */
-        readonly delete: operations["apps_workspaces_api_v2_remove_member"];
+        readonly delete: operations["apps_workspaces_api_remove_member"];
         readonly options?: never;
         readonly head?: never;
         /** Change member role */
-        readonly patch: operations["apps_workspaces_api_v2_change_member_role"];
+        readonly patch: operations["apps_workspaces_api_change_member_role"];
         readonly trace?: never;
     };
     readonly "/api/workspaces/{slug}/leave": {
@@ -827,7 +827,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Leave workspace */
-        readonly post: operations["apps_workspaces_api_v2_leave_workspace"];
+        readonly post: operations["apps_workspaces_api_leave_workspace"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -842,7 +842,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Workspace audit log (owner only) */
-        readonly get: operations["apps_workspaces_api_v2_workspace_activity"];
+        readonly get: operations["apps_workspaces_api_workspace_activity"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -861,7 +861,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Verify Drive access */
-        readonly post: operations["apps_workspaces_api_v2_verify_drive_access"];
+        readonly post: operations["apps_workspaces_api_verify_drive_access"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -876,7 +876,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Invite preview (public) */
-        readonly get: operations["apps_workspaces_api_v2_invite_preview"];
+        readonly get: operations["apps_workspaces_api_invite_preview"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -895,7 +895,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Accept workspace invite */
-        readonly post: operations["apps_workspaces_api_v2_invite_accept"];
+        readonly post: operations["apps_workspaces_api_invite_accept"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -912,7 +912,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Upload a JSONL transcript */
-        readonly post: operations["apps_ingest_api_v2_upload"];
+        readonly post: operations["apps_ingest_api_upload"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -927,7 +927,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Emulator status config */
-        readonly get: operations["apps_mobile_api_v2_status"];
+        readonly get: operations["apps_mobile_api_status"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -946,7 +946,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Ensure emulator is running */
-        readonly post: operations["apps_mobile_api_v2_ensure_running"];
+        readonly post: operations["apps_mobile_api_ensure_running"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -963,7 +963,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Stop emulator */
-        readonly post: operations["apps_mobile_api_v2_stop"];
+        readonly post: operations["apps_mobile_api_stop"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -978,7 +978,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Diagnose emulator */
-        readonly get: operations["apps_mobile_api_v2_diagnose"];
+        readonly get: operations["apps_mobile_api_diagnose"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -995,7 +995,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** List emulator states */
-        readonly get: operations["apps_mobile_api_v2_states"];
+        readonly get: operations["apps_mobile_api_states"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1014,7 +1014,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Select active state */
-        readonly post: operations["apps_mobile_api_v2_select_state"];
+        readonly post: operations["apps_mobile_api_select_state"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1031,7 +1031,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Save emulator snapshot */
-        readonly post: operations["apps_mobile_api_v2_save_snapshot"];
+        readonly post: operations["apps_mobile_api_save_snapshot"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1048,7 +1048,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Load emulator snapshot */
-        readonly post: operations["apps_mobile_api_v2_load_snapshot"];
+        readonly post: operations["apps_mobile_api_load_snapshot"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1065,7 +1065,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Submit recipe for async execution */
-        readonly post: operations["apps_mobile_api_v2_run_recipe"];
+        readonly post: operations["apps_mobile_api_run_recipe"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1080,7 +1080,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Poll async job status */
-        readonly get: operations["apps_mobile_api_v2_get_job"];
+        readonly get: operations["apps_mobile_api_get_job"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1099,7 +1099,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Install APK */
-        readonly post: operations["apps_mobile_api_v2_install_apk"];
+        readonly post: operations["apps_mobile_api_install_apk"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1116,7 +1116,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Capture UI dump */
-        readonly post: operations["apps_mobile_api_v2_capture_ui_dump"];
+        readonly post: operations["apps_mobile_api_capture_ui_dump"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1133,7 +1133,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Take screenshot */
-        readonly post: operations["apps_mobile_api_v2_screenshot"];
+        readonly post: operations["apps_mobile_api_screenshot"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1150,7 +1150,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Restart the in-VM mobile runner */
-        readonly post: operations["apps_mobile_api_v2_restart_runner"];
+        readonly post: operations["apps_mobile_api_restart_runner"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1167,7 +1167,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Admin: patch in-VM launch script */
-        readonly post: operations["apps_mobile_api_v2_admin_patch_launch_script"];
+        readonly post: operations["apps_mobile_api_admin_patch_launch_script"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1182,7 +1182,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Admin: list launch script patches */
-        readonly get: operations["apps_mobile_api_v2_admin_list_launch_script_patches"];
+        readonly get: operations["apps_mobile_api_admin_list_launch_script_patches"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1199,7 +1199,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Full system overview */
-        readonly get: operations["apps_system_api_v2_overview"];
+        readonly get: operations["apps_system_api_overview"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1216,7 +1216,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** List skills */
-        readonly get: operations["apps_system_api_v2_list_skills"];
+        readonly get: operations["apps_system_api_list_skills"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1233,7 +1233,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Skill detail */
-        readonly get: operations["apps_system_api_v2_skill_detail"];
+        readonly get: operations["apps_system_api_skill_detail"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1250,7 +1250,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** List agents */
-        readonly get: operations["apps_system_api_v2_list_agents"];
+        readonly get: operations["apps_system_api_list_agents"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1267,7 +1267,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Agent detail */
-        readonly get: operations["apps_system_api_v2_agent_detail"];
+        readonly get: operations["apps_system_api_agent_detail"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1284,7 +1284,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Plugin version check */
-        readonly get: operations["apps_system_api_v2_version"];
+        readonly get: operations["apps_system_api_version"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1303,7 +1303,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** CLI diagnostic (admin) */
-        readonly post: operations["apps_system_api_v2_cli_diag"];
+        readonly post: operations["apps_system_api_cli_diag"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1318,10 +1318,10 @@ export interface paths {
             readonly cookie?: never;
         };
         /** List my personal tokens */
-        readonly get: operations["apps_service_accounts_api_v2_list_tokens"];
+        readonly get: operations["apps_service_accounts_api_list_tokens"];
         readonly put?: never;
         /** Create a personal token */
-        readonly post: operations["apps_service_accounts_api_v2_create_token"];
+        readonly post: operations["apps_service_accounts_api_create_token"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1339,7 +1339,7 @@ export interface paths {
         readonly put?: never;
         readonly post?: never;
         /** Revoke a personal token */
-        readonly delete: operations["apps_service_accounts_api_v2_delete_token"];
+        readonly delete: operations["apps_service_accounts_api_delete_token"];
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -1353,7 +1353,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Current user info */
-        readonly get: operations["apps_auth_api_v2_me"];
+        readonly get: operations["apps_auth_api_me"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1372,7 +1372,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Logout */
-        readonly post: operations["apps_auth_api_v2_logout"];
+        readonly post: operations["apps_auth_api_logout"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1389,7 +1389,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Automation login (token-gated) */
-        readonly post: operations["apps_auth_api_v2_e2e_login"];
+        readonly post: operations["apps_auth_api_e2e_login"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1404,7 +1404,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** CLI auth status */
-        readonly get: operations["apps_auth_api_v2_cli_auth_status"];
+        readonly get: operations["apps_auth_api_cli_auth_status"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1423,7 +1423,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Upload CLI credentials */
-        readonly post: operations["apps_auth_api_v2_cli_auth_upload"];
+        readonly post: operations["apps_auth_api_cli_auth_upload"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1438,7 +1438,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Nova OAuth status */
-        readonly get: operations["apps_auth_api_v2_nova_auth_status"];
+        readonly get: operations["apps_auth_api_nova_auth_status"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1457,7 +1457,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Disconnect Nova OAuth (admin) */
-        readonly post: operations["apps_auth_api_v2_nova_auth_disconnect"];
+        readonly post: operations["apps_auth_api_nova_auth_disconnect"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1474,7 +1474,7 @@ export interface paths {
         readonly get?: never;
         readonly put?: never;
         /** Promote user CLI credential to global scope (staff/automation only) */
-        readonly post: operations["apps_auth_api_v2_cli_auth_promote"];
+        readonly post: operations["apps_auth_api_cli_auth_promote"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1489,7 +1489,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Expected CLI credential blob shape (public) */
-        readonly get: operations["apps_auth_api_v2_cli_auth_expected_shape"];
+        readonly get: operations["apps_auth_api_cli_auth_expected_shape"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -1506,7 +1506,7 @@ export interface paths {
             readonly cookie?: never;
         };
         /** Health check (public) */
-        readonly get: operations["apps_common_api_v2_health"];
+        readonly get: operations["apps_common_api_health"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -3262,7 +3262,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    readonly apps_api_v2_api__auth_smoke: {
+    readonly apps_api_api__auth_smoke: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3284,7 +3284,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_list_opps: {
+    readonly apps_opps_api_list_opps: {
         readonly parameters: {
             readonly query?: {
                 readonly offset?: number;
@@ -3311,7 +3311,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_create_opp_endpoint: {
+    readonly apps_opps_api_create_opp_endpoint: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3335,7 +3335,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_get_opp: {
+    readonly apps_opps_api_get_opp: {
         readonly parameters: {
             readonly query?: {
                 readonly run_id?: string | null;
@@ -3358,7 +3358,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_delete_opp: {
+    readonly apps_opps_api_delete_opp: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3379,7 +3379,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_update_opp: {
+    readonly apps_opps_api_update_opp: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3404,7 +3404,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_list_runs: {
+    readonly apps_opps_api_list_runs: {
         readonly parameters: {
             readonly query?: {
                 readonly offset?: number;
@@ -3432,7 +3432,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_get_run: {
+    readonly apps_opps_api_get_run: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3456,7 +3456,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_delete_run: {
+    readonly apps_opps_api_delete_run: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3478,7 +3478,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_get_step: {
+    readonly apps_opps_api_get_step: {
         readonly parameters: {
             readonly query?: {
                 readonly run_id?: string | null;
@@ -3504,7 +3504,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_get_artifact: {
+    readonly apps_opps_api_get_artifact: {
         readonly parameters: {
             readonly query?: {
                 readonly run_id?: string | null;
@@ -3530,7 +3530,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_download_artifact: {
+    readonly apps_opps_api_download_artifact: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3552,7 +3552,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_fork_opp_endpoint: {
+    readonly apps_opps_api_fork_opp_endpoint: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3577,7 +3577,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_fork_status: {
+    readonly apps_opps_api_fork_status: {
         readonly parameters: {
             readonly query?: {
                 readonly source_run_id?: string;
@@ -3602,7 +3602,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_get_scorecard: {
+    readonly apps_opps_api_get_scorecard: {
         readonly parameters: {
             readonly query?: {
                 readonly run_id?: string | null;
@@ -3625,7 +3625,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_record_gate: {
+    readonly apps_opps_api_record_gate: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3651,7 +3651,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_compare_runs: {
+    readonly apps_opps_api_compare_runs: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3678,7 +3678,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_seed_chat: {
+    readonly apps_opps_api_seed_chat: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3703,7 +3703,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_opp_health: {
+    readonly apps_opps_api_opp_health: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3726,7 +3726,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_v2_invalidate_snapshot: {
+    readonly apps_opps_api_invalidate_snapshot: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3747,7 +3747,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_list_sessions: {
+    readonly apps_sessions_api_list_sessions: {
         readonly parameters: {
             readonly query?: {
                 readonly offset?: number;
@@ -3774,7 +3774,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_create_session: {
+    readonly apps_sessions_api_create_session: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3798,7 +3798,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_get_session: {
+    readonly apps_sessions_api_get_session: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3819,7 +3819,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_delete_session: {
+    readonly apps_sessions_api_delete_session: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3840,7 +3840,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_update_session: {
+    readonly apps_sessions_api_update_session: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3865,7 +3865,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_list_messages: {
+    readonly apps_sessions_api_list_messages: {
         readonly parameters: {
             readonly query?: {
                 readonly offset?: number;
@@ -3889,7 +3889,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_list_participants: {
+    readonly apps_sessions_api_list_participants: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3910,7 +3910,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_session_turn_state: {
+    readonly apps_sessions_api_session_turn_state: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3931,7 +3931,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_session_cost: {
+    readonly apps_sessions_api_session_cost: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3952,7 +3952,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_session_structure: {
+    readonly apps_sessions_api_session_structure: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3973,7 +3973,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_list_share: {
+    readonly apps_sessions_api_list_share: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -3994,7 +3994,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_create_share_token: {
+    readonly apps_sessions_api_create_share_token: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4015,7 +4015,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_revoke_share_token: {
+    readonly apps_sessions_api_revoke_share_token: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4037,7 +4037,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_activity_api_v2_activity_feed: {
+    readonly apps_activity_api_activity_feed: {
         readonly parameters: {
             readonly query?: {
                 readonly opp?: string | null;
@@ -4063,7 +4063,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_list_programs: {
+    readonly apps_videos_api_list_programs: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4085,7 +4085,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_get_program: {
+    readonly apps_videos_api_get_program: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4108,7 +4108,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_copy_run: {
+    readonly apps_videos_api_copy_run: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4131,7 +4131,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_get_run: {
+    readonly apps_videos_api_get_run: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4155,7 +4155,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_get_library: {
+    readonly apps_videos_api_get_library: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4179,7 +4179,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_get_render_status: {
+    readonly apps_videos_api_get_render_status: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4203,7 +4203,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_get_feedback: {
+    readonly apps_videos_api_get_feedback: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4227,7 +4227,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_post_feedback: {
+    readonly apps_videos_api_post_feedback: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4255,7 +4255,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_post_edit: {
+    readonly apps_videos_api_post_edit: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4283,7 +4283,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_post_build: {
+    readonly apps_videos_api_post_build: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4311,7 +4311,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_serve_explorer: {
+    readonly apps_videos_api_serve_explorer: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4333,7 +4333,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_serve_library_html: {
+    readonly apps_videos_api_serve_library_html: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4355,7 +4355,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_serve_media: {
+    readonly apps_videos_api_serve_media: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4378,7 +4378,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_v2_public_share_view: {
+    readonly apps_sessions_api_public_share_view: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4398,7 +4398,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_list_workspaces: {
+    readonly apps_workspaces_api_list_workspaces: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4418,7 +4418,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_post_workspace: {
+    readonly apps_workspaces_api_post_workspace: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4440,7 +4440,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_get_drive_config: {
+    readonly apps_workspaces_api_get_drive_config: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4458,7 +4458,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_workspace_detail: {
+    readonly apps_workspaces_api_workspace_detail: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4480,7 +4480,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_update_workspace: {
+    readonly apps_workspaces_api_update_workspace: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4506,7 +4506,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_list_members: {
+    readonly apps_workspaces_api_list_members: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4528,7 +4528,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_invite_member: {
+    readonly apps_workspaces_api_invite_member: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4554,7 +4554,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_remove_member: {
+    readonly apps_workspaces_api_remove_member: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4575,7 +4575,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_change_member_role: {
+    readonly apps_workspaces_api_change_member_role: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4598,7 +4598,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_leave_workspace: {
+    readonly apps_workspaces_api_leave_workspace: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4618,7 +4618,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_workspace_activity: {
+    readonly apps_workspaces_api_workspace_activity: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4638,7 +4638,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_verify_drive_access: {
+    readonly apps_workspaces_api_verify_drive_access: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4658,7 +4658,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_invite_preview: {
+    readonly apps_workspaces_api_invite_preview: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4680,7 +4680,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_workspaces_api_v2_invite_accept: {
+    readonly apps_workspaces_api_invite_accept: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4702,7 +4702,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_ingest_api_v2_upload: {
+    readonly apps_ingest_api_upload: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4742,7 +4742,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_status: {
+    readonly apps_mobile_api_status: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4762,7 +4762,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_ensure_running: {
+    readonly apps_mobile_api_ensure_running: {
         readonly parameters: {
             readonly query?: {
                 readonly state?: string | null;
@@ -4782,7 +4782,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_stop: {
+    readonly apps_mobile_api_stop: {
         readonly parameters: {
             readonly query?: {
                 readonly force?: boolean;
@@ -4802,7 +4802,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_diagnose: {
+    readonly apps_mobile_api_diagnose: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4822,7 +4822,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_states: {
+    readonly apps_mobile_api_states: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4842,7 +4842,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_select_state: {
+    readonly apps_mobile_api_select_state: {
         readonly parameters: {
             readonly query: {
                 readonly state: string;
@@ -4862,7 +4862,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_save_snapshot: {
+    readonly apps_mobile_api_save_snapshot: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4884,7 +4884,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_load_snapshot: {
+    readonly apps_mobile_api_load_snapshot: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4906,7 +4906,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_run_recipe: {
+    readonly apps_mobile_api_run_recipe: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4930,7 +4930,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_get_job: {
+    readonly apps_mobile_api_get_job: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4952,7 +4952,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_install_apk: {
+    readonly apps_mobile_api_install_apk: {
         readonly parameters: {
             readonly query: {
                 readonly apk_url: string;
@@ -4972,7 +4972,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_capture_ui_dump: {
+    readonly apps_mobile_api_capture_ui_dump: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -4990,7 +4990,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_screenshot: {
+    readonly apps_mobile_api_screenshot: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5008,7 +5008,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_restart_runner: {
+    readonly apps_mobile_api_restart_runner: {
         readonly parameters: {
             readonly query?: {
                 readonly wait_for_ready?: boolean;
@@ -5028,7 +5028,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_admin_patch_launch_script: {
+    readonly apps_mobile_api_admin_patch_launch_script: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5052,7 +5052,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_mobile_api_v2_admin_list_launch_script_patches: {
+    readonly apps_mobile_api_admin_list_launch_script_patches: {
         readonly parameters: {
             readonly query?: {
                 readonly offset?: number;
@@ -5073,7 +5073,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_system_api_v2_overview: {
+    readonly apps_system_api_overview: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5093,7 +5093,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_system_api_v2_list_skills: {
+    readonly apps_system_api_list_skills: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5113,7 +5113,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_system_api_v2_skill_detail: {
+    readonly apps_system_api_skill_detail: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5135,7 +5135,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_system_api_v2_list_agents: {
+    readonly apps_system_api_list_agents: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5155,7 +5155,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_system_api_v2_agent_detail: {
+    readonly apps_system_api_agent_detail: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5177,7 +5177,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_system_api_v2_version: {
+    readonly apps_system_api_version: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5197,7 +5197,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_system_api_v2_cli_diag: {
+    readonly apps_system_api_cli_diag: {
         readonly parameters: {
             readonly query?: {
                 readonly prompt?: string | null;
@@ -5220,7 +5220,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_service_accounts_api_v2_list_tokens: {
+    readonly apps_service_accounts_api_list_tokens: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5240,7 +5240,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_service_accounts_api_v2_create_token: {
+    readonly apps_service_accounts_api_create_token: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5264,7 +5264,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_service_accounts_api_v2_delete_token: {
+    readonly apps_service_accounts_api_delete_token: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5284,7 +5284,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_auth_api_v2_me: {
+    readonly apps_auth_api_me: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5304,7 +5304,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_auth_api_v2_logout: {
+    readonly apps_auth_api_logout: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5322,7 +5322,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_auth_api_v2_e2e_login: {
+    readonly apps_auth_api_e2e_login: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5346,7 +5346,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_auth_api_v2_cli_auth_status: {
+    readonly apps_auth_api_cli_auth_status: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5366,7 +5366,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_auth_api_v2_cli_auth_upload: {
+    readonly apps_auth_api_cli_auth_upload: {
         readonly parameters: {
             readonly query?: {
                 readonly scope?: string;
@@ -5388,7 +5388,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_auth_api_v2_nova_auth_status: {
+    readonly apps_auth_api_nova_auth_status: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5408,7 +5408,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_auth_api_v2_nova_auth_disconnect: {
+    readonly apps_auth_api_nova_auth_disconnect: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5426,7 +5426,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_auth_api_v2_cli_auth_promote: {
+    readonly apps_auth_api_cli_auth_promote: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5446,7 +5446,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_auth_api_v2_cli_auth_expected_shape: {
+    readonly apps_auth_api_cli_auth_expected_shape: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -5466,7 +5466,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_common_api_v2_health: {
+    readonly apps_common_api_health: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;

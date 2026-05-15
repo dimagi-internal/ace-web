@@ -1,6 +1,6 @@
-"""Contract tests for apps.sessions.api_v2.
+"""Contract tests for apps.sessions.api.
 
-Pattern mirrors apps/opps/tests/test_api_v2.py:
+Pattern mirrors apps/opps/tests/test_api.py:
 - Each helper is patched at its module-level name.
 - member_client / non_member_client fixtures for workspace access control.
 - anon_client fixture for 401 tests.
@@ -102,7 +102,7 @@ def anon_client(db, client):
 def test_list_sessions_returns_page(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.sessions.api_v2.list_sessions_in_workspace",
+        "apps.sessions.api.list_sessions_in_workspace",
         lambda ws, **kwargs: [_FAKE_SESSION_LIST],
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions")
@@ -135,7 +135,7 @@ def test_list_sessions_opp_filter_passed_through(member_client, monkeypatch):
         captured["opp_slug"] = opp_slug
         return []
 
-    monkeypatch.setattr("apps.sessions.api_v2.list_sessions_in_workspace", _fake)
+    monkeypatch.setattr("apps.sessions.api.list_sessions_in_workspace", _fake)
     resp = client.get(f"/api/w/{workspace.slug}/sessions?opp_slug=some-opp")
     assert resp.status_code == 200
     assert captured["opp_slug"] == "some-opp"
@@ -150,7 +150,7 @@ def test_list_sessions_opp_filter_passed_through(member_client, monkeypatch):
 def test_create_session_201(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.sessions.api_v2.create_session_in_workspace",
+        "apps.sessions.api.create_session_in_workspace",
         lambda ws, user, body: {**_FAKE_SESSION_LIST, "title": body.title},
     )
     resp = client.post(
@@ -194,7 +194,7 @@ def test_get_session_detail_happy(member_client, monkeypatch):
     client, workspace, _ = member_client
     detail = {**_FAKE_SESSION_LIST, "messages": []}
     monkeypatch.setattr(
-        "apps.sessions.api_v2.get_session_detail",
+        "apps.sessions.api.get_session_detail",
         lambda ws, slug: detail if slug == "sess-0001" else None,
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001")
@@ -206,7 +206,7 @@ def test_get_session_detail_happy(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_get_session_detail_unknown_slug_404(member_client, monkeypatch):
     client, workspace, _ = member_client
-    monkeypatch.setattr("apps.sessions.api_v2.get_session_detail", lambda ws, slug: None)
+    monkeypatch.setattr("apps.sessions.api.get_session_detail", lambda ws, slug: None)
     resp = client.get(f"/api/w/{workspace.slug}/sessions/does-not-exist")
     assert resp.status_code == 404
 
@@ -234,7 +234,7 @@ def test_get_session_detail_anon_401(anon_client):
 def test_patch_session_happy(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.sessions.api_v2.patch_session_in_workspace",
+        "apps.sessions.api.patch_session_in_workspace",
         lambda ws, slug, updates: {**_FAKE_SESSION_LIST, **updates},
     )
     resp = client.patch(
@@ -249,7 +249,7 @@ def test_patch_session_happy(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_patch_session_not_found_404(member_client, monkeypatch):
     client, workspace, _ = member_client
-    monkeypatch.setattr("apps.sessions.api_v2.patch_session_in_workspace", lambda *a, **k: None)
+    monkeypatch.setattr("apps.sessions.api.patch_session_in_workspace", lambda *a, **k: None)
     resp = client.patch(
         f"/api/w/{workspace.slug}/sessions/no-such",
         {"title": "x"},
@@ -289,7 +289,7 @@ def test_patch_session_non_member_404(non_member_client):
 @pytest.mark.django_db
 def test_delete_session_happy(member_client, monkeypatch):
     client, workspace, _ = member_client
-    monkeypatch.setattr("apps.sessions.api_v2.delete_session_in_workspace", lambda ws, slug: True)
+    monkeypatch.setattr("apps.sessions.api.delete_session_in_workspace", lambda ws, slug: True)
     resp = client.delete(f"/api/w/{workspace.slug}/sessions/sess-0001")
     assert resp.status_code == 204
 
@@ -298,7 +298,7 @@ def test_delete_session_happy(member_client, monkeypatch):
 def test_delete_session_not_found_404(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.sessions.api_v2.delete_session_in_workspace", lambda ws, slug: False
+        "apps.sessions.api.delete_session_in_workspace", lambda ws, slug: False
     )
     resp = client.delete(f"/api/w/{workspace.slug}/sessions/no-such")
     assert resp.status_code == 404
@@ -334,7 +334,7 @@ def test_list_messages_happy(member_client, monkeypatch):
         }
     ]
     monkeypatch.setattr(
-        "apps.sessions.api_v2.list_messages_for_session",
+        "apps.sessions.api.list_messages_for_session",
         lambda ws, slug: fake_msgs,
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/messages")
@@ -347,7 +347,7 @@ def test_list_messages_happy(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_list_messages_not_found_404(member_client, monkeypatch):
     client, workspace, _ = member_client
-    monkeypatch.setattr("apps.sessions.api_v2.list_messages_for_session", lambda ws, slug: None)
+    monkeypatch.setattr("apps.sessions.api.list_messages_for_session", lambda ws, slug: None)
     resp = client.get(f"/api/w/{workspace.slug}/sessions/no-such/messages")
     assert resp.status_code == 404
 
@@ -378,7 +378,7 @@ def test_list_participants_happy(member_client, monkeypatch):
         }
     ]
     monkeypatch.setattr(
-        "apps.sessions.api_v2.list_participants_for_session",
+        "apps.sessions.api.list_participants_for_session",
         lambda ws, slug: fake_parts,
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/participants")
@@ -390,7 +390,7 @@ def test_list_participants_happy(member_client, monkeypatch):
 def test_list_participants_not_found_404(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.sessions.api_v2.list_participants_for_session", lambda ws, slug: None
+        "apps.sessions.api.list_participants_for_session", lambda ws, slug: None
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/no-such/participants")
     assert resp.status_code == 404
@@ -412,7 +412,7 @@ def test_list_participants_non_member_404(non_member_client):
 def test_turn_state_happy(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.sessions.api_v2.get_turn_state",
+        "apps.sessions.api.get_turn_state",
         lambda ws, slug: _FAKE_TURN_STATE,
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/turn-state")
@@ -423,7 +423,7 @@ def test_turn_state_happy(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_turn_state_not_found_404(member_client, monkeypatch):
     client, workspace, _ = member_client
-    monkeypatch.setattr("apps.sessions.api_v2.get_turn_state", lambda ws, slug: None)
+    monkeypatch.setattr("apps.sessions.api.get_turn_state", lambda ws, slug: None)
     resp = client.get(f"/api/w/{workspace.slug}/sessions/no-such/turn-state")
     assert resp.status_code == 404
 
@@ -444,7 +444,7 @@ def test_turn_state_non_member_404(non_member_client):
 def test_cost_breakdown_happy(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.sessions.api_v2.get_cost_breakdown",
+        "apps.sessions.api.get_cost_breakdown",
         lambda ws, slug: _FAKE_COST_BREAKDOWN,
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/cost")
@@ -457,7 +457,7 @@ def test_cost_breakdown_happy(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_cost_breakdown_not_found_404(member_client, monkeypatch):
     client, workspace, _ = member_client
-    monkeypatch.setattr("apps.sessions.api_v2.get_cost_breakdown", lambda ws, slug: None)
+    monkeypatch.setattr("apps.sessions.api.get_cost_breakdown", lambda ws, slug: None)
     resp = client.get(f"/api/w/{workspace.slug}/sessions/no-such/cost")
     assert resp.status_code == 404
 
@@ -484,7 +484,7 @@ def test_structure_happy(member_client, monkeypatch):
         "unavailable_reason": "no-raw-jsonl",
     }
     monkeypatch.setattr(
-        "apps.sessions.api_v2.get_structure_tree",
+        "apps.sessions.api.get_structure_tree",
         lambda ws, slug, if_none_match=None: (fake_tree, None, False),
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/structure")
@@ -495,7 +495,7 @@ def test_structure_happy(member_client, monkeypatch):
 def test_structure_304_when_etag_matches(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.sessions.api_v2.get_structure_tree",
+        "apps.sessions.api.get_structure_tree",
         lambda ws, slug, if_none_match=None: ({}, '"v1:abc"', True),
     )
     resp = client.get(
@@ -510,7 +510,7 @@ def test_structure_etag_in_response(member_client, monkeypatch):
     client, workspace, _ = member_client
     fake_tree = {"schema_version": 1, "session": None, "phases": []}
     monkeypatch.setattr(
-        "apps.sessions.api_v2.get_structure_tree",
+        "apps.sessions.api.get_structure_tree",
         lambda ws, slug, if_none_match=None: (fake_tree, '"v1:abc123"', False),
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/structure")
@@ -522,7 +522,7 @@ def test_structure_etag_in_response(member_client, monkeypatch):
 def test_structure_not_found_404(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.sessions.api_v2.get_structure_tree",
+        "apps.sessions.api.get_structure_tree",
         lambda ws, slug, if_none_match=None: (None, None, False),
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/no-such/structure")
@@ -545,7 +545,7 @@ def test_structure_non_member_404(non_member_client):
 def test_list_share_tokens_empty(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.sessions.api_v2.list_share_tokens",
+        "apps.sessions.api.list_share_tokens",
         lambda ws, slug: [],
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/share")
@@ -565,7 +565,7 @@ def test_list_share_tokens_returns_tokens(member_client, monkeypatch):
         }
     ]
     monkeypatch.setattr(
-        "apps.sessions.api_v2.list_share_tokens",
+        "apps.sessions.api.list_share_tokens",
         lambda ws, slug: fake_tokens,
     )
     resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/share")
@@ -576,7 +576,7 @@ def test_list_share_tokens_returns_tokens(member_client, monkeypatch):
 @pytest.mark.django_db
 def test_list_share_tokens_not_found_404(member_client, monkeypatch):
     client, workspace, _ = member_client
-    monkeypatch.setattr("apps.sessions.api_v2.list_share_tokens", lambda ws, slug: None)
+    monkeypatch.setattr("apps.sessions.api.list_share_tokens", lambda ws, slug: None)
     resp = client.get(f"/api/w/{workspace.slug}/sessions/no-such/share")
     assert resp.status_code == 404
 

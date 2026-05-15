@@ -3,7 +3,7 @@
 These replaced the DRF ModelSerializer implementations when djangorestframework
 was removed. The public surface is identical: each class accepts a model
 instance (or list with ``many=True``) and exposes a ``.data`` dict/list
-property that consumers.py and api_v2.py read from.
+property that consumers.py and api.py read from.
 """
 from __future__ import annotations
 

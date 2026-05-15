@@ -1,7 +1,7 @@
 """Single NinjaAPI instance for the /api/ namespace.
 
 All routers register against this. Routers live in
-`apps/<app>/api_v2.py` and are imported below.
+`apps/<app>/api.py` and are imported below.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ api = NinjaAPI(
         "Replaces the legacy `/api/` DRF endpoints. "
         "Errors are RFC 7807 application/problem+json."
     ),
-    urls_namespace="api_v2",
+    urls_namespace="api",
     renderer=OrjsonRenderer(),
     docs_url=None,  # we mount Scalar at /api/docs/ separately in urls.py
     openapi_url="/openapi.json",
@@ -133,19 +133,19 @@ def _auth_smoke(request: HttpRequest) -> dict:
     return {"email": request.user.email}
 
 
-from apps.activity.api_v2 import router as activity_router  # noqa: E402
-from apps.auth.api_v2 import router as auth_router  # noqa: E402
-from apps.common.api_v2 import router as common_router  # noqa: E402
-from apps.ingest.api_v2 import router as ingest_router  # noqa: E402
-from apps.mobile.api_v2 import router as mobile_router  # noqa: E402
-from apps.opps.api_v2 import router as opps_router  # noqa: E402
-from apps.service_accounts.api_v2 import router as tokens_router  # noqa: E402
-from apps.sessions.api_v2 import router as sessions_router  # noqa: E402
-from apps.sessions.api_v2 import share_public_router  # noqa: E402, I001
-from apps.system.api_v2 import router as system_router  # noqa: E402
-from apps.videos.api_v2 import router as videos_router  # noqa: E402
-from apps.workspaces.api_v2 import invites_router  # noqa: E402, I001
-from apps.workspaces.api_v2 import router as workspaces_router  # noqa: E402, I001
+from apps.activity.api import router as activity_router  # noqa: E402
+from apps.auth.api import router as auth_router  # noqa: E402
+from apps.common.api import router as common_router  # noqa: E402
+from apps.ingest.api import router as ingest_router  # noqa: E402
+from apps.mobile.api import router as mobile_router  # noqa: E402
+from apps.opps.api import router as opps_router  # noqa: E402
+from apps.service_accounts.api import router as tokens_router  # noqa: E402
+from apps.sessions.api import router as sessions_router  # noqa: E402
+from apps.sessions.api import share_public_router  # noqa: E402, I001
+from apps.system.api import router as system_router  # noqa: E402
+from apps.videos.api import router as videos_router  # noqa: E402
+from apps.workspaces.api import invites_router  # noqa: E402, I001
+from apps.workspaces.api import router as workspaces_router  # noqa: E402, I001
 
 # Workspace-scoped resources
 api.add_router("/w/{workspace_slug}/opps", opps_router)

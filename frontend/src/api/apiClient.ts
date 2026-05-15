@@ -95,7 +95,7 @@ const authRedirectMiddleware: Middleware = {
 // that way because the API is mounted at "/api/"). So the client baseUrl is
 // just the Vite BASE_URL — no extra "/api" segment, otherwise every URL
 // becomes /ace/api/api/<path>.
-export const apiV2 = createClient<paths>({
+export const apiClient = createClient<paths>({
   baseUrl: baseUrl.replace(/\/$/, ""),
   credentials: "include",
   headers: {
@@ -103,5 +103,5 @@ export const apiV2 = createClient<paths>({
   },
 });
 
-apiV2.use(headersMiddleware);
-apiV2.use(authRedirectMiddleware);
+apiClient.use(headersMiddleware);
+apiClient.use(authRedirectMiddleware);

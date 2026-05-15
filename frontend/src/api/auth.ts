@@ -1,4 +1,4 @@
-import { apiV2 } from "./client.v2";
+import { apiClient } from "./apiClient";
 import type { components } from "./generated";
 import type { CliAuthPromoteResult, CliAuthStatus, NovaAuthStatus } from "./types.ws";
 
@@ -6,7 +6,7 @@ type NovaAuthStatusOut = components["schemas"]["NovaAuthStatusOut"];
 type MeOut = components["schemas"]["MeOut"];
 
 export const cliAuthStatus = async (): Promise<CliAuthStatus> => {
-  const { data, error } = await apiV2.GET("/api/auth/cli/status");
+  const { data, error } = await apiClient.GET("/api/auth/cli/status");
   if (error) throw new Error((error as { title?: string }).title || "Failed to get CLI auth status");
   // data is typed as CliAuthStatusOut; v2 uses global_ to avoid Python keyword clash
   return {
@@ -17,14 +17,14 @@ export const cliAuthStatus = async (): Promise<CliAuthStatus> => {
 };
 
 export const promoteCliAuthToGlobal = async (): Promise<CliAuthPromoteResult> => {
-  const { response } = await apiV2.POST("/api/auth/cli/promote" as never, {} as never);
+  const { response } = await apiClient.POST("/api/auth/cli/promote" as never, {} as never);
   if (!response.ok) throw new Error(`Promote failed: ${response.status}`);
   const data = (await response.json()) as CliAuthPromoteResult;
   return data;
 };
 
 export const novaAuthStatus = async (): Promise<NovaAuthStatus> => {
-  const { data, error } = await apiV2.GET("/api/auth/nova/status");
+  const { data, error } = await apiClient.GET("/api/auth/nova/status");
   if (error) throw new Error((error as { title?: string }).title || "Failed to get Nova auth status");
   const out: NovaAuthStatusOut = data;
   return {
@@ -38,7 +38,7 @@ export const novaAuthStatus = async (): Promise<NovaAuthStatus> => {
 };
 
 export const disconnectNova = async (): Promise<{ disconnected: boolean }> => {
-  const { response } = await apiV2.POST("/api/auth/nova/disconnect", {});
+  const { response } = await apiClient.POST("/api/auth/nova/disconnect", {});
   if (!response.ok) throw new Error(`Nova disconnect failed: ${response.status}`);
   return (await response.json()) as { disconnected: boolean };
 };
@@ -50,7 +50,7 @@ export interface CurrentUser {
 }
 
 export const getCurrentUser = async (): Promise<CurrentUser> => {
-  const { data, response } = await apiV2.GET("/api/auth/me");
+  const { data, response } = await apiClient.GET("/api/auth/me");
   if (data) {
     const out: MeOut = data as MeOut;
     return { user_id: out.id, email: out.email, display_name: out.display_name };

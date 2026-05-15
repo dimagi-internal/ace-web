@@ -12,7 +12,7 @@ must supply ``Authorization: Bearer <token>`` in its HTTP request to
 ``/api/mcp/``.  FastMCP forwards incoming headers to the httpx client via a
 custom ``BearerPassthrough`` auth class, so the Bearer token is re-used for
 every tool call and the standard ``DjangoSessionAuth`` Bearer path in
-``apps/api_v2/auth.py`` validates it normally.
+``apps/api/auth.py`` validates it normally.
 
 CSRF: Bearer-authenticated requests bypass CSRF (stateless tokens are not
 susceptible to cross-site forgery), so no CSRF tokens are needed.
@@ -123,7 +123,7 @@ def build_mcp(token: str | None = None) -> FastMCP:
         # Shouldn't happen in normal flow; guard for import-time test runs.
         django.setup()
 
-    from apps.api_v2.api import api as ninja_api
+    from apps.api.api import api as ninja_api
 
     schema = _stringify_response_codes(ninja_api.get_openapi_schema())
 

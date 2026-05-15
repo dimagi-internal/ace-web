@@ -7,8 +7,8 @@ from typing import Annotated
 from django.http import HttpRequest, HttpResponse
 from ninja import Path, Router
 
-from apps.api_v2.auth import session_auth
-from apps.api_v2.errors import (
+from apps.api.auth import session_auth
+from apps.api.errors import (
     TYPE_CONFLICT,
     TYPE_FORBIDDEN,
     TYPE_NOT_FOUND,
@@ -212,7 +212,7 @@ def get_drive_config(request: HttpRequest) -> HttpResponse:
 
 
 def get_workspace_detail(user, slug: str) -> dict | None:
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     class FakeRequest:
         pass
@@ -233,7 +233,7 @@ def workspace_detail(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     ws = resolve_workspace_for_member(request, slug)
     payload = WorkspaceOut.model_validate(_workspace_to_dict(ws, request.user)).model_dump(
@@ -250,7 +250,7 @@ def workspace_detail(
 def patch_workspace(user, slug: str, updates: dict) -> dict:
     from django.http import HttpRequest as DjangoRequest
 
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     req = DjangoRequest()
     req.user = user
@@ -278,7 +278,7 @@ def update_workspace(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     ws = resolve_workspace_for_member(request, slug)
     _require_owner_role(ws, request.user)
@@ -321,7 +321,7 @@ def list_members(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     ws = resolve_workspace_for_member(request, slug)
     members = list_members_in_workspace(ws)
@@ -385,7 +385,7 @@ def invite_member(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     ws = resolve_workspace_for_member(request, slug)
     result = invite_member_to_workspace(ws, request.user, body.email, body.role)
@@ -424,7 +424,7 @@ def remove_member(
     slug: Annotated[str, Path()],
     user_id: Annotated[int, Path()],
 ) -> HttpResponse:
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     ws = resolve_workspace_for_member(request, slug)
     remove_member_from_workspace(ws, request.user, user_id)
@@ -459,7 +459,7 @@ def leave_workspace(
     request: HttpRequest,
     slug: Annotated[str, Path()],
 ) -> HttpResponse:
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     ws = resolve_workspace_for_member(request, slug)
     leave_workspace_op(ws, request.user)
@@ -498,7 +498,7 @@ def workspace_activity(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     ws = resolve_workspace_for_member(request, slug)
     rows = get_workspace_activity(ws, request.user)
@@ -544,7 +544,7 @@ def verify_drive_access(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     ws = resolve_workspace_for_member(request, slug)
     result = verify_drive_access_for_workspace(ws)
@@ -568,7 +568,7 @@ def change_member_role(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
     from apps.workspaces.models import WorkspaceMembership
 
     ws = resolve_workspace_for_member(request, slug)

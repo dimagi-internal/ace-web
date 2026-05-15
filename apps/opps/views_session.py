@@ -1,8 +1,8 @@
 """Session-bridging helpers.
 
 All DRF view functions have been removed; the v2 Ninja router in
-apps/opps/api_v2.py handles discuss, step_chats, and opp_working_session.
-This module is kept as a shim because api_v2.py still imports
+apps/opps/api.py handles discuss, step_chats, and opp_working_session.
+This module is kept as a shim because api.py still imports
 _skill_md_relative_path via a lazy import.
 """
 from __future__ import annotations

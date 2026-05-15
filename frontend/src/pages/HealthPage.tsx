@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react"
-import { apiV2 } from "../api/client.v2"
+import { apiClient } from "../api/apiClient"
 
 export default function HealthPage() {
   const [status, setStatus] = useState<string>("loading...")
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    apiV2
+    apiClient
       .GET("/api/health")
       .then(({ data }) => setStatus(data?.status ?? "unknown"))
       .catch((e) => setError(String(e)))

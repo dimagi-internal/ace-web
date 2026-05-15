@@ -6,7 +6,7 @@ from django.test import Client
 
 @pytest.mark.django_db
 def test_health_returns_ok_when_db_and_redis_pass():
-    with patch("apps.common.api_v2.get_health_status", return_value={
+    with patch("apps.common.api.get_health_status", return_value={
         "status": "ok",
         "healthy": True,
         "checks": {
@@ -25,7 +25,7 @@ def test_health_returns_ok_when_db_and_redis_pass():
 
 @pytest.mark.django_db
 def test_health_returns_503_when_redis_down():
-    with patch("apps.common.api_v2.get_health_status", return_value={
+    with patch("apps.common.api.get_health_status", return_value={
         "status": "unhealthy",
         "healthy": False,
         "checks": {
@@ -44,7 +44,7 @@ def test_health_returns_503_when_redis_down():
 
 @pytest.mark.django_db
 def test_health_returns_503_when_db_down():
-    with patch("apps.common.api_v2.get_health_status", return_value={
+    with patch("apps.common.api.get_health_status", return_value={
         "status": "unhealthy",
         "healthy": False,
         "checks": {

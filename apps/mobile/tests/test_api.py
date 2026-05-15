@@ -1,4 +1,4 @@
-"""Contract tests for apps.mobile.api_v2."""
+"""Contract tests for apps.mobile.api."""
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -54,7 +54,7 @@ def anon_client(db, client):
 def test_mobile_status_200(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.mobile.api_v2.get_mobile_status",
+        "apps.mobile.api.get_mobile_status",
         lambda: _FAKE_STATUS,
     )
     resp = client.get("/api/mobile/status")
@@ -79,7 +79,7 @@ def test_mobile_status_anon_401(anon_client):
 def test_ensure_running_200(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.mobile.api_v2.ensure_running_op",
+        "apps.mobile.api.ensure_running_op",
         lambda state=None: {"status": "running"},
     )
     resp = client.post("/api/mobile/ensure-running")
@@ -95,7 +95,7 @@ def test_ensure_running_200(auth_client, monkeypatch):
 def test_diagnose_200(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.mobile.api_v2.diagnose_op",
+        "apps.mobile.api.diagnose_op",
         lambda: {
             "ssm_ok": True,
             "ssm_error": None,
@@ -124,7 +124,7 @@ def test_diagnose_200(auth_client, monkeypatch):
 def test_states_200(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.mobile.api_v2.list_states_op",
+        "apps.mobile.api.list_states_op",
         lambda: {"default": "v2.6", "states": [], "active": "v2.6"},
     )
     resp = client.get("/api/mobile/states")
@@ -141,7 +141,7 @@ def test_states_200(auth_client, monkeypatch):
 def test_run_recipe_202(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.mobile.api_v2.submit_run_recipe",
+        "apps.mobile.api.submit_run_recipe",
         lambda body: {"job_id": "job-abc", "status": "running"},
     )
     resp = client.post(
@@ -164,7 +164,7 @@ def test_run_recipe_202(auth_client, monkeypatch):
 def test_get_job_200(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.mobile.api_v2.get_job_status",
+        "apps.mobile.api.get_job_status",
         lambda job_id: _FAKE_JOB if job_id == "job-abc" else None,
     )
     resp = client.get("/api/mobile/jobs/job-abc")
@@ -176,7 +176,7 @@ def test_get_job_200(auth_client, monkeypatch):
 def test_get_job_404(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.mobile.api_v2.get_job_status",
+        "apps.mobile.api.get_job_status",
         lambda job_id: None,
     )
     resp = client.get("/api/mobile/jobs/nonexistent")
@@ -203,7 +203,7 @@ def test_patch_launch_script_non_admin_403(auth_client, monkeypatch):
 def test_patch_launch_script_admin_200(admin_client, monkeypatch):
     client, user = admin_client
     monkeypatch.setattr(
-        "apps.mobile.api_v2.patch_launch_script_op",
+        "apps.mobile.api.patch_launch_script_op",
         lambda u, body: {
             "id": 1,
             "created_at": "2026-05-14T09:00:00Z",
@@ -241,7 +241,7 @@ def test_list_patches_non_admin_403(auth_client):
 def test_list_patches_admin_200(admin_client, monkeypatch):
     client, _ = admin_client
     monkeypatch.setattr(
-        "apps.mobile.api_v2.list_launch_script_patches",
+        "apps.mobile.api.list_launch_script_patches",
         lambda offset=0, limit=50: {"patches": [], "total": 0, "limit": 50, "offset": 0},
     )
     resp = client.get("/api/mobile/admin/launch-script-patches")

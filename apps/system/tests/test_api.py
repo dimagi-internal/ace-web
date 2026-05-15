@@ -1,4 +1,4 @@
-"""Contract tests for apps.system.api_v2."""
+"""Contract tests for apps.system.api."""
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -74,7 +74,7 @@ def anon_client(db, client):
 @pytest.mark.django_db
 def test_overview_200(auth_client, monkeypatch):
     monkeypatch.setattr(
-        "apps.system.api_v2.get_system_overview",
+        "apps.system.api.get_system_overview",
         lambda: _FAKE_OVERVIEW,
     )
     resp = auth_client.get("/api/system/overview")
@@ -98,7 +98,7 @@ def test_overview_anon_401(anon_client):
 @pytest.mark.django_db
 def test_list_skills_200(auth_client, monkeypatch):
     monkeypatch.setattr(
-        "apps.system.api_v2.get_skills_list",
+        "apps.system.api.get_skills_list",
         lambda: [_FAKE_SKILL_SUMMARY],
     )
     resp = auth_client.get("/api/system/skills")
@@ -116,7 +116,7 @@ def test_list_skills_200(auth_client, monkeypatch):
 @pytest.mark.django_db
 def test_skill_detail_200(auth_client, monkeypatch):
     monkeypatch.setattr(
-        "apps.system.api_v2.get_skill_detail",
+        "apps.system.api.get_skill_detail",
         lambda name: _FAKE_SKILL if name == "app-summary" else None,
     )
     resp = auth_client.get("/api/system/skills/app-summary")
@@ -127,7 +127,7 @@ def test_skill_detail_200(auth_client, monkeypatch):
 @pytest.mark.django_db
 def test_skill_detail_404(auth_client, monkeypatch):
     monkeypatch.setattr(
-        "apps.system.api_v2.get_skill_detail",
+        "apps.system.api.get_skill_detail",
         lambda name: None,
     )
     resp = auth_client.get("/api/system/skills/nonexistent")
@@ -142,7 +142,7 @@ def test_skill_detail_404(auth_client, monkeypatch):
 @pytest.mark.django_db
 def test_list_agents_200(auth_client, monkeypatch):
     monkeypatch.setattr(
-        "apps.system.api_v2.get_agents_list",
+        "apps.system.api.get_agents_list",
         lambda: [_FAKE_AGENT_SUMMARY],
     )
     resp = auth_client.get("/api/system/agents")
@@ -158,7 +158,7 @@ def test_list_agents_200(auth_client, monkeypatch):
 @pytest.mark.django_db
 def test_agent_detail_200(auth_client, monkeypatch):
     monkeypatch.setattr(
-        "apps.system.api_v2.get_agent_detail",
+        "apps.system.api.get_agent_detail",
         lambda name: _FAKE_AGENT if name == "crispr-agent" else None,
     )
     resp = auth_client.get("/api/system/agents/crispr-agent")
@@ -169,7 +169,7 @@ def test_agent_detail_200(auth_client, monkeypatch):
 @pytest.mark.django_db
 def test_agent_detail_404(auth_client, monkeypatch):
     monkeypatch.setattr(
-        "apps.system.api_v2.get_agent_detail",
+        "apps.system.api.get_agent_detail",
         lambda name: None,
     )
     resp = auth_client.get("/api/system/agents/nonexistent")
@@ -184,7 +184,7 @@ def test_agent_detail_404(auth_client, monkeypatch):
 @pytest.mark.django_db
 def test_version_200(auth_client, monkeypatch):
     monkeypatch.setattr(
-        "apps.system.api_v2.get_version_info",
+        "apps.system.api.get_version_info",
         lambda: _FAKE_VERSION,
     )
     resp = auth_client.get("/api/system/version")
@@ -210,7 +210,7 @@ def test_cli_diag_admin_200(db, client, monkeypatch):
     admin = User.objects.create_user(email="admin@dimagi-ai.com")
     client.force_login(admin)
     monkeypatch.setattr(
-        "apps.system.api_v2.run_cli_diag",
+        "apps.system.api.run_cli_diag",
         lambda user, prompt=None, timeout_seconds=30.0: {
             "elapsed_seconds": 1.0,
             "returncode": 0,

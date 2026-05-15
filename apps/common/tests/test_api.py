@@ -1,4 +1,4 @@
-"""Contract tests for apps.common.api_v2."""
+"""Contract tests for apps.common.api."""
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -36,7 +36,7 @@ def anon_client(db, client):
 @pytest.mark.django_db
 def test_health_200_when_healthy(anon_client, monkeypatch):
     monkeypatch.setattr(
-        "apps.common.api_v2.get_health_status",
+        "apps.common.api.get_health_status",
         lambda: _FAKE_HEALTH_OK,
     )
     resp = anon_client.get("/api/health")
@@ -50,7 +50,7 @@ def test_health_200_when_healthy(anon_client, monkeypatch):
 @pytest.mark.django_db
 def test_health_503_when_unhealthy(anon_client, monkeypatch):
     monkeypatch.setattr(
-        "apps.common.api_v2.get_health_status",
+        "apps.common.api.get_health_status",
         lambda: _FAKE_HEALTH_UNHEALTHY,
     )
     resp = anon_client.get("/api/health")
@@ -64,7 +64,7 @@ def test_health_503_when_unhealthy(anon_client, monkeypatch):
 def test_health_accessible_without_auth(anon_client, monkeypatch):
     """Health check must be public — no session required."""
     monkeypatch.setattr(
-        "apps.common.api_v2.get_health_status",
+        "apps.common.api.get_health_status",
         lambda: _FAKE_HEALTH_OK,
     )
     # anon client — no login

@@ -9,8 +9,8 @@ from __future__ import annotations
 from django.http import HttpRequest, HttpResponse
 from ninja import Router
 
-from apps.api_v2.auth import session_auth
-from apps.api_v2.errors import TYPE_FORBIDDEN, ProblemError
+from apps.api.auth import session_auth
+from apps.api.errors import TYPE_FORBIDDEN, ProblemError
 
 from .schemas import (
     CliAuthExpectedShapeOut,

@@ -1,8 +1,8 @@
 """Helpers for in-flight fork progress tracking.
 
 All DRF write-view functions have been removed; the v2 Ninja router in
-apps/opps/api_v2.py handles all mutations.  This module is kept as a
-shim because api_v2.py still imports _FORK_PROGRESS_TTL and
+apps/opps/api.py handles all mutations.  This module is kept as a
+shim because api.py still imports _FORK_PROGRESS_TTL and
 _fork_progress_key via lazy imports.
 """
 from __future__ import annotations

@@ -1,6 +1,6 @@
 from django.http import HttpResponseNotModified
 
-from apps.api_v2.etag import compute_etag, maybe_not_modified
+from apps.api.etag import compute_etag, maybe_not_modified
 
 
 def test_compute_etag_stable_for_same_payload():

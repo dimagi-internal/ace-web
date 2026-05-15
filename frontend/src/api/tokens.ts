@@ -1,4 +1,4 @@
-import { apiV2 } from "./client.v2";
+import { apiClient } from "./apiClient";
 import type { components } from "./generated";
 
 type PersonalTokenOut = components["schemas"]["PersonalTokenOut"];
@@ -20,13 +20,13 @@ export type PersonalTokenCreated = PersonalTokenCreatedOut;
 // ---------------------------------------------------------------------------
 
 export const listTokens = async (): Promise<PersonalToken[]> => {
-  const { data, error } = await apiV2.GET("/api/tokens");
+  const { data, error } = await apiClient.GET("/api/tokens");
   if (error) throw new Error((error as { title?: string }).title || "Failed to list tokens");
   return data as PersonalToken[];
 };
 
 export const createToken = async (name: string): Promise<PersonalTokenCreated> => {
-  const { data, error } = await apiV2.POST("/api/tokens", {
+  const { data, error } = await apiClient.POST("/api/tokens", {
     body: { name },
   });
   if (error) throw new Error((error as { title?: string }).title || "Failed to create token");
@@ -34,7 +34,7 @@ export const createToken = async (name: string): Promise<PersonalTokenCreated> =
 };
 
 export const revokeToken = async (id: number): Promise<void> => {
-  const { response } = await apiV2.DELETE("/api/tokens/{token_id}", {
+  const { response } = await apiClient.DELETE("/api/tokens/{token_id}", {
     params: { path: { token_id: id } },
   });
   if (!response.ok && response.status !== 204) {

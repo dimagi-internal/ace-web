@@ -8,8 +8,8 @@ from django.http import HttpRequest, HttpResponse
 from ninja import File, Form, Router
 from ninja.files import UploadedFile
 
-from apps.api_v2.auth import session_auth
-from apps.api_v2.errors import TYPE_CONFLICT, TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
+from apps.api.auth import session_auth
+from apps.api.errors import TYPE_CONFLICT, TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
 
 from .schemas import IngestUploadOut
 
@@ -180,7 +180,7 @@ def upload(
         ).exists():
             raise ProblemError(403, "Forbidden", type_="https://ace-web.dimagi.com/problems/forbidden")
     elif workspace_slug:
-        from apps.api_v2.deps import resolve_workspace_for_member
+        from apps.api.deps import resolve_workspace_for_member
 
         workspace = resolve_workspace_for_member(request, workspace_slug)
 

@@ -1,4 +1,4 @@
-"""Contract tests for apps.auth.api_v2."""
+"""Contract tests for apps.auth.api."""
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -48,7 +48,7 @@ def anon_client(db, client):
 def test_me_200(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.auth.api_v2.get_me_data",
+        "apps.auth.api.get_me_data",
         lambda user: _FAKE_ME,
     )
     resp = client.get("/api/auth/me")
@@ -115,7 +115,7 @@ def test_e2e_login_success_200(anon_client, settings, monkeypatch):
     settings.ACE_E2E_AUTH_TOKEN = "secret-token"
     settings.ACE_ALLOWED_EMAIL_DOMAINS = []
     monkeypatch.setattr(
-        "apps.auth.api_v2.do_e2e_login",
+        "apps.auth.api.do_e2e_login",
         lambda req, body: {"user_id": 42, "email": body.email},
     )
     resp = anon_client.post(
@@ -136,7 +136,7 @@ def test_e2e_login_success_200(anon_client, settings, monkeypatch):
 def test_cli_status_200(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.auth.api_v2.get_cli_auth_status",
+        "apps.auth.api.get_cli_auth_status",
         lambda user: _FAKE_CLI_STATUS,
     )
     resp = client.get("/api/auth/cli/status")
@@ -160,7 +160,7 @@ def test_cli_status_anon_401(anon_client):
 def test_nova_status_200(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.auth.api_v2.get_nova_status",
+        "apps.auth.api.get_nova_status",
         lambda user: _FAKE_NOVA_STATUS,
     )
     resp = client.get("/api/auth/nova/status")

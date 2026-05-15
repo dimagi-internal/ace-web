@@ -1,4 +1,4 @@
-"""Contract tests for apps.activity.api_v2."""
+"""Contract tests for apps.activity.api."""
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -71,7 +71,7 @@ def anon_client(db, client):
 def test_activity_feed_200(member_client, monkeypatch):
     client, ws, _ = member_client
     monkeypatch.setattr(
-        "apps.activity.api_v2.get_activity_feed",
+        "apps.activity.api.get_activity_feed",
         lambda workspace, user, request, **kwargs: _FAKE_ACTIVITY,
     )
     resp = client.get(f"/api/w/{ws.slug}/activity")
@@ -104,6 +104,6 @@ def test_activity_feed_opp_filter_passed_through(member_client, monkeypatch):
         captured["opp_slug"] = opp_slug
         return {"items": [], "total": 0}
 
-    monkeypatch.setattr("apps.activity.api_v2.get_activity_feed", _fake)
+    monkeypatch.setattr("apps.activity.api.get_activity_feed", _fake)
     client.get(f"/api/w/{ws.slug}/activity?opp=my-opp")
     assert captured["opp_slug"] == "my-opp"
