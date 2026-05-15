@@ -9,7 +9,6 @@ import logging
 from urllib.parse import urlencode
 
 from django.conf import settings
-from django.urls import reverse
 
 from .models import SlackInstallation, SlackUserLink
 from .pending import save_pending_command
@@ -52,8 +51,13 @@ def _get_user_link(installation, slack_user_id: str) -> SlackUserLink | None:
 
 
 def _link_url(nonce: str) -> str:
+    # ACE_PUBLIC_BASE_URL already includes the /ace script-name prefix
+    # (e.g., https://labs.connect.dimagi.com/ace). reverse() also prepends
+    # FORCE_SCRIPT_NAME, so concatenating both duplicates to /ace/ace/...
+    # The other call sites in blocks.py / verbs_run.py / verbs_query.py
+    # hardcode the route path for the same reason — do the same here.
     base = getattr(settings, "ACE_PUBLIC_BASE_URL", "https://labs.connect.dimagi.com/ace")
-    return f"{base}{reverse('slack_auth:link')}?{urlencode({'nonce': nonce})}"
+    return f"{base}/auth/slack/link/?{urlencode({'nonce': nonce})}"
 
 
 def _ephemeral(text: str) -> dict:
