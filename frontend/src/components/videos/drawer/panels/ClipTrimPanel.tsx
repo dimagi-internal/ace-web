@@ -42,6 +42,7 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
 
   const [draft, setDraft] = useState(initial);
   const [sourceDuration, setSourceDuration] = useState<number>(0);
+  const [mediaLoadFailed, setMediaLoadFailed] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Probe the source video for its real duration on load.
@@ -108,18 +109,27 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
-      {src && (
+      {src && !mediaLoadFailed && (
         <video
           ref={videoRef}
           src={src}
           controls
           preload="metadata"
+          onError={() => setMediaLoadFailed(true)}
           // Cap the preview height so the trim controls stay in view.
           // The 480px-wide drawer at aspect-video was ~270px tall — too
           // dominant when the rest of the panel is what the user is
           // actually adjusting.
           className="max-h-48 w-full rounded bg-black object-contain"
         />
+      )}
+      {src && mediaLoadFailed && (
+        <div className="rounded border border-dashed bg-muted/20 p-3 text-xs text-muted-foreground">
+          Source clip <code className="rounded bg-muted px-1">@{alias}</code> isn't cached on this
+          host yet — run <code className="rounded bg-muted px-1">npm run hydrate -- --program={programSlug}</code> to
+          pull it from Drive, or click <strong>Re-render</strong> (the renderer hydrates as part
+          of its setup). Trim values can still be edited blind via the inputs below.
+        </div>
       )}
       {ready ? (
         <TrimBar

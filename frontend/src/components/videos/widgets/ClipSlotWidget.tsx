@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useBeatEditor } from "../BeatEditorContext";
 import type { ClipObject } from "../types";
 
@@ -14,6 +15,7 @@ function aliasFromRef(ref: string): string | null {
 
 export function ClipSlotWidget({ beatId, clipKind, index }: Props) {
   const { effectiveSpec, workspaceSlug, programSlug, runId, dispatch } = useBeatEditor();
+  const [mediaLoadFailed, setMediaLoadFailed] = useState(false);
   const slot =
     clipKind === "scene-clip"
       ? effectiveSpec.scene?.clips[index]
@@ -29,10 +31,14 @@ export function ClipSlotWidget({ beatId, clipKind, index }: Props) {
       : "untrimmed";
 
   // Source-clip MP4 served by the existing serve_media endpoint.
+  // 404s if the host hasn't run `npm run hydrate` to pull the Drive
+  // alias into ~/.cache/connect-videos/<gdriveId>.<ext>. On error we
+  // swap to a placeholder rather than leaving an empty black box.
   const mediaUrl =
     alias && alias !== "(literal path)"
       ? `/api/w/${workspaceSlug}/videos/programs/${programSlug}/runs/${runId}/media/${alias}.mp4`
       : null;
+  const showVideo = mediaUrl && !mediaLoadFailed;
 
   return (
     <div
@@ -53,15 +59,25 @@ export function ClipSlotWidget({ beatId, clipKind, index }: Props) {
           ✏ Edit trim
         </span>
       </header>
-      {mediaUrl && (
-        <video
-          src={mediaUrl}
-          preload="metadata"
-          muted
-          className="mb-2 aspect-video w-full rounded bg-black"
-        />
-      )}
-      <div className="font-mono text-xs text-muted-foreground">{trim}</div>
+      <div className="flex items-start gap-3">
+        {/* Thumbnail-sized preview (not full-width 16:9). The in-page
+            card is for orientation; the drawer panel is where the user
+            actually inspects/scrubs the clip at higher fidelity. */}
+        {showVideo ? (
+          <video
+            src={mediaUrl!}
+            preload="metadata"
+            muted
+            onError={() => setMediaLoadFailed(true)}
+            className="h-20 w-36 flex-shrink-0 rounded bg-black object-cover"
+          />
+        ) : (
+          <div className="flex h-20 w-36 flex-shrink-0 items-center justify-center rounded border border-dashed bg-muted/40 text-center text-[10px] text-muted-foreground">
+            {mediaUrl ? "preview not cached on host" : "literal path"}
+          </div>
+        )}
+        <div className="flex-1 font-mono text-xs text-muted-foreground">{trim}</div>
+      </div>
     </div>
   );
 }
