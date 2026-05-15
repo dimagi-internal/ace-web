@@ -6,7 +6,6 @@ the more interesting assertion. We count drive.* calls via mock.spy.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
