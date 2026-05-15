@@ -540,6 +540,47 @@ def apply_edit(workspace: Workspace, slug: str, run_id: str, body: dict[str, Any
     return result
 
 
+@dataclass(frozen=True)
+class BatchResult:
+    ok: bool
+    applied: int
+    message: str
+
+
+def apply_edit_batch(
+    workspace: Workspace,
+    slug: str,
+    run_id: str,
+    ops: list[dict[str, Any]],
+) -> BatchResult:
+    """Apply N edit ops to spec.yaml in one Drive round-trip. All-or-nothing:
+    if any op fails validation, the doc is not saved and ``applied=0``.
+
+    Empty batch is a no-op (returns ok=True, applied=0) with no Drive I/O.
+    """
+    if not ops:
+        return BatchResult(True, 0, "no-op (empty batch)")
+
+    layout, client = layout_for(workspace)
+    spec_yaml = drive.read_spec(layout, client, slug, run_id)
+    if spec_yaml is None:
+        return BatchResult(False, 0, f"Spec not found for {slug}/{run_id}")
+
+    y = _yaml()
+    doc = y.load(spec_yaml)
+    messages: list[str] = []
+    for i, op in enumerate(ops):
+        result = _apply_single_op(doc, op)
+        if not result.ok:
+            return BatchResult(False, 0, f"op[{i}] failed: {result.message}")
+        messages.append(result.message)
+
+    new_yaml = _dump_yaml(doc)
+    drive.write_spec(layout, client, slug, run_id, new_yaml)
+    cache.set_spec(workspace.slug, slug, run_id, new_yaml)
+    return BatchResult(True, len(ops), "; ".join(messages))
+
+
 # ---------------------------------------------------------------------------
 # existing_content/ — shared binary assets (audio cache + music bed)
 # ---------------------------------------------------------------------------
