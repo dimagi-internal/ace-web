@@ -15,6 +15,13 @@ import chcYaml from "../programs/chc/runs/run-001/spec.yaml";
 
 interface VideoProps {
   programSlug: string;
+  /**
+   * Raw spec.yaml text. The render CLI (scripts/render.ts) loads the
+   * spec from disk and passes it through verbatim so any program slug
+   * works without a Root.tsx registry update. Studio preview omits
+   * this and falls back to PROGRAMS_REGISTRY for the bundled programs.
+   */
+  specYaml?: string;
   captions?: { startFrame: number; endFrame: number; text: string }[];
 }
 
@@ -41,11 +48,17 @@ const brand = defaults.brand
     }
   : BRAND_FALLBACK;
 
-const ProgramVideo: React.FC<VideoProps> = ({ programSlug, captions = [] }) => {
-  const yamlText = PROGRAMS_REGISTRY[programSlug];
+const ProgramVideo: React.FC<VideoProps> = ({ programSlug, specYaml, captions = [] }) => {
+  // Render-CLI path: spec passed verbatim via props. Studio-preview
+  // path: look up the slug in the bundled registry. The render CLI
+  // wins so new programs created via /ace:video-from-program-page
+  // render immediately without a registry edit.
+  const yamlText = specYaml ?? PROGRAMS_REGISTRY[programSlug];
   if (!yamlText) {
     throw new Error(
-      `Unknown program slug "${programSlug}". Register its YAML in src/Root.tsx PROGRAMS_REGISTRY.`
+      `Unknown program slug "${programSlug}" and no specYaml prop provided. ` +
+        `For Studio preview, register the YAML in src/Root.tsx PROGRAMS_REGISTRY; ` +
+        `for the render CLI, ensure scripts/render.ts passes specYaml in props.`
     );
   }
   const spec: ProgramSpec = applyManifestRefs(parseProgramSpec(yamlText));

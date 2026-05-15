@@ -23,6 +23,11 @@ RUN echo "claude-cli cache key: ${CLAUDE_CLI_REF}" && \
     gnupg \
     git \
     unzip \
+    # ffmpeg is the muxer the video-production render chain shells out to
+    # at the end of `npm run render` (silent.mp4 + per-beat narration mp3s
+    # → output.mp4). Without it the chain dies with "ffmpeg: not found"
+    # after the heavy Remotion render — wasting 60+ seconds of work.
+    ffmpeg \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     # tsx@4.21.0 is global so the ACE plugin's MCP servers — declared as
