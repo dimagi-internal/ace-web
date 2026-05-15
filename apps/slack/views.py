@@ -82,3 +82,83 @@ def events(request: HttpRequest) -> HttpResponse:
     if body.get("type") == "url_verification":
         return JsonResponse({"challenge": body["challenge"]})
     return JsonResponse({"ok": True})
+
+
+from urllib.parse import urlencode  # noqa: E402
+
+from django.contrib.auth.decorators import login_required, user_passes_test  # noqa: E402
+from django.http import HttpResponseBadRequest, HttpResponseRedirect  # noqa: E402
+from slack_sdk import WebClient  # noqa: E402
+from slack_sdk.errors import SlackApiError  # noqa: E402
+
+from apps.workspaces.models import Workspace  # noqa: E402
+
+from .models import SlackInstallation  # noqa: E402
+
+_BOT_SCOPES = [
+    "commands", "chat:write", "chat:write.public",
+    "users:read", "users:read.email",
+]
+
+
+def _is_staff(user) -> bool:
+    return user.is_authenticated and user.is_staff
+
+
+@login_required
+@user_passes_test(_is_staff)
+def install(request: HttpRequest) -> HttpResponse:
+    """Kick off the admin OAuth flow."""
+    if not settings.SLACK_CLIENT_ID:
+        return HttpResponseBadRequest("SLACK_CLIENT_ID not configured")
+    params = {
+        "client_id": settings.SLACK_CLIENT_ID,
+        "scope": ",".join(_BOT_SCOPES),
+        # No user_scope — bot install only. Per-user identity link is
+        # a separate Django-side OAuth.
+        "redirect_uri": request.build_absolute_uri("/api/slack/oauth/callback"),
+    }
+    return HttpResponseRedirect("https://slack.com/oauth/v2/authorize?" + urlencode(params))
+
+
+def _exchange_code(code: str, redirect_uri: str) -> dict:
+    client = WebClient()
+    return client.oauth_v2_access(
+        client_id=settings.SLACK_CLIENT_ID,
+        client_secret=settings.SLACK_CLIENT_SECRET,
+        code=code,
+        redirect_uri=redirect_uri,
+    ).data
+
+
+@login_required
+@user_passes_test(_is_staff)
+def oauth_callback(request: HttpRequest) -> HttpResponse:
+    code = request.GET.get("code")
+    if not code:
+        return HttpResponseBadRequest("missing code")
+    redirect_uri = request.build_absolute_uri("/api/slack/oauth/callback")
+    try:
+        data = _exchange_code(code, redirect_uri)
+    except SlackApiError as e:
+        logger.exception("slack oauth exchange failed")
+        return HttpResponseBadRequest(f"oauth failed: {e.response.get('error')}")
+    if not data.get("ok"):
+        return HttpResponseBadRequest(f"oauth not ok: {data}")
+    workspace = Workspace.objects.get(slug="dimagi-team")
+    inst, _ = SlackInstallation.objects.update_or_create(
+        slack_team_id=data["team"]["id"],
+        defaults={
+            "slack_team_name": data["team"]["name"],
+            "bot_user_id": data["bot_user_id"],
+            "ace_workspace": workspace,
+            "installed_by_user": request.user,
+        },
+    )
+    inst.bot_token = data["access_token"]
+    inst.save()
+    return HttpResponse(
+        f"<h1>Installed</h1><p>Slack team <b>{inst.slack_team_name}</b> "
+        f"is now wired up. ace workspace: <b>{workspace.slug}</b>.</p>",
+        status=200,
+    )
