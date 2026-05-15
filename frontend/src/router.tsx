@@ -6,6 +6,7 @@ import { AuthCliPage } from "./pages/AuthCliPage";
 import { ChatPage } from "./pages/ChatPage";
 import { ChatRedirectPage } from "./pages/ChatRedirectPage";
 import InviteAcceptPage from "./pages/InviteAcceptPage";
+import MediaLibraryPage from "./pages/MediaLibraryPage";
 import { NoWorkspaceRedirect } from "./pages/NoWorkspaceRedirect";
 import OppComparePage from "./pages/OppComparePage";
 import OppListPage from "./pages/OppListPage";
@@ -56,6 +57,7 @@ export const router = createBrowserRouter(
             },
             { path: "sessions", element: <SessionsPage /> },
             { path: "videos", element: <VideosListPage /> },
+            { path: "videos/library", element: <MediaLibraryPage /> },
             { path: "videos/:programSlug", element: <VideoExplorerPage /> },
             {
               path: "videos/:programSlug/runs/:runId",
