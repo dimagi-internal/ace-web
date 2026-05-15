@@ -7,6 +7,7 @@ Pure: no Django, no IO. Tested against fixture-derived event lists.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,7 +22,10 @@ from apps.ingest._common import (
 from apps.ingest.parser import CostEvent
 from apps.ingest.pricing import compute_cost
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+# Subjects like "Phase 3: commcare-setup (Nova builds)" — capture the skill slug.
+_PHASE_SUBJECT_RE = re.compile(r"^Phase \d+:\s*([a-z][a-z0-9-]+)")
 
 
 def _tool_label(tool_name: str, tool_input: dict | None) -> str:
@@ -105,6 +109,27 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         if e.kind == "tool_use" and e.tool_name in ("Skill", "Agent") and e.uuid
     }
     pending_dispatch: dict[str, tuple[dict[str, Any] | None, float | None]] = {}
+
+    # Pre-scan TaskCreate events to build task_id -> phase_name. The ACE
+    # orchestrator publishes a `Phase N: <skill>...` task list up front, then
+    # marks each one in_progress via TaskUpdate as it advances. This is the
+    # *only* phase-boundary signal for phases dispatched inline (subagents
+    # can't nest, so commcare-setup et al. run from the orchestrator without
+    # a Skill tool call). TaskCreate returns sequential task_ids 1..N in
+    # transcript order, so we count instead of trying to parse a return value.
+    task_phase_map: dict[str, str] = {}
+    task_counter = 0
+    for e in events:
+        if e.kind != "tool_use" or e.tool_name != "TaskCreate":
+            continue
+        task_counter += 1
+        subject = (e.tool_input or {}).get("subject", "")
+        m = _PHASE_SUBJECT_RE.match(subject)
+        if not m:
+            continue
+        entry = registry_lookup(phase_index, m.group(1))
+        if entry is not None:
+            task_phase_map[str(task_counter)] = entry["phase"]
 
     # Per-phase orchestrator-thinking accumulators. Top-level assistant turns
     # (no open Skill/Agent frame, not themselves a dispatch turn) belong to
@@ -325,6 +350,23 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                         frame.cost += pending_cost
                 open_frames.append(frame)
                 continue
+
+            # Phase-boundary marker: top-level TaskUpdate setting a known
+            # phase-bearing task to in_progress. See the task_phase_map
+            # pre-scan above for why this is the only signal for inline-
+            # dispatched ACE phases. Advance before attaching so the marker
+            # tool itself lands in the new phase (it's the "Phase 3 starts
+            # here" beat, not the tail of Phase 2).
+            if (
+                tool_name == "TaskUpdate"
+                and not open_frames
+                and (event.tool_input or {}).get("status") == "in_progress"
+            ):
+                new_phase = task_phase_map.get(
+                    str((event.tool_input or {}).get("taskId", ""))
+                )
+                if new_phase:
+                    current_phase = new_phase
 
             # Regular tool call (Bash, Read, Edit, etc.)
             tool_node = {

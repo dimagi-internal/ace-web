@@ -9,10 +9,10 @@ def _events(filename="cost_session.jsonl"):
     return events
 
 
-def test_aggregate_returns_schema_v2_with_session_totals():
+def test_aggregate_returns_schema_v3_with_session_totals():
     from apps.ingest.structure_aggregator import aggregate
     tree = aggregate(_events())
-    assert tree["schema_version"] == 2
+    assert tree["schema_version"] == 3
     assert "session" in tree
     assert "phases" in tree
     assert "computed_at" in tree
@@ -399,6 +399,95 @@ def test_phase_wall_is_span_not_sum_when_orch_overlaps_tool(tmp_path):
     assert orch["wall_time_seconds"] == 100, (
         f"expected 100s span, got {orch['wall_time_seconds']}s — "
         "sum-based rollup is leaking tool wall on top of the orch span"
+    )
+
+
+def test_inline_phase_advance_via_task_update(tmp_path, monkeypatch):
+    """ACE subagents can't call other subagents, so later phases (like
+    commcare-setup) run inline from the orchestrator rather than via a Skill
+    dispatch. The orchestrator marks the boundary with a TaskUpdate(status=
+    in_progress) referencing a task whose subject was "Phase N: <skill>".
+    The aggregator advances current_phase on that signal so inline work
+    lands in the right phase bucket — otherwise Phase 3 gets swallowed
+    into Phase 2's tail."""
+    from apps.ingest import structure_aggregator
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+    monkeypatch.setattr(
+        structure_aggregator, "skill_phase_index",
+        lambda: {
+            "scenarios-and-acceptance": {
+                "phase": "phase-2-scenarios-and-acceptance",
+                "phase_display": "Phase 2: Scenarios and Acceptance",
+                "phase_ordinal": 2,
+                "skill_display": "Scenarios & Acceptance",
+            },
+            "commcare-setup": {
+                "phase": "phase-3-commcare-setup",
+                "phase_display": "Phase 3: CommCare Setup",
+                "phase_ordinal": 3,
+                "skill_display": "CommCare Setup",
+            },
+        },
+    )
+
+    jsonl = tmp_path / "inline_phases.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        # Up-front TaskCreate calls (task ids 1, 2 in transcript order).
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tc1","name":"TaskCreate",'
+        '"input":{"subject":"Phase 2: scenarios-and-acceptance"}}]}}\n'
+        '{"type":"user","uuid":"u2","timestamp":"2026-05-10T14:00:01Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tc1",'
+        '"content":"created"}]}}\n'
+        '{"type":"assistant","uuid":"u3","timestamp":"2026-05-10T14:00:02Z",'
+        '"message":{"id":"m3","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tc2","name":"TaskCreate",'
+        '"input":{"subject":"Phase 3: commcare-setup (Nova builds)"}}]}}\n'
+        '{"type":"user","uuid":"u4","timestamp":"2026-05-10T14:00:03Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tc2",'
+        '"content":"created"}]}}\n'
+        # Dispatch Phase 2 via Skill — sets current_phase to phase-2.
+        '{"type":"assistant","uuid":"u5","timestamp":"2026-05-10T14:00:04Z",'
+        '"message":{"id":"m5","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"ts1","name":"Skill",'
+        '"input":{"skill":"scenarios-and-acceptance"}}]}}\n'
+        '{"type":"user","uuid":"u6","timestamp":"2026-05-10T14:00:05Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"ts1",'
+        '"content":"done"}]}}\n'
+        # Orchestrator advances to Phase 3 via TaskUpdate — NO Skill dispatch.
+        '{"type":"assistant","uuid":"u7","timestamp":"2026-05-10T14:00:06Z",'
+        '"message":{"id":"m7","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tu2","name":"TaskUpdate",'
+        '"input":{"status":"in_progress","taskId":"2"}}]}}\n'
+        '{"type":"user","uuid":"u8","timestamp":"2026-05-10T14:00:07Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tu2",'
+        '"content":"ok"}]}}\n'
+        # Inline Phase 3 work — top-level Bash, no enclosing skill.
+        '{"type":"assistant","uuid":"u9","timestamp":"2026-05-10T14:00:08Z",'
+        '"message":{"id":"m9","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tb1","name":"Bash",'
+        '"input":{"command":"echo phase-3 inline"}}]}}\n'
+        '{"type":"user","uuid":"u10","timestamp":"2026-05-10T14:00:09Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tb1",'
+        '"content":"phase-3 inline"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+
+    phase_names = [p["name"] for p in tree["phases"]]
+    assert "phase-3-commcare-setup" in phase_names, (
+        f"phase-3 should exist after inline advance; got {phase_names}"
+    )
+    p3 = next(p for p in tree["phases"] if p["name"] == "phase-3-commcare-setup")
+    bash_tools = [
+        c for c in p3["children"]
+        if c["kind"] == "tool" and c["tool_name"] == "Bash"
+    ]
+    assert bash_tools, (
+        "inline Bash after the TaskUpdate(in_progress) should land in Phase 3"
     )
 
 
