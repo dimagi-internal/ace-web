@@ -65,7 +65,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from playwright.sync_api import Page, sync_playwright, expect
+    from playwright.sync_api import Page, expect, sync_playwright
 except ImportError:
     print("Run with `uv run --extra walkthrough`", file=sys.stderr)
     sys.exit(2)
