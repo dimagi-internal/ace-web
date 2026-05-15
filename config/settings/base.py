@@ -276,6 +276,8 @@ SLACK_CLIENT_ID = env("SLACK_CLIENT_ID", default="")
 SLACK_CLIENT_SECRET = env("SLACK_CLIENT_SECRET", default="")
 SLACK_SIGNING_SECRET = env("SLACK_SIGNING_SECRET", default="")
 SLACK_DEFAULT_INSTALLATION_ID = env("SLACK_DEFAULT_INSTALLATION_ID", default="")
+ACE_PUBLIC_BASE_URL = env("ACE_PUBLIC_BASE_URL",
+                          default="https://labs.connect.dimagi.com/ace")
 
 # --- Allowed email domains ---
 # Empty list = allow any Connect-authenticated user. Workspace memberships
