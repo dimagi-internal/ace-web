@@ -480,20 +480,44 @@ narration:
     assert doc["narration"]["by_beat"]["hook"] == "Hello"
 
 
-def test_stage_rewrites_library_refs_to_gdrive(workspace, fake_drive, videos_root):
+@pytest.mark.django_db
+def test_stage_rewrites_library_refs_to_gdrive(fake_drive, videos_root):
     """Local staged spec.yaml has ``library:`` refs rewritten to ``gdrive:``.
 
     The Drive-side spec keeps the stable ``library:`` references; the
     local scratch copy fed to the renderer is the rewritten form.
+    Library refs resolve via the DB tables (populated here by sync).
     """
+    import json
+
     import yaml as pyyaml
+    from django.contrib.auth import get_user_model
+
+    from apps.videos.library import sync as lib_sync
+    from apps.workspaces.models import Workspace as WorkspaceModel
+
+    User = get_user_model()
+    creator = User.objects.create_user(email="creator@example.com")
+    workspace = WorkspaceModel.objects.create(
+        slug="dimagi-team", display_name="Dimagi",
+        drive_root_folder_id=fake_drive.workspace_root_id,
+        created_by=creator,
+    )
 
     layout = drive.resolve_layout(workspace, fake_drive.client)
-    # Seed a library video file.
+    # Seed a library video file + its sidecar so the sync picks it up.
     drive_id = drive.upload_library_file(
         layout, fake_drive.client, drive.LIBRARY_VIDEO,
         "drone.mp4", b"x", "video/mp4", subfolder="uganda",
     )
+    drive.upload_library_file(
+        layout, fake_drive.client, drive.LIBRARY_VIDEO,
+        "drone.json",
+        json.dumps({"name": "Drone", "tags": []}).encode(),
+        "application/json", subfolder="uganda",
+    )
+    lib_sync.sync_import_video(workspace)
+
     spec_yaml = (
         "name: Demo\n"
         "manifest:\n"
