@@ -171,20 +171,23 @@ def _stop_thread(thread: SlackRunThread, *, stopper, installation) -> None:
     snapshot = _load_snapshot(thread.opp_slug, workspace, run_id=thread.run_id or None)
     if snapshot is None:
         return
+    # Django's DateTimeField descriptor type confuses basedpyright when
+    # `thread` is a typed parameter (vs. inferred via .get()/.first()).
+    # The attribute value at runtime is always a datetime.
+    triggered_at: datetime = thread.triggered_at
+    elapsed = int((datetime.now(UTC) - triggered_at).total_seconds())
+    triggerer_display = (
+        f"{thread.ace_user.display_name or thread.ace_user.email}"
+        if thread.ace_user_id else "ACE"
+    )
+    stopped_by_display = f"<@{stopper.email}>" if stopper else None
     blocks = render_parent_card(
         snapshot,
         opp_slug=thread.opp_slug,
         workspace_slug=workspace.slug,
-        triggerer_display=(
-            f"{thread.ace_user.display_name or thread.ace_user.email}"
-            if thread.ace_user_id else "ACE"
-        ),
-        elapsed_seconds=int(
-            (datetime.now(UTC) - thread.triggered_at).total_seconds()
-        ),
-        stopped_by_display=(
-            f"<@{stopper.email}>" if stopper else None
-        ),
+        triggerer_display=triggerer_display,
+        elapsed_seconds=elapsed,
+        stopped_by_display=stopped_by_display,
     )
     try:
         _get_client(installation).update_message(
