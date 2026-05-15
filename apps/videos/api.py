@@ -62,22 +62,22 @@ router = Router(auth=session_auth, tags=["videos"])
 # ---------------------------------------------------------------------------
 
 
-def _require_program(workspace_slug: str, program_slug: str) -> service.ProgramRecord:
-    """Resolve a program (latest run) for a workspace member; 404 otherwise."""
+def _require_program(workspace, program_slug: str) -> service.ProgramRecord:
+    """Resolve a program (latest run) in this workspace; 404 otherwise."""
     if not service.is_valid_slug(program_slug):
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
-    record = service.load_program(program_slug)
-    if record is None or record.workspace_slug != workspace_slug:
+    record = service.load_program(workspace, program_slug)
+    if record is None or record.workspace_slug != workspace.slug:
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
     return record
 
 
-def _require_run(workspace_slug: str, program_slug: str, run_id: str) -> service.ProgramRecord:
-    """Resolve a specific run + check workspace membership."""
+def _require_run(workspace, program_slug: str, run_id: str) -> service.ProgramRecord:
+    """Resolve a specific run in this workspace; 404 otherwise."""
     if not service.is_valid_slug(program_slug) or not service.is_valid_run_id(run_id):
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
-    record = service.load_program_run(program_slug, run_id)
-    if record is None or record.workspace_slug != workspace_slug:
+    record = service.load_program_run(workspace, program_slug, run_id)
+    if record is None or record.workspace_slug != workspace.slug:
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
     return record
 
@@ -86,8 +86,8 @@ def _explorer_url(workspace_slug: str, program_slug: str, run_id: str) -> str:
     return f"/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/explorer.html"
 
 
-def _program_card(latest: service.ProgramRecord) -> dict:
-    runs = service.list_run_ids(latest.slug)
+def _program_card(workspace, latest: service.ProgramRecord) -> dict:
+    runs = service.list_run_ids(workspace, latest.slug)
     return {
         "slug": latest.slug,
         "name": latest.name,
@@ -100,16 +100,6 @@ def _program_card(latest: service.ProgramRecord) -> dict:
         "latest_run_id": latest.run_id,
         "run_count": len(runs),
     }
-
-
-def _yaml_repo_path(yaml_path) -> str:
-    """Repo-relative path display (relative to the parent of ACE_VIDEOS_ROOT)."""
-    from pathlib import Path as _Path
-    yaml_root = _Path(settings.ACE_VIDEOS_ROOT).parent.parent
-    try:
-        return str(yaml_path.relative_to(yaml_root))
-    except ValueError:
-        return yaml_path.name
 
 
 # ---------------------------------------------------------------------------
@@ -172,10 +162,10 @@ def list_programs(
     request: HttpRequest,
     workspace_slug: Annotated[str, PathParam()],
 ) -> list[ProgramCardOut]:
-    resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
     return [
-        ProgramCardOut.model_validate(_program_card(r))
-        for r in service.list_programs_for_workspace(workspace_slug)
+        ProgramCardOut.model_validate(_program_card(workspace, r))
+        for r in service.list_programs_for_workspace(workspace)
     ]
 
 
@@ -196,7 +186,7 @@ def create_program(
     content quality. Workspace membership is checked here, and the
     spec_yaml's ``workspace:`` field must match the URL workspace_slug.
     """
-    resolve_workspace_for_member(request, workspace_slug)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
     if not service.is_valid_slug(body.slug):
         raise ProblemError(
             400,
@@ -204,35 +194,23 @@ def create_program(
             type_=TYPE_VALIDATION,
             detail=f"Slug must match {service._SLUG_RE.pattern!r}; got {body.slug!r}",
         )
-    # Make sure the spec's workspace matches the URL — catches an agent
-    # filling in the wrong workspace by accident.
-    import re as _re
-    m = _re.search(r"^workspace:\s*['\"]?([a-z0-9-]+)['\"]?\s*$", body.spec_yaml, _re.M)
-    if not m or m.group(1) != workspace_slug:
-        raise ProblemError(
-            400,
-            "spec_yaml.workspace must match URL workspace",
-            type_=TYPE_VALIDATION,
-            detail=f"URL is {workspace_slug!r}; spec_yaml.workspace = {m.group(1) if m else 'missing'!r}",
-        )
     try:
-        path = service.create_program_from_spec(body.slug, body.spec_yaml)
+        service.create_program_from_spec(workspace, body.slug, body.spec_yaml)
     except FileExistsError as e:
         raise ProblemError(409, "Program already exists", type_=TYPE_VALIDATION, detail=str(e))
     except ValueError as e:
         raise ProblemError(400, "Invalid spec", type_=TYPE_VALIDATION, detail=str(e))
 
-    from pathlib import Path as _Path
-    yaml_root = _Path(settings.ACE_VIDEOS_ROOT).parent.parent
-    try:
-        rel = str(path.relative_to(yaml_root))
-    except ValueError:
-        rel = path.name
+    rel = service.drive_spec_display(body.slug, "run-001")
     return CreateProgramOut(
         program_slug=body.slug,
         run_id="run-001",
         spec_path=rel,
-        message=f"Wrote {rel}. Click Re-render in the UI (or POST /programs/{body.slug}/runs/run-001/build) to generate the first output.",
+        message=(
+            f"Wrote {rel} to Drive. Click Re-render in the UI "
+            f"(or POST /programs/{body.slug}/runs/run-001/build) "
+            "to generate the first output."
+        ),
     )
 
 
@@ -247,9 +225,9 @@ def get_program(
     workspace_slug: Annotated[str, PathParam()],
     program_slug: Annotated[str, PathParam()],
 ) -> ProgramDetailOut:
-    resolve_workspace_for_member(request, workspace_slug)
-    latest = _require_program(workspace_slug, program_slug)
-    run_ids = service.list_run_ids(program_slug)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    latest = _require_program(workspace, program_slug)
+    run_ids = service.list_run_ids(workspace, program_slug)
     runs = []
     for rid in run_ids:
         out_p = service.output_path(program_slug, rid)
@@ -285,9 +263,9 @@ def copy_run(
     workspace_slug: Annotated[str, PathParam()],
     program_slug: Annotated[str, PathParam()],
 ) -> CopyRunOut:
-    resolve_workspace_for_member(request, workspace_slug)
-    latest = _require_program(workspace_slug, program_slug)
-    new_run_id = service.copy_run(program_slug, latest.run_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    latest = _require_program(workspace, program_slug)
+    new_run_id = service.copy_run(workspace, program_slug, latest.run_id)
     log.info("videos.copy_run: %s/%s → %s", program_slug, latest.run_id, new_run_id)
     return CopyRunOut(
         program_slug=program_slug,
@@ -308,8 +286,8 @@ def get_run(
     program_slug: Annotated[str, PathParam()],
     run_id: Annotated[str, PathParam()],
 ) -> RunDetailOut:
-    resolve_workspace_for_member(request, workspace_slug)
-    record = _require_run(workspace_slug, program_slug, run_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    record = _require_run(workspace, program_slug, run_id)
     return RunDetailOut(
         program_slug=program_slug,
         run_id=run_id,
@@ -318,7 +296,7 @@ def get_run(
         has_output=record.has_output,
         has_explorer_build=record.has_explorer_build,
         explorer_url=_explorer_url(workspace_slug, program_slug, run_id),
-        yaml_path=_yaml_repo_path(record.yaml_path),
+        yaml_path=record.yaml_path,
     )
 
 
@@ -339,8 +317,8 @@ def get_library(
     program_slug: Annotated[str, PathParam()],
     run_id: Annotated[str, PathParam()],
 ) -> LibraryOut:
-    resolve_workspace_for_member(request, workspace_slug)
-    _require_run(workspace_slug, program_slug, run_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
     entries = [LibraryEntryOut.model_validate(e) for e in service.load_library_entries(program_slug, run_id)]
     return LibraryOut(entries=entries)
 
@@ -357,8 +335,8 @@ def get_render_status(
     program_slug: Annotated[str, PathParam()],
     run_id: Annotated[str, PathParam()],
 ) -> RenderStatusOut:
-    resolve_workspace_for_member(request, workspace_slug)
-    _require_run(workspace_slug, program_slug, run_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
     return RenderStatusOut.model_validate(service.render_status(program_slug, run_id))
 
 
@@ -374,8 +352,8 @@ def get_feedback(
     program_slug: Annotated[str, PathParam()],
     run_id: Annotated[str, PathParam()],
 ) -> FeedbackLogOut:
-    resolve_workspace_for_member(request, workspace_slug)
-    _require_run(workspace_slug, program_slug, run_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
     path = service.feedback_path(program_slug, run_id)
     markdown = path.read_text(encoding="utf-8") if path.exists() else ""
     return FeedbackLogOut(program_slug=program_slug, run_id=run_id, markdown=markdown)
@@ -395,8 +373,8 @@ def post_feedback(
 ) -> FeedbackPostOut:
     import datetime as dt
 
-    resolve_workspace_for_member(request, workspace_slug)
-    _require_run(workspace_slug, program_slug, run_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
     ts = dt.datetime.now(dt.UTC).replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
     scope = f"beat:{body.beatId}" if body.scope == "beat" and body.beatId else "global"
     time_bit = f" (video t={body.timestampSec:.1f}s)" if body.timestampSec is not None else ""
@@ -425,9 +403,9 @@ def post_edit(
     operator batch many edits before paying the render cost; the
     "Re-render" button in the UI is the single canonical render entry.
     """
-    resolve_workspace_for_member(request, workspace_slug)
-    _require_run(workspace_slug, program_slug, run_id)
-    result = service.apply_edit(program_slug, run_id, body.model_dump(exclude_none=True))
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
+    result = service.apply_edit(workspace, program_slug, run_id, body.model_dump(exclude_none=True))
     if not result.ok:
         raise ProblemError(
             400,
@@ -454,12 +432,12 @@ def post_build(
     run_id: Annotated[str, PathParam()],
     body: BuildTriggerIn,
 ) -> BuildTriggerOut:
-    resolve_workspace_for_member(request, workspace_slug)
-    _require_run(workspace_slug, program_slug, run_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
     if body.mode == "build-only":
-        triggered = service.trigger_build_only(program_slug, run_id)
+        triggered = service.trigger_build_only(workspace, program_slug, run_id)
     else:
-        triggered = service.trigger_rerender(program_slug, run_id)
+        triggered = service.trigger_rerender(workspace, program_slug, run_id)
     return BuildTriggerOut(
         ok=True,
         triggered=triggered,
@@ -513,8 +491,8 @@ def serve_explorer(
     program_slug: Annotated[str, PathParam()],
     run_id: Annotated[str, PathParam()],
 ) -> HttpResponse:
-    resolve_workspace_for_member(request, workspace_slug)
-    _require_run(workspace_slug, program_slug, run_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
     return _serve_rewritten_html(workspace_slug, program_slug, run_id, "index.html")
 
 
@@ -528,8 +506,8 @@ def serve_library_html(
     program_slug: Annotated[str, PathParam()],
     run_id: Annotated[str, PathParam()],
 ) -> HttpResponse:
-    resolve_workspace_for_member(request, workspace_slug)
-    _require_run(workspace_slug, program_slug, run_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
     return _serve_rewritten_html(workspace_slug, program_slug, run_id, "library.html")
 
 
@@ -544,8 +522,8 @@ def serve_media(
     run_id: Annotated[str, PathParam()],
     file_name: Annotated[str, PathParam()],
 ) -> HttpResponse | StreamingHttpResponse:
-    resolve_workspace_for_member(request, workspace_slug)
-    _require_run(workspace_slug, program_slug, run_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
 
     import os.path
     if (
