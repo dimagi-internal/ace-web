@@ -308,6 +308,7 @@ export default function VideoExplorerPage() {
         </div>
       ) : useReactBeatEditor && run.spec && workspaceSlug && programSlug && resolvedRunId ? (
         <BeatEditor
+          key={`${workspaceSlug}-${programSlug}-${resolvedRunId}`}
           workspaceSlug={workspaceSlug}
           programSlug={programSlug}
           runId={resolvedRunId}
