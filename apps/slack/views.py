@@ -88,6 +88,7 @@ from urllib.parse import urlencode  # noqa: E402
 
 from django.contrib.auth.decorators import login_required, user_passes_test  # noqa: E402
 from django.http import HttpResponseBadRequest, HttpResponseRedirect  # noqa: E402
+from django.urls import reverse  # noqa: E402
 from slack_sdk import WebClient  # noqa: E402
 from slack_sdk.errors import SlackApiError  # noqa: E402
 
@@ -96,7 +97,7 @@ from apps.workspaces.models import Workspace  # noqa: E402
 from .models import SlackInstallation  # noqa: E402
 
 _BOT_SCOPES = [
-    "commands", "chat:write", "chat:write.public",
+    "commands", "chat:write",
     "users:read", "users:read.email",
 ]
 
@@ -116,7 +117,11 @@ def install(request: HttpRequest) -> HttpResponse:
         "scope": ",".join(_BOT_SCOPES),
         # No user_scope — bot install only. Per-user identity link is
         # a separate Django-side OAuth.
-        "redirect_uri": request.build_absolute_uri("/api/slack/oauth/callback"),
+        # IMPORTANT: build via `reverse(...)` so FORCE_SCRIPT_NAME (/ace)
+        # gets prepended. Hardcoding the path skips the script-name layer
+        # and Slack rejects the resulting URI with redirect_uri mismatch
+        # against the app's configured https://.../ace/api/slack/oauth/callback.
+        "redirect_uri": request.build_absolute_uri(reverse("slack:oauth_callback")),
     }
     return HttpResponseRedirect("https://slack.com/oauth/v2/authorize?" + urlencode(params))
 
@@ -137,7 +142,8 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
     code = request.GET.get("code")
     if not code:
         return HttpResponseBadRequest("missing code")
-    redirect_uri = request.build_absolute_uri("/api/slack/oauth/callback")
+    # Must match the redirect_uri we passed in `install` (Slack verifies them).
+    redirect_uri = request.build_absolute_uri(reverse("slack:oauth_callback"))
     try:
         data = _exchange_code(code, redirect_uri)
     except SlackApiError as e:

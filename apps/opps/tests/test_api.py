@@ -540,6 +540,65 @@ def test_list_runs_empty_for_unknown_slug(member_client, monkeypatch):
     assert response.json()["total"] == 0
 
 
+@pytest.mark.django_db
+def test_list_runs_enriches_phase_display_and_ordinal(member_client, monkeypatch):
+    """`/runs` enriches each run with phase_display + phase_ordinal so the
+    OppCardRunsStrip can render a "P{ordinal}" chip instead of "—".
+
+    Regression: when DRF was retired the new Ninja list_runs endpoint
+    asdict'd RunSummary directly, which has no _display/_ordinal fields.
+    The chip rendered "—" for every run even when latest_phase_done was
+    populated.
+    """
+    from apps.opps.sync import RunSummary
+
+    client, _, _ = member_client
+
+    fake_run = RunSummary(
+        run_id="20260514-2007",
+        folder_id="fake-folder",
+        current_phase=None,
+        current_step=None,
+        mode="default",
+        last_actor="jjackson@dimagi.com",
+        last_actor_at="2026-05-14T20:07:00Z",
+        lifecycle_status="in_progress",
+        phases_total=10,
+        phases_done=3,
+        latest_phase_done="commcare-setup",
+    )
+
+    class _StubDrive:
+        pass
+
+    monkeypatch.setattr(
+        "apps.opps.access.resolve_ace_root_folder_id",
+        lambda workspace: "ace-root",
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client",
+        lambda workspace: _StubDrive(),
+    )
+    monkeypatch.setattr(
+        "apps.opps.sync.list_opp_runs",
+        lambda drive, *, ace_root_folder_id, opp_slug: [fake_run],
+    )
+
+    response = client.get("/api/w/ws1/opps/opp-1/runs")
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    item = items[0]
+    # Display + ordinal come from the stub plugin's commcare-setup agent
+    # frontmatter (phase_display: "CommCare Setup", phase_ordinal: 2).
+    assert item["latest_phase_done"] == "commcare-setup"
+    assert item["latest_phase_done_display"] == "CommCare Setup"
+    assert item["latest_phase_done_ordinal"] == 2
+    # current_phase is None on this fixture; enrichment fields stay null.
+    assert item["current_phase_display"] is None
+    assert item["current_phase_ordinal"] is None
+
+
 # ---------------------------------------------------------------------------
 # Task 2.1.8 — GET /w/{ws}/opps/{slug}/runs/{run_id}
 # ---------------------------------------------------------------------------

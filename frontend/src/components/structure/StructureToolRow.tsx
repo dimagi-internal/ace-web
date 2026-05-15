@@ -36,9 +36,11 @@ export function StructureToolRow({ node, depth }: Props) {
             <span className="w-3" />
           )}
           <StatusIcon status={node.status} />
-          <span className="text-xs text-muted-foreground tabular-nums w-20">{time}</span>
-          <span className="font-medium w-16">{node.tool_name}</span>
-          <span className="truncate text-muted-foreground flex-1">{node.label}</span>
+          <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">{time}</span>
+          <span className="font-medium w-32 shrink-0 truncate" title={node.tool_name}>
+            {node.tool_name}
+          </span>
+          <span className="truncate text-muted-foreground flex-1 min-w-0">{node.label}</span>
         </button>
         <span className="text-xs text-muted-foreground tabular-nums">
           {formatDuration(node.wall_time_seconds)}

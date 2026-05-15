@@ -1,5 +1,5 @@
 # apps/slack/tests/test_handlers_misc.py
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -50,37 +50,32 @@ def test_unknown_subcommand_returns_help(setup):
 
 
 @pytest.mark.django_db
-def test_unlinked_user_gets_dm_link(setup):
+def test_unlinked_user_gets_link_in_ephemeral(setup):
+    """Unlinked users get the OAuth-link URL inline in an ephemeral, not via
+    a DM (DMs would require im:write scope and an extra Slack API call —
+    ephemerals are equally private and instant)."""
     from apps.slack.handlers import dispatch_slash_command
-    with patch("apps.slack.handlers._get_client") as get_client:
-        mock = MagicMock()
-        get_client.return_value = mock
-        resp = dispatch_slash_command(
-            text="run my-opp", slack_user_id="U_UNKNOWN",
-            team_id="T1", channel_id="C1", trigger_id="", response_url="",
-        )
-    mock.dm_user.assert_called_once()
-    dm_kwargs = mock.dm_user.call_args.kwargs
-    assert dm_kwargs["user"] == "U_UNKNOWN"
-    assert "/auth/slack/link" in dm_kwargs["text"] or any(
-        "/auth/slack/link" in repr(b) for b in (dm_kwargs.get("blocks") or [])
+    resp = dispatch_slash_command(
+        text="run my-opp", slack_user_id="U_UNKNOWN",
+        team_id="T1", channel_id="C1", trigger_id="", response_url="",
     )
     assert resp["response_type"] == "ephemeral"
-    assert "link" in resp["text"].lower()
+    assert "/auth/slack/link" in resp["text"] or any(
+        "/auth/slack/link" in repr(b) for b in (resp.get("blocks") or [])
+    )
 
 
 @pytest.mark.django_db
-def test_link_subcommand_resends_link(setup):
+def test_link_subcommand_returns_link_in_ephemeral(setup):
     from apps.slack.handlers import dispatch_slash_command
-    with patch("apps.slack.handlers._get_client") as get_client:
-        mock = MagicMock()
-        get_client.return_value = mock
-        resp = dispatch_slash_command(
-            text="link", slack_user_id="U_JJ", team_id="T1", channel_id="C1",
-            trigger_id="", response_url="",
-        )
-    mock.dm_user.assert_called_once()
+    resp = dispatch_slash_command(
+        text="link", slack_user_id="U_JJ", team_id="T1", channel_id="C1",
+        trigger_id="", response_url="",
+    )
     assert resp["response_type"] == "ephemeral"
+    assert "/auth/slack/link" in resp["text"] or any(
+        "/auth/slack/link" in repr(b) for b in (resp.get("blocks") or [])
+    )
 
 
 @pytest.mark.django_db
@@ -91,7 +86,6 @@ def test_status_returns_parent_card_for_user_recent_run(setup):
         installation=inst, channel_id="C1", parent_ts="1.1",
         opp_slug="my-opp", run_id="run-001", ace_user=jj,
     )
-    from unittest.mock import patch
     with patch("apps.slack.verbs_query._load_snapshot") as load:
         load.return_value = {
             "display_name": "My Opp",
