@@ -1,0 +1,46 @@
+{
+  "name": "connect-videos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "remotion studio src/Root.tsx",
+    "render": "tsx scripts/render.ts",
+    "narrate": "tsx scripts/narrate.ts",
+    "ingest": "tsx scripts/ingest-youtube.ts",
+    "map-content": "tsx scripts/map-content.ts",
+    "drive-fetch": "tsx scripts/drive-fetch.ts",
+    "hydrate": "tsx scripts/hydrate.ts",
+    "qa-review": "tsx scripts/qa-review.ts",
+    "build-clip-explorer": "tsx scripts/build-clip-explorer.ts",
+    "explore": "tsx scripts/explore.ts",
+    "brand-extract": "tsx scripts/brand-extract.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/captions": "^4.0.0",
+    "@remotion/cli": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.460",
+    "@remotion/renderer": "^4.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "remotion": "^4.0.0",
+    "yaml": "^2.5.0",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "jsdom": "^25.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

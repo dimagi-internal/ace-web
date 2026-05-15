@@ -1,7 +1,7 @@
 """Unit tests for the FastMCP server bridge.
 
 Tests:
-1. ``build_mcp`` registers exactly the 9 opted-in endpoints as tools.
+1. ``build_mcp`` registers exactly the opted-in endpoints as tools.
 2. ``_stringify_response_codes`` coerces integer response codes to strings.
 3. ``_route_map_fn`` includes opted-in routes and excludes others.
 4. The httpx loopback call is made with the correct method, path, and
@@ -35,6 +35,11 @@ _EXPECTED_TOOL_NAMES = {
     "apps_opps_api_v2_get_scorecard",
     "apps_sessions_api_v2_list_sessions",
     "apps_sessions_api_v2_get_session",
+    "apps_videos_api_v2_list_programs",
+    "apps_videos_api_v2_get_program",
+    "apps_videos_api_v2_get_library",
+    "apps_videos_api_v2_get_render_status",
+    "apps_videos_api_v2_get_feedback",
 }
 
 
@@ -45,7 +50,7 @@ _EXPECTED_TOOL_NAMES = {
 
 @pytest.mark.asyncio
 async def test_build_mcp_registers_exactly_nine_tools():
-    """build_mcp() should register the 9 opted-in endpoints as MCP tools."""
+    """build_mcp() should register each opted-in endpoint as an MCP tool."""
     mcp = build_mcp()
     tools = await mcp.list_tools()
     tool_names = {t.name for t in tools}

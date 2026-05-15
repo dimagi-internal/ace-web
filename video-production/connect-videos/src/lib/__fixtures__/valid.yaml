@@ -1,0 +1,31 @@
+slug: demo
+name: Demo Program
+country_focus: Demo Country
+status: Active
+tagline: "Demo tagline."
+program_url: https://example.com
+scene:
+  clips:
+    - assets/programs/demo/scene-01.jpg
+  lower_third: "Demo · 2026"
+problem:
+  big: "50%"
+  caption: "Problem caption."
+  source: "Source 2024"
+product:
+  beats:
+    - asset: assets/programs/demo/beat-01.mp4
+      caption: "Beat 1"
+impact:
+  - big: "$1M"
+    caption: "Funding"
+  - big: "1,000"
+    caption: "Targets"
+narration:
+  generator: manual
+  prompt_version: v1
+  script: "Sample narration."
+voice:
+  provider: elevenlabs
+  voice_id: abc123
+  model: eleven_turbo_v2

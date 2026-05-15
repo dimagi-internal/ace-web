@@ -66,6 +66,13 @@ services:
       # Dev-only test-login endpoint (POST /auth/test-login/) for scripted
       # smoke tests + Playwright. Requires DEBUG=True (already set above).
       ACE_ALLOW_TEST_LOGIN: ${ACE_ALLOW_TEST_LOGIN:-false}
+      # Fake CLI backend so chat works without a real Claude subscription
+      # locally. Flip to False in .env to talk to a real Claude (requires
+      # CLI auth shipped to the container — see ace-web:create-cli-credentials).
+      ACE_USE_FAKE_CLI_BACKEND: ${ACE_USE_FAKE_CLI_BACKEND:-True}
+      # ElevenLabs TTS for /api/w/<ws>/videos/.../edit → npm run render.
+      # Without this the render runs silent; voiceover comes back missing.
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
     # Host port 8001 so ace-web can run alongside other Django dev servers
     # (CommCare HQ, connect-labs, etc.) that conventionally bind 8000.
     # Override with `ACE_WEB_HOST_PORT` in .env if 8001 is also in use.
@@ -75,6 +82,17 @@ services:
       - ./apps:/app/apps
       - ./config:/app/config
       - ./manage.py:/app/manage.py
+      # Mount the built frontend so Django's TEMPLATES dir resolves
+      # `index.html` and Whitenoise serves the chunked assets. Run
+      # `cd frontend && bun run build` after frontend edits — the Vite
+      # dev server isn't started here (see profile: prod-parity).
+      - ./frontend/dist:/app/frontend/dist
+      # And the video-production tree so apps/videos/ can read through
+      # to programs/*.yaml and the out/clip-explorer/ artifacts without
+      # a rebuild. Note that the clip-explorer's media/ symlinks point
+      # to absolute paths under the host's $HOME/.cache/connect-videos —
+      # see docker-compose.override.yml.example for the local-dev mount
+      # that makes those symlinks resolve inside the container.
     depends_on:
       db:
         condition: service_healthy

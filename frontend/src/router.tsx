@@ -17,6 +17,8 @@ import SessionsPage from "./pages/SessionsPage";
 import SettingsPage from "./pages/SettingsPage";
 import ShareViewPage from "./pages/ShareViewPage";
 import SystemPage from "./pages/SystemPage";
+import VideoExplorerPage from "./pages/VideoExplorerPage";
+import VideosListPage from "./pages/VideosListPage";
 import WelcomePage from "./pages/WelcomePage";
 import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
 
@@ -54,6 +56,8 @@ export const router = createBrowserRouter(
               element: <OppWorkbenchPage />,
             },
             { path: "sessions", element: <SessionsPage /> },
+            { path: "videos", element: <VideosListPage /> },
+            { path: "videos/:programSlug", element: <VideoExplorerPage /> },
             { path: "chat", element: <ChatRedirectPage /> },
             { path: "chat/:slug", element: <ChatPage /> },
             { path: "chat/:slug/structure", element: <SessionStructurePage /> },
