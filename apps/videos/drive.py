@@ -35,19 +35,24 @@ log = logging.getLogger(__name__)
 
 
 VIDEOS_FOLDER = "videos"
-EXISTING_CONTENT = "existing_content"
 RUNS_FOLDER = "runs"
 SPEC_FILENAME = "spec.yaml"
 YAML_MIME = "application/x-yaml"
 
-# Subfolders under existing_content/. Local layout mirrors `assets/<subdir>/`
-# under video-production/connect-videos/.
+# Legacy layout — kept readable through Phase B; removed in Phase C.
+EXISTING_CONTENT = "existing_content"
 EXISTING_CONTENT_AUDIO = "audio"
 EXISTING_CONTENT_SHARED = "shared"
 EXISTING_CONTENT_SUBDIRS = (EXISTING_CONTENT_AUDIO, EXISTING_CONTENT_SHARED)
 
-# Per-run artifact filenames + mime types. Each run folder holds these
-# alongside spec.yaml after a successful render.
+# New layout — destination of the relocation.
+LIBRARY = "library"
+LIBRARY_VIDEO = "video"
+LIBRARY_AUDIO = "audio"
+LIBRARY_MEDIA_KINDS = (LIBRARY_VIDEO, LIBRARY_AUDIO)
+SHARED_TOP = "shared"  # sibling of library/, at videos/shared/
+
+# Per-run artifact filenames + mime types.
 OUTPUT_MP4_FILENAME = "output.mp4"
 OUTPUT_MP4_MIME = "video/mp4"
 EXPLORER_ARCHIVE_FILENAME = "explorer.tar.gz"
@@ -331,6 +336,179 @@ def read_existing_content(
     if meta is None:
         return None
     return client.get_binary(meta.id)
+
+
+# ---------------------------------------------------------------------------
+# library/ — curated media + shared/ — music bed + brand assets
+# ---------------------------------------------------------------------------
+
+
+def library_folder_id(
+    layout: DriveLayout, client: DriveClient,
+    media: str | None = None, subfolder: str | None = None,
+    *, create: bool = False,
+) -> str | None:
+    """Resolve videos/library/, videos/library/<media>/, or
+    videos/library/<media>/<subfolder>/.
+
+    Pass create=True to materialize missing parents.
+    """
+    if media is not None and media not in LIBRARY_MEDIA_KINDS:
+        raise ValueError(
+            f"Unknown library media: {media!r}; "
+            f"expected one of {LIBRARY_MEDIA_KINDS}"
+        )
+    if subfolder is not None and media is None:
+        raise ValueError("subfolder requires media")
+
+    root = _find_child(client, layout.videos_folder_id, LIBRARY)
+    if root is None or root.mime_type != "application/vnd.google-apps.folder":
+        if not create:
+            return None
+        root_id = client.create_folder(layout.videos_folder_id, LIBRARY)
+    else:
+        root_id = root.id
+
+    if media is None:
+        return root_id
+
+    media_node = _find_child(client, root_id, media)
+    if media_node is None or media_node.mime_type != "application/vnd.google-apps.folder":
+        if not create:
+            return None
+        media_id = client.create_folder(root_id, media)
+    else:
+        media_id = media_node.id
+
+    if subfolder is None:
+        return media_id
+
+    sub = _find_child(client, media_id, subfolder)
+    if sub is None or sub.mime_type != "application/vnd.google-apps.folder":
+        if not create:
+            return None
+        return client.create_folder(media_id, subfolder)
+    return sub.id
+
+
+def list_library_subfolders(
+    layout: DriveLayout, client: DriveClient, media: str,
+) -> list[DriveFile]:
+    """Direct subfolders under videos/library/<media>/.
+
+    Empty list when library/<media>/ does not exist yet.
+    """
+    media_id = library_folder_id(layout, client, media)
+    if media_id is None:
+        return []
+    return [
+        f for f in client.list_folder(media_id)
+        if f.mime_type == "application/vnd.google-apps.folder"
+    ]
+
+
+def list_library_files(
+    layout: DriveLayout, client: DriveClient,
+    media: str, subfolder: str,
+) -> list[DriveFile]:
+    """Direct files under videos/library/<media>/<subfolder>/.
+
+    Returns both media files and sidecars; folders excluded. Empty list
+    when the subfolder doesn't exist.
+    """
+    folder_id = library_folder_id(layout, client, media, subfolder)
+    if folder_id is None:
+        return []
+    return [
+        f for f in client.list_folder(folder_id)
+        if f.mime_type != "application/vnd.google-apps.folder"
+    ]
+
+
+def list_audio_library_files(
+    layout: DriveLayout, client: DriveClient,
+) -> list[DriveFile]:
+    """Direct files under videos/library/audio/ (flat layout — no subfolders).
+
+    Returns both .mp3 and .json files; folders excluded.
+    """
+    media_id = library_folder_id(layout, client, LIBRARY_AUDIO)
+    if media_id is None:
+        return []
+    return [
+        f for f in client.list_folder(media_id)
+        if f.mime_type != "application/vnd.google-apps.folder"
+    ]
+
+
+def read_library_file(
+    layout: DriveLayout, client: DriveClient,
+    media: str, name: str,
+    *, subfolder: str | None = None,
+) -> bytes | None:
+    """Read one file under library/<media>/[<subfolder>/]<name>.
+
+    For audio (flat) pass subfolder=None. For video (subfoldered) pass
+    the subfolder.
+    """
+    if media == LIBRARY_AUDIO:
+        files = list_audio_library_files(layout, client)
+    else:
+        if subfolder is None:
+            raise ValueError("video reads require a subfolder")
+        files = list_library_files(layout, client, media, subfolder)
+    for f in files:
+        if f.name == name:
+            return client.get_binary(f.id)
+    return None
+
+
+def upload_library_file(
+    layout: DriveLayout, client: DriveClient,
+    media: str, name: str, content: bytes, mime_type: str,
+    *, subfolder: str | None = None,
+) -> str:
+    """Create-or-replace a library file. Materializes parents if needed.
+
+    For audio pass subfolder=None (audio is flat); for video pass the subfolder.
+    Returns the Drive file id.
+    """
+    if media == LIBRARY_AUDIO:
+        folder_id = library_folder_id(layout, client, LIBRARY_AUDIO, create=True)
+    else:
+        if subfolder is None:
+            raise ValueError("video uploads require a subfolder")
+        folder_id = library_folder_id(layout, client, media, subfolder, create=True)
+    assert folder_id is not None
+    existing = _find_child(client, folder_id, name)
+    if existing is not None:
+        client.update_binary(existing.id, content, mime_type)
+        return existing.id
+    return client.upload_binary(folder_id, name, content, mime_type)
+
+
+def shared_top_folder_id(
+    layout: DriveLayout, client: DriveClient, *, create: bool = False,
+) -> str | None:
+    """Resolve videos/shared/ (sibling of library/)."""
+    existing = _find_child(client, layout.videos_folder_id, SHARED_TOP)
+    if existing is None or existing.mime_type != "application/vnd.google-apps.folder":
+        if not create:
+            return None
+        return client.create_folder(layout.videos_folder_id, SHARED_TOP)
+    return existing.id
+
+
+def list_shared_top_files(
+    layout: DriveLayout, client: DriveClient,
+) -> list[DriveFile]:
+    folder_id = shared_top_folder_id(layout, client)
+    if folder_id is None:
+        return []
+    return [
+        f for f in client.list_folder(folder_id)
+        if f.mime_type != "application/vnd.google-apps.folder"
+    ]
 
 
 # ---------------------------------------------------------------------------
