@@ -8,7 +8,7 @@ from apps.slack.tests.test_verify import _sign, SECRET
 
 
 @pytest.mark.django_db
-@override_settings(SLACK_SIGNING_SECRET=SECRET, ROOT_URLCONF="apps.slack.tests.urls")
+@override_settings(SLACK_SIGNING_SECRET=SECRET)
 def test_commands_rejects_unsigned():
     c = Client()
     resp = c.post("/api/slack/commands", data={"command": "/ace", "text": "help"})
@@ -16,7 +16,7 @@ def test_commands_rejects_unsigned():
 
 
 @pytest.mark.django_db
-@override_settings(SLACK_SIGNING_SECRET=SECRET, ROOT_URLCONF="apps.slack.tests.urls")
+@override_settings(SLACK_SIGNING_SECRET=SECRET)
 def test_commands_accepts_signed_request_and_dispatches():
     ts = str(int(time.time()))
     body = b"command=/ace&text=help&team_id=T1&user_id=U_JJ&channel_id=C1&trigger_id=tg1"
