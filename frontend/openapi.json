@@ -8,7 +8,7 @@
   "paths": {
     "/api/_auth_smoke/": {
       "get": {
-        "operationId": "apps_api_v2_api__auth_smoke",
+        "operationId": "apps_api_api__auth_smoke",
         "summary": " Auth Smoke",
         "parameters": [],
         "responses": {
@@ -35,7 +35,7 @@
     },
     "/api/w/{workspace_slug}/opps": {
       "get": {
-        "operationId": "apps_opps_api_v2_list_opps",
+        "operationId": "apps_opps_api_list_opps",
         "summary": "List opps in workspace",
         "parameters": [
           {
@@ -74,12 +74,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_OppCardOut_"
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
                 }
               }
             }
           }
         },
+        "description": "Return the full legacy OppCard shape (display_name, tags, labels,\neval_score, etc.) the frontend expects. We bypass OppCardOut's strict\nPydantic schema and return the rich dict directly \u2014 the v2 minimal\nschema was a Phase 1 over-simplification.",
         "tags": [
           "opps"
         ],
@@ -87,10 +90,11 @@
           {
             "DjangoSessionAuth": []
           }
-        ]
+        ],
+        "x-mcp-expose": true
       },
       "post": {
-        "operationId": "apps_opps_api_v2_create_opp_endpoint",
+        "operationId": "apps_opps_api_create_opp_endpoint",
         "summary": "Create opp",
         "parameters": [
           {
@@ -130,7 +134,7 @@
     },
     "/api/w/{workspace_slug}/opps/{slug}": {
       "get": {
-        "operationId": "apps_opps_api_v2_get_opp",
+        "operationId": "apps_opps_api_get_opp",
         "summary": "Opp Workbench snapshot",
         "parameters": [
           {
@@ -173,6 +177,7 @@
             "description": "OK"
           }
         },
+        "description": "Return the full Workbench payload \u2014 opp + current_run with steps +\ndecisions + phases + pdd_body. Uses the legacy serializer which\nmatches the frontend's OppSnapshot shape (the v2 minimal\nOppSnapshotOut schema was a Phase 1 over-simplification).",
         "tags": [
           "opps"
         ],
@@ -180,10 +185,11 @@
           {
             "DjangoSessionAuth": []
           }
-        ]
+        ],
+        "x-mcp-expose": true
       },
       "patch": {
-        "operationId": "apps_opps_api_v2_update_opp",
+        "operationId": "apps_opps_api_update_opp",
         "summary": "Update opp",
         "parameters": [
           {
@@ -230,7 +236,7 @@
         ]
       },
       "delete": {
-        "operationId": "apps_opps_api_v2_delete_opp",
+        "operationId": "apps_opps_api_delete_opp",
         "summary": "Delete opp",
         "parameters": [
           {
@@ -269,7 +275,7 @@
     },
     "/api/w/{workspace_slug}/opps/{slug}/runs": {
       "get": {
-        "operationId": "apps_opps_api_v2_list_runs",
+        "operationId": "apps_opps_api_list_runs",
         "summary": "List runs for opp",
         "parameters": [
           {
@@ -317,12 +323,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_OppRunOut_"
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
                 }
               }
             }
           }
         },
+        "description": "Return the full RunSummary shape (current_phase + phases_done +\nlast_actor_at + lifecycle_status + ...) the frontend renders for\neach row in the opp card's expanded RUNS panel. Bypasses OppRunOut's\nthin schema \u2014 the Phase 1 v2 shape was over-simplified.",
         "tags": [
           "opps"
         ],
@@ -330,12 +339,13 @@
           {
             "DjangoSessionAuth": []
           }
-        ]
+        ],
+        "x-mcp-expose": true
       }
     },
     "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}": {
       "get": {
-        "operationId": "apps_opps_api_v2_get_run",
+        "operationId": "apps_opps_api_get_run",
         "summary": "Run detail",
         "parameters": [
           {
@@ -385,10 +395,11 @@
           {
             "DjangoSessionAuth": []
           }
-        ]
+        ],
+        "x-mcp-expose": true
       },
       "delete": {
-        "operationId": "apps_opps_api_v2_delete_run",
+        "operationId": "apps_opps_api_delete_run",
         "summary": "Delete run",
         "parameters": [
           {
@@ -436,7 +447,7 @@
     },
     "/api/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
       "get": {
-        "operationId": "apps_opps_api_v2_get_step",
+        "operationId": "apps_opps_api_get_step",
         "summary": "Step detail",
         "parameters": [
           {
@@ -502,12 +513,13 @@
           {
             "DjangoSessionAuth": []
           }
-        ]
+        ],
+        "x-mcp-expose": true
       }
     },
     "/api/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}": {
       "get": {
-        "operationId": "apps_opps_api_v2_get_artifact",
+        "operationId": "apps_opps_api_get_artifact",
         "summary": "Artifact metadata",
         "parameters": [
           {
@@ -573,12 +585,13 @@
           {
             "DjangoSessionAuth": []
           }
-        ]
+        ],
+        "x-mcp-expose": true
       }
     },
     "/api/w/{workspace_slug}/opps/{slug}/artifacts/{artifact_id}/download": {
       "get": {
-        "operationId": "apps_opps_api_v2_download_artifact",
+        "operationId": "apps_opps_api_download_artifact",
         "summary": "Download artifact binary",
         "parameters": [
           {
@@ -626,7 +639,7 @@
     },
     "/api/w/{workspace_slug}/opps/{slug}/fork": {
       "post": {
-        "operationId": "apps_opps_api_v2_fork_opp_endpoint",
+        "operationId": "apps_opps_api_fork_opp_endpoint",
         "summary": "Fork opp run",
         "parameters": [
           {
@@ -675,7 +688,7 @@
     },
     "/api/w/{workspace_slug}/opps/{slug}/fork/status": {
       "get": {
-        "operationId": "apps_opps_api_v2_fork_status",
+        "operationId": "apps_opps_api_fork_status",
         "summary": "Fork progress",
         "parameters": [
           {
@@ -731,7 +744,7 @@
     },
     "/api/w/{workspace_slug}/opps/{slug}/scorecard": {
       "get": {
-        "operationId": "apps_opps_api_v2_get_scorecard",
+        "operationId": "apps_opps_api_get_scorecard",
         "summary": "Opp-eval scorecard",
         "parameters": [
           {
@@ -781,12 +794,13 @@
           {
             "DjangoSessionAuth": []
           }
-        ]
+        ],
+        "x-mcp-expose": true
       }
     },
     "/api/w/{workspace_slug}/opps/{slug}/gates/{skill}": {
       "post": {
-        "operationId": "apps_opps_api_v2_record_gate",
+        "operationId": "apps_opps_api_record_gate",
         "summary": "Record gate decision",
         "parameters": [
           {
@@ -844,7 +858,7 @@
     },
     "/api/w/{workspace_slug}/opps/{slug}/compare": {
       "get": {
-        "operationId": "apps_opps_api_v2_compare_runs",
+        "operationId": "apps_opps_api_compare_runs",
         "summary": "Multi-run comparison",
         "parameters": [
           {
@@ -911,7 +925,7 @@
     },
     "/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat": {
       "post": {
-        "operationId": "apps_opps_api_v2_seed_chat",
+        "operationId": "apps_opps_api_seed_chat",
         "summary": "Seed chat from step",
         "parameters": [
           {
@@ -960,7 +974,7 @@
     },
     "/api/w/{workspace_slug}/opps/{slug}/health": {
       "get": {
-        "operationId": "apps_opps_api_v2_opp_health",
+        "operationId": "apps_opps_api_opp_health",
         "summary": "Drive health probe",
         "parameters": [
           {
@@ -1006,7 +1020,7 @@
     },
     "/api/w/{workspace_slug}/opps/{slug}/snapshot/invalidate": {
       "post": {
-        "operationId": "apps_opps_api_v2_invalidate_snapshot",
+        "operationId": "apps_opps_api_invalidate_snapshot",
         "summary": "Invalidate snapshot cache (admin)",
         "parameters": [
           {
@@ -1043,9 +1057,67 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/opps/cross-compare/{slug_a}/{slug_b}": {
+      "get": {
+        "operationId": "apps_opps_api_cross_opp_compare",
+        "summary": "Side-by-side comparison of two opps in the same workspace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug_a",
+            "schema": {
+              "title": "Slug A",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug_b",
+            "schema": {
+              "title": "Slug B",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "description": "Returns both OppSnapshots + a small summary with eval-score delta.\nUsed by the cross-opp compare page (frontend OppComparePage).",
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/sessions": {
       "get": {
-        "operationId": "apps_sessions_api_v2_list_sessions",
+        "operationId": "apps_sessions_api_list_sessions",
         "summary": "List sessions in workspace",
         "parameters": [
           {
@@ -1123,10 +1195,11 @@
           {
             "DjangoSessionAuth": []
           }
-        ]
+        ],
+        "x-mcp-expose": true
       },
       "post": {
-        "operationId": "apps_sessions_api_v2_create_session",
+        "operationId": "apps_sessions_api_create_session",
         "summary": "Create session",
         "parameters": [
           {
@@ -1166,7 +1239,7 @@
     },
     "/api/w/{workspace_slug}/sessions/{slug}": {
       "get": {
-        "operationId": "apps_sessions_api_v2_get_session",
+        "operationId": "apps_sessions_api_get_session",
         "summary": "Session detail",
         "parameters": [
           {
@@ -1200,10 +1273,11 @@
           {
             "DjangoSessionAuth": []
           }
-        ]
+        ],
+        "x-mcp-expose": true
       },
       "patch": {
-        "operationId": "apps_sessions_api_v2_update_session",
+        "operationId": "apps_sessions_api_update_session",
         "summary": "Update session",
         "parameters": [
           {
@@ -1250,7 +1324,7 @@
         ]
       },
       "delete": {
-        "operationId": "apps_sessions_api_v2_delete_session",
+        "operationId": "apps_sessions_api_delete_session",
         "summary": "Delete session",
         "parameters": [
           {
@@ -1289,7 +1363,7 @@
     },
     "/api/w/{workspace_slug}/sessions/{slug}/messages": {
       "get": {
-        "operationId": "apps_sessions_api_v2_list_messages",
+        "operationId": "apps_sessions_api_list_messages",
         "summary": "Message history",
         "parameters": [
           {
@@ -1348,7 +1422,7 @@
     },
     "/api/w/{workspace_slug}/sessions/{slug}/participants": {
       "get": {
-        "operationId": "apps_sessions_api_v2_list_participants",
+        "operationId": "apps_sessions_api_list_participants",
         "summary": "Participant list",
         "parameters": [
           {
@@ -1387,7 +1461,7 @@
     },
     "/api/w/{workspace_slug}/sessions/{slug}/turn-state": {
       "get": {
-        "operationId": "apps_sessions_api_v2_session_turn_state",
+        "operationId": "apps_sessions_api_session_turn_state",
         "summary": "Turn state (polling)",
         "parameters": [
           {
@@ -1426,7 +1500,7 @@
     },
     "/api/w/{workspace_slug}/sessions/{slug}/cost": {
       "get": {
-        "operationId": "apps_sessions_api_v2_session_cost",
+        "operationId": "apps_sessions_api_session_cost",
         "summary": "Cost breakdown",
         "parameters": [
           {
@@ -1465,7 +1539,7 @@
     },
     "/api/w/{workspace_slug}/sessions/{slug}/structure": {
       "get": {
-        "operationId": "apps_sessions_api_v2_session_structure",
+        "operationId": "apps_sessions_api_session_structure",
         "summary": "Session structure tree",
         "parameters": [
           {
@@ -1504,8 +1578,45 @@
     },
     "/api/w/{workspace_slug}/sessions/{slug}/share": {
       "get": {
-        "operationId": "apps_sessions_api_v2_list_share",
+        "operationId": "apps_sessions_api_list_share",
         "summary": "List share tokens",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "apps_sessions_api_create_share_token",
+        "summary": "Create share token",
         "parameters": [
           {
             "in": "path",
@@ -1541,9 +1652,57 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/sessions/{slug}/share/{token_key}": {
+      "delete": {
+        "operationId": "apps_sessions_api_revoke_share_token",
+        "summary": "Revoke share token",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "token_key",
+            "schema": {
+              "title": "Token Key",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/activity": {
       "get": {
-        "operationId": "apps_activity_api_v2_activity_feed",
+        "operationId": "apps_activity_api_activity_feed",
         "summary": "Workspace activity feed",
         "parameters": [
           {
@@ -1614,9 +1773,1127 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/videos/templates": {
+      "get": {
+        "operationId": "apps_videos_api_list_video_templates",
+        "summary": "List available video-spec templates",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateMetaOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/templates/{template_id}": {
+      "get": {
+        "operationId": "apps_videos_api_get_video_template",
+        "summary": "Get the full template bundle (meta + skeleton + skill prompt)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateBundleOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/library/video": {
+      "get": {
+        "operationId": "apps_videos_api_list_media_library_video",
+        "summary": "List curated video library items grouped by subfolder",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaLibraryVideoOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/library/audio": {
+      "get": {
+        "operationId": "apps_videos_api_list_media_library_audio",
+        "summary": "List the audio library (TTS clips with voice + text metadata)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaLibraryAudioOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs": {
+      "get": {
+        "operationId": "apps_videos_api_list_programs",
+        "summary": "List video programs in workspace (latest run per program)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProgramCardOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      },
+      "post": {
+        "operationId": "apps_videos_api_create_program",
+        "summary": "Create a new program from a generated spec.yaml (agent-authored)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateProgramOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "Accept a complete spec.yaml body (generated by an agent following\na template's prompt) and write it as programs/<slug>/runs/run-001/spec.yaml.\n\nThe server validates structure + slug uniqueness; the agent owns\ncontent quality. Workspace membership is checked here, and the\nspec_yaml's ``workspace:`` field must match the URL workspace_slug.",
+        "tags": [
+          "videos"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProgramIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}": {
+      "get": {
+        "operationId": "apps_videos_api_get_program",
+        "summary": "Program detail including runs list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgramDetailOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs": {
+      "post": {
+        "operationId": "apps_videos_api_copy_run",
+        "summary": "Snapshot the latest run into a new run (save-as; both stay mutable)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopyRunOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}": {
+      "get": {
+        "operationId": "apps_videos_api_get_run",
+        "summary": "Run detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetailOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/library.json": {
+      "get": {
+        "operationId": "apps_videos_api_get_library",
+        "summary": "Structured clip library for the explorer drawer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/render-status": {
+      "get": {
+        "operationId": "apps_videos_api_get_render_status",
+        "summary": "Background-render busy flag for a run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderStatusOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/render-log": {
+      "get": {
+        "operationId": "apps_videos_api_get_render_log",
+        "summary": "Captured stdout+stderr of the most recent render chain",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderLogOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/feedback": {
+      "get": {
+        "operationId": "apps_videos_api_get_feedback",
+        "summary": "Read the run's feedback markdown log",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackLogOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      },
+      "post": {
+        "operationId": "apps_videos_api_post_feedback",
+        "summary": "Append a note to the run's feedback markdown log",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackPostOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackPostIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/edit": {
+      "post": {
+        "operationId": "apps_videos_api_post_edit",
+        "summary": "Save an edit to the run's spec.yaml (save only \u2014 does NOT render)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClipEditOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "Save an edit to spec.yaml. Does NOT trigger a render \u2014 that's a\nseparate explicit step via POST /build. Splitting the two lets the\noperator batch many edits before paying the render cost; the\n\"Re-render\" button in the UI is the single canonical render entry.",
+        "tags": [
+          "videos"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClipEditIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/edit-batch": {
+      "post": {
+        "operationId": "apps_videos_api_post_edit_batch",
+        "summary": "Save N edits to spec.yaml in one Drive round-trip (save only \u2014 does NOT render)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditBatchOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "Atomic batch edit. All ops are validated and applied in order;\nif any fails, the spec is not saved (all-or-nothing).",
+        "tags": [
+          "videos"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/build": {
+      "post": {
+        "operationId": "apps_videos_api_post_build",
+        "summary": "Trigger render or rebuild-only for this run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildTriggerOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildTriggerIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/explorer.html": {
+      "get": {
+        "operationId": "apps_videos_api_serve_explorer",
+        "summary": "Serve the run's generated explorer index.html",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/library.html": {
+      "get": {
+        "operationId": "apps_videos_api_serve_library_html",
+        "summary": "Serve the run's generated library.html",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/media/{file_name}": {
+      "get": {
+        "operationId": "apps_videos_api_serve_media",
+        "summary": "Serve an MP4 from the run's explorer media directory (Range-aware)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "file_name",
+            "schema": {
+              "title": "File Name",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/opps/public/{workspace}/{slug}/runs/{run_id}/summary": {
+      "get": {
+        "operationId": "apps_opps_api_public_opp_summary",
+        "summary": "Public per-run summary (no auth, stakeholder-facing)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "description": "Stakeholder-facing per-run summary. AllowAny because share links\nare meant to circulate. Workspace + slug + run_id all in the URL \u2014\nno leak-prevention 404 differentiation here, the URL is the secret.\n\nCached 60 seconds in the Django cache to absorb refresh storms.",
+        "tags": [
+          "opps-public"
+        ]
+      }
+    },
+    "/api/share/{token}": {
+      "get": {
+        "operationId": "apps_sessions_api_public_share_view",
+        "summary": "Public shared session view",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Return a shared session's messages.  No auth required.",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/workspaces": {
       "get": {
-        "operationId": "apps_workspaces_api_v2_list_workspaces",
+        "operationId": "apps_workspaces_api_list_workspaces",
         "summary": "List my workspaces",
         "parameters": [],
         "responses": {
@@ -1645,7 +2922,7 @@
         ]
       },
       "post": {
-        "operationId": "apps_workspaces_api_v2_post_workspace",
+        "operationId": "apps_workspaces_api_post_workspace",
         "summary": "Create workspace",
         "parameters": [],
         "responses": {
@@ -1673,9 +2950,30 @@
         ]
       }
     },
+    "/api/workspaces/drive-config": {
+      "get": {
+        "operationId": "apps_workspaces_api_get_drive_config",
+        "summary": "Drive service-account email",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Returns the Google service-account email used for Drive access.\n\nCallers display this so the user knows which account to share their\nDrive folder with.",
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/workspaces/{slug}": {
       "get": {
-        "operationId": "apps_workspaces_api_v2_workspace_detail",
+        "operationId": "apps_workspaces_api_workspace_detail",
         "summary": "Workspace detail",
         "parameters": [
           {
@@ -1710,7 +3008,7 @@
         ]
       },
       "patch": {
-        "operationId": "apps_workspaces_api_v2_update_workspace",
+        "operationId": "apps_workspaces_api_update_workspace",
         "summary": "Update workspace",
         "parameters": [
           {
@@ -1757,7 +3055,7 @@
     },
     "/api/workspaces/{slug}/members": {
       "get": {
-        "operationId": "apps_workspaces_api_v2_list_members",
+        "operationId": "apps_workspaces_api_list_members",
         "summary": "List workspace members",
         "parameters": [
           {
@@ -1798,7 +3096,7 @@
     },
     "/api/workspaces/{slug}/members/invite": {
       "post": {
-        "operationId": "apps_workspaces_api_v2_invite_member",
+        "operationId": "apps_workspaces_api_invite_member",
         "summary": "Invite a member",
         "parameters": [
           {
@@ -1845,7 +3143,7 @@
     },
     "/api/workspaces/{slug}/members/{user_id}": {
       "delete": {
-        "operationId": "apps_workspaces_api_v2_remove_member",
+        "operationId": "apps_workspaces_api_remove_member",
         "summary": "Remove member",
         "parameters": [
           {
@@ -1880,11 +3178,55 @@
             "DjangoSessionAuth": []
           }
         ]
+      },
+      "patch": {
+        "operationId": "apps_workspaces_api_change_member_role",
+        "summary": "Change member role",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMemberOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
       }
     },
     "/api/workspaces/{slug}/leave": {
       "post": {
-        "operationId": "apps_workspaces_api_v2_leave_workspace",
+        "operationId": "apps_workspaces_api_leave_workspace",
         "summary": "Leave workspace",
         "parameters": [
           {
@@ -1914,7 +3256,7 @@
     },
     "/api/workspaces/{slug}/activity": {
       "get": {
-        "operationId": "apps_workspaces_api_v2_workspace_activity",
+        "operationId": "apps_workspaces_api_workspace_activity",
         "summary": "Workspace audit log (owner only)",
         "parameters": [
           {
@@ -1944,7 +3286,7 @@
     },
     "/api/workspaces/{slug}/drive-config/verify": {
       "post": {
-        "operationId": "apps_workspaces_api_v2_verify_drive_access",
+        "operationId": "apps_workspaces_api_verify_drive_access",
         "summary": "Verify Drive access",
         "parameters": [
           {
@@ -1972,9 +3314,78 @@
         ]
       }
     },
+    "/api/invites/{token}": {
+      "get": {
+        "operationId": "apps_workspaces_api_invite_preview",
+        "summary": "Invite preview (public)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitePreviewOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/invites/{token}/accept": {
+      "post": {
+        "operationId": "apps_workspaces_api_invite_accept",
+        "summary": "Accept workspace invite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteAcceptOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/ingest/upload": {
       "post": {
-        "operationId": "apps_ingest_api_v2_upload",
+        "operationId": "apps_ingest_api_upload",
         "summary": "Upload a JSONL transcript",
         "parameters": [],
         "responses": {
@@ -2077,7 +3488,7 @@
     },
     "/api/mobile/status": {
       "get": {
-        "operationId": "apps_mobile_api_v2_status",
+        "operationId": "apps_mobile_api_status",
         "summary": "Emulator status config",
         "parameters": [],
         "responses": {
@@ -2104,7 +3515,7 @@
     },
     "/api/mobile/ensure-running": {
       "post": {
-        "operationId": "apps_mobile_api_v2_ensure_running",
+        "operationId": "apps_mobile_api_ensure_running",
         "summary": "Ensure emulator is running",
         "parameters": [
           {
@@ -2141,7 +3552,7 @@
     },
     "/api/mobile/stop": {
       "post": {
-        "operationId": "apps_mobile_api_v2_stop",
+        "operationId": "apps_mobile_api_stop",
         "summary": "Stop emulator",
         "parameters": [
           {
@@ -2172,7 +3583,7 @@
     },
     "/api/mobile/diagnose": {
       "get": {
-        "operationId": "apps_mobile_api_v2_diagnose",
+        "operationId": "apps_mobile_api_diagnose",
         "summary": "Diagnose emulator",
         "parameters": [],
         "responses": {
@@ -2199,7 +3610,7 @@
     },
     "/api/mobile/states": {
       "get": {
-        "operationId": "apps_mobile_api_v2_states",
+        "operationId": "apps_mobile_api_states",
         "summary": "List emulator states",
         "parameters": [],
         "responses": {
@@ -2226,7 +3637,7 @@
     },
     "/api/mobile/states/select": {
       "post": {
-        "operationId": "apps_mobile_api_v2_select_state",
+        "operationId": "apps_mobile_api_select_state",
         "summary": "Select active state",
         "parameters": [
           {
@@ -2256,7 +3667,7 @@
     },
     "/api/mobile/snapshots/save": {
       "post": {
-        "operationId": "apps_mobile_api_v2_save_snapshot",
+        "operationId": "apps_mobile_api_save_snapshot",
         "summary": "Save emulator snapshot",
         "parameters": [],
         "responses": {
@@ -2286,7 +3697,7 @@
     },
     "/api/mobile/snapshots/load": {
       "post": {
-        "operationId": "apps_mobile_api_v2_load_snapshot",
+        "operationId": "apps_mobile_api_load_snapshot",
         "summary": "Load emulator snapshot",
         "parameters": [],
         "responses": {
@@ -2316,7 +3727,7 @@
     },
     "/api/mobile/run-recipe": {
       "post": {
-        "operationId": "apps_mobile_api_v2_run_recipe",
+        "operationId": "apps_mobile_api_run_recipe",
         "summary": "Submit recipe for async execution",
         "parameters": [],
         "responses": {
@@ -2353,7 +3764,7 @@
     },
     "/api/mobile/jobs/{job_id}": {
       "get": {
-        "operationId": "apps_mobile_api_v2_get_job",
+        "operationId": "apps_mobile_api_get_job",
         "summary": "Poll async job status",
         "parameters": [
           {
@@ -2390,7 +3801,7 @@
     },
     "/api/mobile/apk/install": {
       "post": {
-        "operationId": "apps_mobile_api_v2_install_apk",
+        "operationId": "apps_mobile_api_install_apk",
         "summary": "Install APK",
         "parameters": [
           {
@@ -2420,7 +3831,7 @@
     },
     "/api/mobile/capture-ui-dump": {
       "post": {
-        "operationId": "apps_mobile_api_v2_capture_ui_dump",
+        "operationId": "apps_mobile_api_capture_ui_dump",
         "summary": "Capture UI dump",
         "parameters": [],
         "responses": {
@@ -2440,7 +3851,7 @@
     },
     "/api/mobile/screenshot": {
       "post": {
-        "operationId": "apps_mobile_api_v2_screenshot",
+        "operationId": "apps_mobile_api_screenshot",
         "summary": "Take screenshot",
         "parameters": [],
         "responses": {
@@ -2460,7 +3871,7 @@
     },
     "/api/mobile/restart-runner": {
       "post": {
-        "operationId": "apps_mobile_api_v2_restart_runner",
+        "operationId": "apps_mobile_api_restart_runner",
         "summary": "Restart the in-VM mobile runner",
         "parameters": [
           {
@@ -2491,7 +3902,7 @@
     },
     "/api/mobile/admin/patch-launch-script": {
       "post": {
-        "operationId": "apps_mobile_api_v2_admin_patch_launch_script",
+        "operationId": "apps_mobile_api_admin_patch_launch_script",
         "summary": "Admin: patch in-VM launch script",
         "parameters": [],
         "responses": {
@@ -2528,7 +3939,7 @@
     },
     "/api/mobile/admin/launch-script-patches": {
       "get": {
-        "operationId": "apps_mobile_api_v2_admin_list_launch_script_patches",
+        "operationId": "apps_mobile_api_admin_list_launch_script_patches",
         "summary": "Admin: list launch script patches",
         "parameters": [
           {
@@ -2569,7 +3980,7 @@
     },
     "/api/system/overview": {
       "get": {
-        "operationId": "apps_system_api_v2_overview",
+        "operationId": "apps_system_api_overview",
         "summary": "Full system overview",
         "parameters": [],
         "responses": {
@@ -2596,7 +4007,7 @@
     },
     "/api/system/skills": {
       "get": {
-        "operationId": "apps_system_api_v2_list_skills",
+        "operationId": "apps_system_api_list_skills",
         "summary": "List skills",
         "parameters": [],
         "responses": {
@@ -2627,7 +4038,7 @@
     },
     "/api/system/skills/{name}": {
       "get": {
-        "operationId": "apps_system_api_v2_skill_detail",
+        "operationId": "apps_system_api_skill_detail",
         "summary": "Skill detail",
         "parameters": [
           {
@@ -2664,7 +4075,7 @@
     },
     "/api/system/agents": {
       "get": {
-        "operationId": "apps_system_api_v2_list_agents",
+        "operationId": "apps_system_api_list_agents",
         "summary": "List agents",
         "parameters": [],
         "responses": {
@@ -2695,7 +4106,7 @@
     },
     "/api/system/agents/{name}": {
       "get": {
-        "operationId": "apps_system_api_v2_agent_detail",
+        "operationId": "apps_system_api_agent_detail",
         "summary": "Agent detail",
         "parameters": [
           {
@@ -2732,7 +4143,7 @@
     },
     "/api/system/version": {
       "get": {
-        "operationId": "apps_system_api_v2_version",
+        "operationId": "apps_system_api_version",
         "summary": "Plugin version check",
         "parameters": [],
         "responses": {
@@ -2759,7 +4170,7 @@
     },
     "/api/system/cli-diag": {
       "post": {
-        "operationId": "apps_system_api_v2_cli_diag",
+        "operationId": "apps_system_api_cli_diag",
         "summary": "CLI diagnostic (admin)",
         "parameters": [
           {
@@ -2813,7 +4224,7 @@
     },
     "/api/tokens": {
       "get": {
-        "operationId": "apps_service_accounts_api_v2_list_tokens",
+        "operationId": "apps_service_accounts_api_list_tokens",
         "summary": "List my personal tokens",
         "parameters": [],
         "responses": {
@@ -2842,7 +4253,7 @@
         ]
       },
       "post": {
-        "operationId": "apps_service_accounts_api_v2_create_token",
+        "operationId": "apps_service_accounts_api_create_token",
         "summary": "Create a personal token",
         "parameters": [],
         "responses": {
@@ -2879,7 +4290,7 @@
     },
     "/api/tokens/{token_id}": {
       "delete": {
-        "operationId": "apps_service_accounts_api_v2_delete_token",
+        "operationId": "apps_service_accounts_api_delete_token",
         "summary": "Revoke a personal token",
         "parameters": [
           {
@@ -2909,7 +4320,7 @@
     },
     "/api/auth/me": {
       "get": {
-        "operationId": "apps_auth_api_v2_me",
+        "operationId": "apps_auth_api_me",
         "summary": "Current user info",
         "parameters": [],
         "responses": {
@@ -2936,7 +4347,7 @@
     },
     "/api/auth/logout": {
       "post": {
-        "operationId": "apps_auth_api_v2_logout",
+        "operationId": "apps_auth_api_logout",
         "summary": "Logout",
         "parameters": [],
         "responses": {
@@ -2956,7 +4367,7 @@
     },
     "/api/auth/e2e-login": {
       "post": {
-        "operationId": "apps_auth_api_v2_e2e_login",
+        "operationId": "apps_auth_api_e2e_login",
         "summary": "Automation login (token-gated)",
         "parameters": [],
         "responses": {
@@ -2988,7 +4399,7 @@
     },
     "/api/auth/cli/status": {
       "get": {
-        "operationId": "apps_auth_api_v2_cli_auth_status",
+        "operationId": "apps_auth_api_cli_auth_status",
         "summary": "CLI auth status",
         "parameters": [],
         "responses": {
@@ -3015,7 +4426,7 @@
     },
     "/api/auth/cli/upload": {
       "post": {
-        "operationId": "apps_auth_api_v2_cli_auth_upload",
+        "operationId": "apps_auth_api_cli_auth_upload",
         "summary": "Upload CLI credentials",
         "parameters": [
           {
@@ -3053,7 +4464,7 @@
     },
     "/api/auth/nova/status": {
       "get": {
-        "operationId": "apps_auth_api_v2_nova_auth_status",
+        "operationId": "apps_auth_api_nova_auth_status",
         "summary": "Nova OAuth status",
         "parameters": [],
         "responses": {
@@ -3080,7 +4491,7 @@
     },
     "/api/auth/nova/disconnect": {
       "post": {
-        "operationId": "apps_auth_api_v2_nova_auth_disconnect",
+        "operationId": "apps_auth_api_nova_auth_disconnect",
         "summary": "Disconnect Nova OAuth (admin)",
         "parameters": [],
         "responses": {
@@ -3098,9 +4509,58 @@
         ]
       }
     },
+    "/api/auth/cli/promote": {
+      "post": {
+        "operationId": "apps_auth_api_cli_auth_promote",
+        "summary": "Promote user CLI credential to global scope (staff/automation only)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliAuthPromoteOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auth/cli/expected-shape": {
+      "get": {
+        "operationId": "apps_auth_api_cli_auth_expected_shape",
+        "summary": "Expected CLI credential blob shape (public)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CliAuthExpectedShapeOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
-        "operationId": "apps_common_api_v2_health",
+        "operationId": "apps_common_api_health",
         "summary": "Health check (public)",
         "parameters": [],
         "responses": {
@@ -3133,105 +4593,6 @@
   },
   "components": {
     "schemas": {
-      "OppCardOut": {
-        "additionalProperties": false,
-        "properties": {
-          "slug": {
-            "title": "Slug",
-            "type": "string"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "current_phase": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Phase"
-          },
-          "current_skill": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Skill"
-          },
-          "run_count": {
-            "minimum": 0,
-            "title": "Run Count",
-            "type": "integer"
-          },
-          "last_run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Run Id"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "slug",
-          "title",
-          "run_count",
-          "updated_at"
-        ],
-        "title": "OppCardOut",
-        "type": "object"
-      },
-      "Page_OppCardOut_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/OppCardOut"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "total": {
-            "minimum": 0,
-            "title": "Total",
-            "type": "integer"
-          },
-          "offset": {
-            "minimum": 0,
-            "title": "Offset",
-            "type": "integer"
-          },
-          "limit": {
-            "maximum": 500,
-            "minimum": 1,
-            "title": "Limit",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
-        ],
-        "title": "Page[OppCardOut]",
-        "type": "object"
-      },
       "OppCreateIn": {
         "additionalProperties": false,
         "description": "Request body for POST /w/{workspace_slug}/opps.",
@@ -3349,41 +4710,6 @@
         "title": "OppRunOut",
         "type": "object"
       },
-      "Page_OppRunOut_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/OppRunOut"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "total": {
-            "minimum": 0,
-            "title": "Total",
-            "type": "integer"
-          },
-          "offset": {
-            "minimum": 0,
-            "title": "Offset",
-            "type": "integer"
-          },
-          "limit": {
-            "maximum": 500,
-            "minimum": 1,
-            "title": "Limit",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
-        ],
-        "title": "Page[OppRunOut]",
-        "type": "object"
-      },
       "ScorecardOut": {
         "additionalProperties": false,
         "properties": {
@@ -3430,8 +4756,8 @@
         "type": "object"
       },
       "ArtifactOut": {
-        "additionalProperties": false,
-        "description": "One entry in the plugin's artifact-manifest.ts.",
+        "additionalProperties": true,
+        "description": "One entry in the plugin's artifact-manifest.ts.\n\nUses ``extra=\"allow\"`` because the artifact manifest evolves with the\nplugin (new fields like ``phase``, ``role``, etc. appear over time);\npinning the schema causes the System Overview to 500 every time the\nplugin adds a metadata field. Tradeoff: drift not caught at schema\nvalidation, but the System Overview is a read-through display and\nnew fields just get passed through to the frontend.",
         "properties": {
           "path": {
             "title": "Path",
@@ -4244,6 +5570,1103 @@
         "title": "ActivityFeedOut",
         "type": "object"
       },
+      "TemplateMetaOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "expected_duration_seconds": {
+            "title": "Expected Duration Seconds",
+            "type": "integer"
+          },
+          "intended_audience": {
+            "title": "Intended Audience",
+            "type": "string"
+          },
+          "when_to_use": {
+            "title": "When To Use",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "expected_duration_seconds",
+          "intended_audience",
+          "when_to_use"
+        ],
+        "title": "TemplateMetaOut",
+        "type": "object"
+      },
+      "TemplateBundleOut": {
+        "additionalProperties": false,
+        "description": "Full template payload \u2014 agent reads `prompt_md` and follows it,\nfills the `skeleton_yaml` placeholders, and posts the result back\nvia POST /programs.",
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/TemplateMetaOut"
+          },
+          "skeleton_yaml": {
+            "title": "Skeleton Yaml",
+            "type": "string"
+          },
+          "prompt_md": {
+            "title": "Prompt Md",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meta",
+          "skeleton_yaml",
+          "prompt_md"
+        ],
+        "title": "TemplateBundleOut",
+        "type": "object"
+      },
+      "MediaLibraryVideoItemOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "drive_id": {
+            "title": "Drive Id",
+            "type": "string"
+          },
+          "drive_url": {
+            "title": "Drive Url",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "drive_id",
+          "drive_url",
+          "filename",
+          "status"
+        ],
+        "title": "MediaLibraryVideoItemOut",
+        "type": "object"
+      },
+      "MediaLibraryVideoOut": {
+        "additionalProperties": false,
+        "properties": {
+          "subfolders": {
+            "items": {
+              "$ref": "#/components/schemas/MediaLibraryVideoSubfolderOut"
+            },
+            "title": "Subfolders",
+            "type": "array"
+          }
+        },
+        "required": [
+          "subfolders"
+        ],
+        "title": "MediaLibraryVideoOut",
+        "type": "object"
+      },
+      "MediaLibraryVideoSubfolderOut": {
+        "additionalProperties": false,
+        "properties": {
+          "subfolder": {
+            "title": "Subfolder",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MediaLibraryVideoItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "subfolder",
+          "items"
+        ],
+        "title": "MediaLibraryVideoSubfolderOut",
+        "type": "object"
+      },
+      "MediaLibraryAudioItemOut": {
+        "additionalProperties": false,
+        "properties": {
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "drive_id": {
+            "title": "Drive Id",
+            "type": "string"
+          },
+          "drive_url": {
+            "title": "Drive Url",
+            "type": "string"
+          },
+          "voice_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Id"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "duration_sec": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Sec"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hash",
+          "drive_id",
+          "drive_url",
+          "status"
+        ],
+        "title": "MediaLibraryAudioItemOut",
+        "type": "object"
+      },
+      "MediaLibraryAudioOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MediaLibraryAudioItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MediaLibraryAudioOut",
+        "type": "object"
+      },
+      "ProgramCardOut": {
+        "additionalProperties": false,
+        "description": "One program in the list view \u2014 surfaces the *latest* run's metadata.",
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tagline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagline"
+          },
+          "country_focus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Focus"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "program_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program Url"
+          },
+          "manifest_count": {
+            "minimum": 0,
+            "title": "Manifest Count",
+            "type": "integer"
+          },
+          "has_explorer_build": {
+            "title": "Has Explorer Build",
+            "type": "boolean"
+          },
+          "latest_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Run Id"
+          },
+          "run_count": {
+            "minimum": 0,
+            "title": "Run Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "manifest_count",
+          "has_explorer_build",
+          "run_count"
+        ],
+        "title": "ProgramCardOut",
+        "type": "object"
+      },
+      "CreateProgramOut": {
+        "additionalProperties": false,
+        "properties": {
+          "program_slug": {
+            "title": "Program Slug",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "spec_path": {
+            "title": "Spec Path",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "program_slug",
+          "run_id",
+          "spec_path",
+          "message"
+        ],
+        "title": "CreateProgramOut",
+        "type": "object"
+      },
+      "CreateProgramIn": {
+        "additionalProperties": false,
+        "description": "POST /programs body. The agent generates the full spec.yaml\n(string) by following the template's prompt and posts it here. The\nserver only validates structure + slug uniqueness; the agent owns\ncontent quality.",
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "spec_yaml": {
+            "title": "Spec Yaml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "spec_yaml"
+        ],
+        "title": "CreateProgramIn",
+        "type": "object"
+      },
+      "ProgramDetailOut": {
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tagline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagline"
+          },
+          "country_focus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Focus"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "program_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program Url"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunSummaryOut"
+            },
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "runs"
+        ],
+        "title": "ProgramDetailOut",
+        "type": "object"
+      },
+      "RunSummaryOut": {
+        "additionalProperties": false,
+        "description": "One run inside a program.",
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "has_output": {
+            "title": "Has Output",
+            "type": "boolean"
+          },
+          "has_explorer_build": {
+            "title": "Has Explorer Build",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run_id",
+          "has_output",
+          "has_explorer_build"
+        ],
+        "title": "RunSummaryOut",
+        "type": "object"
+      },
+      "CopyRunOut": {
+        "additionalProperties": false,
+        "description": "POST /programs/<slug>/runs \u2192 new run id.",
+        "properties": {
+          "program_slug": {
+            "title": "Program Slug",
+            "type": "string"
+          },
+          "new_run_id": {
+            "title": "New Run Id",
+            "type": "string"
+          },
+          "copied_from": {
+            "title": "Copied From",
+            "type": "string"
+          }
+        },
+        "required": [
+          "program_slug",
+          "new_run_id",
+          "copied_from"
+        ],
+        "title": "CopyRunOut",
+        "type": "object"
+      },
+      "RunDetailOut": {
+        "additionalProperties": false,
+        "description": "One run's full payload \u2014 spec metadata + URLs for the embedded media.",
+        "properties": {
+          "program_slug": {
+            "title": "Program Slug",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "manifest_count": {
+            "minimum": 0,
+            "title": "Manifest Count",
+            "type": "integer"
+          },
+          "has_output": {
+            "title": "Has Output",
+            "type": "boolean"
+          },
+          "has_explorer_build": {
+            "title": "Has Explorer Build",
+            "type": "boolean"
+          },
+          "explorer_url": {
+            "title": "Explorer Url",
+            "type": "string"
+          },
+          "yaml_path": {
+            "title": "Yaml Path",
+            "type": "string"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec"
+          }
+        },
+        "required": [
+          "program_slug",
+          "run_id",
+          "name",
+          "manifest_count",
+          "has_output",
+          "has_explorer_build",
+          "explorer_url",
+          "yaml_path"
+        ],
+        "title": "RunDetailOut",
+        "type": "object"
+      },
+      "LibraryEntryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "alias": {
+            "title": "Alias",
+            "type": "string"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "used_in": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Used In",
+            "type": "array"
+          }
+        },
+        "required": [
+          "alias"
+        ],
+        "title": "LibraryEntryOut",
+        "type": "object"
+      },
+      "LibraryOut": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryEntryOut"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "title": "LibraryOut",
+        "type": "object"
+      },
+      "RenderStatusOut": {
+        "additionalProperties": false,
+        "properties": {
+          "program_slug": {
+            "title": "Program Slug",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "busy": {
+            "title": "Busy",
+            "type": "boolean"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "appears_failed": {
+            "default": false,
+            "title": "Appears Failed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "program_slug",
+          "run_id",
+          "busy"
+        ],
+        "title": "RenderStatusOut",
+        "type": "object"
+      },
+      "RenderLogOut": {
+        "additionalProperties": false,
+        "properties": {
+          "program_slug": {
+            "title": "Program Slug",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "log": {
+            "title": "Log",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "busy": {
+            "title": "Busy",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "program_slug",
+          "run_id",
+          "log",
+          "size_bytes",
+          "busy"
+        ],
+        "title": "RenderLogOut",
+        "type": "object"
+      },
+      "FeedbackLogOut": {
+        "additionalProperties": false,
+        "properties": {
+          "program_slug": {
+            "title": "Program Slug",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          }
+        },
+        "required": [
+          "program_slug",
+          "run_id",
+          "markdown"
+        ],
+        "title": "FeedbackLogOut",
+        "type": "object"
+      },
+      "FeedbackPostOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "timestamp"
+        ],
+        "title": "FeedbackPostOut",
+        "type": "object"
+      },
+      "FeedbackPostIn": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "default": "global",
+            "enum": [
+              "global",
+              "beat"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "beatId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beatid"
+          },
+          "timestampSec": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestampsec"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "title": "FeedbackPostIn",
+        "type": "object"
+      },
+      "ClipEditOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "rerender_triggered": {
+            "title": "Rerender Triggered",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "message",
+          "rerender_triggered"
+        ],
+        "title": "ClipEditOut",
+        "type": "object"
+      },
+      "ClipEditIn": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "enum": [
+              "set-clip-start",
+              "set-clip-trim",
+              "set-clip-asset",
+              "set-narration",
+              "set-stat"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "scene-clip",
+                  "product-beat"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "start_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Seconds"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "beatId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beatid"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "big": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Big"
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caption"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "title": "ClipEditIn",
+        "type": "object"
+      },
+      "EditBatchOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "applied",
+          "message"
+        ],
+        "title": "EditBatchOut",
+        "type": "object"
+      },
+      "EditBatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "ops": {
+            "items": {
+              "$ref": "#/components/schemas/ClipEditIn"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Ops",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "title": "EditBatchIn",
+        "type": "object"
+      },
+      "BuildTriggerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "triggered": {
+            "title": "Triggered",
+            "type": "boolean"
+          },
+          "mode": {
+            "enum": [
+              "render",
+              "build-only"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "triggered",
+          "mode",
+          "message"
+        ],
+        "title": "BuildTriggerOut",
+        "type": "object"
+      },
+      "BuildTriggerIn": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "default": "render",
+            "enum": [
+              "render",
+              "build-only"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "BuildTriggerIn",
+        "type": "object"
+      },
       "WorkspaceOut": {
         "additionalProperties": false,
         "properties": {
@@ -4506,6 +6929,77 @@
           "role"
         ],
         "title": "WorkspaceInviteIn",
+        "type": "object"
+      },
+      "InvitePreviewOut": {
+        "additionalProperties": false,
+        "description": "GET /api/invites/{token} \u2014 public invite preview (no auth required).",
+        "properties": {
+          "workspace_slug": {
+            "title": "Workspace Slug",
+            "type": "string"
+          },
+          "workspace_display_name": {
+            "title": "Workspace Display Name",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "invited_by_email": {
+            "title": "Invited By Email",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_slug",
+          "workspace_display_name",
+          "role",
+          "invited_by_email",
+          "email",
+          "expires_at"
+        ],
+        "title": "InvitePreviewOut",
+        "type": "object"
+      },
+      "InviteAcceptOut": {
+        "additionalProperties": false,
+        "description": "POST /api/invites/{token}/accept \u2014 accept an invite.",
+        "properties": {
+          "workspace_slug": {
+            "title": "Workspace Slug",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_slug",
+          "role"
+        ],
+        "title": "InviteAcceptOut",
         "type": "object"
       },
       "CostBreakdownOut": {
@@ -5383,9 +7877,15 @@
             "type": "string"
           },
           "description": {
-            "default": "",
-            "title": "Description",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "used_by": {
             "default": [],
@@ -6116,7 +8616,7 @@
       },
       "NovaAuthStatusOut": {
         "additionalProperties": false,
-        "description": "GET /api/auth/nova/status \u2014 is the Nova MCP credential connected?\n\n``can_manage`` is True for staff + automation accounts \u2014 they get\nthe Connect/Disconnect controls in the UI.",
+        "description": "GET /api/auth/nova/status \u2014 is the Nova MCP credential connected?\n\n``can_manage`` is True for staff + automation accounts \u2014 they get\nthe Connect/Disconnect controls in the UI.\n\n``expires_at`` is an ISO-8601 string when present.  The blob may store\neither an ISO string or a unix-epoch integer; the view normalises to\nstring before validation.",
         "properties": {
           "connected": {
             "title": "Connected",
@@ -6159,6 +8659,53 @@
           "valid"
         ],
         "title": "NovaAuthStatusOut",
+        "type": "object"
+      },
+      "CliAuthPromoteOut": {
+        "additionalProperties": false,
+        "description": "POST /api/auth/cli/promote \u2014 promote user blob to global scope.",
+        "properties": {
+          "promoted": {
+            "title": "Promoted",
+            "type": "boolean"
+          },
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "token_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Prefix"
+          }
+        },
+        "required": [
+          "promoted",
+          "authenticated"
+        ],
+        "title": "CliAuthPromoteOut",
+        "type": "object"
+      },
+      "CliAuthExpectedShapeOut": {
+        "additionalProperties": false,
+        "description": "GET /api/auth/cli/expected-shape \u2014 schema introspection (public).",
+        "properties": {
+          "shape": {
+            "additionalProperties": true,
+            "title": "Shape",
+            "type": "object"
+          }
+        },
+        "required": [
+          "shape"
+        ],
+        "title": "CliAuthExpectedShapeOut",
         "type": "object"
       },
       "HealthCheckOut": {
