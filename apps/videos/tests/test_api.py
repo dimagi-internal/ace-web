@@ -348,9 +348,15 @@ def test_post_build_build_only_mode(member_client, videos_root):
 
 @pytest.mark.django_db
 def test_render_status_reads_redis(member_client, videos_root):
+    """busy=True when the chain is in flight (sentinel older than
+    started_at). The fixture writes explorer/index.html at fixture-
+    setup time; pick a future started_at so the sentinel is OLDER and
+    busy stays True per the mtime-based derivation in service.render_status."""
+    import datetime as dt
     client, _ = member_client
+    future = (dt.datetime.now(dt.UTC) + dt.timedelta(hours=1)).isoformat()
     fake_redis = mock.MagicMock()
-    fake_redis.get.side_effect = lambda k: "1" if k.endswith(":busy") else "2026-05-15T01:00:00+00:00"
+    fake_redis.get.side_effect = lambda k: "1" if k.endswith(":busy") else future
     with mock.patch("apps.videos.service._get_redis", return_value=fake_redis):
         resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-001/render-status")
     assert resp.status_code == 200, resp.content

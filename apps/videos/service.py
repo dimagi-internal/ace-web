@@ -1089,11 +1089,37 @@ def trigger_rerender(workspace: Workspace, slug: str, run_id: str, *, needs_hydr
 
 
 def render_status(slug: str, run_id: str) -> dict[str, Any]:
+    """Report whether a render is in flight.
+
+    The Redis busy key has a 1-hour TTL and is set on every trigger but
+    NEVER cleared on success (so polling apps can rate-limit re-renders).
+    Treating that key alone as ground truth means the UI shows
+    "rendering..." for an hour after a 60-second render.
+
+    Real signal: `explorer/index.html` is the final file both the full
+    render chain and the build-only chain produce. If its mtime is
+    newer than started_at, the chain has completed — return busy=False
+    regardless of the Redis flag. Falls back to the raw Redis flag if
+    no started_at is available.
+    """
     r = _get_redis()
-    busy = bool(r.get(_busy_key(slug, run_id)))
+    busy_flag_set = bool(r.get(_busy_key(slug, run_id)))
     started = r.get(_started_key(slug, run_id))
     if isinstance(started, bytes):
         started = started.decode("utf-8")
+
+    actually_done = False
+    if busy_flag_set and started:
+        try:
+            started_dt = dt.datetime.fromisoformat(started.replace("Z", "+00:00"))
+            sentinel = explorer_dir(slug, run_id) / "index.html"
+            if sentinel.exists():
+                sentinel_mtime = dt.datetime.fromtimestamp(sentinel.stat().st_mtime, tz=dt.UTC)
+                actually_done = sentinel_mtime > started_dt
+        except (ValueError, OSError):
+            actually_done = False
+
+    busy = busy_flag_set and not actually_done
     return {"program_slug": slug, "run_id": run_id, "busy": busy, "started_at": started}
 
 
