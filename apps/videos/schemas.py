@@ -91,6 +91,20 @@ class FeedbackLogOut(StrictModel):
     markdown: str
 
 
+class RenderLogOut(StrictModel):
+    program_slug: str
+    run_id: str
+    """ISO 8601 of the most recent render-trigger; None if never rendered."""
+    started_at: str | None = None
+    """Full captured stdout+stderr of the most recent render chain.
+    Empty when no render has been triggered (or the log file is missing)."""
+    log: str
+    size_bytes: int
+    """True while the render chain is still running (Redis busy flag).
+    Treat the log as a tail in that case — the chain may still be writing."""
+    busy: bool
+
+
 # ---------------------------------------------------------------------------
 # Write-side
 # ---------------------------------------------------------------------------

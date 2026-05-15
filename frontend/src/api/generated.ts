@@ -641,6 +641,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/render-log": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Captured stdout+stderr of the most recent render chain */
+        readonly get: operations["apps_videos_api_get_render_log"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/feedback": {
         readonly parameters: {
             readonly query?: never;
@@ -2221,6 +2238,21 @@ export interface components {
             readonly busy: boolean;
             /** Started At */
             readonly started_at?: string | null;
+        };
+        /** RenderLogOut */
+        readonly RenderLogOut: {
+            /** Program Slug */
+            readonly program_slug: string;
+            /** Run Id */
+            readonly run_id: string;
+            /** Started At */
+            readonly started_at?: string | null;
+            /** Log */
+            readonly log: string;
+            /** Size Bytes */
+            readonly size_bytes: number;
+            /** Busy */
+            readonly busy: boolean;
         };
         /** FeedbackLogOut */
         readonly FeedbackLogOut: {
@@ -4483,6 +4515,30 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["RenderStatusOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_get_render_log: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RenderLogOut"];
                 };
             };
         };
