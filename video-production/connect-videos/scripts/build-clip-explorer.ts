@@ -739,23 +739,6 @@ function renderHtml(args: {
   .lib-tag.used-in { background: rgba(31,143,111,0.15); color: var(--green); }
   .lib-tag.unused { background: var(--sky-tint); color: var(--muted); }
   .lib-placeholder { padding: 16px; text-align: center; color: var(--muted); border-radius: 8px; background: var(--paper); border: 1px dashed var(--rule); font: 400 12px var(--sans); }
-  /* Feedback widgets */
-  .fb-toggle { margin-left: auto; background: white; border: 1px solid var(--rule); color: var(--ink-2); cursor: pointer; padding: 4px 10px; font: 600 11px var(--sans); border-radius: 999px; }
-  .fb-toggle:hover { background: var(--paper); }
-  .fb-toggle.active { background: var(--indigo); color: white; border-color: var(--indigo); }
-  .fb-panel { display: none; margin-top: 12px; padding: 12px; background: white; border: 1px solid var(--line); border-radius: 10px; }
-  .fb-panel.open { display: block; }
-  .fb-panel textarea { width: 100%; min-height: 80px; padding: 8px 10px; font: 400 13px var(--sans); border: 1px solid var(--rule); border-radius: 6px; resize: vertical; }
-  .fb-panel .fb-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-  .fb-panel .fb-row .ts-grab { font: 500 11px var(--mono); color: var(--muted); }
-  .fb-panel button.fb-save { background: var(--indigo); color: white; border: none; padding: 6px 14px; font: 600 12px var(--sans); border-radius: 6px; cursor: pointer; }
-  .fb-panel button.fb-save:hover { background: var(--indigo-deep); }
-  .fb-status { font-size: 11px; color: var(--muted); }
-  .global-fb { margin: 24px 0; padding: 14px 16px; background: white; border: 1px solid var(--line); border-radius: 12px; }
-  .global-fb h3 { margin: 0 0 6px; font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; font-weight: 700; }
-  .global-fb .hint { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.4; }
-  .fb-log { margin-top: 16px; padding: 12px; background: var(--paper); border-radius: 8px; max-height: 240px; overflow: auto; font: 400 12px var(--mono); white-space: pre-wrap; color: var(--ink-2); }
-  .fb-log:empty { display: none; }
   .range-row { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 10px; align-items: center; margin-top: 8px; padding: 8px 12px; background: white; border: 1px solid var(--line); border-radius: 8px; }
   .range-row label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
   .range-row input[type=range] { width: 100%; height: 4px; -webkit-appearance: none; background: var(--rule); border-radius: 999px; outline: none; }
@@ -903,24 +886,6 @@ function renderHtml(args: {
     ${unusedHtml || '<div class="no-asset">All manifest entries are in use.</div>'}
   </div>
 
-  <div class="global-fb">
-    <h3>💬 Overall feedback on this video</h3>
-    <div class="hint">Pause the player above at a moment you want to flag, hit <strong>use current video time</strong>, then describe what should change. Saved to <code>feedback.md</code> for the next iteration.</div>
-    <textarea id="fb-global" placeholder="e.g., music gets too loud during field footage; 1M+ stat should be bigger; swap village clip for a wider shot..."></textarea>
-    <div class="fb-row">
-      <button class="fb-toggle" id="fb-grab-time">use current video time</button>
-      <span class="ts-grab" id="fb-grab-time-out">no timestamp tagged yet</span>
-      <button class="fb-save" data-target="global">save feedback</button>
-      <span class="fb-status" id="fb-global-status"></span>
-    </div>
-  </div>
-
-  <div class="section-title">
-    <h2>Feedback log</h2>
-    <span class="hint">this session — also persisted to <code>feedback.md</code></span>
-  </div>
-  <div class="fb-log" id="fb-log"></div>
-
   <div class="footer-help">
     <strong>Want to suggest a better clip for a beat?</strong>
     Send a Drive link or a YouTube reference for any beat marked
@@ -973,76 +938,6 @@ function renderHtml(args: {
       }
     });
   });
-  const grabBtn = document.getElementById('fb-grab-time');
-  const grabOut = document.getElementById('fb-grab-time-out');
-  let grabbedTs = null;
-  if (grabBtn) {
-    grabBtn.addEventListener('click', () => {
-      if (!finalVideo) return;
-      grabbedTs = finalVideo.currentTime;
-      grabOut.textContent = grabbedTs.toFixed(1) + 's';
-    });
-  }
-  // Toggle per-beat feedback panels
-  document.querySelectorAll('.fb-toggle[data-beat]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const beatId = btn.dataset.beat;
-      const panel = document.querySelector('.fb-panel[data-beat="' + beatId + '"]');
-      const isOpen = panel.classList.toggle('open');
-      btn.classList.toggle('active', isOpen);
-    });
-  });
-
-  async function saveFeedback(payload, statusEl, textarea) {
-    statusEl.textContent = 'saving…';
-    try {
-      const resp = await fetch('/feedback', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const data = await resp.json();
-      statusEl.textContent = '✓ saved at ' + data.timestamp;
-      textarea.value = '';
-      refreshLog();
-    } catch (e) {
-      statusEl.textContent = '⚠ error: ' + e.message;
-    }
-  }
-
-  document.querySelectorAll('button.fb-save').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.target;
-      const beatId = btn.dataset.beat;
-      const textarea = target === 'global'
-        ? document.getElementById('fb-global')
-        : document.querySelector('.fb-panel[data-beat="' + beatId + '"] textarea');
-      const statusEl = target === 'global'
-        ? document.getElementById('fb-global-status')
-        : document.querySelector('.fb-panel[data-beat="' + beatId + '"] .fb-status');
-      const note = (textarea.value || '').trim();
-      if (!note) { statusEl.textContent = 'write something first'; return; }
-      const payload = {
-        scope: target === 'global' ? 'global' : 'beat',
-        beatId: beatId || null,
-        timestampSec: target === 'global' ? grabbedTs : null,
-        note,
-      };
-      saveFeedback(payload, statusEl, textarea);
-    });
-  });
-
-  async function refreshLog() {
-    try {
-      const resp = await fetch('/feedback');
-      if (!resp.ok) return;
-      const text = await resp.text();
-      document.getElementById('fb-log').textContent = text || '(no feedback yet)';
-    } catch (e) { /* ignore */ }
-  }
-  refreshLog();
-
   // --- Trim handles (Premiere/CapCut-style) ---
   document.querySelectorAll('.card[data-edit-kind]').forEach((card) => {
     const trimBar = card.querySelector('[data-trim]');
@@ -1168,6 +1063,12 @@ function renderHtml(args: {
   // commit, Cancel (or Esc) to discard. Save POSTs to /edit which now
   // only persists the YAML; the actual re-render happens when the
   // outer "Re-render" button in ace-web's header is clicked.
+  //
+  // Each widget's save() function is registered on a page-level
+  // pendingSavers registry so the parent React shell's top-bar
+  // Save button can commit every in-progress edit in one shot via
+  // window.saveAllPending().
+  const pendingSavers = [];
   document.querySelectorAll('[data-narration-beat]').forEach((wrapper) => {
     const beatId = wrapper.dataset.narrationBeat;
     const prose = wrapper.querySelector('[data-prose]');
@@ -1202,6 +1103,10 @@ function renderHtml(args: {
         prose.classList.add('empty');
       }
     }
+    function isDirty() {
+      return wrapper.dataset.mode === 'edit' &&
+        (textarea.value || '').trim() !== saved;
+    }
 
     editBtn.addEventListener('click', () => setMode('edit'));
     cancelBtn.addEventListener('click', () => {
@@ -1209,7 +1114,7 @@ function renderHtml(args: {
       setMode('read');
       flashStatus('', '', 0);
     });
-    saveBtn.addEventListener('click', save);
+    saveBtn.addEventListener('click', () => { save(); });
     textarea.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); cancelBtn.click(); }
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
@@ -1217,7 +1122,7 @@ function renderHtml(args: {
 
     async function save() {
       const next = (textarea.value || '').trim();
-      if (next === saved) { setMode('read'); return; }
+      if (next === saved) { setMode('read'); return { ok: true, changed: false }; }
       flashStatus('saving…', '', 0);
       saveBtn.disabled = true;
       try {
@@ -1231,13 +1136,31 @@ function renderHtml(args: {
         refreshProse();
         setMode('read');
         flashStatus('✓ saved · Re-render to regenerate', 'saved', 8000);
+        return { ok: true, changed: true };
       } catch (e) {
         flashStatus('⚠ ' + e.message, 'error', 0);
+        return { ok: false, error: e.message };
       } finally {
         saveBtn.disabled = false;
       }
     }
+
+    pendingSavers.push({ isDirty, save });
   });
+
+  // Top-bar "Save" button entry point. Walks every widget; saves the
+  // ones that have unsaved edits. Returns a small summary the parent
+  // shell uses for its status text.
+  window.saveAllPending = async function () {
+    let saved = 0, skipped = 0, failed = 0;
+    for (const w of pendingSavers) {
+      if (!w.isDirty()) { skipped++; continue; }
+      const r = await w.save();
+      if (r && r.ok && r.changed) saved++;
+      else if (r && !r.ok) failed++;
+    }
+    return { saved, skipped, failed };
+  };
 
   // --- Library drawer + drag-from-library to swap ---
   const drawer = document.getElementById('drawer');
@@ -1362,7 +1285,6 @@ function renderBeatCard(blk: BeatBlock, _totalSec: number, dotColor: string): st
           <h3>${escape(label.name)} <span class="time">· ${fmtTs(blk.startSec)} → ${fmtTs(blk.endSec)} · ${blk.durationSec.toFixed(1)}s</span></h3>
           <div class="section-subtitle">${escape(label.subtitle)}</div>
         </div>
-        <button class="fb-toggle" data-beat="${blk.id}">💬 leave feedback</button>
       </div>
       <div class="narration-edit" data-narration-beat="${blk.id}" data-mode="read">
         <div class="narration-edit-label">
@@ -1384,13 +1306,6 @@ function renderBeatCard(blk: BeatBlock, _totalSec: number, dotColor: string): st
         </div>
       </div>
       <div class="assignments">${cardsHtml}</div>
-      <div class="fb-panel" data-beat="${blk.id}">
-        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
-        <div class="fb-row">
-          <button class="fb-save" data-target="beat" data-beat="${blk.id}">save feedback</button>
-          <span class="fb-status"></span>
-        </div>
-      </div>
     </div>`;
 }
 
@@ -1461,7 +1376,7 @@ function renderTrimWidget(sourceDur: number, start: number, dur: number): string
     </div>
     <div class="trim-save-row">
       <button class="trim-save" disabled>save & re-render</button>
-      <span class="fb-status trim-status"></span>
+      <span class="trim-status"></span>
       <span style="color: var(--muted); font-size: 11px; margin-left: auto;">drag the handles to trim · drag the middle to slide the window</span>
     </div>`;
 }

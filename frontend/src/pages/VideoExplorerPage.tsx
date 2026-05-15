@@ -4,9 +4,9 @@ import {
   AlertTriangle,
   ChevronLeft,
   Copy,
-  Hammer,
   Loader2,
   RefreshCw,
+  Save,
 } from "lucide-react";
 
 import {
@@ -35,7 +35,7 @@ export default function VideoExplorerPage() {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<RenderStatus | null>(null);
-  const [busyAction, setBusyAction] = useState<"render" | "build-only" | "copy" | null>(null);
+  const [busyAction, setBusyAction] = useState<"render" | "save" | "copy" | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const wasBusyRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -110,12 +110,15 @@ export default function VideoExplorerPage() {
     };
   }, [workspaceSlug, programSlug, resolvedRunId]);
 
-  async function handleBuild(mode: "render" | "build-only") {
+  async function handleRender() {
     if (!workspaceSlug || !programSlug || !resolvedRunId) return;
-    setBusyAction(mode);
+    // Commit any in-progress edits before kicking off the render so
+    // partial textbox content isn't silently lost.
+    await flushPendingEdits();
+    setBusyAction("render");
     setActionMsg(null);
     try {
-      const r = await triggerBuild(workspaceSlug, programSlug, resolvedRunId, mode);
+      const r = await triggerBuild(workspaceSlug, programSlug, resolvedRunId, "render");
       setActionMsg(r.message);
       if (r.triggered) {
         wasBusyRef.current = true;
@@ -131,6 +134,34 @@ export default function VideoExplorerPage() {
     } finally {
       setBusyAction(null);
     }
+  }
+
+  type SaveAllResult = { saved: number; skipped: number; failed: number };
+  async function flushPendingEdits(): Promise<SaveAllResult> {
+    const fn = (iframeRef.current?.contentWindow as
+      | (Window & { saveAllPending?: () => Promise<SaveAllResult> })
+      | null
+    )?.saveAllPending;
+    if (typeof fn !== "function") return { saved: 0, skipped: 0, failed: 0 };
+    try {
+      return await fn();
+    } catch {
+      return { saved: 0, skipped: 0, failed: 1 };
+    }
+  }
+
+  async function handleSave() {
+    setBusyAction("save");
+    setActionMsg(null);
+    const r = await flushPendingEdits();
+    if (r.failed > 0) {
+      setActionMsg(`Save failed for ${r.failed} edit${r.failed === 1 ? "" : "s"}`);
+    } else if (r.saved > 0) {
+      setActionMsg(`Saved ${r.saved} edit${r.saved === 1 ? "" : "s"} · click Re-render to regenerate`);
+    } else {
+      setActionMsg("No pending edits to save");
+    }
+    setBusyAction(null);
   }
 
   async function handleCopyRun() {
@@ -231,18 +262,18 @@ export default function VideoExplorerPage() {
               <button
                 type="button"
                 disabled={busyAction !== null || !resolvedRunId}
-                onClick={() => handleBuild("build-only")}
-                title="Regenerate the explorer page only (fast, no re-render of the video)."
-                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                onClick={handleSave}
+                title="Save every in-progress edit on this page to spec.yaml. Does not re-render."
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
               >
-                <Hammer className="h-3 w-3" />
-                Rebuild page only
+                <Save className="h-3 w-3" />
+                {busyAction === "save" ? "Saving…" : "Save"}
               </button>
               <button
                 type="button"
                 disabled={busyAction !== null || !resolvedRunId}
-                onClick={() => handleBuild("render")}
-                title="Save all edits and regenerate the video output — the one button that produces a new output.mp4."
+                onClick={handleRender}
+                title="Save any pending edits and regenerate output.mp4 — the one button that produces a new render."
                 className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:opacity-90 disabled:opacity-50"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
