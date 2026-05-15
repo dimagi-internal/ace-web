@@ -1530,3 +1530,67 @@ def invalidate_snapshot(
     require_write_global(request)
     invalidate_opp_snapshot_cache(workspace)
     return HttpResponse(status=204)
+
+
+# ---------------------------------------------------------------------------
+# Public per-run summary — restored from legacy DRF (deleted in Phase 5)
+# Mounted under /api/opps/public/ at the top level (see apps/api/api.py).
+# ---------------------------------------------------------------------------
+
+
+public_summary_router = Router(auth=None, tags=["opps-public"])
+
+
+@public_summary_router.get(
+    "/public/{workspace}/{slug}/runs/{run_id}/summary",
+    response={200: dict},
+    summary="Public per-run summary (no auth, stakeholder-facing)",
+)
+def public_opp_summary(
+    request: HttpRequest,
+    workspace: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+) -> HttpResponse:
+    """Stakeholder-facing per-run summary. AllowAny because share links
+    are meant to circulate. Workspace + slug + run_id all in the URL —
+    no leak-prevention 404 differentiation here, the URL is the secret.
+
+    Cached 60 seconds in the Django cache to absorb refresh storms.
+    """
+    from django.core.cache import cache as _cache
+
+    from apps.opps.drive_cache import CachedDriveClient
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.summary import build_summary_payload
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+    from apps.workspaces.models import Workspace
+
+    cache_key = f"opp-summary:v1:{workspace}:{slug}:{run_id}"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return JsonResponse(cached)
+
+    try:
+        ws = Workspace.objects.get(slug=workspace)
+    except Workspace.DoesNotExist as exc:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from exc
+    if not ws.drive_root_folder_id:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+
+    try:
+        client = CachedDriveClient(
+            get_drive_client(workspace=ws),
+            bypass=request.GET.get("force") == "1",
+        )
+    except ServiceAccountNotFound as exc:
+        raise ProblemError(500, "Drive not configured", detail=str(exc)) from exc
+
+    payload = build_summary_payload(
+        client, workspace=ws, opp_slug=slug, run_id=run_id,
+    )
+    if payload is None:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+
+    _cache.set(cache_key, payload, timeout=60)
+    return JsonResponse(payload)

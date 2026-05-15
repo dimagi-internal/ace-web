@@ -9,7 +9,6 @@ import type { OppSnapshot, Step } from "../api/types.ws";
 import { HeatmapView } from "../components/views/HeatmapView";
 import { PhaseView } from "../components/views/PhaseView";
 import { RunDiffView } from "../components/views/RunDiffView";
-import { StoryboardView } from "../components/views/StoryboardView";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { SkillList } from "../components/opps/SkillList";
 import { StepDetailPane } from "../components/opps/StepDetailPane";
@@ -30,7 +29,6 @@ const VIEW_TABS: ViewTab[] = [
   { kind: "workbench", label: "Workbench" },
   { kind: "heatmap", label: "Heatmap" },
   { kind: "diff", label: "Diff" },
-  { kind: "story", label: "Storyboard" },
 ];
 
 // Cheap human form for the initial loading label, before the API
@@ -261,15 +259,6 @@ export default function OppWorkbenchPage() {
       {view === "diff" && workspaceSlug && (
         <div className="min-h-0 flex-1">
           <RunDiffView oppSlug={slug} workspaceSlug={workspaceSlug} />
-        </div>
-      )}
-      {view === "story" && workspaceSlug && (
-        <div className="min-h-0 flex-1">
-          <StoryboardView
-            oppSlug={slug}
-            workspaceSlug={workspaceSlug}
-            runId={snapshot.current_run.run_id}
-          />
         </div>
       )}
     </div>

@@ -5,7 +5,6 @@ import { PublicLayout } from "./components/PublicLayout";
 import { AuthCliPage } from "./pages/AuthCliPage";
 import { ChatPage } from "./pages/ChatPage";
 import { ChatRedirectPage } from "./pages/ChatRedirectPage";
-import HealthPage from "./pages/HealthPage";
 import InviteAcceptPage from "./pages/InviteAcceptPage";
 import { NoWorkspaceRedirect } from "./pages/NoWorkspaceRedirect";
 import OppComparePage from "./pages/OppComparePage";
@@ -74,7 +73,6 @@ export const router = createBrowserRouter(
         { path: "invite/:token", element: <InviteAcceptPage /> },
         { path: "settings", element: <SettingsPage /> },
         { path: "system", element: <SystemPage /> },
-        { path: "health", element: <HealthPage /> },
         { path: "auth/cli", element: <AuthCliPage /> },
         { path: "share/:token", element: <ShareViewPage /> },
 

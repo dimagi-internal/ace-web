@@ -138,6 +138,7 @@ from apps.auth.api import router as auth_router  # noqa: E402
 from apps.common.api import router as common_router  # noqa: E402
 from apps.ingest.api import router as ingest_router  # noqa: E402
 from apps.mobile.api import router as mobile_router  # noqa: E402
+from apps.opps.api import public_summary_router as opps_public_router  # noqa: E402, I001
 from apps.opps.api import router as opps_router  # noqa: E402
 from apps.service_accounts.api import router as tokens_router  # noqa: E402
 from apps.sessions.api import router as sessions_router  # noqa: E402
@@ -154,6 +155,7 @@ api.add_router("/w/{workspace_slug}/activity", activity_router)
 api.add_router("/w/{workspace_slug}/videos", videos_router)
 
 # Top-level resources
+api.add_router("/opps", opps_public_router)  # public per-run summary share links
 api.add_router("/share", share_public_router)
 api.add_router("/workspaces", workspaces_router)
 api.add_router("/invites", invites_router)
