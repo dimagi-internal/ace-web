@@ -147,6 +147,57 @@ The minimum clip set per beat:
 - `nm-overview-table` — FLW overview with probation + followup-rate
 - `pm-audit-of-audits` — PM dashboard with longitudinal trends
 
+## Picking clips from the media library
+
+The workspace has a curated **media library** at `videos/library/` in
+Drive. Each video file there has a JSON sidecar with `name`, `tags`, and
+an optional `description`. Items are referenced from `manifest:` using
+the `library:video/<subfolder>/<filename>` syntax — stable across runs,
+preferred over raw `gdrive:<id>.<ext>` IDs.
+
+When the orchestrator injects `available_video_clips` into your prompt
+context, each entry has this shape:
+
+```yaml
+- ref: "library:video/<subfolder>/<filename>"
+  name: "<human label>"
+  tags: ["<tag>", ...]
+  description: "<optional>"
+```
+
+Before listing a clip alias in `manifest_todo:`, check
+`available_video_clips`:
+
+1. Identify what the slot is for (drone bookend / FLW screen / NM
+   dashboard / etc. — see the minimum clip set above).
+2. Look for a library item whose tags match the program's topic /
+   country / app AND the slot's role.
+3. If a fit exists, populate `manifest:` directly with its `ref`
+   instead of leaving the alias in `manifest_todo:` for hand-attach.
+4. If nothing fits, leave the alias in `manifest_todo:` for the
+   operator to hand-attach.
+
+The library refs are also MCP-callable any time via
+`videos_list_library_video` if you need to refresh mid-generation.
+
+**Tag conventions** (advisory, not enforced):
+
+- **Topic/identity:** `uganda`, `kenya`, `kangaroo-care`,
+  `midwifery`, …
+- **Role:** `field-footage`, `app-screenshot`, `b-roll`,
+  `establishing`, `drone`, `closeup`, `nm-dashboard`,
+  `flw-learn`, `flw-deliver`, …
+
+A scene-clip slot is looking for `field-footage` + the program's
+country. A product-clip slot is looking for `app-screenshot` + the
+program's app. Drone bookends look for `drone` + the program's
+country.
+
+**Audio is implicit.** The audio library grows when the renderer
+synthesizes voiceover from your `narration_*` fields. Identical text +
+voice config returns the same cached clip, so reusing exact strings
+across programs reuses the audio.
+
 ## Output format
 
 Return ONLY a single JSON object — no prose, no markdown fences. Keys:
