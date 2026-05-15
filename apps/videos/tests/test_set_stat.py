@@ -1,7 +1,6 @@
 """Tests for the set-stat edit op (problem.* and impact[N].*)."""
 from io import StringIO
 
-import pytest
 from ruamel.yaml import YAML
 
 from apps.videos import service
