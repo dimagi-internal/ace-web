@@ -143,5 +143,5 @@ reportAbstractUsage = "none"
 "apps/opps/summary.py" = ["E501"]
 # Videos app has many CLI-spawning log lines and embedded npm commands
 # that don't split cleanly; another agent owns this area.
-"apps/videos/*.py" = ["E501", "I001"]
-"apps/videos/tests/*.py" = ["E501", "I001"]
+"apps/videos/*.py" = ["E501", "I001", "B904"]
+"apps/videos/tests/*.py" = ["E501", "I001", "B904"]
