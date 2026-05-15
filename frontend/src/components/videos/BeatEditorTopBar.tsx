@@ -69,18 +69,42 @@ export function BeatEditorTopBar({ onSpecRefetched, onRerender }: Props) {
   };
   onSaveRef.current = onSave;
 
-  // ⌘+S / Ctrl+S → Save changes when the buffer is dirty. Browser save
-  // dialog gets preventDefault-ed so the editor reclaims the shortcut.
+  // Keyboard shortcuts:
+  //   ⌘+S / Ctrl+S         → Save changes (when dirty)
+  //   ⌘+Z / Ctrl+Z         → Undo last buffer op
+  //   ESC (when saveState=saved) → dismiss the "Saved at" confirmation
+  //
+  // Skip when an editable element has focus so we don't steal the user's
+  // textarea-undo. The drawer's textareas use native browser undo until
+  // the user commits Done; only then does the op land in the editor's
+  // buffer and become reachable by our ⌘+Z.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const inField = (() => {
+        const el = document.activeElement as HTMLElement | null;
+        if (!el) return false;
+        const tag = el.tagName;
+        return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+      })();
       if (e.key === "s" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
         onSaveRef.current();
+        return;
+      }
+      if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !inField) {
+        e.preventDefault();
+        dispatch({ type: "UNDO_LAST_OP" });
+        return;
+      }
+      if (e.key === "Escape" && saveState.status === "saved") {
+        // Don't preventDefault — ESC also closes drawers etc.
+        dispatch({ type: "SAVE_IDLE" });
+        return;
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [dispatch, saveState.status]);
 
   const onDiscard = () => {
     if (!confirmDiscard) {
@@ -172,10 +196,19 @@ export function BeatEditorTopBar({ onSpecRefetched, onRerender }: Props) {
         <>
           <button
             type="button"
+            onClick={() => dispatch({ type: "UNDO_LAST_OP" })}
+            disabled={status === "saving"}
+            title="Undo last edit (⌘+Z)"
+            className="ml-auto rounded border px-3 py-1.5 text-sm disabled:opacity-50"
+          >
+            Undo
+          </button>
+          <button
+            type="button"
             onClick={onSave}
             disabled={status === "saving"}
             title="Save changes (⌘+S)"
-            className="ml-auto rounded bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+            className="rounded bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
           >
             Save changes
           </button>
