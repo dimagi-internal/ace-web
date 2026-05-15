@@ -598,6 +598,173 @@ def stage_existing_content_locally(workspace: Workspace) -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
+# Per-run render artifacts (output.mp4, explorer/, feedback.md) → Drive
+# ---------------------------------------------------------------------------
+
+
+def _tar_gz_explorer_dir(local_dir: Path) -> bytes:
+    """Tarball + gzip an explorer directory into bytes for Drive upload.
+
+    Symlinks are dereferenced (the media/ subdir holds symlinks into the
+    cache that don't exist on a fresh host). For typical explorer trees
+    this is well under a megabyte sans media, and a few hundred KB even
+    with the media MP4 contents pulled in via symlink-follow.
+    """
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz", dereference=True) as tar:
+        # arcname="" so paths inside the archive are relative to the
+        # explorer/ dir itself (index.html at root, media/ subfolder).
+        tar.add(str(local_dir), arcname="")
+    return buf.getvalue()
+
+
+def _untar_gz_explorer_to_dir(payload: bytes, dest_dir: Path) -> None:
+    """Restore an explorer.tar.gz onto local disk. Used by hosts that
+    didn't render the run but want to serve the explorer iframe."""
+    import io
+    import tarfile
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as tar:
+        tar.extractall(dest_dir, filter="data")
+
+
+@dataclass(frozen=True)
+class PublishResult:
+    output_mp4_id: str | None = None
+    explorer_archive_id: str | None = None
+    feedback_id: str | None = None
+    bytes_uploaded: int = 0
+
+
+def publish_render_artifacts(
+    workspace: Workspace, slug: str, run_id: str,
+) -> PublishResult:
+    """Push the per-run output.mp4 / explorer.tar.gz / feedback.md from
+    local disk to Drive.
+
+    Called at the end of a successful render chain (and via the
+    ``videos_publish_artifacts`` management command). Each artifact is
+    optional — if the local file is missing, the corresponding upload
+    is skipped silently. Replaces any existing copies in Drive.
+    """
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        raise ValueError(f"Invalid slug or run_id: {slug!r} / {run_id!r}")
+    layout, client = layout_for(workspace)
+
+    bytes_total = 0
+    mp4_id: str | None = None
+    archive_id: str | None = None
+    feedback_id: str | None = None
+
+    mp4_path = output_path(slug, run_id)
+    if mp4_path.exists():
+        content = mp4_path.read_bytes()
+        mp4_id = drive.upload_output_mp4(layout, client, slug, run_id, content)
+        bytes_total += len(content)
+        log.info(
+            "videos.publish: output.mp4 → drive id=%s size=%d", mp4_id, len(content),
+        )
+
+    exp_dir = explorer_dir(slug, run_id)
+    if exp_dir.is_dir() and any(exp_dir.iterdir()):
+        archive = _tar_gz_explorer_dir(exp_dir)
+        archive_id = drive.upload_explorer_archive(
+            layout, client, slug, run_id, archive,
+        )
+        bytes_total += len(archive)
+        log.info(
+            "videos.publish: explorer.tar.gz → drive id=%s size=%d",
+            archive_id, len(archive),
+        )
+
+    feedback = feedback_path(slug, run_id)
+    if feedback.exists():
+        text = feedback.read_text(encoding="utf-8")
+        feedback_id = drive.write_feedback(layout, client, slug, run_id, text)
+        bytes_total += len(text.encode("utf-8"))
+        log.info(
+            "videos.publish: feedback.md → drive id=%s len=%d", feedback_id, len(text),
+        )
+
+    return PublishResult(
+        output_mp4_id=mp4_id,
+        explorer_archive_id=archive_id,
+        feedback_id=feedback_id,
+        bytes_uploaded=bytes_total,
+    )
+
+
+def output_mp4_drive_link(workspace: Workspace, slug: str, run_id: str) -> str | None:
+    """Drive webViewLink for the published output.mp4, or None if not
+    published yet. Used by share / summary surfaces."""
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        return None
+    layout, client = layout_for(workspace)
+    meta = drive.output_mp4_drive_meta(layout, client, slug, run_id)
+    if meta is None:
+        return None
+    return meta.web_view_link or None
+
+
+def read_feedback(
+    workspace: Workspace, slug: str, run_id: str, *, allow_local_fallback: bool = True,
+) -> str:
+    """Read the per-run feedback log. Drive first; falls back to local
+    disk only if Drive doesn't have it and the local file exists. New
+    feedback always lands in Drive via ``append_feedback``."""
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        return ""
+    layout, client = layout_for(workspace)
+    remote = drive.read_feedback(layout, client, slug, run_id)
+    if remote is not None:
+        return remote
+    if allow_local_fallback:
+        local = feedback_path(slug, run_id)
+        if local.exists():
+            return local.read_text(encoding="utf-8")
+    return ""
+
+
+def append_feedback(
+    workspace: Workspace, slug: str, run_id: str, line: str,
+) -> str:
+    """Append a line to the run's feedback.md and return the full new
+    content. Atomic at the level of one HTTP request — concurrent writers
+    can still last-writer-wins (acceptable for a notes log)."""
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        raise ValueError(f"Invalid slug or run_id: {slug!r} / {run_id!r}")
+    layout, client = layout_for(workspace)
+    current = drive.read_feedback(layout, client, slug, run_id) or ""
+    new_content = current + line
+    drive.write_feedback(layout, client, slug, run_id, new_content)
+    return new_content
+
+
+def stage_explorer_archive_locally(
+    workspace: Workspace, slug: str, run_id: str,
+) -> bool:
+    """Pull explorer.tar.gz from Drive and extract over the local
+    explorer/ dir. Returns True if extracted, False if nothing in Drive.
+
+    Lets a fresh host serve the explorer iframe without re-rendering —
+    handy when ace-web pods rotate or a teammate clones the repo and
+    wants to view an already-rendered run.
+    """
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        return False
+    layout, client = layout_for(workspace)
+    payload = drive.read_explorer_archive(layout, client, slug, run_id)
+    if payload is None:
+        return False
+    _untar_gz_explorer_to_dir(payload, explorer_dir(slug, run_id))
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Render triggers — stage Drive → local, then npm
 # ---------------------------------------------------------------------------
 
@@ -618,6 +785,21 @@ def _stage_spec(workspace: Workspace, slug: str, run_id: str) -> None:
     so the npm toolchain sees the latest content."""
     layout, client = layout_for(workspace)
     drive.stage_spec_locally(layout, client, slug, run_id, _root())
+
+
+def _publish_artifacts_subcommand(
+    workspace: Workspace, slug: str, run_id: str,
+) -> str:
+    """Build the shell substring that runs the publish-artifacts management
+    command after a successful render. Slug + run_id are pre-validated by
+    the caller (``trigger_rerender``) so the shell interpolation is safe.
+
+    We prefer the venv python if it's around (local dev), otherwise the
+    system python (Docker image has /usr/local/bin/python from uv)."""
+    return (
+        f"python manage.py videos_publish_artifacts "
+        f"--workspace={workspace.slug} --program={slug} --run={run_id}"
+    )
 
 
 def trigger_build_only(workspace: Workspace, slug: str, run_id: str) -> bool:
@@ -676,6 +858,9 @@ def trigger_rerender(workspace: Workspace, slug: str, run_id: str, *, needs_hydr
         parts.append(f"npm run hydrate -- --program={slug}")
     parts.append(f"npm run render -- --program={slug} --run={run_id} --draft")
     parts.append(f"npm run build-clip-explorer -- --program={slug} --run={run_id}")
+    # After a successful render, push artifacts up to Drive so other hosts
+    # (and the share surface) can pick them up without re-rendering.
+    parts.append(_publish_artifacts_subcommand(workspace, slug, run_id))
     chain = " && ".join(parts)
     log.info("videos.trigger_rerender: spawning for %s/%s (needs_hydrate=%s)", slug, run_id, needs_hydrate)
     try:

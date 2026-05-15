@@ -46,6 +46,15 @@ EXISTING_CONTENT_AUDIO = "audio"
 EXISTING_CONTENT_SHARED = "shared"
 EXISTING_CONTENT_SUBDIRS = (EXISTING_CONTENT_AUDIO, EXISTING_CONTENT_SHARED)
 
+# Per-run artifact filenames + mime types. Each run folder holds these
+# alongside spec.yaml after a successful render.
+OUTPUT_MP4_FILENAME = "output.mp4"
+OUTPUT_MP4_MIME = "video/mp4"
+EXPLORER_ARCHIVE_FILENAME = "explorer.tar.gz"
+EXPLORER_ARCHIVE_MIME = "application/gzip"
+FEEDBACK_FILENAME = "feedback.md"
+FEEDBACK_MIME = "text/markdown"
+
 _RUN_RE = re.compile(r"^run-(\d{3,})$")
 
 
@@ -322,6 +331,121 @@ def read_existing_content(
     if meta is None:
         return None
     return client.get_binary(meta.id)
+
+
+# ---------------------------------------------------------------------------
+# Per-run render artifacts: output.mp4, explorer.tar.gz, feedback.md
+# ---------------------------------------------------------------------------
+
+
+def _put_binary_in_run(
+    layout: DriveLayout, client: DriveClient,
+    slug: str, run_id: str, filename: str, content: bytes, mime_type: str,
+) -> str:
+    """Create-or-replace a binary file inside `videos/<slug>/runs/<run_id>/`.
+    Returns the Drive file id."""
+    rid = run_folder_id(layout, client, slug, run_id, create=True)
+    assert rid is not None
+    existing = _find_child(client, rid, filename)
+    if existing is not None:
+        client.update_binary(existing.id, content, mime_type)
+        return existing.id
+    return client.upload_binary(rid, filename, content, mime_type)
+
+
+def _get_binary_in_run(
+    layout: DriveLayout, client: DriveClient,
+    slug: str, run_id: str, filename: str,
+) -> bytes | None:
+    rid = run_folder_id(layout, client, slug, run_id)
+    if rid is None:
+        return None
+    meta = _find_child(client, rid, filename)
+    if meta is None:
+        return None
+    return client.get_binary(meta.id)
+
+
+def _find_in_run(
+    layout: DriveLayout, client: DriveClient,
+    slug: str, run_id: str, filename: str,
+) -> DriveFile | None:
+    rid = run_folder_id(layout, client, slug, run_id)
+    if rid is None:
+        return None
+    return _find_child(client, rid, filename)
+
+
+# output.mp4
+
+def upload_output_mp4(
+    layout: DriveLayout, client: DriveClient,
+    slug: str, run_id: str, content: bytes,
+) -> str:
+    return _put_binary_in_run(
+        layout, client, slug, run_id, OUTPUT_MP4_FILENAME, content, OUTPUT_MP4_MIME,
+    )
+
+
+def read_output_mp4(
+    layout: DriveLayout, client: DriveClient, slug: str, run_id: str,
+) -> bytes | None:
+    return _get_binary_in_run(layout, client, slug, run_id, OUTPUT_MP4_FILENAME)
+
+
+def output_mp4_drive_meta(
+    layout: DriveLayout, client: DriveClient, slug: str, run_id: str,
+) -> DriveFile | None:
+    """Return Drive metadata (id, web_view_link, size, modified_time) for
+    the output.mp4 if it's been published. Used to build share links."""
+    return _find_in_run(layout, client, slug, run_id, OUTPUT_MP4_FILENAME)
+
+
+# explorer.tar.gz
+
+def upload_explorer_archive(
+    layout: DriveLayout, client: DriveClient,
+    slug: str, run_id: str, content: bytes,
+) -> str:
+    return _put_binary_in_run(
+        layout, client, slug, run_id, EXPLORER_ARCHIVE_FILENAME, content,
+        EXPLORER_ARCHIVE_MIME,
+    )
+
+
+def read_explorer_archive(
+    layout: DriveLayout, client: DriveClient, slug: str, run_id: str,
+) -> bytes | None:
+    return _get_binary_in_run(
+        layout, client, slug, run_id, EXPLORER_ARCHIVE_FILENAME,
+    )
+
+
+# feedback.md  (text — uses upload_file/update_file, not the binary surface)
+
+def write_feedback(
+    layout: DriveLayout, client: DriveClient,
+    slug: str, run_id: str, content: str,
+) -> str:
+    rid = run_folder_id(layout, client, slug, run_id, create=True)
+    assert rid is not None
+    existing = _find_child(client, rid, FEEDBACK_FILENAME)
+    if existing is not None:
+        client.update_file(existing.id, content, FEEDBACK_MIME)
+        return existing.id
+    return client.upload_file(rid, FEEDBACK_FILENAME, content, FEEDBACK_MIME)
+
+
+def read_feedback(
+    layout: DriveLayout, client: DriveClient, slug: str, run_id: str,
+) -> str | None:
+    rid = run_folder_id(layout, client, slug, run_id)
+    if rid is None:
+        return None
+    meta = _find_child(client, rid, FEEDBACK_FILENAME)
+    if meta is None:
+        return None
+    return client.get_content(meta.id, "text/plain").content
 
 
 # ---------------------------------------------------------------------------
