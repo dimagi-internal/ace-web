@@ -83,6 +83,12 @@ SEED_SPEC = REPO / "video-production" / "connect-videos" / "programs" / SLUG / "
 RUN_ID = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
 OUT = REPO / "qa-results" / RUN_ID / "beat-editor"
 
+# Run-unique tokens so the dirty-state assertion fires even when Drive
+# still holds a previous run's edits. Drive is the source of truth and
+# we don't clean it up between runs.
+NARRATION_TOKEN = f"E2E-{RUN_ID}-narration"
+STAT_TOKEN = f"E2E-{RUN_ID[-6:]}%"  # short enough to fit a "big" stat field
+
 
 @dataclass
 class StepResult:
@@ -226,7 +232,12 @@ def step_open_editor(page: Page) -> StepResult:
     bad, errs = _capture(page)
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(2500)
+        # Wait up to 20s for the BeatEditor to mount — the run-detail GET
+        # makes a Drive round-trip and is slow on cold cache.
+        try:
+            page.wait_for_selector(EDITOR_ROOT_SELECTOR, timeout=20000)
+        except Exception:
+            pass  # fall through to assertions which report the failure
         # A BeatCard with data-beat-id means React tree is mounted.
         has_react = page.locator(EDITOR_ROOT_SELECTOR).count() > 0
         has_iframe = page.locator(IFRAME_FALLBACK_SELECTOR).count() > 0
@@ -262,7 +273,7 @@ def step_edit_narration(page: Page) -> StepResult:
         narration.click()
         page.wait_for_timeout(400)
         textarea = page.locator("aside[role='dialog'] textarea, div[role='dialog'] textarea").first
-        textarea.fill("E2E-EDITED narration line for the beat editor smoke test.")
+        textarea.fill(f"{NARRATION_TOKEN} narration line for the beat editor smoke test.")
         page.get_by_role("button", name="Done").click()
         page.wait_for_timeout(400)
         # The top-bar should now show "1 edit pending".
@@ -280,23 +291,29 @@ def step_edit_narration(page: Page) -> StepResult:
 
 
 def step_edit_stat(page: Page) -> StepResult:
-    """Click a stats widget (problem or impact[N]), edit big number, Done."""
+    """Click the problem-stat widget, edit big number, Done."""
     r = StepResult(name="03-edit-stat")
     bad, errs = _capture(page)
     try:
-        # StatsWidget renders the big number large — click any one.
-        stat_card = page.locator("div").filter(has_text="source:").first
-        if stat_card.count() == 0:
-            # Fallback: click any "click to edit" element whose neighbor has a big number
-            stat_card = page.get_by_text("click to edit").first
+        # Scroll the problem beat (body_problem_stat — id="problem" in the
+        # default beat list) into view so its StatsWidget is hit-testable.
+        problem_beat = page.locator('[data-beat-id="problem"]')
+        problem_beat.scroll_into_view_if_needed()
+        page.wait_for_timeout(200)
+        # The BeatCard for "problem" contains TWO widgets: the always-
+        # rendered NarrationWidget (first child) and the StatsWidget
+        # (second child). Both have "click to edit" text — pick the
+        # second occurrence with .last() so we hit the stat widget.
+        stat_card = problem_beat.get_by_text("click to edit").last
         stat_card.click()
-        page.wait_for_timeout(400)
+        # Wait for the drawer to mount the StatPanel.
         big_input = page.get_by_label("big", exact=False).first
-        big_input.fill("E2E-99%")
+        big_input.wait_for(state="visible", timeout=5000)
+        big_input.fill(STAT_TOKEN)
         page.get_by_role("button", name="Done").click()
         page.wait_for_timeout(400)
         # Pending count should now be ≥ 2 (narration + stat).
-        expect(page.get_by_text("edit", exact=False)).to_be_visible()
+        expect(page.get_by_text("edits pending", exact=False)).to_be_visible()
         r.screenshot = _screenshot(page, r.name)
         r.verdict = "ok"
         r.detail = "stat drawer opened, big edited, committed to buffer"
@@ -314,29 +331,30 @@ def step_save(page: Page) -> StepResult:
     r = StepResult(name="04-save")
     bad, errs = _capture(page)
     try:
-        # Watch for the /edit-batch response specifically.
-        edit_batch_resp: dict[str, Any] = {}
-        def on_resp(resp):
-            if "/edit-batch" in resp.url:
-                edit_batch_resp["status"] = resp.status
-                edit_batch_resp["url"] = resp.url
-        page.on("response", on_resp)
-
-        page.get_by_role("button", name="Save changes").click()
-        # Wait for either "Saved at" or "Save failed".
-        page.wait_for_timeout(3500)
+        # expect_response blocks until the matching response arrives or the
+        # timeout fires. POST /edit-batch + the follow-on GET both involve
+        # Drive round-trips, so be generous.
+        with page.expect_response(lambda resp: "/edit-batch" in resp.url, timeout=30000) as resp_info:
+            page.get_by_role("button", name="Save changes").click()
+        edit_batch = resp_info.value
+        # Then wait for the TopBar label to swap to "Saved at" (which only
+        # happens after the follow-on getVideoRun refetch + REPLACE_SPEC).
+        try:
+            page.wait_for_selector("text=Saved at", timeout=20000)
+            saved_label_visible = True
+        except Exception:
+            saved_label_visible = False
         r.screenshot = _screenshot(page, r.name)
 
-        if edit_batch_resp.get("status") in (200, 201):
-            saved_label_visible = page.locator("text=Saved at").count() > 0
+        if edit_batch.status in (200, 201):
             r.verdict = "ok" if saved_label_visible else "broken"
             r.detail = (
-                f"/edit-batch -> {edit_batch_resp['status']}; "
+                f"/edit-batch -> {edit_batch.status}; "
                 f"TopBar 'Saved at' visible={saved_label_visible}"
             )
         else:
             r.verdict = "broken"
-            r.detail = f"/edit-batch did not return 200; got {edit_batch_resp.get('status')!r}"
+            r.detail = f"/edit-batch returned {edit_batch.status} (expected 200)"
     except Exception as e:
         r.verdict = "broken"
         r.detail = str(e)[:300]
@@ -360,8 +378,8 @@ def step_verify_persisted(ctx) -> StepResult:
     nar_str = json.dumps(nar)
     problem = (spec.get("problem") or {}).get("big") or ""
     impact_bigs = [item.get("big", "") for item in (spec.get("impact") or [])]
-    nar_hit = "E2E-EDITED" in nar_str
-    stat_hit = "E2E-99%" in problem or any("E2E-99%" in b for b in impact_bigs)
+    nar_hit = NARRATION_TOKEN in nar_str
+    stat_hit = STAT_TOKEN in problem or any(STAT_TOKEN in b for b in impact_bigs)
     if nar_hit and stat_hit:
         r.verdict = "ok"
         r.detail = "narration and stat edits both persisted in YAML"

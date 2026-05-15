@@ -264,12 +264,13 @@ def load_program_run(workspace: Workspace, slug: str, run_id: str) -> ProgramRec
 
 
 def read_parsed_spec(workspace: Workspace, slug: str, run_id: str) -> dict | None:
-    """Return the spec.yaml parsed via ruamel (round-trip safe). None if
-    the spec doesn't exist.
+    """Return the spec.yaml parsed via ruamel (round-trip safe), with the
+    default beat list merged in. None if the spec doesn't exist.
 
-    Used by the run-detail endpoint to ship the full spec down to the
-    frontend beat editor — the editor needs the whole document (not just
-    the metadata that ProgramRecord exposes via properties).
+    The per-run spec.yaml only carries `beat_overrides` (seconds tweaks) —
+    the canonical beat list (id/kind/seconds for the 8 narrative units)
+    lives in `programs/_defaults.yaml`. The React beat editor needs the
+    resolved list to render. We merge here so the frontend stays simple.
     """
     if not is_valid_slug(slug) or not is_valid_run_id(run_id):
         return None
@@ -283,7 +284,42 @@ def read_parsed_spec(workspace: Workspace, slug: str, run_id: str) -> dict | Non
         return None
     if not isinstance(parsed, dict):
         return None
+    # Resolve defaults' beats + apply per-run overrides.
+    if "beats" not in parsed:
+        parsed["beats"] = _resolved_beats(parsed.get("beat_overrides") or {})
     return parsed
+
+
+def _resolved_beats(overrides: dict) -> list[dict]:
+    """Read `programs/_defaults.yaml` and apply per-run beat_overrides.
+
+    Returns a list of {id, kind, seconds} dicts in declaration order.
+    Empty list if defaults can't be read (the editor falls back to a no-
+    beats view rather than 500).
+    """
+    from django.conf import settings
+
+    defaults_path = Path(settings.ACE_VIDEOS_ROOT) / "programs" / "_defaults.yaml"
+    if not defaults_path.is_file():
+        return []
+    try:
+        doc = _yaml().load(defaults_path.read_text())
+    except Exception:
+        return []
+    out: list[dict] = []
+    for b in (doc.get("beats") or []):
+        if not isinstance(b, dict):
+            continue
+        beat_id = b.get("id")
+        if not beat_id:
+            continue
+        override = overrides.get(beat_id) if isinstance(overrides, dict) else None
+        out.append({
+            "id": beat_id,
+            "kind": b.get("kind", ""),
+            "seconds": float((override or {}).get("seconds", b.get("seconds", 0))),
+        })
+    return out
 
 
 def load_program(workspace: Workspace, slug: str, run_id: str | None = None) -> ProgramRecord | None:
