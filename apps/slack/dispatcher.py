@@ -53,79 +53,106 @@ def dispatch_tick(*, thread_id) -> None:
     if thread.broken_at is not None:
         return
 
-    workspace = thread.installation.ace_workspace
-    snapshot = _load_snapshot(thread.opp_slug, workspace)
-    if snapshot is None:
-        logger.info("snapshot not yet available for %s/%s",
-                    thread.opp_slug, thread.run_id)
-        return
+    from django.core.cache import cache
+    lock_key = f"slack:dispatch:{thread.pk}"
+    if not cache.add(lock_key, "held", timeout=5):
+        return  # another worker is dispatching for this thread
+    try:
+        workspace = thread.installation.ace_workspace
+        snapshot = _load_snapshot(thread.opp_slug, workspace)
+        if snapshot is None:
+            logger.info("snapshot not yet available for %s/%s",
+                        thread.opp_slug, thread.run_id)
+            return
 
-    client = _get_client(thread.installation)
-    elapsed = int((datetime.now(timezone.utc) - thread.triggered_at).total_seconds())
-    phase_messages = dict(thread.phase_messages or {})
+        client = _get_client(thread.installation)
+        elapsed = int((datetime.now(timezone.utc) - thread.triggered_at).total_seconds())
+        phase_messages = dict(thread.phase_messages or {})
 
-    # 1. Per-phase create / update
-    for phase in snapshot.get("phases", []):
-        # Skip phases with no steps yet — nothing to render.
-        steps_in_phase = [s for s in snapshot["current_run"]["steps"]
-                          if s["phase"] == phase["name"]]
-        if not steps_in_phase:
-            continue
-        h = phase_state_hash(snapshot, phase["name"])
-        existing = phase_messages.get(phase["name"])
-        blocks = render_phase_tile(snapshot, phase_name=phase["name"],
-                                   opp_slug=thread.opp_slug,
-                                   workspace_slug=workspace.slug)
-        text = f"Phase {phase['ordinal']}: {phase['display_name']}"
+        # 1. Per-phase create / update
+        for phase in snapshot.get("phases", []):
+            # Skip phases with no steps yet — nothing to render.
+            steps_in_phase = [s for s in snapshot["current_run"]["steps"]
+                              if s["phase"] == phase["name"]]
+            if not steps_in_phase:
+                continue
+            h = phase_state_hash(snapshot, phase["name"])
+            existing = phase_messages.get(phase["name"])
+            blocks = render_phase_tile(snapshot, phase_name=phase["name"],
+                                       opp_slug=thread.opp_slug,
+                                       workspace_slug=workspace.slug)
+            text = f"Phase {phase['ordinal']}: {phase['display_name']}"
+            try:
+                if existing is None:
+                    ts = client.post_message(channel=thread.channel_id,
+                                             blocks=blocks, text=text,
+                                             thread_ts=thread.parent_ts)
+                    phase_messages[phase["name"]] = {"ts": ts, "last_state_hash": h}
+                elif existing.get("last_state_hash") != h:
+                    client.update_message(channel=thread.channel_id,
+                                          ts=existing["ts"],
+                                          blocks=blocks, text=text)
+                    existing["last_state_hash"] = h
+                    phase_messages[phase["name"]] = existing
+            except SlackChannelGone:
+                thread.broken_at = datetime.now(timezone.utc)
+                thread.save(update_fields=["broken_at"])
+                return
+            except SlackRateLimited as e:
+                logger.info("slack rate-limited on %s/%s; deferring (retry %ss)",
+                            thread.opp_slug, thread.run_id, e.retry_after)
+                return  # next opp.updated will retry
+
+        # 2. Parent card
+        new_parent_hash = parent_state_hash(snapshot, elapsed_seconds=elapsed)
+        if new_parent_hash != thread.parent_state_hash:
+            triggerer = thread.ace_user
+            triggerer_display = (
+                getattr(triggerer, "display_name", None)
+                or getattr(triggerer, "email", None)
+                or f"user {triggerer.pk}"
+            )
+            parent_blocks = render_parent_card(
+                snapshot, opp_slug=thread.opp_slug,
+                workspace_slug=workspace.slug,
+                triggerer_display=triggerer_display, elapsed_seconds=elapsed,
+            )
+            try:
+                client.update_message(channel=thread.channel_id, ts=thread.parent_ts,
+                                      blocks=parent_blocks,
+                                      text=f"ACE run · {thread.opp_slug}")
+            except SlackChannelGone:
+                thread.broken_at = datetime.now(timezone.utc)
+                thread.save(update_fields=["broken_at"])
+                return
+            except SlackRateLimited:
+                return
+            thread.parent_state_hash = new_parent_hash
+
+        thread.phase_messages = phase_messages
+        thread.save(update_fields=["phase_messages", "parent_state_hash"])
+    finally:
+        cache.delete(lock_key)
+
+
+async def _periodic_sweep() -> None:
+    """Belt-and-suspenders: every 60s, dispatch_tick all active threads.
+
+    Catches missed opp.updated events (worker restart, lost event) and
+    drives phase 1 of newly-created threads that haven't received their
+    first opp.updated yet (snapshot not yet populated → first sweep
+    after Drive writes lands a phase tile)."""
+    while True:
+        await asyncio.sleep(60)
         try:
-            if existing is None:
-                ts = client.post_message(channel=thread.channel_id,
-                                         blocks=blocks, text=text,
-                                         thread_ts=thread.parent_ts)
-                phase_messages[phase["name"]] = {"ts": ts, "last_state_hash": h}
-            elif existing.get("last_state_hash") != h:
-                client.update_message(channel=thread.channel_id,
-                                      ts=existing["ts"],
-                                      blocks=blocks, text=text)
-                existing["last_state_hash"] = h
-                phase_messages[phase["name"]] = existing
-        except SlackChannelGone:
-            thread.broken_at = datetime.now(timezone.utc)
-            thread.save(update_fields=["broken_at"])
-            return
-        except SlackRateLimited as e:
-            logger.info("slack rate-limited on %s/%s; deferring (retry %ss)",
-                        thread.opp_slug, thread.run_id, e.retry_after)
-            return  # next opp.updated will retry
-
-    # 2. Parent card
-    new_parent_hash = parent_state_hash(snapshot, elapsed_seconds=elapsed)
-    if new_parent_hash != thread.parent_state_hash:
-        triggerer = thread.ace_user
-        triggerer_display = (
-            getattr(triggerer, "display_name", None)
-            or getattr(triggerer, "email", None)
-            or f"user {triggerer.pk}"
-        )
-        parent_blocks = render_parent_card(
-            snapshot, opp_slug=thread.opp_slug,
-            workspace_slug=workspace.slug,
-            triggerer_display=triggerer_display, elapsed_seconds=elapsed,
-        )
-        try:
-            client.update_message(channel=thread.channel_id, ts=thread.parent_ts,
-                                  blocks=parent_blocks,
-                                  text=f"ACE run · {thread.opp_slug}")
-        except SlackChannelGone:
-            thread.broken_at = datetime.now(timezone.utc)
-            thread.save(update_fields=["broken_at"])
-            return
-        except SlackRateLimited:
-            return
-        thread.parent_state_hash = new_parent_hash
-
-    thread.phase_messages = phase_messages
-    thread.save(update_fields=["phase_messages", "parent_state_hash"])
+            ids = await sync_to_async(list)(
+                SlackRunThread.objects.filter(broken_at__isnull=True)
+                .values_list("pk", flat=True)
+            )
+            for tid in ids:
+                await sync_to_async(dispatch_tick)(thread_id=tid)
+        except Exception:
+            logger.exception("periodic sweep failed")
 
 
 async def _run_worker() -> None:
@@ -168,6 +195,9 @@ async def _run_worker() -> None:
     )
     for tid in threads:
         await sync_to_async(dispatch_tick)(thread_id=tid)
+
+    sweep_task = asyncio.create_task(_periodic_sweep())
+    _ = sweep_task  # kept alive by the task ref in this scope
 
     while True:
         try:

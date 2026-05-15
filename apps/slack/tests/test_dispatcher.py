@@ -101,3 +101,23 @@ def test_dispatch_tick_marks_broken_on_channel_gone(setup):
         dispatch_tick(thread_id=thread.pk)
     thread.refresh_from_db()
     assert thread.broken_at is not None
+
+
+@pytest.mark.django_db
+def test_dispatch_tick_skips_when_lock_held(setup):
+    inst, user, ws = setup
+    thread = SlackRunThread.objects.create(
+        installation=inst, channel_id="C1", parent_ts="1.1",
+        opp_slug="my-opp", run_id="run-001", ace_user=user,
+    )
+    from django.core.cache import cache
+    cache.set(f"slack:dispatch:{thread.pk}", "held", timeout=5)
+    with patch("apps.slack.dispatcher._load_snapshot") as load, \
+         patch("apps.slack.dispatcher._get_client") as get_client:
+        load.return_value = _snap()
+        client = MagicMock(); get_client.return_value = client
+        from apps.slack.dispatcher import dispatch_tick
+        dispatch_tick(thread_id=thread.pk)
+    # Lock held → no Slack calls.
+    client.post_message.assert_not_called()
+    client.update_message.assert_not_called()
