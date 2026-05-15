@@ -136,10 +136,36 @@ def dispatch_interaction(payload: dict) -> dict:
     """Block action / view submission entrypoint."""
     p_type = payload.get("type")
     if p_type == "view_submission":
-        if payload.get("view", {}).get("callback_id") == "ace_new_modal":
+        if payload["view"].get("callback_id") == "ace_new_modal":
             from .verbs_new import handle_new_submission
             return handle_new_submission(payload)
+        return {}
     if p_type == "block_actions":
-        # Block actions (fork button etc.) lands in Task 16.
+        action = (payload.get("actions") or [{}])[0]
+        action_id = action.get("action_id", "")
+        if action_id == "fork_from_phase":
+            return _fork_redirect(payload, action)
+        if action_id == "link_account":
+            return {}  # button has its own url; nothing to do server-side
+        # Unknown actions — silently 200.
         return {}
     return {}
+
+
+def _fork_redirect(payload: dict, action: dict) -> dict:
+    value = action.get("value", "")
+    try:
+        slug, phase = value.split(":", 1)
+    except ValueError:
+        return {"response_type": "ephemeral", "text": ":x: malformed fork action"}
+    team_id = payload.get("team", {}).get("id", "")
+    installation = _get_installation(team_id)
+    if installation is None:
+        return {"response_type": "ephemeral", "text": ":x: workspace not installed"}
+    workspace_slug = installation.ace_workspace.slug
+    base = getattr(settings, "ACE_PUBLIC_BASE_URL",
+                   "https://labs.connect.dimagi.com/ace")
+    url = (f"{base}/w/{workspace_slug}/opps/{slug}"
+           f"?fork={phase}")
+    return {"response_type": "ephemeral",
+            "text": f"Open the fork dialog: <{url}>"}
