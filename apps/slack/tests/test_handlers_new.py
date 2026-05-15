@@ -17,7 +17,8 @@ def setup(db):
         slack_team_id="T1", slack_team_name="Dimagi",
         bot_user_id="U_BOT", ace_workspace=ws, installed_by_user=admin,
     )
-    inst.bot_token = "xoxb-1"; inst.save()
+    inst.bot_token = "xoxb-1"
+    inst.save()
     jj = User.objects.create(email="jj@dimagi.com")
     link = SlackUserLink.objects.create(
         installation=inst, slack_user_id="U_JJ", ace_user=jj,
@@ -30,7 +31,8 @@ def setup(db):
 def test_new_opens_modal(setup):
     inst, link, _ = setup
     with patch("apps.slack.verbs_new._get_client") as get_client:
-        client = MagicMock(); get_client.return_value = client
+        client = MagicMock()
+        get_client.return_value = client
         from apps.slack.verbs_new import handle_new
         resp = handle_new(installation=inst, user_link=link,
                           channel_id="C1", trigger_id="tg1")
@@ -49,7 +51,8 @@ def test_new_modal_submission_starts_run(setup):
     with patch("apps.slack.verbs_new.start_run_from_slack") as start, \
          patch("apps.slack.verbs_new._get_client") as get_client:
         start.return_value = ("rural-tb", "run-001")
-        client = MagicMock(); get_client.return_value = client
+        client = MagicMock()
+        get_client.return_value = client
         client.post_message.return_value = "1.1"
         from apps.slack.verbs_new import handle_new_submission
         payload = {

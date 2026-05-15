@@ -18,7 +18,8 @@ def setup_installation(db):
         slack_team_id="T1", slack_team_name="Dimagi",
         bot_user_id="U_BOT", ace_workspace=ws, installed_by_user=admin,
     )
-    inst.bot_token = "xoxb-1"; inst.save()
+    inst.bot_token = "xoxb-1"
+    inst.save()
     return inst, admin
 
 
@@ -27,7 +28,8 @@ def test_link_route_creates_user_link_and_replays(setup_installation):
     inst, admin = setup_installation
     User = get_user_model()
     jj = User.objects.create(email="jj@dimagi.com")
-    jj.set_password("pw"); jj.save()
+    jj.set_password("pw")
+    jj.save()
 
     nonce = save_pending_command(slack_user_id="U_JJ", team_id="T1",
                                  channel_id="C1", command_text="/ace help")

@@ -1,7 +1,9 @@
 import pytest
 
 from apps.slack.pending import (
-    save_pending_command, take_pending_command, PendingMissing,
+    PendingMissing,
+    save_pending_command,
+    take_pending_command,
 )
 
 

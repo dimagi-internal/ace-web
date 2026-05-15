@@ -16,7 +16,7 @@ as a user chat message — the turn_driver picks this up and spawns the CLI.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from apps.sessions.models import Message, Session
 
@@ -46,7 +46,7 @@ def _mint_run_id() -> str:
     propose a fresh one. If two Slack triggers race in the same minute,
     /ace:run will bump one to the next minute on its own.
     """
-    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+    return datetime.now(UTC).strftime("%Y%m%d-%H%M")
 
 
 def _next_turn_index(session: Session) -> int:
@@ -78,16 +78,17 @@ def start_run_from_slack(*, slug_or_link: str, user, workspace) -> tuple[str, st
 
         # Build a slug from the idea text (first 40 chars, lowercased, slugified).
         import re
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         raw = re.sub(r"[^a-z0-9]+", "-", idea_text[:40].lower()).strip("-") or "new-opp"
-        datestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+        datestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
         slug = f"{raw}-{datestamp}"[:63]
 
         # We need a DriveClient to create the opp folder. In v1 the Slack
         # path reuses the workspace's Drive root. Import drive_client lazily.
-        from apps.opps.drive_client import GoogleDriveClient
         from django.conf import settings
+
+        from apps.opps.drive_client import GoogleDriveClient
 
         drive = GoogleDriveClient(settings.ACE_DRIVE_SA_KEY_JSON)
         ace_folder_id = workspace.drive_root_folder_id

@@ -1,6 +1,9 @@
 from apps.slack.blocks import (
-    render_parent_card, render_phase_tile, render_progress_bar,
-    phase_state_hash, parent_state_hash,
+    parent_state_hash,
+    phase_state_hash,
+    render_parent_card,
+    render_phase_tile,
+    render_progress_bar,
 )
 
 

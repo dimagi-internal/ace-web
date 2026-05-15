@@ -1,5 +1,5 @@
 # apps/slack/tests/test_handlers_misc.py
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -18,7 +18,8 @@ def setup(db):
         slack_team_id="T1", slack_team_name="Dimagi",
         bot_user_id="U_BOT", ace_workspace=ws, installed_by_user=admin,
     )
-    inst.bot_token = "xoxb-1"; inst.save()
+    inst.bot_token = "xoxb-1"
+    inst.save()
     jj = User.objects.create(email="jj@dimagi.com")
     SlackUserLink.objects.create(installation=inst, slack_user_id="U_JJ",
                                  ace_user=jj, slack_email="jj@dimagi.com",
@@ -52,7 +53,8 @@ def test_unknown_subcommand_returns_help(setup):
 def test_unlinked_user_gets_dm_link(setup):
     from apps.slack.handlers import dispatch_slash_command
     with patch("apps.slack.handlers._get_client") as get_client:
-        mock = MagicMock(); get_client.return_value = mock
+        mock = MagicMock()
+        get_client.return_value = mock
         resp = dispatch_slash_command(
             text="run my-opp", slack_user_id="U_UNKNOWN",
             team_id="T1", channel_id="C1", trigger_id="", response_url="",
@@ -71,7 +73,8 @@ def test_unlinked_user_gets_dm_link(setup):
 def test_link_subcommand_resends_link(setup):
     from apps.slack.handlers import dispatch_slash_command
     with patch("apps.slack.handlers._get_client") as get_client:
-        mock = MagicMock(); get_client.return_value = mock
+        mock = MagicMock()
+        get_client.return_value = mock
         resp = dispatch_slash_command(
             text="link", slack_user_id="U_JJ", team_id="T1", channel_id="C1",
             trigger_id="", response_url="",

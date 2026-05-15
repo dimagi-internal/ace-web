@@ -5,7 +5,7 @@ from urllib.parse import quote as _quote
 import pytest
 from django.test import Client, override_settings
 
-from apps.slack.tests.test_verify import _sign, SECRET
+from apps.slack.tests.test_verify import SECRET, _sign
 
 
 @pytest.mark.django_db
@@ -64,7 +64,8 @@ def test_fork_action_returns_ephemeral_deeplink():
         slack_team_id="T1", slack_team_name="Dimagi",
         bot_user_id="U_BOT", ace_workspace=ws, installed_by_user=admin,
     )
-    inst.bot_token = "xoxb-1"; inst.save()
+    inst.bot_token = "xoxb-1"
+    inst.save()
 
     c = Client()
     resp = c.post("/api/slack/interactions", data=body_form,

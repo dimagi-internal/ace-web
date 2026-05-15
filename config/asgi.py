@@ -67,6 +67,7 @@ async def _composed_lifespan(app):
     smoke tests or management commands that mount the app without Redis).
     """
     import asyncio
+
     from apps.slack.dispatcher import run_worker_forever
 
     slack_task: asyncio.Task | None = None

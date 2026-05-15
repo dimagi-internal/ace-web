@@ -3,16 +3,18 @@
 event → SlackOppConsumer dispatches → Slack chat.update called with a
 phase tile."""
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client, override_settings
 
 from apps.slack.models import (
-    SlackInstallation, SlackRunThread, SlackUserLink,
+    SlackInstallation,
+    SlackRunThread,
+    SlackUserLink,
 )
-from apps.slack.tests.test_verify import _sign, SECRET
+from apps.slack.tests.test_verify import SECRET, _sign
 from apps.workspaces.models import Workspace
 
 
@@ -27,7 +29,8 @@ def test_run_to_phase_tile_happy_path():
         slack_team_id="T1", slack_team_name="Dimagi",
         bot_user_id="U_BOT", ace_workspace=ws, installed_by_user=admin,
     )
-    inst.bot_token = "xoxb-1"; inst.save()
+    inst.bot_token = "xoxb-1"
+    inst.save()
     jj = User.objects.create(email="jj@dimagi.com")
     SlackUserLink.objects.create(installation=inst, slack_user_id="U_JJ",
                                  ace_user=jj, slack_email="jj@dimagi.com",

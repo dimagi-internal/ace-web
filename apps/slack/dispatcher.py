@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from asgiref.sync import sync_to_async
 from channels.layers import get_channel_layer
 
 from .blocks import (
-    parent_state_hash, phase_state_hash,
-    render_parent_card, render_phase_tile,
+    parent_state_hash,
+    phase_state_hash,
+    render_parent_card,
+    render_phase_tile,
 )
 from .models import SlackRunThread
 from .slack_client import SlackChannelGone, SlackRateLimited, client_for
@@ -66,7 +68,7 @@ def dispatch_tick(*, thread_id) -> None:
             return
 
         client = _get_client(thread.installation)
-        elapsed = int((datetime.now(timezone.utc) - thread.triggered_at).total_seconds())
+        elapsed = int((datetime.now(UTC) - thread.triggered_at).total_seconds())
         phase_messages = dict(thread.phase_messages or {})
 
         # 1. Per-phase create / update
@@ -95,7 +97,7 @@ def dispatch_tick(*, thread_id) -> None:
                     existing["last_state_hash"] = h
                     phase_messages[phase["name"]] = existing
             except SlackChannelGone:
-                thread.broken_at = datetime.now(timezone.utc)
+                thread.broken_at = datetime.now(UTC)
                 thread.save(update_fields=["broken_at"])
                 return
             except SlackRateLimited as e:
@@ -122,7 +124,7 @@ def dispatch_tick(*, thread_id) -> None:
                                       blocks=parent_blocks,
                                       text=f"ACE run · {thread.opp_slug}")
             except SlackChannelGone:
-                thread.broken_at = datetime.now(timezone.utc)
+                thread.broken_at = datetime.now(UTC)
                 thread.save(update_fields=["broken_at"])
                 return
             except SlackRateLimited:
@@ -153,6 +155,17 @@ async def _periodic_sweep() -> None:
                 await sync_to_async(dispatch_tick)(thread_id=tid)
         except Exception:
             logger.exception("periodic sweep failed")
+
+
+def _find_thread_pk(slug: str, run_id: str):
+    """Sync helper for the async worker: thread pk for (slug, run_id) or None."""
+    return (
+        SlackRunThread.objects.filter(
+            opp_slug=slug, run_id=run_id, broken_at__isnull=True,
+        )
+        .values_list("pk", flat=True)
+        .first()
+    )
 
 
 async def _run_worker() -> None:
@@ -211,11 +224,7 @@ async def _run_worker() -> None:
         run_id = event.get("run_id") or ""
         if not slug:
             continue
-        thread_id = await sync_to_async(
-            lambda: SlackRunThread.objects.filter(
-                opp_slug=slug, run_id=run_id, broken_at__isnull=True,
-            ).values_list("pk", flat=True).first()
-        )()
+        thread_id = await sync_to_async(_find_thread_pk)(slug, run_id)
         if thread_id is None:
             continue
         # Coalesce: cancel any pending debounced dispatch for this thread.

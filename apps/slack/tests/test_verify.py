@@ -4,8 +4,7 @@ import time
 
 import pytest
 
-from apps.slack.verify import verify_slack_signature, SignatureError
-
+from apps.slack.verify import SignatureError, verify_slack_signature
 
 SECRET = "abc-test-secret"
 

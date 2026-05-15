@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from django.conf import settings
 
@@ -40,7 +40,7 @@ def handle_status(*, installation, user_link, rest: str, channel_id: str) -> dic
         return {"response_type": "ephemeral",
                 "text": f"Could not load snapshot for `{thread.opp_slug}`."}
 
-    elapsed = int((datetime.now(timezone.utc) - thread.triggered_at).total_seconds())
+    elapsed = int((datetime.now(UTC) - thread.triggered_at).total_seconds())
     blocks = render_parent_card(
         snap, opp_slug=thread.opp_slug, workspace_slug=workspace.slug,
         triggerer_display=f"<@{user_link.slack_user_id}>",
