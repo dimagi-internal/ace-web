@@ -32,20 +32,23 @@ import { execSync } from "node:child_process";
 import { loadProgramSpec } from "../src/lib/spec.node";
 import { loadDefaults, resolveBeats, type ResolvedBeat } from "../src/lib/beats.node";
 import { defaultCacheDir } from "../src/lib/asset-resolver.node";
+import { resolveRun, specPath, outputPath, explorerDir as runExplorerDir } from "../src/lib/runs.node";
 
 interface CliArgs {
   program: string;
+  run: string;
   open: boolean;
 }
 
 function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
   const program = args.find((a) => a.startsWith("--program="))?.slice("--program=".length);
+  const run = args.find((a) => a.startsWith("--run="))?.slice("--run=".length) ?? "";
   if (!program) {
-    console.error("Usage: npm run build-clip-explorer -- --program=<slug>");
+    console.error("Usage: npm run build-clip-explorer -- --program=<slug> [--run=<run-NNN>]");
     process.exit(2);
   }
-  return { program, open: args.includes("--open") };
+  return { program, run, open: args.includes("--open") };
 }
 
 interface ParsedRef {
@@ -142,21 +145,29 @@ interface ClipAssignment {
 function main() {
   const cli = parseArgs();
   const root = process.cwd();
+  const runId = resolveRun(cli.program, cli.run, root);
   const defaults = loadDefaults(path.join(root, "programs/_defaults.yaml"));
-  const spec = loadProgramSpec(path.join(root, `programs/${cli.program}.yaml`));
+  const spec = loadProgramSpec(specPath(cli.program, runId, root));
   const timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
   const cacheDir = defaultCacheDir();
 
-  const outDir = path.join(root, "out", "clip-explorer", cli.program);
+  const outDir = runExplorerDir(cli.program, runId, root);
   if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
   const mediaDir = path.join(outDir, "media");
   mkdirSync(mediaDir, { recursive: true });
 
   // Mirror the final render
-  const finalSrc = path.join(root, `out/${cli.program}-draft-mux.mp4`);
+  const finalSrc = outputPath(cli.program, runId, root);
   const finalLink = path.join(mediaDir, "final.mp4");
-  if (existsSync(finalSrc)) symlinkSync(finalSrc, finalLink);
+  if (existsSync(finalSrc)) {
+    // Use a path relative to the symlink's own directory so the link
+    // resolves the same way on the host as it does inside ace-web's
+    // Docker container (where /app/video-production/ is bind-mounted
+    // but the original host's absolute path doesn't exist).
+    const relTarget = path.relative(mediaDir, finalSrc);
+    symlinkSync(relTarget, finalLink);
+  }
 
   // Resolve all assignments (scene + product). Walk the spec.
   const beatBlocks: BeatBlock[] = [];
@@ -217,6 +228,12 @@ function main() {
       // Symlink into media/ for the page
       const mediaName = `${alias}.${parsed.ext}`;
       const mediaLink = path.join(mediaDir, mediaName);
+      // Absolute target — the cache lives at ~/.cache/connect-videos/
+      // outside the project tree. ace-web's docker-compose.override.yml
+      // bind-mounts the same absolute host path inside the container.
+      // A relative path from this deep media/ dir up to $HOME would be
+      // 13+ `..` levels which collapses to `/.cache/...` inside the
+      // container (where $HOME doesn't exist), so absolute is safer.
       if (!existsSync(mediaLink)) symlinkSync(cachePath, mediaLink);
       const probed = probe(cachePath);
       return {
@@ -355,7 +372,13 @@ function main() {
       if (cached) {
         const mediaName = `${alias}.${parsed.ext}`;
         const mediaLink = path.join(mediaDir, mediaName);
-        if (!existsSync(mediaLink)) symlinkSync(cachePath, mediaLink);
+        // Absolute target — the cache lives at ~/.cache/connect-videos/
+      // outside the project tree. ace-web's docker-compose.override.yml
+      // bind-mounts the same absolute host path inside the container.
+      // A relative path from this deep media/ dir up to $HOME would be
+      // 13+ `..` levels which collapses to `/.cache/...` inside the
+      // container (where $HOME doesn't exist), so absolute is safer.
+      if (!existsSync(mediaLink)) symlinkSync(cachePath, mediaLink);
         const probed = probe(cachePath);
         dur = probed.duration; res = `${probed.width}x${probed.height}`;
         sourcePath = `media/${mediaName}`;
@@ -412,7 +435,7 @@ function renderLibraryHtml(args: {
       : `<span class="lib-tag missing">⚠ not cached</span>`;
     const video = e.sourcePath
       ? `<video src="${e.sourcePath}" controls preload="metadata"></video>`
-      : `<div class="lib-placeholder">${e.parsed.kind === "gdrive" ? `not pulled from Drive yet · <code>${escape(e.parsed.gdriveId ?? "")}</code>` : escape(e.entry)}</div>`;
+      : `<div class="lib-placeholder">${e.parsed.kind === "gdrive" ? `not pulled from Drive yet · <a class="gdrive-link" href="https://drive.google.com/file/d/${escape(e.parsed.gdriveId ?? "")}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : escape(e.entry)}</div>`;
     return `
       <div class="lib-card">
         <div class="lib-head">
@@ -421,7 +444,7 @@ function renderLibraryHtml(args: {
         </div>
         <div class="lib-meta">
           ${e.dur ? `<span>${e.dur.toFixed(1)}s · ${e.res}</span>` : ""}
-          ${e.parsed.kind === "gdrive" ? `<code>drive:${escape(e.parsed.gdriveId ?? "")}</code>` : ""}
+          ${e.parsed.kind === "gdrive" ? `<a class="gdrive-link" href="https://drive.google.com/file/d/${escape(e.parsed.gdriveId ?? "")}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}
         </div>
         ${video}
         <div class="lib-tags">${usedBadges}</div>
@@ -549,14 +572,14 @@ function renderHtml(args: {
   };
 
   const beatCardsHtml = beatBlocks
-    .map((blk) => renderBeatCard(blk, totalSec, beatColors[blk.kind] ?? "#3843D0"))
+    .map((blk) => renderBeatCard(blk, totalSec, beatColors[blk.kind] ?? "#3843D0", spec))
     .join("\n");
 
   const timelineHtml = beatBlocks
     .map((blk) => {
       const leftPct = (blk.startSec / totalSec) * 100;
       const widthPct = (blk.durationSec / totalSec) * 100;
-      return `<div class="tl-beat" style="left:${leftPct}%;width:${widthPct}%;background:${beatColors[blk.kind] ?? "#3843D0"}" title="${sectionLabel(blk.id).name}: ${fmtTs(blk.startSec)} → ${fmtTs(blk.endSec)}"></div>`;
+      return `<div class="tl-beat" data-clickable data-beat-id="${blk.id}" data-start-sec="${blk.startSec.toFixed(2)}" style="left:${leftPct}%;width:${widthPct}%;background:${beatColors[blk.kind] ?? "#3843D0"}" title="${sectionLabel(blk.id).name} · ${fmtTs(blk.startSec)} → ${fmtTs(blk.endSec)} · click to jump"></div>`;
     })
     .join("");
 
@@ -589,7 +612,7 @@ function renderHtml(args: {
         </div>
         <div class="meta">
           ${u.sourceDuration ? `${u.sourceDuration.toFixed(1)}s · ${u.sourceRes}` : ""}
-          ${u.gdriveId ? `<br/><code>gdrive:${u.gdriveId}</code>` : ""}
+          ${u.gdriveId ? `<br/><a class="gdrive-link" href="https://drive.google.com/file/d/${u.gdriveId}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}
         </div>
         ${video}
       </div>`;
@@ -716,23 +739,6 @@ function renderHtml(args: {
   .lib-tag.used-in { background: rgba(31,143,111,0.15); color: var(--green); }
   .lib-tag.unused { background: var(--sky-tint); color: var(--muted); }
   .lib-placeholder { padding: 16px; text-align: center; color: var(--muted); border-radius: 8px; background: var(--paper); border: 1px dashed var(--rule); font: 400 12px var(--sans); }
-  /* Feedback widgets */
-  .fb-toggle { margin-left: auto; background: white; border: 1px solid var(--rule); color: var(--ink-2); cursor: pointer; padding: 4px 10px; font: 600 11px var(--sans); border-radius: 999px; }
-  .fb-toggle:hover { background: var(--paper); }
-  .fb-toggle.active { background: var(--indigo); color: white; border-color: var(--indigo); }
-  .fb-panel { display: none; margin-top: 12px; padding: 12px; background: white; border: 1px solid var(--line); border-radius: 10px; }
-  .fb-panel.open { display: block; }
-  .fb-panel textarea { width: 100%; min-height: 80px; padding: 8px 10px; font: 400 13px var(--sans); border: 1px solid var(--rule); border-radius: 6px; resize: vertical; }
-  .fb-panel .fb-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-  .fb-panel .fb-row .ts-grab { font: 500 11px var(--mono); color: var(--muted); }
-  .fb-panel button.fb-save { background: var(--indigo); color: white; border: none; padding: 6px 14px; font: 600 12px var(--sans); border-radius: 6px; cursor: pointer; }
-  .fb-panel button.fb-save:hover { background: var(--indigo-deep); }
-  .fb-status { font-size: 11px; color: var(--muted); }
-  .global-fb { margin: 24px 0; padding: 14px 16px; background: white; border: 1px solid var(--line); border-radius: 12px; }
-  .global-fb h3 { margin: 0 0 6px; font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; font-weight: 700; }
-  .global-fb .hint { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.4; }
-  .fb-log { margin-top: 16px; padding: 12px; background: var(--paper); border-radius: 8px; max-height: 240px; overflow: auto; font: 400 12px var(--mono); white-space: pre-wrap; color: var(--ink-2); }
-  .fb-log:empty { display: none; }
   .range-row { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 10px; align-items: center; margin-top: 8px; padding: 8px 12px; background: white; border: 1px solid var(--line); border-radius: 8px; }
   .range-row label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
   .range-row input[type=range] { width: 100%; height: 4px; -webkit-appearance: none; background: var(--rule); border-radius: 999px; outline: none; }
@@ -747,6 +753,107 @@ function renderHtml(args: {
   .nav-tabs a { padding: 8px 16px; border-radius: 8px; background: white; border: 1px solid var(--line); text-decoration: none; color: var(--ink-2); font: 600 13px var(--sans); }
   .nav-tabs a.active { background: var(--indigo); color: white; border-color: var(--indigo); }
   .nav-tabs a:hover:not(.active) { background: var(--sky-tint); }
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Narration edit — explicit read/edit mode toggle. Two visually
+   * distinct states so it's never ambiguous which mode you're in.
+   *
+   * READ mode (default):
+   *   - Plain prose with a quiet ✏ icon button to the right.
+   *   - Hover lifts the bg slightly so the field reads as "interactive".
+   * EDIT mode (after click):
+   *   - Boxed textarea with focus ring.
+   *   - Explicit [Save] / [Cancel] buttons. No auto-save on blur.
+   * SAVED state (after Save):
+   *   - Brief green check, then returns to READ mode.
+   * ────────────────────────────────────────────────────────────────── */
+  .narration-edit { margin: 10px 0 14px; padding: 10px 12px; background: white; border: 1px solid var(--line); border-radius: 10px; transition: background 0.15s, border-color 0.15s; }
+  .narration-edit[data-mode="read"] { cursor: pointer; }
+  .narration-edit[data-mode="read"]:hover { background: var(--sky-tint); border-color: var(--indigo-soft); }
+  .narration-edit[data-mode="edit"] { background: white; border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(56,67,208,0.15); cursor: default; }
+
+  .narration-edit-label { display: flex; align-items: center; gap: 8px; font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+  .narration-edit-label .mode-tag { font: 600 10px var(--sans); padding: 1px 8px; border-radius: 999px; letter-spacing: 0.04em; }
+  .narration-edit[data-mode="read"] .mode-tag { background: var(--paper); color: var(--muted); border: 1px solid var(--line); }
+  .narration-edit[data-mode="edit"] .mode-tag { background: var(--indigo); color: white; }
+  .narration-edit-label .narration-edit-status { font: 500 11px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: auto; }
+  .narration-edit-label .narration-edit-status.saved { color: var(--green); font-weight: 700; }
+  .narration-edit-label .narration-edit-status.error { color: var(--mango); font-weight: 700; }
+
+  /* Read view: the prose + a pencil button on the right. */
+  .narration-read { display: flex; align-items: flex-start; gap: 12px; }
+  .narration-read .narration-prose { flex: 1; font: 500 15px var(--sans); color: var(--ink); line-height: 1.5; min-height: 22px; }
+  .narration-read .narration-prose.empty { color: var(--muted); font-style: italic; font-weight: 400; }
+  .narration-read button.narration-edit-btn { flex-shrink: 0; background: white; border: 1px solid var(--rule); color: var(--ink-2); padding: 4px 10px; font: 600 12px var(--sans); border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .narration-read button.narration-edit-btn:hover { background: var(--indigo); color: white; border-color: var(--indigo); }
+  .narration-edit[data-mode="edit"] .narration-read { display: none; }
+
+  /* Edit view: textarea + explicit save/cancel buttons. */
+  .narration-write { display: none; flex-direction: column; gap: 8px; }
+  .narration-edit[data-mode="edit"] .narration-write { display: flex; }
+  .narration-write textarea { width: 100%; min-height: 60px; padding: 8px 10px; font: 500 15px var(--sans); color: var(--ink); line-height: 1.5; border: 1px solid var(--rule); border-radius: 6px; resize: vertical; outline: none; }
+  .narration-write textarea:focus { border-color: var(--indigo); }
+  .narration-write .narration-write-actions { display: flex; gap: 6px; align-items: center; }
+  .narration-write button.narration-save-btn { background: var(--indigo); color: white; border: none; padding: 6px 14px; font: 600 12px var(--sans); border-radius: 6px; cursor: pointer; }
+  .narration-write button.narration-save-btn:hover { background: var(--indigo-deep); }
+  .narration-write button.narration-cancel-btn { background: white; color: var(--ink-2); border: 1px solid var(--rule); padding: 6px 12px; font: 600 12px var(--sans); border-radius: 6px; cursor: pointer; }
+  .narration-write button.narration-cancel-btn:hover { background: var(--paper); }
+  .narration-write .narration-write-hint { font: 400 11px var(--sans); color: var(--muted); margin-left: auto; }
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Trim widget — visible handles + region
+   * ────────────────────────────────────────────────────────────────── */
+  .clip-wrapper { display: flex; flex-direction: column; gap: 8px; }
+  .trim-bar { position: relative; height: 36px; background: linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%); border: 1px solid var(--rule); border-radius: 8px; cursor: ew-resize; touch-action: none; user-select: none; margin-top: 6px; }
+  .trim-region { position: absolute; top: -1px; bottom: -1px; background: rgba(56,67,208,0.18); border: 2px solid var(--indigo); border-radius: 6px; cursor: grab; }
+  .trim-region:active { cursor: grabbing; background: rgba(56,67,208,0.26); }
+  .trim-handle { position: absolute; top: -4px; bottom: -4px; width: 14px; background: var(--indigo); border: 2px solid white; border-radius: 4px; box-shadow: 0 2px 6px rgba(10,6,32,0.25); cursor: ew-resize; transition: transform 0.1s, background 0.1s; touch-action: none; }
+  .trim-handle:hover { background: var(--indigo-deep); transform: scaleY(1.08); }
+  .trim-handle.left { left: -7px; }
+  .trim-handle.right { right: -7px; }
+  .trim-handle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 2px; height: 18px; background: white; opacity: 0.65; transform: translate(-50%, -50%); border-radius: 2px; }
+  .trim-readout { display: flex; justify-content: space-between; gap: 8px; font: 400 11px var(--mono); color: var(--muted); }
+  .trim-readout strong { color: var(--indigo-deep); font-family: var(--sans); font-weight: 700; }
+  .trim-save-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .trim-save { background: var(--indigo); color: white; border: none; padding: 6px 14px; font: 600 12px var(--sans); border-radius: 6px; cursor: pointer; transition: background 0.15s, transform 0.05s; }
+  .trim-save:not(:disabled):hover { background: var(--indigo-deep); }
+  .trim-save:not(:disabled):active { transform: translateY(1px); }
+  .trim-save:disabled { background: var(--rule); color: var(--muted); cursor: not-allowed; }
+  .trim-status { font: 400 11px var(--sans); color: var(--muted); }
+  .trim-status.dirty { color: var(--mango); font-weight: 600; }
+  .trim-status.saved { color: var(--green); font-weight: 600; }
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Timeline — click-to-jump segments
+   * ────────────────────────────────────────────────────────────────── */
+  .tl-beat[data-clickable] { cursor: pointer; transition: opacity 0.1s, transform 0.1s; }
+  .tl-beat[data-clickable]:hover { opacity: 1; transform: scaleY(1.4); transform-origin: center; }
+  .tl-beat[data-active] { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  /* gdrive link styling — quieter than a bare link */
+  .gdrive-link { color: var(--indigo-deep); text-decoration: none; border-bottom: 1px dotted var(--rule); }
+  .gdrive-link:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Non-clip section panels — surfaces the YAML / template-driven
+   * content for sections that don't take video clips.
+   * ────────────────────────────────────────────────────────────────── */
+  .section-panel { background: white; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .section-panel-head { font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 12px; }
+  .section-panel-head code { font: 600 11px var(--mono); background: var(--paper); padding: 1px 6px; border-radius: 4px; color: var(--indigo-deep); }
+
+  .section-stats { display: grid; gap: 12px; }
+  .section-stats.one { grid-template-columns: 1fr; }
+  .section-stats.multi { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .section-stat { padding: 14px 16px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; text-align: center; }
+  .section-stat-big { font: 800 36px var(--sans); color: var(--indigo-deep); line-height: 1.0; margin-bottom: 6px; background: linear-gradient(90deg, var(--ink-2), var(--indigo) 60%, var(--sky-deep)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .section-stat-caption { font: 500 13px var(--sans); color: var(--ink-2); line-height: 1.4; }
+  .section-stat-source { font: 400 11px var(--mono); color: var(--muted); margin-top: 6px; }
+
+  .section-brand-fact { display: flex; gap: 12px; align-items: baseline; padding: 8px 0; }
+  .section-brand-label { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); flex-shrink: 0; min-width: 140px; }
+  .section-brand-value { font: 500 14px var(--sans); color: var(--ink); }
+  .section-brand-hint { font: 400 12px var(--sans); color: var(--muted); margin-top: 8px; line-height: 1.5; font-style: italic; }
 </style>
 </head>
 <body>
@@ -800,24 +907,6 @@ function renderHtml(args: {
     ${unusedHtml || '<div class="no-asset">All manifest entries are in use.</div>'}
   </div>
 
-  <div class="global-fb">
-    <h3>💬 Overall feedback on this video</h3>
-    <div class="hint">Pause the player above at a moment you want to flag, hit <strong>use current video time</strong>, then describe what should change. Saved to <code>feedback.md</code> for the next iteration.</div>
-    <textarea id="fb-global" placeholder="e.g., music gets too loud during field footage; 1M+ stat should be bigger; swap village clip for a wider shot..."></textarea>
-    <div class="fb-row">
-      <button class="fb-toggle" id="fb-grab-time">use current video time</button>
-      <span class="ts-grab" id="fb-grab-time-out">no timestamp tagged yet</span>
-      <button class="fb-save" data-target="global">save feedback</button>
-      <span class="fb-status" id="fb-global-status"></span>
-    </div>
-  </div>
-
-  <div class="section-title">
-    <h2>Feedback log</h2>
-    <span class="hint">this session — also persisted to <code>feedback.md</code></span>
-  </div>
-  <div class="fb-log" id="fb-log"></div>
-
   <div class="footer-help">
     <strong>Want to suggest a better clip for a beat?</strong>
     Send a Drive link or a YouTube reference for any beat marked
@@ -846,77 +935,30 @@ function renderHtml(args: {
 </aside>
 
 <script>
+  // Render is no longer triggered automatically from inside this iframe.
+  // Edits POST to /edit (save-only); the operator clicks "Re-render" in
+  // ace-web's outer header to actually regenerate the output. The outer
+  // shell polls /render-status and shows its own busy banner.
   const finalVideo = document.getElementById('final-video');
-  const grabBtn = document.getElementById('fb-grab-time');
-  const grabOut = document.getElementById('fb-grab-time-out');
-  let grabbedTs = null;
-  if (grabBtn) {
-    grabBtn.addEventListener('click', () => {
-      if (!finalVideo) return;
-      grabbedTs = finalVideo.currentTime;
-      grabOut.textContent = grabbedTs.toFixed(1) + 's';
-    });
-  }
-  // Toggle per-beat feedback panels
-  document.querySelectorAll('.fb-toggle[data-beat]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const beatId = btn.dataset.beat;
-      const panel = document.querySelector('.fb-panel[data-beat="' + beatId + '"]');
-      const isOpen = panel.classList.toggle('open');
-      btn.classList.toggle('active', isOpen);
-    });
-  });
 
-  async function saveFeedback(payload, statusEl, textarea) {
-    statusEl.textContent = 'saving…';
-    try {
-      const resp = await fetch('/feedback', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const data = await resp.json();
-      statusEl.textContent = '✓ saved at ' + data.timestamp;
-      textarea.value = '';
-      refreshLog();
-    } catch (e) {
-      statusEl.textContent = '⚠ error: ' + e.message;
-    }
-  }
-
-  document.querySelectorAll('button.fb-save').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.target;
-      const beatId = btn.dataset.beat;
-      const textarea = target === 'global'
-        ? document.getElementById('fb-global')
-        : document.querySelector('.fb-panel[data-beat="' + beatId + '"] textarea');
-      const statusEl = target === 'global'
-        ? document.getElementById('fb-global-status')
-        : document.querySelector('.fb-panel[data-beat="' + beatId + '"] .fb-status');
-      const note = (textarea.value || '').trim();
-      if (!note) { statusEl.textContent = 'write something first'; return; }
-      const payload = {
-        scope: target === 'global' ? 'global' : 'beat',
-        beatId: beatId || null,
-        timestampSec: target === 'global' ? grabbedTs : null,
-        note,
-      };
-      saveFeedback(payload, statusEl, textarea);
+  // ── Timeline click-to-jump: click any segment to scroll the matching
+  // beat card into view AND seek the final-video to that section's start.
+  document.querySelectorAll('.tl-beat[data-clickable]').forEach((seg) => {
+    seg.addEventListener('click', () => {
+      const beatId = seg.dataset.beatId;
+      const startSec = parseFloat(seg.dataset.startSec || '0');
+      // Highlight the active segment.
+      document.querySelectorAll('.tl-beat[data-active]').forEach((el) => el.removeAttribute('data-active'));
+      seg.setAttribute('data-active', '');
+      // Scroll the matching beat card into view.
+      const card = document.querySelector('.beat[data-beat-id="' + beatId + '"]');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // And seek the final video to that section's start.
+      if (finalVideo && !isNaN(startSec)) {
+        try { finalVideo.currentTime = Math.max(0, startSec); } catch (_) { /* ignore */ }
+      }
     });
   });
-
-  async function refreshLog() {
-    try {
-      const resp = await fetch('/feedback');
-      if (!resp.ok) return;
-      const text = await resp.text();
-      document.getElementById('fb-log').textContent = text || '(no feedback yet)';
-    } catch (e) { /* ignore */ }
-  }
-  refreshLog();
-
   // --- Trim handles (Premiere/CapCut-style) ---
   document.querySelectorAll('.card[data-edit-kind]').forEach((card) => {
     const trimBar = card.querySelector('[data-trim]');
@@ -942,7 +984,24 @@ function renderHtml(args: {
     const initial = readState();
     let dirty = false;
 
-    function update(start, dur) {
+    // Live-seek the card's source preview so the operator sees the
+    // frame at the dragged position — closes the "I have to save and
+    // wait to see what I picked" gap. Last-mode tracked because the
+    // right handle should park the playhead at the OUT point, not the
+    // IN point.
+    const cardVideo = card.querySelector('video.clip-video');
+    function seekPreview(mode, start, dur) {
+      if (!cardVideo) return;
+      if (cardVideo.readyState < 1) return;  // metadata not loaded yet
+      if (!cardVideo.paused) cardVideo.pause();
+      const t = mode === 'right' ? start + dur : start;
+      // Clamp into [0, duration] so we never seek past the end (some
+      // browsers stall on out-of-range seeks).
+      const safe = Math.max(0, Math.min((cardVideo.duration || sourceDur) - 0.05, t));
+      cardVideo.currentTime = safe;
+    }
+
+    function update(start, dur, seekMode) {
       const clampedStart = Math.max(0, Math.min(sourceDur - 0.1, start));
       const maxDur = sourceDur - clampedStart;
       const clampedDur = Math.max(0.3, Math.min(maxDur, dur));
@@ -954,6 +1013,7 @@ function renderHtml(args: {
       const changed = Math.abs(clampedStart - initial.start) > 0.05 || Math.abs(clampedDur - initial.dur) > 0.05;
       saveBtn.disabled = !changed;
       dirty = changed;
+      if (seekMode) seekPreview(seekMode, clampedStart, clampedDur);
     }
 
     function makeDrag(target, mode) {
@@ -971,11 +1031,11 @@ function renderHtml(args: {
           if (mode === 'left') {
             const newStart = startStart + dSec;
             const newDur = startDur - dSec;
-            update(newStart, newDur);
+            update(newStart, newDur, 'left');
           } else if (mode === 'right') {
-            update(startStart, startDur + dSec);
+            update(startStart, startDur + dSec, 'right');
           } else {
-            update(startStart + dSec, startDur);
+            update(startStart + dSec, startDur, 'left');
           }
         }
         function onUp() {
@@ -1008,7 +1068,9 @@ function renderHtml(args: {
           }),
         });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        status.textContent = '✓ saved · re-rendering in background — refresh the player in a few seconds';
+        status.textContent = '✓ saved · click Re-render above to regenerate';
+        status.classList.remove('dirty');
+        status.classList.add('saved');
         dirty = false;
       } catch (e) {
         status.textContent = '⚠ ' + e.message;
@@ -1017,37 +1079,109 @@ function renderHtml(args: {
     });
   });
 
-  // --- Inline narration edit (Descript-style) ---
+  // --- Narration: explicit read/edit mode toggle ---
+  // No auto-save on blur — the user clicks Save (or hits ⌘+Enter) to
+  // commit, Cancel (or Esc) to discard. Save POSTs to /edit which now
+  // only persists the YAML; the actual re-render happens when the
+  // outer "Re-render" button in ace-web's header is clicked.
+  //
+  // Each widget's save() function is registered on a page-level
+  // pendingSavers registry so the parent React shell's top-bar
+  // Save button can commit every in-progress edit in one shot via
+  // window.saveAllPending().
+  const pendingSavers = [];
   document.querySelectorAll('[data-narration-beat]').forEach((wrapper) => {
     const beatId = wrapper.dataset.narrationBeat;
-    const body = wrapper.querySelector('[data-narration-body]');
-    let original = body.textContent.trim();
-    body.addEventListener('focus', () => wrapper.classList.add('editing'));
-    body.addEventListener('blur', async () => {
-      wrapper.classList.remove('editing');
-      const current = body.textContent.trim();
-      if (current === original) return;
-      const label = wrapper.querySelector('.save-hint');
-      label.textContent = 'saving…';
+    const prose = wrapper.querySelector('[data-prose]');
+    const textarea = wrapper.querySelector('[data-textarea]');
+    const status = wrapper.querySelector('[data-status]');
+    const modeTag = wrapper.querySelector('[data-mode-tag]');
+    const editBtn = wrapper.querySelector('[data-action="enter-edit"]');
+    const saveBtn = wrapper.querySelector('[data-action="save"]');
+    const cancelBtn = wrapper.querySelector('[data-action="cancel"]');
+    let saved = (textarea.value || '').trim();
+
+    function setMode(mode) {
+      wrapper.dataset.mode = mode;
+      modeTag.textContent = mode === 'edit' ? 'EDITING' : 'READ';
+      if (mode === 'edit') {
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      }
+    }
+    function flashStatus(msg, cls, ttl) {
+      status.textContent = msg;
+      status.className = 'narration-edit-status ' + (cls || '');
+      if (ttl) setTimeout(() => { status.textContent = ''; status.className = 'narration-edit-status'; }, ttl);
+    }
+    function refreshProse() {
+      const t = saved.trim();
+      if (t) {
+        prose.textContent = t;
+        prose.classList.remove('empty');
+      } else {
+        prose.textContent = '(no narration — click Edit to add)';
+        prose.classList.add('empty');
+      }
+    }
+    function isDirty() {
+      return wrapper.dataset.mode === 'edit' &&
+        (textarea.value || '').trim() !== saved;
+    }
+
+    editBtn.addEventListener('click', () => setMode('edit'));
+    cancelBtn.addEventListener('click', () => {
+      textarea.value = saved;
+      setMode('read');
+      flashStatus('', '', 0);
+    });
+    saveBtn.addEventListener('click', () => { save(); });
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); cancelBtn.click(); }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+    });
+
+    async function save() {
+      const next = (textarea.value || '').trim();
+      if (next === saved) { setMode('read'); return { ok: true, changed: false }; }
+      flashStatus('saving…', '', 0);
+      saveBtn.disabled = true;
       try {
-        const resp = await fetch('/edit', {
+        const resp = await fetch('edit', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ op: 'set-narration', beatId, text: current }),
+          body: JSON.stringify({ op: 'set-narration', beatId, text: next }),
         });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        original = current;
-        label.textContent = '✓ saved · re-rendering — refresh the player in a few seconds';
-        setTimeout(() => { label.textContent = 'click to edit · click outside to save & re-render'; }, 6000);
+        saved = next;
+        refreshProse();
+        setMode('read');
+        flashStatus('✓ saved · Re-render to regenerate', 'saved', 8000);
+        return { ok: true, changed: true };
       } catch (e) {
-        label.textContent = '⚠ ' + e.message;
+        flashStatus('⚠ ' + e.message, 'error', 0);
+        return { ok: false, error: e.message };
+      } finally {
+        saveBtn.disabled = false;
       }
-    });
-    body.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { body.textContent = original; body.blur(); }
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); body.blur(); }
-    });
+    }
+
+    pendingSavers.push({ isDirty, save });
   });
+
+  // Top-bar "Save" button entry point. Walks every widget; saves the
+  // ones that have unsaved edits. Returns a small summary the parent
+  // shell uses for its status text.
+  window.saveAllPending = async function () {
+    let saved = 0, skipped = 0, failed = 0;
+    for (const w of pendingSavers) {
+      if (!w.isDirty()) { skipped++; continue; }
+      const r = await w.save();
+      if (r && r.ok && r.changed) saved++;
+      else if (r && !r.ok) failed++;
+    }
+    return { saved, skipped, failed };
+  };
 
   // --- Library drawer + drag-from-library to swap ---
   const drawer = document.getElementById('drawer');
@@ -1146,23 +1280,19 @@ function renderHtml(args: {
 </html>`;
 }
 
-function renderBeatCard(blk: BeatBlock, _totalSec: number, dotColor: string): string {
+function renderBeatCard(
+  blk: BeatBlock,
+  _totalSec: number,
+  dotColor: string,
+  spec: ReturnType<typeof loadProgramSpec>,
+): string {
   const label = sectionLabel(blk.id);
-  const friendlyMissing = (m: string): string => {
-    if (m.includes("problem stat")) return "No video clip — this section is a big-number graphic.";
-    if (m.includes("impact stat")) return "No video clip — this section is two big-number graphics.";
-    return m;
-  };
   const cardsHtml =
     blk.assignments.length > 0
       ? blk.assignments
           .map((a) => renderAssignmentCard(a))
           .join("\n")
-      : blk.missingSlots.length > 0
-        ? blk.missingSlots
-            .map((m) => `<div class="no-asset">${escape(friendlyMissing(m))}</div>`)
-            .join("\n")
-        : `<div class="no-asset">No video clips for this section — it's rendered from the brand template (logo, animated graphics, no footage).</div>`;
+      : renderSectionContent(blk, spec);
 
   return `
     <div class="beat" data-beat-id="${blk.id}">
@@ -1172,24 +1302,113 @@ function renderBeatCard(blk: BeatBlock, _totalSec: number, dotColor: string): st
           <h3>${escape(label.name)} <span class="time">· ${fmtTs(blk.startSec)} → ${fmtTs(blk.endSec)} · ${blk.durationSec.toFixed(1)}s</span></h3>
           <div class="section-subtitle">${escape(label.subtitle)}</div>
         </div>
-        <button class="fb-toggle" data-beat="${blk.id}">💬 leave feedback</button>
       </div>
-      <div class="narration-edit" data-narration-beat="${blk.id}" title="Click to edit voiceover line">
+      <div class="narration-edit" data-narration-beat="${blk.id}" data-mode="read">
         <div class="narration-edit-label">
           Voiceover
-          <span class="save-hint">click to edit · click outside to save</span>
+          <span class="mode-tag" data-mode-tag>READ</span>
+          <span class="narration-edit-status" data-status></span>
         </div>
-        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body>${escape(blk.narration ?? "")}</div>
+        <div class="narration-read">
+          <div class="narration-prose ${(blk.narration ?? '').trim() ? '' : 'empty'}" data-prose>${escape((blk.narration ?? '').trim() || '(no narration — click Edit to add)')}</div>
+          <button type="button" class="narration-edit-btn" data-action="enter-edit" title="Edit this voiceover line">✏ Edit</button>
+        </div>
+        <div class="narration-write">
+          <textarea data-textarea>${escape(blk.narration ?? "")}</textarea>
+          <div class="narration-write-actions">
+            <button type="button" class="narration-save-btn" data-action="save">Save</button>
+            <button type="button" class="narration-cancel-btn" data-action="cancel">Cancel</button>
+            <span class="narration-write-hint">⌘+Enter to save · Esc to cancel · click Re-render above to regenerate</span>
+          </div>
+        </div>
       </div>
       <div class="assignments">${cardsHtml}</div>
-      <div class="fb-panel" data-beat="${blk.id}">
-        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
-        <div class="fb-row">
-          <button class="fb-save" data-target="beat" data-beat="${blk.id}">save feedback</button>
-          <span class="fb-status"></span>
-        </div>
+    </div>`;
+}
+
+/**
+ * For sections that don't take video clips, surface the YAML-driven
+ * content that DOES drive the render so the operator can see what
+ * will appear on screen.
+ *
+ * Each kind reads from spec.* and renders a labeled card. Editing the
+ * underlying values is currently done by hand in spec.yaml; the
+ * structured-editor follow-up plan covers full inline editing.
+ */
+function renderSectionContent(
+  blk: BeatBlock,
+  spec: ReturnType<typeof loadProgramSpec>,
+): string {
+  const statCard = (s: { big: string; caption: string; source?: string | null }) => `
+    <div class="section-stat">
+      <div class="section-stat-big">${escape(s.big)}</div>
+      <div class="section-stat-caption">${escape(s.caption)}</div>
+      ${s.source ? `<div class="section-stat-source">source: ${escape(s.source)}</div>` : ""}
+    </div>`;
+
+  if (blk.kind === "body_problem_stat" && spec.problem) {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">📊 Renders from <code>problem</code> in spec.yaml</div>
+      <div class="section-stats one">${statCard(spec.problem)}</div>
+    </div>`;
+  }
+
+  if (blk.kind === "body_impact_stats" && Array.isArray(spec.impact)) {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">📊 Renders from <code>impact[]</code> in spec.yaml</div>
+      <div class="section-stats multi">${spec.impact.map(statCard).join("")}</div>
+    </div>`;
+  }
+
+  if (blk.kind === "intro_handoff") {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">🎬 Brand template · uses <code>name</code> from spec.yaml</div>
+      <div class="section-brand-fact">
+        <div class="section-brand-label">Program name shown:</div>
+        <div class="section-brand-value">${escape(spec.name)}</div>
       </div>
     </div>`;
+  }
+
+  if (blk.kind === "outro_cta") {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">🎬 Brand template · CTA links to <code>program_url</code></div>
+      <div class="section-brand-fact">
+        <div class="section-brand-label">Link target:</div>
+        <div class="section-brand-value"><a class="gdrive-link" href="${escape(spec.program_url)}" target="_blank" rel="noopener">${escape(spec.program_url)} ↗</a></div>
+      </div>
+    </div>`;
+  }
+
+  if (blk.kind === "intro_hook") {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">🎬 Brand template · hardcoded animation</div>
+      <div class="section-brand-fact">
+        <div class="section-brand-label">On-screen text:</div>
+        <div class="section-brand-value">"Pay for verified service delivery, never effort alone"</div>
+      </div>
+      <div class="section-brand-hint">Animation graphics + this tagline come from Remotion's Intro/Hook component. The narration voiceover above plays under the animation.</div>
+    </div>`;
+  }
+
+  if (blk.kind === "intro_cycle") {
+    return `
+    <div class="section-panel">
+      <div class="section-panel-head">🎬 Brand template · hardcoded 4-step animation</div>
+      <div class="section-brand-fact">
+        <div class="section-brand-label">Steps shown (in order):</div>
+        <div class="section-brand-value">Learn &nbsp;→&nbsp; Deliver &nbsp;→&nbsp; Verify &nbsp;→&nbsp; Pay</div>
+      </div>
+      <div class="section-brand-hint">Chips fade in sequentially across the section. Narration voiceover plays in parallel.</div>
+    </div>`;
+  }
+
+  return `<div class="no-asset">No video clips for this section — it's rendered from the brand template (logo, animated graphics, no footage).</div>`;
 }
 
 function renderAssignmentCard(a: ClipAssignment): string {
@@ -1210,7 +1429,7 @@ function renderAssignmentCard(a: ClipAssignment): string {
           <h3>${a.alias ? `@${a.alias}` : a.refRaw}</h3>
           <span class="badge ${badgeClass}">${badgeLabel}</span>
         </div>
-        <div class="meta">role: ${a.role}${a.gdriveId ? ` · <code>gdrive:${a.gdriveId}</code>` : ""}</div>
+        <div class="meta">role: ${a.role}${a.gdriveId ? ` · <a class="gdrive-link" href="https://drive.google.com/file/d/${a.gdriveId}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}</div>
         <div class="placeholder">${
           a.status === "missing-cache"
             ? `Run <code>npm run hydrate</code> to pull the file into the cache.`
@@ -1234,7 +1453,7 @@ function renderAssignmentCard(a: ClipAssignment): string {
         <h3>@${a.alias}</h3>
         <span class="badge ok">${badgeLabel}</span>
       </div>
-      <div class="meta">clip is ${dur.toFixed(1)}s long · ${a.sourceRes}${a.gdriveId ? ` · drive id <code>${a.gdriveId}</code>` : ""}</div>
+      <div class="meta">clip is ${dur.toFixed(1)}s long · ${a.sourceRes}${a.gdriveId ? ` · <a class="gdrive-link" href="https://drive.google.com/file/d/${a.gdriveId}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}</div>
       <div class="clip-wrapper">
         <video src="${a.sourcePath}" controls preload="metadata" class="clip-video"></video>
         ${a.editScope ? renderTrimWidget(dur, usedStart, usedDur) : ""}
@@ -1259,7 +1478,7 @@ function renderTrimWidget(sourceDur: number, start: number, dur: number): string
     </div>
     <div class="trim-save-row">
       <button class="trim-save" disabled>save & re-render</button>
-      <span class="fb-status trim-status"></span>
+      <span class="trim-status"></span>
       <span style="color: var(--muted); font-size: 11px; margin-left: auto;">drag the handles to trim · drag the middle to slide the window</span>
     </div>`;
 }

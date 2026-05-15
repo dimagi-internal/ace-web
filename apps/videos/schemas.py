@@ -1,10 +1,10 @@
 """Pydantic schemas for the /api/w/<slug>/videos surface.
 
-The clip-explorer is a Node tsx tool that lives outside Django at
-``video-production/connect-videos/``. Programs are YAML files on disk
-under that tree; ace-web reads through to them (analogous to opps
-reading through to Drive). Each program declares its owning workspace
-via a top-level ``workspace: <slug>`` field.
+The data model mirrors opps/runs: a Program is a top-level folder
+(``programs/<slug>/``) and Runs are subfolders (``runs/run-001/``,
+``runs/run-002/``, …) each containing a ``spec.yaml`` and an
+``output.mp4``. Editing mutates a specific run's spec.yaml; forking
+copies it into a new run dir.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from apps.common.schemas import StrictModel
 
 
 class ProgramCardOut(StrictModel):
-    """One program in the list view."""
+    """One program in the list view — surfaces the *latest* run's metadata."""
 
     slug: str
     name: str
@@ -29,6 +29,16 @@ class ProgramCardOut(StrictModel):
     status: str | None = None
     program_url: str | None = None
     manifest_count: int = Field(ge=0)
+    has_explorer_build: bool
+    latest_run_id: str | None = None
+    run_count: int = Field(ge=0)
+
+
+class RunSummaryOut(StrictModel):
+    """One run inside a program."""
+
+    run_id: str
+    has_output: bool
     has_explorer_build: bool
 
 
@@ -39,15 +49,23 @@ class ProgramDetailOut(StrictModel):
     country_focus: str | None = None
     status: str | None = None
     program_url: str | None = None
+    runs: list[RunSummaryOut]
+
+
+class RunDetailOut(StrictModel):
+    """One run's full payload — spec metadata + URLs for the embedded media."""
+
+    program_slug: str
+    run_id: str
+    name: str
     manifest_count: int = Field(ge=0)
+    has_output: bool
     has_explorer_build: bool
-    explorer_url: str  # /api/w/<ws>/videos/programs/<slug>/explorer.html
-    yaml_path: str  # relative to ACE_VIDEOS_ROOT, for surfacing in the UI
+    explorer_url: str  # /api/w/<ws>/videos/programs/<slug>/runs/<run>/explorer.html
+    yaml_path: str  # repo-relative for surfacing in the UI
 
 
 class LibraryEntryOut(StrictModel):
-    """One entry in the clip library (used by the explorer drawer)."""
-
     alias: str
     source_path: str | None = None
     duration_seconds: float | None = None
@@ -60,17 +78,15 @@ class LibraryOut(StrictModel):
 
 
 class RenderStatusOut(StrictModel):
-    """Background-render busy flag."""
-
     program_slug: str
+    run_id: str
     busy: bool
-    started_at: str | None = None  # ISO-8601
+    started_at: str | None = None
 
 
 class FeedbackLogOut(StrictModel):
-    """Raw markdown contents of the per-program feedback log."""
-
     program_slug: str
+    run_id: str
     markdown: str
 
 
@@ -80,20 +96,14 @@ class FeedbackLogOut(StrictModel):
 
 
 class ClipEditIn(StrictModel):
-    """POST /edit body — one of four ops over a program's YAML.
-
-    Mirrors the existing Node tsx server ops in
-    ``video-production/connect-videos/scripts/explore.ts::applyEdit``.
-    """
-
     op: Literal["set-clip-start", "set-clip-trim", "set-clip-asset", "set-narration"]
     kind: Literal["scene-clip", "product-beat"] | None = None
     index: int | None = None
     start_seconds: float | None = None
     duration_seconds: float | None = None
-    beatId: str | None = None  # narration target
-    text: str | None = None  # narration body
-    alias: str | None = None  # asset swap (without the leading @)
+    beatId: str | None = None
+    text: str | None = None
+    alias: str | None = None
 
 
 class ClipEditOut(StrictModel):
@@ -111,4 +121,23 @@ class FeedbackPostIn(StrictModel):
 
 class FeedbackPostOut(StrictModel):
     ok: bool
-    timestamp: str  # ISO-8601 truncated to seconds
+    timestamp: str
+
+
+class BuildTriggerIn(StrictModel):
+    mode: Literal["render", "build-only"] = "render"
+
+
+class BuildTriggerOut(StrictModel):
+    ok: bool
+    triggered: bool
+    mode: Literal["render", "build-only"]
+    message: str
+
+
+class CopyRunOut(StrictModel):
+    """POST /programs/<slug>/runs → new run id."""
+
+    program_slug: str
+    new_run_id: str
+    copied_from: str

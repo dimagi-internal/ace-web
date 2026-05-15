@@ -6,8 +6,12 @@ import { ProgramBody } from "./compositions/ProgramBody";
 import { Outro } from "./compositions/Outro";
 import { CaptionBar } from "./components/CaptionBar";
 import defaultsYaml from "../programs/_defaults.yaml";
-import mbwYaml from "../programs/mbw.yaml";
-import chcYaml from "../programs/chc.yaml";
+// Programs now live as ``programs/<slug>/runs/run-NNN/spec.yaml`` (mirrors
+// ace-web's opp/run model). Studio preview pins to run-001 of each program
+// — the render CLI passes the spec via props at render time, so this
+// registry only matters for in-browser preview.
+import mbwYaml from "../programs/mbw/runs/run-001/spec.yaml";
+import chcYaml from "../programs/chc/runs/run-001/spec.yaml";
 
 interface VideoProps {
   programSlug: string;

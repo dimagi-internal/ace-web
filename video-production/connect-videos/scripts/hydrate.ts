@@ -37,6 +37,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { loadProgramSpec } from "../src/lib/spec.node";
+import { resolveRun, specPath } from "../src/lib/runs.node";
 import {
   resolveAssetRefs,
   defaultCacheDir,
@@ -116,7 +117,8 @@ function adoptFromDir(missing: MissingAsset[], adoptDir: string, cacheDir: strin
 }
 
 function reportStatus(programSlug: string, publicRoot: string, cacheDir: string): MissingAsset[] {
-  const yamlPath = path.resolve("programs", `${programSlug}.yaml`);
+  const runId = resolveRun(programSlug, "", process.cwd());
+  const yamlPath = specPath(programSlug, runId, process.cwd());
   const spec = loadProgramSpec(yamlPath);
   const { missing } = resolveAssetRefs(spec, {
     programSlug,
@@ -158,7 +160,8 @@ function main() {
   }
   if (cli.adoptDir) {
     // Need the missing list first to know what to adopt.
-    const yamlPath = path.resolve("programs", `${cli.program}.yaml`);
+    const runId = resolveRun(cli.program, "", process.cwd());
+    const yamlPath = specPath(cli.program, runId, process.cwd());
     const spec = loadProgramSpec(yamlPath);
     const { missing } = resolveAssetRefs(spec, {
       programSlug: cli.program,

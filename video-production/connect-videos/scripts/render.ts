@@ -5,6 +5,7 @@ import os from "node:os";
 import { execSync } from "node:child_process";
 import { loadProgramSpec } from "../src/lib/spec.node";
 import { loadDefaults, resolveBeats } from "../src/lib/beats.node";
+import { resolveRun, specPath, outputPath } from "../src/lib/runs.node";
 import { synthesize, synthesizePerBeat, type PerBeatNarration } from "../src/lib/voiceover";
 import { estimateCaptionTimeline, captionsFromBeats } from "../src/lib/captions";
 import { resolveAssetRefs, formatMissingError } from "../src/lib/asset-resolver.node";
@@ -14,19 +15,22 @@ interface CliArgs {
   draft: boolean;
   noVoice: boolean;
   noCaptions: boolean;
+  run: string;
 }
 
 function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
   const program = args.find((a) => a.startsWith("--program="))?.split("=")[1];
+  const run = args.find((a) => a.startsWith("--run="))?.split("=")[1] ?? "";
   if (!program) {
     console.error(
-      "Usage: npm run render -- --program=<slug> [--draft] [--no-voice] [--no-captions]"
+      "Usage: npm run render -- --program=<slug> [--run=<run-NNN>] [--draft] [--no-voice] [--no-captions]"
     );
     process.exit(2);
   }
   return {
     program,
+    run,
     draft: args.includes("--draft"),
     noVoice: args.includes("--no-voice"),
     noCaptions: args.includes("--no-captions"),
@@ -36,8 +40,9 @@ function parseArgs(): CliArgs {
 async function main() {
   const cli = parseArgs();
   const root = process.cwd();
+  const runId = resolveRun(cli.program, cli.run, root);
   const defaults = loadDefaults(path.join(root, "programs/_defaults.yaml"));
-  const rawSpec = loadProgramSpec(path.join(root, `programs/${cli.program}.yaml`));
+  const rawSpec = loadProgramSpec(specPath(cli.program, runId, root));
 
   // Resolve @manifest aliases -> concrete asset paths and materialize cache
   // entries as symlinks under public/assets/programs/<slug>/. If anything is
@@ -127,11 +132,17 @@ async function main() {
   const tmpPropsFile = path.join(os.tmpdir(), `remotion-props-${Date.now()}.json`);
   fs.writeFileSync(tmpPropsFile, JSON.stringify(props));
   const propsArg = `--props=${JSON.stringify(tmpPropsFile)}`;
-  const gitSha = safeSha();
-  const outName = `${spec.slug}-${cli.draft ? "draft" : "v" + gitSha}.mp4`;
-  const outDir = path.join(root, "out");
-  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-  const outPath = path.join(outDir, outName);
+  // Intermediate (silent) render writes to a scratch tmp file. The
+  // muxed output lands at the run's output.mp4 path so the explorer
+  // (and ace-web's served media surface) finds it under
+  // programs/<slug>/runs/<runId>/output.mp4.
+  const runDir = path.join(root, "programs", cli.program, "runs", runId);
+  if (!fs.existsSync(runDir)) fs.mkdirSync(runDir, { recursive: true });
+  const intermediateDir = path.join(runDir, ".tmp");
+  if (!fs.existsSync(intermediateDir)) fs.mkdirSync(intermediateDir, { recursive: true });
+  void safeSha; // git sha is no longer in the filename — runId IS the identity
+  const outPath = path.join(intermediateDir, "silent.mp4");
+  const muxedFinal = outputPath(cli.program, runId, root);
   const widthHeightArgs = cli.draft ? ["--width=1280", "--height=720"] : [];
   const crf = cli.draft ? "--crf=28" : "--crf=22";
 
@@ -159,7 +170,7 @@ async function main() {
   // the silent Remotion render. Builds the ffmpeg filter graph dynamically
   // based on which audio sources are present.
   if (voicePath || perBeat.length > 0 || defaults.music_bed) {
-    const muxed = outPath.replace(/\.mp4$/, "-mux.mp4");
+    const muxed = muxedFinal;
     const voiceOffsetMs = Math.round(narrationStartSec * 1000);
 
     const inputs: string[] = [`-i ${JSON.stringify(outPath)}`];
@@ -213,30 +224,47 @@ async function main() {
       }
     }
 
-    const filterComplex =
-      mixLabels.length > 1
-        ? [
-            ...filterParts,
-            `${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0[mix]`,
-          ].join("; ")
-        : filterParts.join("; ");
+    if (mixLabels.length === 0) {
+      // We entered the mux branch because the spec referenced audio
+      // sources, but every one of them resolved away (e.g. narration
+      // generator is "manual" so no voicePath, perBeat empty, music_bed
+      // file missing on disk). Fall back to copying the silent render
+      // through as the muxed output so the clip-explorer still has a
+      // playable preview at out/<slug>-draft-mux.mp4.
+      console.warn(
+        `No audio sources resolved — copying silent render → ${path.relative(root, muxed)}.`
+      );
+      fs.copyFileSync(outPath, muxed);
+    } else {
+      const filterComplex =
+        mixLabels.length > 1
+          ? [
+              ...filterParts,
+              `${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0[mix]`,
+            ].join("; ")
+          : filterParts.join("; ");
 
-    const mapLabel = mixLabels.length > 1 ? "[mix]" : mixLabels[0];
+      const mapLabel = mixLabels.length > 1 ? "[mix]" : mixLabels[0];
 
-    const ffmpegCmd = [
-      "ffmpeg -y",
-      ...inputs,
-      `-filter_complex ${JSON.stringify(filterComplex)}`,
-      "-c:v copy -c:a aac",
-      `-map 0:v:0 -map ${JSON.stringify(mapLabel)}`,
-      `-t ${totalSeconds}`,
-      JSON.stringify(muxed),
-    ].join(" ");
-    console.log(`Muxing audio → ${path.relative(root, muxed)}…`);
-    execSync(ffmpegCmd, { stdio: "inherit" });
+      const ffmpegCmd = [
+        "ffmpeg -y",
+        ...inputs,
+        `-filter_complex ${JSON.stringify(filterComplex)}`,
+        "-c:v copy -c:a aac",
+        `-map 0:v:0 -map ${JSON.stringify(mapLabel)}`,
+        `-t ${totalSeconds}`,
+        JSON.stringify(muxed),
+      ].join(" ");
+      console.log(`Muxing audio → ${path.relative(root, muxed)}…`);
+      execSync(ffmpegCmd, { stdio: "inherit" });
+    }
+  } else {
+    // No audio sources referenced in the spec at all — fall through to
+    // the silent video as the run's output.
+    fs.copyFileSync(outPath, muxedFinal);
   }
 
-  console.log("Done.");
+  console.log(`Done → ${path.relative(root, muxedFinal)}`);
 }
 
 function safeSha(): string {
