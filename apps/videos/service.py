@@ -476,8 +476,48 @@ def _apply_single_op(doc: Any, op: dict[str, Any]) -> EditResult:
         return EditResult(True, f"Updated narration.by_beat.{beat_id}")
 
     if name == "set-stat":
-        # Stub for Task 3 — fails for now so the test stays red until then.
-        return EditResult(False, "set-stat not yet implemented")
+        import re
+        path = op.get("path")
+        if not isinstance(path, str):
+            return EditResult(False, "path must be a string")
+
+        if path == "problem":
+            node = doc.get("problem")
+            if not isinstance(node, dict):
+                return EditResult(False, "spec has no `problem` section")
+        else:
+            m = re.fullmatch(r"impact\[(\d+)\]", path)
+            if not m:
+                return EditResult(False, f"unknown path {path!r}; expected 'problem' or 'impact[N]'")
+            idx = int(m.group(1))
+            impact = doc.get("impact")
+            if not isinstance(impact, list):
+                return EditResult(False, "spec has no `impact` section")
+            if idx < 0 or idx >= len(impact):
+                return EditResult(False, f"impact index {idx} out of range (len={len(impact)})")
+            node = impact[idx]
+            if not isinstance(node, dict):
+                return EditResult(False, f"impact[{idx}] is not a mapping")
+
+        for field in ("big", "caption"):
+            val = op.get(field)
+            if val is None:
+                continue  # field absent → no change
+            if not isinstance(val, str):
+                return EditResult(False, f"{field} must be a string")
+            node[field] = val
+
+        # `source` has tri-state semantics: absent → no change, "" → clear, str → set
+        if "source" in op:
+            val = op["source"]
+            if val is None or val == "":
+                node.pop("source", None)
+            elif isinstance(val, str):
+                node["source"] = val
+            else:
+                return EditResult(False, "source must be a string")
+
+        return EditResult(True, f"Updated stat {path}")
 
     return EditResult(False, f"Unknown op: {name!r}")
 
