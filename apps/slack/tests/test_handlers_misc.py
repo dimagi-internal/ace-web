@@ -133,7 +133,7 @@ def test_status_with_no_runs_returns_message(setup):
 
 
 @pytest.mark.django_db
-def test_list_shows_user_runs(setup):
+def test_list_runs_shows_user_tracked_runs(setup):
     inst, jj = setup
     from apps.slack.models import SlackRunThread
     for i in range(3):
@@ -143,9 +143,77 @@ def test_list_shows_user_runs(setup):
         )
     from apps.slack.handlers import dispatch_slash_command
     resp = dispatch_slash_command(
-        text="list", slack_user_id="U_JJ", team_id="T1",
+        text="list runs", slack_user_id="U_JJ", team_id="T1",
         channel_id="C1", trigger_id="", response_url="",
     )
     assert resp["response_type"] == "ephemeral"
     body = repr(resp.get("blocks", [])) + resp.get("text", "")
     assert "opp-0" in body and "opp-1" in body and "opp-2" in body
+
+
+@pytest.mark.django_db
+def test_list_runs_with_no_runs_returns_message(setup):
+    from apps.slack.handlers import dispatch_slash_command
+    resp = dispatch_slash_command(
+        text="list runs", slack_user_id="U_JJ", team_id="T1",
+        channel_id="C1", trigger_id="", response_url="",
+    )
+    assert resp["response_type"] == "ephemeral"
+    assert "no active" in resp["text"].lower()
+
+
+@pytest.mark.django_db
+def test_list_opps_shows_workspace_opps(setup):
+    """Bare `/ace list` AND `/ace list opps` both show workspace opps."""
+    from apps.slack.handlers import dispatch_slash_command
+    with patch("apps.slack.verbs_query.list_opp_cards") as mock_cards:
+        mock_cards.return_value = [
+            {"slug": "rural-tb", "title": "Rural TB Screening",
+             "current_phase": "scenarios-and-acceptance",
+             "current_skill": "scenarios", "run_count": 2,
+             "updated_at": "2026-05-15T20:00:00Z"},
+            {"slug": "leep-paint", "title": "Leep Paint Collection",
+             "current_phase": "idea-to-design", "current_skill": None,
+             "run_count": 1, "updated_at": "2026-05-14T15:00:00Z"},
+        ]
+        resp = dispatch_slash_command(
+            text="list opps", slack_user_id="U_JJ", team_id="T1",
+            channel_id="C1", trigger_id="", response_url="",
+        )
+    assert resp["response_type"] == "ephemeral"
+    body = resp["text"]
+    assert "Rural TB Screening" in body
+    assert "rural-tb" in body
+    assert "Leep Paint" in body
+    assert "scenarios-and-acceptance" in body
+
+
+@pytest.mark.django_db
+def test_list_bare_falls_back_to_opps(setup):
+    """`/ace list` without an arg defaults to opps (people usually want that)."""
+    from apps.slack.handlers import dispatch_slash_command
+    with patch("apps.slack.verbs_query.list_opp_cards") as mock_cards:
+        mock_cards.return_value = [
+            {"slug": "rural-tb", "title": "Rural TB", "current_phase": "p",
+             "run_count": 1, "updated_at": "2026-05-15T20:00:00Z"},
+        ]
+        resp = dispatch_slash_command(
+            text="list", slack_user_id="U_JJ", team_id="T1",
+            channel_id="C1", trigger_id="", response_url="",
+        )
+    assert "rural-tb" in resp["text"]
+    assert "Rural TB" in resp["text"]
+
+
+@pytest.mark.django_db
+def test_list_opps_with_no_opps_returns_message(setup):
+    from apps.slack.handlers import dispatch_slash_command
+    with patch("apps.slack.verbs_query.list_opp_cards") as mock_cards:
+        mock_cards.return_value = []
+        resp = dispatch_slash_command(
+            text="list opps", slack_user_id="U_JJ", team_id="T1",
+            channel_id="C1", trigger_id="", response_url="",
+        )
+    assert resp["response_type"] == "ephemeral"
+    assert "No opps" in resp["text"]
+    assert "/ace new" in resp["text"]

@@ -25,7 +25,8 @@ _HELP_TEXT = (
     "driving from your laptop) into this channel.\n"
     "`/ace untrack <slug>` — Stop mirroring a run.\n"
     "`/ace status [<slug>]` — Show the current state of a run.\n"
-    "`/ace list` — Show your 5 most recent active runs.\n"
+    "`/ace list opps` — List opportunities in the workspace.\n"
+    "`/ace list runs` — Show your active Slack-tracked runs.\n"
     "`/ace link` — (Re)link your Slack identity to ace-web.\n"
     "`/ace help` — This message.\n"
 )
@@ -140,7 +141,7 @@ def dispatch_slash_command(*, text: str, slack_user_id: str, team_id: str,
     if verb == "list":
         from .verbs_query import handle_list
         return handle_list(installation=installation, user_link=user_link,
-                           channel_id=channel_id)
+                           rest=rest, channel_id=channel_id)
     if verb == "track":
         from .verbs_track import handle_track
         return handle_track(installation=installation, user_link=user_link,
