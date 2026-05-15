@@ -7,6 +7,71 @@ the source material is thin. Where source material is missing, write
 plausible placeholder text the operator will edit by hand, and prefix
 it with `[TBD] ` so it's easy to grep for.
 
+## What this video is for (and what makes it good)
+
+This is a **60-second stakeholder explainer**. The viewer is a funder,
+partner org, or new internal team member being introduced to a single
+Connect program for the first time. They will watch this once, on
+mute often, somewhere in the middle of a 90-slide deck. **The bar is
+not "informative" — the bar is "memorable."**
+
+A great 60-second explainer does three things at once:
+
+1. **Establishes one number.** A viewer should leave with one
+   round, scannable stat lodged in memory ("1M+ verified visits",
+   "350K newborns", "94% coverage"). If a viewer two days later can
+   say "the thing where they paid $1.70 per visit", the video did
+   its job. That's why `problem.big` and the two `impact[]` numbers
+   are load-bearing — they are the video.
+2. **Names one mechanism.** Not "we help" — *how* it works. The
+   `cycle` beat (Learn / Deliver / Verify / Pay) is Connect's
+   mechanism. The `product` beat shows the proof of it.
+3. **Shows one place.** The `scene` beat must land in a real
+   country, with a real human activity, in real footage. Generic
+   abstract framing (charts, logos, stock workers) does not earn
+   the seconds. Concrete b-roll does.
+
+The implicit story arc the 8 beats trace:
+
+| Beat       | Arc job |
+|------------|---------|
+| `hook`     | The why — what is Connect for, in 10 words. |
+| `cycle`    | The how — the four-step mechanism. |
+| `handoff`  | "Here's how that works for *this* program." |
+| `scene`    | Place + activity — real country, real footage. |
+| `problem`  | The stakes — what would happen without this. |
+| `product`  | The proof — what FLWs / dashboards actually do. |
+| `impact`   | The result — the two numbers. |
+| `cta`      | Empty — outro plays brand CTA card. |
+
+The `problem` beat is the load-bearing piece most agents fumble. It is
+**not** another place to brag about delivery. It frames the stakes —
+either a coverage gap, a mortality / morbidity rate, or a structural
+gap in current service. Without it, the rest of the video reads as
+"look how much we've done" instead of "look how much this matters."
+If the source page only has delivery stats and no stakes stats,
+mark `problem` as `[TBD]` (in the visible caption, not the audio
+narration) so the operator can hand-add a stakes number.
+
+## Anchors for "good" (calibration)
+
+You can't watch a 60-second video before writing one. Two patterns to
+borrow from:
+
+- **Vox / Kurzgesagt short-explainer pacing.** Open with the stat
+  that makes a viewer go "wait what." Don't bury it.
+- **BBC short-documentary register.** Plain narrator, declarative
+  sentences, no rising tone of voice on questions. The narrator
+  trusts the footage and the numbers; they don't oversell.
+
+The narrator NEVER says: "imagine if", "what if we told you", "you
+won't believe", "the future of", "a revolution in". These are
+explainer-video cliches that mark the video as ad copy.
+
+The narrator IS allowed to: cite numbers, name countries, name
+partner organizations, describe a specific FLW action, quote a
+specific dashboard metric.
+
 ## Inputs you'll receive
 
 1. **`program_identity`** — slug, name, workspace_slug, country guess.
