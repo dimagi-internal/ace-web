@@ -772,16 +772,50 @@ function renderHtml(args: {
   .nav-tabs a:hover:not(.active) { background: var(--sky-tint); }
 
   /* ──────────────────────────────────────────────────────────────────
-   * Edit affordance: narration text inline edit
+   * Narration edit — explicit read/edit mode toggle. Two visually
+   * distinct states so it's never ambiguous which mode you're in.
+   *
+   * READ mode (default):
+   *   - Plain prose with a quiet ✏ icon button to the right.
+   *   - Hover lifts the bg slightly so the field reads as "interactive".
+   * EDIT mode (after click):
+   *   - Boxed textarea with focus ring.
+   *   - Explicit [Save] / [Cancel] buttons. No auto-save on blur.
+   * SAVED state (after Save):
+   *   - Brief green check, then returns to READ mode.
    * ────────────────────────────────────────────────────────────────── */
-  .narration-edit { margin: 10px 0 14px; padding: 10px 12px; background: white; border: 1px dashed var(--rule); border-radius: 10px; transition: border-color 0.15s, background 0.15s; }
-  .narration-edit:hover { border-color: var(--indigo); background: var(--sky-tint); }
-  .narration-edit:focus-within { border-color: var(--indigo); border-style: solid; background: white; box-shadow: 0 0 0 3px rgba(56,67,208,0.15); }
-  .narration-edit-label { display: flex; align-items: center; gap: 8px; font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 4px; }
-  .narration-edit-label::before { content: '✏'; font-size: 12px; opacity: 0.7; }
-  .narration-edit-label .save-hint { font: 500 11px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); opacity: 0.8; }
-  .narration-edit-body { font: 500 15px var(--sans); color: var(--ink); line-height: 1.5; min-height: 22px; outline: none; cursor: text; }
-  .narration-edit-body:empty::before { content: '(no narration line — click to add)'; color: var(--muted); font-style: italic; font-weight: 400; }
+  .narration-edit { margin: 10px 0 14px; padding: 10px 12px; background: white; border: 1px solid var(--line); border-radius: 10px; transition: background 0.15s, border-color 0.15s; }
+  .narration-edit[data-mode="read"] { cursor: pointer; }
+  .narration-edit[data-mode="read"]:hover { background: var(--sky-tint); border-color: var(--indigo-soft); }
+  .narration-edit[data-mode="edit"] { background: white; border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(56,67,208,0.15); cursor: default; }
+
+  .narration-edit-label { display: flex; align-items: center; gap: 8px; font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+  .narration-edit-label .mode-tag { font: 600 10px var(--sans); padding: 1px 8px; border-radius: 999px; letter-spacing: 0.04em; }
+  .narration-edit[data-mode="read"] .mode-tag { background: var(--paper); color: var(--muted); border: 1px solid var(--line); }
+  .narration-edit[data-mode="edit"] .mode-tag { background: var(--indigo); color: white; }
+  .narration-edit-label .narration-edit-status { font: 500 11px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: auto; }
+  .narration-edit-label .narration-edit-status.saved { color: var(--green); font-weight: 700; }
+  .narration-edit-label .narration-edit-status.error { color: var(--mango); font-weight: 700; }
+
+  /* Read view: the prose + a pencil button on the right. */
+  .narration-read { display: flex; align-items: flex-start; gap: 12px; }
+  .narration-read .narration-prose { flex: 1; font: 500 15px var(--sans); color: var(--ink); line-height: 1.5; min-height: 22px; }
+  .narration-read .narration-prose.empty { color: var(--muted); font-style: italic; font-weight: 400; }
+  .narration-read button.narration-edit-btn { flex-shrink: 0; background: white; border: 1px solid var(--rule); color: var(--ink-2); padding: 4px 10px; font: 600 12px var(--sans); border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .narration-read button.narration-edit-btn:hover { background: var(--indigo); color: white; border-color: var(--indigo); }
+  .narration-edit[data-mode="edit"] .narration-read { display: none; }
+
+  /* Edit view: textarea + explicit save/cancel buttons. */
+  .narration-write { display: none; flex-direction: column; gap: 8px; }
+  .narration-edit[data-mode="edit"] .narration-write { display: flex; }
+  .narration-write textarea { width: 100%; min-height: 60px; padding: 8px 10px; font: 500 15px var(--sans); color: var(--ink); line-height: 1.5; border: 1px solid var(--rule); border-radius: 6px; resize: vertical; outline: none; }
+  .narration-write textarea:focus { border-color: var(--indigo); }
+  .narration-write .narration-write-actions { display: flex; gap: 6px; align-items: center; }
+  .narration-write button.narration-save-btn { background: var(--indigo); color: white; border: none; padding: 6px 14px; font: 600 12px var(--sans); border-radius: 6px; cursor: pointer; }
+  .narration-write button.narration-save-btn:hover { background: var(--indigo-deep); }
+  .narration-write button.narration-cancel-btn { background: white; color: var(--ink-2); border: 1px solid var(--rule); padding: 6px 12px; font: 600 12px var(--sans); border-radius: 6px; cursor: pointer; }
+  .narration-write button.narration-cancel-btn:hover { background: var(--paper); }
+  .narration-write .narration-write-hint { font: 400 11px var(--sans); color: var(--muted); margin-left: auto; }
 
   /* ──────────────────────────────────────────────────────────────────
    * Trim widget — visible handles + region
@@ -813,15 +847,6 @@ function renderHtml(args: {
   .tl-beat[data-clickable]:hover { opacity: 1; transform: scaleY(1.4); transform-origin: center; }
   .tl-beat[data-active] { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-  /* ──────────────────────────────────────────────────────────────────
-   * Render banner — appears after an edit fires a render
-   * ────────────────────────────────────────────────────────────────── */
-  .render-banner { position: sticky; top: 0; z-index: 30; margin: -8px -8px 12px; padding: 10px 16px; background: var(--indigo); color: white; border-radius: 0 0 12px 12px; display: none; align-items: center; gap: 10px; font: 600 13px var(--sans); box-shadow: 0 4px 16px rgba(10,6,32,0.18); }
-  .render-banner.show { display: flex; }
-  .render-banner .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
-  .render-banner button { margin-left: auto; background: white; color: var(--indigo-deep); border: none; padding: 4px 12px; border-radius: 6px; font: 700 12px var(--sans); cursor: pointer; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
   /* gdrive link styling — quieter than a bare link */
   .gdrive-link { color: var(--indigo-deep); text-decoration: none; border-bottom: 1px dotted var(--rule); }
   .gdrive-link:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
@@ -829,10 +854,6 @@ function renderHtml(args: {
 </head>
 <body>
 <div class="container">
-  <div class="render-banner" id="render-banner">
-    <span class="spinner"></span>
-    <span id="render-banner-text">Re-rendering — refresh the player in ~30s.</span>
-  </div>
   <header>
     <h1>${escape(spec.name)} · clip review</h1>
     <span class="coverage">${okAssignments}/${totalAssignments} video clips assigned</span>
@@ -928,20 +949,10 @@ function renderHtml(args: {
 </aside>
 
 <script>
-  // ── Render banner: appears whenever an /edit POST kicks off the
-  // background render chain. Shows a spinner + "refresh the player"
-  // call to action so the operator always knows when work is in flight.
-  const renderBanner = document.getElementById('render-banner');
-  const renderBannerText = document.getElementById('render-banner-text');
-  function showRenderBanner(msg) {
-    if (!renderBanner) return;
-    renderBannerText.textContent = msg;
-    renderBanner.classList.add('show');
-    clearTimeout(showRenderBanner._t);
-    // Auto-hide after 40s — typical draft render finishes in ~25s.
-    showRenderBanner._t = setTimeout(() => renderBanner.classList.remove('show'), 40000);
-  }
-
+  // Render is no longer triggered automatically from inside this iframe.
+  // Edits POST to /edit (save-only); the operator clicks "Re-render" in
+  // ace-web's outer header to actually regenerate the output. The outer
+  // shell polls /render-status and shows its own busy banner.
   const finalVideo = document.getElementById('final-video');
 
   // ── Timeline click-to-jump: click any segment to scroll the matching
@@ -1141,10 +1152,9 @@ function renderHtml(args: {
           }),
         });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        status.textContent = '✓ saved';
+        status.textContent = '✓ saved · click Re-render above to regenerate';
         status.classList.remove('dirty');
         status.classList.add('saved');
-        showRenderBanner('Trim saved · re-rendering — refresh the player in ~30s.');
         dirty = false;
       } catch (e) {
         status.textContent = '⚠ ' + e.message;
@@ -1153,37 +1163,80 @@ function renderHtml(args: {
     });
   });
 
-  // --- Inline narration edit (Descript-style) ---
+  // --- Narration: explicit read/edit mode toggle ---
+  // No auto-save on blur — the user clicks Save (or hits ⌘+Enter) to
+  // commit, Cancel (or Esc) to discard. Save POSTs to /edit which now
+  // only persists the YAML; the actual re-render happens when the
+  // outer "Re-render" button in ace-web's header is clicked.
   document.querySelectorAll('[data-narration-beat]').forEach((wrapper) => {
     const beatId = wrapper.dataset.narrationBeat;
-    const body = wrapper.querySelector('[data-narration-body]');
-    let original = body.textContent.trim();
-    body.addEventListener('focus', () => wrapper.classList.add('editing'));
-    body.addEventListener('blur', async () => {
-      wrapper.classList.remove('editing');
-      const current = body.textContent.trim();
-      if (current === original) return;
-      const label = wrapper.querySelector('.save-hint');
-      label.textContent = 'saving…';
+    const prose = wrapper.querySelector('[data-prose]');
+    const textarea = wrapper.querySelector('[data-textarea]');
+    const status = wrapper.querySelector('[data-status]');
+    const modeTag = wrapper.querySelector('[data-mode-tag]');
+    const editBtn = wrapper.querySelector('[data-action="enter-edit"]');
+    const saveBtn = wrapper.querySelector('[data-action="save"]');
+    const cancelBtn = wrapper.querySelector('[data-action="cancel"]');
+    let saved = (textarea.value || '').trim();
+
+    function setMode(mode) {
+      wrapper.dataset.mode = mode;
+      modeTag.textContent = mode === 'edit' ? 'EDITING' : 'READ';
+      if (mode === 'edit') {
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      }
+    }
+    function flashStatus(msg, cls, ttl) {
+      status.textContent = msg;
+      status.className = 'narration-edit-status ' + (cls || '');
+      if (ttl) setTimeout(() => { status.textContent = ''; status.className = 'narration-edit-status'; }, ttl);
+    }
+    function refreshProse() {
+      const t = saved.trim();
+      if (t) {
+        prose.textContent = t;
+        prose.classList.remove('empty');
+      } else {
+        prose.textContent = '(no narration — click Edit to add)';
+        prose.classList.add('empty');
+      }
+    }
+
+    editBtn.addEventListener('click', () => setMode('edit'));
+    cancelBtn.addEventListener('click', () => {
+      textarea.value = saved;
+      setMode('read');
+      flashStatus('', '', 0);
+    });
+    saveBtn.addEventListener('click', save);
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); cancelBtn.click(); }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+    });
+
+    async function save() {
+      const next = (textarea.value || '').trim();
+      if (next === saved) { setMode('read'); return; }
+      flashStatus('saving…', '', 0);
+      saveBtn.disabled = true;
       try {
-        const resp = await fetch('/edit', {
+        const resp = await fetch('edit', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ op: 'set-narration', beatId, text: current }),
+          body: JSON.stringify({ op: 'set-narration', beatId, text: next }),
         });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        original = current;
-        label.textContent = '✓ saved';
-        showRenderBanner('Voiceover saved · re-rendering — refresh the player in ~30s.');
-        setTimeout(() => { label.textContent = 'click to edit · click outside to save'; }, 6000);
+        saved = next;
+        refreshProse();
+        setMode('read');
+        flashStatus('✓ saved · Re-render to regenerate', 'saved', 8000);
       } catch (e) {
-        label.textContent = '⚠ ' + e.message;
+        flashStatus('⚠ ' + e.message, 'error', 0);
+      } finally {
+        saveBtn.disabled = false;
       }
-    });
-    body.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { body.textContent = original; body.blur(); }
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); body.blur(); }
-    });
+    }
   });
 
   // --- Library drawer + drag-from-library to swap ---
@@ -1311,12 +1364,24 @@ function renderBeatCard(blk: BeatBlock, _totalSec: number, dotColor: string): st
         </div>
         <button class="fb-toggle" data-beat="${blk.id}">💬 leave feedback</button>
       </div>
-      <div class="narration-edit" data-narration-beat="${blk.id}" title="Click to edit voiceover line">
+      <div class="narration-edit" data-narration-beat="${blk.id}" data-mode="read">
         <div class="narration-edit-label">
           Voiceover
-          <span class="save-hint">click to edit · click outside to save</span>
+          <span class="mode-tag" data-mode-tag>READ</span>
+          <span class="narration-edit-status" data-status></span>
         </div>
-        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body>${escape(blk.narration ?? "")}</div>
+        <div class="narration-read">
+          <div class="narration-prose ${(blk.narration ?? '').trim() ? '' : 'empty'}" data-prose>${escape((blk.narration ?? '').trim() || '(no narration — click Edit to add)')}</div>
+          <button type="button" class="narration-edit-btn" data-action="enter-edit" title="Edit this voiceover line">✏ Edit</button>
+        </div>
+        <div class="narration-write">
+          <textarea data-textarea>${escape(blk.narration ?? "")}</textarea>
+          <div class="narration-write-actions">
+            <button type="button" class="narration-save-btn" data-action="save">Save</button>
+            <button type="button" class="narration-cancel-btn" data-action="cancel">Cancel</button>
+            <span class="narration-write-hint">⌘+Enter to save · Esc to cancel · click Re-render above to regenerate</span>
+          </div>
+        </div>
       </div>
       <div class="assignments">${cardsHtml}</div>
       <div class="fb-panel" data-beat="${blk.id}">

@@ -305,7 +305,7 @@ def post_feedback(
 @router.post(
     "/programs/{program_slug}/runs/{run_id}/edit",
     response=ClipEditOut,
-    summary="Mutate a clip / narration in the run's spec.yaml, kick off a draft re-render",
+    summary="Save an edit to the run's spec.yaml (save only — does NOT render)",
 )
 def post_edit(
     request: HttpRequest,
@@ -314,6 +314,11 @@ def post_edit(
     run_id: Annotated[str, PathParam()],
     body: ClipEditIn,
 ) -> ClipEditOut:
+    """Save an edit to spec.yaml. Does NOT trigger a render — that's a
+    separate explicit step via POST /build. Splitting the two lets the
+    operator batch many edits before paying the render cost; the
+    "Re-render" button in the UI is the single canonical render entry.
+    """
     resolve_workspace_for_member(request, workspace_slug)
     _require_run(workspace_slug, program_slug, run_id)
     result = service.apply_edit(program_slug, run_id, body.model_dump(exclude_none=True))
@@ -324,15 +329,10 @@ def post_edit(
             type_=TYPE_VALIDATION,
             detail=result.message,
         )
-    needs_hydrate = body.op == "set-clip-asset"
-    rerender_triggered = service.trigger_rerender(program_slug, run_id, needs_hydrate=needs_hydrate)
     return ClipEditOut(
         ok=True,
-        message=result.message + (
-            " — re-render kicked off in background" if rerender_triggered
-            else " — render already in flight; skipped duplicate"
-        ),
-        rerender_triggered=rerender_triggered,
+        message=result.message + " — click Re-render to regenerate the output.",
+        rerender_triggered=False,
     )
 
 

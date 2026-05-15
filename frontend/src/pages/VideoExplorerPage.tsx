@@ -232,21 +232,21 @@ export default function VideoExplorerPage() {
                 type="button"
                 disabled={busyAction !== null || !resolvedRunId}
                 onClick={() => handleBuild("build-only")}
-                title="Regenerate the explorer HTML against the current YAML — fast, no re-render."
-                className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                title="Regenerate the explorer page only (fast, no re-render of the video)."
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
               >
                 <Hammer className="h-3 w-3" />
-                Rebuild HTML
+                Rebuild page only
               </button>
               <button
                 type="button"
                 disabled={busyAction !== null || !resolvedRunId}
                 onClick={() => handleBuild("render")}
-                title="Run npm run render — produces a fresh draft MP4, then rebuilds the explorer."
-                className="inline-flex items-center gap-1 rounded-md border border-border bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                title="Save all edits and regenerate the video output — the one button that produces a new output.mp4."
+                className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm hover:opacity-90 disabled:opacity-50"
               >
-                <RefreshCw className="h-3 w-3" />
-                Render draft
+                <RefreshCw className="h-3.5 w-3.5" />
+                Re-render
               </button>
             </>
           )}

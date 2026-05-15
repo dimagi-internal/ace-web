@@ -77,7 +77,7 @@ narration:
   # the beat's start time. Word counts are tuned so each clip fits its
   # beat duration at ~150 wpm (with atrim as a safety net).
   by_beat:
-    hook: "Pay for verified service delivery, never effort alone — that is the contract."
+    hook: "Pay only for confirmed visits — this is the contract."
     cycle: "Frontline Workers learn, deliver, verify — and get paid the moment delivery confirms."
     handoff: "Here's how that works for the Child Health Campaign."
     scene: "In Kenya, Frontline Workers deliver Vitamin A, deworming, and immunization — door to door."
