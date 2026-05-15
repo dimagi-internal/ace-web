@@ -46,7 +46,7 @@ export const listSessions = async (params: ListSessionsParams = {}): Promise<Ses
     },
   );
   if (!response.ok) throw new Error(`Failed to list sessions: ${response.status}`);
-  const page = (await response.json()) as SessionListPage;
+  const page = (await response.clone().json()) as SessionListPage;
   return page;
 };
 
@@ -59,7 +59,7 @@ export const createSession = async (workspaceSlug: string): Promise<Session> => 
     },
   );
   if (!response.ok) throw new Error(`Failed to create session: ${response.status}`);
-  return (await response.json()) as Session;
+  return (await response.clone().json()) as Session;
 };
 
 export const getSession = async (slug: string, workspaceSlug: string): Promise<SessionDetail> => {
@@ -68,7 +68,7 @@ export const getSession = async (slug: string, workspaceSlug: string): Promise<S
     { params: { path: { workspace_slug: workspaceSlug, slug } } },
   );
   if (!response.ok) throw new Error(`Failed to get session: ${response.status}`);
-  return (await response.json()) as SessionDetail;
+  return (await response.clone().json()) as SessionDetail;
 };
 
 export const updateSession = async (
@@ -84,7 +84,7 @@ export const updateSession = async (
     },
   );
   if (!response.ok) throw new Error(`Failed to update session: ${response.status}`);
-  return (await response.json()) as Session;
+  return (await response.clone().json()) as Session;
 };
 
 export const deleteSession = async (slug: string, workspaceSlug: string): Promise<void> => {

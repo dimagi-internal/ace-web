@@ -81,7 +81,7 @@ export async function createWorkspace(input: {
   const { data, error, response } = await apiV2.POST("/api/workspaces", { body });
   if (error) throw new Error((error as { title?: string }).title || "Failed to create workspace");
   if (data) return data as WorkspaceDetail;
-  return (await response.json()) as WorkspaceDetail;
+  return (await response.clone().json()) as WorkspaceDetail;
 }
 
 export async function getWorkspace(slug: string): Promise<WorkspaceDetail> {
@@ -158,7 +158,7 @@ export async function changeMemberRole(
     } as never,
   );
   if (!response.ok) throw new Error(`Change role failed: ${response.status}`);
-  return (await response.json()) as WorkspaceMember;
+  return (await response.clone().json()) as WorkspaceMember;
 }
 
 export async function leaveWorkspace(slug: string): Promise<void> {
@@ -175,7 +175,7 @@ export async function getInvitePreview(token: string): Promise<InvitePreview> {
     params: { path: { token } },
   } as never);
   if (!response.ok) throw new Error(`Invite not found: ${response.status}`);
-  return (await response.json()) as InvitePreview;
+  return (await response.clone().json()) as InvitePreview;
 }
 
 export async function acceptInvite(token: string): Promise<AcceptResult> {
@@ -183,13 +183,13 @@ export async function acceptInvite(token: string): Promise<AcceptResult> {
     params: { path: { token } },
   } as never);
   if (!response.ok) throw new Error(`Accept invite failed: ${response.status}`);
-  return (await response.json()) as AcceptResult;
+  return (await response.clone().json()) as AcceptResult;
 }
 
 export async function getDriveConfig(): Promise<DriveConfig> {
   const { response } = await apiV2.GET("/api/workspaces/drive-config" as never, {} as never);
   if (!response.ok) throw new Error(`Drive config failed: ${response.status}`);
-  return (await response.json()) as DriveConfig;
+  return (await response.clone().json()) as DriveConfig;
 }
 
 export async function verifyDriveAccess(slug: string): Promise<VerifyResult> {
@@ -197,7 +197,7 @@ export async function verifyDriveAccess(slug: string): Promise<VerifyResult> {
     params: { path: { slug } },
   });
   if (!response.ok) throw new Error(`Drive verify failed: ${response.status}`);
-  return (await response.json()) as VerifyResult;
+  return (await response.clone().json()) as VerifyResult;
 }
 
 export async function listActivity(slug: string): Promise<ActivityRow[]> {
@@ -205,7 +205,7 @@ export async function listActivity(slug: string): Promise<ActivityRow[]> {
     params: { path: { slug } },
   } as never);
   if (!response.ok) throw new Error(`List activity failed: ${response.status}`);
-  const body = (await response.json()) as { items: ActivityRow[]; total: number };
+  const body = (await response.clone().json()) as { items: ActivityRow[]; total: number };
   return body.items;
 }
 

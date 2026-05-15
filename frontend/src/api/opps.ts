@@ -54,7 +54,7 @@ export async function listOpps(
   // display_name/current_step/tags/labels/eval_score). Map field renames
   // and fill missing fields with safe defaults so consumers don't crash
   // on .display_name.toLowerCase() etc.
-  const page = (await response.json()) as { items: Array<Record<string, unknown>> };
+  const page = (await response.clone().json()) as { items: Array<Record<string, unknown>> };
   const data: OppCard[] = (page.items ?? []).map((raw) => v2ToOppCard(raw));
   setCachedList(cacheKey, { data, etag });
   return data;
@@ -93,7 +93,7 @@ export async function createOpp(
     body: payload as any,
   });
   if (!response.ok) throw new Error(`createOpp: ${response.status}`);
-  return (await response.json()) as CreateOppResponse;
+  return (await response.clone().json()) as CreateOppResponse;
 }
 
 export async function deleteOpp(workspaceSlug: string, slug: string): Promise<void> {
@@ -116,7 +116,7 @@ export async function updateOppTags(
     body: { tags } as any,
   });
   if (!response.ok) throw new Error(`updateOppTags: ${response.status}`);
-  return (await response.json()) as { slug: string; tags: string[] };
+  return (await response.clone().json()) as { slug: string; tags: string[] };
 }
 
 export async function getOpp(
@@ -139,7 +139,7 @@ export async function getOpp(
   if (!response.ok) throw new Error(`getOpp: ${response.status}`);
 
   const etag = response.headers.get("ETag") ?? "";
-  const data = (await response.json()) as OppSnapshot;
+  const data = (await response.clone().json()) as OppSnapshot;
   setCachedSnapshot(slug, runId ?? null, { data, etag });
   return data;
 }
@@ -159,7 +159,7 @@ export async function getScorecard(workspaceSlug: string, slug: string): Promise
     params: { path: { workspace_slug: workspaceSlug, slug } },
   });
   if (!response.ok) throw new Error(`getScorecard: ${response.status}`);
-  return (await response.json()) as Scorecard;
+  return (await response.clone().json()) as Scorecard;
 }
 
 /** Multi-run summary has no v2 equivalent — will be addressed in a future PR. */
@@ -188,7 +188,7 @@ export async function getStepDetail(
     },
   });
   if (!response.ok) throw new Error(`getStepDetail: ${response.status}`);
-  return (await response.json()) as StepDetail;
+  return (await response.clone().json()) as StepDetail;
 }
 
 /** getLinkedChats has no v2 endpoint — will be addressed in a future PR. */
@@ -213,7 +213,7 @@ export async function discussStep(
     body: { step_skill: skill, run_id: runId },
   });
   if (!response.ok) throw new Error(`discussStep: ${response.status}`);
-  return (await response.json()) as DiscussResponse;
+  return (await response.clone().json()) as DiscussResponse;
 }
 
 export async function listOppRuns(workspaceSlug: string, slug: string): Promise<RunSummary[]> {
@@ -221,7 +221,7 @@ export async function listOppRuns(workspaceSlug: string, slug: string): Promise<
     params: { path: { workspace_slug: workspaceSlug, slug } },
   });
   if (!response.ok) throw new Error(`listOppRuns: ${response.status}`);
-  const page = (await response.json()) as { items: RunSummary[] };
+  const page = (await response.clone().json()) as { items: RunSummary[] };
   return page.items ?? (page as unknown as RunSummary[]);
 }
 
@@ -250,7 +250,7 @@ export async function forkOpp(
     body: payload as any,
   });
   if (!response.ok) throw new Error(`forkOpp: ${response.status}`);
-  return (await response.json()) as { slug: string; run_id: string; working_session_slug: string };
+  return (await response.clone().json()) as { slug: string; run_id: string; working_session_slug: string };
 }
 
 export type ForkProgress =
@@ -277,7 +277,7 @@ export async function getForkStatus(
     },
   });
   if (!response.ok) throw new Error(`getForkStatus: ${response.status}`);
-  return (await response.json()) as ForkProgress;
+  return (await response.clone().json()) as ForkProgress;
 }
 
 /** getWorkingSession has no v2 endpoint — will be addressed in a future PR. */
