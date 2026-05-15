@@ -74,9 +74,17 @@ export function resolveBeats(
     seconds: overrides[b.id]?.seconds ?? b.seconds,
   }));
   const sum = merged.reduce((acc, b) => acc + b.seconds, 0);
-  if (Math.abs(sum - defaults.total_seconds) > 0.001) {
-    throw new Error(
-      `Beat seconds sum to ${sum}, expected ${defaults.total_seconds}. Adjust overrides.`
+  // The merged sum may legitimately differ from defaults.total_seconds —
+  // the audio-alignment pass in scripts/render.ts extends beats whose
+  // synthesized narration overruns its declared duration. We accept the
+  // merged sum as the new effective total. The old hard-throw caught
+  // operator typos in beat_overrides but was incompatible with the
+  // dynamic-duration model; if the deviation is large (>30s) we still
+  // surface it as a warning since that suggests a real bug.
+  if (Math.abs(sum - defaults.total_seconds) > 30) {
+    console.warn(
+      `resolveBeats: beat seconds sum to ${sum.toFixed(2)}s vs defaults.total_seconds=${defaults.total_seconds}s ` +
+        `(diff ${Math.abs(sum - defaults.total_seconds).toFixed(2)}s). Check beat_overrides for typos.`,
     );
   }
   let cursor = 0;

@@ -4,11 +4,84 @@ import fs from "node:fs";
 import os from "node:os";
 import { execSync } from "node:child_process";
 import { loadProgramSpec } from "../src/lib/spec.node";
-import { loadDefaults, resolveBeats } from "../src/lib/beats.node";
+import { loadDefaults, resolveBeats, type ResolvedTimeline, type ResolvedBeat } from "../src/lib/beats.node";
 import { resolveRun, specPath, outputPath } from "../src/lib/runs.node";
 import { synthesize, synthesizePerBeat, type PerBeatNarration } from "../src/lib/voiceover";
 import { estimateCaptionTimeline, captionsFromBeats } from "../src/lib/captions";
 import { resolveAssetRefs, formatMissingError } from "../src/lib/asset-resolver.node";
+
+/**
+ * Probe an audio file's duration in seconds via ffprobe. Returns 0 on
+ * any failure (caller treats 0 as "no extension needed"). Used by the
+ * audio-aligned beat realignment below.
+ */
+function probeAudioDurationSeconds(audioPath: string): number {
+  try {
+    const out = execSync(
+      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 ${JSON.stringify(audioPath)}`,
+      { stdio: ["ignore", "pipe", "ignore"] },
+    ).toString().trim();
+    const n = parseFloat(out);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Mutate the timeline so every beat with synthesized narration is at
+ * least as long as its audio (+ safety margin). Subsequent beats shift
+ * later. Total runtime grows by however much the over-budget beats
+ * needed.
+ *
+ * This is the fix for the "narration text gets cut off mid-word" class
+ * of issue: even when the agent stays within the prompt's word budget,
+ * ElevenLabs' actual pacing varies (~135-165 wpm depending on text),
+ * and the rendered audio can run a fraction of a second over its beat.
+ * The atrim filter in the mux step then clips the last syllable.
+ */
+function realignTimelineToAudio(
+  timeline: ResolvedTimeline,
+  perBeat: PerBeatNarration[],
+  safetyMarginSeconds = 0.25,
+): ResolvedTimeline {
+  if (perBeat.length === 0) return timeline;
+  const audioDur = new Map<string, number>();
+  for (const n of perBeat) {
+    const d = probeAudioDurationSeconds(n.audioPath);
+    if (d > 0) audioDur.set(n.beatId, d);
+  }
+  let extended = false;
+  let cursor = 0;
+  const beats: ResolvedBeat[] = timeline.beats.map((b) => {
+    const ad = audioDur.get(b.id);
+    let durSec = b.seconds;
+    if (ad !== undefined && ad + safetyMarginSeconds > durSec) {
+      durSec = ad + safetyMarginSeconds;
+      extended = true;
+      console.log(
+        `  beat "${b.id}": ${b.seconds.toFixed(2)}s → ${durSec.toFixed(2)}s ` +
+          `(audio ${ad.toFixed(2)}s + ${safetyMarginSeconds}s margin)`,
+      );
+    }
+    const durFrames = Math.round(durSec * timeline.fps);
+    const out: ResolvedBeat = {
+      ...b,
+      seconds: durSec,
+      startFrame: cursor,
+      durationFrames: durFrames,
+    };
+    cursor += durFrames;
+    return out;
+  });
+  if (extended) {
+    console.log(
+      `Audio-aligned: total ${(timeline.totalFrames / timeline.fps).toFixed(2)}s → ` +
+        `${(cursor / timeline.fps).toFixed(2)}s`,
+    );
+  }
+  return { fps: timeline.fps, totalFrames: cursor, beats };
+}
 
 interface CliArgs {
   program: string;
@@ -56,7 +129,7 @@ async function main() {
     process.exit(1);
   }
 
-  const timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
+  let timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
 
   if (!spec.narration.script.trim()) {
     console.error(
@@ -89,6 +162,10 @@ async function main() {
         apiKey,
       });
       console.log(`Per-beat VO ready: ${perBeat.length} clips`);
+      // Audio-align: if any synthesized clip is longer than its beat's
+      // declared duration, extend that beat (and shift later beats) so
+      // the audio plays in full instead of getting cut at the boundary.
+      timeline = realignTimelineToAudio(timeline, perBeat);
     } else {
       console.log("Synthesizing voiceover…");
       voicePath = await synthesize({
@@ -134,7 +211,15 @@ async function main() {
   // Read the raw text directly off disk — the staged spec.yaml has
   // already been written by Django's _stage_spec().
   const specYaml = fs.readFileSync(specPath(cli.program, runId, root), "utf8");
-  const props = { programSlug: cli.program, specYaml, captions };
+  // beatOverrides reflects any audio-alignment extension above. The
+  // Remotion component merges this with spec.beat_overrides before
+  // calling resolveBeats so the rendered visuals' beat durations line
+  // up with what the mux step expects.
+  const beatOverrides: Record<string, { seconds: number }> = {};
+  for (const b of timeline.beats) {
+    beatOverrides[b.id] = { seconds: b.seconds };
+  }
+  const props = { programSlug: cli.program, specYaml, beatOverrides, captions };
   const tmpPropsFile = path.join(os.tmpdir(), `remotion-props-${Date.now()}.json`);
   fs.writeFileSync(tmpPropsFile, JSON.stringify(props));
   const propsArg = `--props=${JSON.stringify(tmpPropsFile)}`;
