@@ -1,0 +1,35 @@
+import { BeatEditorProvider } from "./BeatEditorContext";
+import { BeatEditorTopBar } from "./BeatEditorTopBar";
+import { TimelineStrip } from "./TimelineStrip";
+import { FinalVideoPlayer } from "./FinalVideoPlayer";
+import { BeatList } from "./BeatList";
+import { EditDrawer } from "./drawer/EditDrawer";
+import type { ProgramSpec } from "./types";
+
+interface Props {
+  workspaceSlug: string;
+  programSlug: string;
+  runId: string;
+  spec: ProgramSpec;
+  // Bubbles to the page so the Re-render button can refetch if needed.
+  onSpecRefetched?: (spec: ProgramSpec) => void;
+}
+
+export function BeatEditor({ workspaceSlug, programSlug, runId, spec, onSpecRefetched }: Props) {
+  return (
+    <BeatEditorProvider
+      workspaceSlug={workspaceSlug}
+      programSlug={programSlug}
+      runId={runId}
+      spec={spec}
+    >
+      <div className="flex flex-col gap-4">
+        <BeatEditorTopBar onSpecRefetched={onSpecRefetched} />
+        <TimelineStrip />
+        <FinalVideoPlayer />
+        <BeatList />
+        <EditDrawer />
+      </div>
+    </BeatEditorProvider>
+  );
+}
