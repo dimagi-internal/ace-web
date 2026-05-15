@@ -253,6 +253,128 @@ def test_list_programs_404_non_member(non_member_client, videos_root):
     assert resp.status_code == 404
 
 
+# ---------------------------------------------------------------------------
+# Templates + create-program (agent-driven flow)
+# ---------------------------------------------------------------------------
+
+
+def _seed_template(root: Path) -> None:
+    t = root / "templates" / "60s-campaign-overview"
+    t.mkdir(parents=True)
+    (t / "template.yaml").write_text(
+        "id: 60s-campaign-overview\nname: 60s\ndescription: test\n"
+        "expected_duration_seconds: 60\nintended_audience: x\nwhen_to_use: y\n",
+        encoding="utf-8",
+    )
+    (t / "spec.template.yaml").write_text("slug: \"{{slug}}\"\nworkspace: \"{{ws}}\"\n", encoding="utf-8")
+    (t / "generate.prompt.md").write_text("# Skill prompt\nFill it.\n", encoding="utf-8")
+
+
+@pytest.mark.django_db
+def test_list_templates(member_client, videos_root):
+    client, _ = member_client
+    _seed_template(videos_root)
+    resp = client.get("/api/w/ws1/videos/templates")
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["id"] == "60s-campaign-overview"
+    assert body[0]["expected_duration_seconds"] == 60
+
+
+@pytest.mark.django_db
+def test_get_template_bundle(member_client, videos_root):
+    client, _ = member_client
+    _seed_template(videos_root)
+    resp = client.get("/api/w/ws1/videos/templates/60s-campaign-overview")
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["meta"]["id"] == "60s-campaign-overview"
+    assert "Skill prompt" in body["prompt_md"]
+    assert "{{slug}}" in body["skeleton_yaml"]
+
+
+@pytest.mark.django_db
+def test_get_template_404(member_client, videos_root):
+    client, _ = member_client
+    resp = client.get("/api/w/ws1/videos/templates/nonexistent")
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_create_program_happy_path(member_client, videos_root):
+    client, _ = member_client
+    spec = (
+        "slug: new-prog\n"
+        "workspace: ws1\n"
+        "name: New Program\n"
+        "country_focus: Test Country\n"
+    )
+    resp = client.post(
+        "/api/w/ws1/videos/programs",
+        data={"slug": "new-prog", "spec_yaml": spec},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["program_slug"] == "new-prog"
+    assert body["run_id"] == "run-001"
+    assert (videos_root / "programs" / "new-prog" / "runs" / "run-001" / "spec.yaml").exists()
+
+
+@pytest.mark.django_db
+def test_create_program_409_when_slug_taken(member_client, videos_root):
+    client, _ = member_client
+    spec = "slug: demo\nworkspace: ws1\nname: Demo\n"
+    resp = client.post(
+        "/api/w/ws1/videos/programs",
+        data={"slug": "demo", "spec_yaml": spec},
+        content_type="application/json",
+    )
+    assert resp.status_code == 409, resp.content
+
+
+@pytest.mark.django_db
+def test_create_program_400_workspace_mismatch(member_client, videos_root):
+    client, _ = member_client
+    spec = "slug: x\nworkspace: other-ws\nname: X\n"
+    resp = client.post(
+        "/api/w/ws1/videos/programs",
+        data={"slug": "x", "spec_yaml": spec},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_create_program_400_slug_mismatch(member_client, videos_root):
+    client, _ = member_client
+    spec = "slug: in-yaml\nworkspace: ws1\nname: X\n"
+    resp = client.post(
+        "/api/w/ws1/videos/programs",
+        data={"slug": "in-url", "spec_yaml": spec},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_create_program_400_invalid_slug(member_client, videos_root):
+    client, _ = member_client
+    resp = client.post(
+        "/api/w/ws1/videos/programs",
+        data={"slug": "../evil", "spec_yaml": "slug: x\nworkspace: ws1\n"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_list_templates_401_anonymous(db, client, videos_root):
+    resp = client.get("/api/w/ws1/videos/templates")
+    assert resp.status_code == 401
+
+
 @pytest.mark.django_db
 def test_list_programs_401_anonymous(db, client, videos_root):
     resp = client.get("/api/w/ws1/videos/programs")

@@ -141,3 +141,47 @@ class CopyRunOut(StrictModel):
     program_slug: str
     new_run_id: str
     copied_from: str
+
+
+# ---------------------------------------------------------------------------
+# Templates — MCP-callable surface used by an agent in a Claude session
+# to discover available templates + post a generated spec back.
+# ---------------------------------------------------------------------------
+
+
+class TemplateMetaOut(StrictModel):
+    id: str
+    name: str
+    description: str
+    expected_duration_seconds: int
+    intended_audience: str
+    when_to_use: str
+
+
+class TemplateBundleOut(StrictModel):
+    """Full template payload — agent reads `prompt_md` and follows it,
+    fills the `skeleton_yaml` placeholders, and posts the result back
+    via POST /programs.
+    """
+
+    meta: TemplateMetaOut
+    skeleton_yaml: str
+    prompt_md: str
+
+
+class CreateProgramIn(StrictModel):
+    """POST /programs body. The agent generates the full spec.yaml
+    (string) by following the template's prompt and posts it here. The
+    server only validates structure + slug uniqueness; the agent owns
+    content quality.
+    """
+
+    slug: str
+    spec_yaml: str  # complete YAML body for spec.yaml
+
+
+class CreateProgramOut(StrictModel):
+    program_slug: str
+    run_id: str  # always "run-001" — programs start at one run
+    spec_path: str  # repo-relative path that was written
+    message: str

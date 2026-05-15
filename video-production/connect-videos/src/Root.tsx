@@ -27,6 +27,19 @@ const PROGRAMS_REGISTRY: Record<string, string> = {
 };
 
 const defaults = parseDefaults(defaultsYaml);
+// Brand strings live in _defaults.yaml — single source of truth.
+// Fallback values match what was hardcoded before the brand section
+// was introduced, so older defaults files still render.
+const BRAND_FALLBACK = {
+  tagline: "Pay for verified service delivery, not planned activity.",
+  cycleSteps: ["Learn", "Deliver", "Verify", "Pay"] as const,
+};
+const brand = defaults.brand
+  ? {
+      tagline: defaults.brand.tagline,
+      cycleSteps: defaults.brand.cycle_steps as readonly [string, string, string, string],
+    }
+  : BRAND_FALLBACK;
 
 const ProgramVideo: React.FC<VideoProps> = ({ programSlug, captions = [] }) => {
   const yamlText = PROGRAMS_REGISTRY[programSlug];
@@ -52,7 +65,7 @@ const ProgramVideo: React.FC<VideoProps> = ({ programSlug, captions = [] }) => {
   return (
     <AbsoluteFill>
       <Sequence durationInFrames={byId.handoff.startFrame + byId.handoff.durationFrames}>
-        <Intro programName={spec.name} beatFrames={introBeats} />
+        <Intro programName={spec.name} brand={brand} beatFrames={introBeats} />
       </Sequence>
       <Sequence
         from={bodyBeats[0].startFrame}
