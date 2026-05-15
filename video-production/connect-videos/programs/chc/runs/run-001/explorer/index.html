@@ -1,618 +1,9 @@
-#!/usr/bin/env tsx
-/**
- * build-clip-explorer.ts — generate a slick local web page that
- * visualizes a program's clip assignments:
- *
- *   - Plays the final rendered video at the top.
- *   - For each beat, shows the assigned source clips with a player +
- *     a "used range" overlay on the timeline, so you can scrub the
- *     full clip and decide whether the slice we picked is the best
- *     window (or whether we should swap in a different clip).
- *   - Calls out beats with no assigned clip and manifest entries we
- *     have but aren't currently using.
- *
- * Output:
- *   out/clip-explorer/<slug>/
- *     index.html  -- self-contained page (inline CSS+JS)
- *     media/      -- symlinks to source MP4s + final render
- *
- * Run via `npm run explore -- --program=chc` (also starts a server).
- */
-
-import path from "node:path";
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { execSync } from "node:child_process";
-import { loadProgramSpec } from "../src/lib/spec.node";
-import { loadDefaults, resolveBeats, type ResolvedBeat } from "../src/lib/beats.node";
-import { defaultCacheDir } from "../src/lib/asset-resolver.node";
-import { resolveRun, specPath, outputPath, explorerDir as runExplorerDir } from "../src/lib/runs.node";
-
-interface CliArgs {
-  program: string;
-  run: string;
-  open: boolean;
-}
-
-function parseArgs(): CliArgs {
-  const args = process.argv.slice(2);
-  const program = args.find((a) => a.startsWith("--program="))?.slice("--program=".length);
-  const run = args.find((a) => a.startsWith("--run="))?.slice("--run=".length) ?? "";
-  if (!program) {
-    console.error("Usage: npm run build-clip-explorer -- --program=<slug> [--run=<run-NNN>]");
-    process.exit(2);
-  }
-  return { program, run, open: args.includes("--open") };
-}
-
-interface ParsedRef {
-  kind: "gdrive" | "file" | "plain";
-  gdriveId?: string;
-  ext?: string;
-  path?: string;
-}
-
-function parseManifestRef(ref: string): ParsedRef {
-  if (ref.startsWith("gdrive:")) {
-    const body = ref.slice("gdrive:".length);
-    const dot = body.lastIndexOf(".");
-    return { kind: "gdrive", gdriveId: body.slice(0, dot), ext: body.slice(dot + 1) };
-  }
-  if (ref.startsWith("file:")) return { kind: "file", path: ref.slice("file:".length) };
-  return { kind: "plain", path: ref };
-}
-
-function aliasFromRef(value: string): string | null {
-  return value.startsWith("@") ? value.slice(1) : null;
-}
-
-function fmtTs(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = (sec % 60).toFixed(1);
-  return `${m}:${s.padStart(4, "0")}`;
-}
-
-function probe(file: string): { duration: number; width: number; height: number } {
-  const out = execSync(
-    `ffprobe -v error -of csv=p=0 -select_streams v:0 -show_entries stream=width,height:format=duration ${JSON.stringify(file)}`
-  ).toString().trim();
-  // Output is two lines: "WxH" then "duration"
-  const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
-  let w = 0, h = 0, dur = 0;
-  for (const line of lines) {
-    if (line.includes(",")) {
-      const [a, b] = line.split(",");
-      w = Number(a); h = Number(b);
-    } else if (/^\d/.test(line)) {
-      dur = Number(line);
-    }
-  }
-  return { duration: dur, width: w, height: h };
-}
-
-interface BeatBlock {
-  id: string;
-  kind: string;
-  startSec: number;
-  endSec: number;
-  durationSec: number;
-  narration: string;
-  assignments: ClipAssignment[];
-  // If this beat takes asset slots but they're empty/missing, flagged.
-  missingSlots: string[];
-}
-
-// Plain-language labels keyed by beat id. The schema-level term is "beat"
-// (screenwriting jargon for a narrative unit) but the UI uses "section".
-const SECTION_LABELS: Record<string, { name: string; subtitle: string }> = {
-  hook:    { name: "Opening tagline",       subtitle: "The headline that frames the whole video — Connect's value prop." },
-  cycle:   { name: "How Connect works",     subtitle: "The four-step cycle: Learn → Deliver → Verify → Pay." },
-  handoff: { name: "Program handoff",       subtitle: "Names which program we're about to dive into." },
-  scene:   { name: "Field footage",         subtitle: "Real footage from the program location — sets the scene." },
-  problem: { name: "Headline stat",         subtitle: "One big number that frames the problem or scale." },
-  product: { name: "Connect app walkthrough", subtitle: "Short phone-frame clips of the Connect platform in use." },
-  impact:  { name: "Results numbers",       subtitle: "Two big numbers — what the program has delivered." },
-  cta:     { name: "End card",              subtitle: "Logo + tagline + 'become a delivery partner' CTA." },
-};
-
-function sectionLabel(beatId: string): { name: string; subtitle: string } {
-  return SECTION_LABELS[beatId] ?? { name: beatId, subtitle: "" };
-}
-
-interface ClipAssignment {
-  role: string;             // "scene-clip[0]", "product-beat[1].asset", etc.
-  alias: string | null;     // null if a literal path
-  refRaw: string;           // original ref string
-  sourcePath: string | null;
-  sourceDuration: number | null;
-  sourceRes: string | null;
-  usedStartSec: number;
-  usedDurationSec: number;
-  gdriveId: string | null;
-  status: "ok" | "missing-cache" | "alias-unknown" | "literal-path";
-  // Identifies which YAML path the explorer's /edit endpoint should
-  // update when a slider is dragged. Set when we wire scene-clip /
-  // product-beat assignments.
-  editScope?: { path: string; kind: "scene-clip" | "product-beat"; index: number };
-}
-
-function main() {
-  const cli = parseArgs();
-  const root = process.cwd();
-  const runId = resolveRun(cli.program, cli.run, root);
-  const defaults = loadDefaults(path.join(root, "programs/_defaults.yaml"));
-  const spec = loadProgramSpec(specPath(cli.program, runId, root));
-  const timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
-  const cacheDir = defaultCacheDir();
-
-  const outDir = runExplorerDir(cli.program, runId, root);
-  if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
-  mkdirSync(outDir, { recursive: true });
-  const mediaDir = path.join(outDir, "media");
-  mkdirSync(mediaDir, { recursive: true });
-
-  // Mirror the final render
-  const finalSrc = outputPath(cli.program, runId, root);
-  const finalLink = path.join(mediaDir, "final.mp4");
-  if (existsSync(finalSrc)) {
-    // Use a path relative to the symlink's own directory so the link
-    // resolves the same way on the host as it does inside ace-web's
-    // Docker container (where /app/video-production/ is bind-mounted
-    // but the original host's absolute path doesn't exist).
-    const relTarget = path.relative(mediaDir, finalSrc);
-    symlinkSync(relTarget, finalLink);
-  }
-
-  // Resolve all assignments (scene + product). Walk the spec.
-  const beatBlocks: BeatBlock[] = [];
-
-  const beatById = Object.fromEntries(
-    timeline.beats.map((b) => [b.id, b])
-  ) as Record<string, ResolvedBeat>;
-
-  function resolveAlias(refRaw: string, role: string, slotDurationSec: number): ClipAssignment {
-    const alias = aliasFromRef(refRaw);
-    if (!alias) {
-      return {
-        role,
-        alias: null,
-        refRaw,
-        sourcePath: null,
-        sourceDuration: null,
-        sourceRes: null,
-        usedStartSec: 0,
-        usedDurationSec: slotDurationSec,
-        gdriveId: null,
-        status: "literal-path",
-      };
-    }
-    const entry = spec.manifest?.[alias];
-    if (!entry) {
-      return {
-        role,
-        alias,
-        refRaw,
-        sourcePath: null,
-        sourceDuration: null,
-        sourceRes: null,
-        usedStartSec: 0,
-        usedDurationSec: slotDurationSec,
-        gdriveId: null,
-        status: "alias-unknown",
-      };
-    }
-    const parsed = parseManifestRef(entry);
-    if (parsed.kind === "gdrive") {
-      const cachePath = path.join(cacheDir, `${parsed.gdriveId}.${parsed.ext}`);
-      const present = existsSync(cachePath);
-      if (!present) {
-        return {
-          role,
-          alias,
-          refRaw,
-          sourcePath: null,
-          sourceDuration: null,
-          sourceRes: null,
-          usedStartSec: 0,
-          usedDurationSec: slotDurationSec,
-          gdriveId: parsed.gdriveId!,
-          status: "missing-cache",
-        };
-      }
-      // Symlink into media/ for the page
-      const mediaName = `${alias}.${parsed.ext}`;
-      const mediaLink = path.join(mediaDir, mediaName);
-      if (!existsSync(mediaLink)) symlinkSync(path.relative(mediaDir, cachePath), mediaLink);
-      const probed = probe(cachePath);
-      return {
-        role,
-        alias,
-        refRaw,
-        sourcePath: `media/${mediaName}`,
-        sourceDuration: probed.duration,
-        sourceRes: `${probed.width}x${probed.height}`,
-        usedStartSec: 0,
-        usedDurationSec: Math.min(slotDurationSec, probed.duration),
-        gdriveId: parsed.gdriveId!,
-        status: "ok",
-      };
-    }
-    return {
-      role,
-      alias,
-      refRaw,
-      sourcePath: parsed.path ?? null,
-      sourceDuration: null,
-      sourceRes: null,
-      usedStartSec: 0,
-      usedDurationSec: slotDurationSec,
-      gdriveId: null,
-      status: "literal-path",
-    };
-  }
-
-  // Build per-beat blocks
-  for (const b of timeline.beats) {
-    const startSec = b.startFrame / timeline.fps;
-    const endSec = (b.startFrame + b.durationFrames) / timeline.fps;
-    const block: BeatBlock = {
-      id: b.id,
-      kind: b.kind,
-      startSec,
-      endSec,
-      durationSec: b.durationFrames / timeline.fps,
-      narration: spec.narration.by_beat?.[b.id] ?? "",
-      assignments: [],
-      missingSlots: [],
-    };
-
-    if (b.kind === "body_scene") {
-      const slotPer = block.durationSec / spec.scene.clips.length;
-      spec.scene.clips.forEach((c, i) => {
-        // Clip can be a bare alias string or an object with start_seconds.
-        const refRaw = typeof c === "string" ? c : c.asset;
-        const startSec = typeof c === "string" ? 0 : (c.start_seconds ?? 0);
-        const a = resolveAlias(refRaw, `scene-clip[${i}]`, slotPer);
-        a.usedStartSec = startSec;
-        a.usedDurationSec = Math.min(slotPer, (a.sourceDuration ?? Infinity) - startSec);
-        a.editScope = { path: `scene.clips[${i}]`, kind: "scene-clip", index: i };
-        block.assignments.push(a);
-      });
-    } else if (b.kind === "body_product_beats") {
-      const slotPer = block.durationSec / spec.product.beats.length;
-      spec.product.beats.forEach((pb, i) => {
-        const a = resolveAlias(pb.asset, `product-beat[${i}].asset`, slotPer);
-        a.usedStartSec = pb.start_seconds ?? 0;
-        a.usedDurationSec = Math.min(slotPer, (a.sourceDuration ?? Infinity) - a.usedStartSec);
-        a.editScope = { path: `product.beats[${i}]`, kind: "product-beat", index: i };
-        block.assignments.push(a);
-      });
-    } else if (b.kind === "body_problem_stat") {
-      // problem renders a stat card; doesn't take a clip slot
-      block.missingSlots.push("no-visual-asset (uses problem stat data)");
-    } else if (b.kind === "body_impact_stats") {
-      block.missingSlots.push("no-visual-asset (uses impact stat data)");
-    }
-    beatBlocks.push(block);
-  }
-
-  // Identify manifest entries that are present but unused
-  const usedAliases = new Set<string>();
-  for (const blk of beatBlocks)
-    for (const a of blk.assignments) if (a.alias) usedAliases.add(a.alias);
-
-  const allAliases = Object.keys(spec.manifest ?? {});
-  const unusedAliases = allAliases.filter((a) => !usedAliases.has(a));
-
-  // For unused entries, also probe + link so the page can preview them
-  const unusedClips: UnusedClip[] = unusedAliases.map((alias) => {
-    const entry = spec.manifest![alias];
-    const parsed = parseManifestRef(entry);
-    if (parsed.kind !== "gdrive") return { alias, status: "non-gdrive", entry };
-    const cachePath = path.join(cacheDir, `${parsed.gdriveId}.${parsed.ext}`);
-    if (!existsSync(cachePath)) {
-      return { alias, status: "missing-cache", entry, gdriveId: parsed.gdriveId };
-    }
-    const mediaName = `${alias}.${parsed.ext}`;
-    const mediaLink = path.join(mediaDir, mediaName);
-    if (!existsSync(mediaLink)) symlinkSync(path.relative(mediaDir, cachePath), mediaLink);
-    const probed = probe(cachePath);
-    return {
-      alias,
-      status: "ok",
-      entry,
-      gdriveId: parsed.gdriveId,
-      sourcePath: `media/${mediaName}`,
-      sourceDuration: probed.duration,
-      sourceRes: `${probed.width}x${probed.height}`,
-    };
-  });
-
-  // Compute coverage metrics for the header.
-  const totalAssignments = beatBlocks.flatMap((b) => b.assignments).length;
-  const okAssignments = beatBlocks
-    .flatMap((b) => b.assignments)
-    .filter((a) => a.status === "ok").length;
-
-  // Render HTML
-  const html = renderHtml({
-    program: cli.program,
-    spec,
-    timeline,
-    beatBlocks,
-    unusedClips,
-    totalAssignments,
-    okAssignments,
-    finalAvailable: existsSync(finalLink),
-  });
-  writeFileSync(path.join(outDir, "index.html"), html);
-
-  // --- Library tab: every manifest entry, with usage badges ---
-  const allEntries = Object.entries(spec.manifest ?? {}).map(([alias, entry]) => {
-    const parsed = parseManifestRef(entry);
-    let cached = false;
-    let dur: number | null = null;
-    let res: string | null = null;
-    let sourcePath: string | null = null;
-    if (parsed.kind === "gdrive") {
-      const cachePath = path.join(cacheDir, `${parsed.gdriveId}.${parsed.ext}`);
-      cached = existsSync(cachePath);
-      if (cached) {
-        const mediaName = `${alias}.${parsed.ext}`;
-        const mediaLink = path.join(mediaDir, mediaName);
-        if (!existsSync(mediaLink)) symlinkSync(path.relative(mediaDir, cachePath), mediaLink);
-        const probed = probe(cachePath);
-        dur = probed.duration; res = `${probed.width}x${probed.height}`;
-        sourcePath = `media/${mediaName}`;
-      }
-    }
-    // Find which sections use this alias
-    const usedIn: string[] = [];
-    for (const blk of beatBlocks) {
-      for (const a of blk.assignments) {
-        if (a.alias === alias) usedIn.push(sectionLabel(blk.id).name);
-      }
-    }
-    return { alias, entry, parsed, cached, dur, res, sourcePath, usedIn };
-  });
-
-  const libraryHtml = renderLibraryHtml({
-    program: cli.program,
-    spec,
-    entries: allEntries,
-  });
-  writeFileSync(path.join(outDir, "library.html"), libraryHtml);
-
-  console.log(`Wrote ${path.relative(root, path.join(outDir, "index.html"))}`);
-  console.log(`Wrote ${path.relative(root, path.join(outDir, "library.html"))}`);
-  console.log(`Coverage: ${okAssignments}/${totalAssignments} clip slots assigned and cached`);
-}
-
-interface LibEntry {
-  alias: string;
-  entry: string;
-  parsed: ParsedRef;
-  cached: boolean;
-  dur: number | null;
-  res: string | null;
-  sourcePath: string | null;
-  usedIn: string[];
-}
-
-function renderLibraryHtml(args: {
-  program: string;
-  spec: ReturnType<typeof loadProgramSpec>;
-  entries: LibEntry[];
-}): string {
-  const { program, spec, entries } = args;
-  const used = entries.filter((e) => e.usedIn.length > 0);
-  const unused = entries.filter((e) => e.usedIn.length === 0);
-
-  const card = (e: LibEntry): string => {
-    const usedBadges = e.usedIn.length
-      ? e.usedIn.map((u) => `<span class="lib-tag used-in">${escape(u)}</span>`).join("")
-      : `<span class="lib-tag unused">not used in this video</span>`;
-    const statusTag = e.cached
-      ? `<span class="lib-tag cached">✓ in cache</span>`
-      : `<span class="lib-tag missing">⚠ not cached</span>`;
-    const video = e.sourcePath
-      ? `<video src="${e.sourcePath}" controls preload="metadata"></video>`
-      : `<div class="lib-placeholder">${e.parsed.kind === "gdrive" ? `not pulled from Drive yet · <a class="gdrive-link" href="https://drive.google.com/file/d/${escape(e.parsed.gdriveId ?? "")}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : escape(e.entry)}</div>`;
-    return `
-      <div class="lib-card">
-        <div class="lib-head">
-          <h3>@${escape(e.alias)}</h3>
-          ${statusTag}
-        </div>
-        <div class="lib-meta">
-          ${e.dur ? `<span>${e.dur.toFixed(1)}s · ${e.res}</span>` : ""}
-          ${e.parsed.kind === "gdrive" ? `<a class="gdrive-link" href="https://drive.google.com/file/d/${escape(e.parsed.gdriveId ?? "")}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}
-        </div>
-        ${video}
-        <div class="lib-tags">${usedBadges}</div>
-      </div>`;
-  };
-
-  return `<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Clip Library — ${escape(spec.name)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --paper: #FAFBFF; --paper-2: #FFFFFF; --ink: #0A0620; --ink-2: #14103A; --ink-3: #4A5468;
-    --line: #E6E7F0; --rule: #C9CCE0; --indigo: #3843D0; --indigo-deep: #2832A0;
-    --indigo-soft: #E7E9FB; --sky: #8EA1FF; --sky-deep: #5C6FE8; --sky-tint: #F0F3FF;
-    --mango: #FC5F36; --green: #1F8F6F; --muted: #6B7388;
-    --sans: 'Work Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-    --mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
-  .container { max-width: 1280px; margin: 0 auto; padding: 32px 24px 96px; }
-  header { display: flex; align-items: center; gap: 12px; padding-bottom: 24px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
-  header h1 { margin: 0; font-size: 28px; font-weight: 800; background: linear-gradient(90deg, var(--ink-2), var(--indigo) 60%, var(--sky-deep)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-  header .subtitle { color: var(--muted); margin-left: auto; font-size: 14px; }
-  .nav-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
-  .nav-tabs a { padding: 8px 16px; border-radius: 8px; background: white; border: 1px solid var(--line); text-decoration: none; color: var(--ink-2); font: 600 13px var(--sans); }
-  .nav-tabs a.active { background: var(--indigo); color: white; border-color: var(--indigo); }
-  .nav-tabs a:hover:not(.active) { background: var(--sky-tint); }
-  .lead { padding: 18px 24px; background: linear-gradient(120deg, var(--paper-2) 0%, var(--sky-tint) 100%); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 28px; font-size: 14px; color: var(--ink-2); line-height: 1.55; }
-  .lead strong { color: var(--ink); }
-  .section-title { display: flex; align-items: baseline; gap: 12px; margin: 28px 0 14px; }
-  .section-title h2 { margin: 0; font-size: 20px; }
-  .section-title .hint { color: var(--muted); font-size: 13px; }
-  .lib-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
-  .lib-card { background: white; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
-  .lib-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-  .lib-head h3 { margin: 0; font: 700 15px var(--mono); }
-  .lib-meta { font: 400 12px var(--mono); color: var(--muted); margin-bottom: 8px; }
-  .lib-meta code { background: var(--paper); padding: 1px 4px; border-radius: 3px; }
-  .lib-card video { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; }
-  .lib-placeholder { padding: 24px; text-align: center; color: var(--muted); border-radius: 8px; background: var(--paper); border: 1px dashed var(--rule); font-size: 12px; }
-  .lib-placeholder code { background: white; padding: 1px 4px; border-radius: 3px; font-family: var(--mono); }
-  .lib-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
-  .lib-tag { font: 600 11px var(--sans); padding: 2px 8px; border-radius: 999px; }
-  .lib-tag.used-in { background: rgba(31,143,111,0.15); color: var(--green); }
-  .lib-tag.unused { background: var(--sky-tint); color: var(--muted); }
-  .lib-tag.cached { background: rgba(56,67,208,0.1); color: var(--indigo-deep); }
-  .lib-tag.missing { background: rgba(252,95,54,0.15); color: var(--mango); }
-</style>
-</head>
-<body>
-<div class="container">
-  <header>
-    <h1>${escape(spec.name)} · clip library</h1>
-    <span class="subtitle">${program} · ${spec.country_focus} · ${spec.status}</span>
-  </header>
-  <div class="nav-tabs">
-    <a href="/">Per-section review</a>
-    <a href="/library.html" class="active">Clip library</a>
-  </div>
-  <div class="lead">
-    This is every video clip registered in the program's manifest — what's been downloaded,
-    what's still on Drive, and which sections of the current video they're used in.
-    <strong>Want to suggest a new clip?</strong> Drop a Drive link in the feedback box on the
-    main page; the agent will pull it into the cache on the next iteration and slot it where
-    you indicate.
-  </div>
-
-  <div class="section-title">
-    <h2>Used in this video (${used.length})</h2>
-    <span class="hint">each tag shows which section it's currently placed in</span>
-  </div>
-  <div class="lib-grid">
-    ${used.map(card).join("") || `<div class="lib-placeholder">No clips assigned to any section yet.</div>`}
-  </div>
-
-  <div class="section-title">
-    <h2>Available but unused (${unused.length})</h2>
-    <span class="hint">cached on disk, ready to swap into any section</span>
-  </div>
-  <div class="lib-grid">
-    ${unused.map(card).join("") || `<div class="lib-placeholder">Every cached clip is currently in use.</div>`}
-  </div>
-</div>
-</body>
-</html>`;
-}
-
-interface UnusedClip {
-  alias: string;
-  status: string;
-  entry: string;
-  gdriveId?: string;
-  sourcePath?: string;
-  sourceDuration?: number;
-  sourceRes?: string;
-}
-
-function renderHtml(args: {
-  program: string;
-  spec: ReturnType<typeof loadProgramSpec>;
-  timeline: ReturnType<typeof resolveBeats>;
-  beatBlocks: BeatBlock[];
-  unusedClips: UnusedClip[];
-  totalAssignments: number;
-  okAssignments: number;
-  finalAvailable: boolean;
-}): string {
-  const { program, spec, timeline, beatBlocks, unusedClips, totalAssignments, okAssignments, finalAvailable } = args;
-  const totalSec = timeline.totalFrames / timeline.fps;
-
-  const beatColors: Record<string, string> = {
-    intro_hook: "#3843D0",
-    intro_cycle: "#5C6FE8",
-    intro_handoff: "#8EA1FF",
-    body_scene: "#1F8F6F",
-    body_problem_stat: "#FC5F36",
-    body_product_beats: "#FEAF31",
-    body_impact_stats: "#10684F",
-    outro_cta: "#2832A0",
-  };
-
-  const beatCardsHtml = beatBlocks
-    .map((blk) => renderBeatCard(blk, totalSec, beatColors[blk.kind] ?? "#3843D0"))
-    .join("\n");
-
-  const timelineHtml = beatBlocks
-    .map((blk) => {
-      const leftPct = (blk.startSec / totalSec) * 100;
-      const widthPct = (blk.durationSec / totalSec) * 100;
-      return `<div class="tl-beat" data-clickable data-beat-id="${blk.id}" data-start-sec="${blk.startSec.toFixed(2)}" style="left:${leftPct}%;width:${widthPct}%;background:${beatColors[blk.kind] ?? "#3843D0"}" title="${sectionLabel(blk.id).name} · ${fmtTs(blk.startSec)} → ${fmtTs(blk.endSec)} · click to jump"></div>`;
-    })
-    .join("");
-
-  // Legend strip above the colored bar so section names never truncate.
-  const tlLegendHtml = beatBlocks
-    .map((blk) => {
-      const color = beatColors[blk.kind] ?? "#3843D0";
-      return `<span class="tl-legend-item"><span class="dot" style="background:${color}"></span>${escape(sectionLabel(blk.id).name)}</span>`;
-    })
-    .join("");
-
-  const unusedHtml = unusedClips
-    .map((u) => {
-      const status = u.status === "ok" ? "ok" : u.status === "missing-cache" ? "missing" : "non-gdrive";
-      const badge =
-        u.status === "ok"
-          ? "✓ cached"
-          : u.status === "missing-cache"
-            ? "⚠ not in cache"
-            : "literal";
-      const video =
-        u.status === "ok"
-          ? `<video src="${u.sourcePath}" controls preload="metadata"></video>`
-          : `<div class="placeholder">${badge}</div>`;
-      return `
-      <div class="card unused">
-        <div class="card-header">
-          <h3>@${u.alias}</h3>
-          <span class="badge ${status}">${badge}</span>
-        </div>
-        <div class="meta">
-          ${u.sourceDuration ? `${u.sourceDuration.toFixed(1)}s · ${u.sourceRes}` : ""}
-          ${u.gdriveId ? `<br/><a class="gdrive-link" href="https://drive.google.com/file/d/${u.gdriveId}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}
-        </div>
-        ${video}
-      </div>`;
-    })
-    .join("");
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Clip Explorer — ${escape(spec.name)}</title>
+<title>Clip Explorer — Child Health Campaign</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -822,9 +213,9 @@ function renderHtml(args: {
     <span id="render-banner-text">Re-rendering — refresh the player in ~30s.</span>
   </div>
   <header>
-    <h1>${escape(spec.name)} · clip review</h1>
-    <span class="coverage">${okAssignments}/${totalAssignments} video clips assigned</span>
-    <span class="subtitle">${program} · ${spec.country_focus} · ${spec.status}</span>
+    <h1>Child Health Campaign · clip review</h1>
+    <span class="coverage">6/6 video clips assigned</span>
+    <span class="subtitle">chc · Kenya · Active in 8 countries</span>
   </header>
 
   <div class="nav-tabs">
@@ -834,23 +225,21 @@ function renderHtml(args: {
   </div>
 
   <div class="hero">
-    ${finalAvailable
-      ? `<video src="media/final.mp4" controls preload="metadata" id="final-video"></video>`
-      : `<div class="placeholder">No rendered video yet. Run <code>npm run render -- --program=${program}</code>.</div>`}
+    <video src="media/final.mp4" controls preload="metadata" id="final-video"></video>
     <div class="hero-line">
-      <strong>${escape(spec.country_focus)}</strong>
+      <strong>Kenya</strong>
       <span class="sep">·</span>
-      <span>${escape(spec.status)}</span>
+      <span>Active in 8 countries</span>
       <span class="sep">·</span>
-      <span>${fmtTs(totalSec)} long</span>
+      <span>1:00.0 long</span>
       <span class="sep">·</span>
-      <span>${timeline.beats.length} sections</span>
+      <span>8 sections</span>
       <span class="sep">·</span>
-      <span>${Object.keys(spec.manifest ?? {}).length} clips in manifest</span>
+      <span>8 clips in manifest</span>
     </div>
     <div class="timeline-wrap">
-      <div class="tl-legend">${tlLegendHtml}</div>
-      <div class="timeline" id="timeline">${timelineHtml}</div>
+      <div class="tl-legend"><span class="tl-legend-item"><span class="dot" style="background:#3843D0"></span>Opening tagline</span><span class="tl-legend-item"><span class="dot" style="background:#5C6FE8"></span>How Connect works</span><span class="tl-legend-item"><span class="dot" style="background:#8EA1FF"></span>Program handoff</span><span class="tl-legend-item"><span class="dot" style="background:#1F8F6F"></span>Field footage</span><span class="tl-legend-item"><span class="dot" style="background:#FC5F36"></span>Headline stat</span><span class="tl-legend-item"><span class="dot" style="background:#FEAF31"></span>Connect app walkthrough</span><span class="tl-legend-item"><span class="dot" style="background:#10684F"></span>Results numbers</span><span class="tl-legend-item"><span class="dot" style="background:#2832A0"></span>End card</span></div>
+      <div class="timeline" id="timeline"><div class="tl-beat" data-clickable data-beat-id="hook" data-start-sec="0.00" style="left:0%;width:6.666666666666667%;background:#3843D0" title="Opening tagline · 0:00.0 → 0:04.0 · click to jump"></div><div class="tl-beat" data-clickable data-beat-id="cycle" data-start-sec="4.00" style="left:6.666666666666667%;width:13.333333333333334%;background:#5C6FE8" title="How Connect works · 0:04.0 → 0:12.0 · click to jump"></div><div class="tl-beat" data-clickable data-beat-id="handoff" data-start-sec="12.00" style="left:20%;width:5%;background:#8EA1FF" title="Program handoff · 0:12.0 → 0:15.0 · click to jump"></div><div class="tl-beat" data-clickable data-beat-id="scene" data-start-sec="15.00" style="left:25%;width:11.666666666666666%;background:#1F8F6F" title="Field footage · 0:15.0 → 0:22.0 · click to jump"></div><div class="tl-beat" data-clickable data-beat-id="problem" data-start-sec="22.00" style="left:36.666666666666664%;width:16.666666666666664%;background:#FC5F36" title="Headline stat · 0:22.0 → 0:32.0 · click to jump"></div><div class="tl-beat" data-clickable data-beat-id="product" data-start-sec="32.00" style="left:53.333333333333336%;width:20%;background:#FEAF31" title="Connect app walkthrough · 0:32.0 → 0:44.0 · click to jump"></div><div class="tl-beat" data-clickable data-beat-id="impact" data-start-sec="44.00" style="left:73.33333333333333%;width:13.333333333333334%;background:#10684F" title="Results numbers · 0:44.0 → 0:52.0 · click to jump"></div><div class="tl-beat" data-clickable data-beat-id="cta" data-start-sec="52.00" style="left:86.66666666666667%;width:13.333333333333334%;background:#2832A0" title="End card · 0:52.0 → 1:00.0 · click to jump"></div></div>
     </div>
   </div>
 
@@ -859,7 +248,386 @@ function renderHtml(args: {
     <span class="hint">click play on any clip to see what's in it. the blue bar = the portion that appears in the final video.</span>
   </div>
   <div class="beats">
-    ${beatCardsHtml}
+    
+    <div class="beat" data-beat-id="hook">
+      <div class="beat-head">
+        <span class="beat-kind-dot" style="background:#3843D0"></span>
+        <div style="flex: 1; min-width: 0;">
+          <h3>Opening tagline <span class="time">· 0:00.0 → 0:04.0 · 4.0s</span></h3>
+          <div class="section-subtitle">The headline that frames the whole video — Connect's value prop.</div>
+        </div>
+        <button class="fb-toggle" data-beat="hook">💬 leave feedback</button>
+      </div>
+      <div class="narration-edit" data-narration-beat="hook" title="Click to edit voiceover line">
+        <div class="narration-edit-label">
+          Voiceover
+          <span class="save-hint">click to edit · click outside to save</span>
+        </div>
+        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body>Pay for verified service delivery — not effort.</div>
+      </div>
+      <div class="assignments"><div class="no-asset">No video clips for this section — it's rendered from the brand template (logo, animated graphics, no footage).</div></div>
+      <div class="fb-panel" data-beat="hook">
+        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
+        <div class="fb-row">
+          <button class="fb-save" data-target="beat" data-beat="hook">save feedback</button>
+          <span class="fb-status"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="beat" data-beat-id="cycle">
+      <div class="beat-head">
+        <span class="beat-kind-dot" style="background:#5C6FE8"></span>
+        <div style="flex: 1; min-width: 0;">
+          <h3>How Connect works <span class="time">· 0:04.0 → 0:12.0 · 8.0s</span></h3>
+          <div class="section-subtitle">The four-step cycle: Learn → Deliver → Verify → Pay.</div>
+        </div>
+        <button class="fb-toggle" data-beat="cycle">💬 leave feedback</button>
+      </div>
+      <div class="narration-edit" data-narration-beat="cycle" title="Click to edit voiceover line">
+        <div class="narration-edit-label">
+          Voiceover
+          <span class="save-hint">click to edit · click outside to save</span>
+        </div>
+        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body>Frontline Workers learn, deliver, verify — and get paid the moment delivery confirms.</div>
+      </div>
+      <div class="assignments"><div class="no-asset">No video clips for this section — it's rendered from the brand template (logo, animated graphics, no footage).</div></div>
+      <div class="fb-panel" data-beat="cycle">
+        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
+        <div class="fb-row">
+          <button class="fb-save" data-target="beat" data-beat="cycle">save feedback</button>
+          <span class="fb-status"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="beat" data-beat-id="handoff">
+      <div class="beat-head">
+        <span class="beat-kind-dot" style="background:#8EA1FF"></span>
+        <div style="flex: 1; min-width: 0;">
+          <h3>Program handoff <span class="time">· 0:12.0 → 0:15.0 · 3.0s</span></h3>
+          <div class="section-subtitle">Names which program we're about to dive into.</div>
+        </div>
+        <button class="fb-toggle" data-beat="handoff">💬 leave feedback</button>
+      </div>
+      <div class="narration-edit" data-narration-beat="handoff" title="Click to edit voiceover line">
+        <div class="narration-edit-label">
+          Voiceover
+          <span class="save-hint">click to edit · click outside to save</span>
+        </div>
+        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body>Here's how that works for the Child Health Campaign.</div>
+      </div>
+      <div class="assignments"><div class="no-asset">No video clips for this section — it's rendered from the brand template (logo, animated graphics, no footage).</div></div>
+      <div class="fb-panel" data-beat="handoff">
+        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
+        <div class="fb-row">
+          <button class="fb-save" data-target="beat" data-beat="handoff">save feedback</button>
+          <span class="fb-status"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="beat" data-beat-id="scene">
+      <div class="beat-head">
+        <span class="beat-kind-dot" style="background:#1F8F6F"></span>
+        <div style="flex: 1; min-width: 0;">
+          <h3>Field footage <span class="time">· 0:15.0 → 0:22.0 · 7.0s</span></h3>
+          <div class="section-subtitle">Real footage from the program location — sets the scene.</div>
+        </div>
+        <button class="fb-toggle" data-beat="scene">💬 leave feedback</button>
+      </div>
+      <div class="narration-edit" data-narration-beat="scene" title="Click to edit voiceover line">
+        <div class="narration-edit-label">
+          Voiceover
+          <span class="save-hint">click to edit · click outside to save</span>
+        </div>
+        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body>In Kenya, Frontline Workers deliver Vitamin A, deworming, and immunization — door to door.</div>
+      </div>
+      <div class="assignments">
+    <div class="card" data-edit-kind="scene-clip" data-edit-index="0" data-source-duration="23.4" data-droppable="1">
+      <div class="drop-hint">Drop a clip from the library to replace this one</div>
+      <div class="card-header">
+        <h3>@field-group-around-woman</h3>
+        <span class="badge ok">✓ cached</span>
+      </div>
+      <div class="meta">clip is 23.4s long · 1920x1080 · <a class="gdrive-link" href="https://drive.google.com/file/d/14hGIWbv4GcJ0HAm3ZzWEm1KhLK8AjhPQ/view" target="_blank" rel="noopener">open in Drive ↗</a></div>
+      <div class="clip-wrapper">
+        <video src="media/field-group-around-woman.mp4" controls preload="metadata" class="clip-video"></video>
+        
+    <div class="trim-bar" data-source-duration="23.4" data-trim>
+      <div class="trim-region" data-trim-region style="left:0.000%;width:9.972%">
+        <div class="trim-handle left" data-trim-handle="left"></div>
+        <div class="trim-handle right" data-trim-handle="right"></div>
+      </div>
+    </div>
+    <div class="trim-readout">
+      <span>clip start (0.0s)</span>
+      <span><strong data-trim-start>0.0</strong>s → <strong data-trim-end>2.3</strong>s · <strong data-trim-dur>2.3</strong>s in final video</span>
+      <span>clip end (23.4s)</span>
+    </div>
+    <div class="trim-save-row">
+      <button class="trim-save" disabled>save & re-render</button>
+      <span class="fb-status trim-status"></span>
+      <span style="color: var(--muted); font-size: 11px; margin-left: auto;">drag the handles to trim · drag the middle to slide the window</span>
+    </div>
+      </div>
+    </div>
+
+    <div class="card" data-edit-kind="scene-clip" data-edit-index="1" data-source-duration="5.68" data-droppable="1">
+      <div class="drop-hint">Drop a clip from the library to replace this one</div>
+      <div class="card-header">
+        <h3>@field-walking-in-market-flws</h3>
+        <span class="badge ok">✓ cached</span>
+      </div>
+      <div class="meta">clip is 5.7s long · 1920x1080 · <a class="gdrive-link" href="https://drive.google.com/file/d/1XvEe52tIr8jVjMHc0LJw6QPwO0e4vu4C/view" target="_blank" rel="noopener">open in Drive ↗</a></div>
+      <div class="clip-wrapper">
+        <video src="media/field-walking-in-market-flws.mp4" controls preload="metadata" class="clip-video"></video>
+        
+    <div class="trim-bar" data-source-duration="5.68" data-trim>
+      <div class="trim-region" data-trim-region style="left:0.000%;width:41.080%">
+        <div class="trim-handle left" data-trim-handle="left"></div>
+        <div class="trim-handle right" data-trim-handle="right"></div>
+      </div>
+    </div>
+    <div class="trim-readout">
+      <span>clip start (0.0s)</span>
+      <span><strong data-trim-start>0.0</strong>s → <strong data-trim-end>2.3</strong>s · <strong data-trim-dur>2.3</strong>s in final video</span>
+      <span>clip end (5.7s)</span>
+    </div>
+    <div class="trim-save-row">
+      <button class="trim-save" disabled>save & re-render</button>
+      <span class="fb-status trim-status"></span>
+      <span style="color: var(--muted); font-size: 11px; margin-left: auto;">drag the handles to trim · drag the middle to slide the window</span>
+    </div>
+      </div>
+    </div>
+
+    <div class="card" data-edit-kind="scene-clip" data-edit-index="2" data-source-duration="2.869433" data-droppable="1">
+      <div class="drop-hint">Drop a clip from the library to replace this one</div>
+      <div class="card-header">
+        <h3>@field-walking-towards-house</h3>
+        <span class="badge ok">✓ cached</span>
+      </div>
+      <div class="meta">clip is 2.9s long · 1920x1080 · <a class="gdrive-link" href="https://drive.google.com/file/d/10ZVEiFx3KQBj7nNP8c9lP5fHM5hWpORf/view" target="_blank" rel="noopener">open in Drive ↗</a></div>
+      <div class="clip-wrapper">
+        <video src="media/field-walking-towards-house.mp4" controls preload="metadata" class="clip-video"></video>
+        
+    <div class="trim-bar" data-source-duration="2.869433" data-trim>
+      <div class="trim-region" data-trim-region style="left:0.000%;width:81.317%">
+        <div class="trim-handle left" data-trim-handle="left"></div>
+        <div class="trim-handle right" data-trim-handle="right"></div>
+      </div>
+    </div>
+    <div class="trim-readout">
+      <span>clip start (0.0s)</span>
+      <span><strong data-trim-start>0.0</strong>s → <strong data-trim-end>2.3</strong>s · <strong data-trim-dur>2.3</strong>s in final video</span>
+      <span>clip end (2.9s)</span>
+    </div>
+    <div class="trim-save-row">
+      <button class="trim-save" disabled>save & re-render</button>
+      <span class="fb-status trim-status"></span>
+      <span style="color: var(--muted); font-size: 11px; margin-left: auto;">drag the handles to trim · drag the middle to slide the window</span>
+    </div>
+      </div>
+    </div></div>
+      <div class="fb-panel" data-beat="scene">
+        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
+        <div class="fb-row">
+          <button class="fb-save" data-target="beat" data-beat="scene">save feedback</button>
+          <span class="fb-status"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="beat" data-beat-id="problem">
+      <div class="beat-head">
+        <span class="beat-kind-dot" style="background:#FC5F36"></span>
+        <div style="flex: 1; min-width: 0;">
+          <h3>Headline stat <span class="time">· 0:22.0 → 0:32.0 · 10.0s</span></h3>
+          <div class="section-subtitle">One big number that frames the problem or scale.</div>
+        </div>
+        <button class="fb-toggle" data-beat="problem">💬 leave feedback</button>
+      </div>
+      <div class="narration-edit" data-narration-beat="problem" title="Click to edit voiceover line">
+        <div class="narration-edit-label">
+          Voiceover
+          <span class="save-hint">click to edit · click outside to save</span>
+        </div>
+        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body>Over one million visits already delivered — every one independently verified with photos and GPS, before payment is approved.</div>
+      </div>
+      <div class="assignments"><div class="no-asset">No video clip — this section is a big-number graphic.</div></div>
+      <div class="fb-panel" data-beat="problem">
+        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
+        <div class="fb-row">
+          <button class="fb-save" data-target="beat" data-beat="problem">save feedback</button>
+          <span class="fb-status"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="beat" data-beat-id="product">
+      <div class="beat-head">
+        <span class="beat-kind-dot" style="background:#FEAF31"></span>
+        <div style="flex: 1; min-width: 0;">
+          <h3>Connect app walkthrough <span class="time">· 0:32.0 → 0:44.0 · 12.0s</span></h3>
+          <div class="section-subtitle">Short phone-frame clips of the Connect platform in use.</div>
+        </div>
+        <button class="fb-toggle" data-beat="product">💬 leave feedback</button>
+      </div>
+      <div class="narration-edit" data-narration-beat="product" title="Click to edit voiceover line">
+        <div class="narration-edit-label">
+          Voiceover
+          <span class="save-hint">click to edit · click outside to save</span>
+        </div>
+        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body>Local delivery organizations watch every visit on a live dashboard, in real time. Funders fund outcomes — not paperwork, not promises.</div>
+      </div>
+      <div class="assignments">
+    <div class="card" data-edit-kind="product-beat" data-edit-index="0" data-source-duration="11.981497" data-droppable="1">
+      <div class="drop-hint">Drop a clip from the library to replace this one</div>
+      <div class="card-header">
+        <h3>@mobile-learn</h3>
+        <span class="badge ok">✓ cached</span>
+      </div>
+      <div class="meta">clip is 12.0s long · 1920x1080 · <a class="gdrive-link" href="https://drive.google.com/file/d/1dI_1NwTdMoW49Vk2HdJVbbni0S188H8n/view" target="_blank" rel="noopener">open in Drive ↗</a></div>
+      <div class="clip-wrapper">
+        <video src="media/mobile-learn.mp4" controls preload="metadata" class="clip-video"></video>
+        
+    <div class="trim-bar" data-source-duration="11.981497" data-trim>
+      <div class="trim-region" data-trim-region style="left:0.000%;width:33.385%">
+        <div class="trim-handle left" data-trim-handle="left"></div>
+        <div class="trim-handle right" data-trim-handle="right"></div>
+      </div>
+    </div>
+    <div class="trim-readout">
+      <span>clip start (0.0s)</span>
+      <span><strong data-trim-start>0.0</strong>s → <strong data-trim-end>4.0</strong>s · <strong data-trim-dur>4.0</strong>s in final video</span>
+      <span>clip end (12.0s)</span>
+    </div>
+    <div class="trim-save-row">
+      <button class="trim-save" disabled>save & re-render</button>
+      <span class="fb-status trim-status"></span>
+      <span style="color: var(--muted); font-size: 11px; margin-left: auto;">drag the handles to trim · drag the middle to slide the window</span>
+    </div>
+      </div>
+    </div>
+
+    <div class="card" data-edit-kind="product-beat" data-edit-index="1" data-source-duration="16.8333" data-droppable="1">
+      <div class="drop-hint">Drop a clip from the library to replace this one</div>
+      <div class="card-header">
+        <h3>@web-superset-graphs</h3>
+        <span class="badge ok">✓ cached</span>
+      </div>
+      <div class="meta">clip is 16.8s long · 1412x748 · <a class="gdrive-link" href="https://drive.google.com/file/d/1aOgcC5EQioXMriZ3krVYmDTPuYrA1MT9/view" target="_blank" rel="noopener">open in Drive ↗</a></div>
+      <div class="clip-wrapper">
+        <video src="media/web-superset-graphs.mp4" controls preload="metadata" class="clip-video"></video>
+        
+    <div class="trim-bar" data-source-duration="16.8333" data-trim>
+      <div class="trim-region" data-trim-region style="left:0.000%;width:23.762%">
+        <div class="trim-handle left" data-trim-handle="left"></div>
+        <div class="trim-handle right" data-trim-handle="right"></div>
+      </div>
+    </div>
+    <div class="trim-readout">
+      <span>clip start (0.0s)</span>
+      <span><strong data-trim-start>0.0</strong>s → <strong data-trim-end>4.0</strong>s · <strong data-trim-dur>4.0</strong>s in final video</span>
+      <span>clip end (16.8s)</span>
+    </div>
+    <div class="trim-save-row">
+      <button class="trim-save" disabled>save & re-render</button>
+      <span class="fb-status trim-status"></span>
+      <span style="color: var(--muted); font-size: 11px; margin-left: auto;">drag the handles to trim · drag the middle to slide the window</span>
+    </div>
+      </div>
+    </div>
+
+    <div class="card" data-edit-kind="product-beat" data-edit-index="2" data-source-duration="9.798821" data-droppable="1">
+      <div class="drop-hint">Drop a clip from the library to replace this one</div>
+      <div class="card-header">
+        <h3>@mobile-pay</h3>
+        <span class="badge ok">✓ cached</span>
+      </div>
+      <div class="meta">clip is 9.8s long · 1920x1080 · <a class="gdrive-link" href="https://drive.google.com/file/d/1vyxeW7F_2vFkZukFKrMzY7caxuygDbB5/view" target="_blank" rel="noopener">open in Drive ↗</a></div>
+      <div class="clip-wrapper">
+        <video src="media/mobile-pay.mp4" controls preload="metadata" class="clip-video"></video>
+        
+    <div class="trim-bar" data-source-duration="9.798821" data-trim>
+      <div class="trim-region" data-trim-region style="left:0.000%;width:40.821%">
+        <div class="trim-handle left" data-trim-handle="left"></div>
+        <div class="trim-handle right" data-trim-handle="right"></div>
+      </div>
+    </div>
+    <div class="trim-readout">
+      <span>clip start (0.0s)</span>
+      <span><strong data-trim-start>0.0</strong>s → <strong data-trim-end>4.0</strong>s · <strong data-trim-dur>4.0</strong>s in final video</span>
+      <span>clip end (9.8s)</span>
+    </div>
+    <div class="trim-save-row">
+      <button class="trim-save" disabled>save & re-render</button>
+      <span class="fb-status trim-status"></span>
+      <span style="color: var(--muted); font-size: 11px; margin-left: auto;">drag the handles to trim · drag the middle to slide the window</span>
+    </div>
+      </div>
+    </div></div>
+      <div class="fb-panel" data-beat="product">
+        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
+        <div class="fb-row">
+          <button class="fb-save" data-target="beat" data-beat="product">save feedback</button>
+          <span class="fb-status"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="beat" data-beat-id="impact">
+      <div class="beat-head">
+        <span class="beat-kind-dot" style="background:#10684F"></span>
+        <div style="flex: 1; min-width: 0;">
+          <h3>Results numbers <span class="time">· 0:44.0 → 0:52.0 · 8.0s</span></h3>
+          <div class="section-subtitle">Two big numbers — what the program has delivered.</div>
+        </div>
+        <button class="fb-toggle" data-beat="impact">💬 leave feedback</button>
+      </div>
+      <div class="narration-edit" data-narration-beat="impact" title="Click to edit voiceover line">
+        <div class="narration-edit-label">
+          Voiceover
+          <span class="save-hint">click to edit · click outside to save</span>
+        </div>
+        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body>A dollar seventy per verified visit. Costs dropping twenty-two percent as the program scales — proven across eight countries.</div>
+      </div>
+      <div class="assignments"><div class="no-asset">No video clip — this section is two big-number graphics.</div></div>
+      <div class="fb-panel" data-beat="impact">
+        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
+        <div class="fb-row">
+          <button class="fb-save" data-target="beat" data-beat="impact">save feedback</button>
+          <span class="fb-status"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="beat" data-beat-id="cta">
+      <div class="beat-head">
+        <span class="beat-kind-dot" style="background:#2832A0"></span>
+        <div style="flex: 1; min-width: 0;">
+          <h3>End card <span class="time">· 0:52.0 → 1:00.0 · 8.0s</span></h3>
+          <div class="section-subtitle">Logo + tagline + 'become a delivery partner' CTA.</div>
+        </div>
+        <button class="fb-toggle" data-beat="cta">💬 leave feedback</button>
+      </div>
+      <div class="narration-edit" data-narration-beat="cta" title="Click to edit voiceover line">
+        <div class="narration-edit-label">
+          Voiceover
+          <span class="save-hint">click to edit · click outside to save</span>
+        </div>
+        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body></div>
+      </div>
+      <div class="assignments"><div class="no-asset">No video clips for this section — it's rendered from the brand template (logo, animated graphics, no footage).</div></div>
+      <div class="fb-panel" data-beat="cta">
+        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
+        <div class="fb-row">
+          <button class="fb-save" data-target="beat" data-beat="cta">save feedback</button>
+          <span class="fb-status"></span>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="section-title">
@@ -867,7 +635,29 @@ function renderHtml(args: {
     <span class="hint">cached and ready to drag into any section above</span>
   </div>
   <div class="unused-grid">
-    ${unusedHtml || '<div class="no-asset">All manifest entries are in use.</div>'}
+    
+      <div class="card unused">
+        <div class="card-header">
+          <h3>@mobile-mapping</h3>
+          <span class="badge ok">✓ cached</span>
+        </div>
+        <div class="meta">
+          13.6s · 1080x1920
+          <br/><a class="gdrive-link" href="https://drive.google.com/file/d/1dvb_1TJuEfRgMr2i913h7YRSSNOXTn5f/view" target="_blank" rel="noopener">open in Drive ↗</a>
+        </div>
+        <video src="media/mobile-mapping.mp4" controls preload="metadata"></video>
+      </div>
+      <div class="card unused">
+        <div class="card-header">
+          <h3>@web-microplan</h3>
+          <span class="badge ok">✓ cached</span>
+        </div>
+        <div class="meta">
+          59.4s · 1920x1080
+          <br/><a class="gdrive-link" href="https://drive.google.com/file/d/1UC6QSQB2rMcDYBKcZ3Wmj-cqx7dY6Kno/view" target="_blank" rel="noopener">open in Drive ↗</a>
+        </div>
+        <video src="media/web-microplan.mp4" controls preload="metadata"></video>
+      </div>
   </div>
 
   <div class="global-fb">
@@ -892,8 +682,8 @@ function renderHtml(args: {
     <strong>Want to suggest a better clip for a beat?</strong>
     Send a Drive link or a YouTube reference for any beat marked
     <em>no clip</em> or where the current one doesn't fit. Then run
-    <code>npm run hydrate -- --program=${program}</code> to seed the
-    cache, edit <code>programs/${program}.yaml</code>, and re-render.
+    <code>npm run hydrate -- --program=chc</code> to seed the
+    cache, edit <code>programs/chc.yaml</code>, and re-render.
   </div>
 </div>
 
@@ -1268,136 +1058,4 @@ function renderHtml(args: {
   });
 </script>
 </body>
-</html>`;
-}
-
-function renderBeatCard(blk: BeatBlock, _totalSec: number, dotColor: string): string {
-  const label = sectionLabel(blk.id);
-  const friendlyMissing = (m: string): string => {
-    if (m.includes("problem stat")) return "No video clip — this section is a big-number graphic.";
-    if (m.includes("impact stat")) return "No video clip — this section is two big-number graphics.";
-    return m;
-  };
-  const cardsHtml =
-    blk.assignments.length > 0
-      ? blk.assignments
-          .map((a) => renderAssignmentCard(a))
-          .join("\n")
-      : blk.missingSlots.length > 0
-        ? blk.missingSlots
-            .map((m) => `<div class="no-asset">${escape(friendlyMissing(m))}</div>`)
-            .join("\n")
-        : `<div class="no-asset">No video clips for this section — it's rendered from the brand template (logo, animated graphics, no footage).</div>`;
-
-  return `
-    <div class="beat" data-beat-id="${blk.id}">
-      <div class="beat-head">
-        <span class="beat-kind-dot" style="background:${dotColor}"></span>
-        <div style="flex: 1; min-width: 0;">
-          <h3>${escape(label.name)} <span class="time">· ${fmtTs(blk.startSec)} → ${fmtTs(blk.endSec)} · ${blk.durationSec.toFixed(1)}s</span></h3>
-          <div class="section-subtitle">${escape(label.subtitle)}</div>
-        </div>
-        <button class="fb-toggle" data-beat="${blk.id}">💬 leave feedback</button>
-      </div>
-      <div class="narration-edit" data-narration-beat="${blk.id}" title="Click to edit voiceover line">
-        <div class="narration-edit-label">
-          Voiceover
-          <span class="save-hint">click to edit · click outside to save</span>
-        </div>
-        <div class="narration-edit-body" contenteditable="plaintext-only" data-narration-body>${escape(blk.narration ?? "")}</div>
-      </div>
-      <div class="assignments">${cardsHtml}</div>
-      <div class="fb-panel" data-beat="${blk.id}">
-        <textarea placeholder="What's wrong with this section? Wrong clip, awkward timing, the narration line, missing footage — anything."></textarea>
-        <div class="fb-row">
-          <button class="fb-save" data-target="beat" data-beat="${blk.id}">save feedback</button>
-          <span class="fb-status"></span>
-        </div>
-      </div>
-    </div>`;
-}
-
-function renderAssignmentCard(a: ClipAssignment): string {
-  const badgeClass = a.status === "ok" ? "ok" : a.status === "missing-cache" ? "missing" : a.status === "alias-unknown" ? "unknown" : "literal";
-  const badgeLabel =
-    a.status === "ok"
-      ? "✓ cached"
-      : a.status === "missing-cache"
-        ? "⚠ not in cache"
-        : a.status === "alias-unknown"
-          ? "⚠ alias not in manifest"
-          : "literal path";
-
-  if (a.status !== "ok") {
-    return `
-      <div class="card">
-        <div class="card-header">
-          <h3>${a.alias ? `@${a.alias}` : a.refRaw}</h3>
-          <span class="badge ${badgeClass}">${badgeLabel}</span>
-        </div>
-        <div class="meta">role: ${a.role}${a.gdriveId ? ` · <a class="gdrive-link" href="https://drive.google.com/file/d/${a.gdriveId}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}</div>
-        <div class="placeholder">${
-          a.status === "missing-cache"
-            ? `Run <code>npm run hydrate</code> to pull the file into the cache.`
-            : a.status === "alias-unknown"
-              ? `Add this alias to spec.manifest in the YAML.`
-              : `Literal path — no preview generated.`
-        }</div>
-      </div>`;
-  }
-
-  const dur = a.sourceDuration ?? 0;
-  const usedDur = a.usedDurationSec;
-  const usedStart = a.usedStartSec;
-  const editAttrs = a.editScope
-    ? `data-edit-kind="${a.editScope.kind}" data-edit-index="${a.editScope.index}" data-source-duration="${dur}" data-droppable="1"`
-    : "";
-  return `
-    <div class="card" ${editAttrs}>
-      <div class="drop-hint">Drop a clip from the library to replace this one</div>
-      <div class="card-header">
-        <h3>@${a.alias}</h3>
-        <span class="badge ok">${badgeLabel}</span>
-      </div>
-      <div class="meta">clip is ${dur.toFixed(1)}s long · ${a.sourceRes}${a.gdriveId ? ` · <a class="gdrive-link" href="https://drive.google.com/file/d/${a.gdriveId}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}</div>
-      <div class="clip-wrapper">
-        <video src="${a.sourcePath}" controls preload="metadata" class="clip-video"></video>
-        ${a.editScope ? renderTrimWidget(dur, usedStart, usedDur) : ""}
-      </div>
-    </div>`;
-}
-
-function renderTrimWidget(sourceDur: number, start: number, dur: number): string {
-  const leftPct = sourceDur > 0 ? (start / sourceDur) * 100 : 0;
-  const widthPct = sourceDur > 0 ? (dur / sourceDur) * 100 : 0;
-  return `
-    <div class="trim-bar" data-source-duration="${sourceDur}" data-trim>
-      <div class="trim-region" data-trim-region style="left:${leftPct.toFixed(3)}%;width:${widthPct.toFixed(3)}%">
-        <div class="trim-handle left" data-trim-handle="left"></div>
-        <div class="trim-handle right" data-trim-handle="right"></div>
-      </div>
-    </div>
-    <div class="trim-readout">
-      <span>clip start (0.0s)</span>
-      <span><strong data-trim-start>${start.toFixed(1)}</strong>s → <strong data-trim-end>${(start + dur).toFixed(1)}</strong>s · <strong data-trim-dur>${dur.toFixed(1)}</strong>s in final video</span>
-      <span>clip end (${sourceDur.toFixed(1)}s)</span>
-    </div>
-    <div class="trim-save-row">
-      <button class="trim-save" disabled>save & re-render</button>
-      <span class="fb-status trim-status"></span>
-      <span style="color: var(--muted); font-size: 11px; margin-left: auto;">drag the handles to trim · drag the middle to slide the window</span>
-    </div>`;
-}
-
-function escape(s: string): string {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-main();
-
-// Silence "unused" warnings for symlink/copy helpers that future iterations may use.
-void copyFileSync;
+</html>

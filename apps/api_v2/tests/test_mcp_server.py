@@ -37,6 +37,7 @@ _EXPECTED_TOOL_NAMES = {
     "apps_sessions_api_v2_get_session",
     "apps_videos_api_v2_list_programs",
     "apps_videos_api_v2_get_program",
+    "apps_videos_api_v2_get_run",
     "apps_videos_api_v2_get_library",
     "apps_videos_api_v2_get_render_status",
     "apps_videos_api_v2_get_feedback",
