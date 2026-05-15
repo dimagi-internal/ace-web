@@ -93,6 +93,7 @@ services:
       # to absolute paths under the host's $HOME/.cache/connect-videos —
       # see docker-compose.override.yml.example for the local-dev mount
       # that makes those symlinks resolve inside the container.
+      - ./video-production:/app/video-production
     depends_on:
       db:
         condition: service_healthy

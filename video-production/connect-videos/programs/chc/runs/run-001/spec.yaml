@@ -24,27 +24,27 @@ manifest:
   #   web-*    = web app / Labs dashboard recordings
   #   field-*  = real-world b-roll
   # Product-feature edits (Video Edits folder)
-  mobile-learn:          gdrive:1dI_1NwTdMoW49Vk2HdJVbbni0S188H8n.mp4
-  mobile-pay:            gdrive:1vyxeW7F_2vFkZukFKrMzY7caxuygDbB5.mp4
-  mobile-mapping:        gdrive:1dvb_1TJuEfRgMr2i913h7YRSSNOXTn5f.mp4
-  web-superset-graphs:   gdrive:1aOgcC5EQioXMriZ3krVYmDTPuYrA1MT9.mp4
-  web-microplan:         gdrive:1UC6QSQB2rMcDYBKcZ3Wmj-cqx7dY6Kno.mp4
+  mobile-learn: gdrive:1dI_1NwTdMoW49Vk2HdJVbbni0S188H8n.mp4
+  mobile-pay: gdrive:1vyxeW7F_2vFkZukFKrMzY7caxuygDbB5.mp4
+  mobile-mapping: gdrive:1dvb_1TJuEfRgMr2i913h7YRSSNOXTn5f.mp4
+  web-superset-graphs: gdrive:1aOgcC5EQioXMriZ3krVYmDTPuYrA1MT9.mp4
+  web-microplan: gdrive:1UC6QSQB2rMcDYBKcZ3Wmj-cqx7dY6Kno.mp4
   # `visit-stats` (gdrive 1UlrT_…) dropped — `web-superset-graphs` is the
   # canonical stats visualization and reads stronger.
   # Field b-roll (B-ROLLS folder, Kikapu Garden / Nairobi shoot)
   # Aliases describe the dominant action visible in each clip.
-  field-walking-towards-house:    gdrive:10ZVEiFx3KQBj7nNP8c9lP5fHM5hWpORf.mp4  # 3s wide village settlement, figure walks toward a house
-  field-walking-in-market-flws:   gdrive:1XvEe52tIr8jVjMHc0LJw6QPwO0e4vu4C.mp4  # 6s FLWs walking the street market
-  field-group-around-woman:       gdrive:14hGIWbv4GcJ0HAm3ZzWEm1KhLK8AjhPQ.mp4  # 23s FLW group gathered around a woman
+  field-walking-towards-house: gdrive:10ZVEiFx3KQBj7nNP8c9lP5fHM5hWpORf.mp4     # 3s wide village settlement, figure walks toward a house
+  field-walking-in-market-flws: gdrive:1XvEe52tIr8jVjMHc0LJw6QPwO0e4vu4C.mp4    # 6s FLWs walking the street market
+  field-group-around-woman: gdrive:14hGIWbv4GcJ0HAm3ZzWEm1KhLK8AjhPQ.mp4        # 23s FLW group gathered around a woman
 
 scene:
   # Real field b-roll from the Kikapu Garden / Nairobi shoot.
   # Order: group around woman (sets program) -> FLWs walking the
   # market (door-to-door) -> wide village establishing shot.
   clips:
-    - "@field-group-around-woman"
-    - "@field-walking-in-market-flws"
-    - "@field-walking-towards-house"
+  - "@field-group-around-woman"
+  - "@field-walking-in-market-flws"
+  - "@field-walking-towards-house"
   lower_third: "Kenya · Child Health Campaign"
 
 problem:
@@ -54,18 +54,18 @@ problem:
 
 product:
   beats:
-    - asset: "@mobile-learn"
-      caption: "FLW certified through Learn modules"
-    - asset: "@web-superset-graphs"
-      caption: "Service tracked and verified in real time"
-    - asset: "@mobile-pay"
-      caption: "Payment lands the moment delivery confirms"
+  - asset: "@mobile-learn"
+    caption: "FLW certified through Learn modules"
+  - asset: "@web-superset-graphs"
+    caption: "Service tracked and verified in real time"
+  - asset: "@mobile-pay"
+    caption: "Payment lands the moment delivery confirms"
 
 impact:
-  - big: "$1.70"
-    caption: "average cost per verified visit"
-  - big: "22%"
-    caption: "cost reduction per visit at scale"
+- big: "$1.70"
+  caption: "average cost per verified visit"
+- big: "22%"
+  caption: "cost reduction per visit at scale"
 
 narration:
   generator: manual
@@ -77,14 +77,14 @@ narration:
   # the beat's start time. Word counts are tuned so each clip fits its
   # beat duration at ~150 wpm (with atrim as a safety net).
   by_beat:
-    hook:    "Pay for verified service delivery — not effort."
-    cycle:   "Frontline Workers learn, deliver, verify — and get paid the moment delivery confirms."
+    hook: "Pay for verified service delivery, never effort alone — that is the contract."
+    cycle: "Frontline Workers learn, deliver, verify — and get paid the moment delivery confirms."
     handoff: "Here's how that works for the Child Health Campaign."
-    scene:   "In Kenya, Frontline Workers deliver Vitamin A, deworming, and immunization — door to door."
+    scene: "In Kenya, Frontline Workers deliver Vitamin A, deworming, and immunization — door to door."
     problem: "Over one million visits already delivered — every one independently verified with photos and GPS, before payment is approved."
     product: "Local delivery organizations watch every visit on a live dashboard, in real time. Funders fund outcomes — not paperwork, not promises."
-    impact:  "A dollar seventy per verified visit. Costs dropping twenty-two percent as the program scales — proven across eight countries."
-    cta:     ""
+    impact: "A dollar seventy per verified visit. Costs dropping twenty-two percent as the program scales — proven across eight countries."
+    cta: ""
   # ElevenLabs synthesizes from this `script` — keep it semantically
   # close to the by_beat union but with natural sentence rhythm.
   script: |

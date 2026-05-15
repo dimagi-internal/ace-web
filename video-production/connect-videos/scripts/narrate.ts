@@ -4,26 +4,30 @@ import { parse, stringify } from "yaml";
 import path from "node:path";
 import { generateNarration } from "../src/lib/narration";
 import { loadProgramSpec } from "../src/lib/spec.node";
+import { resolveRun, specPath } from "../src/lib/runs.node";
 
-function parseArgs(): { program: string; durationSeconds: number; dryRun: boolean } {
+function parseArgs(): { program: string; run: string; durationSeconds: number; dryRun: boolean } {
   const args = process.argv.slice(2);
   const program = args.find((a) => a.startsWith("--program="))?.split("=")[1];
+  const run = args.find((a) => a.startsWith("--run="))?.split("=")[1] ?? "";
   const duration = args.find((a) => a.startsWith("--duration="))?.split("=")[1];
   const dryRun = args.includes("--dry-run");
   if (!program) {
-    console.error("Usage: npm run narrate -- --program=<slug> [--duration=37] [--dry-run]");
+    console.error("Usage: npm run narrate -- --program=<slug> [--run=<run-NNN>] [--duration=37] [--dry-run]");
     process.exit(2);
   }
   return {
     program,
+    run,
     durationSeconds: duration ? Number(duration) : 37,
     dryRun,
   };
 }
 
 async function main() {
-  const { program, durationSeconds, dryRun } = parseArgs();
-  const yamlPath = path.resolve("programs", `${program}.yaml`);
+  const { program, run, durationSeconds, dryRun } = parseArgs();
+  const runId = resolveRun(program, run, process.cwd());
+  const yamlPath = specPath(program, runId, process.cwd());
   const spec = loadProgramSpec(yamlPath);
   if (spec.narration.generator !== "anthropic") {
     console.error(

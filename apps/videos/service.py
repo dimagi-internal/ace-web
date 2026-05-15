@@ -1,22 +1,25 @@
-"""Filesystem + subprocess service layer for the clip-explorer port.
+"""Filesystem + subprocess service layer for the videos surface.
 
-The Node tsx project at ``video-production/connect-videos/`` is the
-source of truth: ``programs/<slug>.yaml`` declares each video's spec,
-``out/clip-explorer/<slug>/`` holds the generated HTML + media. Django
-reads through to those artifacts and mutates the YAML on edit.
+Storage layout (mirrors opps/runs in ace-web):
+
+    programs/<slug>/runs/run-001/spec.yaml       ← video spec
+    programs/<slug>/runs/run-001/output.mp4      ← muxed render
+    programs/<slug>/runs/run-001/explorer/       ← built explorer (index.html + media/)
+
+Each iteration is a folder snapshot. Editing a run mutates that run's
+spec.yaml; forking copies spec.yaml into the next ``run-NNN`` directory
+and starts fresh from there.
 
 YAML I/O uses ruamel.yaml so we round-trip with comments and structure
-preserved (matching the Node ``yaml.parseDocument`` behavior).
-
-Renders are fire-and-forget subprocess spawns. We track a busy flag in
-Redis (``videos:render:<slug>:busy``) with a TTL so a crashed render
-doesn't pin the indicator forever.
+preserved. Renders are fire-and-forget subprocess spawns; a Redis busy
+flag scoped to (slug, run_id) tracks in-flight work with a TTL.
 """
 from __future__ import annotations
 
 import datetime as dt
 import logging
 import re
+import shutil
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -44,21 +47,22 @@ def _get_redis() -> _redis_sync.Redis:
 
 
 # ---------------------------------------------------------------------------
-# Slug validation
+# Slug / run-id validation
 # ---------------------------------------------------------------------------
 
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_RUN_RE = re.compile(r"^run-(\d{3,})$")
 
 
 def is_valid_slug(slug: str) -> bool:
-    """Whitelist for program slugs.
-
-    Slugs flow into subprocess shell commands (``npm run … --program=<slug>``),
-    so they must be sanitised at the boundary. Lowercase + digits + hyphens
-    matches the existing ``programs/*.yaml`` filenames.
-    """
+    """Whitelist for program slugs. Lowercase + digits + hyphens."""
     return bool(_SLUG_RE.match(slug))
+
+
+def is_valid_run_id(run_id: str) -> bool:
+    """Whitelist for run ids (e.g. ``run-001``)."""
+    return bool(_RUN_RE.match(run_id))
 
 
 # ---------------------------------------------------------------------------
@@ -75,16 +79,81 @@ def _programs_dir() -> Path:
     return _root() / "programs"
 
 
-def program_yaml_path(slug: str) -> Path:
-    return _programs_dir() / f"{slug}.yaml"
+def program_dir(slug: str) -> Path:
+    return _programs_dir() / slug
 
 
-def explorer_dir(slug: str) -> Path:
-    return _root() / "out" / "clip-explorer" / slug
+def runs_dir(slug: str) -> Path:
+    return program_dir(slug) / "runs"
 
 
-def feedback_path(slug: str) -> Path:
-    return explorer_dir(slug) / "feedback.md"
+def run_dir(slug: str, run_id: str) -> Path:
+    return runs_dir(slug) / run_id
+
+
+def spec_path(slug: str, run_id: str) -> Path:
+    return run_dir(slug, run_id) / "spec.yaml"
+
+
+def output_path(slug: str, run_id: str) -> Path:
+    return run_dir(slug, run_id) / "output.mp4"
+
+
+def explorer_dir(slug: str, run_id: str) -> Path:
+    return run_dir(slug, run_id) / "explorer"
+
+
+def feedback_path(slug: str, run_id: str) -> Path:
+    return explorer_dir(slug, run_id) / "feedback.md"
+
+
+# ---------------------------------------------------------------------------
+# Runs discovery
+# ---------------------------------------------------------------------------
+
+
+def list_run_ids(slug: str) -> list[str]:
+    """Return all run ids for ``slug`` sorted ascending."""
+    rdir = runs_dir(slug)
+    if not rdir.exists():
+        return []
+    return sorted(
+        p.name for p in rdir.iterdir()
+        if p.is_dir() and _RUN_RE.match(p.name)
+    )
+
+
+def latest_run_id(slug: str) -> str | None:
+    ids = list_run_ids(slug)
+    return ids[-1] if ids else None
+
+
+def next_run_id(slug: str) -> str:
+    ids = list_run_ids(slug)
+    if not ids:
+        return "run-001"
+    last = ids[-1]
+    n = int(last.removeprefix("run-"))
+    return f"run-{n + 1:03d}"
+
+
+def copy_run(slug: str, from_run_id: str) -> str:
+    """Snapshot ``spec.yaml`` from ``from_run_id`` into a fresh
+    ``run-NNN`` and return the new run id. Both runs stay mutable
+    — this is "save-as", not "fork". Use it when you want to keep
+    the current run around as a known-good baseline before trying
+    something different in a new run.
+
+    Output + explorer start empty — re-render to populate them.
+    """
+    src = spec_path(slug, from_run_id)
+    if not src.exists():
+        raise FileNotFoundError(f"Source spec not found: {src}")
+    new_id = next_run_id(slug)
+    new_dir = run_dir(slug, new_id)
+    new_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, new_dir / "spec.yaml")
+    return new_id
 
 
 # ---------------------------------------------------------------------------
@@ -93,12 +162,7 @@ def feedback_path(slug: str) -> Path:
 
 
 def _yaml() -> YAML:
-    """Round-tripping YAML loader.
-
-    ``typ='rt'`` preserves comments, anchors, and structure on
-    write-back. We also widen the line so re-emitted scalars don't get
-    line-wrapped weirdly.
-    """
+    """Round-tripping YAML loader: preserves comments + structure."""
     y = YAML(typ="rt")
     y.preserve_quotes = True
     y.width = 4096
@@ -108,6 +172,7 @@ def _yaml() -> YAML:
 @dataclass(frozen=True)
 class ProgramRecord:
     slug: str
+    run_id: str
     workspace_slug: str | None
     raw: dict[str, Any]
     yaml_path: Path
@@ -143,12 +208,18 @@ class ProgramRecord:
 
     @property
     def has_explorer_build(self) -> bool:
-        return (explorer_dir(self.slug) / "index.html").exists()
+        return (explorer_dir(self.slug, self.run_id) / "index.html").exists()
+
+    @property
+    def has_output(self) -> bool:
+        return output_path(self.slug, self.run_id).exists()
 
 
-def load_program(slug: str) -> ProgramRecord | None:
-    """Load one program YAML by slug, or None if absent."""
-    path = program_yaml_path(slug)
+def load_program_run(slug: str, run_id: str) -> ProgramRecord | None:
+    """Load the spec.yaml for one specific run, or None if absent."""
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        return None
+    path = spec_path(slug, run_id)
     if not path.exists():
         return None
     with path.open("r", encoding="utf-8") as f:
@@ -158,27 +229,41 @@ def load_program(slug: str) -> ProgramRecord | None:
     ws = data.get("workspace")
     return ProgramRecord(
         slug=slug,
+        run_id=run_id,
         workspace_slug=str(ws) if ws else None,
         raw=dict(data),
         yaml_path=path,
     )
 
 
+def load_program(slug: str, run_id: str | None = None) -> ProgramRecord | None:
+    """Load a program — defaults to its latest run when run_id is None."""
+    if not is_valid_slug(slug):
+        return None
+    rid = run_id or latest_run_id(slug)
+    if rid is None:
+        return None
+    return load_program_run(slug, rid)
+
+
 def iter_programs() -> Iterable[ProgramRecord]:
-    """Yield every program YAML on disk (any workspace, no filter)."""
+    """Yield the latest run of every program directory on disk."""
     pdir = _programs_dir()
     if not pdir.exists():
         return
-    for path in sorted(pdir.glob("*.yaml")):
-        if path.name.startswith("_"):  # _defaults.yaml etc.
+    for entry in sorted(pdir.iterdir()):
+        if not entry.is_dir() or entry.name.startswith("_"):
             continue
-        rec = load_program(path.stem)
+        rid = latest_run_id(entry.name)
+        if rid is None:
+            continue
+        rec = load_program_run(entry.name, rid)
         if rec is not None:
             yield rec
 
 
 def list_programs_for_workspace(workspace_slug: str) -> list[ProgramRecord]:
-    """Return programs whose ``workspace:`` field matches ``workspace_slug``."""
+    """Return latest-run records visible to a workspace."""
     return [p for p in iter_programs() if p.workspace_slug == workspace_slug]
 
 
@@ -216,16 +301,14 @@ class EditResult:
     message: str
 
 
-def apply_edit(slug: str, body: dict[str, Any]) -> EditResult:
-    """Apply one of four ops to ``programs/<slug>.yaml``.
+def apply_edit(slug: str, run_id: str, body: dict[str, Any]) -> EditResult:
+    """Apply one of four ops to ``programs/<slug>/runs/<run_id>/spec.yaml``.
 
-    Mirrors ``video-production/connect-videos/scripts/explore.ts::applyEdit``
-    exactly. Returns an EditResult — callers translate to ProblemError
-    on failure.
+    Mirrors ``video-production/connect-videos/scripts/explore.ts::applyEdit``.
     """
-    path = program_yaml_path(slug)
+    path = spec_path(slug, run_id)
     if not path.exists():
-        return EditResult(False, f"Program {slug} not found")
+        return EditResult(False, f"Spec not found for {slug}/{run_id}")
 
     y = _yaml()
     with path.open("r", encoding="utf-8") as f:
@@ -318,94 +401,99 @@ def _save_yaml(y: YAML, path: Path, doc: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-_RENDER_BUSY_TTL_SECONDS = 60 * 60  # render shouldn't exceed an hour; clear stale flags
+_RENDER_BUSY_TTL_SECONDS = 60 * 60  # render shouldn't exceed an hour
 
 
-def _busy_key(slug: str) -> str:
-    return f"videos:render:{slug}:busy"
+def _busy_key(slug: str, run_id: str) -> str:
+    return f"videos:render:{slug}:{run_id}:busy"
 
 
-def _started_key(slug: str) -> str:
-    return f"videos:render:{slug}:started_at"
+def _started_key(slug: str, run_id: str) -> str:
+    return f"videos:render:{slug}:{run_id}:started_at"
 
 
-def trigger_rerender(slug: str, *, needs_hydrate: bool) -> bool:
-    """Spawn the appropriate npm chain in the background.
-
-    Returns True if a render was kicked off; False if one was already
-    busy (skip-duplicate).
-    """
-    if not is_valid_slug(slug):
-        raise ValueError(f"Invalid program slug: {slug!r}")
+def trigger_build_only(slug: str, run_id: str) -> bool:
+    """Spawn just `build-clip-explorer` (no render). Sub-second."""
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        raise ValueError(f"Invalid slug or run_id: {slug!r} / {run_id!r}")
     r = _get_redis()
-    # SETNX-like: only mark busy if not already busy.
-    acquired = r.set(_busy_key(slug), "1", nx=True, ex=_RENDER_BUSY_TTL_SECONDS)
+    acquired = r.set(_busy_key(slug, run_id), "1", nx=True, ex=_RENDER_BUSY_TTL_SECONDS)
     if not acquired:
-        log.info("videos.trigger_rerender: skipping; render already busy for %s", slug)
         return False
     now = dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
-    r.set(_started_key(slug), now, ex=_RENDER_BUSY_TTL_SECONDS)
-
-    cmd_parts = []
-    if needs_hydrate:
-        cmd_parts.append(f"npm run hydrate -- --program={slug}")
-    cmd_parts.append(f"npm run render -- --program={slug} --draft")
-    cmd_parts.append(f"npm run build-clip-explorer -- --program={slug}")
-    # We rely on the busy-flag TTL to clear itself; a stale flag for an
-    # hour is fine (it's UX hint, not correctness).
-    chain = " && ".join(cmd_parts)
-    log.info(
-        "videos.trigger_rerender: spawning chain for %s (needs_hydrate=%s)",
-        slug, needs_hydrate,
-    )
+    r.set(_started_key(slug, run_id), now, ex=_RENDER_BUSY_TTL_SECONDS)
+    chain = f"npm run build-clip-explorer -- --program={slug} --run={run_id}"
+    log.info("videos.trigger_build_only: spawning for %s/%s", slug, run_id)
     try:
-        subprocess.Popen(  # noqa: S602 — intentional shell wrapper; slug is validated upstream
+        subprocess.Popen(  # noqa: S602
             ["sh", "-c", chain],
             cwd=str(_root()),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,  # detach from Django
+            start_new_session=True,
         )
     except FileNotFoundError:
-        # Node toolchain isn't installed in this environment — clear flag and report.
-        r.delete(_busy_key(slug), _started_key(slug))
-        log.warning("videos.trigger_rerender: 'sh' not found, render not started for %s", slug)
+        r.delete(_busy_key(slug, run_id), _started_key(slug, run_id))
         return False
     return True
 
 
-def render_status(slug: str) -> dict[str, Any]:
+def trigger_rerender(slug: str, run_id: str, *, needs_hydrate: bool = False) -> bool:
+    """Run hydrate + render + build-clip-explorer in the background."""
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        raise ValueError(f"Invalid slug or run_id: {slug!r} / {run_id!r}")
     r = _get_redis()
-    busy = bool(r.get(_busy_key(slug)))
-    started = r.get(_started_key(slug))
+    acquired = r.set(_busy_key(slug, run_id), "1", nx=True, ex=_RENDER_BUSY_TTL_SECONDS)
+    if not acquired:
+        return False
+    now = dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
+    r.set(_started_key(slug, run_id), now, ex=_RENDER_BUSY_TTL_SECONDS)
+
+    parts = []
+    if needs_hydrate:
+        parts.append(f"npm run hydrate -- --program={slug}")
+    parts.append(f"npm run render -- --program={slug} --run={run_id} --draft")
+    parts.append(f"npm run build-clip-explorer -- --program={slug} --run={run_id}")
+    chain = " && ".join(parts)
+    log.info("videos.trigger_rerender: spawning for %s/%s (needs_hydrate=%s)", slug, run_id, needs_hydrate)
+    try:
+        subprocess.Popen(  # noqa: S602
+            ["sh", "-c", chain],
+            cwd=str(_root()),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except FileNotFoundError:
+        r.delete(_busy_key(slug, run_id), _started_key(slug, run_id))
+        return False
+    return True
+
+
+def render_status(slug: str, run_id: str) -> dict[str, Any]:
+    r = _get_redis()
+    busy = bool(r.get(_busy_key(slug, run_id)))
+    started = r.get(_started_key(slug, run_id))
     if isinstance(started, bytes):
         started = started.decode("utf-8")
-    return {"program_slug": slug, "busy": busy, "started_at": started}
+    return {"program_slug": slug, "run_id": run_id, "busy": busy, "started_at": started}
 
 
 # ---------------------------------------------------------------------------
-# Library parsing (mirror buildLibraryJson from explore.ts)
+# Library parsing
 # ---------------------------------------------------------------------------
 
 
-# Card-block matcher mirrors explore.ts::buildLibraryJson. The trailing
-# lookahead accepts ``\Z`` so the final card in a document (no following
-# sibling card and no trailing wrapper ``</div>``) still matches —
-# this makes the parser robust against minor template trims.
 _CARD_BLOCK_RE = re.compile(
     r'<div class="lib-card">([\s\S]*?)</div>\s*</div>(?=\s*(?:<div class="lib-card"|</div>|\Z))'
 )
 _ALIAS_RE = re.compile(r"<h3>@([^<]+)</h3>")
 _SRC_RE = re.compile(r'<video src="([^"]+)"')
 _META_RE = re.compile(r"<span>([\d.]+)s · ([\dx]+)</span>")
-# ``[^<]+`` already stops at the next ``<``; the trailing ``<`` literal
-# would force a follow-on character that may not exist when the captured
-# card block is truncated (lazy match) right after the alias text.
 _USED_IN_RE = re.compile(r"lib-tag used-in[^>]*>([^<]+)")
 
 
 def parse_library_html(html: str) -> list[dict[str, Any]]:
-    """Parse the generated library.html into structured entries."""
     entries: list[dict[str, Any]] = []
     for m in _CARD_BLOCK_RE.finditer(html):
         block = m.group(1)
@@ -429,40 +517,22 @@ def parse_library_html(html: str) -> list[dict[str, Any]]:
     return entries
 
 
-def load_library_entries(slug: str) -> list[dict[str, Any]]:
-    lib = explorer_dir(slug) / "library.html"
+def load_library_entries(slug: str, run_id: str) -> list[dict[str, Any]]:
+    lib = explorer_dir(slug, run_id) / "library.html"
     if not lib.exists():
         return []
     return parse_library_html(lib.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
-# Explorer HTML rewriting (root-absolute paths → workspace-prefixed)
+# Explorer HTML rewriting
 # ---------------------------------------------------------------------------
 
 
 def rewrite_explorer_html(html: str, *, prefix: str, csrf_cookie_name: str) -> str:
-    """Rewrite the generated HTML so it can be iframed under a Django URL prefix.
+    """Rewrite root-absolute paths to page-relative + inject CSRF + dark theme."""
+    _ = prefix
 
-    The Node-served version assumes it owns ``/`` — its fetches go to
-    ``/edit``, ``/feedback``, ``/library.json``, etc. We rewrite those
-    to be relative to the served page, so they resolve under the
-    workspace-scoped API URL.
-
-    We also inject a small fetch wrapper that adds the CSRF token from
-    the cookie (Ninja's session auth enforces CSRF on unsafe methods).
-
-    Args:
-        html: source HTML from out/clip-explorer/<slug>/{index,library}.html
-        prefix: not currently used — kept so callers can later switch to
-            absolute-with-prefix rewrites if iframe sandboxing forces it.
-        csrf_cookie_name: matches Django's CSRF_COOKIE_NAME for the tenant.
-    """
-    _ = prefix  # currently unused; kept for symmetry
-
-    # Convert path-absolute references to page-relative ones. The page is
-    # served as ``.../explorer.html`` so e.g. ``library.json`` resolves to
-    # ``.../library.json`` under the same Django prefix.
     rewrites = (
         ("fetch('/feedback'", "fetch('feedback'"),
         ("fetch(\"/feedback\"", "fetch(\"feedback\""),
@@ -478,7 +548,6 @@ def rewrite_explorer_html(html: str, *, prefix: str, csrf_cookie_name: str) -> s
     for old, new in rewrites:
         html = html.replace(old, new)
 
-    # Inject a fetch wrapper that forwards the CSRF token from cookie.
     wrapper = (
         "<script>(function(){"
         "var _f=window.fetch;"
@@ -496,4 +565,44 @@ def rewrite_explorer_html(html: str, *, prefix: str, csrf_cookie_name: str) -> s
         "};"
         "})();</script>"
     )
-    return html.replace("<head>", "<head>" + wrapper, 1)
+
+    theme = """
+<style id="ace-web-dark-theme">
+:root {
+  --paper: #0e0f12 !important;
+  --paper-2: #161821 !important;
+  --ink: #f3f4f6 !important;
+  --ink-2: #e5e7eb !important;
+  --ink-3: #cbd2dd !important;
+  --line: #262833 !important;
+  --rule: #353846 !important;
+  --indigo-soft: #1d2540 !important;
+  --sky-tint: #1a2030 !important;
+  --muted: #9ca3af !important;
+}
+html, body { background: #0e0f12; color: #e5e7eb; }
+.lib-card,
+.range-row,
+.nav-tabs a:not(.active),
+[data-trim],
+.card,
+.assignments,
+.beat,
+.narration-edit,
+.no-asset { background: #161821 !important; border-color: #262833 !important; color: #e5e7eb !important; }
+.lead { background: linear-gradient(120deg, #161821 0%, #1a2030 100%) !important; color: #e5e7eb !important; }
+.lib-meta code { background: #0e0f12 !important; color: #cbd2dd !important; }
+.lib-placeholder { background: #0e0f12 !important; color: #9ca3af !important; }
+input[type="text"], textarea, input[type="range"] { background: #0e0f12 !important; color: #e5e7eb !important; border-color: #262833 !important; }
+.range-row button.btn-save-range,
+.trim-save,
+.nav-tabs a.active { color: #fff !important; }
+.narration-edit-body { color: #f3f4f6 !important; }
+.trim-bar { background: linear-gradient(180deg, #0e0f12 0%, #161821 100%) !important; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #2a2c34; border-radius: 6px; }
+::-webkit-scrollbar-track { background: #0e0f12; }
+</style>
+"""
+
+    return html.replace("<head>", "<head>" + wrapper + theme, 1)

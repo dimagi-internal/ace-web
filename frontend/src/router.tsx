@@ -58,6 +58,10 @@ export const router = createBrowserRouter(
             { path: "sessions", element: <SessionsPage /> },
             { path: "videos", element: <VideosListPage /> },
             { path: "videos/:programSlug", element: <VideoExplorerPage /> },
+            {
+              path: "videos/:programSlug/runs/:runId",
+              element: <VideoExplorerPage />,
+            },
             { path: "chat", element: <ChatRedirectPage /> },
             { path: "chat/:slug", element: <ChatPage /> },
             { path: "chat/:slug/structure", element: <SessionStructurePage /> },
