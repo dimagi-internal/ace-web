@@ -5,6 +5,7 @@ import type { StructureSkillNode } from "../../api/types.ws";
 import { formatDuration, formatUsd } from "../../lib/format";
 import { ParallelCluster } from "./ParallelCluster";
 import { StatusIcon } from "./StatusIcon";
+import { StructureDirectTurnRow } from "./StructureDirectTurnRow";
 import { StructureToolRow } from "./StructureToolRow";
 
 interface Props {
@@ -57,6 +58,14 @@ export function StructureSkillRow({ node, depth }: Props) {
               return <ParallelCluster key={`pg-${i}`} group={child} depth={depth + 1} />;
             if (child.kind === "skill")
               return <StructureSkillRow key={`${child.name}-${i}`} node={child} depth={depth + 1} />;
+            if (child.kind === "direct_turn")
+              return (
+                <StructureDirectTurnRow
+                  key={`dt-${child.started_at ?? i}`}
+                  node={child}
+                  depth={depth + 1}
+                />
+              );
             return null;
           })
         : null}

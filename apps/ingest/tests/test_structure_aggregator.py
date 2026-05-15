@@ -9,10 +9,10 @@ def _events(filename="cost_session.jsonl"):
     return events
 
 
-def test_aggregate_returns_schema_v1_with_session_totals():
+def test_aggregate_returns_schema_v2_with_session_totals():
     from apps.ingest.structure_aggregator import aggregate
     tree = aggregate(_events())
-    assert tree["schema_version"] == 1
+    assert tree["schema_version"] == 2
     assert "session" in tree
     assert "phases" in tree
     assert "computed_at" in tree
@@ -66,8 +66,10 @@ def test_consecutive_same_turn_tools_form_parallel_group(tmp_path):
     assert {c["tool_use_id"] for c in group["children"]} == {"tA", "tB"}
 
 
-def test_tool_error_propagates_status_up_to_session(tmp_path):
-    """A tool with is_error → its phase and session status flip to 'error'."""
+def test_tool_error_stays_pinned_and_does_not_roll_up(tmp_path):
+    """A tool with is_error keeps `status: "error"` on its own row, but the
+    phase and session stay `"ok"`. A single tool blip should not paint a
+    whole transcript red."""
     from apps.ingest.parser import parse_session_file
     from apps.ingest.structure_aggregator import aggregate
 
@@ -83,7 +85,12 @@ def test_tool_error_propagates_status_up_to_session(tmp_path):
     )
     _session, events = parse_session_file(jsonl)
     tree = aggregate(events)
-    assert tree["session"]["status"] == "error"
+    assert tree["session"]["status"] == "ok"
+    phase = tree["phases"][0]
+    assert phase["status"] == "ok"
+    # The errored tool node still carries status=error so the UI can flag it.
+    tool_nodes = [c for c in phase["children"] if c["kind"] == "tool"]
+    assert tool_nodes and tool_nodes[0]["status"] == "error"
 
 
 def test_nested_skill_dispatch_marked_is_subagent(tmp_path):
@@ -310,6 +317,17 @@ def test_orchestrator_thinking_attributed_to_current_phase(tmp_path, monkeypatch
     assert orch_rows[0]["tokens"]["input_tokens"] == 100000
     assert orch_rows[0]["tokens"]["output_tokens"] == 5000
     assert orch_rows[0]["estimated_cost_usd"] > 0
+    # Each orchestrator turn is also surfaced as a `direct_turn` child so the
+    # user can drill into where the spend went.
+    children = orch_rows[0]["children"]
+    assert len(children) == 1
+    turn = children[0]
+    assert turn["kind"] == "direct_turn"
+    assert turn["tokens"]["input_tokens"] == 100000
+    assert turn["tokens"]["output_tokens"] == 5000
+    assert turn["text_preview"] == "thinking after the dispatch"
+    assert turn["model"] == "claude-sonnet-4-6"
+    assert turn["started_at"] is not None
 
 
 def test_orchestrator_thinking_before_any_dispatch_lands_in_orchestration(tmp_path):

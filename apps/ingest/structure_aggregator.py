@@ -7,7 +7,6 @@ Pure: no Django, no IO. Tested against fixture-derived event lists.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -22,7 +21,7 @@ from apps.ingest._common import (
 from apps.ingest.parser import CostEvent
 from apps.ingest.pricing import compute_cost
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _tool_label(tool_name: str, tool_input: dict | None) -> str:
@@ -58,19 +57,6 @@ def _find_tool_node(nodes: list[dict], tool_use_id: str | None) -> dict | None:
                 if child.get("tool_use_id") == tool_use_id:
                     return child
     return None
-
-
-def _iter_descendants(nodes: Iterable[dict]) -> Iterable[dict]:
-    """Yield every descendant node (used for status propagation).
-
-    Uniformly recursive across all wrapper kinds so adding new container
-    kinds in the future doesn't silently break error propagation.
-    """
-    for node in nodes:
-        yield node
-        children = node.get("children")
-        if children:
-            yield from _iter_descendants(children)
 
 
 @dataclass
@@ -132,6 +118,10 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     phase_orch_tokens: dict[str, dict[str, int]] = {}
     phase_orch_first_ts: dict[str, datetime] = {}
     phase_orch_last_ts: dict[str, datetime] = {}
+    # Per-turn rows for the "(direct turns)" synthetic skill, so the user can
+    # drill into orchestrator spend instead of staring at a single rolled-up
+    # cost. Order matters — preserved in emit.
+    phase_orch_turns: dict[str, list[dict[str, Any]]] = {}
 
     def _ensure_phase(name: str) -> dict[str, Any]:
         if name not in phase_buckets:
@@ -264,6 +254,19 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     if bucket_key not in phase_orch_first_ts:
                         phase_orch_first_ts[bucket_key] = event.timestamp
                     phase_orch_last_ts[bucket_key] = event.timestamp
+                turn_tokens = empty_tokens()
+                add_usage(turn_tokens, event.usage)
+                phase_orch_turns.setdefault(bucket_key, []).append({
+                    "kind": "direct_turn",
+                    "started_at": (
+                        event.timestamp.isoformat() if event.timestamp else None
+                    ),
+                    "model": event.model,
+                    "estimated_cost_usd": round(cost, 6) if cost is not None else 0.0,
+                    "cost_is_partial": cost is None,
+                    "tokens": turn_tokens,
+                    "text_preview": event.text_preview,
+                })
             continue
 
         if event.kind == "tool_use":
@@ -345,13 +348,11 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 frame = open_frames.pop(match_idx)
                 if event.timestamp is not None:
                     frame.last_ts = event.timestamp
+                # The frame itself is "error" only if its own closing
+                # tool_result is_error — tool errors of its children don't
+                # promote up. (See the comment in `aggregate()` rollup.)
                 if event.is_error:
                     frame.status = "error"
-                # Promote child errors up
-                for desc in _iter_descendants(frame.children):
-                    if desc.get("status") == "error":
-                        frame.status = "error"
-                        break
                 skill_node = {
                     "kind": "skill",
                     "name": frame.skill_name,
@@ -437,7 +438,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             "cost_is_partial": phase_orch_partial.get(bucket_key, False),
             "tokens": tokens,
             "status": "ok",
-            "children": [],
+            "children": phase_orch_turns.get(bucket_key, []),
         }
         bucket["children"].append(synthetic_skill)
 
@@ -452,10 +453,13 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         bucket.pop("_last_parallel_group", None)
         phases.append(bucket)
 
+    # Tool-level errors stay pinned to the tool row that caused them; we do not
+    # roll them up to skill / phase / session because a single tool failure
+    # rarely means "this skill failed" (most tool errors are caught and worked
+    # around). Incomplete still rolls up — a frame that never closed is a real
+    # lifecycle signal, not a transient tool blip.
     session_status = "ok"
-    if any(p["status"] == "error" for p in phases):
-        session_status = "error"
-    elif any(p["status"] == "incomplete" for p in phases):
+    if any(p["status"] == "incomplete" for p in phases):
         session_status = "incomplete"
 
     return {
@@ -516,7 +520,11 @@ def _phase_wall_span(bucket: dict) -> int:
 
 
 def _roll_phase_totals(bucket: dict) -> None:
-    """Sum cost/tokens from a phase's direct children; wall is a span."""
+    """Sum cost/tokens from a phase's direct children; wall is a span.
+
+    Status rolls up `incomplete` only — see the comment in `aggregate()` for
+    why tool errors stay pinned to the tool row.
+    """
     cost = 0.0
     cost_partial = False
     tokens = empty_tokens()
@@ -527,17 +535,8 @@ def _roll_phase_totals(bucket: dict) -> None:
             cost_partial = cost_partial or child.get("cost_is_partial", False)
             for k in tokens:
                 tokens[k] += child.get("tokens", {}).get(k, 0)
-            if child.get("status") == "error":
-                status = "error"
-            elif child.get("status") == "incomplete" and status != "error":
+            if child.get("status") == "incomplete":
                 status = "incomplete"
-        elif child["kind"] == "parallel_group":
-            for sub in child["children"]:
-                if sub.get("status") == "error":
-                    status = "error"
-        elif child["kind"] == "tool":
-            if child.get("status") == "error":
-                status = "error"
     bucket["wall_time_seconds"] = _phase_wall_span(bucket)
     bucket["estimated_cost_usd"] = round(cost, 6)
     bucket["cost_is_partial"] = cost_partial

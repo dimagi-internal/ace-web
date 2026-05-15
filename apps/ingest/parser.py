@@ -57,6 +57,11 @@ class CostEvent:
     is_error: bool = False
     content_preview: str | None = None
 
+    # assistant_turn fields (continued): first 200 chars of concatenated text
+    # blocks. Powers the per-turn expander under "Direct turns (no skill)"
+    # so orchestrator spend is legible (not just a single rolled-up row).
+    text_preview: str | None = None
+
 
 def _parse_ts(value: Any) -> datetime | None:
     if not isinstance(value, str):
@@ -103,6 +108,11 @@ def _extract_cost_events(lines: list[str]) -> list[CostEvent]:
             # plus one tool_use event per tool_use block (carries the skill name).
             has_text = any(isinstance(b, dict) and b.get("type") == "text" for b in blocks)
             tool_blocks = [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_use"]
+            text_concat = "".join(
+                b.get("text", "") for b in blocks
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+            text_preview = text_concat[:200] if text_concat else None
 
             if has_text or usage:
                 events.append(CostEvent(
@@ -113,6 +123,7 @@ def _extract_cost_events(lines: list[str]) -> list[CostEvent]:
                     is_sidechain=is_sidechain,
                     model=model,
                     usage=usage,
+                    text_preview=text_preview,
                 ))
             for block in tool_blocks:
                 events.append(CostEvent(
