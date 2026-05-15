@@ -8,5 +8,12 @@ class SlackConfig(AppConfig):
     verbose_name = "Slack integration"
 
     def ready(self):
-        # Dispatcher worker spawn is deferred until Task 13.
-        pass
+        # Skip during tests and migrate to avoid spurious worker spawns.
+        import os
+        import sys
+        if os.environ.get("DJANGO_SLACK_DISABLE_WORKER") == "1":
+            return
+        if "pytest" in sys.modules or "test" in sys.argv or "migrate" in sys.argv:
+            return
+        from .dispatcher import start_worker
+        start_worker()

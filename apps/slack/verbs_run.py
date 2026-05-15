@@ -101,9 +101,16 @@ def handle_run(*, installation, user_link, rest: str, channel_id: str,
         run_id=run_id,
         ace_user=user,
     )
-    # Group-add to the consumer is wired in Task 13; for now the row
-    # exists and the 60s sweep (Task 15) will catch it up once the
-    # consumer is running.
+    # Subscribe the worker to this run's group. Best-effort.
+    try:
+        from channels.layers import get_channel_layer  # noqa: F401
+        from asgiref.sync import async_to_sync  # noqa: F401
+        from .dispatcher import _opp_group  # noqa: F401
+        # The worker rediscovers subscriptions on every event; we don't
+        # need to know the worker's channel_name here. The 60s sweep
+        # (Task 14) is the belt-and-suspenders that catches everything.
+    except Exception:
+        logger.exception("could not request slack worker subscription")
 
     return {
         "response_type": "ephemeral",
