@@ -7,9 +7,9 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
-from apps.videos import cache as cache_mod
 from apps.videos import drive as drive_mod
 from apps.videos import service as service_mod
+from apps.videos.library import sync as lib_sync
 from apps.workspaces.models import Workspace, WorkspaceMembership
 
 User = get_user_model()
@@ -33,9 +33,6 @@ def member_client(db, client, fake_drive):
     user = User.objects.create_user(email="member@example.com")
     WorkspaceMembership.objects.create(workspace=workspace, user=user, role="editor")
     client.force_login(user)
-    # Library cache leaks across tests within a process — clear for isolation.
-    cache_mod.invalidate_lib_video(workspace.slug)
-    cache_mod.invalidate_lib_audio(workspace.slug)
     return client, workspace
 
 
@@ -87,6 +84,7 @@ def _seed_audio_lib(workspace, fake_drive_client):
 def test_get_video_library_returns_grouped_subfolders(member_client, fake_drive):
     client, workspace = member_client
     _seed_video_lib(workspace, fake_drive)
+    lib_sync.sync_import_video(workspace)
     resp = client.get(f"/api/w/{workspace.slug}/videos/library/video")
     assert resp.status_code == 200, resp.content
     body = resp.json()
@@ -102,6 +100,7 @@ def test_get_video_library_returns_grouped_subfolders(member_client, fake_drive)
 def test_get_audio_library_flat_list(member_client, fake_drive):
     client, workspace = member_client
     _seed_audio_lib(workspace, fake_drive)
+    lib_sync.sync_import_audio(workspace)
     resp = client.get(f"/api/w/{workspace.slug}/videos/library/audio")
     assert resp.status_code == 200, resp.content
     body = resp.json()
