@@ -354,8 +354,7 @@ def get_feedback(
 ) -> FeedbackLogOut:
     workspace = resolve_workspace_for_member(request, workspace_slug)
     _require_run(workspace, program_slug, run_id)
-    path = service.feedback_path(program_slug, run_id)
-    markdown = path.read_text(encoding="utf-8") if path.exists() else ""
+    markdown = service.read_feedback(workspace, program_slug, run_id)
     return FeedbackLogOut(program_slug=program_slug, run_id=run_id, markdown=markdown)
 
 
@@ -379,10 +378,7 @@ def post_feedback(
     scope = f"beat:{body.beatId}" if body.scope == "beat" and body.beatId else "global"
     time_bit = f" (video t={body.timestampSec:.1f}s)" if body.timestampSec is not None else ""
     line = f"\n## [{ts}] {scope}{time_bit}\n\n{body.note}\n"
-    path = service.feedback_path(program_slug, run_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(line)
+    service.append_feedback(workspace, program_slug, run_id, line)
     return FeedbackPostOut(ok=True, timestamp=ts)
 
 
