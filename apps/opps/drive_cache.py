@@ -175,6 +175,21 @@ class CachedDriveClient(DriveClient):
         self._inner.update_file(file_id, content, mime_type)
         _invalidate_file(file_id, mime_types=(mime_type,))
 
+    def upload_binary(
+        self, parent_id: str, name: str, content: bytes, mime_type: str
+    ) -> str:
+        result = self._inner.upload_binary(parent_id, name, content, mime_type)
+        _invalidate_folder_listings(parent_id)
+        return result
+
+    def update_binary(self, file_id: str, content: bytes, mime_type: str) -> None:
+        self._inner.update_binary(file_id, content, mime_type)
+        _invalidate_file(file_id, mime_types=(mime_type,))
+
+    def get_binary(self, file_id: str) -> bytes:
+        # Binary content is large and per-file unique; no caching layer.
+        return self._inner.get_binary(file_id)
+
     def copy_file(
         self, file_id: str, new_parent_id: str, new_name: str | None = None
     ) -> str:

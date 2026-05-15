@@ -40,6 +40,12 @@ RUNS_FOLDER = "runs"
 SPEC_FILENAME = "spec.yaml"
 YAML_MIME = "application/x-yaml"
 
+# Subfolders under existing_content/. Local layout mirrors `assets/<subdir>/`
+# under video-production/connect-videos/.
+EXISTING_CONTENT_AUDIO = "audio"
+EXISTING_CONTENT_SHARED = "shared"
+EXISTING_CONTENT_SUBDIRS = (EXISTING_CONTENT_AUDIO, EXISTING_CONTENT_SHARED)
+
 _RUN_RE = re.compile(r"^run-(\d{3,})$")
 
 
@@ -228,6 +234,94 @@ def next_run_id(layout: DriveLayout, client: DriveClient, program_slug: str) -> 
         return "run-001"
     n = int(ids[-1].removeprefix("run-"))
     return f"run-{n + 1:03d}"
+
+
+# ---------------------------------------------------------------------------
+# existing_content/ — shared binary assets (audio cache + music bed)
+# ---------------------------------------------------------------------------
+
+
+def existing_content_folder_id(
+    layout: DriveLayout, client: DriveClient,
+    subdir: str | None = None, *, create: bool = False,
+) -> str | None:
+    """Return the Drive folder id for `videos/existing_content/` or one
+    of its subdirs (audio/, shared/). Pass create=True to materialize
+    on first use."""
+    if subdir is not None and subdir not in EXISTING_CONTENT_SUBDIRS:
+        raise ValueError(
+            f"Unknown existing_content subdir: {subdir}; "
+            f"expected one of {EXISTING_CONTENT_SUBDIRS}"
+        )
+    existing = _find_child(client, layout.videos_folder_id, EXISTING_CONTENT)
+    if existing is None or existing.mime_type != "application/vnd.google-apps.folder":
+        if not create:
+            return None
+        root_id = client.create_folder(layout.videos_folder_id, EXISTING_CONTENT)
+    else:
+        root_id = existing.id
+    if subdir is None:
+        return root_id
+    sub = _find_child(client, root_id, subdir)
+    if sub is None or sub.mime_type != "application/vnd.google-apps.folder":
+        if not create:
+            return None
+        return client.create_folder(root_id, subdir)
+    return sub.id
+
+
+def list_existing_content(
+    layout: DriveLayout, client: DriveClient, subdir: str,
+) -> list[DriveFile]:
+    """List files in `videos/existing_content/<subdir>/`. Excludes
+    folders. Empty list if the folder doesn't exist yet."""
+    folder_id = existing_content_folder_id(layout, client, subdir)
+    if folder_id is None:
+        return []
+    return [
+        f for f in client.list_folder(folder_id)
+        if f.mime_type != "application/vnd.google-apps.folder"
+    ]
+
+
+def find_existing_content_file(
+    layout: DriveLayout, client: DriveClient, subdir: str, filename: str,
+) -> DriveFile | None:
+    """Look for one file by name. None if not found."""
+    folder_id = existing_content_folder_id(layout, client, subdir)
+    if folder_id is None:
+        return None
+    return _find_child(client, folder_id, filename)
+
+
+def upload_existing_content(
+    layout: DriveLayout, client: DriveClient,
+    subdir: str, filename: str, content: bytes, mime_type: str,
+) -> str:
+    """Create-or-replace `videos/existing_content/<subdir>/<filename>`.
+    Returns the file id. Materializes parent folders if needed.
+
+    Idempotent on byte-identical content (still issues an update call,
+    but the content is unchanged). For size-based skip behavior the
+    caller should consult ``find_existing_content_file`` first.
+    """
+    folder_id = existing_content_folder_id(layout, client, subdir, create=True)
+    assert folder_id is not None
+    existing = _find_child(client, folder_id, filename)
+    if existing is not None:
+        client.update_binary(existing.id, content, mime_type)
+        return existing.id
+    return client.upload_binary(folder_id, filename, content, mime_type)
+
+
+def read_existing_content(
+    layout: DriveLayout, client: DriveClient, subdir: str, filename: str,
+) -> bytes | None:
+    """Fetch the raw bytes of one file. None if absent."""
+    meta = find_existing_content_file(layout, client, subdir, filename)
+    if meta is None:
+        return None
+    return client.get_binary(meta.id)
 
 
 # ---------------------------------------------------------------------------

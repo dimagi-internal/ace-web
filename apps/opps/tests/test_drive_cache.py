@@ -84,6 +84,15 @@ class _FakeDriveClient(DriveClient):
     def update_file(self, file_id, content, mime_type):
         pass
 
+    def upload_binary(self, parent_id, name, content, mime_type):
+        return f"new-{name}"
+
+    def update_binary(self, file_id, content, mime_type):
+        pass
+
+    def get_binary(self, file_id):
+        raise NotImplementedError
+
     def copy_file(self, file_id, new_parent_id, new_name=None):
         return f"copy-{file_id}"
 

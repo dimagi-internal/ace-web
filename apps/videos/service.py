@@ -496,6 +496,108 @@ def apply_edit(workspace: Workspace, slug: str, run_id: str, body: dict[str, Any
 
 
 # ---------------------------------------------------------------------------
+# existing_content/ — shared binary assets (audio cache + music bed)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExistingContentItem:
+    """One file under `videos/existing_content/<subdir>/`."""
+    subdir: str
+    filename: str
+    size_bytes: int
+    drive_id: str
+    modified_time: str | None = None
+
+
+def list_existing_content(
+    workspace: Workspace, subdir: str,
+) -> list[ExistingContentItem]:
+    """Enumerate files in `videos/existing_content/<subdir>/`. Used by
+    the migration command to skip already-uploaded entries and by the
+    render-time hydrator to know what to pull down."""
+    if subdir not in drive.EXISTING_CONTENT_SUBDIRS:
+        raise ValueError(
+            f"Unknown existing_content subdir: {subdir}; "
+            f"expected one of {drive.EXISTING_CONTENT_SUBDIRS}"
+        )
+    layout, client = layout_for(workspace)
+    files = drive.list_existing_content(layout, client, subdir)
+    return [
+        ExistingContentItem(
+            subdir=subdir, filename=f.name,
+            size_bytes=f.size_bytes or 0,
+            drive_id=f.id,
+            modified_time=f.modified_time,
+        )
+        for f in files
+    ]
+
+
+def upload_existing_content(
+    workspace: Workspace, subdir: str, filename: str,
+    content: bytes, mime_type: str,
+) -> str:
+    """Idempotent upload. Returns the Drive file id."""
+    if subdir not in drive.EXISTING_CONTENT_SUBDIRS:
+        raise ValueError(
+            f"Unknown existing_content subdir: {subdir}; "
+            f"expected one of {drive.EXISTING_CONTENT_SUBDIRS}"
+        )
+    if "/" in filename or filename.startswith(".") or not filename:
+        raise ValueError(f"Invalid filename: {filename!r}")
+    layout, client = layout_for(workspace)
+    return drive.upload_existing_content(
+        layout, client, subdir, filename, content, mime_type,
+    )
+
+
+def read_existing_content(
+    workspace: Workspace, subdir: str, filename: str,
+) -> bytes | None:
+    if subdir not in drive.EXISTING_CONTENT_SUBDIRS:
+        return None
+    layout, client = layout_for(workspace)
+    return drive.read_existing_content(layout, client, subdir, filename)
+
+
+def _local_existing_content_dir(subdir: str) -> Path:
+    """Local mirror of Drive's `existing_content/<subdir>/`. Matches the
+    Node toolchain's expected layout: assets/audio/ and assets/shared/."""
+    return _root() / "assets" / subdir
+
+
+def stage_existing_content_locally(workspace: Workspace) -> dict[str, int]:
+    """Pull `existing_content/{audio,shared}/*` from Drive down to
+    `<videos_root>/assets/{audio,shared}/`.
+
+    Skip-if-present: if a local file already exists at the target path
+    with a matching byte size, no download. This keeps renders fast on
+    warm scratch while still pulling new audio cache entries the moment
+    they're uploaded.
+
+    Returns a per-subdir count of files downloaded (skipped files are
+    not counted)."""
+    counts: dict[str, int] = {}
+    for subdir in drive.EXISTING_CONTENT_SUBDIRS:
+        local_dir = _local_existing_content_dir(subdir)
+        local_dir.mkdir(parents=True, exist_ok=True)
+        items = list_existing_content(workspace, subdir)
+        downloaded = 0
+        for item in items:
+            target = local_dir / item.filename
+            if target.exists() and target.stat().st_size == item.size_bytes:
+                continue
+            payload = read_existing_content(workspace, subdir, item.filename)
+            if payload is None:
+                continue
+            target.write_bytes(payload)
+            downloaded += 1
+        counts[subdir] = downloaded
+    return counts
+
+
+# ---------------------------------------------------------------------------
 # Render triggers — stage Drive → local, then npm
 # ---------------------------------------------------------------------------
 
@@ -530,6 +632,7 @@ def trigger_build_only(workspace: Workspace, slug: str, run_id: str) -> bool:
     r.set(_started_key(slug, run_id), now, ex=_RENDER_BUSY_TTL_SECONDS)
     try:
         _stage_spec(workspace, slug, run_id)
+        stage_existing_content_locally(workspace)
     except Exception as e:
         log.warning("videos.trigger_build_only: staging failed for %s/%s: %s", slug, run_id, e)
         r.delete(_busy_key(slug, run_id), _started_key(slug, run_id))
@@ -563,6 +666,7 @@ def trigger_rerender(workspace: Workspace, slug: str, run_id: str, *, needs_hydr
     r.set(_started_key(slug, run_id), now, ex=_RENDER_BUSY_TTL_SECONDS)
     try:
         _stage_spec(workspace, slug, run_id)
+        stage_existing_content_locally(workspace)
     except Exception as e:
         log.warning("videos.trigger_rerender: staging failed for %s/%s: %s", slug, run_id, e)
         r.delete(_busy_key(slug, run_id), _started_key(slug, run_id))
