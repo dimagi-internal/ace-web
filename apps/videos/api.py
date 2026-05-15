@@ -30,6 +30,7 @@ from apps.api.deps import resolve_workspace_for_member
 from apps.api.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
 
 from . import service, templates
+from .library import reader as library_reader
 from .schemas import (
     BuildTriggerIn,
     BuildTriggerOut,
@@ -45,6 +46,11 @@ from .schemas import (
     FeedbackPostOut,
     LibraryEntryOut,
     LibraryOut,
+    MediaLibraryAudioItemOut,
+    MediaLibraryAudioOut,
+    MediaLibraryVideoItemOut,
+    MediaLibraryVideoOut,
+    MediaLibraryVideoSubfolderOut,
     ProgramCardOut,
     ProgramDetailOut,
     RenderLogOut,
@@ -148,6 +154,62 @@ def get_video_template(
         skeleton_yaml=bundle.skeleton_yaml,
         prompt_md=bundle.prompt_md,
     )
+
+
+# ---------------------------------------------------------------------------
+# Media library — MCP-exposed so the video-spec generator can browse it.
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/library/video",
+    response=MediaLibraryVideoOut,
+    summary="List curated video library items grouped by subfolder",
+    openapi_extra={"x-mcp-expose": True},
+)
+def list_media_library_video(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+) -> MediaLibraryVideoOut:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    raw = library_reader.list_video_library(workspace)
+    return MediaLibraryVideoOut(subfolders=[
+        MediaLibraryVideoSubfolderOut(
+            subfolder=s.subfolder,
+            items=[
+                MediaLibraryVideoItemOut(
+                    ref=i.ref, drive_id=i.drive_id, drive_url=i.drive_url,
+                    filename=i.filename, name=i.name, description=i.description,
+                    tags=i.tags, status=i.status,
+                )
+                for i in s.items
+            ],
+        )
+        for s in raw.subfolders
+    ])
+
+
+@router.get(
+    "/library/audio",
+    response=MediaLibraryAudioOut,
+    summary="List the audio library (TTS clips with voice + text metadata)",
+    openapi_extra={"x-mcp-expose": True},
+)
+def list_media_library_audio(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+) -> MediaLibraryAudioOut:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    raw = library_reader.list_audio_library(workspace)
+    return MediaLibraryAudioOut(items=[
+        MediaLibraryAudioItemOut(
+            hash=i.hash, drive_id=i.drive_id, drive_url=i.drive_url,
+            voice_id=i.voice_id, model=i.model, text=i.text,
+            duration_sec=i.duration_sec, generated_at=i.generated_at,
+            status=i.status,
+        )
+        for i in raw.items
+    ])
 
 
 # ---------------------------------------------------------------------------
