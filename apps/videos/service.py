@@ -753,32 +753,76 @@ def _local_existing_content_dir(subdir: str) -> Path:
 
 
 def stage_existing_content_locally(workspace: Workspace) -> dict[str, int]:
-    """Pull `existing_content/{audio,shared}/*` from Drive down to
+    """Pull audio + shared assets from Drive into local
     `<videos_root>/assets/{audio,shared}/`.
 
-    Skip-if-present: if a local file already exists at the target path
-    with a matching byte size, no download. This keeps renders fast on
-    warm scratch while still pulling new audio cache entries the moment
-    they're uploaded.
+    Source-of-truth precedence per asset type:
 
-    Returns a per-subdir count of files downloaded (skipped files are
-    not counted)."""
-    counts: dict[str, int] = {}
-    for subdir in drive.EXISTING_CONTENT_SUBDIRS:
-        local_dir = _local_existing_content_dir(subdir)
-        local_dir.mkdir(parents=True, exist_ok=True)
-        items = list_existing_content(workspace, subdir)
-        downloaded = 0
-        for item in items:
-            target = local_dir / item.filename
-            if target.exists() and target.stat().st_size == item.size_bytes:
-                continue
-            payload = read_existing_content(workspace, subdir, item.filename)
-            if payload is None:
-                continue
-            target.write_bytes(payload)
-            downloaded += 1
-        counts[subdir] = downloaded
+      audio:  videos/library/audio/   (new)  >>  videos/existing_content/audio/   (legacy)
+      shared: videos/shared/          (new)  >>  videos/existing_content/shared/  (legacy)
+
+    The legacy fallback is kept through Phase B of the relocation
+    rollout; remove it in Phase C once the Drive move has run on every
+    workspace and the dual-write code has been retired.
+
+    Skip-if-present (by exact byte size) keeps warm scratch fast.
+
+    Returns a per-bucket count of files actually downloaded.
+    """
+    counts: dict[str, int] = {"audio": 0, "shared": 0}
+    layout, client = layout_for(workspace)
+
+    # ---- audio (mp3s + sidecars) -----------------------------------------
+    local_audio = _root() / "assets" / "audio"
+    local_audio.mkdir(parents=True, exist_ok=True)
+
+    audio_drive_files = drive.list_audio_library_files(layout, client)
+    seen_audio: set[str] = set()
+    for f in audio_drive_files:
+        seen_audio.add(f.name)
+        target = local_audio / f.name
+        if target.exists() and target.stat().st_size == (f.size_bytes or 0):
+            continue
+        payload = client.get_binary(f.id)
+        target.write_bytes(payload)
+        counts["audio"] += 1
+
+    # Legacy fallback: only pull names the new path didn't already cover.
+    legacy_audio = drive.list_existing_content(layout, client, drive.EXISTING_CONTENT_AUDIO)
+    for f in legacy_audio:
+        if f.name in seen_audio:
+            continue
+        target = local_audio / f.name
+        if target.exists() and target.stat().st_size == (f.size_bytes or 0):
+            continue
+        payload = client.get_binary(f.id)
+        target.write_bytes(payload)
+        counts["audio"] += 1
+
+    # ---- shared (music bed + brand assets) -------------------------------
+    local_shared = _root() / "assets" / "shared"
+    local_shared.mkdir(parents=True, exist_ok=True)
+
+    shared_drive_files = drive.list_shared_top_files(layout, client)
+    seen_shared: set[str] = set()
+    for f in shared_drive_files:
+        seen_shared.add(f.name)
+        target = local_shared / f.name
+        if target.exists() and target.stat().st_size == (f.size_bytes or 0):
+            continue
+        target.write_bytes(client.get_binary(f.id))
+        counts["shared"] += 1
+
+    legacy_shared = drive.list_existing_content(layout, client, drive.EXISTING_CONTENT_SHARED)
+    for f in legacy_shared:
+        if f.name in seen_shared:
+            continue
+        target = local_shared / f.name
+        if target.exists() and target.stat().st_size == (f.size_bytes or 0):
+            continue
+        target.write_bytes(client.get_binary(f.id))
+        counts["shared"] += 1
+
     return counts
 
 

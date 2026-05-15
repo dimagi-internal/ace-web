@@ -197,6 +197,31 @@ def test_stage_creates_empty_subdirs_when_drive_is_empty(workspace, fake_drive, 
 # ---------------------------------------------------------------------------
 
 
+def test_stage_existing_content_reads_from_library_audio_then_shared(workspace, fake_drive, videos_root):
+    """When new library/audio/ has files, they land in local assets/audio/.
+    When videos/shared/ has files, they land in local assets/shared/."""
+    layout = service.layout_for(workspace)[0]
+
+    # Seed new layout: one file in library/audio/ and one in shared/.
+    drive.upload_library_file(
+        layout, fake_drive.client, drive.LIBRARY_AUDIO,
+        "deadbeef.mp3", b"audio-bytes", "audio/mpeg",
+    )
+    drive.upload_library_file(
+        layout, fake_drive.client, drive.LIBRARY_AUDIO,
+        "deadbeef.json", b'{"voice_id":"v","model":"m","text":"t","duration_sec":null,"generated_at":"2026-05-15T00:00:00Z"}',
+        "application/json",
+    )
+    # Music bed in the new shared/ location.
+    shared_id = drive.shared_top_folder_id(layout, fake_drive.client, create=True)
+    fake_drive.client.upload_binary(shared_id, "music-bed.mp3", b"music", "audio/mpeg")
+
+    counts = service.stage_existing_content_locally(workspace)
+    # audio + shared both downloaded
+    assert counts["audio"] >= 1
+    assert counts["shared"] >= 1
+
+
 def test_trigger_rerender_stages_existing_content(workspace, fake_drive, videos_root):
     """Bumping a render should pull all existing_content/ down so the
     Node toolchain finds audio + music bed on disk."""
