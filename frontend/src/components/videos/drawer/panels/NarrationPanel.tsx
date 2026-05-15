@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBeatEditor } from "../../BeatEditorContext";
 
 interface Props {
@@ -24,6 +24,19 @@ export function NarrationPanel({ beatId, onCommit, onCancel }: Props) {
   const beatSeconds = beat?.seconds ?? 0;
   const overflow = beatSeconds > 0 && estSec > beatSeconds + 0.3;
 
+  // Auto-grow textarea — content-driven height, clamped to [min, max]
+  // line-height windows so short text doesn't waste space and long text
+  // stays readable without an internal scroll.
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const max = 480;  // ~24 lines
+    const min = 96;   // ~5 lines
+    ta.style.height = Math.max(min, Math.min(max, ta.scrollHeight)) + "px";
+  }, [text]);
+
   const commit = () => {
     if (!dirty) return;
     dispatch({ type: "APPEND_OP", op: { op: "set-narration", beatId, text } });
@@ -44,11 +57,11 @@ export function NarrationPanel({ beatId, onCommit, onCancel }: Props) {
         model <code className="rounded bg-muted px-1">{model}</code>
       </div>
       <textarea
+        ref={taRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
-        rows={8}
-        className="w-full rounded border bg-background p-2 font-sans text-sm"
+        className="w-full resize-none rounded border bg-background p-2 font-sans text-sm leading-relaxed"
       />
       <div className={overflow ? "text-xs font-medium text-amber-700" : "text-xs text-muted-foreground"}>
         {wordCount} word{wordCount === 1 ? "" : "s"} · ~{estSec}s read

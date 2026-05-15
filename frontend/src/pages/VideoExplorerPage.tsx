@@ -269,6 +269,7 @@ export default function VideoExplorerPage() {
           runId={resolvedRunId}
           spec={run.spec}
           onSpecRefetched={(s) => setRun((rd) => (rd ? { ...rd, spec: s } : rd))}
+          onRerender={handleRender}
         />
       ) : (
         // Fallback only when the run pre-dates the parsed-spec endpoint

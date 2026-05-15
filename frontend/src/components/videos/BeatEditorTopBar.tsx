@@ -33,9 +33,10 @@ function scrollToBeat(beatId: string): void {
 
 interface Props {
   onSpecRefetched?: (s: ProgramSpec) => void;
+  onRerender?: () => void;
 }
 
-export function BeatEditorTopBar({ onSpecRefetched }: Props) {
+export function BeatEditorTopBar({ onSpecRefetched, onRerender }: Props) {
   const { state, effectiveSpec, dispatch, workspaceSlug, programSlug, runId } = useBeatEditor();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [showPending, setShowPending] = useState(false);
@@ -109,6 +110,17 @@ export function BeatEditorTopBar({ onSpecRefetched }: Props) {
     ? state.buffer.map((op) => describeOp(op, effectiveSpec))
     : [];
 
+  // Show the bar when there's something actionable — dirty, mid-save,
+  // failed save, or briefly after a successful save (so the user sees
+  // confirmation + Re-render CTA before it tucks away). Otherwise hide.
+  const showBar =
+    dirty ||
+    status === "saving" ||
+    status === "error" ||
+    status === "saved";
+
+  if (!showBar) return null;
+
   return (
     <div className="sticky top-0 z-30 flex items-center gap-3 rounded-md border bg-background p-3 shadow-sm">
       <div className="relative">
@@ -175,6 +187,15 @@ export function BeatEditorTopBar({ onSpecRefetched }: Props) {
             {confirmDiscard ? "Click again to confirm" : "Discard all"}
           </button>
         </>
+      )}
+      {!dirty && status === "saved" && onRerender && (
+        <button
+          type="button"
+          onClick={onRerender}
+          className="ml-auto rounded bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground"
+        >
+          Re-render to see changes →
+        </button>
       )}
     </div>
   );
