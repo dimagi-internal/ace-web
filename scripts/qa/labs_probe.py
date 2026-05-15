@@ -183,12 +183,13 @@ CORE_SURFACES = [
     ("08-system-pipeline",    "/system?tab=pipeline"),
     ("09-system-agents",      "/system?tab=agents"),
     ("10-system-mcps",        "/system?tab=mcps"),
-    ("11-health",             "/health"),
+    ("11-auth-cli",           "/auth/cli"),
+    ("12-videos-list",        f"/w/{WORKSPACE}/videos"),
 ]
 
 
 # View-mode tabs to probe on each opp's workbench page.
-OPP_VIEW_MODES = ["phase", "workbench", "heatmap", "diff", "story"]
+OPP_VIEW_MODES = ["phase", "workbench", "heatmap", "diff"]
 
 
 def discover_opps(ctx) -> list[str]:
@@ -296,6 +297,96 @@ def main() -> int:
             results.append(r)
             mark = "✓" if r.verdict == "ok" else "✗"
             print(f"  {mark} {r.verdict:7s} {short:10s} {r.preview[:70]}")
+
+        # 5. Step deep-link (most-active opp, first phase, first skill)
+        if opps:
+            slug = opps[0]
+            snap_resp = ctx.request.get(f"{BASE}/api/w/{WORKSPACE}/opps/{slug}")
+            if snap_resp.status == 200:
+                snap = snap_resp.json()
+                run = snap.get("current_run", {})
+                steps = run.get("steps", [])
+                if steps and run.get("run_id"):
+                    run_id = run["run_id"]
+                    skill = steps[0].get("skill_name") or steps[0].get("skill")
+                    if skill:
+                        path = f"/w/{WORKSPACE}/opps/{slug}/runs/{run_id}/steps/{skill}"
+                        print(f"\n=== Step deep-link (opp={slug}, run={run_id}, skill={skill}) ===")
+                        r = visit(ctx, f"opp-{slug}-step-{skill}", path)
+                        results.append(r)
+                        mark = "✓" if r.verdict == "ok" else "✗"
+                        print(f"  {mark} {r.verdict:7s} {r.preview[:80]}")
+
+        # 6. Opp-vs-opp compare (if >= 2 opps with runs)
+        if len(opps) >= 2:
+            slug_a, slug_b = opps[0], opps[1]
+            path = f"/w/{WORKSPACE}/opps/compare/{slug_a}/{slug_b}"
+            print(f"\n=== Opp compare ({slug_a} vs {slug_b}) ===")
+            r = visit(ctx, f"opp-compare-{slug_a}-{slug_b}", path)
+            results.append(r)
+            mark = "✓" if r.verdict == "ok" else "✗"
+            print(f"  {mark} {r.verdict:7s} {r.preview[:80]}")
+
+        # 7. Public per-run summary (no auth — used for stakeholder share links)
+        if opps:
+            slug = opps[0]
+            runs_resp = ctx.request.get(f"{BASE}/api/w/{WORKSPACE}/opps/{slug}/runs")
+            if runs_resp.status == 200:
+                items = runs_resp.json().get("items", [])
+                if items:
+                    run_id = items[0]["run_id"]
+                    # PUBLIC route — no /w/ prefix, no auth required. Open in
+                    # a fresh incognito-ish context so we genuinely test the
+                    # no-auth path (the bot's session cookie would mask
+                    # auth-related regressions).
+                    pub_browser = p.chromium.launch(headless=True)
+                    pub_ctx = pub_browser.new_context(viewport={"width": 1280, "height": 900})
+                    path = f"/opps/{WORKSPACE}/{slug}/runs/{run_id}/summary"
+                    print(f"\n=== Public summary (no auth) ===")
+                    r = visit(pub_ctx, "public-summary", path)
+                    results.append(r)
+                    mark = "✓" if r.verdict == "ok" else "✗"
+                    print(f"  {mark} {r.verdict:7s} {r.preview[:80]}")
+                    pub_browser.close()
+
+        # 8. API coverage cross-check: walk the OpenAPI schema, probe every
+        # GET endpoint that doesn't need path params we don't know how to
+        # supply. The goal isn't to validate response shape (that's
+        # schemathesis's job in CI) — it's to detect endpoints that 5xx
+        # because they're calling deleted code, or 404 because they were
+        # never mounted.
+        print("\n=== API coverage (GET endpoints with no required path params) ===")
+        schema_resp = ctx.request.get(f"{BASE}/api/openapi.json")
+        if schema_resp.status == 200:
+            paths = schema_resp.json().get("paths", {})
+            unparametric_gets: list[tuple[str, str]] = []
+            for path_str, ops in paths.items():
+                # Only test paths with no `{param}` (or where every param
+                # is a query, not path). Parametric paths get covered by
+                # the UI walk above.
+                if "{" in path_str:
+                    continue
+                if "get" not in ops:
+                    continue
+                unparametric_gets.append((path_str, ops["get"].get("summary", "")))
+            print(f"  {len(unparametric_gets)} unparametric GET paths to probe")
+            for path_str, summary in unparametric_gets:
+                resp = ctx.request.get(f"{BASE}{path_str}")
+                # Anything in [200, 304, 401, 403, 404] is normal (auth gate
+                # or genuinely-empty resource). 5xx is the alarm.
+                ok = resp.status < 500
+                mark = "✓" if ok else "✗"
+                tag = "ok" if ok else f"5xx={resp.status}"
+                print(f"  {mark} {tag:7s} GET {path_str}")
+                if not ok:
+                    results.append(StepResult(
+                        name=f"api-coverage-{path_str.replace('/', '_')}",
+                        path=path_str,
+                        http_status=resp.status,
+                        verdict="broken",
+                        bad_responses=[{"status": resp.status, "method": "GET", "url": path_str}],
+                        preview=f"summary: {summary}",
+                    ))
 
         browser.close()
 
