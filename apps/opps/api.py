@@ -656,6 +656,38 @@ def delete_opp(
 # ---------------------------------------------------------------------------
 
 
+def _phase_display_index() -> dict[str, tuple[str, int]]:
+    """Return {phase_name: (phase_display, phase_ordinal)} from the ACE plugin.
+
+    Used to enrich RunSummary dicts on the way out so the frontend's
+    OppCardRunsStrip can render "P{ordinal}" chips and human-readable
+    phase labels in tooltips. Empty dict if the plugin can't be read —
+    callers degrade to the bare phase slug.
+    """
+    from django.conf import settings  # noqa: PLC0415
+
+    from apps.system.reader import load_system_overview  # noqa: PLC0415
+
+    plugin_path = getattr(settings, "ACE_PLUGIN_PATH", "") or ""
+    if not plugin_path:
+        return {}
+    overview = load_system_overview(plugin_path)
+    return {
+        p["name"]: (p.get("display_name") or p["name"], int(p.get("ordinal") or 0))
+        for p in overview.get("phases", [])
+    }
+
+
+def _skill_display_index() -> dict[str, str]:
+    """Return {skill_name: skill_display} from the ACE plugin's skill registry."""
+    from apps.system.reader import get_skill_phase_index  # noqa: PLC0415
+
+    return {
+        name: entry.get("skill_display") or name
+        for name, entry in get_skill_phase_index().items()
+    }
+
+
 def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
     """Return a list of run dicts shaped for OppRunOut.
 
@@ -681,14 +713,26 @@ def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
     runs = list_opp_runs(drive, ace_root_folder_id=ace_folder_id, opp_slug=slug)
     out: list[dict] = []
     from dataclasses import asdict
+    phase_meta = _phase_display_index()
+    skill_phase_index = _skill_display_index()
     for r in runs:
         # Dump the FULL RunSummary dataclass so the frontend gets
-        # current_phase / current_phase_display / phases_done /
-        # phases_total / last_actor_at / lifecycle_status etc.
+        # current_phase / phases_done / phases_total / last_actor_at /
+        # lifecycle_status / latest_phase_done etc.
         rich = asdict(r)
         # Drop the internal folder_id — frontend doesn't need it and the
         # legacy RunSummary type doesn't declare it.
         rich.pop("folder_id", None)
+        # Enrich phase / step references with the plugin's display name +
+        # ordinal so the OppCardRunsStrip chip can render "P3" instead of
+        # "—" and tooltips can show capitalized phase labels.
+        cur_display, cur_ord = phase_meta.get(r.current_phase or "", (None, None))
+        rich["current_phase_display"] = cur_display
+        rich["current_phase_ordinal"] = cur_ord
+        done_display, done_ord = phase_meta.get(r.latest_phase_done or "", (None, None))
+        rich["latest_phase_done_display"] = done_display
+        rich["latest_phase_done_ordinal"] = done_ord
+        rich["current_step_display"] = skill_phase_index.get(r.current_step or "")
         # Add the lighter v2-style fields too (some consumers still use them).
         raw = r.last_actor_at
         started_at: dt.datetime
