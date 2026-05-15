@@ -40,6 +40,7 @@ _EXPECTED_TOOL_NAMES = {
     "apps_videos_api_get_run",
     "apps_videos_api_get_library",
     "apps_videos_api_get_render_status",
+    "apps_videos_api_get_render_log",
     "apps_videos_api_get_feedback",
     "apps_videos_api_list_video_templates",
     "apps_videos_api_get_video_template",
@@ -52,7 +53,7 @@ _EXPECTED_TOOL_NAMES = {
 
 
 @pytest.mark.asyncio
-async def test_build_mcp_registers_exactly_nine_tools():
+async def test_build_mcp_registers_expected_tools():
     """build_mcp() should register each opted-in endpoint as an MCP tool."""
     mcp = build_mcp()
     tools = await mcp.list_tools()
