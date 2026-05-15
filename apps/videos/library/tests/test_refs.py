@@ -1,30 +1,40 @@
 """Tests for ``apps.videos.library.refs``.
 
-Parses + resolves ``library:<media>/[<subfolder>/]<filename>`` refs against
-a FakeDriveClient-backed workspace.
+Parses + resolves ``library:<media>/[<subfolder>/]<filename>`` refs. As
+of the DB pivot, resolution hits the DB-backed library tables rather
+than walking Drive — tests sync first, then resolve.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
+import json
 
 import pytest
+from django.contrib.auth import get_user_model
 
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
 from apps.videos import drive as drive_mod
 from apps.videos import service as service_mod
-from apps.videos.library import refs
+from apps.videos.library import refs, sync as lib_sync
+from apps.workspaces.models import Workspace
+
+User = get_user_model()
 
 
 @pytest.fixture
 def fake_drive(monkeypatch):
     client = FakeDriveClient.from_tree({"ws-root": {}})
     monkeypatch.setattr(drive_mod, "client_for_workspace", lambda ws: client)
-    return SimpleNamespace(client=client, root_id=client.folder_id("ws-root"))
+    return client
 
 
 @pytest.fixture
-def workspace(fake_drive):
-    return SimpleNamespace(slug="dimagi-team", drive_root_folder_id=fake_drive.root_id)
+def workspace(db, fake_drive):
+    creator = User.objects.create_user(email="creator@example.com")
+    return Workspace.objects.create(
+        slug="dimagi-team", display_name="Dimagi",
+        drive_root_folder_id=fake_drive.folder_id("ws-root"),
+        created_by=creator,
+    )
 
 
 def test_parse_library_ref_video():
@@ -51,12 +61,42 @@ def test_parse_library_ref_rejects_malformed():
 
 
 def test_resolve_library_ref_returns_drive_id(workspace, fake_drive):
-    layout = service_mod.layout_for(workspace)[0]
+    layout = service_mod.layout_for(workspace, client=fake_drive)[0]
     drive_id = drive_mod.upload_library_file(
-        layout, fake_drive.client, drive_mod.LIBRARY_VIDEO,
+        layout, fake_drive, drive_mod.LIBRARY_VIDEO,
         "x.mp4", b"x", "video/mp4", subfolder="cat",
     )
+    drive_mod.upload_library_file(
+        layout, fake_drive, drive_mod.LIBRARY_VIDEO,
+        "x.json", json.dumps({"name": "X", "tags": []}).encode(),
+        "application/json", subfolder="cat",
+    )
+    lib_sync.sync_import_video(workspace)
+
     resolved = refs.resolve_library_ref(workspace, "library:video/cat/x.mp4")
+    assert resolved is not None
+    assert resolved.drive_id == drive_id
+
+
+def test_resolve_library_ref_resolves_audio_by_hash(workspace, fake_drive):
+    """Audio refs carry ``<hash>.mp3``; resolution strips the extension
+    to look up by hash."""
+    layout = service_mod.layout_for(workspace, client=fake_drive)[0]
+    drive_id = drive_mod.upload_library_file(
+        layout, fake_drive, drive_mod.LIBRARY_AUDIO,
+        "abc.mp3", b"x", "audio/mpeg",
+    )
+    drive_mod.upload_library_file(
+        layout, fake_drive, drive_mod.LIBRARY_AUDIO,
+        "abc.json",
+        json.dumps({
+            "voice_id": "v", "model": "m", "text": "t",
+            "duration_sec": 1.0, "generated_at": "2026-05-15T00:00:00Z",
+        }).encode(),
+        "application/json",
+    )
+    lib_sync.sync_import_audio(workspace)
+    resolved = refs.resolve_library_ref(workspace, "library:audio/abc.mp3")
     assert resolved is not None
     assert resolved.drive_id == drive_id
 

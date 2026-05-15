@@ -4,13 +4,16 @@ reference syntax.
 Used by the render-prep code path to turn a stable ``library:`` ref into
 a concrete Drive file id before the renderer sees the spec. The renderer
 keeps parsing ``gdrive:<id>.<ext>`` — the rewrite is invisible to it.
+
+Resolution hits the DB-backed library tables (populated by
+``apps.videos.library.sync``); the previous Drive-walking implementation
+was 60-90s at scale.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
-from apps.videos import drive as drive_mod
 from apps.workspaces.models import Workspace
 
 
@@ -52,23 +55,25 @@ def parse_library_ref(ref: str) -> ParsedRef:
 
 
 def resolve_library_ref(workspace: Workspace, ref: str) -> ResolvedRef | None:
-    """Resolve a library ref against the workspace's Drive layout.
+    """Resolve a library ref against the workspace's library tables.
 
-    Returns None when the target file does not exist; raises
+    Returns None when the target row does not exist; raises
     LibraryRefError on malformed refs.
     """
     parsed = parse_library_ref(ref)
-    # Lazy import to avoid cycles between apps.videos.service and this module.
-    from apps.videos.service import layout_for
-    layout, client = layout_for(workspace)
+    # Local imports — avoid the ORM at module load.
     if parsed.media == "audio":
-        files = drive_mod.list_audio_library_files(layout, client)
+        from apps.videos.models import AudioLibraryEntry
+        # The library:audio/<filename> ref uses the full filename incl. extension;
+        # the DB row keys on the bare hash (the stem of the filename).
+        stem = parsed.filename.rsplit(".", 1)[0]
+        row = AudioLibraryEntry.objects.filter(workspace=workspace, hash=stem).first()
     else:
+        from apps.videos.models import VideoLibraryEntry
         assert parsed.subfolder is not None  # parser guarantees
-        files = drive_mod.list_library_files(
-            layout, client, drive_mod.LIBRARY_VIDEO, parsed.subfolder,
-        )
-    for f in files:
-        if f.name == parsed.filename:
-            return ResolvedRef(parsed=parsed, drive_id=f.id)
-    return None
+        row = VideoLibraryEntry.objects.filter(
+            workspace=workspace, subfolder=parsed.subfolder, filename=parsed.filename,
+        ).first()
+    if row is None or not row.drive_id:
+        return None
+    return ResolvedRef(parsed=parsed, drive_id=row.drive_id)
