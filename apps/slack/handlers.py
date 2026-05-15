@@ -133,5 +133,13 @@ def dispatch_slash_command(*, text: str, slack_user_id: str, team_id: str,
 
 
 def dispatch_interaction(payload: dict) -> dict:
-    """Block action / view submission entrypoint. Filled in by Task 13."""
-    return {"response_action": "clear"}
+    """Block action / view submission entrypoint."""
+    p_type = payload.get("type")
+    if p_type == "view_submission":
+        if payload.get("view", {}).get("callback_id") == "ace_new_modal":
+            from .verbs_new import handle_new_submission
+            return handle_new_submission(payload)
+    if p_type == "block_actions":
+        # Block actions (fork button etc.) lands in Task 16.
+        return {}
+    return {}
