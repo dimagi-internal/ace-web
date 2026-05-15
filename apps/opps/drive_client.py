@@ -177,6 +177,15 @@ class DriveClient(ABC):
         """Copy a file to a new parent. Returns new file ID."""
 
     @abstractmethod
+    def move_file(self, file_id: str, new_parent_id: str) -> None:
+        """Change file_id's parent to new_parent_id (atomic; no copy).
+
+        Drive supports this via files.update with addParents + removeParents
+        query params. Operates on whatever parent(s) the file currently has;
+        after the call the file lives only under new_parent_id.
+        """
+
+    @abstractmethod
     def trash_folder(self, folder_id: str) -> None:
         """Move a folder (and all descendants) to Drive trash.
 
@@ -380,6 +389,21 @@ class GoogleDriveClient(DriveClient):
             fileId=file_id, body=body, fields="id", supportsAllDrives=True
         ).execute()
         return resp["id"]
+
+    @_drive_retry
+    def move_file(self, file_id: str, new_parent_id: str) -> None:
+        # First fetch the file's current parents so removeParents is exact.
+        meta = self._service.files().get(
+            fileId=file_id, fields="parents", supportsAllDrives=True,
+        ).execute()
+        old_parents = ",".join(meta.get("parents", []))
+        self._service.files().update(
+            fileId=file_id,
+            addParents=new_parent_id,
+            removeParents=old_parents,
+            fields="id, parents",
+            supportsAllDrives=True,
+        ).execute()
 
     def trash_folder(self, folder_id: str) -> None:
         self._service.files().update(

@@ -128,6 +128,19 @@ def test_get_drive_client_raises_on_missing_sa():
             get_drive_client()
 
 
+def test_fake_drive_move_file_changes_parent():
+    """move_file relocates a file from one folder to another."""
+    client = FakeDriveClient.from_tree({"root": {"src": {}, "dst": {}}})
+    src_id = client.folder_id("root/src")
+    dst_id = client.folder_id("root/dst")
+    file_id = client.upload_binary(src_id, "x.mp3", b"x", "audio/mpeg")
+    client.move_file(file_id, dst_id)
+    in_src = {f.id for f in client.list_folder(src_id)}
+    in_dst = {f.id for f in client.list_folder(dst_id)}
+    assert file_id not in in_src
+    assert file_id in in_dst
+
+
 def test_fake_drive_trash_folder_removes_from_listings():
     tree = {
         "ACE": {
