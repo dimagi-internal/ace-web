@@ -2238,6 +2238,11 @@ export interface components {
             readonly busy: boolean;
             /** Started At */
             readonly started_at?: string | null;
+            /**
+             * Appears Failed
+             * @default false
+             */
+            readonly appears_failed: boolean;
         };
         /** RenderLogOut */
         readonly RenderLogOut: {

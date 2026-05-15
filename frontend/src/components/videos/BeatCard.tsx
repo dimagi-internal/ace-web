@@ -1,17 +1,7 @@
 import { useBeatEditor } from "./BeatEditorContext";
+import { sectionLabel } from "./sectionLabels";
 import { opCoalesceKey, type PendingChange } from "./types";
 import type { ReactNode } from "react";
-
-const SECTION_LABELS: Record<string, { name: string; subtitle: string }> = {
-  hook: { name: "Opening tagline", subtitle: "Headline that frames the video." },
-  cycle: { name: "How Connect works", subtitle: "Learn → Deliver → Verify → Pay cycle." },
-  handoff: { name: "Program handoff", subtitle: "Names this specific program." },
-  scene: { name: "Field footage", subtitle: "Real footage from the program location." },
-  problem: { name: "Headline stat", subtitle: "One big number that frames the problem." },
-  product: { name: "Connect app walkthrough", subtitle: "Short phone-frame clips." },
-  impact: { name: "Results numbers", subtitle: "Two big numbers — what the program delivered." },
-  cta: { name: "End card", subtitle: "Logo + tagline + 'become a partner'." },
-};
 
 interface Props {
   beatId: string;
@@ -41,7 +31,7 @@ function beatIsDirty(beatId: string, kind: string, buffer: PendingChange[]): boo
 
 export function BeatCard({ beatId, kind, startSec, endSec, children }: Props) {
   const { state } = useBeatEditor();
-  const label = SECTION_LABELS[beatId] ?? { name: beatId, subtitle: "" };
+  const label = sectionLabel(beatId);
   const dirty = beatIsDirty(beatId, kind, state.buffer);
   return (
     <section

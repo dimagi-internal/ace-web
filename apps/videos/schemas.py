@@ -83,6 +83,11 @@ class RenderStatusOut(StrictModel):
     run_id: str
     busy: bool
     started_at: str | None = None
+    """Set when the Redis busy flag is still set but the chain has been
+    running longer than the longest-plausible render (8 min) AND no
+    new explorer/index.html has been produced. Tells the UI to show
+    "render failed — check /render-log" instead of spinning."""
+    appears_failed: bool = False
 
 
 class FeedbackLogOut(StrictModel):

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBeatEditor } from "../../BeatEditorContext";
 
 interface Props {
@@ -17,6 +17,25 @@ export function NarrationPanel({ beatId, onCommit, onCancel }: Props) {
   const model = effectiveSpec.voice?.model ?? "(default)";
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
   const estSec = Math.round((text.length / 15) * 10) / 10;
+
+  // The beat's allotted seconds in the final video. Used to warn when
+  // estimated read time overflows the slot (synth may get cut off).
+  const beat = (effectiveSpec.beats ?? []).find((b) => b.id === beatId);
+  const beatSeconds = beat?.seconds ?? 0;
+  const overflow = beatSeconds > 0 && estSec > beatSeconds + 0.3;
+
+  // Auto-grow textarea — content-driven height, clamped to [min, max]
+  // line-height windows so short text doesn't waste space and long text
+  // stays readable without an internal scroll.
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const max = 480;  // ~24 lines
+    const min = 96;   // ~5 lines
+    ta.style.height = Math.max(min, Math.min(max, ta.scrollHeight)) + "px";
+  }, [text]);
 
   const commit = () => {
     if (!dirty) return;
@@ -38,14 +57,24 @@ export function NarrationPanel({ beatId, onCommit, onCancel }: Props) {
         model <code className="rounded bg-muted px-1">{model}</code>
       </div>
       <textarea
+        ref={taRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
-        rows={8}
-        className="w-full rounded border bg-background p-2 font-sans text-sm"
+        className="w-full resize-none rounded border bg-background p-2 font-sans text-sm leading-relaxed"
       />
-      <div className="text-xs text-muted-foreground">
+      <div className={overflow ? "text-xs font-medium text-amber-700" : "text-xs text-muted-foreground"}>
         {wordCount} word{wordCount === 1 ? "" : "s"} · ~{estSec}s read
+        {beatSeconds > 0 && (
+          <span className="ml-2">
+            of <strong>{beatSeconds.toFixed(1)}s</strong> slot
+          </span>
+        )}
+        {overflow && (
+          <span className="ml-2">
+            ⚠ overflows — synth may get cut off
+          </span>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
         Identical text reuses the cached audio — no resynth on Re-render.

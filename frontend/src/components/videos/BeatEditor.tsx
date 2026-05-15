@@ -13,9 +13,14 @@ interface Props {
   spec: ProgramSpec;
   // Bubbles to the page so the Re-render button can refetch if needed.
   onSpecRefetched?: (spec: ProgramSpec) => void;
+  // Called from the TopBar's post-save Re-render CTA. Optional — when
+  // omitted, the CTA hides.
+  onRerender?: () => void;
 }
 
-export function BeatEditor({ workspaceSlug, programSlug, runId, spec, onSpecRefetched }: Props) {
+export function BeatEditor({
+  workspaceSlug, programSlug, runId, spec, onSpecRefetched, onRerender,
+}: Props) {
   return (
     <BeatEditorProvider
       workspaceSlug={workspaceSlug}
@@ -24,7 +29,7 @@ export function BeatEditor({ workspaceSlug, programSlug, runId, spec, onSpecRefe
       spec={spec}
     >
       <div className="flex flex-col gap-4">
-        <BeatEditorTopBar onSpecRefetched={onSpecRefetched} />
+        <BeatEditorTopBar onSpecRefetched={onSpecRefetched} onRerender={onRerender} />
         <TimelineStrip />
         <FinalVideoPlayer />
         <BeatList />

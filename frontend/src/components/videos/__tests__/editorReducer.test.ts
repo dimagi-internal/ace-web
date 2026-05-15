@@ -83,6 +83,23 @@ describe("editorReducer", () => {
     expect(s.buffer).toEqual([]);
   });
 
+  it("UNDO_LAST_OP pops the most recent op", () => {
+    let s = fresh();
+    s = editorReducer(s, { type: "APPEND_OP", op: { op: "set-narration", beatId: "a", text: "1" } });
+    s = editorReducer(s, { type: "APPEND_OP", op: { op: "set-narration", beatId: "b", text: "2" } });
+    s = editorReducer(s, { type: "UNDO_LAST_OP" });
+    expect(s.buffer).toHaveLength(1);
+    expect((s.buffer[0] as any).beatId).toBe("a");
+  });
+
+  it("UNDO_LAST_OP on empty buffer is a no-op", () => {
+    const s = fresh();
+    const next = editorReducer(s, { type: "UNDO_LAST_OP" });
+    expect(next.buffer).toEqual([]);
+    // Returns the same state ref (cheap noop, lets memos skip).
+    expect(next).toBe(s);
+  });
+
   it("REPLACE_SPEC swaps spec and clears buffer", () => {
     let s = fresh();
     s = editorReducer(s, { type: "APPEND_OP", op: { op: "set-narration", beatId: "h", text: "x" } });
@@ -100,5 +117,13 @@ describe("editorReducer", () => {
     expect(s.saveState).toEqual({ status: "saved", at: 1234 });
     s = editorReducer(s, { type: "SAVE_ERROR", message: "boom" });
     expect(s.saveState).toEqual({ status: "error", message: "boom" });
+  });
+
+  it("SAVE_IDLE resets save state to idle", () => {
+    let s = fresh();
+    s = editorReducer(s, { type: "SAVE_OK", at: 1234 });
+    expect(s.saveState.status).toBe("saved");
+    s = editorReducer(s, { type: "SAVE_IDLE" });
+    expect(s.saveState).toEqual({ status: "idle" });
   });
 });

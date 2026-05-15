@@ -5,11 +5,13 @@ export type EditorAction =
   | { type: "OPEN_DRAWER"; target: WidgetRef }
   | { type: "CLOSE_DRAWER" }
   | { type: "APPEND_OP"; op: PendingChange }
+  | { type: "UNDO_LAST_OP" }
   | { type: "CLEAR_BUFFER" }
   | { type: "REPLACE_SPEC"; spec: ProgramSpec }
   | { type: "SAVE_START" }
   | { type: "SAVE_OK"; at: number }
-  | { type: "SAVE_ERROR"; message: string };
+  | { type: "SAVE_ERROR"; message: string }
+  | { type: "SAVE_IDLE" };
 
 export function initialEditorState(spec: ProgramSpec): EditorState {
   return { spec, buffer: [], drawerTarget: null, saveState: { status: "idle" } };
@@ -31,6 +33,10 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       }
       return { ...state, buffer: [...state.buffer, action.op] };
     }
+    case "UNDO_LAST_OP": {
+      if (state.buffer.length === 0) return state;
+      return { ...state, buffer: state.buffer.slice(0, -1) };
+    }
     case "CLEAR_BUFFER":
       return { ...state, buffer: [] };
     case "REPLACE_SPEC":
@@ -41,5 +47,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       return { ...state, saveState: { status: "saved", at: action.at } };
     case "SAVE_ERROR":
       return { ...state, saveState: { status: "error", message: action.message } };
+    case "SAVE_IDLE":
+      return { ...state, saveState: { status: "idle" } };
   }
 }
