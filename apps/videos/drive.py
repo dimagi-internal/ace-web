@@ -207,14 +207,18 @@ def write_spec(
 # ---------------------------------------------------------------------------
 
 
+_NON_PROGRAM_FOLDERS = frozenset({EXISTING_CONTENT, LIBRARY, SHARED_TOP})
+
+
 def list_program_slugs(layout: DriveLayout, client: DriveClient) -> list[str]:
     """All program folder names under videos/. Sorted, excludes
-    existing_content + anything that isn't a folder."""
+    infrastructure folders (existing_content, library, shared) and
+    anything that isn't a folder or starts with an underscore."""
     out: list[str] = []
     for f in client.list_folder(layout.videos_folder_id):
         if f.mime_type != "application/vnd.google-apps.folder":
             continue
-        if f.name == EXISTING_CONTENT:
+        if f.name in _NON_PROGRAM_FOLDERS:
             continue
         if f.name.startswith("_"):
             continue
