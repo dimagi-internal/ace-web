@@ -25,6 +25,14 @@ SECURE_SSL_REDIRECT = False
 # setting itself is defined in base.py; we just override the default here.
 FORCE_SCRIPT_NAME = env("FORCE_SCRIPT_NAME", default="/ace")  # noqa: F405
 
+# `@login_required` builds its redirect from LOGIN_URL via `resolve_url`,
+# which does NOT prepend FORCE_SCRIPT_NAME (the prefix is only added when
+# URLs are generated through `reverse()` / the URL router). Without this
+# override, an unauthenticated hit to e.g. /ace/api/slack/install redirects
+# to /auth/login/?next=… and 404s because that path is owned by a sibling
+# tenant on labs.connect.dimagi.com (scout / connect-labs), not by ace-web.
+LOGIN_URL = "/ace/auth/login/"
+
 # Tenant-unique session cookie to avoid collisions with scout / connect-labs
 # on the shared labs.connect.dimagi.com domain.
 SESSION_COOKIE_NAME = "sessionid_ace"
