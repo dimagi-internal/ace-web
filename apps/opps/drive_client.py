@@ -153,6 +153,24 @@ class DriveClient(ABC):
         """Replace the content of an existing file."""
 
     @abstractmethod
+    def upload_binary(
+        self, parent_id: str, name: str, content: bytes, mime_type: str
+    ) -> str:
+        """Create a new file under parent_id with binary content (no UTF-8 encode).
+        Returns new file ID. Use for audio/video/image/etc."""
+
+    @abstractmethod
+    def update_binary(self, file_id: str, content: bytes, mime_type: str) -> None:
+        """Replace the content of an existing file with binary bytes."""
+
+    @abstractmethod
+    def get_binary(self, file_id: str) -> bytes:
+        """Fetch the raw bytes of a Drive file. Unlike ``get_content`` (which
+        round-trips through base64 for non-utf8 payloads) this returns raw
+        bytes — appropriate for the audio cache + music bed download paths
+        where the caller writes the result straight to a local file."""
+
+    @abstractmethod
     def copy_file(
         self, file_id: str, new_parent_id: str, new_name: str | None = None
     ) -> str:
@@ -321,6 +339,36 @@ class GoogleDriveClient(DriveClient):
         self._service.files().update(
             fileId=file_id, media_body=media, supportsAllDrives=True
         ).execute()
+
+    def upload_binary(
+        self, parent_id: str, name: str, content: bytes, mime_type: str
+    ) -> str:
+        from googleapiclient.http import MediaInMemoryUpload
+        body = {"name": name, "parents": [parent_id]}
+        media = MediaInMemoryUpload(content, mimetype=mime_type)
+        resp = self._service.files().create(
+            body=body, media_body=media, fields="id", supportsAllDrives=True
+        ).execute()
+        return resp["id"]
+
+    def update_binary(self, file_id: str, content: bytes, mime_type: str) -> None:
+        from googleapiclient.http import MediaInMemoryUpload
+        media = MediaInMemoryUpload(content, mimetype=mime_type)
+        self._service.files().update(
+            fileId=file_id, media_body=media, supportsAllDrives=True
+        ).execute()
+
+    @_drive_retry
+    def get_binary(self, file_id: str) -> bytes:
+        content = self._service.files().get_media(fileId=file_id).execute()
+        if isinstance(content, bytes):
+            return content
+        # googleapiclient sometimes returns str for tiny payloads; coerce.
+        if isinstance(content, str):
+            return content.encode("latin-1")
+        raise TypeError(
+            f"Unexpected Drive get_media return type: {type(content).__name__}"
+        )
 
     def copy_file(
         self, file_id: str, new_parent_id: str, new_name: str | None = None

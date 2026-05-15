@@ -36,7 +36,8 @@ class _Node:
     name: str
     parent_id: str | None
     mime_type: str               # "application/vnd.google-apps.folder" for folders
-    body: str | None = None      # None for folders
+    body: str | None = None      # text body (None for folders + binary files)
+    binary_body: bytes | None = None  # binary body (set via upload_binary)
     modified_time: str | None = None
     children: dict[str, _Node] = field(default_factory=dict)  # name -> node
 
@@ -136,10 +137,17 @@ class FakeDriveClient(DriveClient):
                         modified_time=child.modified_time,
                     ))
             else:
+                if child.binary_body is not None:
+                    size = len(child.binary_body)
+                elif child.body is not None:
+                    size = len(child.body.encode("utf-8"))
+                else:
+                    size = 0
                 results.append(DriveFile(
                     id=child.id, name=name, mime_type=child.mime_type,
                     web_view_link=f"https://fake/{child.id}", path=child_path,
                     modified_time=child.modified_time,
+                    size_bytes=size,
                 ))
 
     def get_file(self, file_id: str) -> DriveFile:
@@ -191,8 +199,44 @@ class FakeDriveClient(DriveClient):
         if node.mime_type == self.FOLDER_MIME:
             raise ValueError(f"{node.name} is a folder, not a file")
         node.body = content
+        node.binary_body = None
         node.mime_type = mime_type
         self._record_mutation(file_id)
+
+    def upload_binary(
+        self, parent_id: str, name: str, content: bytes, mime_type: str
+    ) -> str:
+        parent = self._nodes_by_id[parent_id]
+        if parent.mime_type != self.FOLDER_MIME:
+            raise ValueError(f"{parent.name} is not a folder")
+        nid = f"fake-{next(self._counter)}"
+        node = _Node(
+            id=nid, name=name, parent_id=parent.id, mime_type=mime_type,
+            binary_body=content,
+        )
+        parent.children[name] = node
+        self._nodes_by_id[nid] = node
+        self._record_mutation(nid)
+        return nid
+
+    def update_binary(self, file_id: str, content: bytes, mime_type: str) -> None:
+        node = self._nodes_by_id[file_id]
+        if node.mime_type == self.FOLDER_MIME:
+            raise ValueError(f"{node.name} is a folder, not a file")
+        node.binary_body = content
+        node.body = None
+        node.mime_type = mime_type
+        self._record_mutation(file_id)
+
+    def get_binary(self, file_id: str) -> bytes:
+        node = self._nodes_by_id[file_id]
+        if node.mime_type == self.FOLDER_MIME:
+            raise ValueError(f"{node.name} is a folder, not a file")
+        if node.binary_body is not None:
+            return node.binary_body
+        if node.body is not None:
+            return node.body.encode("utf-8")
+        raise ValueError(f"{node.name} has no content")
 
     def copy_file(
         self, file_id: str, new_parent_id: str, new_name: str | None = None
