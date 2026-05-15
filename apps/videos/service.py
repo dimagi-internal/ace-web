@@ -1088,19 +1088,29 @@ def trigger_rerender(workspace: Workspace, slug: str, run_id: str, *, needs_hydr
     return True
 
 
+_RENDER_FAILURE_AFTER_SECONDS = 8 * 60  # 8 min covers slowest renders + headroom
+
+
 def render_status(slug: str, run_id: str) -> dict[str, Any]:
-    """Report whether a render is in flight.
+    """Report whether a render is in flight, succeeded, or appears failed.
 
     The Redis busy key has a 1-hour TTL and is set on every trigger but
     NEVER cleared on success (so polling apps can rate-limit re-renders).
     Treating that key alone as ground truth means the UI shows
     "rendering..." for an hour after a 60-second render.
 
-    Real signal: `explorer/index.html` is the final file both the full
-    render chain and the build-only chain produce. If its mtime is
-    newer than started_at, the chain has completed — return busy=False
-    regardless of the Redis flag. Falls back to the raw Redis flag if
-    no started_at is available.
+    Two derived signals on top of the raw Redis flag:
+
+    - **Success**: ``explorer/index.html`` (the final file both the full
+      render chain and the build-only chain produce) has mtime newer
+      than started_at. → busy=False.
+    - **Failure**: Redis still busy, sentinel mtime not newer than
+      started_at, AND it's been longer than the longest-plausible
+      render. → busy=False but appears_failed=True so the UI can show
+      "render failed, check /render-log" instead of spinning forever.
+
+    Plain Redis-busy with neither signal yet (chain still in flight)
+    returns busy=True, appears_failed=False.
     """
     r = _get_redis()
     busy_flag_set = bool(r.get(_busy_key(slug, run_id)))
@@ -1109,6 +1119,7 @@ def render_status(slug: str, run_id: str) -> dict[str, Any]:
         started = started.decode("utf-8")
 
     actually_done = False
+    appears_failed = False
     if busy_flag_set and started:
         try:
             started_dt = dt.datetime.fromisoformat(started.replace("Z", "+00:00"))
@@ -1116,11 +1127,21 @@ def render_status(slug: str, run_id: str) -> dict[str, Any]:
             if sentinel.exists():
                 sentinel_mtime = dt.datetime.fromtimestamp(sentinel.stat().st_mtime, tz=dt.UTC)
                 actually_done = sentinel_mtime > started_dt
+            if not actually_done:
+                age = (dt.datetime.now(dt.UTC) - started_dt).total_seconds()
+                if age > _RENDER_FAILURE_AFTER_SECONDS:
+                    appears_failed = True
         except (ValueError, OSError):
-            actually_done = False
+            pass
 
-    busy = busy_flag_set and not actually_done
-    return {"program_slug": slug, "run_id": run_id, "busy": busy, "started_at": started}
+    busy = busy_flag_set and not actually_done and not appears_failed
+    return {
+        "program_slug": slug,
+        "run_id": run_id,
+        "busy": busy,
+        "started_at": started,
+        "appears_failed": appears_failed,
+    }
 
 
 # ---------------------------------------------------------------------------
