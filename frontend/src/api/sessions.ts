@@ -1,4 +1,4 @@
-import { apiV2 } from "./client.v2";
+import { apiClient } from "./apiClient";
 import type { Session, SessionDetail, SessionListPage } from "./types.ws";
 
 /**
@@ -11,7 +11,7 @@ import type { Session, SessionDetail, SessionListPage } from "./types.ws";
  *   PATCH  /api/w/{workspace_slug}/sessions/{slug}  — update
  *   DELETE /api/w/{workspace_slug}/sessions/{slug}  — delete
  *
- * All v2 responses have content?: never so we cast the `data` field from apiV2.
+ * All v2 responses have content?: never so we cast the `data` field from apiClient.
  */
 
 export interface ListSessionsParams {
@@ -36,7 +36,7 @@ export const listSessions = async (params: ListSessionsParams = {}): Promise<Ses
   if (params.opp) query.opp_slug = params.opp;
   if (params.status === "archived") query.archived = true;
 
-  const { data, response } = await apiV2.GET(
+  const { data, response } = await apiClient.GET(
     "/api/w/{workspace_slug}/sessions",
     {
       params: {
@@ -50,7 +50,7 @@ export const listSessions = async (params: ListSessionsParams = {}): Promise<Ses
 };
 
 export const createSession = async (workspaceSlug: string): Promise<Session> => {
-  const { data, response } = await apiV2.POST(
+  const { data, response } = await apiClient.POST(
     "/api/w/{workspace_slug}/sessions",
     {
       params: { path: { workspace_slug: workspaceSlug } },
@@ -62,7 +62,7 @@ export const createSession = async (workspaceSlug: string): Promise<Session> => 
 };
 
 export const getSession = async (slug: string, workspaceSlug: string): Promise<SessionDetail> => {
-  const { data, response } = await apiV2.GET(
+  const { data, response } = await apiClient.GET(
     "/api/w/{workspace_slug}/sessions/{slug}",
     { params: { path: { workspace_slug: workspaceSlug, slug } } },
   );
@@ -75,7 +75,7 @@ export const updateSession = async (
   updates: Partial<Session>,
   workspaceSlug: string,
 ): Promise<Session> => {
-  const { data, response } = await apiV2.PATCH(
+  const { data, response } = await apiClient.PATCH(
     "/api/w/{workspace_slug}/sessions/{slug}",
     {
       params: { path: { workspace_slug: workspaceSlug, slug } },
@@ -87,7 +87,7 @@ export const updateSession = async (
 };
 
 export const deleteSession = async (slug: string, workspaceSlug: string): Promise<void> => {
-  const { response } = await apiV2.DELETE(
+  const { response } = await apiClient.DELETE(
     "/api/w/{workspace_slug}/sessions/{slug}",
     { params: { path: { workspace_slug: workspaceSlug, slug } } },
   );

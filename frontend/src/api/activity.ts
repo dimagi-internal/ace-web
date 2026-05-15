@@ -1,4 +1,4 @@
-import { apiV2 } from "./client.v2";
+import { apiClient } from "./apiClient";
 import type { components } from "./generated";
 
 type ActivityFeedOut = components["schemas"]["ActivityFeedOut"];
@@ -52,7 +52,7 @@ export const fetchActivityFeed = async (params: ActivityFeedParams): Promise<Act
       : params.type
     : undefined;
 
-  const { data, error, response } = await apiV2.GET("/api/w/{workspace_slug}/activity", {
+  const { data, error, response } = await apiClient.GET("/api/w/{workspace_slug}/activity", {
     params: {
       path: { workspace_slug: params.workspaceSlug },
       query: {

@@ -2,7 +2,7 @@
 
 The DRF view surface (session_collection, session_detail, messages_list, etc.)
 has been removed — sessions are now served exclusively via the v2 Ninja router
-at apps/sessions/api_v2.py.
+at apps/sessions/api.py.
 
 This module is kept as a thin helper shim because two external callers still
 import from it:

@@ -1,4 +1,4 @@
-from apps.api_v2.pagination import Page, paginate
+from apps.api.pagination import Page, paginate
 
 
 def test_paginate_returns_page_with_metadata():

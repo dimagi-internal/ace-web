@@ -101,7 +101,7 @@ def test_list_opps_returns_pydantic_validated_payload(member_client, monkeypatch
         }
     ]
     monkeypatch.setattr(
-        "apps.opps.api_v2.list_opp_cards", lambda workspace: fake_cards
+        "apps.opps.api.list_opp_cards", lambda workspace: fake_cards
     )
 
     response = client.get("/api/w/ws1/opps")
@@ -150,7 +150,7 @@ def test_list_opps_401_anonymous(db, client):
 def test_get_opp_returns_snapshot_with_etag(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_rich_opp_snapshot",
+        "apps.opps.api.load_rich_opp_snapshot",
         lambda workspace, slug, run_id=None: _FAKE_SNAPSHOT,
     )
     response = client.get("/api/w/ws1/opps/opp-1")
@@ -165,7 +165,7 @@ def test_get_opp_returns_snapshot_with_etag(member_client, monkeypatch):
 def test_get_opp_304_on_matching_etag(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_rich_opp_snapshot",
+        "apps.opps.api.load_rich_opp_snapshot",
         lambda workspace, slug, run_id=None: _FAKE_SNAPSHOT,
     )
     # First request — get the ETag.
@@ -199,7 +199,7 @@ def test_get_opp_401_anonymous(db, client):
 def test_get_opp_404_unknown_slug(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_rich_opp_snapshot",
+        "apps.opps.api.load_rich_opp_snapshot",
         lambda workspace, slug, run_id=None: None,
     )
     response = client.get("/api/w/ws1/opps/no-such-opp")
@@ -218,7 +218,7 @@ def test_get_opp_404_unknown_slug(member_client, monkeypatch):
 def test_create_opp_happy_path(member_client, monkeypatch):
     client, workspace, user = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.create_opp_and_return_card",
+        "apps.opps.api.create_opp_and_return_card",
         lambda workspace, user, body: _FAKE_CARD,
     )
     response = client.post(
@@ -276,7 +276,7 @@ def test_create_opp_409_duplicate_slug(member_client, monkeypatch):
     def _raise_conflict(workspace, user, body):
         raise CreateOppError("slug-taken", "opp 'new-opp' already exists")
 
-    monkeypatch.setattr("apps.opps.api_v2.create_opp_and_return_card", _raise_conflict)
+    monkeypatch.setattr("apps.opps.api.create_opp_and_return_card", _raise_conflict)
     response = client.post(
         "/api/w/ws1/opps",
         data={"title": "New Opp", "slug": "new-opp", "idea": "An idea."},
@@ -295,7 +295,7 @@ def test_create_opp_409_duplicate_slug(member_client, monkeypatch):
 def test_patch_opp_happy_path(member_client, monkeypatch):
     client, workspace, user = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.patch_opp_and_return_card",
+        "apps.opps.api.patch_opp_and_return_card",
         lambda workspace, slug, body: _FAKE_CARD,
     )
     response = client.patch(
@@ -342,7 +342,7 @@ def test_patch_opp_404_unknown_slug(member_client, monkeypatch):
     def _raise_not_found(workspace, slug, body):
         raise CreateOppError("opp-not-found", "opp not found")
 
-    monkeypatch.setattr("apps.opps.api_v2.patch_opp_and_return_card", _raise_not_found)
+    monkeypatch.setattr("apps.opps.api.patch_opp_and_return_card", _raise_not_found)
     response = client.patch(
         "/api/w/ws1/opps/no-such-opp",
         data={"title": "Updated"},
@@ -372,7 +372,7 @@ def test_patch_opp_400_empty_title(member_client):
 def test_delete_opp_happy_path(member_client, monkeypatch):
     client, workspace, user = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.delete_opp_by_slug",
+        "apps.opps.api.delete_opp_by_slug",
         lambda workspace, slug: None,
     )
     response = client.delete("/api/w/ws1/opps/opp-1")
@@ -404,7 +404,7 @@ def test_delete_opp_404_unknown_slug(member_client, monkeypatch):
     def _raise_not_found(workspace, slug):
         raise FileNotFoundError(f"no opp named {slug!r}")
 
-    monkeypatch.setattr("apps.opps.api_v2.delete_opp_by_slug", _raise_not_found)
+    monkeypatch.setattr("apps.opps.api.delete_opp_by_slug", _raise_not_found)
     response = client.delete("/api/w/ws1/opps/no-such-opp")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
@@ -499,7 +499,7 @@ _FAKE_SNAPSHOT_B = {**_FAKE_SNAPSHOT, "slug": "opp-1", "active_run_id": "run-002
 def test_list_runs_happy_path(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.list_opp_runs_for_workspace",
+        "apps.opps.api.list_opp_runs_for_workspace",
         lambda workspace, slug: _FAKE_RUNS,
     )
     response = client.get("/api/w/ws1/opps/opp-1/runs")
@@ -532,7 +532,7 @@ def test_list_runs_401_anonymous(db, client):
 def test_list_runs_empty_for_unknown_slug(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.list_opp_runs_for_workspace",
+        "apps.opps.api.list_opp_runs_for_workspace",
         lambda workspace, slug: [],
     )
     response = client.get("/api/w/ws1/opps/no-such/runs")
@@ -549,7 +549,7 @@ def test_list_runs_empty_for_unknown_slug(member_client, monkeypatch):
 def test_get_run_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.list_opp_runs_for_workspace",
+        "apps.opps.api.list_opp_runs_for_workspace",
         lambda workspace, slug: _FAKE_RUNS,
     )
     response = client.get("/api/w/ws1/opps/opp-1/runs/run-001")
@@ -579,7 +579,7 @@ def test_get_run_401_anonymous(db, client):
 def test_get_run_404_unknown_run_id(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.list_opp_runs_for_workspace",
+        "apps.opps.api.list_opp_runs_for_workspace",
         lambda workspace, slug: _FAKE_RUNS,
     )
     response = client.get("/api/w/ws1/opps/opp-1/runs/run-999")
@@ -591,7 +591,7 @@ def test_get_run_404_unknown_run_id(member_client, monkeypatch):
 def test_get_run_404_unknown_slug(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.list_opp_runs_for_workspace",
+        "apps.opps.api.list_opp_runs_for_workspace",
         lambda workspace, slug: [],
     )
     response = client.get("/api/w/ws1/opps/no-such/runs/run-001")
@@ -607,7 +607,7 @@ def test_get_run_404_unknown_slug(member_client, monkeypatch):
 def test_delete_run_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.delete_run_by_id",
+        "apps.opps.api.delete_run_by_id",
         lambda workspace, slug, run_id: None,
     )
     response = client.delete("/api/w/ws1/opps/opp-1/runs/run-001")
@@ -638,7 +638,7 @@ def test_delete_run_404_unknown_run(member_client, monkeypatch):
     def _raise(workspace, slug, run_id):
         raise FileNotFoundError("no run named 'run-999'")
 
-    monkeypatch.setattr("apps.opps.api_v2.delete_run_by_id", _raise)
+    monkeypatch.setattr("apps.opps.api.delete_run_by_id", _raise)
     response = client.delete("/api/w/ws1/opps/opp-1/runs/run-999")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
@@ -653,7 +653,7 @@ def test_delete_run_404_unknown_run(member_client, monkeypatch):
 def test_get_step_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_step_snapshot",
+        "apps.opps.api.load_step_snapshot",
         lambda workspace, slug, skill, run_id=None: _FAKE_STEP,
     )
     response = client.get("/api/w/ws1/opps/opp-1/steps/idea-to-pdd")
@@ -683,7 +683,7 @@ def test_get_step_401_anonymous(db, client):
 def test_get_step_404_unknown_opp(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_step_snapshot",
+        "apps.opps.api.load_step_snapshot",
         lambda workspace, slug, skill, run_id=None: None,
     )
     response = client.get("/api/w/ws1/opps/no-such/steps/idea-to-pdd")
@@ -694,7 +694,7 @@ def test_get_step_404_unknown_opp(member_client, monkeypatch):
 def test_get_step_404_unknown_skill(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_step_snapshot",
+        "apps.opps.api.load_step_snapshot",
         lambda workspace, slug, skill, run_id=None: {"_not_found": "skill"},
     )
     response = client.get("/api/w/ws1/opps/opp-1/steps/no-such-skill")
@@ -711,7 +711,7 @@ def test_get_step_404_unknown_skill(member_client, monkeypatch):
 def test_get_artifact_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_artifact_meta",
+        "apps.opps.api.load_artifact_meta",
         lambda workspace, slug, artifact_id, run_id=None: _FAKE_ARTIFACT,
     )
     response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc")
@@ -741,7 +741,7 @@ def test_get_artifact_401_anonymous(db, client):
 def test_get_artifact_404_unknown(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_artifact_meta",
+        "apps.opps.api.load_artifact_meta",
         lambda workspace, slug, artifact_id, run_id=None: {"_not_found": True},
     )
     response = client.get("/api/w/ws1/opps/opp-1/artifacts/no-such")
@@ -758,7 +758,7 @@ def test_get_artifact_404_unknown(member_client, monkeypatch):
 def test_download_artifact_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.download_artifact_bytes",
+        "apps.opps.api.download_artifact_bytes",
         lambda workspace, slug, artifact_id: (b"hello world", "text/plain"),
     )
     response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc/download")
@@ -784,7 +784,7 @@ def test_download_artifact_404_unknown(member_client, monkeypatch):
     def _raise(workspace, slug, artifact_id):
         raise FileNotFoundError("artifact not found")
 
-    monkeypatch.setattr("apps.opps.api_v2.download_artifact_bytes", _raise)
+    monkeypatch.setattr("apps.opps.api.download_artifact_bytes", _raise)
     response = client.get("/api/w/ws1/opps/opp-1/artifacts/no-such/download")
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
@@ -799,7 +799,7 @@ def test_download_artifact_404_unknown(member_client, monkeypatch):
 def test_fork_opp_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.fork_opp_and_return",
+        "apps.opps.api.fork_opp_and_return",
         lambda workspace, user, slug, body: _FAKE_FORK_RESULT,
     )
     response = client.post(
@@ -846,7 +846,7 @@ def test_fork_opp_400_invalid_phase(member_client, monkeypatch):
     def _raise(workspace, user, slug, body):
         raise ForkOppError("invalid-phase", "unknown phase 'bad-phase'")
 
-    monkeypatch.setattr("apps.opps.api_v2.fork_opp_and_return", _raise)
+    monkeypatch.setattr("apps.opps.api.fork_opp_and_return", _raise)
     response = client.post(
         "/api/w/ws1/opps/opp-1/fork",
         data={"fork_at_phase": "bad-phase"},
@@ -865,7 +865,7 @@ def test_fork_opp_409_no_runs(member_client, monkeypatch):
     def _raise(workspace, user, slug, body):
         raise ForkOppError("no-runs", "no runs to fork from")
 
-    monkeypatch.setattr("apps.opps.api_v2.fork_opp_and_return", _raise)
+    monkeypatch.setattr("apps.opps.api.fork_opp_and_return", _raise)
     response = client.post(
         "/api/w/ws1/opps/opp-1/fork",
         data={"fork_at_phase": "design"},
@@ -884,7 +884,7 @@ def test_fork_opp_404_unknown_run(member_client, monkeypatch):
     def _raise(workspace, user, slug, body):
         raise ForkOppError("source-run-not-found", "run not found")
 
-    monkeypatch.setattr("apps.opps.api_v2.fork_opp_and_return", _raise)
+    monkeypatch.setattr("apps.opps.api.fork_opp_and_return", _raise)
     response = client.post(
         "/api/w/ws1/opps/opp-1/fork",
         data={"fork_at_phase": "design", "source_run_id": "run-999"},
@@ -947,7 +947,7 @@ def test_fork_status_404_non_member(non_member_client):
 def test_get_scorecard_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_scorecard_for_opp",
+        "apps.opps.api.load_scorecard_for_opp",
         lambda workspace, slug: _FAKE_SCORECARD,
     )
     response = client.get("/api/w/ws1/opps/opp-1/scorecard")
@@ -960,7 +960,7 @@ def test_get_scorecard_happy_path(member_client, monkeypatch):
 def test_get_scorecard_null_when_no_scorecard(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_scorecard_for_opp",
+        "apps.opps.api.load_scorecard_for_opp",
         lambda workspace, slug: {},
     )
     response = client.get("/api/w/ws1/opps/opp-1/scorecard")
@@ -989,7 +989,7 @@ def test_get_scorecard_401_anonymous(db, client):
 def test_get_scorecard_404_unknown_opp(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_scorecard_for_opp",
+        "apps.opps.api.load_scorecard_for_opp",
         lambda workspace, slug: None,
     )
     response = client.get("/api/w/ws1/opps/no-such/scorecard")
@@ -1006,7 +1006,7 @@ def test_get_scorecard_404_unknown_opp(member_client, monkeypatch):
 def test_record_gate_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.record_gate_decision",
+        "apps.opps.api.record_gate_decision",
         lambda workspace, slug, skill, body, user: _FAKE_GATE,
     )
     response = client.post(
@@ -1062,7 +1062,7 @@ def test_record_gate_404_unknown_opp(member_client, monkeypatch):
     def _raise(workspace, slug, skill, body, user):
         raise FileNotFoundError(f"no opp named {slug!r}")
 
-    monkeypatch.setattr("apps.opps.api_v2.record_gate_decision", _raise)
+    monkeypatch.setattr("apps.opps.api.record_gate_decision", _raise)
     response = client.post(
         "/api/w/ws1/opps/no-such/gates/idea-to-pdd",
         data={"decision": "approved"},
@@ -1086,7 +1086,7 @@ def test_compare_runs_happy_path(member_client, monkeypatch):
         "snapshots": [_FAKE_SNAPSHOT_A, _FAKE_SNAPSHOT_B],
     }
     monkeypatch.setattr(
-        "apps.opps.api_v2.compare_opp_runs",
+        "apps.opps.api.compare_opp_runs",
         lambda workspace, slug, run_ids: fake_compare,
     )
     response = client.get(
@@ -1122,7 +1122,7 @@ def test_compare_runs_400_too_few_run_ids(member_client):
 def test_seed_chat_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.seed_chat_for_step",
+        "apps.opps.api.seed_chat_for_step",
         lambda workspace, slug, user, body: {"session_slug": "sess-abc"},
     )
     response = client.post(
@@ -1178,7 +1178,7 @@ def test_seed_chat_404_opp_not_found(member_client, monkeypatch):
     def _raise(workspace, slug, user, body):
         raise FileNotFoundError("no opp named 'no-such'")
 
-    monkeypatch.setattr("apps.opps.api_v2.seed_chat_for_step", _raise)
+    monkeypatch.setattr("apps.opps.api.seed_chat_for_step", _raise)
     response = client.post(
         "/api/w/ws1/opps/no-such/actions/seed-chat",
         data={"step_skill": "idea-to-pdd"},
@@ -1198,7 +1198,7 @@ def test_opp_health_reachable(member_client, monkeypatch):
     client, _, _ = member_client
     now = dt.datetime(2026, 5, 14, 10, 0, tzinfo=dt.UTC)
     monkeypatch.setattr(
-        "apps.opps.api_v2.probe_opp_health",
+        "apps.opps.api.probe_opp_health",
         lambda workspace, slug: {"reachable": True, "last_checked_at": now, "error": None},
     )
     response = client.get("/api/w/ws1/opps/opp-1/health")
@@ -1213,7 +1213,7 @@ def test_opp_health_unreachable(member_client, monkeypatch):
     client, _, _ = member_client
     now = dt.datetime(2026, 5, 14, 10, 0, tzinfo=dt.UTC)
     monkeypatch.setattr(
-        "apps.opps.api_v2.probe_opp_health",
+        "apps.opps.api.probe_opp_health",
         lambda workspace, slug: {
             "reachable": False, "last_checked_at": now, "error": "connection refused",
         },
@@ -1260,7 +1260,7 @@ def test_invalidate_snapshot_happy_path(db, client, monkeypatch):
     WorkspaceMembership.objects.create(workspace=workspace, user=staff_user, role="owner")
     client.force_login(staff_user)
     monkeypatch.setattr(
-        "apps.opps.api_v2.invalidate_opp_snapshot_cache",
+        "apps.opps.api.invalidate_opp_snapshot_cache",
         lambda workspace: None,
     )
     response = client.post("/api/w/ws1/opps/opp-1/snapshot/invalidate")
@@ -1272,7 +1272,7 @@ def test_invalidate_snapshot_403_non_admin(member_client, monkeypatch):
     """Regular editor cannot invalidate."""
     client, _, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.invalidate_opp_snapshot_cache",
+        "apps.opps.api.invalidate_opp_snapshot_cache",
         lambda workspace: None,
     )
     response = client.post("/api/w/ws1/opps/opp-1/snapshot/invalidate")

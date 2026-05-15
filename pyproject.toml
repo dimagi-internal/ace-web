@@ -75,7 +75,7 @@ select = ["E", "F", "W", "I", "UP", "B"]
 
 [tool.basedpyright]
 include = ["apps", "config"]
-exclude = ["**/migrations", "**/__pycache__", "**/node_modules"]
+exclude = ["**/migrations", "**/__pycache__", "**/node_modules", "apps/videos/**"]
 pythonVersion = "3.11"
 # ── Missing stubs context ────────────────────────────────────────────────────
 # Running at "standard" / "basic" without django-stubs, django-environ stubs,

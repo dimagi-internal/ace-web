@@ -25,9 +25,9 @@ from django.http import FileResponse, HttpRequest, HttpResponse, StreamingHttpRe
 from ninja import Path as PathParam
 from ninja import Router
 
-from apps.api_v2.auth import session_auth
-from apps.api_v2.deps import resolve_workspace_for_member
-from apps.api_v2.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
+from apps.api.auth import session_auth
+from apps.api.deps import resolve_workspace_for_member
+from apps.api.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
 
 from . import service, templates
 from .schemas import (

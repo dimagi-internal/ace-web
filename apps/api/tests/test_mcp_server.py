@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from apps.api_v2.mcp_server import (
+from apps.api.mcp_server import (
     MCPType,
     _BearerPassthrough,
     _route_map_fn,
@@ -26,23 +26,23 @@ from apps.api_v2.mcp_server import (
 # ---------------------------------------------------------------------------
 
 _EXPECTED_TOOL_NAMES = {
-    "apps_opps_api_v2_list_opps",
-    "apps_opps_api_v2_get_opp",
-    "apps_opps_api_v2_list_runs",
-    "apps_opps_api_v2_get_run",
-    "apps_opps_api_v2_get_step",
-    "apps_opps_api_v2_get_artifact",
-    "apps_opps_api_v2_get_scorecard",
-    "apps_sessions_api_v2_list_sessions",
-    "apps_sessions_api_v2_get_session",
-    "apps_videos_api_v2_list_programs",
-    "apps_videos_api_v2_get_program",
-    "apps_videos_api_v2_get_run",
-    "apps_videos_api_v2_get_library",
-    "apps_videos_api_v2_get_render_status",
-    "apps_videos_api_v2_get_feedback",
-    "apps_videos_api_v2_list_video_templates",
-    "apps_videos_api_v2_get_video_template",
+    "apps_opps_api_list_opps",
+    "apps_opps_api_get_opp",
+    "apps_opps_api_list_runs",
+    "apps_opps_api_get_run",
+    "apps_opps_api_get_step",
+    "apps_opps_api_get_artifact",
+    "apps_opps_api_get_scorecard",
+    "apps_sessions_api_list_sessions",
+    "apps_sessions_api_get_session",
+    "apps_videos_api_list_programs",
+    "apps_videos_api_get_program",
+    "apps_videos_api_get_run",
+    "apps_videos_api_get_library",
+    "apps_videos_api_get_render_status",
+    "apps_videos_api_get_feedback",
+    "apps_videos_api_list_video_templates",
+    "apps_videos_api_get_video_template",
 }
 
 

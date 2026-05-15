@@ -2,8 +2,8 @@
 
 The DRF ``activity_feed`` view was removed in the Phase 5 API
 modernisation — all traffic now flows through the Ninja v2 router
-(``apps/activity/api_v2.py``).  This module retains the pure helper
-functions so that ``api_v2`` can import them without pulling in DRF.
+(``apps/activity/api.py``).  This module retains the pure helper
+functions so that ``api`` can import them without pulling in DRF.
 
 Out-of-scope for v1:
   - Artifact mtimes (they'd require a per-opp file walk; skipped because

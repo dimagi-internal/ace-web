@@ -8,15 +8,15 @@ from typing import Annotated
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from ninja import Path, Router
 
-from apps.api_v2.auth import session_auth
-from apps.api_v2.deps import require_write_global, resolve_workspace_for_member
-from apps.api_v2.errors import (
+from apps.api.auth import session_auth
+from apps.api.deps import require_write_global, resolve_workspace_for_member
+from apps.api.errors import (
     TYPE_CONFLICT,
     TYPE_NOT_FOUND,
     TYPE_VALIDATION,
     ProblemError,
 )
-from apps.api_v2.etag import compute_etag, maybe_not_modified
+from apps.api.etag import compute_etag, maybe_not_modified
 
 from .schemas import (
     ArtifactOut,

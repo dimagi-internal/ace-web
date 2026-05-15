@@ -1,4 +1,4 @@
-"""Contract tests for apps.ingest.api_v2."""
+"""Contract tests for apps.ingest.api."""
 import io
 
 import pytest
@@ -47,7 +47,7 @@ def anon_client(db, client):
 def test_upload_201(member_client, monkeypatch):
     client, ws, _ = member_client
     monkeypatch.setattr(
-        "apps.ingest.api_v2.process_ingest_upload",
+        "apps.ingest.api.process_ingest_upload",
         lambda **kwargs: _FAKE_UPLOAD_RESULT,
     )
     resp = client.post(

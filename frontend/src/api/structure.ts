@@ -1,4 +1,4 @@
-import { apiV2 } from "./client.v2";
+import { apiClient } from "./apiClient";
 import type { StructureTree } from "./types.ws";
 
 /**
@@ -6,13 +6,13 @@ import type { StructureTree } from "./types.ws";
  *
  * v2 endpoint: GET /api/w/{workspace_slug}/sessions/{slug}/structure
  * The response body is not captured in the generated schema (content?: never),
- * so we cast the `data` field from apiV2 to `StructureTree`.
+ * so we cast the `data` field from apiClient to `StructureTree`.
  */
 export async function getSessionStructure(
   slug: string,
   workspaceSlug: string,
 ): Promise<StructureTree> {
-  const { data, response } = await apiV2.GET(
+  const { data, response } = await apiClient.GET(
     "/api/w/{workspace_slug}/sessions/{slug}/structure",
     { params: { path: { workspace_slug: workspaceSlug, slug } } },
   );

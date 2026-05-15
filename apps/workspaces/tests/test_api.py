@@ -1,4 +1,4 @@
-"""Contract tests for apps.workspaces.api_v2."""
+"""Contract tests for apps.workspaces.api."""
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -109,7 +109,7 @@ def anon_client(db, client):
 def test_list_workspaces_returns_list(owner_client, monkeypatch):
     client, workspace, user = owner_client
     monkeypatch.setattr(
-        "apps.workspaces.api_v2.list_my_workspaces",
+        "apps.workspaces.api.list_my_workspaces",
         lambda u: [_FAKE_WORKSPACE],
     )
     resp = client.get("/api/workspaces")
@@ -135,7 +135,7 @@ def test_list_workspaces_anon_401(anon_client):
 def test_create_workspace_201(owner_client, monkeypatch):
     client, _, user = owner_client
     monkeypatch.setattr(
-        "apps.workspaces.api_v2.create_workspace",
+        "apps.workspaces.api.create_workspace",
         lambda u, body: {**_FAKE_WORKSPACE, "name": body.name},
     )
     resp = client.post(
@@ -167,7 +167,7 @@ def test_create_workspace_anon_401(anon_client):
 def test_workspace_detail_happy(owner_client, monkeypatch):
     client, workspace, _ = owner_client
     monkeypatch.setattr(
-        "apps.workspaces.api_v2._workspace_to_dict",
+        "apps.workspaces.api._workspace_to_dict",
         lambda ws, user: _FAKE_WORKSPACE,
     )
     resp = client.get(f"/api/workspaces/{workspace.slug}")
@@ -198,7 +198,7 @@ def test_workspace_detail_anon_401(anon_client):
 def test_patch_workspace_owner(owner_client, monkeypatch):
     client, workspace, _ = owner_client
     monkeypatch.setattr(
-        "apps.workspaces.api_v2._workspace_to_dict",
+        "apps.workspaces.api._workspace_to_dict",
         lambda ws, user: {**_FAKE_WORKSPACE, "name": ws.display_name},
     )
     resp = client.patch(
@@ -229,7 +229,7 @@ def test_patch_workspace_member_403(member_client, monkeypatch):
 def test_list_members_happy(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.workspaces.api_v2.list_members_in_workspace",
+        "apps.workspaces.api.list_members_in_workspace",
         lambda ws: [_FAKE_MEMBER],
     )
     resp = client.get(f"/api/workspaces/{workspace.slug}/members")
@@ -255,7 +255,7 @@ def test_list_members_non_member_404(non_member_client):
 def test_invite_member_owner_201(owner_client, monkeypatch):
     client, workspace, _ = owner_client
     monkeypatch.setattr(
-        "apps.workspaces.api_v2.invite_member_to_workspace",
+        "apps.workspaces.api.invite_member_to_workspace",
         lambda ws, inviter, email, role: {**_FAKE_INVITE, "email": email},
     )
     resp = client.post(
@@ -287,7 +287,7 @@ def test_invite_member_non_owner_403(member_client, monkeypatch):
 def test_remove_member_owner_204(owner_client, monkeypatch):
     client, workspace, user = owner_client
     monkeypatch.setattr(
-        "apps.workspaces.api_v2.remove_member_from_workspace",
+        "apps.workspaces.api.remove_member_from_workspace",
         lambda ws, requester, uid: None,
     )
     resp = client.delete(f"/api/workspaces/{workspace.slug}/members/999")
@@ -310,7 +310,7 @@ def test_remove_member_non_owner_403(member_client, monkeypatch):
 def test_leave_workspace_204(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.workspaces.api_v2.leave_workspace_op",
+        "apps.workspaces.api.leave_workspace_op",
         lambda ws, user: None,
     )
     resp = client.post(f"/api/workspaces/{workspace.slug}/leave")
@@ -326,7 +326,7 @@ def test_leave_workspace_204(member_client, monkeypatch):
 def test_workspace_activity_owner(owner_client, monkeypatch):
     client, workspace, _ = owner_client
     monkeypatch.setattr(
-        "apps.workspaces.api_v2.get_workspace_activity",
+        "apps.workspaces.api.get_workspace_activity",
         lambda ws, user: [],
     )
     resp = client.get(f"/api/workspaces/{workspace.slug}/activity")
@@ -352,7 +352,7 @@ def test_workspace_activity_member_403(member_client, monkeypatch):
 def test_verify_drive_happy(owner_client, monkeypatch):
     client, workspace, _ = owner_client
     monkeypatch.setattr(
-        "apps.workspaces.api_v2.verify_drive_access_for_workspace",
+        "apps.workspaces.api.verify_drive_access_for_workspace",
         lambda ws: {"ok": True, "sample_files": [], "total_visible": 0},
     )
     resp = client.post(f"/api/workspaces/{workspace.slug}/drive-config/verify")
@@ -370,7 +370,7 @@ def test_drive_config_not_shadowed_by_slug_route(owner_client, monkeypatch):
     """Regression: /workspaces/drive-config must not be matched as /{slug}='drive-config'."""
     client, _workspace, _ = owner_client
     # Patch out the ServiceAccount lookup so we don't need a real SA row.
-    import apps.workspaces.api_v2 as _api
+    import apps.workspaces.api as _api
 
     monkeypatch.setattr(
         _api,

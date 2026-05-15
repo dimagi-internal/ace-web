@@ -2,10 +2,10 @@
 
 The DRF-decorated endpoint functions that previously lived here were removed
 in the Phase 5 API modernisation.  All traffic now flows through the Ninja v2
-router (``apps/auth/api_v2.py``).
+router (``apps/auth/api.py``).
 
 This module retains ``_can_write_global`` because it is imported by
-``apps/auth/api_v2.py`` for the promote / disconnect / nova-status endpoints.
+``apps/auth/api.py`` for the promote / disconnect / nova-status endpoints.
 """
 from __future__ import annotations
 

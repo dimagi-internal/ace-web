@@ -6,8 +6,8 @@ from typing import Annotated
 from django.http import HttpRequest, HttpResponse
 from ninja import Path, Router
 
-from apps.api_v2.auth import session_auth
-from apps.api_v2.deps import resolve_workspace_for_member
+from apps.api.auth import session_auth
+from apps.api.deps import resolve_workspace_for_member
 
 from .schemas import ActivityFeedOut
 

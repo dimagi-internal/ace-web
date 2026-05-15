@@ -3,9 +3,9 @@ name: Regenerate OpenAPI types
 on:
   pull_request:
     paths:
-      - "apps/**/api_v2.py"
+      - "apps/**/api.py"
       - "apps/**/schemas.py"
-      - "apps/api_v2/**"
+      - "apps/api/**"
 
 jobs:
   regen:
@@ -28,7 +28,7 @@ jobs:
           DJANGO_SETTINGS_MODULE=config.settings.test uv run python -c "
           import django, json
           django.setup()
-          from apps.api_v2.api import api
+          from apps.api.api import api
           with open('frontend/openapi.json', 'w') as f:
             json.dump(api.get_openapi_schema(), f, indent=2)
           "

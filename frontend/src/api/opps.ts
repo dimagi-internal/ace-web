@@ -1,4 +1,4 @@
-import { apiV2 } from "./client.v2";
+import { apiClient } from "./apiClient";
 import { getCachedSnapshot, setCachedSnapshot, getCachedList, setCachedList } from "./oppCache";
 import type {
   CreateOppPayload,
@@ -40,7 +40,7 @@ export async function listOpps(
   const cacheKey = `ws=${workspaceSlug}&tags=${(tags ?? []).join(",")}`;
   const cached = !opts?.force ? getCachedList(cacheKey) : undefined;
 
-  const { data: responseData, response } = await apiV2.GET("/api/w/{workspace_slug}/opps", {
+  const { data: responseData, response } = await apiClient.GET("/api/w/{workspace_slug}/opps", {
     params: { path: { workspace_slug: workspaceSlug } },
     headers: cached ? { "If-None-Match": cached.etag } : {},
   });
@@ -87,7 +87,7 @@ export async function createOpp(
   workspaceSlug: string,
   payload: CreateOppPayload,
 ): Promise<CreateOppResponse> {
-  const { data, response } = await apiV2.POST("/api/w/{workspace_slug}/opps", {
+  const { data, response } = await apiClient.POST("/api/w/{workspace_slug}/opps", {
     params: { path: { workspace_slug: workspaceSlug } },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     body: payload as any,
@@ -97,7 +97,7 @@ export async function createOpp(
 }
 
 export async function deleteOpp(workspaceSlug: string, slug: string): Promise<void> {
-  const { response } = await apiV2.DELETE("/api/w/{workspace_slug}/opps/{slug}", {
+  const { response } = await apiClient.DELETE("/api/w/{workspace_slug}/opps/{slug}", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
   });
   if (!response.ok && response.status !== 204) {
@@ -110,7 +110,7 @@ export async function updateOppTags(
   slug: string,
   tags: string[],
 ): Promise<{ slug: string; tags: string[] }> {
-  const { data, response } = await apiV2.PATCH("/api/w/{workspace_slug}/opps/{slug}", {
+  const { data, response } = await apiClient.PATCH("/api/w/{workspace_slug}/opps/{slug}", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     body: { tags } as any,
@@ -127,7 +127,7 @@ export async function getOpp(
 ): Promise<OppSnapshot> {
   const cached = !opts?.force ? getCachedSnapshot(slug, runId ?? null) : undefined;
 
-  const { data: responseData, response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}", {
+  const { data: responseData, response } = await apiClient.GET("/api/w/{workspace_slug}/opps/{slug}", {
     params: {
       path: { workspace_slug: workspaceSlug, slug },
       query: runId ? { run_id: runId } : {},
@@ -155,7 +155,7 @@ export function getOppCompare(_slugA: string, _slugB: string): Promise<never> {
 }
 
 export async function getScorecard(workspaceSlug: string, slug: string): Promise<Scorecard> {
-  const { data, response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/scorecard", {
+  const { data, response } = await apiClient.GET("/api/w/{workspace_slug}/opps/{slug}/scorecard", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
   });
   if (!response.ok) throw new Error(`getScorecard: ${response.status}`);
@@ -181,7 +181,7 @@ export async function getStepDetail(
   runId: string,
   skill: string,
 ): Promise<StepDetail> {
-  const { data, response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/steps/{skill}", {
+  const { data, response } = await apiClient.GET("/api/w/{workspace_slug}/opps/{slug}/steps/{skill}", {
     params: {
       path: { workspace_slug: workspaceSlug, slug, skill },
       query: { run_id: runId },
@@ -208,7 +208,7 @@ export async function discussStep(
   runId: string,
   skill: string,
 ): Promise<DiscussResponse> {
-  const { data, response } = await apiV2.POST("/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat", {
+  const { data, response } = await apiClient.POST("/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
     body: { step_skill: skill, run_id: runId },
   });
@@ -217,7 +217,7 @@ export async function discussStep(
 }
 
 export async function listOppRuns(workspaceSlug: string, slug: string): Promise<RunSummary[]> {
-  const { data, response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/runs", {
+  const { data, response } = await apiClient.GET("/api/w/{workspace_slug}/opps/{slug}/runs", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
   });
   if (!response.ok) throw new Error(`listOppRuns: ${response.status}`);
@@ -230,7 +230,7 @@ export async function deleteOppRun(
   slug: string,
   runId: string,
 ): Promise<void> {
-  const { response } = await apiV2.DELETE(
+  const { response } = await apiClient.DELETE(
     "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}",
     { params: { path: { workspace_slug: workspaceSlug, slug, run_id: runId } } },
   );
@@ -244,7 +244,7 @@ export async function forkOpp(
   slug: string,
   payload: { fork_at_phase: string; source_run_id?: string | null },
 ): Promise<{ slug: string; run_id: string; working_session_slug: string }> {
-  const { data, response } = await apiV2.POST("/api/w/{workspace_slug}/opps/{slug}/fork", {
+  const { data, response } = await apiClient.POST("/api/w/{workspace_slug}/opps/{slug}/fork", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     body: payload as any,
@@ -270,7 +270,7 @@ export async function getForkStatus(
   slug: string,
   sourceRunId: string | null | undefined,
 ): Promise<ForkProgress> {
-  const { data, response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/fork/status", {
+  const { data, response } = await apiClient.GET("/api/w/{workspace_slug}/opps/{slug}/fork/status", {
     params: {
       path: { workspace_slug: workspaceSlug, slug },
       query: sourceRunId ? { source_run_id: sourceRunId } : {},
@@ -295,7 +295,7 @@ export function artifactBodyUrl(
   artifactName: string,
 ): string {
   // Prepend Vite's BASE_URL so this raw-fetch helper lands on the same
-  // /ace/ prefix the rest of the API uses via apiV2. Without this,
+  // /ace/ prefix the rest of the API uses via apiClient. Without this,
   // prod fetches went to labs.connect.dimagi.com/api/... instead of
   // /ace/api/..., which nginx refuses to route and the artifact body
   // preview showed "Error: 404".

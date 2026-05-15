@@ -1,4 +1,4 @@
-import { apiV2 } from "./client.v2";
+import { apiClient } from "./apiClient";
 import type { ShareTokenInfo, ShareTokenListItem, SharedSession } from "./types.ws";
 
 /**
@@ -15,7 +15,7 @@ export const createShareToken = async (
   slug: string,
   workspaceSlug: string,
 ): Promise<ShareTokenInfo> => {
-  const { data, response } = await apiV2.POST(
+  const { data, response } = await apiClient.POST(
     "/api/w/{workspace_slug}/sessions/{slug}/share" as never,
     { params: { path: { workspace_slug: workspaceSlug, slug } } } as never,
   );
@@ -27,7 +27,7 @@ export const listShareTokens = async (
   slug: string,
   workspaceSlug: string,
 ): Promise<ShareTokenListItem[]> => {
-  const { data, response } = await apiV2.GET(
+  const { data, response } = await apiClient.GET(
     "/api/w/{workspace_slug}/sessions/{slug}/share",
     { params: { path: { workspace_slug: workspaceSlug, slug } } },
   );
@@ -40,7 +40,7 @@ export const revokeShareToken = async (
   token: string,
   workspaceSlug: string,
 ): Promise<ShareTokenListItem> => {
-  const { data, response } = await apiV2.DELETE(
+  const { data, response } = await apiClient.DELETE(
     "/api/w/{workspace_slug}/sessions/{slug}/share/{token_key}" as never,
     { params: { path: { workspace_slug: workspaceSlug, slug, token_key: token } } } as never,
   );
@@ -49,7 +49,7 @@ export const revokeShareToken = async (
 };
 
 export const getSharedSession = async (token: string): Promise<SharedSession> => {
-  const { data, response } = await apiV2.GET("/api/share/{token}" as never, {
+  const { data, response } = await apiClient.GET("/api/share/{token}" as never, {
     params: { path: { token } },
   } as never);
   if (!response.ok) throw new Error(`Failed to load shared session: ${response.status}`);

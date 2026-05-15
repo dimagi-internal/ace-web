@@ -24,7 +24,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
 
 django_asgi_app = get_asgi_application()
 
-from apps.api_v2.mcp_server import make_asgi_app  # noqa: E402
+from apps.api.mcp_server import make_asgi_app  # noqa: E402
 from apps.common.channels_auth import AceSessionAuthMiddleware  # noqa: E402
 from apps.opps.routing import websocket_urlpatterns as opps_ws_urlpatterns  # noqa: E402
 from apps.sessions.routing import websocket_urlpatterns as sessions_ws_urlpatterns  # noqa: E402

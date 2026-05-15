@@ -7,10 +7,10 @@ from typing import Annotated
 from django.http import HttpRequest, HttpResponse
 from ninja import Path, Router
 
-from apps.api_v2.auth import session_auth
-from apps.api_v2.deps import resolve_workspace_for_member
-from apps.api_v2.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
-from apps.api_v2.pagination import Page, paginate
+from apps.api.auth import session_auth
+from apps.api.deps import resolve_workspace_for_member
+from apps.api.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
+from apps.api.pagination import Page, paginate
 
 from .schemas import SessionCreateIn, SessionListOut, SessionPatchIn
 
@@ -680,7 +680,7 @@ def create_share_token(
     from django.conf import settings
     from django.http import JsonResponse
 
-    from apps.api_v2.errors import TYPE_FORBIDDEN
+    from apps.api.errors import TYPE_FORBIDDEN
 
     from .models import Session, SessionParticipant, ShareToken
     from .schemas import ShareTokenOut
@@ -731,7 +731,7 @@ def revoke_share_token(
     from django.http import JsonResponse
     from django.utils import timezone
 
-    from apps.api_v2.errors import TYPE_FORBIDDEN
+    from apps.api.errors import TYPE_FORBIDDEN
 
     from .models import Session, SessionParticipant, ShareToken
     from .schemas import ShareTokenOut
@@ -771,7 +771,7 @@ def revoke_share_token(
 
 
 # ---------------------------------------------------------------------------
-# Public share view — no auth router (mounted at /share in api_v2/api.py)
+# Public share view — no auth router (mounted at /share in api/api.py)
 # ---------------------------------------------------------------------------
 
 share_public_router = Router(tags=["sessions"])  # mounted at /share

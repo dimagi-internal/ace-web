@@ -1,4 +1,4 @@
-import { apiV2 } from "./client.v2";
+import { apiClient } from "./apiClient";
 import type { Message } from "./types.ws";
 
 /**
@@ -12,7 +12,7 @@ export const listMessages = async (
   slug: string,
   workspaceSlug: string,
 ): Promise<Message[]> => {
-  const { data, response } = await apiV2.GET(
+  const { data, response } = await apiClient.GET(
     "/api/w/{workspace_slug}/sessions/{slug}/messages",
     { params: { path: { workspace_slug: workspaceSlug, slug } } },
   );

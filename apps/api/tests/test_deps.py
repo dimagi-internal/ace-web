@@ -21,7 +21,7 @@ def workspace_and_member(db):
 
 @pytest.mark.django_db
 def test_resolve_workspace_returns_workspace_for_member(workspace_and_member, rf):
-    from apps.api_v2.deps import resolve_workspace_for_member
+    from apps.api.deps import resolve_workspace_for_member
 
     workspace, user = workspace_and_member
     request = rf.get("/api/w/ws1/")
@@ -32,8 +32,8 @@ def test_resolve_workspace_returns_workspace_for_member(workspace_and_member, rf
 
 @pytest.mark.django_db
 def test_resolve_workspace_404s_for_non_member(workspace_and_member, rf):
-    from apps.api_v2.deps import resolve_workspace_for_member
-    from apps.api_v2.errors import ProblemError
+    from apps.api.deps import resolve_workspace_for_member
+    from apps.api.errors import ProblemError
 
     workspace, _ = workspace_and_member
     outsider = User.objects.create_user(email="b@example.com")

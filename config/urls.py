@@ -3,12 +3,12 @@ from django.contrib.auth.decorators import login_required
 from django.urls import include, path, re_path
 from django.views.generic import TemplateView
 
-from apps.api_v2.api import api as api_v2
-from apps.api_v2.views import redoc_docs, scalar_docs
+from apps.api.api import api
+from apps.api.views import redoc_docs, scalar_docs
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/", api_v2.urls),
+    path("api/", api.urls),
     path("api/docs/", scalar_docs, name="api_docs_scalar"),
     path("api/redoc/", redoc_docs, name="api_docs_redoc"),
     # React pages under /auth/ that must be served by the SPA, not by

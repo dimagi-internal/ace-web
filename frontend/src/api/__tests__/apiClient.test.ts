@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { apiV2 } from "../client.v2";
+import { apiClient } from "../apiClient";
 import type { components } from "../generated";
 
-describe("apiV2 typed client", () => {
+describe("apiClient typed client", () => {
   it("compiles with typed paths", () => {
     // Spot-check that codegen produced a schema we can reference. OppCardOut
     // was dropped from the OpenAPI schema when list_opps started returning a
@@ -12,9 +12,9 @@ describe("apiV2 typed client", () => {
     expect(sample.slug).toBe("x");
   });
 
-  it("apiV2 client is created", () => {
-    expect(apiV2).toBeDefined();
-    expect(typeof apiV2.GET).toBe("function");
-    expect(typeof apiV2.POST).toBe("function");
+  it("apiClient is created", () => {
+    expect(apiClient).toBeDefined();
+    expect(typeof apiClient.GET).toBe("function");
+    expect(typeof apiClient.POST).toBe("function");
   });
 });

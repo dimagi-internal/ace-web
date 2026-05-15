@@ -6,8 +6,8 @@ from typing import Annotated
 from django.http import HttpRequest, HttpResponse
 from ninja import Path, Router
 
-from apps.api_v2.auth import session_auth
-from apps.api_v2.errors import TYPE_NOT_FOUND, ProblemError
+from apps.api.auth import session_auth
+from apps.api.errors import TYPE_NOT_FOUND, ProblemError
 
 from .schemas import PersonalTokenCreatedOut, PersonalTokenCreateIn, PersonalTokenOut
 

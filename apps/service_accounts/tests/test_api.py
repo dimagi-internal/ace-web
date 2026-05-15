@@ -1,4 +1,4 @@
-"""Contract tests for apps.service_accounts.api_v2."""
+"""Contract tests for apps.service_accounts.api."""
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -38,7 +38,7 @@ def anon_client(db, client):
 def test_list_tokens_200(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.service_accounts.api_v2.list_personal_tokens",
+        "apps.service_accounts.api.list_personal_tokens",
         lambda user: [_FAKE_TOKEN],
     )
     resp = client.get("/api/tokens")
@@ -63,7 +63,7 @@ def test_list_tokens_anon_401(anon_client):
 def test_create_token_201(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.service_accounts.api_v2.create_personal_token",
+        "apps.service_accounts.api.create_personal_token",
         lambda user, name: {**_FAKE_TOKEN_CREATED, "name": name},
     )
     resp = client.post(
@@ -96,7 +96,7 @@ def test_create_token_anon_401(anon_client):
 def test_revoke_token_204(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.service_accounts.api_v2.revoke_personal_token",
+        "apps.service_accounts.api.revoke_personal_token",
         lambda user, token_id: True,
     )
     resp = client.delete("/api/tokens/1")
@@ -107,7 +107,7 @@ def test_revoke_token_204(auth_client, monkeypatch):
 def test_revoke_token_404(auth_client, monkeypatch):
     client, _ = auth_client
     monkeypatch.setattr(
-        "apps.service_accounts.api_v2.revoke_personal_token",
+        "apps.service_accounts.api.revoke_personal_token",
         lambda user, token_id: False,
     )
     resp = client.delete("/api/tokens/999")

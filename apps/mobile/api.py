@@ -9,9 +9,9 @@ from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from ninja import Path, Router
 
-from apps.api_v2.auth import session_auth
-from apps.api_v2.deps import require_write_global
-from apps.api_v2.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
+from apps.api.auth import session_auth
+from apps.api.deps import require_write_global
+from apps.api.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
 
 from .schemas import (
     DiagnoseOut,
