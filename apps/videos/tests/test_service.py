@@ -478,3 +478,36 @@ narration:
     })
     assert result.ok
     assert doc["narration"]["by_beat"]["hook"] == "Hello"
+
+
+def test_stage_rewrites_library_refs_to_gdrive(workspace, fake_drive, videos_root):
+    """Local staged spec.yaml has ``library:`` refs rewritten to ``gdrive:``.
+
+    The Drive-side spec keeps the stable ``library:`` references; the
+    local scratch copy fed to the renderer is the rewritten form.
+    """
+    import yaml as pyyaml
+
+    layout = drive.resolve_layout(workspace, fake_drive.client)
+    # Seed a library video file.
+    drive_id = drive.upload_library_file(
+        layout, fake_drive.client, drive.LIBRARY_VIDEO,
+        "drone.mp4", b"x", "video/mp4", subfolder="uganda",
+    )
+    spec_yaml = (
+        "name: Demo\n"
+        "manifest:\n"
+        '  hero: "library:video/uganda/drone.mp4"\n'
+        '  other: "gdrive:abc.mp4"\n'
+        '  bogus: "library:video/missing/never.mp4"\n'
+    )
+    drive.write_spec(layout, fake_drive.client, "demo", "run-001", spec_yaml)
+
+    service._stage_spec(workspace, "demo", "run-001")
+    local_path = service.spec_path("demo", "run-001")
+    parsed = pyyaml.safe_load(local_path.read_text())
+    assert parsed["manifest"]["hero"] == f"gdrive:{drive_id}.mp4"
+    assert parsed["manifest"]["other"] == "gdrive:abc.mp4"  # unchanged
+    # Unresolvable library refs are left as-is — renderer surfaces them
+    # as missing assets and the operator fixes the library entry.
+    assert parsed["manifest"]["bogus"] == "library:video/missing/never.mp4"
