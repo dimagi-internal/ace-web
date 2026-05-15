@@ -419,7 +419,7 @@ function renderLibraryHtml(args: {
       : `<span class="lib-tag missing">⚠ not cached</span>`;
     const video = e.sourcePath
       ? `<video src="${e.sourcePath}" controls preload="metadata"></video>`
-      : `<div class="lib-placeholder">${e.parsed.kind === "gdrive" ? `not pulled from Drive yet · <code>${escape(e.parsed.gdriveId ?? "")}</code>` : escape(e.entry)}</div>`;
+      : `<div class="lib-placeholder">${e.parsed.kind === "gdrive" ? `not pulled from Drive yet · <a class="gdrive-link" href="https://drive.google.com/file/d/${escape(e.parsed.gdriveId ?? "")}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : escape(e.entry)}</div>`;
     return `
       <div class="lib-card">
         <div class="lib-head">
@@ -428,7 +428,7 @@ function renderLibraryHtml(args: {
         </div>
         <div class="lib-meta">
           ${e.dur ? `<span>${e.dur.toFixed(1)}s · ${e.res}</span>` : ""}
-          ${e.parsed.kind === "gdrive" ? `<code>drive:${escape(e.parsed.gdriveId ?? "")}</code>` : ""}
+          ${e.parsed.kind === "gdrive" ? `<a class="gdrive-link" href="https://drive.google.com/file/d/${escape(e.parsed.gdriveId ?? "")}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}
         </div>
         ${video}
         <div class="lib-tags">${usedBadges}</div>
@@ -563,7 +563,7 @@ function renderHtml(args: {
     .map((blk) => {
       const leftPct = (blk.startSec / totalSec) * 100;
       const widthPct = (blk.durationSec / totalSec) * 100;
-      return `<div class="tl-beat" style="left:${leftPct}%;width:${widthPct}%;background:${beatColors[blk.kind] ?? "#3843D0"}" title="${sectionLabel(blk.id).name}: ${fmtTs(blk.startSec)} → ${fmtTs(blk.endSec)}"></div>`;
+      return `<div class="tl-beat" data-clickable data-beat-id="${blk.id}" data-start-sec="${blk.startSec.toFixed(2)}" style="left:${leftPct}%;width:${widthPct}%;background:${beatColors[blk.kind] ?? "#3843D0"}" title="${sectionLabel(blk.id).name} · ${fmtTs(blk.startSec)} → ${fmtTs(blk.endSec)} · click to jump"></div>`;
     })
     .join("");
 
@@ -596,7 +596,7 @@ function renderHtml(args: {
         </div>
         <div class="meta">
           ${u.sourceDuration ? `${u.sourceDuration.toFixed(1)}s · ${u.sourceRes}` : ""}
-          ${u.gdriveId ? `<br/><code>gdrive:${u.gdriveId}</code>` : ""}
+          ${u.gdriveId ? `<br/><a class="gdrive-link" href="https://drive.google.com/file/d/${u.gdriveId}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}
         </div>
         ${video}
       </div>`;
@@ -754,10 +754,69 @@ function renderHtml(args: {
   .nav-tabs a { padding: 8px 16px; border-radius: 8px; background: white; border: 1px solid var(--line); text-decoration: none; color: var(--ink-2); font: 600 13px var(--sans); }
   .nav-tabs a.active { background: var(--indigo); color: white; border-color: var(--indigo); }
   .nav-tabs a:hover:not(.active) { background: var(--sky-tint); }
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Edit affordance: narration text inline edit
+   * ────────────────────────────────────────────────────────────────── */
+  .narration-edit { margin: 10px 0 14px; padding: 10px 12px; background: white; border: 1px dashed var(--rule); border-radius: 10px; transition: border-color 0.15s, background 0.15s; }
+  .narration-edit:hover { border-color: var(--indigo); background: var(--sky-tint); }
+  .narration-edit:focus-within { border-color: var(--indigo); border-style: solid; background: white; box-shadow: 0 0 0 3px rgba(56,67,208,0.15); }
+  .narration-edit-label { display: flex; align-items: center; gap: 8px; font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 4px; }
+  .narration-edit-label::before { content: '✏'; font-size: 12px; opacity: 0.7; }
+  .narration-edit-label .save-hint { font: 500 11px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); opacity: 0.8; }
+  .narration-edit-body { font: 500 15px var(--sans); color: var(--ink); line-height: 1.5; min-height: 22px; outline: none; cursor: text; }
+  .narration-edit-body:empty::before { content: '(no narration line — click to add)'; color: var(--muted); font-style: italic; font-weight: 400; }
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Trim widget — visible handles + region
+   * ────────────────────────────────────────────────────────────────── */
+  .clip-wrapper { display: flex; flex-direction: column; gap: 8px; }
+  .trim-bar { position: relative; height: 36px; background: linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%); border: 1px solid var(--rule); border-radius: 8px; cursor: ew-resize; touch-action: none; user-select: none; margin-top: 6px; }
+  .trim-region { position: absolute; top: -1px; bottom: -1px; background: rgba(56,67,208,0.18); border: 2px solid var(--indigo); border-radius: 6px; cursor: grab; }
+  .trim-region:active { cursor: grabbing; background: rgba(56,67,208,0.26); }
+  .trim-handle { position: absolute; top: -4px; bottom: -4px; width: 14px; background: var(--indigo); border: 2px solid white; border-radius: 4px; box-shadow: 0 2px 6px rgba(10,6,32,0.25); cursor: ew-resize; transition: transform 0.1s, background 0.1s; touch-action: none; }
+  .trim-handle:hover { background: var(--indigo-deep); transform: scaleY(1.08); }
+  .trim-handle.left { left: -7px; }
+  .trim-handle.right { right: -7px; }
+  .trim-handle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 2px; height: 18px; background: white; opacity: 0.65; transform: translate(-50%, -50%); border-radius: 2px; }
+  .trim-readout { display: flex; justify-content: space-between; gap: 8px; font: 400 11px var(--mono); color: var(--muted); }
+  .trim-readout strong { color: var(--indigo-deep); font-family: var(--sans); font-weight: 700; }
+  .trim-save-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .trim-save { background: var(--indigo); color: white; border: none; padding: 6px 14px; font: 600 12px var(--sans); border-radius: 6px; cursor: pointer; transition: background 0.15s, transform 0.05s; }
+  .trim-save:not(:disabled):hover { background: var(--indigo-deep); }
+  .trim-save:not(:disabled):active { transform: translateY(1px); }
+  .trim-save:disabled { background: var(--rule); color: var(--muted); cursor: not-allowed; }
+  .trim-status { font: 400 11px var(--sans); color: var(--muted); }
+  .trim-status.dirty { color: var(--mango); font-weight: 600; }
+  .trim-status.saved { color: var(--green); font-weight: 600; }
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Timeline — click-to-jump segments
+   * ────────────────────────────────────────────────────────────────── */
+  .tl-beat[data-clickable] { cursor: pointer; transition: opacity 0.1s, transform 0.1s; }
+  .tl-beat[data-clickable]:hover { opacity: 1; transform: scaleY(1.4); transform-origin: center; }
+  .tl-beat[data-active] { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Render banner — appears after an edit fires a render
+   * ────────────────────────────────────────────────────────────────── */
+  .render-banner { position: sticky; top: 0; z-index: 30; margin: -8px -8px 12px; padding: 10px 16px; background: var(--indigo); color: white; border-radius: 0 0 12px 12px; display: none; align-items: center; gap: 10px; font: 600 13px var(--sans); box-shadow: 0 4px 16px rgba(10,6,32,0.18); }
+  .render-banner.show { display: flex; }
+  .render-banner .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .render-banner button { margin-left: auto; background: white; color: var(--indigo-deep); border: none; padding: 4px 12px; border-radius: 6px; font: 700 12px var(--sans); cursor: pointer; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* gdrive link styling — quieter than a bare link */
+  .gdrive-link { color: var(--indigo-deep); text-decoration: none; border-bottom: 1px dotted var(--rule); }
+  .gdrive-link:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
 </style>
 </head>
 <body>
 <div class="container">
+  <div class="render-banner" id="render-banner">
+    <span class="spinner"></span>
+    <span id="render-banner-text">Re-rendering — refresh the player in ~30s.</span>
+  </div>
   <header>
     <h1>${escape(spec.name)} · clip review</h1>
     <span class="coverage">${okAssignments}/${totalAssignments} video clips assigned</span>
@@ -853,7 +912,40 @@ function renderHtml(args: {
 </aside>
 
 <script>
+  // ── Render banner: appears whenever an /edit POST kicks off the
+  // background render chain. Shows a spinner + "refresh the player"
+  // call to action so the operator always knows when work is in flight.
+  const renderBanner = document.getElementById('render-banner');
+  const renderBannerText = document.getElementById('render-banner-text');
+  function showRenderBanner(msg) {
+    if (!renderBanner) return;
+    renderBannerText.textContent = msg;
+    renderBanner.classList.add('show');
+    clearTimeout(showRenderBanner._t);
+    // Auto-hide after 40s — typical draft render finishes in ~25s.
+    showRenderBanner._t = setTimeout(() => renderBanner.classList.remove('show'), 40000);
+  }
+
   const finalVideo = document.getElementById('final-video');
+
+  // ── Timeline click-to-jump: click any segment to scroll the matching
+  // beat card into view AND seek the final-video to that section's start.
+  document.querySelectorAll('.tl-beat[data-clickable]').forEach((seg) => {
+    seg.addEventListener('click', () => {
+      const beatId = seg.dataset.beatId;
+      const startSec = parseFloat(seg.dataset.startSec || '0');
+      // Highlight the active segment.
+      document.querySelectorAll('.tl-beat[data-active]').forEach((el) => el.removeAttribute('data-active'));
+      seg.setAttribute('data-active', '');
+      // Scroll the matching beat card into view.
+      const card = document.querySelector('.beat[data-beat-id="' + beatId + '"]');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // And seek the final video to that section's start.
+      if (finalVideo && !isNaN(startSec)) {
+        try { finalVideo.currentTime = Math.max(0, startSec); } catch (_) { /* ignore */ }
+      }
+    });
+  });
   const grabBtn = document.getElementById('fb-grab-time');
   const grabOut = document.getElementById('fb-grab-time-out');
   let grabbedTs = null;
@@ -1033,7 +1125,10 @@ function renderHtml(args: {
           }),
         });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        status.textContent = '✓ saved · re-rendering in background — refresh the player in a few seconds';
+        status.textContent = '✓ saved';
+        status.classList.remove('dirty');
+        status.classList.add('saved');
+        showRenderBanner('Trim saved · re-rendering — refresh the player in ~30s.');
         dirty = false;
       } catch (e) {
         status.textContent = '⚠ ' + e.message;
@@ -1062,8 +1157,9 @@ function renderHtml(args: {
         });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         original = current;
-        label.textContent = '✓ saved · re-rendering — refresh the player in a few seconds';
-        setTimeout(() => { label.textContent = 'click to edit · click outside to save & re-render'; }, 6000);
+        label.textContent = '✓ saved';
+        showRenderBanner('Voiceover saved · re-rendering — refresh the player in ~30s.');
+        setTimeout(() => { label.textContent = 'click to edit · click outside to save'; }, 6000);
       } catch (e) {
         label.textContent = '⚠ ' + e.message;
       }
@@ -1235,7 +1331,7 @@ function renderAssignmentCard(a: ClipAssignment): string {
           <h3>${a.alias ? `@${a.alias}` : a.refRaw}</h3>
           <span class="badge ${badgeClass}">${badgeLabel}</span>
         </div>
-        <div class="meta">role: ${a.role}${a.gdriveId ? ` · <code>gdrive:${a.gdriveId}</code>` : ""}</div>
+        <div class="meta">role: ${a.role}${a.gdriveId ? ` · <a class="gdrive-link" href="https://drive.google.com/file/d/${a.gdriveId}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}</div>
         <div class="placeholder">${
           a.status === "missing-cache"
             ? `Run <code>npm run hydrate</code> to pull the file into the cache.`
@@ -1259,7 +1355,7 @@ function renderAssignmentCard(a: ClipAssignment): string {
         <h3>@${a.alias}</h3>
         <span class="badge ok">${badgeLabel}</span>
       </div>
-      <div class="meta">clip is ${dur.toFixed(1)}s long · ${a.sourceRes}${a.gdriveId ? ` · drive id <code>${a.gdriveId}</code>` : ""}</div>
+      <div class="meta">clip is ${dur.toFixed(1)}s long · ${a.sourceRes}${a.gdriveId ? ` · <a class="gdrive-link" href="https://drive.google.com/file/d/${a.gdriveId}/view" target="_blank" rel="noopener">open in Drive ↗</a>` : ""}</div>
       <div class="clip-wrapper">
         <video src="${a.sourcePath}" controls preload="metadata" class="clip-video"></video>
         ${a.editScope ? renderTrimWidget(dur, usedStart, usedDur) : ""}
