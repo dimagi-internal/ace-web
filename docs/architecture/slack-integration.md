@@ -32,10 +32,26 @@ To force a re-link, the user can run `/ace link`.
 | `/ace run <slug>`                    | Start `/ace:run` on an existing opp.                          |
 | `/ace run <pdd-link>`                | Create an opp from a PDD in Drive and run it.                 |
 | `/ace new`                           | Open a modal: name + idea → new opp.                          |
+| `/ace track <slug>[/<run_id>]`       | Mirror an existing run (e.g. one running on a laptop) into the current channel. Bare slug picks the current run. |
+| `/ace untrack <slug>`                | Stop mirroring. Equivalent to clicking *Stop watching* on the parent card. |
 | `/ace status [<slug>]`               | Ephemeral parent-card snapshot.                               |
 | `/ace list`                          | Top 5 active runs the user triggered.                         |
 | `/ace link`                          | Re-issue the OAuth-link DM.                                   |
 | `/ace help`                          | Print usage.                                                  |
+
+### Tracking laptop-driven runs
+
+`/ace track` exists for runs that aren't driven through ace-web's
+`turn_driver` — typically when a human is running `claude -p /ace:run`
+on their laptop. There's no `opp.updated` push signal for those runs, so
+the dispatcher's 30s periodic sweep is the only progress source.
+`dispatch_tick` re-loads the opp snapshot, which goes through the Drive
+Changes API (per the opp-cache redesign) and picks up Drive-only changes
+automatically. Cost is ~30ms per active tracked thread per sweep tick.
+
+Click *Stop watching* on the parent card (or run `/ace untrack <slug>`)
+to stop mirroring; the run itself keeps going. The thread is marked with
+`stopped_at` and the sweep skips it from then on.
 
 ## Troubleshooting
 
