@@ -27,6 +27,15 @@ class DjangoSessionAuth(SessionAuth):
     cookie jar.
     """
 
+    def _get_key(self, request: HttpRequest) -> str | None:
+        # Bearer-token callers are stateless and not susceptible to CSRF;
+        # short-circuit the parent's CSRF check so unsafe-method requests
+        # (POST/PUT/PATCH/DELETE) authenticated only by a Bearer header
+        # are not rejected before ``authenticate()`` ever runs.
+        if request.META.get("HTTP_AUTHORIZATION", "").startswith("Bearer "):
+            return None
+        return super()._get_key(request)
+
     def authenticate(self, request: HttpRequest, key: str | None) -> object | None:
         # 1. Bearer-token path — checked first so the CLI tool doesn't need
         #    a session cookie.
