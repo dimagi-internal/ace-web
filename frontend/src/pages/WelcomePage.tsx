@@ -26,6 +26,18 @@ export default function WelcomePage() {
     if (inviteToken) navigate(`/invite/${inviteToken}`, { replace: true });
   }, [inviteToken, navigate]);
 
+  // Returning users with a workspace already shouldn't see the onboarding
+  // page — bounce them to their first workspace home. Onboarding only
+  // makes sense for users with zero memberships (or an invite token,
+  // handled above).
+  useEffect(() => {
+    if (workspacesLoading) return;
+    if (inviteToken) return;
+    if (existingWorkspaces && existingWorkspaces.length > 0) {
+      navigate(`/w/${existingWorkspaces[0].slug}/opps`, { replace: true });
+    }
+  }, [workspacesLoading, existingWorkspaces, inviteToken, navigate]);
+
   const [step, setStep] = useState<Step>("name");
   const [displayName, setDisplayName] = useState("");
   const [folderInput, setFolderInput] = useState("");
