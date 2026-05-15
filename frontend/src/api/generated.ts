@@ -530,6 +530,40 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/videos/library/video": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List curated video library items grouped by subfolder */
+        readonly get: operations["apps_videos_api_list_media_library_video"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/library/audio": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List the audio library (TTS clips with voice + text metadata) */
+        readonly get: operations["apps_videos_api_list_media_library_audio"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/videos/programs": {
         readonly parameters: {
             readonly query?: never;
@@ -2092,6 +2126,63 @@ export interface components {
             readonly skeleton_yaml: string;
             /** Prompt Md */
             readonly prompt_md: string;
+        };
+        /** MediaLibraryVideoItemOut */
+        readonly MediaLibraryVideoItemOut: {
+            /** Ref */
+            readonly ref: string;
+            /** Drive Id */
+            readonly drive_id: string;
+            /** Drive Url */
+            readonly drive_url: string;
+            /** Filename */
+            readonly filename: string;
+            /** Name */
+            readonly name?: string | null;
+            /** Description */
+            readonly description?: string | null;
+            /** Tags */
+            readonly tags?: readonly string[];
+            /** Status */
+            readonly status: string;
+        };
+        /** MediaLibraryVideoOut */
+        readonly MediaLibraryVideoOut: {
+            /** Subfolders */
+            readonly subfolders: readonly components["schemas"]["MediaLibraryVideoSubfolderOut"][];
+        };
+        /** MediaLibraryVideoSubfolderOut */
+        readonly MediaLibraryVideoSubfolderOut: {
+            /** Subfolder */
+            readonly subfolder: string;
+            /** Items */
+            readonly items: readonly components["schemas"]["MediaLibraryVideoItemOut"][];
+        };
+        /** MediaLibraryAudioItemOut */
+        readonly MediaLibraryAudioItemOut: {
+            /** Hash */
+            readonly hash: string;
+            /** Drive Id */
+            readonly drive_id: string;
+            /** Drive Url */
+            readonly drive_url: string;
+            /** Voice Id */
+            readonly voice_id?: string | null;
+            /** Model */
+            readonly model?: string | null;
+            /** Text */
+            readonly text?: string | null;
+            /** Duration Sec */
+            readonly duration_sec?: number | null;
+            /** Generated At */
+            readonly generated_at?: string | null;
+            /** Status */
+            readonly status: string;
+        };
+        /** MediaLibraryAudioOut */
+        readonly MediaLibraryAudioOut: {
+            /** Items */
+            readonly items: readonly components["schemas"]["MediaLibraryAudioItemOut"][];
         };
         /**
          * ProgramCardOut
@@ -4354,6 +4445,50 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["TemplateBundleOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_list_media_library_video: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["MediaLibraryVideoOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_list_media_library_audio: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["MediaLibraryAudioOut"];
                 };
             };
         };
