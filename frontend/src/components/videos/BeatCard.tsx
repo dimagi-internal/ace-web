@@ -27,22 +27,22 @@ function fmt(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function beatIsDirty(beatId: string, buffer: PendingChange[]): boolean {
+function beatIsDirty(beatId: string, kind: string, buffer: PendingChange[]): boolean {
   return buffer.some((op) => {
     const k = opCoalesceKey(op);
     if (k === `set-narration:${beatId}`) return true;
-    if (k === "set-stat:problem" && beatId === "problem") return true;
-    if (k.startsWith("set-stat:impact") && beatId === "impact") return true;
-    if (k.includes("scene-clip") && beatId === "scene") return true;
-    if (k.includes("product-beat") && beatId === "product") return true;
+    if (k === "set-stat:problem" && kind === "body_problem_stat") return true;
+    if (k.startsWith("set-stat:impact") && kind === "body_impact_stats") return true;
+    if (k.includes("scene-clip") && kind === "body_scene") return true;
+    if (k.includes("product-beat") && kind === "body_product_beats") return true;
     return false;
   });
 }
 
-export function BeatCard({ beatId, kind: _kind, startSec, endSec, children }: Props) {
+export function BeatCard({ beatId, kind, startSec, endSec, children }: Props) {
   const { state } = useBeatEditor();
   const label = SECTION_LABELS[beatId] ?? { name: beatId, subtitle: "" };
-  const dirty = beatIsDirty(beatId, state.buffer);
+  const dirty = beatIsDirty(beatId, kind, state.buffer);
   return (
     <section
       data-beat-id={beatId}
