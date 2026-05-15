@@ -8,7 +8,7 @@ from django.conf import settings
 from .blocks import render_parent_card
 from .models import SlackRunThread
 from .run_starter import RunStartError, start_run_from_slack
-from .slack_client import SlackClient, client_for
+from .slack_client import SlackChannelGone, SlackClient, client_for
 
 logger = logging.getLogger(__name__)
 
@@ -92,9 +92,18 @@ def handle_run(*, installation, user_link, rest: str, channel_id: str,
         triggerer_display=f"<@{user_link.slack_user_id}>",
         elapsed_seconds=0,
     )
-    ts = client.post_message(
-        channel=channel_id, blocks=blocks, text=f"ACE run started — {slug}"
-    )
+    try:
+        ts = client.post_message(
+            channel=channel_id, blocks=blocks, text=f"ACE run started — {slug}"
+        )
+    except SlackChannelGone:
+        return {
+            "response_type": "ephemeral",
+            "text": (
+                ":x: I can't post in this channel — invite me first with "
+                "`/invite @ACE`, then re-run the command."
+            ),
+        }
     SlackRunThread.objects.create(
         installation=installation,
         channel_id=channel_id,

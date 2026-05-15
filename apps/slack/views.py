@@ -97,7 +97,7 @@ from apps.workspaces.models import Workspace  # noqa: E402
 from .models import SlackInstallation  # noqa: E402
 
 _BOT_SCOPES = [
-    "commands", "chat:write", "chat:write.public",
+    "commands", "chat:write",
     "users:read", "users:read.email",
 ]
 

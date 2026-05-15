@@ -3,7 +3,9 @@
 ## Install the Slack app (one-time)
 
 1. Create a Slack app at https://api.slack.com/apps with the following:
-   - Bot scopes: `commands`, `chat:write`, `chat:write.public`, `users:read`, `users:read.email`
+   - Bot scopes: `commands`, `chat:write`, `users:read`, `users:read.email`
+     (intentionally NO `chat:write.public` — bot must be invited to a
+     channel before `/ace` commands work there)
    - Slash command `/ace` pointing at
      `https://labs.connect.dimagi.com/ace/api/slack/commands`
    - Interactivity request URL: `https://labs.connect.dimagi.com/ace/api/slack/interactions`
