@@ -4,12 +4,13 @@ import { X } from "lucide-react";
 import { updateOppTags } from "../../api/opps";
 
 interface Props {
+  workspaceSlug: string;
   slug: string;
   initialTags: string[];
   onChanged?: (tags: string[]) => void;
 }
 
-export function TagEditor({ slug, initialTags, onChanged }: Props) {
+export function TagEditor({ workspaceSlug, slug, initialTags, onChanged }: Props) {
   const [tags, setTags] = useState<string[]>(initialTags);
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -23,7 +24,7 @@ export function TagEditor({ slug, initialTags, onChanged }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const resp = await updateOppTags(slug, next);
+      const resp = await updateOppTags(workspaceSlug, slug, next);
       setTags(resp.tags);
       onChanged?.(resp.tags);
     } catch (err) {

@@ -11,6 +11,7 @@ import {
 import { DeleteRunDialog } from "./DeleteRunDialog";
 
 interface RunSelectorProps {
+  workspaceSlug: string;
   oppSlug: string;
   runs: RunSummary[];
   selectedRunId: string | null;
@@ -43,6 +44,7 @@ function formatRunId(runId: string): string {
 }
 
 export function RunSelector({
+  workspaceSlug,
   oppSlug,
   runs,
   selectedRunId,
@@ -117,6 +119,7 @@ export function RunSelector({
           onOpenChange={(v) => {
             if (!v) setDeleteTarget(null);
           }}
+          workspaceSlug={workspaceSlug}
           oppSlug={oppSlug}
           runId={deleteTarget.run_id}
           runLabel={formatRunId(deleteTarget.run_id)}

@@ -50,7 +50,7 @@ export function ChatPage() {
     setMeta(null);
     setLoadError(null);
     const load = () => {
-      getSession(slug)
+      getSession(slug, workspaceSlug)
         .then((s) => {
           if (!cancelled) {
             setMeta(s);
@@ -70,11 +70,11 @@ export function ChatPage() {
       cancelled = true;
       window.removeEventListener(SESSIONS_UPDATED_EVENT, handler);
     };
-  }, [slug]);
+  }, [slug, workspaceSlug]);
 
   const handleTitleSave = async (newTitle: string) => {
     if (!meta) return;
-    const updated = await updateSession(slug, { title: newTitle });
+    const updated = await updateSession(slug, { title: newTitle }, workspaceSlug);
     setMeta({ ...meta, title: updated.title });
     notifySessionsUpdated();
   };
@@ -116,7 +116,7 @@ export function ChatPage() {
           </div>
         </header>
         <div className="flex-1 overflow-hidden">
-          <ChatPanel key={slug} slug={slug} />
+          <ChatPanel key={slug} slug={slug} workspaceSlug={workspaceSlug} />
         </div>
       </div>
     </div>
@@ -134,7 +134,7 @@ function ChatNotFound({ slug, detail }: { slug: string; detail: string }) {
     : "/sessions";
 
   const handleNew = async () => {
-    const s = await createSession();
+    const s = await createSession(workspaceSlug ?? "");
     notifySessionsUpdated();
     const path = workspaceSlug
       ? `/w/${workspaceSlug}/chat/${s.slug}`

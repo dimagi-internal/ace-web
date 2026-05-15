@@ -358,3 +358,28 @@ def test_verify_drive_happy(owner_client, monkeypatch):
     resp = client.post(f"/api/workspaces/{workspace.slug}/drive-config/verify")
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# GET /workspaces/drive-config — drive-config must match before /{slug}
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_drive_config_not_shadowed_by_slug_route(owner_client, monkeypatch):
+    """Regression: /workspaces/drive-config must not be matched as /{slug}='drive-config'."""
+    client, _workspace, _ = owner_client
+    # Patch out the ServiceAccount lookup so we don't need a real SA row.
+    import apps.workspaces.api_v2 as _api
+
+    monkeypatch.setattr(
+        _api,
+        "get_drive_config",
+        lambda request: __import__("django.http", fromlist=["JsonResponse"]).JsonResponse(
+            {"service_account_email": "test-sa@example.com"}
+        ),
+    )
+    resp = client.get("/api/workspaces/drive-config")
+    # Before the fix this returned 404 because "drive-config" was routed
+    # to workspace_detail which looked up a workspace with slug="drive-config".
+    assert resp.status_code == 200

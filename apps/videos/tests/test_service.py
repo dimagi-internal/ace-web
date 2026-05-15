@@ -13,7 +13,6 @@ import pytest
 
 from apps.videos import service
 
-
 PROGRAM_YAML = """\
 # top-level comment about this program
 slug: demo
@@ -146,7 +145,10 @@ def test_apply_edit_unknown_op(videos_root: Path):
 
 
 def test_apply_edit_unknown_program():
-    result = service.apply_edit("does-not-exist", {"op": "set-narration", "beatId": "x", "text": "y"})
+    result = service.apply_edit(
+        "does-not-exist",
+        {"op": "set-narration", "beatId": "x", "text": "y"},
+    )
     assert not result.ok
 
 

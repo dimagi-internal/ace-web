@@ -1,4 +1,4 @@
-import { request, requestWithEtag } from "./client";
+import { apiV2 } from "./client.v2";
 import { getCachedSnapshot, setCachedSnapshot, getCachedList, setCachedList } from "./oppCache";
 import type {
   CreateOppPayload,
@@ -7,158 +7,222 @@ import type {
   LinkedChat,
   MultiRunSummary,
   OppCard,
-  OppCompare,
   OppSnapshot,
   RunSummary,
   Scorecard,
   StepDetail,
-  WorkingSessionResponse,
 } from "./types.ws";
 
+/**
+ * opps.ts — opportunities resource API client (v2).
+ *
+ * All endpoints are workspace-scoped under /api/w/{workspace_slug}/opps/...
+ *
+ * Endpoints with NO v2 equivalent throw a descriptive Error so callers
+ * fail loudly instead of silently 404-ing:
+ *   - getOppCompare (cross-opp compare) — legacy DRF only
+ *   - getMultiRunSummary — legacy DRF only (v2 compare is within-opp)
+ *   - getLinkedChats — no v2 endpoint
+ *   - getWorkingSession — no v2 endpoint
+ *   - writeArtifact — no v2 endpoint
+ *   - runAction — no v2 endpoint
+ */
+
 export async function listOpps(
+  workspaceSlug: string,
   tags?: string[],
   opts?: { force?: boolean },
 ): Promise<OppCard[]> {
   const params = new URLSearchParams();
   if (tags && tags.length > 0) params.set("tags", tags.join(","));
   if (opts?.force) params.set("force", "1");
-  const q = params.toString();
-  const path = `/opps/${q ? `?${q}` : ""}`;
 
-  const cacheKey = `tags=${(tags ?? []).join(",")}`;
+  const cacheKey = `ws=${workspaceSlug}&tags=${(tags ?? []).join(",")}`;
   const cached = !opts?.force ? getCachedList(cacheKey) : undefined;
-  const headers: HeadersInit = cached ? { "If-None-Match": cached.etag } : {};
 
-  const res = await requestWithEtag<OppCard[]>(path, { headers });
-  if (res.status === 304 && cached) return cached.data;
-  if (res.data) {
-    setCachedList(cacheKey, { data: res.data, etag: res.etag });
-    return res.data;
+  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps", {
+    params: { path: { workspace_slug: workspaceSlug } },
+    headers: cached ? { "If-None-Match": cached.etag } : {},
+  });
+
+  if (response.status === 304 && cached) return cached.data;
+  if (!response.ok) throw new Error(`listOpps: ${response.status}`);
+
+  const etag = response.headers.get("ETag") ?? "";
+  const page = (await response.json()) as { items: OppCard[] };
+  const data = page.items ?? (page as unknown as OppCard[]);
+  setCachedList(cacheKey, { data, etag });
+  return data;
+}
+
+export async function createOpp(
+  workspaceSlug: string,
+  payload: CreateOppPayload,
+): Promise<CreateOppResponse> {
+  const { response } = await apiV2.POST("/api/w/{workspace_slug}/opps", {
+    params: { path: { workspace_slug: workspaceSlug } },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    body: payload as any,
+  });
+  if (!response.ok) throw new Error(`createOpp: ${response.status}`);
+  return (await response.json()) as CreateOppResponse;
+}
+
+export async function deleteOpp(workspaceSlug: string, slug: string): Promise<void> {
+  const { response } = await apiV2.DELETE("/api/w/{workspace_slug}/opps/{slug}", {
+    params: { path: { workspace_slug: workspaceSlug, slug } },
+  });
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`deleteOpp: ${response.status}`);
   }
-  throw new Error("listOpps: unexpected empty response without cache");
 }
 
-export function createOpp(payload: CreateOppPayload): Promise<CreateOppResponse> {
-  return request<CreateOppResponse>("/opps/", {
-    method: "POST",
-    body: JSON.stringify(payload),
+export async function updateOppTags(
+  workspaceSlug: string,
+  slug: string,
+  tags: string[],
+): Promise<{ slug: string; tags: string[] }> {
+  const { response } = await apiV2.PATCH("/api/w/{workspace_slug}/opps/{slug}", {
+    params: { path: { workspace_slug: workspaceSlug, slug } },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    body: { tags } as any,
   });
-}
-
-export function deleteOpp(slug: string): Promise<void> {
-  return request<void>(`/opps/${encodeURIComponent(slug)}`, {
-    method: "DELETE",
-  });
-}
-
-export function updateOppTags(slug: string, tags: string[]): Promise<{ slug: string; tags: string[] }> {
-  return request<{ slug: string; tags: string[] }>(
-    `/opps/${encodeURIComponent(slug)}`,
-    { method: "PATCH", body: JSON.stringify({ tags }) },
-  );
+  if (!response.ok) throw new Error(`updateOppTags: ${response.status}`);
+  return (await response.json()) as { slug: string; tags: string[] };
 }
 
 export async function getOpp(
+  workspaceSlug: string,
   slug: string,
   runId?: string,
   opts?: { force?: boolean },
 ): Promise<OppSnapshot> {
-  const params = new URLSearchParams();
-  if (runId) params.set("run_id", runId);
-  if (opts?.force) params.set("force", "1");
-  const q = params.toString();
-  const path = `/opps/${encodeURIComponent(slug)}${q ? `?${q}` : ""}`;
-
   const cached = !opts?.force ? getCachedSnapshot(slug, runId ?? null) : undefined;
-  const headers: HeadersInit = cached ? { "If-None-Match": cached.etag } : {};
 
-  const res = await requestWithEtag<OppSnapshot>(path, { headers });
-  if (res.status === 304 && cached) return cached.data;
-  if (res.data) {
-    setCachedSnapshot(slug, runId ?? null, { data: res.data, etag: res.etag });
-    return res.data;
-  }
-  throw new Error("getOpp: unexpected empty response without cache");
+  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}", {
+    params: {
+      path: { workspace_slug: workspaceSlug, slug },
+      query: runId ? { run_id: runId } : {},
+    },
+    headers: cached ? { "If-None-Match": cached.etag } : {},
+  });
+
+  if (response.status === 304 && cached) return cached.data;
+  if (!response.ok) throw new Error(`getOpp: ${response.status}`);
+
+  const etag = response.headers.get("ETag") ?? "";
+  const data = (await response.json()) as OppSnapshot;
+  setCachedSnapshot(slug, runId ?? null, { data, etag });
+  return data;
 }
 
-
-export function getOppCompare(slugA: string, slugB: string): Promise<OppCompare> {
-  return request<OppCompare>(
-    `/opps/compare/${encodeURIComponent(slugA)}/${encodeURIComponent(slugB)}`,
+/** Cross-opp comparison has no v2 endpoint — will be addressed in a future PR. */
+export function getOppCompare(_slugA: string, _slugB: string): Promise<never> {
+  return Promise.reject(
+    new Error(
+      "getOppCompare: cross-opp comparison endpoint not available in v2 — " +
+        "see /api/w/{workspace_slug}/opps/{slug}/compare for within-opp run comparison",
+    ),
   );
 }
 
-export function getScorecard(slug: string): Promise<Scorecard> {
-  return request<Scorecard>(`/opps/${encodeURIComponent(slug)}/scorecard`);
+export async function getScorecard(workspaceSlug: string, slug: string): Promise<Scorecard> {
+  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/scorecard", {
+    params: { path: { workspace_slug: workspaceSlug, slug } },
+  });
+  if (!response.ok) throw new Error(`getScorecard: ${response.status}`);
+  return (await response.json()) as Scorecard;
 }
 
+/** Multi-run summary has no v2 equivalent — will be addressed in a future PR. */
 export function getMultiRunSummary(
-  slug: string,
-  opts?: { limit?: number; force?: boolean },
+  _slug: string,
+  _opts?: { limit?: number; force?: boolean },
 ): Promise<MultiRunSummary> {
-  const params = new URLSearchParams();
-  if (opts?.limit) params.set("limit", String(opts.limit));
-  if (opts?.force) params.set("force", "1");
-  const q = params.toString();
-  return request<MultiRunSummary>(
-    `/opps/${encodeURIComponent(slug)}/multi-run-summary${q ? `?${q}` : ""}`,
+  return Promise.reject(
+    new Error(
+      "getMultiRunSummary: legacy DRF endpoint removed — no v2 equivalent yet; " +
+        "use /api/w/{workspace_slug}/opps/{slug}/compare for within-opp run comparison",
+    ),
   );
 }
 
-export function getStepDetail(
+export async function getStepDetail(
+  workspaceSlug: string,
   slug: string,
   runId: string,
   skill: string,
 ): Promise<StepDetail> {
-  return request<StepDetail>(
-    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(skill)}`,
-  );
+  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/steps/{skill}", {
+    params: {
+      path: { workspace_slug: workspaceSlug, slug, skill },
+      query: { run_id: runId },
+    },
+  });
+  if (!response.ok) throw new Error(`getStepDetail: ${response.status}`);
+  return (await response.json()) as StepDetail;
 }
 
+/** getLinkedChats has no v2 endpoint — will be addressed in a future PR. */
 export function getLinkedChats(
-  slug: string,
-  runId: string,
-  skill: string,
+  _slug: string,
+  _runId: string,
+  _skill: string,
 ): Promise<LinkedChat[]> {
-  return request<LinkedChat[]>(
-    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(skill)}/chats`,
+  return Promise.reject(
+    new Error("getLinkedChats: no v2 endpoint — will be addressed in a future PR"),
   );
 }
 
-export function discussStep(
+export async function discussStep(
+  workspaceSlug: string,
   slug: string,
   runId: string,
   skill: string,
 ): Promise<DiscussResponse> {
-  return request<DiscussResponse>(
-    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(skill)}/discuss`,
-    { method: "POST" },
+  const { response } = await apiV2.POST("/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat", {
+    params: { path: { workspace_slug: workspaceSlug, slug } },
+    body: { step_skill: skill, run_id: runId },
+  });
+  if (!response.ok) throw new Error(`discussStep: ${response.status}`);
+  return (await response.json()) as DiscussResponse;
+}
+
+export async function listOppRuns(workspaceSlug: string, slug: string): Promise<RunSummary[]> {
+  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/runs", {
+    params: { path: { workspace_slug: workspaceSlug, slug } },
+  });
+  if (!response.ok) throw new Error(`listOppRuns: ${response.status}`);
+  const page = (await response.json()) as { items: RunSummary[] };
+  return page.items ?? (page as unknown as RunSummary[]);
+}
+
+export async function deleteOppRun(
+  workspaceSlug: string,
+  slug: string,
+  runId: string,
+): Promise<void> {
+  const { response } = await apiV2.DELETE(
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}",
+    { params: { path: { workspace_slug: workspaceSlug, slug, run_id: runId } } },
   );
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`deleteOppRun: ${response.status}`);
+  }
 }
 
-export function listOppRuns(slug: string): Promise<RunSummary[]> {
-  return request<RunSummary[]>(`/opps/${encodeURIComponent(slug)}/runs`);
-}
-
-export function deleteOppRun(slug: string, runId: string): Promise<void> {
-  return request<void>(
-    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}`,
-    { method: "DELETE" },
-  );
-}
-
-export function forkOpp(
+export async function forkOpp(
+  workspaceSlug: string,
   slug: string,
   payload: { fork_at_phase: string; source_run_id?: string | null },
 ): Promise<{ slug: string; run_id: string; working_session_slug: string }> {
-  return request<{ slug: string; run_id: string; working_session_slug: string }>(
-    `/opps/${encodeURIComponent(slug)}/fork`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    },
-  );
+  const { response } = await apiV2.POST("/api/w/{workspace_slug}/opps/{slug}/fork", {
+    params: { path: { workspace_slug: workspaceSlug, slug } },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    body: payload as any,
+  });
+  if (!response.ok) throw new Error(`forkOpp: ${response.status}`);
+  return (await response.json()) as { slug: string; run_id: string; working_session_slug: string };
 }
 
 export type ForkProgress =
@@ -173,49 +237,59 @@ export type ForkProgress =
     }
   | { status: "error"; error: string; code?: string };
 
-export function getForkStatus(
+export async function getForkStatus(
+  workspaceSlug: string,
   slug: string,
   sourceRunId: string | null | undefined,
 ): Promise<ForkProgress> {
-  const qs = new URLSearchParams({
-    source_run_id: sourceRunId ?? "",
-  }).toString();
-  return request<ForkProgress>(
-    `/opps/${encodeURIComponent(slug)}/fork/status?${qs}`,
-  );
+  const { response } = await apiV2.GET("/api/w/{workspace_slug}/opps/{slug}/fork/status", {
+    params: {
+      path: { workspace_slug: workspaceSlug, slug },
+      query: sourceRunId ? { source_run_id: sourceRunId } : {},
+    },
+  });
+  if (!response.ok) throw new Error(`getForkStatus: ${response.status}`);
+  return (await response.json()) as ForkProgress;
 }
 
-export function getWorkingSession(slug: string): Promise<WorkingSessionResponse> {
-  return request<WorkingSessionResponse>(
-    `/opps/${encodeURIComponent(slug)}/working-session`,
+/** getWorkingSession has no v2 endpoint — will be addressed in a future PR. */
+export function getWorkingSession(_slug: string): Promise<never> {
+  return Promise.reject(
+    new Error("getWorkingSession: no v2 endpoint — will be addressed in a future PR"),
   );
 }
 
 export function artifactBodyUrl(
+  workspaceSlug: string,
   slug: string,
   runId: string,
   skill: string,
   artifactName: string,
 ): string {
   // Prepend Vite's BASE_URL so this raw-fetch helper lands on the same
-  // /ace/ prefix the rest of the API uses via apiFetch. Without this,
+  // /ace/ prefix the rest of the API uses via apiV2. Without this,
   // prod fetches went to labs.connect.dimagi.com/api/... instead of
   // /ace/api/..., which nginx refuses to route and the artifact body
   // preview showed "Error: 404".
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   return (
-    `${base}/api/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}` +
-    `/steps/${encodeURIComponent(skill)}/artifacts/${encodeURIComponent(artifactName)}`
+    `${base}/api/w/${encodeURIComponent(workspaceSlug)}/opps/${encodeURIComponent(slug)}` +
+    `/steps/${encodeURIComponent(skill)}/artifacts/${encodeURIComponent(artifactName)}` +
+    `?run_id=${encodeURIComponent(runId)}`
   );
 }
 
+/** writeArtifact has no v2 endpoint — will be addressed in a future PR. */
 export function writeArtifact(
-  slug: string, runId: string, skill: string, artifactName: string, content: string,
-): Promise<{ ok: true }> {
-  return request(
-    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}` +
-    `/steps/${encodeURIComponent(skill)}/artifacts/${encodeURIComponent(artifactName)}/write`,
-    { method: "PUT", body: JSON.stringify({ content }) },
+  _workspaceSlug: string,
+  _slug: string,
+  _runId: string,
+  _skill: string,
+  _artifactName: string,
+  _content: string,
+): Promise<never> {
+  return Promise.reject(
+    new Error("writeArtifact: no v2 endpoint — will be addressed in a future PR"),
   );
 }
 
@@ -224,11 +298,15 @@ export interface ActionPayload {
   reason?: string;
 }
 
+/** runAction has no v2 endpoint — will be addressed in a future PR. */
 export function runAction(
-  slug: string, runId: string, action: string, payload: ActionPayload,
-): Promise<{ message_id: number; turn_index: number }> {
-  return request(
-    `/opps/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/actions/${action}`,
-    { method: "POST", body: JSON.stringify(payload) },
+  _workspaceSlug: string,
+  _slug: string,
+  _runId: string,
+  _action: string,
+  _payload: ActionPayload,
+): Promise<never> {
+  return Promise.reject(
+    new Error("runAction: no v2 endpoint — will be addressed in a future PR"),
   );
 }

@@ -20,7 +20,7 @@ export function SessionStructurePage() {
     let cancelled = false;
     setMeta(null);
     setLoadError(null);
-    getSession(slug)
+    getSession(slug, workspaceSlug)
       .then((s) => {
         if (!cancelled) setMeta(s);
       })
@@ -32,7 +32,7 @@ export function SessionStructurePage() {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, workspaceSlug]);
 
   return (
     <div className="flex h-full">
@@ -64,7 +64,7 @@ export function SessionStructurePage() {
           {loadError ? (
             <div className="p-4 text-sm text-destructive">{loadError}</div>
           ) : (
-            <StructureTab slug={slug} />
+            <StructureTab slug={slug} workspaceSlug={workspaceSlug} />
           )}
         </div>
       </div>

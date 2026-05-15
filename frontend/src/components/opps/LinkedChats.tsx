@@ -30,7 +30,7 @@ export function LinkedChats({ slug, runId, skill }: Props) {
 
   useEffect(() => {
     setLoading(true);
-    getLinkedChats(slug, runId, skill)
+    getLinkedChats(slug, runId, skill) // NOTE: no v2 endpoint; will fail loudly until backend ships it
       .then(setChats)
       .catch(() => setChats([]))
       .finally(() => setLoading(false));

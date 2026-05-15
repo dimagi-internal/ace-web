@@ -22,7 +22,7 @@ interface Props {
  * how many surfaces consume it.
  */
 export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
-  const runs = useOppRuns(oppSlug);
+  const runs = useOppRuns(workspaceSlug, oppSlug);
 
   if (runs === null) {
     return (

@@ -9,16 +9,21 @@ export function notifySessionsUpdated() {
   window.dispatchEvent(new CustomEvent(SESSIONS_UPDATED_EVENT));
 }
 
-export function useRecentSessions(limit = 10) {
+export function useRecentSessions(limit = 10, workspaceSlug?: string) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    if (!workspaceSlug) {
+      setSessions([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const data = await listSessions({ pageSize: limit, status: "active" });
+    const data = await listSessions({ pageSize: limit, status: "active", workspaceSlug });
     setSessions(data.items);
     setLoading(false);
-  }, [limit]);
+  }, [limit, workspaceSlug]);
 
   useEffect(() => {
     refresh();

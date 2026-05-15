@@ -11,6 +11,7 @@ import { JudgeVerdict } from "./JudgeVerdict";
 import { PatientLoader } from "./LoadingStates";
 
 interface Props {
+  workspaceSlug: string;
   slug: string;
   runId: string;
   skill: string;
@@ -21,7 +22,7 @@ interface Props {
   skillDisplayName?: string;
 }
 
-export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) {
+export function StepDetailPane({ workspaceSlug, slug, runId, skill, skillDisplayName }: Props) {
   const [detail, setDetail] = useState<StepDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null);
@@ -29,7 +30,7 @@ export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) 
 
   useEffect(() => {
     setLoading(true);
-    getStepDetail(slug, runId, skill)
+    getStepDetail(workspaceSlug, slug, runId, skill)
       .then((d) => {
         setDetail(d);
         setActiveArtifact(d.artifacts[0] ?? null);
@@ -145,6 +146,7 @@ export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) 
             )}
           </div>
           <ArtifactBody
+            workspaceSlug={workspaceSlug}
             slug={slug}
             runId={runId}
             skill={skill}
@@ -157,12 +159,13 @@ export function StepDetailPane({ slug, runId, skill, skillDisplayName }: Props) 
 
       <JudgeVerdict judge={detail.judge} />
 
-      <DiscussInChatButton slug={slug} runId={runId} skill={skill} />
+      <DiscussInChatButton workspaceSlug={workspaceSlug} slug={slug} runId={runId} skill={skill} />
 
       {editing && (
         <EditArtifactDialog
           open={editing !== null}
           onOpenChange={(v) => !v && setEditing(null)}
+          workspaceSlug={workspaceSlug}
           slug={slug}
           runId={runId}
           skill={skill}

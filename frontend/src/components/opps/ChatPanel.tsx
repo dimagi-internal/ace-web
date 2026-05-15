@@ -12,6 +12,8 @@ import { SendBox } from "../SendBox";
 
 interface Props {
   slug: string;
+  /** Workspace context — used for workspace-scoped API calls. Sourced from the parent route. */
+  workspaceSlug?: string;
 }
 
 /**
@@ -22,7 +24,7 @@ interface Props {
  * same chat surface whether it's in the dedicated chat page or embedded in
  * the Opp Workbench right-side panel.
  */
-export function ChatPanel({ slug }: Props) {
+export function ChatPanel({ slug, workspaceSlug }: Props) {
   const [meta, setMeta] = useState<Session | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
   const socket = useSessionSocket(slug);
@@ -48,7 +50,7 @@ export function ChatPanel({ slug }: Props) {
     if (!slug) return;
     setMeta(null);
     setMetaError(null);
-    getSession(slug)
+    getSession(slug, workspaceSlug ?? "")
       .then((s) => setMeta(s))
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);

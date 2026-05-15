@@ -143,7 +143,10 @@ def get_library(
 ) -> LibraryOut:
     resolve_workspace_for_member(request, workspace_slug)
     _require_program(workspace_slug, program_slug)
-    entries = [LibraryEntryOut.model_validate(e) for e in service.load_library_entries(program_slug)]
+    entries = [
+        LibraryEntryOut.model_validate(e)
+        for e in service.load_library_entries(program_slug)
+    ]
     return LibraryOut(entries=entries)
 
 

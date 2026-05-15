@@ -62,10 +62,11 @@ export default function SessionsPage() {
   // Opps that no chat is linked to still appear in the dropdown — that's
   // fine; selecting one returns an empty list (server-filtered).
   useEffect(() => {
-    listOpps()
+    if (!workspaceSlug) return;
+    listOpps(workspaceSlug)
       .then(setOpps)
       .catch(() => setOpps([]));
-  }, []);
+  }, [workspaceSlug]);
 
   const oppDisplayBySlug = useMemo(() => {
     const m = new Map<string, string>();
@@ -80,10 +81,10 @@ export default function SessionsPage() {
     if (query.trim()) params.q = query.trim();
     if (statusFilter) params.status = statusFilter;
     if (oppFilter) params.opp = oppFilter;
-    listSessions(params)
+    listSessions({ ...params, workspaceSlug })
       .then((d) => { setData(d); setLoading(false); })
       .catch((err) => { setError(String(err?.message ?? err)); setLoading(false); });
-  }, [query, statusFilter, oppFilter, page]);
+  }, [query, statusFilter, oppFilter, page, workspaceSlug]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -91,8 +92,8 @@ export default function SessionsPage() {
   }, [load]);
 
   const handleNewChat = async () => {
-    const s = await createSession();
-    navigate(`/chat/${s.slug}`);
+    const s = await createSession(workspaceSlug ?? "");
+    navigate(workspaceSlug ? `/w/${workspaceSlug}/chat/${s.slug}` : `/chat/${s.slug}`);
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -110,14 +111,14 @@ export default function SessionsPage() {
 
   const handleArchiveToggle = async (s: Session) => {
     const newStatus = s.status === "archived" ? "active" : "archived";
-    await updateSession(s.slug, { status: newStatus } as Partial<Session>);
+    await updateSession(s.slug, { status: newStatus } as Partial<Session>, workspaceSlug ?? "");
     toast.success(newStatus === "archived" ? "Session archived" : "Session restored");
     load();
   };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    await deleteSession(deleteTarget.slug);
+    await deleteSession(deleteTarget.slug, workspaceSlug ?? "");
     toast.success("Session deleted");
     setDeleteTarget(null);
     load();
