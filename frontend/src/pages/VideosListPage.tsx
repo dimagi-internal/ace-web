@@ -31,6 +31,12 @@ export default function VideosListPage() {
       <header className="mb-6 flex items-center gap-2">
         <Video className="h-5 w-5 text-muted-foreground" />
         <h1 className="text-2xl font-semibold">Videos</h1>
+        <Link
+          to={`/w/${workspaceSlug}/videos/library`}
+          className="ml-auto text-sm text-muted-foreground underline hover:text-foreground"
+        >
+          Media library →
+        </Link>
       </header>
       <p className="mb-6 text-sm text-muted-foreground">
         The clip-explorer for each video program in this workspace. Edits to clip
