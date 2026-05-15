@@ -100,3 +100,21 @@ def test_list_audio_library_pairs_by_hash(workspace, fake_drive):
     assert item.voice_id == "v1"
     assert item.text == "Hello"
     assert item.duration_sec == 1.1
+
+
+def test_list_video_library_uses_cache(workspace, fake_drive, seeded_video_library, monkeypatch):
+    """Second call within TTL doesn't re-hit Drive."""
+    from apps.videos import drive as drive_mod
+
+    real_list_subfolders = drive_mod.list_library_subfolders
+    call_count = {"n": 0}
+
+    def counting(*args, **kwargs):
+        call_count["n"] += 1
+        return real_list_subfolders(*args, **kwargs)
+
+    monkeypatch.setattr(drive_mod, "list_library_subfolders", counting)
+
+    reader.list_video_library(workspace)
+    reader.list_video_library(workspace)
+    assert call_count["n"] == 1, "second call must hit cache"

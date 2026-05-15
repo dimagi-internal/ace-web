@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 from typing import Literal
 
 from apps.opps.drive_client import DriveClient, DriveFile
+from apps.videos import cache as _cache_mod
 from apps.videos import drive as drive_mod
 from apps.videos.drive import DriveLayout
 from apps.videos.library.sidecar import (
@@ -205,6 +206,19 @@ def _list_audio_library_uncached(workspace: Workspace) -> AudioLibraryResponse:
     return AudioLibraryResponse(items=items)
 
 
-# Public entry points — wrapped with the TTL cache in Task 4.2.
-list_video_library = _list_video_library_uncached
-list_audio_library = _list_audio_library_uncached
+def list_video_library(workspace: Workspace) -> VideoLibraryResponse:
+    hit = _cache_mod.get_lib_video(workspace.slug)
+    if hit is not None:
+        return hit
+    value = _list_video_library_uncached(workspace)
+    _cache_mod.set_lib_video(workspace.slug, value)
+    return value
+
+
+def list_audio_library(workspace: Workspace) -> AudioLibraryResponse:
+    hit = _cache_mod.get_lib_audio(workspace.slug)
+    if hit is not None:
+        return hit
+    value = _list_audio_library_uncached(workspace)
+    _cache_mod.set_lib_audio(workspace.slug, value)
+    return value
