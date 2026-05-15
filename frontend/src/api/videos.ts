@@ -152,3 +152,27 @@ export function triggerBuild(
     body: JSON.stringify({ mode }),
   });
 }
+
+// ───────── edit-batch ─────────
+
+export type EditBatchOp =
+  | { op: "set-clip-trim"; kind: "scene-clip" | "product-beat"; index: number;
+      start_seconds: number; duration_seconds: number }
+  | { op: "set-clip-asset"; kind: "scene-clip" | "product-beat"; index: number; alias: string }
+  | { op: "set-narration"; beatId: string; text: string }
+  | { op: "set-stat"; path: string; big?: string; caption?: string; source?: string };
+
+export interface EditBatchResult {
+  ok: boolean;
+  applied: number;
+  message: string;
+}
+
+export function submitEditBatch(
+  ws: string, p: string, r: string, ops: EditBatchOp[],
+): Promise<EditBatchResult> {
+  return v2Fetch(`${runBase(ws, p, r)}/edit-batch`, {
+    method: "POST",
+    body: JSON.stringify({ ops }),
+  });
+}
