@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "apps.activity.apps.ActivityConfig",
     "apps.mobile.apps.MobileConfig",
     "apps.videos.apps.VideosConfig",
+    "apps.slack.apps.SlackConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -269,6 +270,12 @@ ACE_USE_FAKE_CLI_BACKEND = env.bool("ACE_USE_FAKE_CLI_BACKEND", default=False)
 # at /auth/e2e-login/ only registers when this is non-empty. Stored in
 # AWS Secrets Manager alongside other labs secrets.
 ACE_E2E_AUTH_TOKEN = env("ACE_E2E_AUTH_TOKEN", default="")
+
+# --- Slack integration ---
+SLACK_CLIENT_ID = env("SLACK_CLIENT_ID", default="")
+SLACK_CLIENT_SECRET = env("SLACK_CLIENT_SECRET", default="")
+SLACK_SIGNING_SECRET = env("SLACK_SIGNING_SECRET", default="")
+SLACK_DEFAULT_INSTALLATION_ID = env("SLACK_DEFAULT_INSTALLATION_ID", default="")
 
 # --- Allowed email domains ---
 # Empty list = allow any Connect-authenticated user. Workspace memberships
