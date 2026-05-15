@@ -241,6 +241,51 @@ def test_post_edit_saves_spec_without_triggering_render(member_client, videos_ro
     assert popen.call_count == 0  # save only
 
 
+@pytest.mark.django_db
+def test_post_edit_batch_applies_multiple_ops(member_client, videos_root, fake_drive):
+    client, _ = member_client
+    with mock.patch("apps.videos.service.subprocess.Popen") as popen:
+        resp = client.post(
+            "/api/w/ws1/videos/programs/demo/runs/run-001/edit-batch",
+            data={"ops": [
+                {"op": "set-narration", "beatId": "intro", "text": "Hello"},
+                {"op": "set-clip-trim", "kind": "scene-clip", "index": 0,
+                 "start_seconds": 1.0, "duration_seconds": 3.0},
+            ]},
+            content_type="application/json",
+        )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["applied"] == 2
+    assert popen.call_count == 0  # save only
+
+
+@pytest.mark.django_db
+def test_post_edit_batch_400_on_invalid_op(member_client, videos_root, fake_drive):
+    client, _ = member_client
+    resp = client.post(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/edit-batch",
+        data={"ops": [
+            {"op": "set-narration", "beatId": "intro", "text": "Hello"},
+            {"op": "set-stat", "path": "nope"},
+        ]},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400, resp.content
+
+
+@pytest.mark.django_db
+def test_post_edit_batch_400_on_empty_ops(member_client, videos_root, fake_drive):
+    client, _ = member_client
+    resp = client.post(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/edit-batch",
+        data={"ops": []},
+        content_type="application/json",
+    )
+    assert resp.status_code == 422  # Ninja validation — min_length=1
+
+
 # ---------------------------------------------------------------------------
 # Render trigger (stages spec from Drive to local, spawns subprocess)
 # ---------------------------------------------------------------------------
