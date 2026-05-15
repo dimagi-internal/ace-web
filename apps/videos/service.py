@@ -33,7 +33,7 @@ import redis as _redis_sync
 from django.conf import settings
 from ruamel.yaml import YAML
 
-from apps.videos import drive
+from apps.videos import cache, drive
 from apps.workspaces.models import Workspace
 
 log = logging.getLogger(__name__)
@@ -158,8 +158,13 @@ def layout_for(workspace: Workspace, client=None):
 
 
 def list_run_ids(workspace: Workspace, slug: str) -> list[str]:
+    cached = cache.get_runs(workspace.slug, slug)
+    if cached is not None:
+        return cached
     layout, client = layout_for(workspace)
-    return drive.list_run_ids(layout, client, slug)
+    ids = drive.list_run_ids(layout, client, slug)
+    cache.set_runs(workspace.slug, slug, ids)
+    return ids
 
 
 def latest_run_id(workspace: Workspace, slug: str) -> str | None:
@@ -244,13 +249,17 @@ def _record_from_yaml(slug: str, run_id: str, spec_yaml: str) -> ProgramRecord |
 
 
 def load_program_run(workspace: Workspace, slug: str, run_id: str) -> ProgramRecord | None:
-    """Load the spec.yaml for one specific run from Drive."""
+    """Load the spec.yaml for one specific run from Drive (cache-aware)."""
     if not is_valid_slug(slug) or not is_valid_run_id(run_id):
         return None
+    cached = cache.get_spec(workspace.slug, slug, run_id)
+    if cached is not None:
+        return _record_from_yaml(slug, run_id, cached)
     layout, client = layout_for(workspace)
     spec_yaml = drive.read_spec(layout, client, slug, run_id)
     if spec_yaml is None:
         return None
+    cache.set_spec(workspace.slug, slug, run_id, spec_yaml)
     return _record_from_yaml(slug, run_id, spec_yaml)
 
 
@@ -265,16 +274,28 @@ def load_program(workspace: Workspace, slug: str, run_id: str | None = None) -> 
 
 
 def iter_programs(workspace: Workspace) -> Iterable[ProgramRecord]:
-    """Yield the latest run of every program under videos/."""
-    layout, client = layout_for(workspace)
-    for slug in drive.list_program_slugs(layout, client):
-        rid = drive.latest_run_id(layout, client, slug)
+    """Yield the latest run of every program under videos/ (cache-aware).
+
+    Three cache layers:
+      - per-workspace slug list (videos:slugs:<ws>)
+      - per-program run list (videos:runs:<ws>:<slug>)
+      - per-run spec content (videos:spec:<ws>:<slug>:<run-id>)
+
+    On a warm cache this is zero Drive calls.
+    """
+    cached_slugs = cache.get_slugs(workspace.slug)
+    if cached_slugs is not None:
+        slugs = cached_slugs
+    else:
+        layout, client = layout_for(workspace)
+        slugs = drive.list_program_slugs(layout, client)
+        cache.set_slugs(workspace.slug, slugs)
+
+    for slug in slugs:
+        rid = latest_run_id(workspace, slug)
         if rid is None:
             continue
-        spec_yaml = drive.read_spec(layout, client, slug, rid)
-        if spec_yaml is None:
-            continue
-        rec = _record_from_yaml(slug, rid, spec_yaml)
+        rec = load_program_run(workspace, slug, rid)
         if rec is not None:
             yield rec
 
@@ -325,7 +346,10 @@ def create_program_from_spec(workspace: Workspace, slug: str, spec_yaml: str) ->
         raise FileExistsError(
             f"Program already exists in Drive: videos/{slug}/"
         )
-    return drive.write_spec(layout, client, slug, "run-001", spec_yaml)
+    file_id = drive.write_spec(layout, client, slug, "run-001", spec_yaml)
+    cache.invalidate_program(workspace.slug, slug)
+    cache.set_spec(workspace.slug, slug, "run-001", spec_yaml)
+    return file_id
 
 
 def copy_run(workspace: Workspace, slug: str, from_run_id: str) -> str:
@@ -338,6 +362,8 @@ def copy_run(workspace: Workspace, slug: str, from_run_id: str) -> str:
         raise FileNotFoundError(f"Source run not found: videos/{slug}/runs/{from_run_id}")
     new_id = drive.next_run_id(layout, client, slug)
     drive.write_spec(layout, client, slug, new_id, src_yaml)
+    cache.invalidate_runs(workspace.slug, slug)
+    cache.set_spec(workspace.slug, slug, new_id, src_yaml)
     return new_id
 
 
@@ -389,7 +415,10 @@ def apply_edit(workspace: Workspace, slug: str, run_id: str, body: dict[str, Any
     op = body.get("op")
 
     def _save() -> None:
-        drive.write_spec(layout, client, slug, run_id, _dump_yaml(doc))
+        new_yaml = _dump_yaml(doc)
+        drive.write_spec(layout, client, slug, run_id, new_yaml)
+        # Drop the cached old spec so the next read sees the edit.
+        cache.set_spec(workspace.slug, slug, run_id, new_yaml)
 
     if op in {"set-clip-start", "set-clip-trim", "set-clip-asset"}:
         index = body.get("index")
