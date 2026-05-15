@@ -34,10 +34,10 @@ export function TopNav() {
       >
         ACE
       </Link>
-      <WorkspaceSwitcher />
 
-      {/* Workspace-scoped nav: lives next to the workspace switcher,
-          so it's visually clear these change WHEN you change workspace. */}
+      {/* Workspace-scoped nav. The opp/page name in the body dominates
+          the header — workspace switcher lives in the right cluster
+          since for most users it's near-static. */}
       <div className="flex items-center gap-4">
         {WORKSPACE_NAV.map((item) => {
           const target = slug ? `/w/${slug}/${item.subPath}` : `/${item.subPath}`;
@@ -76,6 +76,7 @@ export function TopNav() {
           );
         })}
         <span aria-hidden className="h-5 w-px bg-border" />
+        <WorkspaceSwitcher />
         <UserMenu />
       </div>
     </nav>

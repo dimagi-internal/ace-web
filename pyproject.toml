@@ -145,3 +145,5 @@ reportAbstractUsage = "none"
 # that don't split cleanly; another agent owns this area.
 "apps/videos/*.py" = ["E501", "I001", "B904"]
 "apps/videos/tests/*.py" = ["E501", "I001", "B904"]
+# Probe scripts have wide URL strings + descriptive log lines.
+"scripts/qa/*.py" = ["E501"]

@@ -1530,3 +1530,152 @@ def invalidate_snapshot(
     require_write_global(request)
     invalidate_opp_snapshot_cache(workspace)
     return HttpResponse(status=204)
+
+
+# ---------------------------------------------------------------------------
+# Public per-run summary — restored from legacy DRF (deleted in Phase 5)
+# Mounted under /api/opps/public/ at the top level (see apps/api/api.py).
+# ---------------------------------------------------------------------------
+
+
+public_summary_router = Router(auth=None, tags=["opps-public"])
+
+
+@public_summary_router.get(
+    "/public/{workspace}/{slug}/runs/{run_id}/summary",
+    response={200: dict},
+    summary="Public per-run summary (no auth, stakeholder-facing)",
+)
+def public_opp_summary(
+    request: HttpRequest,
+    workspace: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+) -> HttpResponse:
+    """Stakeholder-facing per-run summary. AllowAny because share links
+    are meant to circulate. Workspace + slug + run_id all in the URL —
+    no leak-prevention 404 differentiation here, the URL is the secret.
+
+    Cached 60 seconds in the Django cache to absorb refresh storms.
+    """
+    from django.core.cache import cache as _cache
+
+    from apps.opps.drive_cache import CachedDriveClient
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.summary import build_summary_payload
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+    from apps.workspaces.models import Workspace
+
+    cache_key = f"opp-summary:v1:{workspace}:{slug}:{run_id}"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return JsonResponse(cached)
+
+    try:
+        ws = Workspace.objects.get(slug=workspace)
+    except Workspace.DoesNotExist as exc:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from exc
+    if not ws.drive_root_folder_id:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+
+    try:
+        client = CachedDriveClient(
+            get_drive_client(workspace=ws),
+            bypass=request.GET.get("force") == "1",
+        )
+    except ServiceAccountNotFound as exc:
+        raise ProblemError(500, "Drive not configured", detail=str(exc)) from exc
+
+    payload = build_summary_payload(
+        client, workspace=ws, opp_slug=slug, run_id=run_id,
+    )
+    if payload is None:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+
+    _cache.set(cache_key, payload, timeout=60)
+    return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# Cross-opp compare — restored from legacy DRF (deleted in Phase 5).
+# Frontend OppComparePage at /w/<ws>/opps/compare/<a>/<b> calls this.
+# Distinct from the within-opp /opps/{slug}/compare which compares
+# multiple RUNS of the same opp.
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/cross-compare/{slug_a}/{slug_b}",
+    response={200: dict},
+    summary="Side-by-side comparison of two opps in the same workspace",
+)
+def cross_opp_compare(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug_a: Annotated[str, Path()],
+    slug_b: Annotated[str, Path()],
+) -> HttpResponse:
+    """Returns both OppSnapshots + a small summary with eval-score delta.
+    Used by the cross-opp compare page (frontend OppComparePage)."""
+    from apps.opps import access
+    from apps.opps.drive_cache import CachedDriveClient
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.serializers import serialize_opp_snapshot
+    from apps.opps.sync import load_opp, load_opp_card_by_slug
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+
+    if slug_a == slug_b:
+        raise ProblemError(
+            400, "Cannot compare an opp to itself", type_=TYPE_VALIDATION,
+        )
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    ace_folder_id = access.resolve_ace_root_folder_id(workspace)
+    if ace_folder_id is None:
+        raise ProblemError(404, "ACE root folder not found", type_=TYPE_NOT_FOUND)
+
+    try:
+        client = CachedDriveClient(get_drive_client(workspace=workspace), bypass=False)
+    except ServiceAccountNotFound as exc:
+        raise ProblemError(500, "Drive not configured", detail=str(exc)) from exc
+
+    try:
+        snap_a = load_opp(client, ace_folder_id=ace_folder_id, slug=slug_a)
+    except FileNotFoundError as exc:
+        raise ProblemError(404, f"No opp named {slug_a!r}", type_=TYPE_NOT_FOUND) from exc
+    try:
+        snap_b = load_opp(client, ace_folder_id=ace_folder_id, slug=slug_b)
+    except FileNotFoundError as exc:
+        raise ProblemError(404, f"No opp named {slug_b!r}", type_=TYPE_NOT_FOUND) from exc
+
+    access.overlay_workspace_display_name(snap_a.opp, slug_a, workspace=workspace)
+    access.overlay_workspace_display_name(snap_b.opp, slug_b, workspace=workspace)
+
+    score_a = score_b = None
+    passed_a = passed_b = None
+    try:
+        card_a = load_opp_card_by_slug(client, ace_folder_id=ace_folder_id, slug=slug_a)
+        score_a, passed_a = card_a.eval_score, card_a.eval_passed
+    except Exception as exc:  # noqa: BLE001
+        log.warning("cross_opp_compare: failed to load card for %r: %s", slug_a, exc)
+    try:
+        card_b = load_opp_card_by_slug(client, ace_folder_id=ace_folder_id, slug=slug_b)
+        score_b, passed_b = card_b.eval_score, card_b.eval_passed
+    except Exception as exc:  # noqa: BLE001
+        log.warning("cross_opp_compare: failed to load card for %r: %s", slug_b, exc)
+
+    score_delta = (
+        score_b - score_a if score_a is not None and score_b is not None else None
+    )
+
+    return JsonResponse({
+        "a": serialize_opp_snapshot(snap_a),
+        "b": serialize_opp_snapshot(snap_b),
+        "summary": {
+            "score_a": score_a,
+            "passed_a": passed_a,
+            "score_b": score_b,
+            "passed_b": passed_b,
+            "score_delta": score_delta,
+        },
+    })
