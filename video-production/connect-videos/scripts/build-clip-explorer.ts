@@ -228,7 +228,13 @@ function main() {
       // Symlink into media/ for the page
       const mediaName = `${alias}.${parsed.ext}`;
       const mediaLink = path.join(mediaDir, mediaName);
-      if (!existsSync(mediaLink)) symlinkSync(path.relative(mediaDir, cachePath), mediaLink);
+      // Absolute target — the cache lives at ~/.cache/connect-videos/
+      // outside the project tree. ace-web's docker-compose.override.yml
+      // bind-mounts the same absolute host path inside the container.
+      // A relative path from this deep media/ dir up to $HOME would be
+      // 13+ `..` levels which collapses to `/.cache/...` inside the
+      // container (where $HOME doesn't exist), so absolute is safer.
+      if (!existsSync(mediaLink)) symlinkSync(cachePath, mediaLink);
       const probed = probe(cachePath);
       return {
         role,
@@ -321,7 +327,7 @@ function main() {
     }
     const mediaName = `${alias}.${parsed.ext}`;
     const mediaLink = path.join(mediaDir, mediaName);
-    if (!existsSync(mediaLink)) symlinkSync(path.relative(mediaDir, cachePath), mediaLink);
+    if (!existsSync(mediaLink)) symlinkSync(cachePath, mediaLink);
     const probed = probe(cachePath);
     return {
       alias,
@@ -366,7 +372,13 @@ function main() {
       if (cached) {
         const mediaName = `${alias}.${parsed.ext}`;
         const mediaLink = path.join(mediaDir, mediaName);
-        if (!existsSync(mediaLink)) symlinkSync(path.relative(mediaDir, cachePath), mediaLink);
+        // Absolute target — the cache lives at ~/.cache/connect-videos/
+      // outside the project tree. ace-web's docker-compose.override.yml
+      // bind-mounts the same absolute host path inside the container.
+      // A relative path from this deep media/ dir up to $HOME would be
+      // 13+ `..` levels which collapses to `/.cache/...` inside the
+      // container (where $HOME doesn't exist), so absolute is safer.
+      if (!existsSync(mediaLink)) symlinkSync(cachePath, mediaLink);
         const probed = probe(cachePath);
         dur = probed.duration; res = `${probed.width}x${probed.height}`;
         sourcePath = `media/${mediaName}`;
