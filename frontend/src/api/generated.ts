@@ -80,7 +80,13 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** List runs for opp */
+        /**
+         * List runs for opp
+         * @description Return the full RunSummary shape (current_phase + phases_done +
+         *     last_actor_at + lifecycle_status + ...) the frontend renders for
+         *     each row in the opp card's expanded RUNS panel. Bypasses OppRunOut's
+         *     thin schema — the Phase 1 v2 shape was over-simplified.
+         */
         readonly get: operations["apps_opps_api_v2_list_runs"];
         readonly put?: never;
         readonly post?: never;
@@ -1573,17 +1579,6 @@ export interface components {
             /** Is Active */
             readonly is_active: boolean;
             readonly scorecard?: components["schemas"]["ScorecardOut"] | null;
-        };
-        /** Page[OppRunOut] */
-        readonly Page_OppRunOut_: {
-            /** Items */
-            readonly items: readonly components["schemas"]["OppRunOut"][];
-            /** Total */
-            readonly total: number;
-            /** Offset */
-            readonly offset: number;
-            /** Limit */
-            readonly limit: number;
         };
         /** ScorecardOut */
         readonly ScorecardOut: {
@@ -3430,7 +3425,9 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["Page_OppRunOut_"];
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
                 };
             };
         };
