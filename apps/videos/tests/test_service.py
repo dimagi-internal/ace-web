@@ -221,6 +221,7 @@ def test_apply_edit_set_narration_preserves_comments(seeded):
     # Re-read from Drive and verify the comment + the new value.
     layout = drive.resolve_layout(seeded.workspace, seeded.client)
     fresh = drive.read_spec(layout, seeded.client, "demo", "run-001")
+    assert fresh is not None
     assert "# top-level comment about this program" in fresh
     assert "intro: Hi" in fresh
 
@@ -233,6 +234,7 @@ def test_apply_edit_set_clip_start(seeded):
     assert result.ok, result.message
     layout = drive.resolve_layout(seeded.workspace, seeded.client)
     fresh = drive.read_spec(layout, seeded.client, "demo", "run-001")
+    assert fresh is not None
     assert "start_seconds: 1.25" in fresh
 
 
