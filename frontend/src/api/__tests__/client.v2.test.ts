@@ -4,13 +4,11 @@ import type { components } from "../generated";
 
 describe("apiV2 typed client", () => {
   it("compiles with typed paths", () => {
-    type OppCardOut = components["schemas"]["OppCardOut"];
-    const sample: OppCardOut = {
-      slug: "x",
-      title: "x",
-      run_count: 0,
-      updated_at: "2026-05-14T00:00:00Z",
-    };
+    // Spot-check that codegen produced a schema we can reference. OppCardOut
+    // was dropped from the OpenAPI schema when list_opps started returning a
+    // free dict (the richer legacy card shape) — pick a stable schema instead.
+    type WorkspaceOut = components["schemas"]["WorkspaceOut"];
+    const sample: Partial<WorkspaceOut> = { slug: "x" };
     expect(sample.slug).toBe("x");
   });
 
