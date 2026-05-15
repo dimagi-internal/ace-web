@@ -39,7 +39,10 @@
         {"name": "ACE_DRIVE_SA_KEY_JSON", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-drive-sa-key-json-lIHSY8"},
         {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-anthropic-api-key-x6p0ij"},
         {"name": "ACE_FIELD_ENCRYPTION_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/field-encryption-key-D40eTj"},
-        {"name": "OP_SERVICE_ACCOUNT_TOKEN", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-op-service-account-token-aW4N8Y"}
+        {"name": "OP_SERVICE_ACCOUNT_TOKEN", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-op-service-account-token-aW4N8Y"},
+        {"name": "SLACK_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-client-id-tNVN7G"},
+        {"name": "SLACK_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-client-secret-KaEozS"},
+        {"name": "SLACK_SIGNING_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-signing-secret-9CmCYh"}
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
