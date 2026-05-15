@@ -228,3 +228,47 @@ class CreateProgramOut(StrictModel):
     run_id: str  # always "run-001" — programs start at one run
     spec_path: str  # repo-relative path that was written
     message: str
+
+
+# ---------------------------------------------------------------------------
+# Media library — workspace-scoped curated video + audio assets.
+# Separate from LibraryEntryOut / LibraryOut above (which describe a
+# per-program clip manifest); these are the cross-program asset pool the
+# generator skill browses to pick clips for new specs.
+# ---------------------------------------------------------------------------
+
+
+class MediaLibraryVideoItemOut(StrictModel):
+    ref: str
+    drive_id: str
+    drive_url: str
+    filename: str
+    name: str | None = None
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    status: str  # "ok" | "missing-sidecar" | "missing-media" | "malformed-sidecar"
+
+
+class MediaLibraryVideoSubfolderOut(StrictModel):
+    subfolder: str
+    items: list[MediaLibraryVideoItemOut]
+
+
+class MediaLibraryVideoOut(StrictModel):
+    subfolders: list[MediaLibraryVideoSubfolderOut]
+
+
+class MediaLibraryAudioItemOut(StrictModel):
+    hash: str
+    drive_id: str
+    drive_url: str
+    voice_id: str | None = None
+    model: str | None = None
+    text: str | None = None
+    duration_sec: float | None = None
+    generated_at: str | None = None
+    status: str
+
+
+class MediaLibraryAudioOut(StrictModel):
+    items: list[MediaLibraryAudioItemOut]
