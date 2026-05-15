@@ -128,7 +128,13 @@ async function main() {
   // Compose props for Remotion.
   // Write props to a temp JSON file so minimist doesn't mis-parse JSON arrays
   // (e.g., `--props={"captions":[]}` confuses minimist's [] detection).
-  const props = { programSlug: cli.program, captions };
+  // Pass the spec YAML through props verbatim. The component prefers
+  // it over the static PROGRAMS_REGISTRY lookup, so any slug created
+  // via /ace:video-from-program-page renders without a registry edit.
+  // Read the raw text directly off disk — the staged spec.yaml has
+  // already been written by Django's _stage_spec().
+  const specYaml = fs.readFileSync(specPath(cli.program, runId, root), "utf8");
+  const props = { programSlug: cli.program, specYaml, captions };
   const tmpPropsFile = path.join(os.tmpdir(), `remotion-props-${Date.now()}.json`);
   fs.writeFileSync(tmpPropsFile, JSON.stringify(props));
   const propsArg = `--props=${JSON.stringify(tmpPropsFile)}`;

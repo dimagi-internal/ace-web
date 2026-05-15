@@ -1,0 +1,37 @@
+# Template metadata. The generator service reads this to surface the
+# template in the picker and to know which prompt + skeleton to use.
+id: 120s-program-demo
+name: 120-second program demo
+description: |
+  Deep-dive demo of a single Connect program for a stakeholder who
+  already knows the basics. Walks the full Learn / Deliver / Verify /
+  Pay cycle with screen-recorded product flows, then shows the
+  Network Manager and Program Manager audit layers (probation /
+  relearn / deactivation / Audit-of-Audits dashboard). Closes with a
+  longitudinal-outcome / drone-shot return to the field.
+expected_duration_seconds: 150
+intended_audience: |
+  Funders and partner orgs who have already seen the 60s overview
+  and are scoping a real engagement. Connect program managers
+  presenting at a partner kick-off. Internal training for new
+  delivery org Network Managers.
+when_to_use: |
+  - You need to *demo* Connect end-to-end, not introduce it.
+  - You have program-specific product screen-recordings: FLW Learn
+    modules, FLW Delivery forms, payment notification screens, the
+    Network Manager bulk-audit + GPS-review screens, the
+    Program Manager Audit-of-Audits dashboard.
+  - You have field b-roll for two slots: opening drone + closing
+    drone (or near-equivalent: opening scene-setter + closing
+    return-to-place).
+needs_program_specific_footage: true
+status: scaffold-only
+notes: |
+  This template structure follows Matt's MBW Killer Demo outline
+  (mid-2026). It is intentionally a richer scaffold than the 60s
+  overview — 14 beats with a sub-flow inside the verification arc.
+  The generator can fill the narration scaffolding from a source
+  page, but the spec ships ready to render only after an operator
+  hand-attaches the program-specific screen recordings + drone
+  footage. Until those land, the rendered output will use [TBD]
+  placeholder clips and the result is for spec review only.

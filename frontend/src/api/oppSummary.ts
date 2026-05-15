@@ -1,4 +1,7 @@
-import { apiFetch } from "./client";
+// Public no-auth endpoint — use raw fetch so we don't pull in apiClient's
+// session/CSRF middleware (which would redirect to /auth/login on auth
+// errors). The public summary URL is meant to circulate as a stakeholder
+// share link, with no cookies required.
 
 // Matches apps/opps/summary.py build_summary_payload return shape.
 // Backed by phases.<phase>.products.* blocks in run_state.yaml as of
@@ -79,12 +82,16 @@ export interface OppSummaryPayload {
   workbench_url: string | null;
 }
 
-export function getPublicOppSummary(
+export async function getPublicOppSummary(
   workspace: string,
   slug: string,
   runId: string,
 ): Promise<OppSummaryPayload> {
-  return apiFetch<OppSummaryPayload>(
-    `/api/opps/public/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/summary`,
-  );
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const url = `${base}/api/opps/public/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/summary`;
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`getPublicOppSummary: ${resp.status}`);
+  }
+  return (await resp.json()) as OppSummaryPayload;
 }

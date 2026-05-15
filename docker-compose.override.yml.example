@@ -42,6 +42,14 @@ services:
       # The destination path must literally match the symlink target,
       # so replace CHANGEME with your macOS username (cat /Users/$USER).
       - /Users/CHANGEME/.cache/connect-videos:/Users/CHANGEME/.cache/connect-videos:ro
+      # ALSO mount the same cache at the container user's home so the
+      # video-production scripts' defaultCacheDir() = os.homedir() + ...
+      # resolves to the same bytes when running renders inside the
+      # container (defaultCacheDir picks /home/app/.cache/... on Linux).
+      # Without this, `npm run render` from Django's trigger_rerender
+      # aborts with "6 asset(s) missing from cache" even though the host
+      # cache is populated.
+      - /Users/CHANGEME/.cache/connect-videos:/home/app/.cache/connect-videos:ro
     environment:
       # Docker Desktop on macOS doesn't propagate inotify events from the
       # host into the container for bind-mounted volumes — file CONTENT is

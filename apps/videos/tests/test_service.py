@@ -178,6 +178,58 @@ def test_create_program_writes_to_drive(fake_drive, workspace):
     assert rec.name == "New Program"
 
 
+def test_create_program_autofills_narration_script_from_by_beat(fake_drive, workspace):
+    """The render's precondition check requires narration.script non-empty.
+    When the agent fills only by_beat (the canonical case for the
+    /ace:video-from-program-page skill), the server joins them into
+    script before persisting so renders don't abort."""
+    yaml_body = (
+        "slug: kmc-test\n"
+        "workspace: dimagi-team\n"
+        "name: KMC Test\n"
+        "narration:\n"
+        "  generator: manual\n"
+        "  by_beat:\n"
+        "    hook: \"Pay for verified service delivery.\"\n"
+        "    cycle: \"Workers learn, deliver, and verify before pay.\"\n"
+        "    cta: \"\"\n"
+        "  script: \"\"\n"
+    )
+    service.create_program_from_spec(workspace, "kmc-test", yaml_body)
+    # Re-read from Drive and confirm script is no longer empty.
+    layout = drive.resolve_layout(workspace, fake_drive.client)
+    fresh = drive.read_spec(layout, fake_drive.client, "kmc-test", "run-001")
+    assert fresh is not None
+    assert "Pay for verified service delivery." in fresh
+    # Joined paragraphs land in narration.script.
+    assert "script:" in fresh
+    # The empty-string cta is filtered out (no double newlines).
+    parsed_by_yaml = fresh.split("script:")[1]
+    assert "Pay for verified service delivery." in parsed_by_yaml
+    assert "Workers learn, deliver, and verify before pay." in parsed_by_yaml
+
+
+def test_create_program_respects_author_provided_script(fake_drive, workspace):
+    """If the author wrote a script, the auto-fill must NOT overwrite it."""
+    yaml_body = (
+        "slug: respects-script\n"
+        "workspace: dimagi-team\n"
+        "name: X\n"
+        "narration:\n"
+        "  by_beat:\n"
+        "    hook: \"This is the by-beat hook.\"\n"
+        "  script: \"This is the author's hand-crafted script paragraph.\"\n"
+    )
+    service.create_program_from_spec(workspace, "respects-script", yaml_body)
+    layout = drive.resolve_layout(workspace, fake_drive.client)
+    fresh = drive.read_spec(layout, fake_drive.client, "respects-script", "run-001")
+    assert fresh is not None
+    assert "hand-crafted script paragraph" in fresh
+    # The by_beat content does NOT leak into the script.
+    script_portion = fresh.split("script:")[1].split("\n")[0]
+    assert "by-beat hook" not in script_portion
+
+
 def test_create_program_rejects_slug_mismatch(workspace):
     bad = "slug: in-yaml\nworkspace: dimagi-team\nname: X\n"
     with pytest.raises(ValueError, match="must match the URL slug"):
@@ -301,3 +353,24 @@ def test_rewrite_explorer_html_injects_dark_theme():
     assert "ace-web-dark-theme" in out
     assert "X-CSRFToken" in out
     assert "fetch('edit'" in out
+
+
+def test_apply_single_op_returns_result_without_saving(monkeypatch):
+    from apps.videos import service
+    from ruamel.yaml import YAML
+    yaml = YAML(typ="rt")
+    yaml.preserve_quotes = True
+    from io import StringIO
+
+    doc = yaml.load(StringIO("""\
+scene:
+  clips:
+    - "@alpha"
+narration:
+  by_beat: {}
+"""))
+    result = service._apply_single_op(doc, {
+        "op": "set-narration", "beatId": "hook", "text": "Hello"
+    })
+    assert result.ok
+    assert doc["narration"]["by_beat"]["hook"] == "Hello"

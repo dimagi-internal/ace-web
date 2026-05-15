@@ -13,6 +13,8 @@
  *   GET    /programs/{slug}/runs/{run_id}/media/{name}
  */
 
+import type { ProgramSpec } from "@/components/videos/types";
+
 const API_PREFIX = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
 function getCsrfToken(): string {
@@ -93,6 +95,7 @@ export interface RunDetail {
   has_explorer_build: boolean;
   explorer_url: string;
   yaml_path: string;
+  spec: ProgramSpec | null;
 }
 
 export interface RenderStatus {
@@ -150,5 +153,29 @@ export function triggerBuild(
   return v2Fetch(`${runBase(ws, p, r)}/build`, {
     method: "POST",
     body: JSON.stringify({ mode }),
+  });
+}
+
+// ───────── edit-batch ─────────
+
+export type EditBatchOp =
+  | { op: "set-clip-trim"; kind: "scene-clip" | "product-beat"; index: number;
+      start_seconds: number; duration_seconds: number }
+  | { op: "set-clip-asset"; kind: "scene-clip" | "product-beat"; index: number; alias: string }
+  | { op: "set-narration"; beatId: string; text: string }
+  | { op: "set-stat"; path: string; big?: string; caption?: string; source?: string };
+
+export interface EditBatchResult {
+  ok: boolean;
+  applied: number;
+  message: string;
+}
+
+export function submitEditBatch(
+  ws: string, p: string, r: string, ops: EditBatchOp[],
+): Promise<EditBatchResult> {
+  return v2Fetch(`${runBase(ws, p, r)}/edit-batch`, {
+    method: "POST",
+    body: JSON.stringify({ ops }),
   });
 }

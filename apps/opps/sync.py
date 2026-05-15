@@ -1249,8 +1249,21 @@ def load_opp(
             opp_children=opp_children,
         )
         if not run_summaries:
-            raise FileNotFoundError(
-                f"opp {_slug!r} has runs/ subfolder but no runs inside"
+            # "Multi-run layout but runs/ is empty" is a valid state — the
+            # opp was created (has idea.md / pdd.md) but /ace:run hasn't
+            # produced its first run yet. Fall through to the flat path so
+            # we synthesise a placeholder RunDetail from whatever's at the
+            # opp root. Result: an empty Workbench with a "no runs yet"
+            # affordance instead of a 404 page.
+            opp_children_via_list_files = client.list_files(opp_folder.id)
+            return _load_opp_flat(
+                client,
+                opp_folder=opp_folder,
+                opp_children=opp_children_via_list_files,
+                slug=_slug,
+                run_id=run_id,
+                skill_registry=SKILL_REGISTRY,
+                overview=overview,
             )
         if run_id is None:
             target = run_summaries[0]
