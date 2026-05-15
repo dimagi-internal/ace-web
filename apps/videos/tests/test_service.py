@@ -7,6 +7,7 @@ explorer/) so a few path helpers still touch tmp_path.
 """
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -338,6 +339,69 @@ def test_trigger_rerender_rejects_bad_slug_or_run(workspace):
         service.trigger_rerender(workspace, "../evil", "run-001")
     with pytest.raises(ValueError):
         service.trigger_rerender(workspace, "demo", "../run-001")
+
+
+# ---------------------------------------------------------------------------
+# render_status: Redis busy flag + output.mp4 mtime → accurate "busy"
+# ---------------------------------------------------------------------------
+
+
+def test_render_status_busy_true_when_no_sentinel_exists(seeded):
+    """No explorer/index.html + busy flag set → busy True (chain in
+    flight or failed before producing the sentinel)."""
+    fake_redis = mock.MagicMock()
+    fake_redis.get.side_effect = lambda k: (
+        "1" if k.endswith(":busy") else "2026-05-15T18:00:00+00:00"
+    )
+    # Wipe the sentinel from the fixture.
+    sentinel = service.explorer_dir("demo", "run-001") / "index.html"
+    if sentinel.exists():
+        sentinel.unlink()
+    with mock.patch.object(service, "_get_redis", return_value=fake_redis):
+        status = service.render_status("demo", "run-001")
+    assert status["busy"] is True
+    assert status["started_at"] == "2026-05-15T18:00:00+00:00"
+
+
+def test_render_status_busy_false_when_sentinel_newer_than_started(seeded):
+    """explorer/index.html mtime > started_at → busy False even though
+    Redis still has the busy flag (1-hour TTL hasn't cleared)."""
+    # The seeded fixture wrote explorer/index.html just now.
+    started = (
+        dt.datetime.now(dt.UTC) - dt.timedelta(minutes=10)
+    ).replace(microsecond=0).isoformat()
+    fake_redis = mock.MagicMock()
+    fake_redis.get.side_effect = lambda k: ("1" if k.endswith(":busy") else started)
+    with mock.patch.object(service, "_get_redis", return_value=fake_redis):
+        status = service.render_status("demo", "run-001")
+    assert status["busy"] is False
+
+
+def test_render_status_busy_true_when_sentinel_older_than_started(seeded):
+    """Stale explorer/index.html from a prior render + new busy flag →
+    busy True (the new chain hasn't produced the sentinel yet)."""
+    import os
+    sentinel = service.explorer_dir("demo", "run-001") / "index.html"
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    sentinel.write_text("<old>")
+    # Backdate the sentinel by 10 minutes; mark the chain as starting now.
+    old = (dt.datetime.now() - dt.timedelta(minutes=10)).timestamp()
+    os.utime(sentinel, (old, old))
+    started = dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
+    fake_redis = mock.MagicMock()
+    fake_redis.get.side_effect = lambda k: ("1" if k.endswith(":busy") else started)
+    with mock.patch.object(service, "_get_redis", return_value=fake_redis):
+        status = service.render_status("demo", "run-001")
+    assert status["busy"] is True
+
+
+def test_render_status_busy_false_when_redis_flag_absent(seeded):
+    fake_redis = mock.MagicMock()
+    fake_redis.get.return_value = None
+    with mock.patch.object(service, "_get_redis", return_value=fake_redis):
+        status = service.render_status("demo", "run-001")
+    assert status["busy"] is False
+    assert status["started_at"] is None
 
 
 # ---------------------------------------------------------------------------
