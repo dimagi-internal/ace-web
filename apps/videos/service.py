@@ -1,25 +1,28 @@
 """Filesystem + subprocess service layer for the videos surface.
 
-Storage layout (mirrors opps/runs in ace-web):
+**Source of truth = Drive.** Each workspace's spec.yaml files live in
+its Drive root under ``videos/<program-slug>/runs/<run-id>/spec.yaml``.
+The local FS at ``ACE_VIDEOS_ROOT/programs/...`` is render scratch:
+``trigger_rerender`` stages the latest spec from Drive to local just
+before kicking off the Node toolchain. Renders themselves write to
+local (output.mp4, explorer/) and stay local for now — uploading the
+rendered artifacts back to Drive is a follow-up.
 
-    programs/<slug>/runs/run-001/spec.yaml       ← video spec
-    programs/<slug>/runs/run-001/output.mp4      ← muxed render
-    programs/<slug>/runs/run-001/explorer/       ← built explorer (index.html + media/)
+Apart from spec.yaml, three things still live on local disk only and
+will move to Drive in subsequent passes:
+- the rendered output.mp4 (per run)
+- the built explorer/ tree (per run)
+- the per-program feedback.md log
+- the ElevenLabs voiceover cache (assets/audio/) + music bed
 
-Each iteration is a folder snapshot. Editing a run mutates that run's
-spec.yaml; forking copies spec.yaml into the next ``run-NNN`` directory
-and starts fresh from there.
-
-YAML I/O uses ruamel.yaml so we round-trip with comments and structure
-preserved. Renders are fire-and-forget subprocess spawns; a Redis busy
-flag scoped to (slug, run_id) tracks in-flight work with a TTL.
+YAML I/O uses ruamel.yaml so we round-trip with comments preserved.
 """
 from __future__ import annotations
 
 import datetime as dt
+import io
 import logging
 import re
-import shutil
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -29,6 +32,9 @@ from typing import Any
 import redis as _redis_sync
 from django.conf import settings
 from ruamel.yaml import YAML
+
+from apps.videos import drive
+from apps.workspaces.models import Workspace
 
 log = logging.getLogger(__name__)
 
@@ -56,31 +62,25 @@ _RUN_RE = re.compile(r"^run-(\d{3,})$")
 
 
 def is_valid_slug(slug: str) -> bool:
-    """Whitelist for program slugs. Lowercase + digits + hyphens."""
     return bool(_SLUG_RE.match(slug))
 
 
 def is_valid_run_id(run_id: str) -> bool:
-    """Whitelist for run ids (e.g. ``run-001``)."""
     return bool(_RUN_RE.match(run_id))
 
 
 # ---------------------------------------------------------------------------
-# Paths
+# Local paths — kept for render scratch + outputs
 # ---------------------------------------------------------------------------
 
 
 def _root() -> Path:
-    """Connect-videos project root (the directory `npm run` is invoked from)."""
+    """connect-videos project root (where npm scripts are invoked)."""
     return Path(settings.ACE_VIDEOS_ROOT)
 
 
-def _programs_dir() -> Path:
-    return _root() / "programs"
-
-
 def program_dir(slug: str) -> Path:
-    return _programs_dir() / slug
+    return _root() / "programs" / slug
 
 
 def runs_dir(slug: str) -> Path:
@@ -92,6 +92,8 @@ def run_dir(slug: str, run_id: str) -> Path:
 
 
 def spec_path(slug: str, run_id: str) -> Path:
+    """LOCAL path where spec.yaml gets staged before a render. Drive is
+    the source of truth; this is the npm toolchain's scratch."""
     return run_dir(slug, run_id) / "spec.yaml"
 
 
@@ -107,106 +109,75 @@ def feedback_path(slug: str, run_id: str) -> Path:
     return explorer_dir(slug, run_id) / "feedback.md"
 
 
+def drive_spec_display(slug: str, run_id: str) -> str:
+    """Human-readable Drive path for UI display (not a filesystem path)."""
+    return f"videos/{slug}/runs/{run_id}/spec.yaml"
+
+
+# ---------------------------------------------------------------------------
+# YAML helpers
+# ---------------------------------------------------------------------------
+
+
+def _yaml() -> YAML:
+    y = YAML(typ="rt")
+    y.preserve_quotes = True
+    y.width = 4096
+    return y
+
+
+def _dump_yaml(doc: Any) -> str:
+    """Serialize a YAML doc back to a string preserving formatting."""
+    buf = io.StringIO()
+    _yaml().dump(doc, buf)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Drive client / layout resolution
+#
+# ``client_for`` and ``layout_for`` are tiny wrappers so tests can
+# monkeypatch ``apps.videos.drive.client_for_workspace`` to return a
+# FakeDriveClient.
+# ---------------------------------------------------------------------------
+
+
+def client_for(workspace: Workspace):
+    return drive.client_for_workspace(workspace)
+
+
+def layout_for(workspace: Workspace, client=None):
+    if client is None:
+        client = client_for(workspace)
+    return drive.resolve_layout(workspace, client), client
+
+
 # ---------------------------------------------------------------------------
 # Runs discovery
 # ---------------------------------------------------------------------------
 
 
-def list_run_ids(slug: str) -> list[str]:
-    """Return all run ids for ``slug`` sorted ascending."""
-    rdir = runs_dir(slug)
-    if not rdir.exists():
-        return []
-    return sorted(
-        p.name for p in rdir.iterdir()
-        if p.is_dir() and _RUN_RE.match(p.name)
-    )
+def list_run_ids(workspace: Workspace, slug: str) -> list[str]:
+    layout, client = layout_for(workspace)
+    return drive.list_run_ids(layout, client, slug)
 
 
-def latest_run_id(slug: str) -> str | None:
-    ids = list_run_ids(slug)
+def latest_run_id(workspace: Workspace, slug: str) -> str | None:
+    ids = list_run_ids(workspace, slug)
     return ids[-1] if ids else None
 
 
-def next_run_id(slug: str) -> str:
-    ids = list_run_ids(slug)
+def next_run_id(workspace: Workspace, slug: str) -> str:
+    ids = list_run_ids(workspace, slug)
     if not ids:
         return "run-001"
-    last = ids[-1]
-    n = int(last.removeprefix("run-"))
+    n = int(ids[-1].removeprefix("run-"))
     return f"run-{n + 1:03d}"
 
 
-def create_program_from_spec(slug: str, spec_yaml: str) -> Path:
-    """Create programs/<slug>/runs/run-001/spec.yaml with the supplied
-    YAML body. Validates: slug shape, slug doesn't collide, body parses
-    as a YAML mapping, and the `slug:` field inside the body matches
-    the path slug (catches the most common copy-paste mistake).
-
-    Returns the absolute path that was written.
-
-    Raises ``ValueError`` on validation failure and
-    ``FileExistsError`` when the program directory already exists —
-    the caller (API) translates these into RFC 7807 problem responses.
-    """
-    if not is_valid_slug(slug):
-        raise ValueError(f"Invalid program slug: {slug!r}")
-    pdir = program_dir(slug)
-    if pdir.exists():
-        raise FileExistsError(f"Program already exists: {pdir}")
-
-    # Parse the supplied YAML so we can sanity-check it before writing.
-    try:
-        doc = _yaml().load(spec_yaml)
-    except Exception as e:  # ruamel.yaml's own error types vary
-        raise ValueError(f"spec_yaml is not valid YAML: {e}") from e
-    if not isinstance(doc, dict):
-        raise ValueError("spec_yaml must parse to a YAML mapping at the top level")
-    yaml_slug = doc.get("slug")
-    if yaml_slug != slug:
-        raise ValueError(
-            f"spec_yaml.slug ({yaml_slug!r}) must match the URL slug ({slug!r})"
-        )
-    if not doc.get("workspace"):
-        raise ValueError("spec_yaml.workspace is required")
-
-    run_001 = run_dir(slug, "run-001")
-    run_001.mkdir(parents=True, exist_ok=True)
-    target = run_001 / "spec.yaml"
-    target.write_text(spec_yaml, encoding="utf-8")
-    return target
-
-
-def copy_run(slug: str, from_run_id: str) -> str:
-    """Snapshot ``spec.yaml`` from ``from_run_id`` into a fresh
-    ``run-NNN`` and return the new run id. Both runs stay mutable
-    — this is "save-as", not "fork". Use it when you want to keep
-    the current run around as a known-good baseline before trying
-    something different in a new run.
-
-    Output + explorer start empty — re-render to populate them.
-    """
-    src = spec_path(slug, from_run_id)
-    if not src.exists():
-        raise FileNotFoundError(f"Source spec not found: {src}")
-    new_id = next_run_id(slug)
-    new_dir = run_dir(slug, new_id)
-    new_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, new_dir / "spec.yaml")
-    return new_id
-
-
 # ---------------------------------------------------------------------------
-# YAML loading
+# ProgramRecord — the loaded-spec value object
 # ---------------------------------------------------------------------------
-
-
-def _yaml() -> YAML:
-    """Round-tripping YAML loader: preserves comments + structure."""
-    y = YAML(typ="rt")
-    y.preserve_quotes = True
-    y.width = 4096
-    return y
 
 
 @dataclass(frozen=True)
@@ -215,7 +186,7 @@ class ProgramRecord:
     run_id: str
     workspace_slug: str | None
     raw: dict[str, Any]
-    yaml_path: Path
+    yaml_path: str   # Drive display path: "videos/<slug>/runs/<run-id>/spec.yaml"
 
     @property
     def name(self) -> str:
@@ -255,15 +226,11 @@ class ProgramRecord:
         return output_path(self.slug, self.run_id).exists()
 
 
-def load_program_run(slug: str, run_id: str) -> ProgramRecord | None:
-    """Load the spec.yaml for one specific run, or None if absent."""
-    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+def _record_from_yaml(slug: str, run_id: str, spec_yaml: str) -> ProgramRecord | None:
+    try:
+        data = _yaml().load(spec_yaml)
+    except Exception:
         return None
-    path = spec_path(slug, run_id)
-    if not path.exists():
-        return None
-    with path.open("r", encoding="utf-8") as f:
-        data = _yaml().load(f)
     if not isinstance(data, dict):
         return None
     ws = data.get("workspace")
@@ -272,43 +239,110 @@ def load_program_run(slug: str, run_id: str) -> ProgramRecord | None:
         run_id=run_id,
         workspace_slug=str(ws) if ws else None,
         raw=dict(data),
-        yaml_path=path,
+        yaml_path=drive_spec_display(slug, run_id),
     )
 
 
-def load_program(slug: str, run_id: str | None = None) -> ProgramRecord | None:
+def load_program_run(workspace: Workspace, slug: str, run_id: str) -> ProgramRecord | None:
+    """Load the spec.yaml for one specific run from Drive."""
+    if not is_valid_slug(slug) or not is_valid_run_id(run_id):
+        return None
+    layout, client = layout_for(workspace)
+    spec_yaml = drive.read_spec(layout, client, slug, run_id)
+    if spec_yaml is None:
+        return None
+    return _record_from_yaml(slug, run_id, spec_yaml)
+
+
+def load_program(workspace: Workspace, slug: str, run_id: str | None = None) -> ProgramRecord | None:
     """Load a program — defaults to its latest run when run_id is None."""
     if not is_valid_slug(slug):
         return None
-    rid = run_id or latest_run_id(slug)
+    rid = run_id or latest_run_id(workspace, slug)
     if rid is None:
         return None
-    return load_program_run(slug, rid)
+    return load_program_run(workspace, slug, rid)
 
 
-def iter_programs() -> Iterable[ProgramRecord]:
-    """Yield the latest run of every program directory on disk."""
-    pdir = _programs_dir()
-    if not pdir.exists():
-        return
-    for entry in sorted(pdir.iterdir()):
-        if not entry.is_dir() or entry.name.startswith("_"):
-            continue
-        rid = latest_run_id(entry.name)
+def iter_programs(workspace: Workspace) -> Iterable[ProgramRecord]:
+    """Yield the latest run of every program under videos/."""
+    layout, client = layout_for(workspace)
+    for slug in drive.list_program_slugs(layout, client):
+        rid = drive.latest_run_id(layout, client, slug)
         if rid is None:
             continue
-        rec = load_program_run(entry.name, rid)
+        spec_yaml = drive.read_spec(layout, client, slug, rid)
+        if spec_yaml is None:
+            continue
+        rec = _record_from_yaml(slug, rid, spec_yaml)
         if rec is not None:
             yield rec
 
 
-def list_programs_for_workspace(workspace_slug: str) -> list[ProgramRecord]:
-    """Return latest-run records visible to a workspace."""
-    return [p for p in iter_programs() if p.workspace_slug == workspace_slug]
+def list_programs_for_workspace(workspace: Workspace) -> list[ProgramRecord]:
+    """Latest-run record per program in this workspace."""
+    return [
+        p for p in iter_programs(workspace)
+        if p.workspace_slug == workspace.slug
+    ]
 
 
 # ---------------------------------------------------------------------------
-# YAML mutation ops (mirror explore.ts::applyEdit)
+# Creates / writes
+# ---------------------------------------------------------------------------
+
+
+def create_program_from_spec(workspace: Workspace, slug: str, spec_yaml: str) -> str:
+    """Create programs/<slug>/runs/run-001/spec.yaml in Drive.
+
+    Validates: slug shape, slug uniqueness in workspace, body parses as
+    a YAML mapping, slug + workspace fields inside spec_yaml match the
+    target. Returns the Drive file id of the new spec.yaml.
+
+    Raises ``ValueError`` (validation) / ``FileExistsError`` (collision).
+    """
+    if not is_valid_slug(slug):
+        raise ValueError(f"Invalid program slug: {slug!r}")
+
+    try:
+        doc = _yaml().load(spec_yaml)
+    except Exception as e:
+        raise ValueError(f"spec_yaml is not valid YAML: {e}") from e
+    if not isinstance(doc, dict):
+        raise ValueError("spec_yaml must parse to a YAML mapping at the top level")
+    if doc.get("slug") != slug:
+        raise ValueError(
+            f"spec_yaml.slug ({doc.get('slug')!r}) must match the URL slug ({slug!r})"
+        )
+    if doc.get("workspace") != workspace.slug:
+        raise ValueError(
+            f"spec_yaml.workspace ({doc.get('workspace')!r}) must match the URL workspace ({workspace.slug!r})"
+        )
+
+    layout, client = layout_for(workspace)
+    existing = drive.program_folder_id(layout, client, slug)
+    if existing is not None:
+        raise FileExistsError(
+            f"Program already exists in Drive: videos/{slug}/"
+        )
+    return drive.write_spec(layout, client, slug, "run-001", spec_yaml)
+
+
+def copy_run(workspace: Workspace, slug: str, from_run_id: str) -> str:
+    """Snapshot a run's spec.yaml into the next ``run-NNN`` in Drive.
+    Both runs stay mutable — save-as, not fork.
+    """
+    layout, client = layout_for(workspace)
+    src_yaml = drive.read_spec(layout, client, slug, from_run_id)
+    if src_yaml is None:
+        raise FileNotFoundError(f"Source run not found: videos/{slug}/runs/{from_run_id}")
+    new_id = drive.next_run_id(layout, client, slug)
+    drive.write_spec(layout, client, slug, new_id, src_yaml)
+    return new_id
+
+
+# ---------------------------------------------------------------------------
+# Apply-edit (yaml mutation ops, mirror explore.ts::applyEdit)
 # ---------------------------------------------------------------------------
 
 
@@ -341,20 +375,21 @@ class EditResult:
     message: str
 
 
-def apply_edit(slug: str, run_id: str, body: dict[str, Any]) -> EditResult:
-    """Apply one of four ops to ``programs/<slug>/runs/<run_id>/spec.yaml``.
-
-    Mirrors ``video-production/connect-videos/scripts/explore.ts::applyEdit``.
+def apply_edit(workspace: Workspace, slug: str, run_id: str, body: dict[str, Any]) -> EditResult:
+    """Apply one of four ops to the run's spec.yaml in Drive (round-trip
+    via ruamel.yaml to preserve comments).
     """
-    path = spec_path(slug, run_id)
-    if not path.exists():
+    layout, client = layout_for(workspace)
+    spec_yaml = drive.read_spec(layout, client, slug, run_id)
+    if spec_yaml is None:
         return EditResult(False, f"Spec not found for {slug}/{run_id}")
 
     y = _yaml()
-    with path.open("r", encoding="utf-8") as f:
-        doc = y.load(f)
-
+    doc = y.load(spec_yaml)
     op = body.get("op")
+
+    def _save() -> None:
+        drive.write_spec(layout, client, slug, run_id, _dump_yaml(doc))
 
     if op in {"set-clip-start", "set-clip-trim", "set-clip-asset"}:
         index = body.get("index")
@@ -374,7 +409,7 @@ def apply_edit(slug: str, run_id: str, body: dict[str, Any]) -> EditResult:
                 node["start_seconds"] = float(start_seconds)
             else:
                 return EditResult(False, f"Could not find {kind}[{index}]")
-            _save_yaml(y, path, doc)
+            _save()
             return EditResult(True, f"Set {kind}[{index}].start_seconds = {start_seconds}")
 
         if op == "set-clip-trim":
@@ -395,7 +430,7 @@ def apply_edit(slug: str, run_id: str, body: dict[str, Any]) -> EditResult:
                 node["duration_seconds"] = float(duration_seconds)
             else:
                 return EditResult(False, f"Could not find {kind}[{index}]")
-            _save_yaml(y, path, doc)
+            _save()
             return EditResult(True, f"Set {kind}[{index}] trim window")
 
         if op == "set-clip-asset":
@@ -412,7 +447,7 @@ def apply_edit(slug: str, run_id: str, body: dict[str, Any]) -> EditResult:
                 node["asset"] = new_ref
             else:
                 return EditResult(False, f"Could not find {kind}[{index}]")
-            _save_yaml(y, path, doc)
+            _save()
             return EditResult(True, f"Swapped {kind}[{index}] -> @{alias}")
 
     if op == "set-narration":
@@ -425,23 +460,18 @@ def apply_edit(slug: str, run_id: str, body: dict[str, Any]) -> EditResult:
         narration = doc.setdefault("narration", {})
         by_beat = narration.setdefault("by_beat", {})
         by_beat[beat_id] = text
-        _save_yaml(y, path, doc)
+        _save()
         return EditResult(True, f"Updated narration.by_beat.{beat_id}")
 
     return EditResult(False, f"Unknown op or missing args: {op!r}")
 
 
-def _save_yaml(y: YAML, path: Path, doc: Any) -> None:
-    with path.open("w", encoding="utf-8") as f:
-        y.dump(doc, f)
-
-
 # ---------------------------------------------------------------------------
-# Render trigger (fire-and-forget npm chain)
+# Render triggers — stage Drive → local, then npm
 # ---------------------------------------------------------------------------
 
 
-_RENDER_BUSY_TTL_SECONDS = 60 * 60  # render shouldn't exceed an hour
+_RENDER_BUSY_TTL_SECONDS = 60 * 60
 
 
 def _busy_key(slug: str, run_id: str) -> str:
@@ -452,8 +482,15 @@ def _started_key(slug: str, run_id: str) -> str:
     return f"videos:render:{slug}:{run_id}:started_at"
 
 
-def trigger_build_only(slug: str, run_id: str) -> bool:
-    """Spawn just `build-clip-explorer` (no render). Sub-second."""
+def _stage_spec(workspace: Workspace, slug: str, run_id: str) -> None:
+    """Pull spec.yaml from Drive and write it to the local scratch path
+    so the npm toolchain sees the latest content."""
+    layout, client = layout_for(workspace)
+    drive.stage_spec_locally(layout, client, slug, run_id, _root())
+
+
+def trigger_build_only(workspace: Workspace, slug: str, run_id: str) -> bool:
+    """Spawn build-clip-explorer (no render). Sub-second."""
     if not is_valid_slug(slug) or not is_valid_run_id(run_id):
         raise ValueError(f"Invalid slug or run_id: {slug!r} / {run_id!r}")
     r = _get_redis()
@@ -462,6 +499,12 @@ def trigger_build_only(slug: str, run_id: str) -> bool:
         return False
     now = dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
     r.set(_started_key(slug, run_id), now, ex=_RENDER_BUSY_TTL_SECONDS)
+    try:
+        _stage_spec(workspace, slug, run_id)
+    except Exception as e:
+        log.warning("videos.trigger_build_only: staging failed for %s/%s: %s", slug, run_id, e)
+        r.delete(_busy_key(slug, run_id), _started_key(slug, run_id))
+        return False
     chain = f"npm run build-clip-explorer -- --program={slug} --run={run_id}"
     log.info("videos.trigger_build_only: spawning for %s/%s", slug, run_id)
     try:
@@ -478,8 +521,9 @@ def trigger_build_only(slug: str, run_id: str) -> bool:
     return True
 
 
-def trigger_rerender(slug: str, run_id: str, *, needs_hydrate: bool = False) -> bool:
-    """Run hydrate + render + build-clip-explorer in the background."""
+def trigger_rerender(workspace: Workspace, slug: str, run_id: str, *, needs_hydrate: bool = False) -> bool:
+    """Stage spec from Drive → local; spawn hydrate + render +
+    build-clip-explorer in the background."""
     if not is_valid_slug(slug) or not is_valid_run_id(run_id):
         raise ValueError(f"Invalid slug or run_id: {slug!r} / {run_id!r}")
     r = _get_redis()
@@ -488,7 +532,12 @@ def trigger_rerender(slug: str, run_id: str, *, needs_hydrate: bool = False) -> 
         return False
     now = dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
     r.set(_started_key(slug, run_id), now, ex=_RENDER_BUSY_TTL_SECONDS)
-
+    try:
+        _stage_spec(workspace, slug, run_id)
+    except Exception as e:
+        log.warning("videos.trigger_rerender: staging failed for %s/%s: %s", slug, run_id, e)
+        r.delete(_busy_key(slug, run_id), _started_key(slug, run_id))
+        return False
     parts = []
     if needs_hydrate:
         parts.append(f"npm run hydrate -- --program={slug}")
@@ -520,7 +569,7 @@ def render_status(slug: str, run_id: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Library parsing
+# Library parsing — reads local explorer/library.html (a render artifact)
 # ---------------------------------------------------------------------------
 
 
@@ -565,14 +614,12 @@ def load_library_entries(slug: str, run_id: str) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Explorer HTML rewriting
+# Explorer HTML rewriting (unchanged from prior)
 # ---------------------------------------------------------------------------
 
 
 def rewrite_explorer_html(html: str, *, prefix: str, csrf_cookie_name: str) -> str:
-    """Rewrite root-absolute paths to page-relative + inject CSRF + dark theme."""
     _ = prefix
-
     rewrites = (
         ("fetch('/feedback'", "fetch('feedback'"),
         ("fetch(\"/feedback\"", "fetch(\"feedback\""),
