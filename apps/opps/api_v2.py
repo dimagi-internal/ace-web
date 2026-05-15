@@ -32,7 +32,6 @@ from .schemas import (
     OppHealthOut,
     OppPatchIn,
     OppRunOut,
-    OppSnapshotOut,
     ScorecardOut,
     SeedChatIn,
     SeedChatOut,
@@ -134,22 +133,31 @@ def list_opp_cards(workspace) -> list[dict]:
         else:
             updated_at = _EPOCH
 
-        out.append({
-            "slug": card.opp.slug,
-            "title": card.opp.display_name,
-            "current_phase": card.current_phase,
-            "current_skill": card.current_step,
-            "run_count": card.run_count,
-            "last_run_id": card.opp.current_run_id,
-            "updated_at": updated_at,
-        })
+        # Produce the FULL legacy OppCard shape the frontend expects
+        # (display_name, tags, labels, eval_score, etc.) — see
+        # apps/opps/serializers.py::serialize_opp_card.
+        from apps.opps.serializers import serialize_opp_card
+        rich = serialize_opp_card(
+            card.opp,
+            card.current_run if hasattr(card, "current_run") else None,
+        )
+        # Add fields the lighter v2 OppCardOut consumers also use.
+        rich["title"] = card.opp.display_name
+        rich["current_phase"] = card.current_phase
+        rich["current_step"] = card.current_step
+        rich["current_skill"] = card.current_step
+        rich["run_count"] = card.run_count
+        rich["last_run_id"] = card.opp.current_run_id
+        rich["updated_at"] = updated_at
+        rich["last_activity_at"] = raw_ts
+        out.append(rich)
 
     return out
 
 
 @router.get(
     "",
-    response=Page[OppCardOut],
+    response={200: dict},
     summary="List opps in workspace",
     openapi_extra={"x-mcp-expose": True},
 )
@@ -158,19 +166,70 @@ def list_opps(
     workspace_slug: Annotated[str, Path()],
     offset: int = 0,
     limit: int = 100,
-) -> Page[OppCardOut]:
+) -> HttpResponse:
+    """Return the full legacy OppCard shape (display_name, tags, labels,
+    eval_score, etc.) the frontend expects. We bypass OppCardOut's strict
+    Pydantic schema and return the rich dict directly — the v2 minimal
+    schema was a Phase 1 over-simplification."""
     workspace = resolve_workspace_for_member(request, workspace_slug)
     cards = list_opp_cards(workspace)
-    return paginate(
-        [OppCardOut.model_validate(c) for c in cards],
-        offset=offset,
-        limit=limit,
-    )
+    items = list(cards[offset:offset + limit])
+    return JsonResponse({
+        "items": items,
+        "total": len(cards),
+        "offset": offset,
+        "limit": limit,
+    })
 
 
 # ---------------------------------------------------------------------------
 # Task 2.1.3 helpers — snapshot load
 # ---------------------------------------------------------------------------
+
+
+def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -> dict | None:
+    """Like load_opp_snapshot but returns the full legacy serializer shape
+    (opp + current_run with steps + decisions + phases + pdd_body) the
+    frontend's OppSnapshot type expects.
+
+    Returns None when the opp slug doesn't exist in Drive.
+    """
+    from apps.opps import access, drive_changes, snapshot_cache
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.serializers import serialize_opp_snapshot
+    from apps.opps.sync import load_opp
+    from apps.opps.touched_tracker import TouchedFileTracker
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+
+    ace_folder_id = access.resolve_ace_root_folder_id(workspace)
+    if ace_folder_id is None:
+        return None
+    try:
+        inner = get_drive_client(workspace=workspace)
+    except ServiceAccountNotFound:
+        log.warning("load_rich_opp_snapshot: Drive not configured for workspace %s", workspace.slug)
+        return None
+    from apps.opps.drive_cache import CachedDriveClient
+    client = CachedDriveClient(inner, bypass=False)
+    changed = drive_changes.observe(workspace, client)
+    if changed:
+        snapshot_cache.invalidate(changed)
+    cached = snapshot_cache.get(workspace_id=workspace.pk, slug=slug, run_id=run_id)
+    if cached is not None:
+        access.overlay_workspace_display_name(cached.opp, slug, workspace=workspace)
+        return serialize_opp_snapshot(cached)
+    bypass_client = snapshot_cache.cold_load_client(client)
+    try:
+        with TouchedFileTracker() as tracker:
+            snap = load_opp(bypass_client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
+    except FileNotFoundError:
+        return None
+    access.overlay_workspace_display_name(snap.opp, slug, workspace=workspace)
+    snapshot_cache.set(
+        workspace_id=workspace.pk, slug=slug, run_id=run_id,
+        snap=snap, file_ids=tracker.file_ids,
+    )
+    return serialize_opp_snapshot(snap)
 
 
 def load_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -> dict | None:
@@ -355,11 +414,14 @@ def get_opp(
     slug: Annotated[str, Path()],
     run_id: str | None = None,
 ) -> HttpResponse:
+    """Return the full Workbench payload — opp + current_run with steps +
+    decisions + phases + pdd_body. Uses the legacy serializer which
+    matches the frontend's OppSnapshot shape (the v2 minimal
+    OppSnapshotOut schema was a Phase 1 over-simplification)."""
     workspace = resolve_workspace_for_member(request, workspace_slug)
-    snapshot = load_opp_snapshot(workspace, slug, run_id=run_id)
-    if snapshot is None:
+    payload = load_rich_opp_snapshot(workspace, slug, run_id=run_id)
+    if payload is None:
         raise ProblemError(404, "Opp not found", type_=TYPE_NOT_FOUND)
-    payload = OppSnapshotOut.model_validate(snapshot).model_dump(mode="json")
     etag = compute_etag(payload)
     not_modified = maybe_not_modified(request, etag)
     if not_modified is not None:

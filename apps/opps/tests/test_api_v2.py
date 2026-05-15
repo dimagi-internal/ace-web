@@ -150,7 +150,7 @@ def test_list_opps_401_anonymous(db, client):
 def test_get_opp_returns_snapshot_with_etag(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_opp_snapshot",
+        "apps.opps.api_v2.load_rich_opp_snapshot",
         lambda workspace, slug, run_id=None: _FAKE_SNAPSHOT,
     )
     response = client.get("/api/w/ws1/opps/opp-1")
@@ -165,7 +165,7 @@ def test_get_opp_returns_snapshot_with_etag(member_client, monkeypatch):
 def test_get_opp_304_on_matching_etag(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_opp_snapshot",
+        "apps.opps.api_v2.load_rich_opp_snapshot",
         lambda workspace, slug, run_id=None: _FAKE_SNAPSHOT,
     )
     # First request — get the ETag.
@@ -199,7 +199,7 @@ def test_get_opp_401_anonymous(db, client):
 def test_get_opp_404_unknown_slug(member_client, monkeypatch):
     client, workspace, _ = member_client
     monkeypatch.setattr(
-        "apps.opps.api_v2.load_opp_snapshot",
+        "apps.opps.api_v2.load_rich_opp_snapshot",
         lambda workspace, slug, run_id=None: None,
     )
     response = client.get("/api/w/ws1/opps/no-such-opp")

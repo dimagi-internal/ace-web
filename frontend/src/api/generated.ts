@@ -31,7 +31,13 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** List opps in workspace */
+        /**
+         * List opps in workspace
+         * @description Return the full legacy OppCard shape (display_name, tags, labels,
+         *     eval_score, etc.) the frontend expects. We bypass OppCardOut's strict
+         *     Pydantic schema and return the rich dict directly — the v2 minimal
+         *     schema was a Phase 1 over-simplification.
+         */
         readonly get: operations["apps_opps_api_v2_list_opps"];
         readonly put?: never;
         /** Create opp */
@@ -49,7 +55,13 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Opp Workbench snapshot */
+        /**
+         * Opp Workbench snapshot
+         * @description Return the full Workbench payload — opp + current_run with steps +
+         *     decisions + phases + pdd_body. Uses the legacy serializer which
+         *     matches the frontend's OppSnapshot shape (the v2 minimal
+         *     OppSnapshotOut schema was a Phase 1 over-simplification).
+         */
         readonly get: operations["apps_opps_api_v2_get_opp"];
         readonly put?: never;
         readonly post?: never;
@@ -464,7 +476,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** List video programs in workspace */
+        /** List video programs in workspace (latest run per program) */
         readonly get: operations["apps_videos_api_v2_list_programs"];
         readonly put?: never;
         readonly post?: never;
@@ -481,7 +493,7 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Get a video program's detail payload */
+        /** Program detail including runs list */
         readonly get: operations["apps_videos_api_v2_get_program"];
         readonly put?: never;
         readonly post?: never;
@@ -491,7 +503,41 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/library.json": {
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Snapshot the latest run into a new run (save-as; both stay mutable) */
+        readonly post: operations["apps_videos_api_v2_copy_run"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Run detail */
+        readonly get: operations["apps_videos_api_v2_get_run"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/library.json": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -508,14 +554,14 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/render-status": {
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/render-status": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Background-render busy flag for a program */
+        /** Background-render busy flag for a run */
         readonly get: operations["apps_videos_api_v2_get_render_status"];
         readonly put?: never;
         readonly post?: never;
@@ -525,17 +571,17 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/feedback": {
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/feedback": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Read the per-program feedback markdown log */
+        /** Read the run's feedback markdown log */
         readonly get: operations["apps_videos_api_v2_get_feedback"];
         readonly put?: never;
-        /** Append a note to the per-program feedback markdown log */
+        /** Append a note to the run's feedback markdown log */
         readonly post: operations["apps_videos_api_v2_post_feedback"];
         readonly delete?: never;
         readonly options?: never;
@@ -543,7 +589,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/build": {
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/edit": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -552,24 +598,13 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** Trigger a fresh draft render or just rebuild the explorer HTML */
-        readonly post: operations["apps_videos_api_v2_post_build"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/edit": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Mutate a clip / narration in the program YAML, fire a draft re-render */
+        /**
+         * Save an edit to the run's spec.yaml (save only — does NOT render)
+         * @description Save an edit to spec.yaml. Does NOT trigger a render — that's a
+         *     separate explicit step via POST /build. Splitting the two lets the
+         *     operator batch many edits before paying the render cost; the
+         *     "Re-render" button in the UI is the single canonical render entry.
+         */
         readonly post: operations["apps_videos_api_v2_post_edit"];
         readonly delete?: never;
         readonly options?: never;
@@ -577,14 +612,31 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/explorer.html": {
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/build": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Serve the generated clip-explorer index.html (rewritten for iframe) */
+        readonly get?: never;
+        readonly put?: never;
+        /** Trigger render or rebuild-only for this run */
+        readonly post: operations["apps_videos_api_v2_post_build"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/explorer.html": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Serve the run's generated explorer index.html */
         readonly get: operations["apps_videos_api_v2_serve_explorer"];
         readonly put?: never;
         readonly post?: never;
@@ -594,14 +646,14 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/library.html": {
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/library.html": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Serve the generated clip-library.html (rewritten for iframe) */
+        /** Serve the run's generated library.html */
         readonly get: operations["apps_videos_api_v2_serve_library_html"];
         readonly put?: never;
         readonly post?: never;
@@ -611,14 +663,14 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/media/{file_name}": {
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/media/{file_name}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Serve an MP4 from the program's explorer media directory (Range-aware) */
+        /** Serve an MP4 from the run's explorer media directory (Range-aware) */
         readonly get: operations["apps_videos_api_v2_serve_media"];
         readonly put?: never;
         readonly post?: never;
@@ -1461,37 +1513,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** OppCardOut */
-        readonly OppCardOut: {
-            /** Slug */
-            readonly slug: string;
-            /** Title */
-            readonly title: string;
-            /** Current Phase */
-            readonly current_phase?: string | null;
-            /** Current Skill */
-            readonly current_skill?: string | null;
-            /** Run Count */
-            readonly run_count: number;
-            /** Last Run Id */
-            readonly last_run_id?: string | null;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
-        };
-        /** Page[OppCardOut] */
-        readonly Page_OppCardOut_: {
-            /** Items */
-            readonly items: readonly components["schemas"]["OppCardOut"][];
-            /** Total */
-            readonly total: number;
-            /** Offset */
-            readonly offset: number;
-            /** Limit */
-            readonly limit: number;
-        };
         /**
          * OppCreateIn
          * @description Request body for POST /w/{workspace_slug}/opps.
@@ -1925,7 +1946,7 @@ export interface components {
         };
         /**
          * ProgramCardOut
-         * @description One program in the list view.
+         * @description One program in the list view — surfaces the *latest* run's metadata.
          */
         readonly ProgramCardOut: {
             /** Slug */
@@ -1944,6 +1965,10 @@ export interface components {
             readonly manifest_count: number;
             /** Has Explorer Build */
             readonly has_explorer_build: boolean;
+            /** Latest Run Id */
+            readonly latest_run_id?: string | null;
+            /** Run Count */
+            readonly run_count: number;
         };
         /** ProgramDetailOut */
         readonly ProgramDetailOut: {
@@ -1959,8 +1984,48 @@ export interface components {
             readonly status?: string | null;
             /** Program Url */
             readonly program_url?: string | null;
+            /** Runs */
+            readonly runs: readonly components["schemas"]["RunSummaryOut"][];
+        };
+        /**
+         * RunSummaryOut
+         * @description One run inside a program.
+         */
+        readonly RunSummaryOut: {
+            /** Run Id */
+            readonly run_id: string;
+            /** Has Output */
+            readonly has_output: boolean;
+            /** Has Explorer Build */
+            readonly has_explorer_build: boolean;
+        };
+        /**
+         * CopyRunOut
+         * @description POST /programs/<slug>/runs → new run id.
+         */
+        readonly CopyRunOut: {
+            /** Program Slug */
+            readonly program_slug: string;
+            /** New Run Id */
+            readonly new_run_id: string;
+            /** Copied From */
+            readonly copied_from: string;
+        };
+        /**
+         * RunDetailOut
+         * @description One run's full payload — spec metadata + URLs for the embedded media.
+         */
+        readonly RunDetailOut: {
+            /** Program Slug */
+            readonly program_slug: string;
+            /** Run Id */
+            readonly run_id: string;
+            /** Name */
+            readonly name: string;
             /** Manifest Count */
             readonly manifest_count: number;
+            /** Has Output */
+            readonly has_output: boolean;
             /** Has Explorer Build */
             readonly has_explorer_build: boolean;
             /** Explorer Url */
@@ -1968,10 +2033,7 @@ export interface components {
             /** Yaml Path */
             readonly yaml_path: string;
         };
-        /**
-         * LibraryEntryOut
-         * @description One entry in the clip library (used by the explorer drawer).
-         */
+        /** LibraryEntryOut */
         readonly LibraryEntryOut: {
             /** Alias */
             readonly alias: string;
@@ -1989,25 +2051,23 @@ export interface components {
             /** Entries */
             readonly entries: readonly components["schemas"]["LibraryEntryOut"][];
         };
-        /**
-         * RenderStatusOut
-         * @description Background-render busy flag.
-         */
+        /** RenderStatusOut */
         readonly RenderStatusOut: {
             /** Program Slug */
             readonly program_slug: string;
+            /** Run Id */
+            readonly run_id: string;
             /** Busy */
             readonly busy: boolean;
             /** Started At */
             readonly started_at?: string | null;
         };
-        /**
-         * FeedbackLogOut
-         * @description Raw markdown contents of the per-program feedback log.
-         */
+        /** FeedbackLogOut */
         readonly FeedbackLogOut: {
             /** Program Slug */
             readonly program_slug: string;
+            /** Run Id */
+            readonly run_id: string;
             /** Markdown */
             readonly markdown: string;
         };
@@ -2033,33 +2093,6 @@ export interface components {
             /** Note */
             readonly note: string;
         };
-        /** BuildTriggerOut */
-        readonly BuildTriggerOut: {
-            /** Ok */
-            readonly ok: boolean;
-            /** Triggered */
-            readonly triggered: boolean;
-            /**
-             * Mode
-             * @enum {string}
-             */
-            readonly mode: "render" | "build-only";
-            /** Message */
-            readonly message: string;
-        };
-        /**
-         * BuildTriggerIn
-         * @description POST /build body — opt into the full re-render or just rebuild the
-         *     explorer HTML against the current YAML.
-         */
-        readonly BuildTriggerIn: {
-            /**
-             * Mode
-             * @default render
-             * @enum {string}
-             */
-            readonly mode: "render" | "build-only";
-        };
         /** ClipEditOut */
         readonly ClipEditOut: {
             /** Ok */
@@ -2069,13 +2102,7 @@ export interface components {
             /** Rerender Triggered */
             readonly rerender_triggered: boolean;
         };
-        /**
-         * ClipEditIn
-         * @description POST /edit body — one of four ops over a program's YAML.
-         *
-         *     Mirrors the existing Node tsx server ops in
-         *     ``video-production/connect-videos/scripts/explore.ts::applyEdit``.
-         */
+        /** ClipEditIn */
         readonly ClipEditIn: {
             /**
              * Op
@@ -2096,6 +2123,29 @@ export interface components {
             readonly text?: string | null;
             /** Alias */
             readonly alias?: string | null;
+        };
+        /** BuildTriggerOut */
+        readonly BuildTriggerOut: {
+            /** Ok */
+            readonly ok: boolean;
+            /** Triggered */
+            readonly triggered: boolean;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            readonly mode: "render" | "build-only";
+            /** Message */
+            readonly message: string;
+        };
+        /** BuildTriggerIn */
+        readonly BuildTriggerIn: {
+            /**
+             * Mode
+             * @default render
+             * @enum {string}
+             */
+            readonly mode: "render" | "build-only";
         };
         /** WorkspaceOut */
         readonly WorkspaceOut: {
@@ -3259,7 +3309,9 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["Page_OppCardOut_"];
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -4059,6 +4111,53 @@ export interface operations {
             };
         };
     };
+    readonly apps_videos_api_v2_copy_run: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CopyRunOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_v2_get_run: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RunDetailOut"];
+                };
+            };
+        };
+    };
     readonly apps_videos_api_v2_get_library: {
         readonly parameters: {
             readonly query?: never;
@@ -4066,6 +4165,7 @@ export interface operations {
             readonly path: {
                 readonly workspace_slug: string;
                 readonly program_slug: string;
+                readonly run_id: string;
             };
             readonly cookie?: never;
         };
@@ -4089,6 +4189,7 @@ export interface operations {
             readonly path: {
                 readonly workspace_slug: string;
                 readonly program_slug: string;
+                readonly run_id: string;
             };
             readonly cookie?: never;
         };
@@ -4112,6 +4213,7 @@ export interface operations {
             readonly path: {
                 readonly workspace_slug: string;
                 readonly program_slug: string;
+                readonly run_id: string;
             };
             readonly cookie?: never;
         };
@@ -4135,6 +4237,7 @@ export interface operations {
             readonly path: {
                 readonly workspace_slug: string;
                 readonly program_slug: string;
+                readonly run_id: string;
             };
             readonly cookie?: never;
         };
@@ -4155,33 +4258,6 @@ export interface operations {
             };
         };
     };
-    readonly apps_videos_api_v2_post_build: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_slug: string;
-                readonly program_slug: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["BuildTriggerIn"];
-            };
-        };
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["BuildTriggerOut"];
-                };
-            };
-        };
-    };
     readonly apps_videos_api_v2_post_edit: {
         readonly parameters: {
             readonly query?: never;
@@ -4189,6 +4265,7 @@ export interface operations {
             readonly path: {
                 readonly workspace_slug: string;
                 readonly program_slug: string;
+                readonly run_id: string;
             };
             readonly cookie?: never;
         };
@@ -4209,6 +4286,34 @@ export interface operations {
             };
         };
     };
+    readonly apps_videos_api_v2_post_build: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["BuildTriggerIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["BuildTriggerOut"];
+                };
+            };
+        };
+    };
     readonly apps_videos_api_v2_serve_explorer: {
         readonly parameters: {
             readonly query?: never;
@@ -4216,6 +4321,7 @@ export interface operations {
             readonly path: {
                 readonly workspace_slug: string;
                 readonly program_slug: string;
+                readonly run_id: string;
             };
             readonly cookie?: never;
         };
@@ -4237,6 +4343,7 @@ export interface operations {
             readonly path: {
                 readonly workspace_slug: string;
                 readonly program_slug: string;
+                readonly run_id: string;
             };
             readonly cookie?: never;
         };
@@ -4258,6 +4365,7 @@ export interface operations {
             readonly path: {
                 readonly workspace_slug: string;
                 readonly program_slug: string;
+                readonly run_id: string;
                 readonly file_name: string;
             };
             readonly cookie?: never;
