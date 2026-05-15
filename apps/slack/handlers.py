@@ -62,28 +62,34 @@ def _ephemeral(text: str) -> dict:
 
 def _send_link_dm(*, installation, slack_user_id: str, team_id: str,
                   channel_id: str, command_text: str, trigger_id: str) -> dict:
+    """Build an ephemeral response that contains the OAuth-link URL.
+
+    Originally this DM'd the user — but that requires `im:write` scope and
+    a Slack API call (slow → 3s timeout risk). Ephemerals are equally
+    private (only the invoking user sees them), instant (no API call),
+    and don't need any extra scope.
+    """
     nonce = save_pending_command(
         slack_user_id=slack_user_id, team_id=team_id,
         channel_id=channel_id, command_text=command_text,
         trigger_id=trigger_id or None,
     )
     url = _link_url(nonce)
-    client = _get_client(installation)
-    client.dm_user(
-        user=slack_user_id,
-        text=f"Link your ace-web account to use /ace: {url}",
-        blocks=[
+    return {
+        "response_type": "ephemeral",
+        "text": f"Link your ace-web account to use /ace: {url}",
+        "blocks": [
             {"type": "section", "text": {"type": "mrkdwn",
-             "text": "Link your ace-web account to use `/ace`."}},
+             "text": ":link: Link your ace-web account to use `/ace`. "
+                     "The link is single-use and expires in 10 minutes."}},
             {"type": "actions", "elements": [
                 {"type": "button",
                  "text": {"type": "plain_text", "text": "Link account"},
-                 "url": url, "action_id": "link_account"},
+                 "url": url, "action_id": "link_account",
+                 "style": "primary"},
             ]},
         ],
-    )
-    return _ephemeral("I sent you a DM with a link to connect your account. "
-                      "Once linked, I'll resume your command.")
+    }
 
 
 def dispatch_slash_command(*, text: str, slack_user_id: str, team_id: str,
