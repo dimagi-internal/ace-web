@@ -79,6 +79,26 @@ def test_link_subcommand_returns_link_in_ephemeral(setup):
 
 
 @pytest.mark.django_db
+def test_link_url_does_not_double_script_name_prefix(setup):
+    """Regression guard: ACE_PUBLIC_BASE_URL already includes the /ace
+    script-name prefix, and reverse() also prepends it under
+    FORCE_SCRIPT_NAME. We hardcode the path to avoid /ace/ace/... dupes."""
+    from django.test import override_settings
+    with override_settings(
+        ACE_PUBLIC_BASE_URL="https://labs.connect.dimagi.com/ace",
+        FORCE_SCRIPT_NAME="/ace",
+    ):
+        from apps.slack.handlers import dispatch_slash_command
+        resp = dispatch_slash_command(
+            text="link", slack_user_id="U_JJ", team_id="T1", channel_id="C1",
+            trigger_id="", response_url="",
+        )
+    body = resp.get("text", "") + repr(resp.get("blocks", []))
+    assert "/ace/ace/" not in body
+    assert "/ace/auth/slack/link/" in body
+
+
+@pytest.mark.django_db
 def test_status_returns_parent_card_for_user_recent_run(setup):
     inst, jj = setup
     from apps.slack.models import SlackRunThread
