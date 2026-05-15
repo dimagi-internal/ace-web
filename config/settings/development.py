@@ -23,3 +23,8 @@ ACE_ALLOW_TEST_LOGIN = True
 # Set ACE_USE_FAKE_CLI_BACKEND=false in your env / compose override to chat
 # against real Claude using the uploaded CLI credentials.
 ACE_USE_FAKE_CLI_BACKEND = env.bool("ACE_USE_FAKE_CLI_BACKEND", default=True)
+
+# Enable the React-native video beat editor in dev. Production stays False
+# until we've dogfooded; flip in `config/settings/production.py` (or via env)
+# once we're ready.
+ACE_VIDEO_BEAT_EDITOR_REACT = True
