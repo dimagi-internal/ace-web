@@ -38,6 +38,8 @@ from .schemas import (
     CopyRunOut,
     CreateProgramIn,
     CreateProgramOut,
+    EditBatchIn,
+    EditBatchOut,
     FeedbackLogOut,
     FeedbackPostIn,
     FeedbackPostOut,
@@ -297,6 +299,7 @@ def get_run(
         has_explorer_build=record.has_explorer_build,
         explorer_url=_explorer_url(workspace_slug, program_slug, run_id),
         yaml_path=record.yaml_path,
+        spec=service.read_parsed_spec(workspace, program_slug, run_id),
     )
 
 
@@ -413,6 +416,39 @@ def post_edit(
         ok=True,
         message=result.message + " — click Re-render to regenerate the output.",
         rerender_triggered=False,
+    )
+
+
+@router.post(
+    "/programs/{program_slug}/runs/{run_id}/edit-batch",
+    response=EditBatchOut,
+    summary="Save N edits to spec.yaml in one Drive round-trip (save only — does NOT render)",
+)
+def post_edit_batch(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    program_slug: Annotated[str, PathParam()],
+    run_id: Annotated[str, PathParam()],
+    body: EditBatchIn,
+) -> EditBatchOut:
+    """Atomic batch edit. All ops are validated and applied in order;
+    if any fails, the spec is not saved (all-or-nothing).
+    """
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
+    ops = [op.model_dump(exclude_none=True) for op in body.ops]
+    result = service.apply_edit_batch(workspace, program_slug, run_id, ops)
+    if not result.ok:
+        raise ProblemError(
+            400,
+            "Edit batch could not be applied",
+            type_=TYPE_VALIDATION,
+            detail=result.message,
+        )
+    return EditBatchOut(
+        ok=True,
+        applied=result.applied,
+        message=result.message + " — click Re-render to regenerate.",
     )
 
 

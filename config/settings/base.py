@@ -226,6 +226,11 @@ ACE_VIDEOS_ROOT = env.str(
     default=str(BASE_DIR / "video-production" / "connect-videos"),
 )
 
+# Feature flag — flip to True once the React beat editor is ready for general
+# use. When False, VideoExplorerPage falls back to the iframe-served HTML.
+# Exposed to the SPA via GET /api/settings (apps.common.api.public_settings).
+ACE_VIDEO_BEAT_EDITOR_REACT = env.bool("ACE_VIDEO_BEAT_EDITOR_REACT", default=False)
+
 # --- Google Drive service account ---
 # SA JSON key for the shared ACE Drive (read/write on the Shared Drive
 # the SA has been granted access to). The whole JSON blob lives as a

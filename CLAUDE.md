@@ -194,6 +194,19 @@ read through to Google Drive.
   endpoints are MCP-exposed via `x-mcp-expose: true`. Programs declare ownership
   via a top-level `workspace: <slug>` field; non-members get 404. Slug
   validation in `service.is_valid_slug` is mandatory before any subprocess spawn.
+- **Videos beat editor (React rewrite)**: as of 2026-05-15, the per-run editor
+  is a native React tree under `frontend/src/components/videos/`
+  (`<BeatEditor>` + reducer + drawer). Local-buffer dirty state with
+  coalescing-by-target, batched save via `POST /edit-batch` (single Drive
+  round-trip, all-or-nothing). Click-to-edit drawer (DrawerShell/ModalShell
+  swappable). Trim widget reimplemented with window-level pointer listeners +
+  keyboard nudge. Stats (`problem`, `impact[N]`) now editable via `set-stat`
+  op with tri-state source semantics. Gated on `ACE_VIDEO_BEAT_EDITOR_REACT`
+  (default False in prod until dogfooded). When False, falls back to the
+  iframe-served HTML from `build-clip-explorer.ts` (kept for the standalone
+  share artifact). Spec:
+  `docs/specs/2026-05-15-video-beat-editor-react-port-design.md`. Plan:
+  `docs/plans/2026-05-15-video-beat-editor-react-rewrite.md`.
 - **Cloud mobile emulator (`apps/mobile/`)**: ace-web orchestrates a single EC2
   instance (`m8i.xlarge` with nested virtualization) running an Android AVD via
   SSM. Packer bake in `infra/mobile-ami/`; runtime API at `/api/mobile/*`
