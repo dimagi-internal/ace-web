@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from django.conf import settings
 
-from apps.opps.api import list_opp_cards
+from apps.opps.api import list_opp_cards, list_opp_runs_for_workspace
 
 from .blocks import render_parent_card
 from .models import SlackRunThread
@@ -53,17 +53,24 @@ def handle_status(*, installation, user_link, rest: str, channel_id: str) -> dic
 
 
 def handle_list(*, installation, user_link, rest: str, channel_id: str) -> dict:
-    """`/ace list opps` (workspace-wide) | `/ace list runs` (your tracked
-    Slack runs). Bare `/ace list` falls back to `opps` since that's almost
-    always what people mean."""
-    sub = (rest or "").strip().lower() or "opps"
-    if sub.startswith("opp"):
+    """`/ace list opps`                — workspace-wide opp list
+    `/ace list runs`                — your active Slack-tracked runs
+    `/ace list runs <slug>`         — every run for an opp (from Drive,
+                                      not limited to ones you tracked)
+    Bare `/ace list` falls back to `opps`."""
+    parts = (rest or "").strip().split(maxsplit=1)
+    sub = parts[0].lower() if parts else "opps"
+    sub_arg = parts[1].strip() if len(parts) > 1 else ""
+    if sub == "" or sub.startswith("opp"):
         return _list_opps(installation=installation)
     if sub.startswith("run"):
+        if sub_arg:
+            return _list_runs_for_opp(installation=installation, slug=sub_arg)
         return _list_runs(installation=installation, user_link=user_link)
     return {
         "response_type": "ephemeral",
-        "text": "Usage: `/ace list opps` or `/ace list runs`.",
+        "text": ("Usage: `/ace list opps` · `/ace list runs` · "
+                 "`/ace list runs <slug>`."),
     }
 
 
@@ -86,18 +93,58 @@ def _list_opps(*, installation) -> dict:
     for c in cards:
         slug = c.get("slug") or c.get("opp_slug") or "?"
         title = c.get("title") or c.get("display_name") or slug
-        phase = c.get("current_phase") or "—"
+        # Phase fallback chain: in-progress current_phase → "status" (e.g.
+        # "complete", "qa-failed") → "—". Without the fallback every
+        # finished run renders as `phase: —` which looks broken.
+        phase = c.get("current_phase") or ""
+        status = c.get("status") or ""
+        state = phase if phase else status if status and status != "unknown" else "—"
         skill = c.get("current_skill") or c.get("current_step")
         run_count = c.get("run_count") or 0
-        skill_bit = f" · `{skill}`" if skill else ""
+        skill_bit = f" · `{skill}`" if skill and phase else ""
         permalink = (f"{settings.ACE_PUBLIC_BASE_URL}/w/"
                      f"{workspace.slug}/opps/{slug}")
         lines.append(
             f"• <{permalink}|*{title}*> · `{slug}` · {run_count} run"
-            f"{'s' if run_count != 1 else ''} · phase: {phase}{skill_bit}"
+            f"{'s' if run_count != 1 else ''} · {state}{skill_bit}"
         )
     return {"response_type": "ephemeral",
             "text": f"Opps in `{workspace.slug}` (top {len(cards)}):\n" + "\n".join(lines)}
+
+
+def _list_runs_for_opp(*, installation, slug: str) -> dict:
+    """List every run for a specific opp, sourced from Drive (not limited
+    to Slack-triggered/tracked runs). Used for `/ace list runs <slug>`."""
+    workspace = installation.ace_workspace
+    try:
+        runs = list_opp_runs_for_workspace(workspace, slug)
+    except Exception:
+        logger.exception("list_opp_runs_for_workspace failed for %s/%s",
+                         workspace.slug, slug)
+        return {"response_type": "ephemeral",
+                "text": f":x: Couldn't load runs for `{slug}` — check ace-web logs."}
+    if not runs:
+        return {"response_type": "ephemeral",
+                "text": (f"No runs for `{slug}` in workspace `{workspace.slug}`. "
+                         f"(Or the opp doesn't exist.)")}
+    # Sort by last activity desc.
+    runs = sorted(runs, key=lambda r: r.get("started_at") or "", reverse=True)[:10]
+    base = f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace.slug}/opps/{slug}"
+    lines = []
+    for r in runs:
+        run_id = r.get("run_id") or "?"
+        lifecycle = r.get("lifecycle_status") or "—"
+        cur_phase = r.get("current_phase_display") or r.get("current_phase") or ""
+        done = r.get("latest_phase_done_display") or r.get("latest_phase_done") or ""
+        state_bit = cur_phase or done or lifecycle
+        is_active = r.get("is_active")
+        marker = "🟡" if is_active else "✅" if lifecycle == "complete" else "⚪"
+        lines.append(
+            f"{marker} <{base}?run_id={run_id}|`{run_id}`> · {state_bit}"
+        )
+    return {"response_type": "ephemeral",
+            "text": (f"Runs for `{slug}` ({len(runs)} of "
+                     f"{len(runs)} shown):\n" + "\n".join(lines))}
 
 
 def _list_runs(*, installation, user_link) -> dict:

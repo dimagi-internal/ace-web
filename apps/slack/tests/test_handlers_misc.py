@@ -217,3 +217,69 @@ def test_list_opps_with_no_opps_returns_message(setup):
     assert resp["response_type"] == "ephemeral"
     assert "No opps" in resp["text"]
     assert "/ace new" in resp["text"]
+
+
+@pytest.mark.django_db
+def test_list_opps_falls_back_to_status_when_no_current_phase(setup):
+    """A completed run has no current_phase but does have status. The
+    rendering should show the status (e.g. 'complete') instead of '—'."""
+    from apps.slack.handlers import dispatch_slash_command
+    with patch("apps.slack.verbs_query.list_opp_cards") as mock_cards:
+        mock_cards.return_value = [
+            {"slug": "done-opp", "title": "Finished Opp",
+             "current_phase": None, "status": "complete",
+             "run_count": 3, "updated_at": "2026-05-15T20:00:00Z"},
+            {"slug": "running-opp", "title": "Running Opp",
+             "current_phase": "scenarios", "status": "running",
+             "run_count": 1, "updated_at": "2026-05-15T19:00:00Z"},
+        ]
+        resp = dispatch_slash_command(
+            text="list opps", slack_user_id="U_JJ", team_id="T1",
+            channel_id="C1", trigger_id="", response_url="",
+        )
+    body = resp["text"]
+    # The completed opp shows "complete" (its status), not the phase dash.
+    assert "Finished Opp" in body
+    assert "complete" in body
+    # The running opp shows its in-progress phase.
+    assert "scenarios" in body
+
+
+@pytest.mark.django_db
+def test_list_runs_with_slug_shows_all_runs_from_drive(setup):
+    """`/ace list runs <slug>` reads from Drive (not just Slack-tracked
+    threads) so it surfaces runs other people started."""
+    from apps.slack.handlers import dispatch_slash_command
+    with patch("apps.slack.verbs_query.list_opp_runs_for_workspace") as mock_runs:
+        mock_runs.return_value = [
+            {"run_id": "20260515-1500", "lifecycle_status": "complete",
+             "current_phase": None, "latest_phase_done": "ocs-setup",
+             "latest_phase_done_display": "OCS Setup",
+             "is_active": False, "started_at": "2026-05-15T15:00:00Z"},
+            {"run_id": "20260515-1800", "lifecycle_status": "in_progress",
+             "current_phase": "scenarios-and-acceptance",
+             "current_phase_display": "Scenarios & Acceptance",
+             "is_active": True, "started_at": "2026-05-15T18:00:00Z"},
+        ]
+        resp = dispatch_slash_command(
+            text="list runs leep-paint-collection", slack_user_id="U_JJ",
+            team_id="T1", channel_id="C1", trigger_id="", response_url="",
+        )
+    mock_runs.assert_called_once()
+    body = resp["text"]
+    assert "20260515-1500" in body
+    assert "20260515-1800" in body
+    # Active run gets the running marker; complete run gets the check.
+    assert "🟡" in body and "✅" in body
+
+
+@pytest.mark.django_db
+def test_list_runs_with_slug_empty_returns_message(setup):
+    from apps.slack.handlers import dispatch_slash_command
+    with patch("apps.slack.verbs_query.list_opp_runs_for_workspace") as mock_runs:
+        mock_runs.return_value = []
+        resp = dispatch_slash_command(
+            text="list runs nonexistent", slack_user_id="U_JJ", team_id="T1",
+            channel_id="C1", trigger_id="", response_url="",
+        )
+    assert "No runs" in resp["text"]
