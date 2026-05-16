@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 
 import type { StructureToolNode } from "../../api/types.ws";
-import { formatDuration } from "../../lib/format";
+import { formatDuration, formatUsd } from "../../lib/format";
 import { StatusIcon } from "./StatusIcon";
 
 interface Props {
@@ -42,8 +42,13 @@ export function StructureToolRow({ node, depth }: Props) {
           </span>
           <span className="truncate text-muted-foreground flex-1 min-w-0">{node.label}</span>
         </button>
-        <span className="text-xs text-muted-foreground tabular-nums">
+        <span className="text-xs text-muted-foreground tabular-nums w-20 text-right shrink-0">
           {formatDuration(node.wall_time_seconds)}
+        </span>
+        <span className="text-xs text-muted-foreground tabular-nums w-16 text-right shrink-0">
+          {node.estimated_cost_usd > 0 || node.cost_is_partial
+            ? formatUsd(node.estimated_cost_usd, node.cost_is_partial)
+            : ""}
         </span>
       </div>
       {open && node.content_preview ? (

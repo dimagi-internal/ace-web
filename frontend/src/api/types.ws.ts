@@ -477,6 +477,12 @@ export interface StructureToolNode {
   label: string;
   started_at: string | null;
   wall_time_seconds: number;
+  // Top-level tool rows inherit a share of the parent assistant turn's
+  // cost (split evenly across parallel tools) so "where did the money go"
+  // is answerable per row. Subagent-internal tools stay at 0 — their
+  // cost rolls into the enclosing skill.
+  estimated_cost_usd: number;
+  cost_is_partial: boolean;
   status: StructureStatus;
   content_preview: string | null;
 }
