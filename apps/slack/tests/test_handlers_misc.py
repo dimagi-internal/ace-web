@@ -220,29 +220,33 @@ def test_list_opps_with_no_opps_returns_message(setup):
 
 
 @pytest.mark.django_db
-def test_list_opps_falls_back_to_status_when_no_current_phase(setup):
-    """A completed run has no current_phase but does have status. The
-    rendering should show the status (e.g. 'complete') instead of '—'."""
+def test_list_opps_shows_last_run_id_when_no_current_phase(setup):
+    """An opp whose most recent run has finished has no current_phase, but
+    last_run_id is populated. Rendering should fall back to 'last run: X'
+    rather than '—' so the user has something to click into."""
     from apps.slack.handlers import dispatch_slash_command
     with patch("apps.slack.verbs_query.list_opp_cards") as mock_cards:
         mock_cards.return_value = [
             {"slug": "done-opp", "title": "Finished Opp",
-             "current_phase": None, "status": "complete",
+             "current_phase": None, "last_run_id": "20260514-1530",
              "run_count": 3, "updated_at": "2026-05-15T20:00:00Z"},
             {"slug": "running-opp", "title": "Running Opp",
-             "current_phase": "scenarios", "status": "running",
+             "current_phase": "scenarios",
              "run_count": 1, "updated_at": "2026-05-15T19:00:00Z"},
+            {"slug": "no-runs-opp", "title": "Empty Opp",
+             "current_phase": None, "last_run_id": None,
+             "run_count": 0, "updated_at": "2026-05-15T18:00:00Z"},
         ]
         resp = dispatch_slash_command(
             text="list opps", slack_user_id="U_JJ", team_id="T1",
             channel_id="C1", trigger_id="", response_url="",
         )
     body = resp["text"]
-    # The completed opp shows "complete" (its status), not the phase dash.
     assert "Finished Opp" in body
-    assert "complete" in body
-    # The running opp shows its in-progress phase.
-    assert "scenarios" in body
+    assert "20260514-1530" in body  # last_run_id shown
+    assert "scenarios" in body       # in-progress phase shown
+    assert "no runs yet" in body     # empty-state path
+    assert " — " not in body         # the explicit dash regressed
 
 
 @pytest.mark.django_db

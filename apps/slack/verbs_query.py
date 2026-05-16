@@ -115,20 +115,29 @@ def _list_opps(*, installation) -> dict:
     for c in cards:
         slug = c.get("slug") or c.get("opp_slug") or "?"
         title = c.get("title") or c.get("display_name") or slug
-        # Phase fallback chain: in-progress current_phase → "status" (e.g.
-        # "complete", "qa-failed") → "—". Without the fallback every
-        # finished run renders as `phase: —` which looks broken.
+        # Fallback chain:
+        #   1. current_phase (a phase is in progress)
+        #   2. last_run_id (most recent run; if it had finished cleanly
+        #      current_phase would still be None — but the user can click
+        #      through to see what state it's in)
+        #   3. "no runs yet"
+        # (`status` from serialize_opp_card is always "unknown" here
+        # because list_opp_cards passes current_run=None, so we skip it.)
         phase = c.get("current_phase") or ""
-        status = c.get("status") or ""
-        state = phase if phase else status if status and status != "unknown" else "—"
+        last_run = c.get("last_run_id") or ""
         skill = c.get("current_skill") or c.get("current_step")
         run_count = c.get("run_count") or 0
-        skill_bit = f" · `{skill}`" if skill and phase else ""
+        if phase:
+            state = f"phase: `{phase}`" + (f" · `{skill}`" if skill else "")
+        elif last_run:
+            state = f"last run: `{last_run}`"
+        else:
+            state = "no runs yet"
         permalink = (f"{settings.ACE_PUBLIC_BASE_URL}/w/"
                      f"{workspace.slug}/opps/{slug}")
         lines.append(
             f"• <{permalink}|*{title}*> · `{slug}` · {run_count} run"
-            f"{'s' if run_count != 1 else ''} · {state}{skill_bit}"
+            f"{'s' if run_count != 1 else ''} · {state}"
         )
     return {"response_type": "ephemeral",
             "text": f"Opps in `{workspace.slug}` (top {len(cards)}):\n" + "\n".join(lines)}
