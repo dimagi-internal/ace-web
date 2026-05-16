@@ -873,12 +873,17 @@ def publish_render_artifacts(
     workspace: Workspace, slug: str, run_id: str,
 ) -> PublishResult:
     """Push the per-run output.mp4 / explorer.tar.gz / feedback.md from
-    local disk to Drive.
+    local disk to Drive, then publish any newly-synthesized audio
+    sidecars to the workspace's audio library.
 
     Called at the end of a successful render chain (and via the
     ``videos_publish_artifacts`` management command). Each artifact is
     optional — if the local file is missing, the corresponding upload
     is skipped silently. Replaces any existing copies in Drive.
+
+    Audio library publishing is best-effort: a failure here logs a
+    warning but doesn't fail the publish — the main artifacts are
+    already in Drive.
     """
     if not is_valid_slug(slug) or not is_valid_run_id(run_id):
         raise ValueError(f"Invalid slug or run_id: {slug!r} / {run_id!r}")
@@ -919,12 +924,84 @@ def publish_render_artifacts(
             "videos.publish: feedback.md → drive id=%s len=%d", feedback_id, len(text),
         )
 
+    try:
+        audio_counts = publish_audio_library_from_local(workspace)
+        if audio_counts["uploaded_mp3"] or audio_counts["uploaded_json"]:
+            log.info(
+                "videos.publish: audio library +%d mp3 +%d json (db +%d created, %d updated)",
+                audio_counts["uploaded_mp3"], audio_counts["uploaded_json"],
+                audio_counts["db_created"], audio_counts["db_updated"],
+            )
+    except Exception as e:  # noqa: BLE001 — best-effort, never break publish
+        log.warning("videos.publish: audio library push failed: %s", e)
+
     return PublishResult(
         output_mp4_id=mp4_id,
         explorer_archive_id=archive_id,
         feedback_id=feedback_id,
         bytes_uploaded=bytes_total,
     )
+
+
+def publish_audio_library_from_local(workspace: Workspace) -> dict[str, int]:
+    """Upload locally-synthesized audio (and sidecars) to the workspace's
+    Drive ``library/audio/`` folder, then upsert ``AudioLibraryEntry``
+    rows for what's there.
+
+    The renderer's ElevenLabs synthesis writes ``<hash>.mp3`` +
+    ``<hash>.json`` to ``<videos_root>/assets/audio/``. After a render
+    completes, this pushes any pair not already in Drive up to
+    ``library/audio/``. Idempotent on name match: if Drive already has
+    ``<hash>.mp3`` we skip the mp3 upload (assume bytes match — synthesis
+    is deterministic on (voice_id, model, text)).
+
+    Returns ``{uploaded_mp3, uploaded_json, db_created, db_updated}``.
+    """
+    local_dir = _root() / "assets" / "audio"
+    counts = {"uploaded_mp3": 0, "uploaded_json": 0, "db_created": 0, "db_updated": 0}
+    if not local_dir.is_dir():
+        return counts
+
+    layout, client = layout_for(workspace)
+
+    drive_files = {f.name for f in drive.list_audio_library_files(layout, client)}
+
+    pairs: dict[str, dict[str, Path]] = {}
+    for f in local_dir.iterdir():
+        if not f.is_file():
+            continue
+        if f.suffix == ".mp3":
+            pairs.setdefault(f.stem, {})["mp3"] = f
+        elif f.suffix == ".json":
+            pairs.setdefault(f.stem, {})["json"] = f
+
+    for hash_, parts in pairs.items():
+        mp3 = parts.get("mp3")
+        json_file = parts.get("json")
+        if mp3 is None:
+            continue  # orphan sidecar locally — nothing to publish
+        mp3_name = f"{hash_}.mp3"
+        json_name = f"{hash_}.json"
+        if mp3_name not in drive_files:
+            drive.upload_library_file(
+                layout, client, drive.LIBRARY_AUDIO,
+                mp3_name, mp3.read_bytes(), "audio/mpeg",
+            )
+            counts["uploaded_mp3"] += 1
+        if json_file is not None and json_name not in drive_files:
+            drive.upload_library_file(
+                layout, client, drive.LIBRARY_AUDIO,
+                json_name, json_file.read_bytes(), "application/json",
+            )
+            counts["uploaded_json"] += 1
+
+    if counts["uploaded_mp3"] or counts["uploaded_json"]:
+        from apps.videos.library import sync as lib_sync
+        sync_counts = lib_sync.sync_import_audio(workspace)
+        counts["db_created"] = sync_counts["created"]
+        counts["db_updated"] = sync_counts["updated"]
+
+    return counts
 
 
 def output_mp4_drive_link(workspace: Workspace, slug: str, run_id: str) -> str | None:
