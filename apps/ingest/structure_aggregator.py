@@ -22,7 +22,7 @@ from apps.ingest._common import (
 from apps.ingest.parser import CostEvent
 from apps.ingest.pricing import compute_cost
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Subjects like "Phase 3: commcare-setup (Nova builds)" — capture the skill slug.
 _PHASE_SUBJECT_RE = re.compile(r"^Phase \d+:\s*([a-z][a-z0-9-]+)")
@@ -119,7 +119,19 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     # transcript order, so we count instead of trying to parse a return value.
     task_phase_map: dict[str, str] = {}
     task_counter = 0
+    # Pre-scan turn cost + tool count so we can attribute a top-level tool
+    # row's display cost to its parent assistant turn. Without this, every
+    # tool reads "$0.00" because cost lives on the assistant_turn event, not
+    # the tool_use event. Visual aid only — not used in phase rollups, so
+    # there's no double-count risk.
+    turn_cost: dict[str, tuple[float | None, int]] = {}
     for e in events:
+        if e.kind == "assistant_turn" and e.uuid:
+            c = compute_cost(e.model, e.usage)
+            turn_cost[e.uuid] = (c, 0)
+        elif e.kind == "tool_use" and e.uuid and e.uuid in turn_cost:
+            c, n = turn_cost[e.uuid]
+            turn_cost[e.uuid] = (c, n + 1)
         if e.kind != "tool_use" or e.tool_name != "TaskCreate":
             continue
         task_counter += 1
@@ -369,6 +381,20 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     current_phase = new_phase
 
             # Regular tool call (Bash, Read, Edit, etc.)
+            # For top-level tools (no enclosing skill frame), attribute a
+            # share of the parent assistant turn's cost to the tool row so
+            # the user can scan "where did the money go." Cost is split
+            # evenly across parallel tools fired by the same turn. Display
+            # only — phase rollups still come from the synthetic skill
+            # bucket, so no double-count.
+            tool_cost = 0.0
+            tool_cost_partial = False
+            if not open_frames and event.uuid in turn_cost:
+                c, n = turn_cost[event.uuid]
+                if c is None:
+                    tool_cost_partial = True
+                elif n > 0:
+                    tool_cost = c / n
             tool_node = {
                 "kind": "tool",
                 "tool_use_id": event.tool_use_id or "",
@@ -376,6 +402,8 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 "label": _tool_label(tool_name, event.tool_input),
                 "started_at": event.timestamp.isoformat() if event.timestamp else None,
                 "wall_time_seconds": 0,
+                "estimated_cost_usd": round(tool_cost, 6),
+                "cost_is_partial": tool_cost_partial,
                 "status": "ok",
                 "content_preview": None,  # filled in by the matching tool_result
             }
@@ -474,7 +502,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         synthetic_skill = {
             "kind": "skill",
             "name": "(direct turns)",
-            "display": "Direct turns (no skill)",
+            "display": "Orchestrator narration",
             "is_subagent": False,
             "started_at": (
                 phase_orch_first_ts[bucket_key].isoformat()

@@ -9,10 +9,10 @@ def _events(filename="cost_session.jsonl"):
     return events
 
 
-def test_aggregate_returns_schema_v3_with_session_totals():
+def test_aggregate_returns_schema_v4_with_session_totals():
     from apps.ingest.structure_aggregator import aggregate
     tree = aggregate(_events())
-    assert tree["schema_version"] == 3
+    assert tree["schema_version"] == 4
     assert "session" in tree
     assert "phases" in tree
     assert "computed_at" in tree
@@ -489,6 +489,68 @@ def test_inline_phase_advance_via_task_update(tmp_path, monkeypatch):
     assert bash_tools, (
         "inline Bash after the TaskUpdate(in_progress) should land in Phase 3"
     )
+
+
+def test_toplevel_tool_inherits_cost_from_parent_assistant_turn(tmp_path):
+    """A top-level tool row gets a display `estimated_cost_usd` derived from
+    the assistant turn that fired it (split evenly across parallel tools).
+    Without this every tool reads "$0.00" because cost lives on the
+    assistant_turn event, not the tool_use event — and 35/40 children of a
+    typical phase are tools."""
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+
+    jsonl = tmp_path / "tool_cost.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        # One assistant turn fires two parallel tools; turn cost ≈ $0.10.
+        # Each tool should display ≈ $0.05.
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":10000,"output_tokens":1000},"content":['
+        '{"type":"tool_use","id":"tA","name":"Bash","input":{"command":"ls"}},'
+        '{"type":"tool_use","id":"tB","name":"Bash","input":{"command":"pwd"}}]}}\n'
+        '{"type":"user","uuid":"u2","timestamp":"2026-05-10T14:00:01Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tA","content":"x"}]}}\n'
+        '{"type":"user","uuid":"u3","timestamp":"2026-05-10T14:00:02Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tB","content":"x"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+    orch = next(p for p in tree["phases"] if p["name"] == "_orchestration")
+    # The two tools were clustered into a parallel_group; descend into it.
+    pg = next(c for c in orch["children"] if c["kind"] == "parallel_group")
+    tool_costs = [t["estimated_cost_usd"] for t in pg["children"]]
+    assert all(c > 0 for c in tool_costs), (
+        f"top-level tools should inherit parent-turn cost; got {tool_costs}"
+    )
+    # Costs should be equal (parallel split) and sum to roughly the turn cost.
+    assert tool_costs[0] == tool_costs[1]
+    # Phase total still equals synthetic-skill cost (no double-count).
+    synth = next(c for c in orch["children"]
+                 if c["kind"] == "skill" and c["name"] == "(direct turns)")
+    assert orch["estimated_cost_usd"] == synth["estimated_cost_usd"]
+
+
+def test_synthetic_skill_display_is_orchestrator_narration(tmp_path):
+    """The "(direct turns)" skill's display name reads as English to a
+    fresh user, not as an internal token."""
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+    jsonl = tmp_path / "narration.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":100,"output_tokens":10},"content":['
+        '{"type":"text","text":"thinking"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+    orch = next(p for p in tree["phases"] if p["name"] == "_orchestration")
+    synth = next(c for c in orch["children"]
+                 if c["kind"] == "skill" and c["name"] == "(direct turns)")
+    assert synth["display"] == "Orchestrator narration"
 
 
 def test_tool_without_result_has_null_content_preview(tmp_path):
