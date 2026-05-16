@@ -65,7 +65,6 @@ def test_prefetch_downloads_missing_gdrive_refs(
     workspace, fake_drive, videos_root, home_cache,
 ):
     """gdrive: refs missing from the cache get downloaded."""
-    layout = drive.resolve_layout(workspace, fake_drive.client)
     # Upload one file at the workspace root so we can prove get_binary works.
     file_id = fake_drive.client.upload_binary(
         fake_drive.root_id, "src.mp4", b"pretend-mp4-bytes", "video/mp4",
