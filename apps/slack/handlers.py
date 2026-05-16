@@ -142,7 +142,8 @@ def dispatch_slash_command(*, text: str, slack_user_id: str, team_id: str,
     if verb == "list":
         from .verbs_query import handle_list
         return handle_list(installation=installation, user_link=user_link,
-                           rest=rest, channel_id=channel_id)
+                           rest=rest, channel_id=channel_id,
+                           response_url=response_url)
     if verb == "track":
         from .verbs_track import handle_track
         return handle_track(installation=installation, user_link=user_link,

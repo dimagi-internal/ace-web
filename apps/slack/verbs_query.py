@@ -8,6 +8,7 @@ from django.conf import settings
 
 from apps.opps.api import list_opp_cards, list_opp_runs_for_workspace
 
+from .async_response import run_async
 from .blocks import render_parent_card
 from .models import SlackRunThread
 
@@ -52,26 +53,47 @@ def handle_status(*, installation, user_link, rest: str, channel_id: str) -> dic
             "text": f"Status of {thread.opp_slug}"}
 
 
-def handle_list(*, installation, user_link, rest: str, channel_id: str) -> dict:
+def handle_list(*, installation, user_link, rest: str, channel_id: str,
+                response_url: str = "") -> dict:
     """`/ace list opps`                — workspace-wide opp list
     `/ace list runs`                — your active Slack-tracked runs
     `/ace list runs <slug>`         — every run for an opp (from Drive,
                                       not limited to ones you tracked)
-    Bare `/ace list` falls back to `opps`."""
+    Bare `/ace list` falls back to `opps`.
+
+    The opps + runs-for-opp paths hit Drive and can take 5-15s on a
+    cold cache — well past Slack's 3s slash-command deadline. When a
+    response_url is provided (always, in production), we ack
+    synchronously and POST the real result asynchronously."""
     parts = (rest or "").strip().split(maxsplit=1)
     sub = parts[0].lower() if parts else "opps"
     sub_arg = parts[1].strip() if len(parts) > 1 else ""
+
     if sub == "" or sub.startswith("opp"):
+        if response_url:
+            run_async(response_url, _list_opps, installation=installation)
+            return _loading_ack("Loading opps from Drive…")
         return _list_opps(installation=installation)
+
     if sub.startswith("run"):
         if sub_arg:
+            if response_url:
+                run_async(response_url, _list_runs_for_opp,
+                          installation=installation, slug=sub_arg)
+                return _loading_ack(f"Loading runs for `{sub_arg}` from Drive…")
             return _list_runs_for_opp(installation=installation, slug=sub_arg)
+        # /ace list runs (no slug) is a fast DB query — no async needed.
         return _list_runs(installation=installation, user_link=user_link)
+
     return {
         "response_type": "ephemeral",
         "text": ("Usage: `/ace list opps` · `/ace list runs` · "
                  "`/ace list runs <slug>`."),
     }
+
+
+def _loading_ack(text: str) -> dict:
+    return {"response_type": "ephemeral", "text": f":hourglass_flowing_sand: {text}"}
 
 
 def _list_opps(*, installation) -> dict:
