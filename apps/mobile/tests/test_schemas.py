@@ -44,6 +44,24 @@ def test_run_recipe_in_defaults():
     assert r.env == {}
     assert r.screenshot_prefix is None
     assert r.state is None
+    assert r.palette_tar_b64 is None
+
+
+def test_run_recipe_in_accepts_palette():
+    r = RunRecipeIn(
+        recipe_yaml="appId: com.example\n---\n- tapOn: Submit",
+        palette_tar_b64="dGVzdA==",
+    )
+    assert r.palette_tar_b64 == "dGVzdA=="
+
+
+def test_run_recipe_in_rejects_oversized_palette():
+    import pytest
+    from pydantic import ValidationError
+
+    huge = "A" * (256 * 1024 + 1)
+    with pytest.raises(ValidationError, match="palette_tar_b64 exceeds 256 KB"):
+        RunRecipeIn(recipe_yaml="appId: x\n", palette_tar_b64=huge)
 
 
 def test_run_recipe_accepted_out():

@@ -496,11 +496,18 @@ class EmulatorController:
         recipe_yaml: str,
         env: dict[str, str],
         screenshot_prefix: str | None,
+        palette_tar_b64: str | None = None,
     ) -> RunResult:
         """Run a Maestro recipe on the instance and collect S3 artifacts.
 
         The view is responsible for the singleton lock; this method does
         the in-VM ``try/finally`` to guarantee the idle marker bump.
+
+        ``palette_tar_b64``: optional base64-encoded ``tar.gz`` of sibling
+        palette recipes (resolved client-side by
+        ``mcp/mobile/recipe-resolver.ts``). When present, extracted into
+        ``run_dir`` before Maestro starts so ``runFlow: file: "./..."``
+        refs in ``recipe_yaml`` resolve to sibling files.
         """
         self._assert_running()
         run_id = uuid.uuid4().hex
@@ -514,11 +521,28 @@ class EmulatorController:
         # widening of the regex.
         s3_dest_url = f"s3://{self.s3_bucket}/{s3_prefix}/"
         run_dir = f"/tmp/run-{run_id}"
-        recipe_path = f"/tmp/recipe-{run_id}.yaml"
+        # The recipe file lives inside run_dir (not /tmp) so Maestro's
+        # relative ``runFlow: file: "./form-advance.yaml"`` refs land
+        # next to the extracted palette files.
+        recipe_path = f"{run_dir}/recipe-{run_id}.yaml"
         recipe_b64 = base64.b64encode(recipe_yaml.encode("utf-8")).decode("ascii")
         env_flags = " ".join(
             f"--env {shlex.quote(f'{k}={v}')}" for k, v in (env or {}).items()
         )
+
+        # Optional palette tarball — sibling palette recipes referenced by
+        # ``runFlow: file:`` directives. Producer is the local-side
+        # ``prepareRecipeForMaestro`` helper, which resolves ``${SELECTOR:...}``
+        # placeholders in every static palette file and writes them to a
+        # temp dir. We accept the entire temp dir as a tar.gz so the cloud
+        # path's Maestro sees the same sibling layout the local path's
+        # Maestro sees.
+        palette_extract_cmds: list[str] = []
+        if palette_tar_b64:
+            palette_extract_cmds = [
+                f"echo {shlex.quote(palette_tar_b64)} | base64 -d "
+                f"| sudo -u ubuntu tar xzf - -C {shlex.quote(run_dir)}",
+            ]
 
         try:
             commands = [
@@ -530,6 +554,7 @@ class EmulatorController:
                 # over to ubuntu before invoking maestro.
                 f"chown -R ubuntu:ubuntu {shlex.quote(run_dir)}",
                 f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+                *palette_extract_cmds,
                 f"echo {shlex.quote(recipe_b64)} | base64 -d > {shlex.quote(recipe_path)}",
                 f"chown ubuntu:ubuntu {shlex.quote(recipe_path)}",
                 # `cd run_dir` so Maestro's `takeScreenshot: "name"` (no
@@ -560,7 +585,6 @@ class EmulatorController:
                 'echo "---STEPS_JSON_END---"',
                 f"aws s3 cp {shlex.quote(run_dir)}/ "
                 f"{shlex.quote(s3_dest_url)} --recursive",
-                f"rm -f {shlex.quote(recipe_path)}",
                 f"rm -rf {shlex.quote(run_dir)}",
             ]
             # ``return_on_script_failure=True`` so a recipe that exits
