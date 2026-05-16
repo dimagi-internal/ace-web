@@ -1153,6 +1153,87 @@ def _stage_spec(workspace: Workspace, slug: str, run_id: str) -> None:
         target.write_text(rewritten, encoding="utf-8")
 
 
+def _manifest_cache_dir() -> Path:
+    """Where the Node renderer's hydrate step expects gdrive: refs to
+    land. Matches ``defaultCacheDir()`` in
+    ``video-production/connect-videos/src/lib/asset-resolver.node.ts``
+    (``~/.cache/connect-videos``).
+    """
+    return Path.home() / ".cache" / "connect-videos"
+
+
+_GDRIVE_RE = re.compile(r"^gdrive:([A-Za-z0-9_\-]+)\.([A-Za-z0-9]+)$")
+
+
+def prefetch_manifest_to_cache(
+    workspace: Workspace, slug: str, run_id: str,
+) -> dict[str, int]:
+    """Walk the staged spec.yaml's ``manifest:`` and download any
+    ``gdrive:<id>.<ext>`` ref not yet in the local render cache via the
+    Drive SA client.
+
+    The npm hydrate step otherwise expects an operator to have pulled
+    each file via the ace-gdrive MCP first — fine for laptop dev, but
+    blocks every render on labs where the server has the SA credentials
+    in hand.
+
+    Returns ``{downloaded, skipped, errored}`` counts.
+    """
+    staged = spec_path(slug, run_id)
+    if not staged.exists():
+        return {"downloaded": 0, "skipped": 0, "errored": 0}
+
+    try:
+        doc = YAML(typ="safe").load(staged.read_text(encoding="utf-8"))
+    except Exception as e:
+        log.warning("videos.prefetch: failed to parse %s: %s", staged, e)
+        return {"downloaded": 0, "skipped": 0, "errored": 0}
+
+    if not isinstance(doc, dict):
+        return {"downloaded": 0, "skipped": 0, "errored": 0}
+    manifest = doc.get("manifest") or {}
+    if not isinstance(manifest, dict):
+        return {"downloaded": 0, "skipped": 0, "errored": 0}
+
+    cache_dir = _manifest_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    counts = {"downloaded": 0, "skipped": 0, "errored": 0}
+
+    layout = None
+    client = None
+    for _alias, ref in manifest.items():
+        if not isinstance(ref, str):
+            continue
+        m = _GDRIVE_RE.match(ref)
+        if m is None:
+            continue
+        file_id, ext = m.group(1), m.group(2)
+        target = cache_dir / f"{file_id}.{ext}"
+        if target.exists() and target.stat().st_size > 0:
+            counts["skipped"] += 1
+            continue
+        if client is None:
+            layout, client = layout_for(workspace)
+        try:
+            content = client.get_binary(file_id)
+        except Exception as e:  # noqa: BLE001 — Drive errors logged, render keeps going
+            log.warning(
+                "videos.prefetch: failed to fetch %s for %s/%s: %s",
+                file_id, slug, run_id, e,
+            )
+            counts["errored"] += 1
+            continue
+        target.write_bytes(content)
+        counts["downloaded"] += 1
+
+    if counts["downloaded"] or counts["errored"]:
+        log.info(
+            "videos.prefetch: %s/%s downloaded=%d skipped=%d errored=%d",
+            slug, run_id, counts["downloaded"], counts["skipped"], counts["errored"],
+        )
+    return counts
+
+
 def _publish_artifacts_subcommand(
     workspace: Workspace, slug: str, run_id: str,
 ) -> str:
@@ -1238,6 +1319,7 @@ def trigger_rerender(workspace: Workspace, slug: str, run_id: str, *, needs_hydr
     try:
         _stage_spec(workspace, slug, run_id)
         stage_existing_content_locally(workspace)
+        prefetch_manifest_to_cache(workspace, slug, run_id)
     except Exception as e:
         log.warning("videos.trigger_rerender: staging failed for %s/%s: %s", slug, run_id, e)
         r.delete(_busy_key(slug, run_id), _started_key(slug, run_id))
