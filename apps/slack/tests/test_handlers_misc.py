@@ -283,3 +283,52 @@ def test_list_runs_with_slug_empty_returns_message(setup):
             channel_id="C1", trigger_id="", response_url="",
         )
     assert "No runs" in resp["text"]
+
+
+@pytest.mark.django_db
+def test_list_opps_with_response_url_acks_fast_and_posts_async(setup):
+    """When Slack provides a response_url, we ack within 3s and POST the
+    real list to response_url in a background thread. Verifies the ack
+    is the loading message and run_async was called with _list_opps."""
+    from apps.slack.handlers import dispatch_slash_command
+    with patch("apps.slack.verbs_query.run_async") as mock_async:
+        resp = dispatch_slash_command(
+            text="list opps", slack_user_id="U_JJ", team_id="T1",
+            channel_id="C1", trigger_id="",
+            response_url="https://hooks.slack.com/commands/T1/123/abc",
+        )
+    assert "Loading" in resp["text"]
+    assert resp["response_type"] == "ephemeral"
+    mock_async.assert_called_once()
+    args = mock_async.call_args
+    assert args.args[0] == "https://hooks.slack.com/commands/T1/123/abc"
+
+
+@pytest.mark.django_db
+def test_list_runs_with_slug_and_response_url_acks_fast(setup):
+    from apps.slack.handlers import dispatch_slash_command
+    with patch("apps.slack.verbs_query.run_async") as mock_async:
+        resp = dispatch_slash_command(
+            text="list runs leep-paint", slack_user_id="U_JJ", team_id="T1",
+            channel_id="C1", trigger_id="",
+            response_url="https://hooks.slack.com/commands/T1/123/abc",
+        )
+    assert "Loading runs" in resp["text"]
+    assert "leep-paint" in resp["text"]
+    mock_async.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_list_runs_no_slug_does_not_use_async(setup):
+    """`/ace list runs` (your tracked runs) is a fast DB query — should
+    NOT go through the async path (saves a background thread)."""
+    from apps.slack.handlers import dispatch_slash_command
+    with patch("apps.slack.verbs_query.run_async") as mock_async:
+        resp = dispatch_slash_command(
+            text="list runs", slack_user_id="U_JJ", team_id="T1",
+            channel_id="C1", trigger_id="",
+            response_url="https://hooks.slack.com/commands/T1/123/abc",
+        )
+    mock_async.assert_not_called()
+    # Synchronous response.
+    assert resp["response_type"] == "ephemeral"
