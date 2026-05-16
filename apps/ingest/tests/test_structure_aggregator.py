@@ -9,10 +9,10 @@ def _events(filename="cost_session.jsonl"):
     return events
 
 
-def test_aggregate_returns_schema_v5_with_session_totals():
+def test_aggregate_returns_schema_v6_with_session_totals():
     from apps.ingest.structure_aggregator import aggregate
     tree = aggregate(_events())
-    assert tree["schema_version"] == 5
+    assert tree["schema_version"] == 6
     assert "session" in tree
     assert "phases" in tree
     assert "computed_at" in tree
@@ -269,11 +269,12 @@ def test_nested_subagent_cost_rolls_up_to_parent_and_phase(tmp_path, monkeypatch
     assert inner["tokens"]["output_tokens"] == 2000
 
 
-def test_orchestrator_thinking_attributed_to_current_phase(tmp_path, monkeypatch):
-    """Top-level assistant turns (not dispatch turns, no open frame) belong
-    to the most-recently-entered phase as a synthetic "(orchestration)"
-    skill row. Otherwise their cost is lost from phase rollups even though
-    the wall-time and tool nodes are bucketed correctly.
+def test_orchestrator_thinking_folds_into_preceding_skill(tmp_path, monkeypatch):
+    """Top-level orchestrator narration that fires after a skill's dispatch
+    closes is "follow-on work" for that skill — it absorbs into the skill
+    row, not a separate Inline-work bucket. Mental model: the skill that
+    was most-recently dispatched stays "active" (absorbing inline work)
+    until the next skill dispatches or the phase advances.
     """
     from apps.ingest import structure_aggregator
     from apps.ingest.parser import parse_session_file
@@ -311,27 +312,29 @@ def test_orchestrator_thinking_attributed_to_current_phase(tmp_path, monkeypatch
     tree = aggregate(events)
 
     phase = next(p for p in tree["phases"] if p["name"] == "phase-5-qa-and-training")
-    # Phase total reconciles with session total — the orchestrator turn's
-    # cost lives in a synthetic "(orchestration)" child of the phase.
+    # Phase total reconciles with session total — the follow-on turn's cost
+    # folded into qa-and-training's row, not a separate Inline-work bucket.
     assert phase["estimated_cost_usd"] == tree["session"]["estimated_cost_usd"]
 
-    orch_rows = [c for c in phase["children"]
-                 if c["kind"] == "skill" and c["name"] == "(direct turns)"]
-    assert len(orch_rows) == 1
-    assert orch_rows[0]["tokens"]["input_tokens"] == 100000
-    assert orch_rows[0]["tokens"]["output_tokens"] == 5000
-    assert orch_rows[0]["estimated_cost_usd"] > 0
-    # Each orchestrator turn is also surfaced as a `direct_turn` child so the
-    # user can drill into where the spend went.
-    children = orch_rows[0]["children"]
-    assert len(children) == 1
-    turn = children[0]
-    assert turn["kind"] == "direct_turn"
-    assert turn["tokens"]["input_tokens"] == 100000
-    assert turn["tokens"]["output_tokens"] == 5000
-    assert turn["text_preview"] == "thinking after the dispatch"
-    assert turn["model"] == "claude-sonnet-4-6"
-    assert turn["started_at"] is not None
+    real_skills = [c for c in phase["children"]
+                   if c["kind"] == "skill" and c["name"] != "(direct turns)"]
+    assert len(real_skills) == 1
+    qa = real_skills[0]
+    assert qa["name"] == "qa-and-training"
+    assert qa["tokens"]["input_tokens"] == 100000
+    assert qa["tokens"]["output_tokens"] == 5000
+    assert qa["estimated_cost_usd"] > 0
+    # The follow-on turn is also surfaced as a `direct_turn` child of the
+    # skill so the user can see what the orchestrator was saying.
+    direct_turns = [c for c in qa["children"] if c["kind"] == "direct_turn"]
+    assert len(direct_turns) == 1
+    assert direct_turns[0]["text_preview"] == "thinking after the dispatch"
+    assert direct_turns[0]["model"] == "claude-sonnet-4-6"
+    assert direct_turns[0]["started_at"] is not None
+    # No Inline-work bucket — everything folded into the skill.
+    synth = [c for c in phase["children"]
+             if c["kind"] == "skill" and c["name"] == "(direct turns)"]
+    assert not synth
 
 
 def test_orchestrator_thinking_before_any_dispatch_lands_in_orchestration(tmp_path):
@@ -591,6 +594,66 @@ def test_toplevel_tools_move_into_inline_work_skill(tmp_path):
     bash_tools = [c for c in synth["children"]
                   if c["kind"] == "tool" and c["tool_name"] == "Bash"]
     assert bash_tools, "top-level Bash should have been moved under Inline work"
+
+
+def test_post_skill_work_flushes_when_next_skill_dispatches(tmp_path, monkeypatch):
+    """When skill A dispatches, runs, closes, then does follow-on inline
+    work, then skill B dispatches — A's row should contain A's dispatch +
+    the follow-on; B's row should start fresh. The pending-skill model
+    flushes A to the phase right before B opens its frame.
+    """
+    from apps.ingest import structure_aggregator
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+    monkeypatch.setattr(
+        structure_aggregator, "skill_phase_index",
+        lambda: {
+            "skill-a": {"phase": "phase-x", "phase_display": "X",
+                        "phase_ordinal": 1, "skill_display": "A"},
+            "skill-b": {"phase": "phase-x", "phase_display": "X",
+                        "phase_ordinal": 1, "skill_display": "B"},
+        },
+    )
+    jsonl = tmp_path / "ab.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        # Dispatch skill-A
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tA","name":"Skill","input":{"skill":"skill-a"}}]}}\n'
+        '{"type":"user","uuid":"u2","timestamp":"2026-05-10T14:00:01Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tA","content":"a-done"}]}}\n'
+        # Follow-on for A: narration + a Bash.
+        '{"type":"assistant","uuid":"u3","timestamp":"2026-05-10T14:00:02Z",'
+        '"message":{"id":"m3","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":50,"output_tokens":5},"content":['
+        '{"type":"text","text":"A post-work"},'
+        '{"type":"tool_use","id":"tBa","name":"Bash","input":{"command":"echo a-tail"}}]}}\n'
+        '{"type":"user","uuid":"u4","timestamp":"2026-05-10T14:00:03Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tBa","content":"a-tail"}]}}\n'
+        # Dispatch skill-B — this flushes A.
+        '{"type":"assistant","uuid":"u5","timestamp":"2026-05-10T14:00:04Z",'
+        '"message":{"id":"m5","model":"claude-sonnet-4-6","content":['
+        '{"type":"tool_use","id":"tB","name":"Skill","input":{"skill":"skill-b"}}]}}\n'
+        '{"type":"user","uuid":"u6","timestamp":"2026-05-10T14:00:05Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tB","content":"b-done"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+    phase = next(p for p in tree["phases"] if p["name"] == "phase-x")
+    skills = [c for c in phase["children"]
+              if c["kind"] == "skill" and c["name"] != "(direct turns)"]
+    assert [s["name"] for s in skills] == ["skill-a", "skill-b"]
+    # skill-A absorbed the follow-on Bash and narration; skill-B did not.
+    a, b = skills
+    a_tools = [c for c in a["children"] if c["kind"] == "tool"]
+    a_turns = [c for c in a["children"] if c["kind"] == "direct_turn"]
+    b_tools = [c for c in b["children"] if c["kind"] == "tool"]
+    b_turns = [c for c in b["children"] if c["kind"] == "direct_turn"]
+    assert any(t["tool_name"] == "Bash" for t in a_tools)
+    assert a_turns and a_turns[0]["text_preview"] == "A post-work"
+    assert not b_tools, "skill-B has no children — it dispatched and closed cleanly"
+    assert not b_turns
 
 
 def test_tool_without_result_has_null_content_preview(tmp_path):

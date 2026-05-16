@@ -22,7 +22,7 @@ from apps.ingest._common import (
 from apps.ingest.parser import CostEvent
 from apps.ingest.pricing import compute_cost
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Subjects like "Phase 3: commcare-setup (Nova builds)" — capture the skill slug.
 _PHASE_SUBJECT_RE = re.compile(r"^Phase \d+:\s*([a-z][a-z0-9-]+)")
@@ -191,8 +191,10 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         return phase_buckets[name]
 
     def _attach(node: dict, *, frame: _Frame | None, phase_name: str | None,
-                turn_uuid: str | None) -> None:
-        """Append node to (frame.children) or (phase_buckets[phase_name]['children']).
+                turn_uuid: str | None, target_dict: dict | None = None) -> None:
+        """Append node to a frame, a phase bucket, or a target dict (used for
+        pending_top_skill — the "currently active" top-level skill that
+        absorbs follow-on inline work until the next dispatch fires).
 
         If the previous attached node shares `turn_uuid` AND the new node is a
         tool, cluster them into a parallel_group.
@@ -201,6 +203,10 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             target_children = frame.children
             last_turn = frame.last_turn_uuid
             last_group = frame.last_parallel_group
+        elif target_dict is not None:
+            target_children = target_dict["children"]
+            last_turn = target_dict.get("_last_turn_uuid")
+            last_group = target_dict.get("_last_parallel_group")
         elif phase_name is not None:
             bucket = _ensure_phase(phase_name)
             target_children = bucket["children"]
@@ -232,6 +238,8 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 target_children.append(group)
                 if frame is not None:
                     frame.last_parallel_group = group
+                elif target_dict is not None:
+                    target_dict["_last_parallel_group"] = group
                 else:
                     phase_buckets[phase_name]["_last_parallel_group"] = group
                 return
@@ -240,9 +248,45 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         if frame is not None:
             frame.last_turn_uuid = turn_uuid
             frame.last_parallel_group = None
+        elif target_dict is not None:
+            target_dict["_last_turn_uuid"] = turn_uuid
+            target_dict["_last_parallel_group"] = None
         else:
             phase_buckets[phase_name]["_last_turn_uuid"] = turn_uuid
             phase_buckets[phase_name]["_last_parallel_group"] = None
+
+    # The "currently active" top-level skill. When a top-level Skill/Agent
+    # dispatch closes, we don't attach it to the phase right away — instead
+    # we stage it here so subsequent inline assistant turns and tool calls
+    # (orchestrator follow-on work) get absorbed into the skill that caused
+    # them. The pending slot flushes to the phase on: next top-level
+    # dispatch, phase boundary, or end of stream. Mental model: "skill X
+    # stays active until skill Y dispatches."
+    pending_top_skill: dict | None = None
+
+    def _flush_pending() -> None:
+        nonlocal pending_top_skill
+        if pending_top_skill is None:
+            return
+        skill_node = pending_top_skill
+        pending_top_skill = None
+        phase = skill_node.pop("_phase_name", None) or "_orchestration"
+        # Final wall_time = start → last activity (assistant_turn / tool_use /
+        # tool_result timestamp), reflecting the full regime, not just the
+        # original frame's open→close.
+        start_iso = skill_node.get("started_at")
+        last_iso = skill_node.pop("_last_ts", None)
+        if start_iso and last_iso:
+            try:
+                skill_node["wall_time_seconds"] = wall_time_seconds(
+                    datetime.fromisoformat(start_iso),
+                    datetime.fromisoformat(last_iso),
+                )
+            except ValueError:
+                pass
+        skill_node.pop("_last_turn_uuid", None)
+        skill_node.pop("_last_parallel_group", None)
+        _ensure_phase(phase)["children"].append(skill_node)
 
     for event in events:
         if event.timestamp is not None:
@@ -271,13 +315,45 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 # Top-level dispatch turn: hold the usage until the segment
                 # opens on the matching tool_use event below.
                 pending_dispatch[event.uuid] = (event.usage, cost)
+            elif pending_top_skill is not None:
+                # A top-level skill is currently "active" — its dispatch has
+                # closed but no new dispatch (and no phase boundary) has
+                # happened yet. Subsequent orchestrator narration / loose
+                # tool calls are follow-on work for that skill, so absorb
+                # the cost into its skill row and (for narration turns)
+                # append a direct_turn child so the user can see what was
+                # being said.
+                add_usage(pending_top_skill["tokens"], event.usage)
+                if cost is None:
+                    pending_top_skill["cost_is_partial"] = True
+                else:
+                    pending_top_skill["estimated_cost_usd"] = round(
+                        pending_top_skill["estimated_cost_usd"] + cost, 6
+                    )
+                if event.timestamp is not None:
+                    pending_top_skill["_last_ts"] = event.timestamp.isoformat()
+                if event.text_preview:
+                    turn_tokens = empty_tokens()
+                    add_usage(turn_tokens, event.usage)
+                    pending_top_skill["children"].append({
+                        "kind": "direct_turn",
+                        "started_at": (
+                            event.timestamp.isoformat() if event.timestamp else None
+                        ),
+                        "model": event.model,
+                        "estimated_cost_usd": (
+                            round(cost, 6) if cost is not None else 0.0
+                        ),
+                        "cost_is_partial": cost is None,
+                        "tokens": turn_tokens,
+                        "text_preview": event.text_preview,
+                    })
             else:
-                # Top-level orchestrator thinking (no Skill/Agent in flight,
-                # not a dispatch turn — e.g. assistant reply that precedes a
-                # Bash/Read tool call, or pure thinking between dispatches).
-                # Attribute to the current phase if one has been entered,
-                # else to the global Orchestration bucket. Without this the
-                # cost is lost from every phase rollup.
+                # No skill has dispatched yet in this phase (or we're pre-
+                # phase). This work has no skill to attribute to — it goes
+                # into the residual "Inline work" bucket. Typically small:
+                # the TaskUpdate marker turn that opens the phase, plus
+                # whatever narration precedes the first dispatch.
                 bucket_key = current_phase or "_orchestration"
                 add_usage(phase_orch_tokens.setdefault(bucket_key, empty_tokens()),
                           event.usage)
@@ -291,11 +367,6 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     if bucket_key not in phase_orch_first_ts:
                         phase_orch_first_ts[bucket_key] = event.timestamp
                     phase_orch_last_ts[bucket_key] = event.timestamp
-                # Only surface the turn as its own row when there's narration
-                # worth reading. Pure tool-firing turns (no text blocks) have
-                # nothing to show — their tools already appear in the tree as
-                # orchestrator-level tool rows. The cost still rolls into the
-                # synthetic skill's total either way, so no spend is lost.
                 if event.text_preview:
                     turn_tokens = empty_tokens()
                     add_usage(turn_tokens, event.usage)
@@ -319,6 +390,12 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             is_skill = tool_name in ("Skill", "Agent")
 
             if is_skill:
+                if not open_frames:
+                    # A new top-level dispatch is starting; the previous
+                    # skill's "active" regime ends here. Flush so its
+                    # absorbed inline work lands in the phase before we
+                    # open the new frame.
+                    _flush_pending()
                 skill_name = (
                     (event.tool_input or {}).get("skill")
                     or (event.tool_input or {}).get("subagent_type")
@@ -368,7 +445,9 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             # pre-scan above for why this is the only signal for inline-
             # dispatched ACE phases. Advance before attaching so the marker
             # tool itself lands in the new phase (it's the "Phase 3 starts
-            # here" beat, not the tail of Phase 2).
+            # here" beat, not the tail of Phase 2). Also flush any pending
+            # top-level skill — its regime ends when the phase boundary
+            # crosses, even if no new skill has dispatched yet.
             if (
                 tool_name == "TaskUpdate"
                 and not open_frames
@@ -377,7 +456,10 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 new_phase = task_phase_map.get(
                     str((event.tool_input or {}).get("taskId", ""))
                 )
-                if new_phase:
+                if new_phase and new_phase != current_phase:
+                    _flush_pending()
+                    current_phase = new_phase
+                elif new_phase:
                     current_phase = new_phase
 
             # Regular tool call (Bash, Read, Edit, etc.)
@@ -409,6 +491,15 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             }
             if open_frames:
                 _attach(tool_node, frame=open_frames[-1], phase_name=None, turn_uuid=event.uuid)
+            elif pending_top_skill is not None:
+                # Top-level tool fired after a skill's dispatch closed —
+                # absorb into that skill's children (orchestrator follow-on).
+                _attach(
+                    tool_node, frame=None, phase_name=None,
+                    target_dict=pending_top_skill, turn_uuid=event.uuid,
+                )
+                if event.timestamp is not None:
+                    pending_top_skill["_last_ts"] = event.timestamp.isoformat()
             elif current_phase is not None:
                 _attach(tool_node, frame=None, phase_name=current_phase, turn_uuid=event.uuid)
             else:
@@ -448,12 +539,29 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     _propagate_to_parent(frame, open_frames[-1])
                     _attach(skill_node, frame=open_frames[-1], phase_name=None, turn_uuid=None)
                 else:
-                    _attach(skill_node, frame=None, phase_name=frame.phase_name, turn_uuid=None)
+                    # Top-level skill closed. Don't attach to the phase yet —
+                    # stage it as the active pending skill so subsequent
+                    # inline work (orchestrator narration + loose tool calls)
+                    # gets absorbed into this skill's children. Flush any
+                    # previously-pending one first; the new skill takes over.
+                    _flush_pending()
+                    skill_node["_phase_name"] = frame.phase_name
+                    skill_node["_last_ts"] = (
+                        frame.last_ts.isoformat() if frame.last_ts else None
+                    )
+                    skill_node["_last_turn_uuid"] = None
+                    skill_node["_last_parallel_group"] = None
+                    pending_top_skill = skill_node
                 continue
 
             # Regular tool result — find the open tool node and update it.
+            # Tools fired by the orchestrator at top level live inside
+            # pending_top_skill (the absorber for follow-on work); fall back
+            # to phase children for pre-skill orchestrator tool calls.
             if open_frames:
                 target_children = open_frames[-1].children
+            elif pending_top_skill is not None:
+                target_children = pending_top_skill["children"]
             else:
                 phase_for_lookup = current_phase or "_orchestration"
                 target_children = _ensure_phase(phase_for_lookup)["children"]
@@ -489,6 +597,9 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             _attach(skill_node, frame=open_frames[-1], phase_name=None, turn_uuid=None)
         else:
             _attach(skill_node, frame=None, phase_name=frame.phase_name, turn_uuid=None)
+
+    # Flush any pending top-level skill — its regime ends at end-of-stream.
+    _flush_pending()
 
     # Inject orchestrator-thinking as a synthetic "(orchestration)" skill row
     # in each phase that has any. The cost lives in `phase_orch_*` because it
