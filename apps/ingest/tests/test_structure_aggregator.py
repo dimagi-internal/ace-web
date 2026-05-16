@@ -9,10 +9,10 @@ def _events(filename="cost_session.jsonl"):
     return events
 
 
-def test_aggregate_returns_schema_v4_with_session_totals():
+def test_aggregate_returns_schema_v5_with_session_totals():
     from apps.ingest.structure_aggregator import aggregate
     tree = aggregate(_events())
-    assert tree["schema_version"] == 4
+    assert tree["schema_version"] == 5
     assert "session" in tree
     assert "phases" in tree
     assert "computed_at" in tree
@@ -59,9 +59,10 @@ def test_consecutive_same_turn_tools_form_parallel_group(tmp_path):
     tree = aggregate(events)
     orch = next((p for p in tree["phases"] if p["name"] == "_orchestration"), None)
     assert orch is not None, f"got phases {[p['name'] for p in tree['phases']]}"
-    assert len(orch["children"]) == 1
-    group = orch["children"][0]
-    assert group["kind"] == "parallel_group"
+    # Top-level tools/parallel_groups now live under the synthetic "Inline
+    # work" skill rather than as phase-level siblings.
+    synth = next(c for c in orch["children"] if c["name"] == "(direct turns)")
+    group = next(c for c in synth["children"] if c["kind"] == "parallel_group")
     assert len(group["children"]) == 2
     assert {c["tool_use_id"] for c in group["children"]} == {"tA", "tB"}
 
@@ -89,7 +90,9 @@ def test_tool_error_stays_pinned_and_does_not_roll_up(tmp_path):
     phase = tree["phases"][0]
     assert phase["status"] == "ok"
     # The errored tool node still carries status=error so the UI can flag it.
-    tool_nodes = [c for c in phase["children"] if c["kind"] == "tool"]
+    # Top-level tools now live inside the synthetic "Inline work" skill.
+    synth = next(c for c in phase["children"] if c["name"] == "(direct turns)")
+    tool_nodes = [c for c in synth["children"] if c["kind"] == "tool"]
     assert tool_nodes and tool_nodes[0]["status"] == "error"
 
 
@@ -182,7 +185,8 @@ def test_tool_content_preview_propagates_from_tool_result(tmp_path):
     _session, events = parse_session_file(jsonl)
     tree = aggregate(events)
     orch = next(p for p in tree["phases"] if p["name"] == "_orchestration")
-    tool = next(c for c in orch["children"] if c["kind"] == "tool")
+    synth = next(c for c in orch["children"] if c["name"] == "(direct turns)")
+    tool = next(c for c in synth["children"] if c["kind"] == "tool")
     assert tool["content_preview"] == "file1.txt\nfile2.txt"
 
 
@@ -482,8 +486,10 @@ def test_inline_phase_advance_via_task_update(tmp_path, monkeypatch):
         f"phase-3 should exist after inline advance; got {phase_names}"
     )
     p3 = next(p for p in tree["phases"] if p["name"] == "phase-3-commcare-setup")
+    # Top-level Bash now lives inside the synthetic "Inline work" skill.
+    synth = next(c for c in p3["children"] if c["name"] == "(direct turns)")
     bash_tools = [
-        c for c in p3["children"]
+        c for c in synth["children"]
         if c["kind"] == "tool" and c["tool_name"] == "Bash"
     ]
     assert bash_tools, (
@@ -518,8 +524,9 @@ def test_toplevel_tool_inherits_cost_from_parent_assistant_turn(tmp_path):
     _session, events = parse_session_file(jsonl)
     tree = aggregate(events)
     orch = next(p for p in tree["phases"] if p["name"] == "_orchestration")
-    # The two tools were clustered into a parallel_group; descend into it.
-    pg = next(c for c in orch["children"] if c["kind"] == "parallel_group")
+    # The two tools were clustered into a parallel_group inside Inline work.
+    synth = next(c for c in orch["children"] if c["name"] == "(direct turns)")
+    pg = next(c for c in synth["children"] if c["kind"] == "parallel_group")
     tool_costs = [t["estimated_cost_usd"] for t in pg["children"]]
     assert all(c > 0 for c in tool_costs), (
         f"top-level tools should inherit parent-turn cost; got {tool_costs}"
@@ -532,7 +539,7 @@ def test_toplevel_tool_inherits_cost_from_parent_assistant_turn(tmp_path):
     assert orch["estimated_cost_usd"] == synth["estimated_cost_usd"]
 
 
-def test_synthetic_skill_display_is_orchestrator_narration(tmp_path):
+def test_synthetic_skill_display_is_inline_work(tmp_path):
     """The "(direct turns)" skill's display name reads as English to a
     fresh user, not as an internal token."""
     from apps.ingest.parser import parse_session_file
@@ -550,7 +557,40 @@ def test_synthetic_skill_display_is_orchestrator_narration(tmp_path):
     orch = next(p for p in tree["phases"] if p["name"] == "_orchestration")
     synth = next(c for c in orch["children"]
                  if c["kind"] == "skill" and c["name"] == "(direct turns)")
-    assert synth["display"] == "Orchestrator narration"
+    assert synth["display"] == "Inline work"
+
+
+def test_toplevel_tools_move_into_inline_work_skill(tmp_path):
+    """Phase rows should be Phase → Agent/Skill — tool noise lives inside
+    the synthetic "Inline work" skill, not at phase level. This keeps the
+    phase view scannable and matches the user's "below skill is rarely
+    helpful" mental model."""
+    from apps.ingest.parser import parse_session_file
+    from apps.ingest.structure_aggregator import aggregate
+    jsonl = tmp_path / "tools_inline.jsonl"
+    jsonl.write_text(
+        '{"type":"system","subtype":"init","session_id":"s1"}\n'
+        # Top-level Bash with no enclosing skill — this should land inside
+        # "Inline work", not as a sibling of any real skill row.
+        '{"type":"assistant","uuid":"u1","timestamp":"2026-05-10T14:00:00Z",'
+        '"message":{"id":"m1","model":"claude-sonnet-4-6","usage":'
+        '{"input_tokens":100,"output_tokens":10},"content":['
+        '{"type":"tool_use","id":"tA","name":"Bash","input":{"command":"ls"}}]}}\n'
+        '{"type":"user","uuid":"u2","timestamp":"2026-05-10T14:00:01Z",'
+        '"message":{"content":[{"type":"tool_result","tool_use_id":"tA",'
+        '"content":"ok"}]}}\n'
+    )
+    _session, events = parse_session_file(jsonl)
+    tree = aggregate(events)
+    orch = next(p for p in tree["phases"] if p["name"] == "_orchestration")
+    kinds_at_phase = {c["kind"] for c in orch["children"]}
+    assert kinds_at_phase == {"skill"}, (
+        f"phase children should be only skills; got {kinds_at_phase}"
+    )
+    synth = next(c for c in orch["children"] if c["name"] == "(direct turns)")
+    bash_tools = [c for c in synth["children"]
+                  if c["kind"] == "tool" and c["tool_name"] == "Bash"]
+    assert bash_tools, "top-level Bash should have been moved under Inline work"
 
 
 def test_tool_without_result_has_null_content_preview(tmp_path):
@@ -568,5 +608,6 @@ def test_tool_without_result_has_null_content_preview(tmp_path):
     _session, events = parse_session_file(jsonl)
     tree = aggregate(events)
     orch = next(p for p in tree["phases"] if p["name"] == "_orchestration")
-    tool = next(c for c in orch["children"] if c["kind"] == "tool")
+    synth = next(c for c in orch["children"] if c["name"] == "(direct turns)")
+    tool = next(c for c in synth["children"] if c["kind"] == "tool")
     assert tool["content_preview"] is None
