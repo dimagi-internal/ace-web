@@ -25,6 +25,7 @@ _HELP_TEXT = (
     "driving from your laptop) into this channel.\n"
     "`/ace untrack <slug>` — Stop mirroring a run.\n"
     "`/ace status [<slug>]` — Show the current state of a run.\n"
+    "`/ace activity` — Show what's running across the workspace right now.\n"
     "`/ace list opps` — List opportunities in the workspace.\n"
     "`/ace list runs` — Show your active Slack-tracked runs.\n"
     "`/ace list runs <slug>` — Show every run for an opp (regardless of who started it).\n"
@@ -144,6 +145,11 @@ def dispatch_slash_command(*, text: str, slack_user_id: str, team_id: str,
         return handle_list(installation=installation, user_link=user_link,
                            rest=rest, channel_id=channel_id,
                            response_url=response_url)
+    if verb == "activity":
+        from .verbs_activity import handle_activity
+        return handle_activity(installation=installation, user_link=user_link,
+                               rest=rest, channel_id=channel_id,
+                               response_url=response_url)
     if verb == "track":
         from .verbs_track import handle_track
         return handle_track(installation=installation, user_link=user_link,
@@ -171,6 +177,8 @@ def dispatch_interaction(payload: dict) -> dict:
             return _fork_redirect(payload, action)
         if action_id == "stop_watching":
             return _stop_watching(payload, action)
+        if action_id == "track_run_from_activity":
+            return _track_from_activity(payload, action)
         if action_id == "link_account":
             return {}  # button has its own url; nothing to do server-side
         # Unknown actions — silently 200.
@@ -201,6 +209,31 @@ def _stop_watching(payload: dict, action: dict) -> dict:
     _stop_thread(thread, stopper=stopper, installation=installation)
     return {"response_type": "ephemeral",
             "text": f":octagonal_sign: Stopped mirroring `{thread.opp_slug}/{thread.run_id}`."}
+
+
+def _track_from_activity(payload: dict, action: dict) -> dict:
+    """Track button on `/ace activity` rows. Reuses the same code path as
+    `/ace track <slug>/<run_id>`."""
+    value = action.get("value", "")
+    try:
+        slug, run_id = value.split(":", 1)
+    except ValueError:
+        return {"response_type": "ephemeral", "text": ":x: malformed track action"}
+    team_id = payload.get("team", {}).get("id", "")
+    slack_user_id = payload.get("user", {}).get("id", "")
+    channel_id = payload.get("channel", {}).get("id", "")
+    installation = _get_installation(team_id)
+    if installation is None:
+        return {"response_type": "ephemeral", "text": ":x: workspace not installed"}
+    user_link = _get_user_link(installation, slack_user_id) if slack_user_id else None
+    if user_link is None:
+        return {"response_type": "ephemeral",
+                "text": "Link your account first with `/ace link`."}
+    from .verbs_track import handle_track
+    return handle_track(
+        installation=installation, user_link=user_link,
+        rest=f"{slug}/{run_id}", channel_id=channel_id,
+    )
 
 
 def _fork_redirect(payload: dict, action: dict) -> dict:
