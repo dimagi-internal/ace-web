@@ -20,6 +20,7 @@ import SystemPage from "./pages/SystemPage";
 import VideoExplorerPage from "./pages/VideoExplorerPage";
 import VideosListPage from "./pages/VideosListPage";
 import WelcomePage from "./pages/WelcomePage";
+import WorkspaceActivityPage from "./pages/WorkspaceActivityPage";
 import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
 
 export const router = createBrowserRouter(
@@ -44,6 +45,7 @@ export const router = createBrowserRouter(
           path: "w/:workspaceSlug",
           children: [
             { index: true, element: <Navigate to="opps" replace /> },
+            { path: "activity", element: <WorkspaceActivityPage /> },
             { path: "opps", element: <OppListPage /> },
             {
               path: "opps/compare/:slugA/:slugB",
