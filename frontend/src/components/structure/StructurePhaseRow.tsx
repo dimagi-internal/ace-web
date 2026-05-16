@@ -7,6 +7,7 @@ import { ParallelCluster } from "./ParallelCluster";
 import { StatusIcon } from "./StatusIcon";
 import { StructureSkillRow } from "./StructureSkillRow";
 import { StructureToolRow } from "./StructureToolRow";
+import { useStructureView } from "./structureContext";
 
 interface Props {
   phase: StructurePhase;
@@ -15,7 +16,10 @@ interface Props {
 
 export function StructurePhaseRow({ phase, defaultOpen = false }: Props) {
   const [open, setOpen] = useState(defaultOpen);
-  const expandable = phase.children.length > 0;
+  const { showTools } = useStructureView();
+  const expandable = phase.children.some(
+    (c) => showTools || (c.kind !== "tool" && c.kind !== "parallel_group"),
+  );
   // Lifecycle phases have ordinal 1-99; pseudo phases (_orchestration=0,
   // _other=999) skip the "Phase N:" prefix.
   const isLifecyclePhase = phase.ordinal > 0 && phase.ordinal < 100;
@@ -52,9 +56,13 @@ export function StructurePhaseRow({ phase, defaultOpen = false }: Props) {
       {open
         ? phase.children.map((child, i) => {
             if (child.kind === "tool")
-              return <StructureToolRow key={child.tool_use_id} node={child} depth={1} />;
+              return showTools ? (
+                <StructureToolRow key={child.tool_use_id} node={child} depth={1} />
+              ) : null;
             if (child.kind === "parallel_group")
-              return <ParallelCluster key={`pg-${i}`} group={child} depth={1} />;
+              return showTools ? (
+                <ParallelCluster key={`pg-${i}`} group={child} depth={1} />
+              ) : null;
             if (child.kind === "skill")
               return <StructureSkillRow key={`${child.name}-${i}`} node={child} depth={1} />;
             return null;

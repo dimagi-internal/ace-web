@@ -7,6 +7,7 @@ import { ParallelCluster } from "./ParallelCluster";
 import { StatusIcon } from "./StatusIcon";
 import { StructureDirectTurnRow } from "./StructureDirectTurnRow";
 import { StructureToolRow } from "./StructureToolRow";
+import { useStructureView } from "./structureContext";
 
 interface Props {
   node: StructureSkillNode;
@@ -16,7 +17,14 @@ interface Props {
 export function StructureSkillRow({ node, depth }: Props) {
   // Subagents collapsed by default; top-level skills expanded for at-a-glance scanning.
   const [open, setOpen] = useState(!node.is_subagent);
-  const expandable = node.children.length > 0;
+  const { showTools } = useStructureView();
+  // Below skill level we hide tools by default — Phase → Agent/Skill is the
+  // useful mental model. With `showTools=false` an empty skill (just tools)
+  // shouldn't pretend to be expandable.
+  const hasVisibleChildren = node.children.some(
+    (c) => showTools || (c.kind !== "tool" && c.kind !== "parallel_group"),
+  );
+  const expandable = hasVisibleChildren;
   return (
     <>
       <div
@@ -53,9 +61,13 @@ export function StructureSkillRow({ node, depth }: Props) {
       {open
         ? node.children.map((child, i) => {
             if (child.kind === "tool")
-              return <StructureToolRow key={child.tool_use_id} node={child} depth={depth + 1} />;
+              return showTools ? (
+                <StructureToolRow key={child.tool_use_id} node={child} depth={depth + 1} />
+              ) : null;
             if (child.kind === "parallel_group")
-              return <ParallelCluster key={`pg-${i}`} group={child} depth={depth + 1} />;
+              return showTools ? (
+                <ParallelCluster key={`pg-${i}`} group={child} depth={depth + 1} />
+              ) : null;
             if (child.kind === "skill")
               return <StructureSkillRow key={`${child.name}-${i}`} node={child} depth={depth + 1} />;
             if (child.kind === "direct_turn")

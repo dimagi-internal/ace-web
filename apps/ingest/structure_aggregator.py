@@ -22,7 +22,7 @@ from apps.ingest._common import (
 from apps.ingest.parser import CostEvent
 from apps.ingest.pricing import compute_cost
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Subjects like "Phase 3: commcare-setup (Nova builds)" — capture the skill slug.
 _PHASE_SUBJECT_RE = re.compile(r"^Phase \d+:\s*([a-z][a-z0-9-]+)")
@@ -495,14 +495,34 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     # came from top-level assistant turns with no enclosing frame — without a
     # synthetic row to carry it, the phase rollup would lose this spend even
     # though wall-time and tool nodes are correctly bucketed under the phase.
-    for bucket_key, tokens in phase_orch_tokens.items():
-        if not any(tokens.values()):
-            continue
+    # The phase view's mental model is Phase → Agent/Skill — tool noise below
+    # that is rarely useful. Pull every top-level tool / parallel_group out of
+    # the phase and into the synthetic "Inline work" skill so each phase's
+    # direct children are exclusively skill rows. The synthetic skill becomes
+    # the home for everything the orchestrator did directly: narration turns,
+    # one-off Bash/Read calls, MCP tool invocations.
+    all_phase_keys = set(phase_orch_tokens) | set(phase_buckets)
+    for bucket_key in all_phase_keys:
         bucket = _ensure_phase(bucket_key)
+        # Split phase children: tools/parallel_groups go inside the synthetic
+        # skill; everything else (real skill dispatches) stays at phase level.
+        inline_children: list[dict[str, Any]] = []
+        kept: list[dict[str, Any]] = []
+        for child in bucket["children"]:
+            if child["kind"] in ("tool", "parallel_group"):
+                inline_children.append(child)
+            else:
+                kept.append(child)
+        bucket["children"] = kept
+
+        tokens = phase_orch_tokens.get(bucket_key, empty_tokens())
+        has_orch_cost = any(tokens.values()) or phase_orch_partial.get(bucket_key, False)
+        if not has_orch_cost and not inline_children:
+            continue
         synthetic_skill = {
             "kind": "skill",
-            "name": "(direct turns)",
-            "display": "Orchestrator narration",
+            "name": "(direct turns)",  # stable key — don't change
+            "display": "Inline work",
             "is_subagent": False,
             "started_at": (
                 phase_orch_first_ts[bucket_key].isoformat()
@@ -516,7 +536,10 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             "cost_is_partial": phase_orch_partial.get(bucket_key, False),
             "tokens": tokens,
             "status": "ok",
-            "children": phase_orch_turns.get(bucket_key, []),
+            # Narration turns first (they show "what the orchestrator was
+            # doing"), then the tool calls they fired. Tools default-hidden
+            # in the UI; the "Show tool calls" toggle reveals them.
+            "children": [*phase_orch_turns.get(bucket_key, []), *inline_children],
         }
         bucket["children"].append(synthetic_skill)
 
