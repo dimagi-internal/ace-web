@@ -6,6 +6,7 @@ import { useWorkspace } from "@/hooks/useWorkspace";
 import { cn } from "@/lib/utils";
 
 const WORKSPACE_NAV = [
+  { label: "Activity", subPath: "activity" },
   { label: "Opps", subPath: "opps" },
   { label: "Sessions", subPath: "sessions" },
   { label: "Chat", subPath: "chat" },
