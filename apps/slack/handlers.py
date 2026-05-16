@@ -27,6 +27,7 @@ _HELP_TEXT = (
     "`/ace status [<slug>]` — Show the current state of a run.\n"
     "`/ace list opps` — List opportunities in the workspace.\n"
     "`/ace list runs` — Show your active Slack-tracked runs.\n"
+    "`/ace list runs <slug>` — Show every run for an opp (regardless of who started it).\n"
     "`/ace link` — (Re)link your Slack identity to ace-web.\n"
     "`/ace help` — This message.\n"
 )
