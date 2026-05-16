@@ -14,7 +14,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Literal
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, field_validator
 
 from apps.common.schemas import StrictModel
 
@@ -48,12 +48,34 @@ class RunRecipeIn(StrictModel):
     the recipe; ``screenshot_prefix`` sets the S3 key namespace;
     ``state`` names the baked AVD snapshot to ensure is loaded before
     the recipe runs.
+
+    ``palette_tar_b64`` ships sibling palette recipes (the files referenced
+    by ``runFlow: file: "./..."`` in the top recipe). Base64-encoded
+    ``tar.gz``. When present, the controller extracts it into the run
+    directory before invoking Maestro — keeps local + cloud at parity
+    since the local path resolves the palette into a temp dir and runs
+    Maestro from there. See ``mcp/mobile/recipe-resolver.ts`` §
+    prepareRecipeForMaestro for the producer.
     """
 
     recipe_yaml: str
     env: dict[str, str] = {}
     screenshot_prefix: str | None = None
     state: str | None = None
+    palette_tar_b64: str | None = None
+
+    @field_validator("palette_tar_b64")
+    @classmethod
+    def _cap_palette_size(cls, v: str | None) -> str | None:
+        # 256 KB base64 ~ 190 KB binary. Resolved static palette is
+        # ~50 KB; this caps misuse without restricting legitimate
+        # callers. SSM SendCommand inlines this in a shell command so
+        # keeping it well below 100 KB margin matters.
+        if v is not None and len(v) > 256 * 1024:
+            raise ValueError(
+                f"palette_tar_b64 exceeds 256 KB (got {len(v)} bytes)"
+            )
+        return v
 
 
 class RunRecipeAcceptedOut(StrictModel):

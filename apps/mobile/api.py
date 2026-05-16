@@ -305,6 +305,7 @@ def submit_run_recipe(body: RunRecipeIn) -> dict:
     env = body.env or {}
     screenshot_prefix = body.screenshot_prefix
     requested_state = body.state
+    palette_tar_b64 = body.palette_tar_b64
 
     def worker_holding(job_id: str) -> None:
         try:
@@ -317,6 +318,7 @@ def submit_run_recipe(body: RunRecipeIn) -> dict:
                     recipe_yaml=recipe_yaml,
                     env=env,
                     screenshot_prefix=screenshot_prefix,
+                    palette_tar_b64=palette_tar_b64,
                 )
                 jobs.mark_completed(job_id, _to_payload(result))
             except MobileError as e:

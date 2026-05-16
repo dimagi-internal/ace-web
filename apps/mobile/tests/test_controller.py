@@ -820,6 +820,80 @@ def test_run_recipe_ssm_timeout_surfaces_as_ssm_timeout(controller_factory, monk
         c.run_recipe(recipe_yaml="...", env={}, screenshot_prefix=None)
 
 
+def test_run_recipe_extracts_palette_when_provided(controller_factory, monkeypatch):
+    """When ``palette_tar_b64`` is provided, the SSM command stream must
+    decode it and ``tar xzf`` into ``run_dir`` before Maestro starts —
+    that way the local-side ``runFlow: file: "./form-advance.yaml"``
+    refs in the resolved top recipe land alongside sibling palette files.
+    """
+    captured: dict[str, list[str]] = {}
+
+    def fake_run_command(client, instance_id, *, commands, timeout_seconds, **_):
+        if "commands" not in captured:
+            captured["commands"] = commands
+        from apps.mobile.ssm import CommandResult
+
+        return CommandResult(status="Success", exit_code=0, stdout="", stderr="")
+
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", fake_run_command)
+
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    controller_factory.s3_stub.add_response("list_objects_v2", {"Contents": []})
+
+    palette_b64 = "SGVsbG8sIFdvcmxkIQ=="  # synthetic — controller doesn't decode
+    c.run_recipe(
+        recipe_yaml="appId: com.example\n",
+        env={},
+        screenshot_prefix="run-with-palette",
+        palette_tar_b64=palette_b64,
+    )
+
+    joined = "\n".join(captured["commands"])
+    # Palette tarball flows through to a `tar xzf` step.
+    assert palette_b64 in joined
+    assert "base64 -d | sudo -u ubuntu tar xzf -" in joined
+    # Recipe lives inside run_dir so sibling-file refs resolve.
+    assert "/tmp/run-" in joined
+    # Extraction precedes recipe write (so palette files don't clobber
+    # the resolved top recipe even if names collide).
+    palette_idx = joined.index("tar xzf -")
+    recipe_write_idx = joined.index("base64 -d > /tmp/run-")
+    assert palette_idx < recipe_write_idx, (
+        "palette must extract before recipe is written so a same-named "
+        "palette entry doesn't clobber the resolved top recipe"
+    )
+
+
+def test_run_recipe_skips_palette_step_when_absent(controller_factory, monkeypatch):
+    """Back-compat: callers that don't ship a palette get the unchanged
+    command stream — no ``tar xzf`` step, no behavior drift for pre-
+    palette-shipping clients (the cloud ace-web before 2026-05-16)."""
+    captured: dict[str, list[str]] = {}
+
+    def fake_run_command(client, instance_id, *, commands, timeout_seconds, **_):
+        if "commands" not in captured:
+            captured["commands"] = commands
+        from apps.mobile.ssm import CommandResult
+
+        return CommandResult(status="Success", exit_code=0, stdout="", stderr="")
+
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", fake_run_command)
+
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    controller_factory.s3_stub.add_response("list_objects_v2", {"Contents": []})
+
+    c.run_recipe(recipe_yaml="appId: x\n", env={}, screenshot_prefix=None)
+
+    joined = "\n".join(captured["commands"])
+    assert "tar xzf" not in joined
+
+
 def test_run_recipe_shell_quotes_s3_destination_url(controller_factory, monkeypatch):
     """Belt-and-suspenders against shell injection in the ``aws s3 cp``
     SSM command: even if a future serializer widening lets an unsafe
