@@ -2954,6 +2954,14 @@ export interface components {
          *     the recipe; ``screenshot_prefix`` sets the S3 key namespace;
          *     ``state`` names the baked AVD snapshot to ensure is loaded before
          *     the recipe runs.
+         *
+         *     ``palette_tar_b64`` ships sibling palette recipes (the files referenced
+         *     by ``runFlow: file: "./..."`` in the top recipe). Base64-encoded
+         *     ``tar.gz``. When present, the controller extracts it into the run
+         *     directory before invoking Maestro — keeps local + cloud at parity
+         *     since the local path resolves the palette into a temp dir and runs
+         *     Maestro from there. See ``mcp/mobile/recipe-resolver.ts`` §
+         *     prepareRecipeForMaestro for the producer.
          */
         readonly RunRecipeIn: {
             /** Recipe Yaml */
@@ -2969,6 +2977,8 @@ export interface components {
             readonly screenshot_prefix?: string | null;
             /** State */
             readonly state?: string | null;
+            /** Palette Tar B64 */
+            readonly palette_tar_b64?: string | null;
         };
         /**
          * JobOut
