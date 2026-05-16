@@ -176,6 +176,20 @@ they read through to Google Drive.
   plugin-derived registry. Aggregator: `apps/ingest/cost_aggregator.py`; pricing
   table: `apps/ingest/pricing.py` (refresh ~twice/year). Sidechain attribution
   gotcha: `sidechain-attribution.md`.
+- **Workspace Activity view** (page at `/w/<slug>/activity`, also
+  `/ace activity` in Slack): cross-surface "what's running across the
+  workspace right now?" view. One row per opp's most recent run,
+  source-attributed via active Session lookup. **Observable-facts-only
+  discipline** — no "is running" / "is alive" labels anywhere; only
+  "last update Nm ago" + `ace-web` / `Drive only` source labels +
+  recency-based opacity fade. Backend aggregator at
+  `apps/activity/workspace_activity.py`; consumes
+  `apps.opps.api.list_opp_cards`. Endpoint:
+  `GET /api/w/<slug>/activity/runs`. Slack uses async `response_url`
+  (Drive read can be 5-15s cold). Spec:
+  `docs/specs/2026-05-16-workspace-activity-view-design.md`. Runbook:
+  `docs/architecture/workspace-activity.md`. Phase view is the canonical
+  drill-down — row clicks go to `?run_id=<id>`, not the Workbench.
 - **Per-session Structure view** (page at `/w/<workspace>/chat/<slug>/structure`):
   hierarchical session tree (phase → skill → tool, with subagent recursion +
   parallel-group clusters). Computed fresh per request from
