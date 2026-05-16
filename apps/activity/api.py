@@ -9,7 +9,7 @@ from ninja import Path, Router
 from apps.api.auth import session_auth
 from apps.api.deps import resolve_workspace_for_member
 
-from .schemas import ActivityFeedOut
+from .schemas import ActivityFeedOut, WorkspaceActivityOut
 
 router = Router(auth=session_auth, tags=["activity"])
 
@@ -98,4 +98,55 @@ def activity_feed(
         limit=limit,
     )
     payload = ActivityFeedOut.model_validate(result).model_dump(mode="json")
+    return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# GET /w/{workspace_slug}/activity/runs — workspace "what's running" view
+# ---------------------------------------------------------------------------
+
+
+def get_workspace_activity(
+    workspace,
+    include_completed: bool = True,
+    limit: int = 20,
+) -> dict:
+    """Aggregate one row per opp's most recent run, with source hints.
+
+    Module-level so contract tests / Slack handlers can monkeypatch."""
+    import datetime as dt
+
+    from apps.activity.workspace_activity import list_workspace_activity
+
+    rows = list_workspace_activity(
+        workspace, include_completed=include_completed, limit=limit,
+    )
+    return {
+        "rows": [r.to_dict() for r in rows],
+        "server_now": dt.datetime.now(dt.UTC).isoformat().replace(
+            "+00:00", "Z"
+        ),
+    }
+
+
+@router.get(
+    "/runs",
+    response={200: WorkspaceActivityOut},
+    summary="Workspace 'what's running' view",
+)
+def workspace_activity(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    include_completed: bool = True,
+    limit: int = 20,
+) -> HttpResponse:
+    from django.http import JsonResponse
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    result = get_workspace_activity(
+        workspace=workspace,
+        include_completed=include_completed,
+        limit=limit,
+    )
+    payload = WorkspaceActivityOut.model_validate(result).model_dump(mode="json")
     return JsonResponse(payload)
