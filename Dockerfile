@@ -158,6 +158,17 @@ COPY . .
 # Install the project itself (fast — deps already installed).
 RUN uv pip install --system --no-deps -e .
 
+# Install Node deps for the video-production renderer. The render chain
+# (hydrate + render + build-clip-explorer) shells out to `npm run …`
+# which imports yaml/zod/remotion/etc. via tsx. Without node_modules
+# every render fails immediately with ERR_MODULE_NOT_FOUND.
+#
+# Heavy install (~hundreds of MB; Remotion bundles Chromium/Node bits)
+# but it's a one-time cost cached by Docker layer caching on
+# package.json + package-lock.json changes.
+RUN cd /app/video-production/connect-videos \
+    && npm install --no-audit --no-fund
+
 # Run collectstatic at build time so the image ships with the static
 # manifest. Use placeholders for env vars that settings.base would otherwise
 # require — the values don't affect collectstatic output.
