@@ -206,8 +206,10 @@ def test_track_block_action_creates_slack_run_thread(setup):
     ).exists()
 
 
-def test_render_row_lifecycle_complete_shows_check():
-    """A row with lifecycle_status='complete' renders a check, no phase."""
+def test_render_row_with_no_phase_omits_state_bit():
+    """Observable-facts-only: when current_phase is None we don't know
+    if the run completed or crashed. Don't render a state token; just
+    show source + recency."""
     import datetime as dt
 
     from apps.slack.verbs_activity import _render_row_line
@@ -218,15 +220,19 @@ def test_render_row_lifecycle_complete_shows_check():
             "run_id": "r1", "last_activity_at": "2026-05-15T18:30:00Z",
             "current_phase_name": None, "current_phase_display": None,
             "current_step_name": None, "current_step_display": None,
-            "lifecycle_status": "complete",
+            "lifecycle_status": "no-active-phase",
             "source_hint": "drive-only", "source_actor_email": None,
             "phase_url": "https://example/done",
         },
         now=now, base_url="https://example",
     )
-    assert ":white_check_mark:" in line or "Complete" in line.lower()
-    assert "Phase:" not in line
-    assert line.startswith("•")
+    # No state claims at all.
+    assert "complete" not in line.lower()
+    assert "running" not in line.lower()
+    assert "failed" not in line.lower()
+    # But we still show source + recency.
+    assert "Drive only" in line
+    assert " ago" in line
 
 
 def test_render_row_observable_facts_only():

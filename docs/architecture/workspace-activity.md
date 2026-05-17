@@ -48,6 +48,7 @@ The view enforces this discipline:
 | `is_alive=true` | (don't carry that field at all) |
 | `running` / `paused` status badges | recency-based opacity fade |
 | "Laptop" / "Cloud" hard claim | `ace-web` (Session found) / `Drive only` (no Session) |
+| "✓ complete" inferred from `current_phase=None` | nothing — `current_phase=None` could mean finished, crashed, or between phases. Don't claim. |
 
 A `drive-only` row could be a laptop, a stranded session, an
 `ace@dimagi-ai.com` automation run, or two cloud tasks racing. We
