@@ -31,20 +31,20 @@ export function StructurePhaseRow({ phase, defaultOpen = false }: Props) {
           disabled={!expandable}
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="flex-1 flex items-center gap-1 pl-2 text-left disabled:opacity-50"
+          className="flex-1 min-w-0 flex items-center gap-1 pl-2 text-left disabled:opacity-50"
         >
           {expandable ? (
-            <ChevronRight className={`h-4 w-4 transition-transform ${open ? "rotate-90" : ""}`} />
+            <ChevronRight className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
           ) : (
-            <span className="w-4" />
+            <span className="w-4 shrink-0" />
           )}
           <StatusIcon status={phase.status} />
           {isLifecyclePhase ? (
-            <span className="text-xs font-semibold text-muted-foreground tabular-nums">
+            <span className="text-xs font-semibold text-muted-foreground tabular-nums shrink-0">
               Phase {phase.ordinal}:
             </span>
           ) : null}
-          <span className="font-medium">{phase.display}</span>
+          <span className="font-medium truncate">{phase.display}</span>
         </button>
         <span className="text-xs text-muted-foreground tabular-nums w-20 text-right">
           {formatDuration(phase.wall_time_seconds)}

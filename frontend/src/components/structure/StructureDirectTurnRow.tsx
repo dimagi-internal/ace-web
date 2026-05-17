@@ -37,7 +37,7 @@ export function StructureDirectTurnRow({ node, depth }: Props) {
           disabled={!expandable}
           onClick={() => setOpen(!open)}
           aria-expanded={expandable ? open : undefined}
-          className="flex-1 flex items-center gap-2 text-left disabled:cursor-default"
+          className="flex-1 min-w-0 flex items-center gap-2 text-left disabled:cursor-default"
           title={node.text_preview ?? undefined}
         >
           {expandable ? (
