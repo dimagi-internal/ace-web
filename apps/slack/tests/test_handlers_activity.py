@@ -138,10 +138,10 @@ def test_activity_all_flag_includes_completed(setup):
 
 
 @pytest.mark.django_db
-def test_activity_rows_are_compact_one_section_per_row(setup):
-    """Per the post-launch UX pass: one section per row, no per-row
-    actions block, no dividers, no `unknown` lifecycle noise. The
-    Track action moved to `/ace track <slug>`."""
+def test_activity_renders_as_single_section_bulleted_list(setup):
+    """Post-launch v2 UX pass: ditch per-row sections + Open buttons.
+    The opp title is already a hyperlink, so just emit a markdown
+    bulleted list inside one section block."""
     from apps.slack.handlers import dispatch_slash_command
     with patch("apps.slack.verbs_activity.get_workspace_activity") as mock_get:
         mock_get.return_value = _FAKE_ACTIVITY
@@ -150,23 +150,28 @@ def test_activity_rows_are_compact_one_section_per_row(setup):
             channel_id="C1", trigger_id="", response_url="",
         )
     blocks = resp.get("blocks") or []
-    # Count section blocks vs everything else.
     section_blocks = [b for b in blocks if b.get("type") == "section"]
     action_blocks = [b for b in blocks if b.get("type") == "actions"]
     divider_blocks = [b for b in blocks if b.get("type") == "divider"]
-    # One section per row, no separate actions blocks, no dividers.
-    assert len(section_blocks) == len(_FAKE_ACTIVITY["rows"])
+    # Exactly ONE section block (the body — bulleted list).
+    assert len(section_blocks) == 1
     assert action_blocks == []
     assert divider_blocks == []
-    # Each section has an Open ↗ accessory.
-    for s in section_blocks:
-        assert s["accessory"]["type"] == "button"
-        assert s["accessory"]["text"]["text"] == "Open ↗"
-    body = repr(blocks)
-    # Don't render 'unknown' as a state label.
+    # No Open button (no accessory).
+    assert "accessory" not in section_blocks[0]
+    body = section_blocks[0]["text"]["text"]
+    # All rows present, each as a single line.
+    assert "Rural TB Screening" in body
+    assert "Leep Paint Collection" in body
+    # Bullet markers — one per row.
+    assert body.count("\n•") + (1 if body.startswith("•") else 0) == len(
+        _FAKE_ACTIVITY["rows"]
+    )
+    # No `unknown` noise.
     assert "`unknown`" not in body
-    # The compact footer still mentions /ace track for the missing button.
+    # Footer mentions both flags.
     assert "/ace track" in repr(blocks[-1])
+    assert "/ace activity" in repr(blocks[-1])
 
 
 @pytest.mark.django_db
@@ -205,9 +210,9 @@ def test_render_row_lifecycle_complete_shows_check():
     """A row with lifecycle_status='complete' renders a check, no phase."""
     import datetime as dt
 
-    from apps.slack.verbs_activity import _render_row
+    from apps.slack.verbs_activity import _render_row_line
     now = dt.datetime(2026, 5, 15, 18, 31, tzinfo=dt.UTC)
-    blocks = _render_row(
+    line = _render_row_line(
         {
             "opp_slug": "done", "opp_display_name": "Done Opp",
             "run_id": "r1", "last_activity_at": "2026-05-15T18:30:00Z",
@@ -219,18 +224,18 @@ def test_render_row_lifecycle_complete_shows_check():
         },
         now=now, base_url="https://example",
     )
-    body = repr(blocks)
-    assert ":white_check_mark:" in body or "Complete" in body
-    assert "Phase:" not in body
+    assert ":white_check_mark:" in line or "Complete" in line.lower()
+    assert "Phase:" not in line
+    assert line.startswith("•")
 
 
 def test_render_row_observable_facts_only():
     """Even for in-progress rows, we never claim 'running' / 'alive'."""
     import datetime as dt
 
-    from apps.slack.verbs_activity import _render_row
+    from apps.slack.verbs_activity import _render_row_line
     now = dt.datetime(2026, 5, 15, 18, 31, tzinfo=dt.UTC)
-    blocks = _render_row(
+    line = _render_row_line(
         {
             "opp_slug": "x", "opp_display_name": "X",
             "run_id": "r", "last_activity_at": "2026-05-15T18:30:00Z",
@@ -243,7 +248,7 @@ def test_render_row_observable_facts_only():
         },
         now=now, base_url="https://example",
     )
-    body = repr(blocks).lower()
+    body = line.lower()
     # Recency is rendered as 'Nm ago' (compact form, post-launch UX pass).
     # The point of the test is the absence of liveness claims, not a
     # particular phrasing.

@@ -90,20 +90,14 @@ def _render_activity_blocks(
     *, rows: list[dict], workspace_slug: str,
     server_now: str | None, include_completed: bool,
 ) -> list[dict]:
-    """Build a compact Block Kit message body.
+    """Build a single section block holding the whole table as mrkdwn
+    bullets. One line per row, opp name is a hyperlink (no Open button
+    needed). Drastically more compact than per-row section blocks.
 
-    Layout (one section per row, no dividers, no per-row action block —
-    Open ↗ is the section accessory; Track is the slash command
-    `/ace track <slug>` separately):
-
-      [Header context]
-      *Title* · `run-id` · state                       [Open ↗]
-        _source · Nm ago_
-
-      *Title* · `run-id` · state                       [Open ↗]
-        _source · Nm ago_
-      …
-      [Footer context]
+    Layout:
+      [Context header]
+      [Section: bulleted list, one line per row]
+      [Context footer]
     """
     base_url = getattr(
         settings, "ACE_PUBLIC_BASE_URL",
@@ -115,13 +109,9 @@ def _render_activity_blocks(
         f"{active_count} active"
         + (f" / {len(rows)} total" if include_completed and active_count != len(rows) else "")
     )
-    blocks: list[dict] = [
-        {"type": "context", "elements": [{"type": "mrkdwn", "text": header_text}]},
-    ]
-
     now_dt = _parse_iso(server_now) if server_now else dt.datetime.now(dt.UTC)
-    for r in rows:
-        blocks.append(_render_row(r, now=now_dt, base_url=base_url))
+    lines = [_render_row_line(r, now=now_dt, base_url=base_url) for r in rows]
+    body = "\n".join(lines)
 
     footer = (
         f"_Sorted by recency · `/ace activity{' --all' if not include_completed else ''}` "
@@ -129,15 +119,24 @@ def _render_activity_blocks(
         f"{'recent completed' if not include_completed else 'runs'} · "
         f"`/ace track <slug>` to mirror a run in this channel_"
     )
-    blocks.append({"type": "context",
-                   "elements": [{"type": "mrkdwn", "text": footer}]})
-    return blocks
+    return [
+        {"type": "context",
+         "elements": [{"type": "mrkdwn", "text": header_text}]},
+        {"type": "section",
+         "text": {"type": "mrkdwn", "text": body}},
+        {"type": "context",
+         "elements": [{"type": "mrkdwn", "text": footer}]},
+    ]
 
 
-def _render_row(row: dict, *, now: dt.datetime, base_url: str) -> dict:
-    """One section block per row. Title line carries the state inline
-    (phase / lifecycle); subline carries source + recency. No dividers
-    between rows — Slack's section spacing is enough."""
+def _render_row_line(row: dict, *, now: dt.datetime, base_url: str) -> str:
+    """One markdown line per row. No per-row Block Kit — pure mrkdwn.
+
+    Format:
+      • *<title link>* · `run-id` · <state> · <source · Nm ago>
+
+    The opp name itself is the hyperlink, so no Open button needed.
+    """
     opp_slug = row.get("opp_slug") or "?"
     display_name = row.get("opp_display_name") or opp_slug
     run_id = row.get("run_id") or ""
@@ -151,45 +150,28 @@ def _render_row(row: dict, *, now: dt.datetime, base_url: str) -> dict:
     source_actor = row.get("source_actor_email")
     phase_url = row.get("phase_url") or f"{base_url}/w/?/opps/{opp_slug}"
 
-    # State on the title line — phase if running, lifecycle if meaningful,
-    # nothing if "unknown" (don't show noise).
+    # State token:
     if phase:
-        state_bit = phase
+        state_bit = f"`{phase}`"
     elif lifecycle == "complete":
         state_bit = ":white_check_mark: complete"
     elif lifecycle == "qa-failed":
         state_bit = ":warning: qa-failed"
-    elif lifecycle in ("", "unknown"):
-        state_bit = ""
     else:
-        state_bit = lifecycle
-
-    title_line = f"*<{phase_url}|{display_name}>* · `{run_id}`"
-    if state_bit:
-        title_line += f" · {state_bit}"
+        state_bit = ""
 
     source_label = (
         f"ace-web · {source_actor}" if source_hint == "ace-web" and source_actor
         else "ace-web" if source_hint == "ace-web"
         else "Drive only"
     )
-    recency_line = (
-        f"_{source_label} · {delta}_" if delta else f"_{source_label}_"
-    )
+    recency = f"_{source_label} · {delta}_" if delta else f"_{source_label}_"
 
-    return {
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": f"{title_line}\n{recency_line}",
-        },
-        "accessory": {
-            "type": "button",
-            "text": {"type": "plain_text", "text": "Open ↗"},
-            "url": phase_url,
-            "action_id": f"open_phase:{opp_slug}:{run_id}",
-        },
-    }
+    parts = [f"*<{phase_url}|{display_name}>*", f"`{run_id}`"]
+    if state_bit:
+        parts.append(state_bit)
+    parts.append(recency)
+    return "• " + " · ".join(parts)
 
 
 def _parse_iso(value: str | None) -> dt.datetime | None:

@@ -142,20 +142,19 @@ def list_workspace_activity(
             # No runs yet — skip. Empty-state opps appear in /ace list opps,
             # not in Activity.
             continue
-        # OppCard's status is "ok"/"no-state"/"error"; lifecycle_status
-        # is what we'd find inside run_state.yaml. The card dict
-        # doesn't propagate the latter, so we read it from list_opp_runs
-        # only when we need disambiguation. For v1, treat current_phase
-        # is None AND status==ok as "complete" (a reasonable proxy).
+        # current_phase is set only for in-progress runs; for completed
+        # runs the plugin clears it. So:
+        #   has current_phase   → in_progress
+        #   no current_phase    → the latest run finished (complete is
+        #                         the practical default — we can't
+        #                         distinguish qa-failed without reading
+        #                         run_state.yaml per opp, which is too
+        #                         expensive for the list view)
+        # We already filtered out opps with no runs at all above, so a
+        # missing current_phase HERE always means a finished run.
         current_phase = c.get("current_phase") or None
         current_step = c.get("current_skill") or c.get("current_step")
-        card_status = c.get("status") or ""
-
-        lifecycle = (
-            "in_progress" if current_phase
-            else "complete" if card_status == "ok"
-            else "unknown"
-        )
+        lifecycle = "in_progress" if current_phase else "complete"
 
         # Recency filter.
         last_activity_iso = c.get("last_activity_at") or None
