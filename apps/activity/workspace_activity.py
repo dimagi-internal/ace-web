@@ -142,27 +142,28 @@ def list_workspace_activity(
             # No runs yet — skip. Empty-state opps appear in /ace list opps,
             # not in Activity.
             continue
-        # current_phase is set only for in-progress runs; for completed
-        # runs the plugin clears it. So:
-        #   has current_phase   → in_progress
-        #   no current_phase    → the latest run finished (complete is
-        #                         the practical default — we can't
-        #                         distinguish qa-failed without reading
-        #                         run_state.yaml per opp, which is too
-        #                         expensive for the list view)
-        # We already filtered out opps with no runs at all above, so a
-        # missing current_phase HERE always means a finished run.
+        # Observable facts only — never claim a lifecycle we can't prove.
+        # `current_phase` is only set for runs with an in-progress phase.
+        # When it's None we DON'T know whether the run completed cleanly,
+        # crashed, or is between phases. Reading run_state.yaml to find
+        # out would cost an extra Drive call per opp; we defer that to
+        # the per-opp detail view. For the list, "in_progress" vs
+        # "no in-progress phase" is all we honestly know.
         current_phase = c.get("current_phase") or None
         current_step = c.get("current_skill") or c.get("current_step")
-        lifecycle = "in_progress" if current_phase else "complete"
+        lifecycle = "in_progress" if current_phase else "no-active-phase"
 
-        # Recency filter.
+        # Filter / recency rules. Rows with an in-progress phase always
+        # appear (we want to see what's actively running). Rows without
+        # a current_phase are kept only when recently touched — and
+        # dropped entirely when the caller asks for active-only.
         last_activity_iso = c.get("last_activity_at") or None
         last_activity_dt = _parse_iso(last_activity_iso)
-        if lifecycle == "complete" and not include_completed:
+        has_in_progress_phase = lifecycle == "in_progress"
+        if not has_in_progress_phase and not include_completed:
             continue
         if (
-            lifecycle == "complete"
+            not has_in_progress_phase
             and last_activity_dt is not None
             and (now - last_activity_dt) > _RECENT_WINDOW
         ):

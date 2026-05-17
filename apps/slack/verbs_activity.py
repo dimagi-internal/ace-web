@@ -145,20 +145,15 @@ def _render_row_line(row: dict, *, now: dt.datetime, base_url: str) -> str:
     delta = _human_delta(now - last_activity_dt) if last_activity_dt else None
 
     phase = row.get("current_phase_display") or row.get("current_phase_name")
-    lifecycle = row.get("lifecycle_status") or ""
     source_hint = row.get("source_hint") or "drive-only"
     source_actor = row.get("source_actor_email")
     phase_url = row.get("phase_url") or f"{base_url}/w/?/opps/{opp_slug}"
 
-    # State token:
-    if phase:
-        state_bit = f"`{phase}`"
-    elif lifecycle == "complete":
-        state_bit = ":white_check_mark: complete"
-    elif lifecycle == "qa-failed":
-        state_bit = ":warning: qa-failed"
-    else:
-        state_bit = ""
+    # Observable-facts-only state token. We show a phase ONLY when one is
+    # actually in progress. When current_phase is None we honestly don't
+    # know if the run completed cleanly or crashed — say nothing rather
+    # than guess.
+    state_bit = f"`{phase}`" if phase else ""
 
     source_label = (
         f"ace-web · {source_actor}" if source_hint == "ace-web" and source_actor
