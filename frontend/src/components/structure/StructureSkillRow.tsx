@@ -36,17 +36,19 @@ export function StructureSkillRow({ node, depth }: Props) {
           disabled={!expandable}
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="flex-1 flex items-center gap-1 text-left disabled:opacity-50"
+          className="flex-1 min-w-0 flex items-center gap-1 text-left disabled:opacity-50"
         >
           {expandable ? (
-            <ChevronRight className={`h-4 w-4 transition-transform ${open ? "rotate-90" : ""}`} />
+            <ChevronRight className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
           ) : (
-            <span className="w-4" />
+            <span className="w-4 shrink-0" />
           )}
           <StatusIcon status={node.status} />
-          <span className={node.is_subagent ? "italic" : "font-medium"}>{node.display}</span>
+          <span className={`${node.is_subagent ? "italic" : "font-medium"} truncate`}>
+            {node.display}
+          </span>
           {node.is_subagent ? (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground shrink-0">
               subagent · {node.children.length} step{node.children.length === 1 ? "" : "s"}
             </span>
           ) : null}
