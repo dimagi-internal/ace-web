@@ -1607,6 +1607,39 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/auth/pat-to-session": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Trade a Bearer PAT for a Django session cookie
+         * @description Set a session cookie for the Bearer-authenticated caller.
+         *
+         *     Browsers can't set custom headers on WebSocket handshakes, so
+         *     PAT-only clients can't connect to Channels routes (the ASGI auth
+         *     middleware only sees the cookie jar from a browser-driven WS). This
+         *     endpoint bridges that gap: a scripted client mints a PAT, calls
+         *     /pat-to-session once with the Bearer header, and the response sets
+         *     the same session cookie a regular OAuth login would have set. From
+         *     that point the client can hand the cookie to a browser context
+         *     (Playwright, etc.) and full session-based auth — including
+         *     WebSockets — Just Works.
+         *
+         *     The Bearer-token side of ``DjangoSessionAuth`` resolves the user
+         *     before this view runs, so any valid PAT-bearer caller succeeds.
+         */
+        readonly post: operations["apps_auth_api_pat_to_session"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/auth/e2e-login": {
         readonly parameters: {
             readonly query?: never;
@@ -6110,6 +6143,24 @@ export interface operations {
         };
     };
     readonly apps_auth_api_logout: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_auth_api_pat_to_session: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
