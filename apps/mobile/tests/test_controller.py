@@ -567,6 +567,126 @@ def test_install_apk_when_not_running_raises(controller_factory):
         c.install_apk("https://example.com/cc.apk")
 
 
+# ── Operations: clear_app_data ──────────────────────────────────────
+
+
+def test_clear_app_data_success(controller_factory):
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="Success\n")
+    result = c.clear_app_data()
+    assert result.package == "org.commcare.dalvik"
+    assert result.cleared is True
+
+
+def test_clear_app_data_reports_false_when_pm_clear_failed(controller_factory):
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    # ``pm clear`` returns exit 0 but stdout is ``Failed`` when the package
+    # isn't installed — mirror that and assert we surface cleared=False.
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="Failed\n")
+    result = c.clear_app_data()
+    assert result.cleared is False
+
+
+def test_clear_app_data_when_not_running_raises(controller_factory):
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("stopped")
+    )
+    with pytest.raises(MobileError):
+        c.clear_app_data()
+
+
+def test_clear_app_data_shell_quotes_package(controller_factory, monkeypatch):
+    """Defense in depth — even though the API schema constrains
+    ``package`` to a safe grammar, the controller must shlex-quote
+    the package name before dropping it into ``adb shell pm clear ...``.
+    """
+    captured: dict[str, list[str]] = {}
+
+    def fake_run_command(client, instance_id, *, commands, timeout_seconds, **_):
+        captured["commands"] = commands
+        from apps.mobile.ssm import CommandResult
+
+        return CommandResult(status="Success", exit_code=0, stdout="Success\n", stderr="")
+
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", fake_run_command)
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    c.clear_app_data(package="com.example.app")
+
+    joined = "\n".join(captured["commands"])
+    # Package name should appear inside the pm-clear invocation.
+    assert "pm clear com.example.app" in joined
+
+
+# ── Operations: repair_driver ───────────────────────────────────────
+
+
+def test_repair_driver_lists_packages_actually_removed(controller_factory):
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    # Both packages were installed and successfully uninstalled.
+    _queue_ssm_command(
+        controller_factory.ssm_stub,
+        stdout="REMOVED=dev.mobile.maestro\nREMOVED=dev.mobile.maestro.test\n",
+    )
+    result = c.repair_driver()
+    assert result.uninstalled_packages == [
+        "dev.mobile.maestro",
+        "dev.mobile.maestro.test",
+    ]
+
+
+def test_repair_driver_returns_empty_when_neither_was_installed(controller_factory):
+    """If neither Maestro package is installed (clean device), the
+    server-side ``case`` matcher emits no REMOVED lines. Should
+    surface as an empty list, not an error — repair is idempotent.
+    """
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(controller_factory.ssm_stub, stdout="")
+    result = c.repair_driver()
+    assert result.uninstalled_packages == []
+
+
+def test_repair_driver_uses_user_0_scoped_uninstall(controller_factory, monkeypatch):
+    """Pin the exact ``pm uninstall -k --user 0`` form — this is the
+    clear-wedged-instrumentation incantation; without ``--user 0`` the
+    gRPC instrumentation state can survive (the bug ebf4560 fixed locally).
+    """
+    captured: dict[str, list[str]] = {}
+
+    def fake_run_command(client, instance_id, *, commands, timeout_seconds, **_):
+        captured["commands"] = commands
+        from apps.mobile.ssm import CommandResult
+
+        return CommandResult(status="Success", exit_code=0, stdout="", stderr="")
+
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", fake_run_command)
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    c.repair_driver()
+
+    joined = "\n".join(captured["commands"])
+    assert "pm uninstall -k --user 0" in joined
+    assert "dev.mobile.maestro" in joined
+    assert "dev.mobile.maestro.test" in joined
+
+
 # ── Operations: run_recipe ──────────────────────────────────────────
 
 

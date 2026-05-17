@@ -209,6 +209,31 @@ class SnapshotResult:
 
 
 @dataclass
+class ClearAppDataResult:
+    """Outcome of ``pm clear`` on a target package.
+
+    ``cleared=True`` iff the in-VM ``adb shell pm clear`` reported
+    ``Success``. ``False`` means the package was not installed (clear
+    is a no-op) or the command emitted no recognizable marker.
+    """
+
+    package: str
+    cleared: bool
+
+
+@dataclass
+class RepairDriverResult:
+    """Outcome of the Maestro instrumentation repair.
+
+    ``uninstalled_packages`` lists which of the maestro/maestro.test
+    packages were actually present + removed. Idempotent: if neither
+    was installed the call is a no-op and returns an empty list.
+    """
+
+    uninstalled_packages: list[str]
+
+
+@dataclass
 class State:
     """One named state baked into the AMI (1:1 with a CommCare APK version)."""
 
@@ -490,6 +515,91 @@ class EmulatorController:
         package = _grep_kv(result.stdout, "PACKAGE") or ""
         version = _grep_kv(result.stdout, "VERSION") or ""
         return InstallResult(package_name=package, version=version)
+
+    def clear_app_data(
+        self, package: str = "org.commcare.dalvik"
+    ) -> ClearAppDataResult:
+        """Wipe an app's per-app data dir via ``adb shell pm clear``.
+
+        Mirrors the local-side ``AvdBackend.clearConnectAppData`` so the
+        cloud heal flow can do "wipe + re-register" before each dispatch,
+        matching the post-2026-05-14 local pattern that dropped the
+        snapshot-load fast-path.
+
+        Does NOT uninstall the APK — only clears ``/data/data/<pkg>/``.
+        Idempotent: clearing an app with no prior data still reports
+        ``Success``. Clearing a not-installed package emits ``Failed``
+        but isn't an error class — surfaces as ``cleared=False``.
+        """
+        self._assert_running()
+        # Package name is constrained by the API schema's
+        # ``ClearAppDataIn`` validator so by the time we get here
+        # ``package`` is safe to drop in a shell-quoted slot. We
+        # ``shlex.quote`` anyway as defense in depth — the controller
+        # is a callable boundary too, not just the HTTP API.
+        commands = [
+            "set -eu",
+            f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+            f"{_ADB} shell pm clear {shlex.quote(package)}",
+        ]
+        result = ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=commands,
+            timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
+            return_on_script_failure=True,
+        )
+        # ``pm clear`` writes either ``Success\n`` or ``Failed\n`` to stdout;
+        # the command's exit code is 0 in both cases (it only non-zeroes on
+        # malformed args). Match the local-side semantics where ``Success``
+        # is the boolean we surface.
+        cleared = "Success" in result.stdout
+        return ClearAppDataResult(package=package, cleared=cleared)
+
+    def repair_driver(self) -> RepairDriverResult:
+        """Clear wedged Maestro gRPC instrumentation state.
+
+        Runs ``pm uninstall -k --user 0 dev.mobile.maestro{,.test}`` —
+        the explicit ``--user 0`` form clears wedged instrumentation
+        that a plain ``adb uninstall`` doesn't fully reach. Live-debugged
+        2026-05-14 in turmeric/20260513-2243 retry #2; the local-side
+        fix lives in ``MaestroBackend.repairDriver`` (commit ebf4560).
+
+        Best-effort: package not installed is treated as "nothing to
+        repair" (not an error). Surface which packages were actually
+        present + removed so callers know whether the wedge cleared.
+        """
+        self._assert_running()
+        commands = [
+            "set -eu",
+            f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+            # ``pm uninstall -k --user 0`` returns:
+            #   ``Success``   — package was installed, now uninstalled
+            #   ``Failure ... Unknown package`` — wasn't installed (ok)
+            # We emit a per-package marker so the Python side can
+            # decode which subset cleared without parsing every variant.
+            f"for pkg in dev.mobile.maestro dev.mobile.maestro.test; do "
+            "  result=$("
+            f"    {_ADB} shell pm uninstall -k --user 0 \"$pkg\" 2>&1 || true"
+            "  );"
+            "  case \"$result\" in"
+            "    *Success*) echo \"REMOVED=$pkg\" ;;"
+            "  esac;"
+            "done",
+        ]
+        result = ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=commands,
+            timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
+            return_on_script_failure=True,
+        )
+        uninstalled = [
+            line.removeprefix("REMOVED=").strip()
+            for line in result.stdout.splitlines()
+            if line.startswith("REMOVED=")
+        ]
+        return RepairDriverResult(uninstalled_packages=uninstalled)
 
     def run_recipe(
         self,
