@@ -212,6 +212,51 @@ def list_media_library_audio(
     ])
 
 
+@router.get(
+    "/library/audio/{hash}/stream",
+    summary="Stream the audio clip bytes (Range-aware)",
+)
+def stream_library_audio(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    hash: Annotated[str, PathParam()],
+) -> HttpResponse | StreamingHttpResponse:
+    """Serve the raw MP3 bytes for one library audio entry.
+
+    Lazy-caches into the same on-disk audio cache the renderer uses
+    (``<videos_root>/assets/audio/<hash>.mp3``) so repeat playback hits
+    local disk. First playback fetches via the workspace's Drive SA.
+    """
+    import re as _re
+    if not _re.fullmatch(r"[a-f0-9]{16}", hash):
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+
+    from apps.videos.models import AudioLibraryEntry
+    try:
+        entry = AudioLibraryEntry.objects.get(workspace=workspace, hash=hash)
+    except AudioLibraryEntry.DoesNotExist:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from None
+
+    cache_path = service._root() / "assets" / "audio" / f"{hash}.mp3"
+    if not cache_path.is_file():
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        client = service.drive.get_drive_client()
+        try:
+            content = client.get_binary(entry.drive_id)
+        except Exception as e:  # pragma: no cover — surfaces as 502 to caller
+            raise ProblemError(
+                502, "Drive fetch failed", detail=str(e)[:200],
+            ) from e
+        cache_path.write_bytes(content)
+
+    response = FileResponse(cache_path.open("rb"), as_attachment=False)
+    response["Content-Type"] = "audio/mpeg"
+    response["Cache-Control"] = "private, max-age=3600"
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Programs
 # ---------------------------------------------------------------------------

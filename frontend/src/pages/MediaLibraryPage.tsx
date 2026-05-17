@@ -94,7 +94,9 @@ export default function MediaLibraryPage() {
         </div>
       )}
 
-      {tab === "video" ? renderVideo(video) : renderAudio(audio)}
+      {tab === "video"
+        ? renderVideo(video)
+        : renderAudio(audio, workspaceSlug ?? "")}
     </div>
   );
 }
@@ -161,7 +163,7 @@ function renderVideo(data: MediaLibraryVideoOut | null) {
   );
 }
 
-function renderAudio(data: MediaLibraryAudioOut | null) {
+function renderAudio(data: MediaLibraryAudioOut | null, workspaceSlug: string) {
   if (data === null) return <Skeleton className="h-40 w-full" />;
   if (data.items.length === 0) {
     return (
@@ -171,6 +173,11 @@ function renderAudio(data: MediaLibraryAudioOut | null) {
       </div>
     );
   }
+  // The library streaming endpoint is workspace-scoped. We round-trip
+  // through Django so playback is Range-aware + private (Drive's preview
+  // URL doesn't stream audio, it serves an HTML viewer that prompts for
+  // download).
+  const streamBase = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/w/${workspaceSlug}/videos/library/audio`;
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       {data.items.map((item) => (
@@ -191,6 +198,14 @@ function renderAudio(data: MediaLibraryAudioOut | null) {
           <p className="mb-2 text-sm" title={item.text ?? ""}>
             {truncate(item.text)}
           </p>
+          {item.status !== "missing-media" && (
+            <audio
+              controls
+              preload="none"
+              className="mb-2 h-9 w-full"
+              src={`${streamBase}/${item.hash}/stream`}
+            />
+          )}
           <div className="mb-2 flex flex-wrap gap-1 text-xs text-muted-foreground">
             {item.voice_id && (
               <span className="rounded-full bg-muted px-2 py-0.5">
