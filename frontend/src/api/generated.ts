@@ -496,6 +496,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/activity/runs": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Workspace 'what's running' view */
+        readonly get: operations["apps_activity_api_workspace_activity"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/videos/templates": {
         readonly parameters: {
             readonly query?: never;
@@ -1539,6 +1556,39 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/auth/pat-to-session": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Trade a Bearer PAT for a Django session cookie
+         * @description Set a session cookie for the Bearer-authenticated caller.
+         *
+         *     Browsers can't set custom headers on WebSocket handshakes, so
+         *     PAT-only clients can't connect to Channels routes (the ASGI auth
+         *     middleware only sees the cookie jar from a browser-driven WS). This
+         *     endpoint bridges that gap: a scripted client mints a PAT, calls
+         *     /pat-to-session once with the Bearer header, and the response sets
+         *     the same session cookie a regular OAuth login would have set. From
+         *     that point the client can hand the cookie to a browser context
+         *     (Playwright, etc.) and full session-based auth — including
+         *     WebSockets — Just Works.
+         *
+         *     The Bearer-token side of ``DjangoSessionAuth`` resolves the user
+         *     before this view runs, so any valid PAT-bearer caller succeeds.
+         */
+        readonly post: operations["apps_auth_api_pat_to_session"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/auth/e2e-login": {
         readonly parameters: {
             readonly query?: never;
@@ -2098,6 +2148,56 @@ export interface components {
             readonly items: readonly components["schemas"]["ActivityEntryOut"][];
             /** Total */
             readonly total: number;
+        };
+        /**
+         * WorkspaceActivityOut
+         * @description Response wrapper for GET /api/w/{slug}/activity/runs.
+         */
+        readonly WorkspaceActivityOut: {
+            /** Rows */
+            readonly rows: readonly components["schemas"]["WorkspaceActivityRowOut"][];
+            /** Server Now */
+            readonly server_now: string;
+        };
+        /**
+         * WorkspaceActivityRowOut
+         * @description One row in the 'what's running across the workspace' view.
+         *
+         *     All fields are observable facts (Drive content, ORM rows, derived
+         *     URLs). NO inferred liveness claims — the caller renders timestamps
+         *     and lets the user decide what's actually alive. See the design doc
+         *     `docs/specs/2026-05-16-workspace-activity-view-design.md`.
+         */
+        readonly WorkspaceActivityRowOut: {
+            /** Opp Slug */
+            readonly opp_slug: string;
+            /** Opp Display Name */
+            readonly opp_display_name: string;
+            /** Run Id */
+            readonly run_id: string;
+            /** Last Activity At */
+            readonly last_activity_at?: string | null;
+            /** Current Phase Name */
+            readonly current_phase_name?: string | null;
+            /** Current Phase Display */
+            readonly current_phase_display?: string | null;
+            /** Current Step Name */
+            readonly current_step_name?: string | null;
+            /** Current Step Display */
+            readonly current_step_display?: string | null;
+            /** Lifecycle Status */
+            readonly lifecycle_status: string;
+            /** Last Actor */
+            readonly last_actor?: string | null;
+            /**
+             * Source Hint
+             * @enum {string}
+             */
+            readonly source_hint: "ace-web" | "drive-only";
+            /** Source Actor Email */
+            readonly source_actor_email?: string | null;
+            /** Phase Url */
+            readonly phase_url: string;
         };
         /** TemplateMetaOut */
         readonly TemplateMetaOut: {
@@ -4414,6 +4514,31 @@ export interface operations {
             };
         };
     };
+    readonly apps_activity_api_workspace_activity: {
+        readonly parameters: {
+            readonly query?: {
+                readonly include_completed?: boolean;
+                readonly limit?: number;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkspaceActivityOut"];
+                };
+            };
+        };
+    };
     readonly apps_videos_api_list_video_templates: {
         readonly parameters: {
             readonly query?: never;
@@ -5849,6 +5974,24 @@ export interface operations {
         };
     };
     readonly apps_auth_api_logout: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_auth_api_pat_to_session: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
