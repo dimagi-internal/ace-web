@@ -264,18 +264,28 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     # stays active until skill Y dispatches."
     pending_top_skill: dict | None = None
 
-    def _flush_pending() -> None:
+    def _flush_pending(boundary_ts: datetime | None = None) -> None:
+        """Attach the currently-active top-level skill to its phase.
+
+        `boundary_ts` (when given) extends the skill's regime to the next
+        dispatch's timestamp — so a "passthrough" Skill that fires and
+        immediately delegates to an Agent reports the time until that
+        delegation, not just its <1s frame close. Without this, thin
+        wrapper skills like `nova:autobuild` (whose actual work happens
+        in a subsequent Agent dispatch) show 0s wall time.
+        """
         nonlocal pending_top_skill
         if pending_top_skill is None:
             return
         skill_node = pending_top_skill
         pending_top_skill = None
         phase = skill_node.pop("_phase_name", None) or "_orchestration"
-        # Final wall_time = start → last activity (assistant_turn / tool_use /
-        # tool_result timestamp), reflecting the full regime, not just the
-        # original frame's open→close.
         start_iso = skill_node.get("started_at")
         last_iso = skill_node.pop("_last_ts", None)
+        if boundary_ts is not None:
+            boundary_iso = boundary_ts.isoformat()
+            if last_iso is None or boundary_iso > last_iso:
+                last_iso = boundary_iso
         if start_iso and last_iso:
             try:
                 skill_node["wall_time_seconds"] = wall_time_seconds(
@@ -392,10 +402,12 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             if is_skill:
                 if not open_frames:
                     # A new top-level dispatch is starting; the previous
-                    # skill's "active" regime ends here. Flush so its
-                    # absorbed inline work lands in the phase before we
-                    # open the new frame.
-                    _flush_pending()
+                    # skill's "active" regime ends here. Pass the new
+                    # dispatch's timestamp as the regime boundary so a
+                    # passthrough skill (which closes <1s after dispatch
+                    # and immediately fires a subagent) reports its real
+                    # elapsed time, not 0s.
+                    _flush_pending(boundary_ts=event.timestamp)
                 skill_name = (
                     (event.tool_input or {}).get("skill")
                     or (event.tool_input or {}).get("subagent_type")
@@ -457,7 +469,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                     str((event.tool_input or {}).get("taskId", ""))
                 )
                 if new_phase and new_phase != current_phase:
-                    _flush_pending()
+                    _flush_pending(boundary_ts=event.timestamp)
                     current_phase = new_phase
                 elif new_phase:
                     current_phase = new_phase
