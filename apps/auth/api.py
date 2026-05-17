@@ -73,6 +73,40 @@ def logout(request: HttpRequest) -> HttpResponse:
 
 
 # ---------------------------------------------------------------------------
+# POST /auth/pat-to-session — trade a PAT for a session cookie
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/pat-to-session",
+    auth=session_auth,
+    summary="Trade a Bearer PAT for a Django session cookie",
+)
+def pat_to_session(request: HttpRequest) -> HttpResponse:
+    """Set a session cookie for the Bearer-authenticated caller.
+
+    Browsers can't set custom headers on WebSocket handshakes, so
+    PAT-only clients can't connect to Channels routes (the ASGI auth
+    middleware only sees the cookie jar from a browser-driven WS). This
+    endpoint bridges that gap: a scripted client mints a PAT, calls
+    /pat-to-session once with the Bearer header, and the response sets
+    the same session cookie a regular OAuth login would have set. From
+    that point the client can hand the cookie to a browser context
+    (Playwright, etc.) and full session-based auth — including
+    WebSockets — Just Works.
+
+    The Bearer-token side of ``DjangoSessionAuth`` resolves the user
+    before this view runs, so any valid PAT-bearer caller succeeds.
+    """
+    from django.contrib.auth import login
+
+    # PersonalToken records have a single backend in ``AUTHENTICATION_BACKENDS``
+    # for ace-web, so we don't need to specify which backend authenticated.
+    login(request, request.user)
+    return HttpResponse(status=204)
+
+
+# ---------------------------------------------------------------------------
 # POST /auth/e2e-login — automation auth (no session auth required)
 # ---------------------------------------------------------------------------
 

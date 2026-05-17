@@ -81,15 +81,53 @@ def _resolve_user_sync(session_key: str | None):
         return AnonymousUser()
 
 
+def _resolve_bearer_sync(raw: str):
+    """Resolve a raw Bearer token to a User (or AnonymousUser)."""
+    from django.utils import timezone
+
+    from apps.auth.models import PersonalToken
+
+    try:
+        token = PersonalToken.lookup(raw)
+    except Exception:
+        logger.warning("channels_auth: bearer lookup raised", exc_info=True)
+        return AnonymousUser()
+    if token is None:
+        return AnonymousUser()
+    PersonalToken.objects.filter(pk=token.pk).update(last_used_at=timezone.now())
+    return token.user
+
+
+def _bearer_token_from_headers(headers: list[tuple[bytes, bytes]]) -> str | None:
+    """Pull `Authorization: Bearer <token>` off the WebSocket handshake."""
+    for name, value in headers:
+        if name == b"authorization":
+            decoded = value.decode("latin-1")
+            if decoded.startswith("Bearer "):
+                return decoded[len("Bearer "):].strip() or None
+    return None
+
+
 class AceSessionAuthMiddleware:
-    """One-shot ASGI middleware. Attaches scope['user']."""
+    """One-shot ASGI middleware. Attaches scope['user'].
+
+    Resolution order: session cookie first (the normal browser flow),
+    then `Authorization: Bearer <pat>` (scripted automation, the QA
+    probe). Bearer auth was added so PAT-only callers can connect to
+    Channels WebSockets without trading the PAT for a session cookie.
+    """
 
     def __init__(self, inner):
         self.inner = inner
 
     async def __call__(self, scope, receive, send):
-        cookies = _parse_cookie_header(scope.get("headers", []))
+        headers = scope.get("headers", [])
+        cookies = _parse_cookie_header(headers)
         session_key = cookies.get(settings.SESSION_COOKIE_NAME)
         user = await sync_to_async(_resolve_user_sync)(session_key)
+        if isinstance(user, AnonymousUser):
+            raw = _bearer_token_from_headers(headers)
+            if raw:
+                user = await sync_to_async(_resolve_bearer_sync)(raw)
         scope = {**scope, "user": user}
         return await self.inner(scope, receive, send)

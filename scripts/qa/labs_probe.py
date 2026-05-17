@@ -23,18 +23,30 @@ doesn't replace eyeballing; it replaces *forgetting* to eyeball.
 
 Auth
 ====
-Uses the ``/auth/e2e-login/`` endpoint with ``ACE_E2E_AUTH_TOKEN``. That
-endpoint is only mounted on labs and only when the env var is non-empty.
-Token lives in deploy/aws/task-definition.json and AWS Secrets Manager.
+At startup the probe trades a ``LABS_TOKEN`` PAT for a Django session
+cookie via ``POST /api/auth/pat-to-session`` (Bearer header → server
+calls ``login()``). The session cookie then drives every subsequent
+request: ``ctx.request.*`` API calls, ``page.goto()`` page loads, and
+critically the Channels WebSocket handshakes (browsers can't set custom
+headers on WS, so cookie auth is the only path that lets the SPA's
+real-time data load in a headless probe).
+
+The PAT must belong to a workspace member (typically the bot identity
+``ace@dimagi-ai.com``). Mint one via ``/ace:ace-web-pat-mint`` and
+export ``LABS_TOKEN`` to the raw value. For local dev you can also mint
+directly via the Django shell, e.g.:
+
+    PersonalToken.create_for_user(user=bot, label="probe-local")
 
 Usage
 =====
-    # Default: hit labs with the bot identity
-    uv run --extra walkthrough python scripts/qa/labs_probe.py
-
-    # Override the base URL or token
-    LABS_URL=https://...  LABS_TOKEN=... uv run --extra walkthrough \
+    # Default: hit labs with a pre-minted PAT
+    LABS_TOKEN=<pat> uv run --extra walkthrough \
         python scripts/qa/labs_probe.py
+
+    # Probe localhost
+    LABS_URL=http://localhost:8001/ace LABS_TOKEN=<pat> uv run \
+        --extra walkthrough python scripts/qa/labs_probe.py
 
 Output
 ======
@@ -63,7 +75,6 @@ except ImportError:
 
 BASE = os.environ.get("LABS_URL", "https://labs.connect.dimagi.com/ace")
 TOKEN = os.environ.get("LABS_TOKEN", "")
-EMAIL = os.environ.get("LABS_EMAIL", "ace@dimagi-ai.com")
 WORKSPACE = os.environ.get("LABS_WORKSPACE", "dimagi-team")
 
 REPO = Path(__file__).resolve().parents[2]
@@ -220,29 +231,52 @@ def discover_sessions(ctx, limit: int = 5) -> list[str]:
 
 
 def _login(ctx) -> bool:
-    """Hit /auth/e2e-login/ to get a session cookie. Requires LABS_TOKEN."""
-    if not TOKEN:
+    """Trade the PAT for a session cookie.
+
+    Browsers can't put a custom ``Authorization`` header on WebSocket
+    handshakes, so PAT-only auth would leave every Channels-driven
+    surface 403'd. Exchanging for a session cookie up front lets the
+    same probe run validate both API routes (Bearer-friendly) and
+    Channels routes (cookie-only) end-to-end.
+    """
+    resp = ctx.request.post(
+        f"{BASE}/api/auth/pat-to-session",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+    if resp.status not in (200, 204):
         print(
-            "LABS_TOKEN not set. Get it from deploy/aws/task-definition.json "
-            "(env var ACE_E2E_AUTH_TOKEN) and export it.",
+            f"[auth] pat-to-session FAILED status={resp.status} "
+            f"body={resp.text()[:200]}\n"
+            "  LABS_TOKEN must be a valid PAT (mint via "
+            "/ace:ace-web-pat-mint or the Django shell).",
             file=sys.stderr,
         )
         return False
-    resp = ctx.request.post(
-        f"{BASE}/auth/e2e-login/",
-        data=json.dumps({"email": EMAIL, "token": TOKEN}),
-        headers={"Content-Type": "application/json"},
-    )
-    if resp.status != 200:
-        print(f"[auth] FAILED status={resp.status} body={resp.text()[:200]}", file=sys.stderr)
+    # Confirm the session is live by hitting /api/auth/me.
+    me_resp = ctx.request.get(f"{BASE}/api/auth/me")
+    if me_resp.status != 200:
+        print(
+            f"[auth] /api/auth/me failed after pat-to-session: "
+            f"{me_resp.status}",
+            file=sys.stderr,
+        )
         return False
-    print(f"[auth] OK ({EMAIL})")
+    me = me_resp.json()
+    print(f"[auth] OK ({me.get('email', '?')})")
     return True
 
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     print(f"[probe] base={BASE} workspace={WORKSPACE} out={OUT.relative_to(REPO)}")
+
+    if not TOKEN:
+        print(
+            "LABS_TOKEN not set. Mint a PAT via /ace:ace-web-pat-mint "
+            "and export it.",
+            file=sys.stderr,
+        )
+        return 2
 
     results: list[StepResult] = []
 
