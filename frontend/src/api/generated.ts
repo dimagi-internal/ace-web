@@ -581,6 +581,30 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/videos/library/audio/{hash}/stream": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Stream the audio clip bytes (Range-aware)
+         * @description Serve the raw MP3 bytes for one library audio entry.
+         *
+         *     Lazy-caches into the same on-disk audio cache the renderer uses
+         *     (``<videos_root>/assets/audio/<hash>.mp3``) so repeat playback hits
+         *     local disk. First playback fetches via the workspace's Drive SA.
+         */
+        readonly get: operations["apps_videos_api_stream_library_audio"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/videos/programs": {
         readonly parameters: {
             readonly query?: never;
@@ -4730,6 +4754,27 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["MediaLibraryAudioOut"];
                 };
+            };
+        };
+    };
+    readonly apps_videos_api_stream_library_audio: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly hash: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
