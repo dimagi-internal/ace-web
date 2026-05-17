@@ -21,7 +21,7 @@ methods, matching the same opt-out the Ninja auth class performs.
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from django.http import HttpRequest, HttpResponse
 from django.utils import timezone
