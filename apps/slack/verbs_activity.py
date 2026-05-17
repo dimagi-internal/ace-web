@@ -90,13 +90,20 @@ def _render_activity_blocks(
     *, rows: list[dict], workspace_slug: str,
     server_now: str | None, include_completed: bool,
 ) -> list[dict]:
-    """Build the Block Kit message body.
+    """Build a compact Block Kit message body.
 
-    Layout:
-      - Header context block ("Workspace activity · dimagi-team — N rows")
-      - Per row: section block with mrkdwn body + 'Open ↗' accessory button
-      - Divider between rows
-      - Footer context block with row count + --all hint
+    Layout (one section per row, no dividers, no per-row action block —
+    Open ↗ is the section accessory; Track is the slash command
+    `/ace track <slug>` separately):
+
+      [Header context]
+      *Title* · `run-id` · state                       [Open ↗]
+        _source · Nm ago_
+
+      *Title* · `run-id` · state                       [Open ↗]
+        _source · Nm ago_
+      …
+      [Footer context]
     """
     base_url = getattr(
         settings, "ACE_PUBLIC_BASE_URL",
@@ -110,28 +117,27 @@ def _render_activity_blocks(
     )
     blocks: list[dict] = [
         {"type": "context", "elements": [{"type": "mrkdwn", "text": header_text}]},
-        {"type": "divider"},
     ]
 
     now_dt = _parse_iso(server_now) if server_now else dt.datetime.now(dt.UTC)
+    for r in rows:
+        blocks.append(_render_row(r, now=now_dt, base_url=base_url))
 
-    for i, r in enumerate(rows):
-        if i > 0:
-            blocks.append({"type": "divider"})
-        blocks.extend(_render_row(r, now=now_dt, base_url=base_url))
-
-    blocks.append({"type": "divider"})
     footer = (
         f"_Sorted by recency · `/ace activity{' --all' if not include_completed else ''}` "
         f"to {'include' if not include_completed else 'see only active'} "
-        f"{'recent completed' if not include_completed else 'runs'}_"
+        f"{'recent completed' if not include_completed else 'runs'} · "
+        f"`/ace track <slug>` to mirror a run in this channel_"
     )
     blocks.append({"type": "context",
                    "elements": [{"type": "mrkdwn", "text": footer}]})
     return blocks
 
 
-def _render_row(row: dict, *, now: dt.datetime, base_url: str) -> list[dict]:
+def _render_row(row: dict, *, now: dt.datetime, base_url: str) -> dict:
+    """One section block per row. Title line carries the state inline
+    (phase / lifecycle); subline carries source + recency. No dividers
+    between rows — Slack's section spacing is enough."""
     opp_slug = row.get("opp_slug") or "?"
     display_name = row.get("opp_display_name") or opp_slug
     run_id = row.get("run_id") or ""
@@ -140,41 +146,42 @@ def _render_row(row: dict, *, now: dt.datetime, base_url: str) -> list[dict]:
     delta = _human_delta(now - last_activity_dt) if last_activity_dt else None
 
     phase = row.get("current_phase_display") or row.get("current_phase_name")
-    step = row.get("current_step_display") or row.get("current_step_name")
-    lifecycle = row.get("lifecycle_status") or "unknown"
+    lifecycle = row.get("lifecycle_status") or ""
     source_hint = row.get("source_hint") or "drive-only"
     source_actor = row.get("source_actor_email")
     phase_url = row.get("phase_url") or f"{base_url}/w/?/opps/{opp_slug}"
 
-    # Line 1: title + run-id (mrkdwn link to phase view)
-    title_line = f"*<{phase_url}|{display_name}>* · `{run_id}`"
-
-    # Line 2: phase / step OR lifecycle label
+    # State on the title line — phase if running, lifecycle if meaningful,
+    # nothing if "unknown" (don't show noise).
     if phase:
-        state_line = f"Phase: *{phase}*" + (f" · `{step}`" if step else "")
+        state_bit = phase
     elif lifecycle == "complete":
-        state_line = ":white_check_mark: Complete"
+        state_bit = ":white_check_mark: complete"
     elif lifecycle == "qa-failed":
-        state_line = ":warning: qa-failed"
+        state_bit = ":warning: qa-failed"
+    elif lifecycle in ("", "unknown"):
+        state_bit = ""
     else:
-        state_line = f"`{lifecycle}`"
+        state_bit = lifecycle
 
-    # Line 3: source + last-update timestamp (observable facts only)
+    title_line = f"*<{phase_url}|{display_name}>* · `{run_id}`"
+    if state_bit:
+        title_line += f" · {state_bit}"
+
     source_label = (
         f"ace-web · {source_actor}" if source_hint == "ace-web" and source_actor
         else "ace-web" if source_hint == "ace-web"
         else "Drive only"
     )
-    if delta:
-        recency_line = f"_{source_label} · last update {delta}_"
-    else:
-        recency_line = f"_{source_label} · no recent updates_"
+    recency_line = (
+        f"_{source_label} · {delta}_" if delta else f"_{source_label}_"
+    )
 
-    section_block = {
+    return {
         "type": "section",
         "text": {
             "type": "mrkdwn",
-            "text": f"{title_line}\n{state_line}\n{recency_line}",
+            "text": f"{title_line}\n{recency_line}",
         },
         "accessory": {
             "type": "button",
@@ -183,19 +190,6 @@ def _render_row(row: dict, *, now: dt.datetime, base_url: str) -> list[dict]:
             "action_id": f"open_phase:{opp_slug}:{run_id}",
         },
     }
-
-    actions_block = {
-        "type": "actions",
-        "elements": [
-            {
-                "type": "button",
-                "text": {"type": "plain_text", "text": ":eyes: Track in this channel"},
-                "value": f"{opp_slug}:{run_id}",
-                "action_id": "track_run_from_activity",
-            },
-        ],
-    }
-    return [section_block, actions_block]
 
 
 def _parse_iso(value: str | None) -> dt.datetime | None:

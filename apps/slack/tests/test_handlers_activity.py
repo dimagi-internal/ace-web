@@ -138,7 +138,10 @@ def test_activity_all_flag_includes_completed(setup):
 
 
 @pytest.mark.django_db
-def test_activity_rows_include_track_button(setup):
+def test_activity_rows_are_compact_one_section_per_row(setup):
+    """Per the post-launch UX pass: one section per row, no per-row
+    actions block, no dividers, no `unknown` lifecycle noise. The
+    Track action moved to `/ace track <slug>`."""
     from apps.slack.handlers import dispatch_slash_command
     with patch("apps.slack.verbs_activity.get_workspace_activity") as mock_get:
         mock_get.return_value = _FAKE_ACTIVITY
@@ -146,11 +149,24 @@ def test_activity_rows_include_track_button(setup):
             text="activity", slack_user_id="U_JJ", team_id="T1",
             channel_id="C1", trigger_id="", response_url="",
         )
-    body = repr(resp.get("blocks", []))
-    assert "track_run_from_activity" in body
-    # The button's value carries opp_slug:run_id for the action handler.
-    assert "rural-tb:20260515-1830" in body
-    assert "Track in this channel" in body
+    blocks = resp.get("blocks") or []
+    # Count section blocks vs everything else.
+    section_blocks = [b for b in blocks if b.get("type") == "section"]
+    action_blocks = [b for b in blocks if b.get("type") == "actions"]
+    divider_blocks = [b for b in blocks if b.get("type") == "divider"]
+    # One section per row, no separate actions blocks, no dividers.
+    assert len(section_blocks) == len(_FAKE_ACTIVITY["rows"])
+    assert action_blocks == []
+    assert divider_blocks == []
+    # Each section has an Open ↗ accessory.
+    for s in section_blocks:
+        assert s["accessory"]["type"] == "button"
+        assert s["accessory"]["text"]["text"] == "Open ↗"
+    body = repr(blocks)
+    # Don't render 'unknown' as a state label.
+    assert "`unknown`" not in body
+    # The compact footer still mentions /ace track for the missing button.
+    assert "/ace track" in repr(blocks[-1])
 
 
 @pytest.mark.django_db
@@ -228,7 +244,10 @@ def test_render_row_observable_facts_only():
         now=now, base_url="https://example",
     )
     body = repr(blocks).lower()
-    # We say "last update Nm ago", we don't say "is running" anywhere.
-    assert "last update" in body
+    # Recency is rendered as 'Nm ago' (compact form, post-launch UX pass).
+    # The point of the test is the absence of liveness claims, not a
+    # particular phrasing.
+    import re
+    assert re.search(r"\d+[smhd] ago", body), body
     assert "is running" not in body
     assert "alive" not in body
