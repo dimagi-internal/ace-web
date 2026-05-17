@@ -176,6 +176,62 @@ class SnapshotResultOut(StrictModel):
 # ── Launch script patch ───────────────────────────────────────────────────────
 
 
+class ClearAppDataIn(StrictModel):
+    """POST /api/mobile/clear-app-data body.
+
+    ``package`` defaults to ``org.commcare.dalvik`` — the only app the
+    cloud heal flow needs to wipe between dispatches. Constrained to
+    the Android package-name grammar so the controller can drop it
+    into a shell command without further escaping concerns.
+    """
+
+    package: str = "org.commcare.dalvik"
+
+    @field_validator("package")
+    @classmethod
+    def _validate_package(cls, v: str) -> str:
+        import re as _re
+
+        if not _re.match(r"^[a-zA-Z][a-zA-Z0-9_.]*$", v):
+            raise ValueError(
+                f"package must match [a-zA-Z][a-zA-Z0-9_.]* (got {v!r})"
+            )
+        return v
+
+
+class ClearAppDataOut(StrictModel):
+    """Response from /api/mobile/clear-app-data."""
+
+    package: str
+    cleared: bool
+
+
+class RepairDriverOut(StrictModel):
+    """Response from /api/mobile/repair-driver.
+
+    ``uninstalled_packages`` is the subset of
+    ``[dev.mobile.maestro, dev.mobile.maestro.test]`` that was actually
+    present + removed. Empty list means the wedge cleared with no
+    work (neither was installed), which is a no-op success.
+    """
+
+    uninstalled_packages: list[str]
+
+
+class InstallDriverOut(StrictModel):
+    """Response from /api/mobile/install-driver.
+
+    ``actions`` is a short audit trail mirroring local
+    ``MaestroBackend.ensureDriverInstalled``: tokens like
+    ``already-installed`` (warm path, ~150ms), ``pm-ready``,
+    ``extracted``, ``installed:app``, ``installed:test``,
+    ``verified``. Lets the caller log whether the call did the full
+    extract+install or short-circuited on the warm path.
+    """
+
+    actions: list[str]
+
+
 class LaunchScriptPatchIn(StrictModel):
     """POST /api/mobile/admin/patch-launch-script body.
 

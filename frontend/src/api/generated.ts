@@ -496,6 +496,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/activity/runs": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Workspace 'what's running' view */
+        readonly get: operations["apps_activity_api_workspace_activity"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/videos/templates": {
         readonly parameters: {
             readonly query?: never;
@@ -1260,6 +1277,57 @@ export interface paths {
         readonly put?: never;
         /** Install APK */
         readonly post: operations["apps_mobile_api_install_apk"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/mobile/clear-app-data": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Clear per-app data via pm clear */
+        readonly post: operations["apps_mobile_api_clear_app_data"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/mobile/repair-driver": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Clear wedged Maestro instrumentation (pm uninstall -k --user 0) */
+        readonly post: operations["apps_mobile_api_repair_driver"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/mobile/install-driver": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Idempotently install Maestro driver APKs on the AVD */
+        readonly post: operations["apps_mobile_api_install_driver"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -2098,6 +2166,56 @@ export interface components {
             readonly items: readonly components["schemas"]["ActivityEntryOut"][];
             /** Total */
             readonly total: number;
+        };
+        /**
+         * WorkspaceActivityOut
+         * @description Response wrapper for GET /api/w/{slug}/activity/runs.
+         */
+        readonly WorkspaceActivityOut: {
+            /** Rows */
+            readonly rows: readonly components["schemas"]["WorkspaceActivityRowOut"][];
+            /** Server Now */
+            readonly server_now: string;
+        };
+        /**
+         * WorkspaceActivityRowOut
+         * @description One row in the 'what's running across the workspace' view.
+         *
+         *     All fields are observable facts (Drive content, ORM rows, derived
+         *     URLs). NO inferred liveness claims — the caller renders timestamps
+         *     and lets the user decide what's actually alive. See the design doc
+         *     `docs/specs/2026-05-16-workspace-activity-view-design.md`.
+         */
+        readonly WorkspaceActivityRowOut: {
+            /** Opp Slug */
+            readonly opp_slug: string;
+            /** Opp Display Name */
+            readonly opp_display_name: string;
+            /** Run Id */
+            readonly run_id: string;
+            /** Last Activity At */
+            readonly last_activity_at?: string | null;
+            /** Current Phase Name */
+            readonly current_phase_name?: string | null;
+            /** Current Phase Display */
+            readonly current_phase_display?: string | null;
+            /** Current Step Name */
+            readonly current_step_name?: string | null;
+            /** Current Step Display */
+            readonly current_step_display?: string | null;
+            /** Lifecycle Status */
+            readonly lifecycle_status: string;
+            /** Last Actor */
+            readonly last_actor?: string | null;
+            /**
+             * Source Hint
+             * @enum {string}
+             */
+            readonly source_hint: "ace-web" | "drive-only";
+            /** Source Actor Email */
+            readonly source_actor_email?: string | null;
+            /** Phase Url */
+            readonly phase_url: string;
         };
         /** TemplateMetaOut */
         readonly TemplateMetaOut: {
@@ -3013,6 +3131,60 @@ export interface components {
             readonly error_code?: string | null;
         } & {
             readonly [key: string]: unknown;
+        };
+        /**
+         * ClearAppDataOut
+         * @description Response from /api/mobile/clear-app-data.
+         */
+        readonly ClearAppDataOut: {
+            /** Package */
+            readonly package: string;
+            /** Cleared */
+            readonly cleared: boolean;
+        };
+        /**
+         * ClearAppDataIn
+         * @description POST /api/mobile/clear-app-data body.
+         *
+         *     ``package`` defaults to ``org.commcare.dalvik`` — the only app the
+         *     cloud heal flow needs to wipe between dispatches. Constrained to
+         *     the Android package-name grammar so the controller can drop it
+         *     into a shell command without further escaping concerns.
+         */
+        readonly ClearAppDataIn: {
+            /**
+             * Package
+             * @default org.commcare.dalvik
+             */
+            readonly package: string;
+        };
+        /**
+         * RepairDriverOut
+         * @description Response from /api/mobile/repair-driver.
+         *
+         *     ``uninstalled_packages`` is the subset of
+         *     ``[dev.mobile.maestro, dev.mobile.maestro.test]`` that was actually
+         *     present + removed. Empty list means the wedge cleared with no
+         *     work (neither was installed), which is a no-op success.
+         */
+        readonly RepairDriverOut: {
+            /** Uninstalled Packages */
+            readonly uninstalled_packages: readonly string[];
+        };
+        /**
+         * InstallDriverOut
+         * @description Response from /api/mobile/install-driver.
+         *
+         *     ``actions`` is a short audit trail mirroring local
+         *     ``MaestroBackend.ensureDriverInstalled``: tokens like
+         *     ``already-installed`` (warm path, ~150ms), ``pm-ready``,
+         *     ``extracted``, ``installed:app``, ``installed:test``,
+         *     ``verified``. Lets the caller log whether the call did the full
+         *     extract+install or short-circuited on the warm path.
+         */
+        readonly InstallDriverOut: {
+            /** Actions */
+            readonly actions: readonly string[];
         };
         /**
          * LaunchScriptPatchOut
@@ -4414,6 +4586,31 @@ export interface operations {
             };
         };
     };
+    readonly apps_activity_api_workspace_activity: {
+        readonly parameters: {
+            readonly query?: {
+                readonly include_completed?: boolean;
+                readonly limit?: number;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkspaceActivityOut"];
+                };
+            };
+        };
+    };
     readonly apps_videos_api_list_video_templates: {
         readonly parameters: {
             readonly query?: never;
@@ -5513,6 +5710,70 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly apps_mobile_api_clear_app_data: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ClearAppDataIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ClearAppDataOut"];
+                };
+            };
+        };
+    };
+    readonly apps_mobile_api_repair_driver: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RepairDriverOut"];
+                };
+            };
+        };
+    };
+    readonly apps_mobile_api_install_driver: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InstallDriverOut"];
+                };
             };
         };
     };

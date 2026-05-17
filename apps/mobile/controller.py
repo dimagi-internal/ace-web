@@ -63,6 +63,16 @@ _SSM_RECIPE_TIMEOUT_SEC = 1800  # 30 min — Maestro flows can be long.
 # 10-android-sdk.sh installs to.
 _ADB = "/opt/android-sdk/platform-tools/adb"
 _MAESTRO = "/usr/local/bin/maestro"
+# In-VM path to the Maestro client jar that bundles the on-device driver
+# APKs (dev.mobile.maestro + dev.mobile.maestro.test). Pinned to where
+# ``infra/mobile-ami/scripts/30-maestro.sh`` extracts the Maestro CLI
+# distribution. The AMI rebake invalidates this if Maestro changes its
+# distribution layout — keep this in sync with the bake script.
+_MAESTRO_JAR_PATH = "/opt/maestro/maestro/lib/maestro-client.jar"
+# Where ``install_driver`` extracts the driver APKs in-VM. Per-jar-mtime
+# keyed (matches the local-side cache) so a Maestro CLI upgrade
+# invalidates the cache automatically.
+_MAESTRO_DRIVER_CACHE_ROOT = "/var/cache/ace-mobile/driver-apks"
 # In-VM idle marker — must agree with files/idle-shutdown.sh in the AMI.
 _IDLE_MARKER_PATH = "/var/run/ace-mobile/last-activity"
 # Catalog of states (one per CommCare APK version) baked into the AMI.
@@ -206,6 +216,46 @@ class SnapshotResult:
     name: str
     saved_at: str | None = None
     loaded_at: str | None = None
+
+
+@dataclass
+class ClearAppDataResult:
+    """Outcome of ``pm clear`` on a target package.
+
+    ``cleared=True`` iff the in-VM ``adb shell pm clear`` reported
+    ``Success``. ``False`` means the package was not installed (clear
+    is a no-op) or the command emitted no recognizable marker.
+    """
+
+    package: str
+    cleared: bool
+
+
+@dataclass
+class RepairDriverResult:
+    """Outcome of the Maestro instrumentation repair.
+
+    ``uninstalled_packages`` lists which of the maestro/maestro.test
+    packages were actually present + removed. Idempotent: if neither
+    was installed the call is a no-op and returns an empty list.
+    """
+
+    uninstalled_packages: list[str]
+
+
+@dataclass
+class InstallDriverResult:
+    """Outcome of explicit Maestro driver APK install.
+
+    ``actions`` is a short audit trail (mirrors the local-side
+    ``MaestroBackend.ensureDriverInstalled`` return shape): tokens
+    like ``already-installed``, ``pm-ready``, ``extracted``,
+    ``installed:app``, ``installed:test``, ``verified``. Lets the
+    caller see whether the call was a fast-path (warm) or had to
+    do the full extract+install (cold).
+    """
+
+    actions: list[str]
 
 
 @dataclass
@@ -490,6 +540,211 @@ class EmulatorController:
         package = _grep_kv(result.stdout, "PACKAGE") or ""
         version = _grep_kv(result.stdout, "VERSION") or ""
         return InstallResult(package_name=package, version=version)
+
+    def clear_app_data(
+        self, package: str = "org.commcare.dalvik"
+    ) -> ClearAppDataResult:
+        """Wipe an app's per-app data dir via ``adb shell pm clear``.
+
+        Mirrors the local-side ``AvdBackend.clearConnectAppData`` so the
+        cloud heal flow can do "wipe + re-register" before each dispatch,
+        matching the post-2026-05-14 local pattern that dropped the
+        snapshot-load fast-path.
+
+        Does NOT uninstall the APK — only clears ``/data/data/<pkg>/``.
+        Idempotent: clearing an app with no prior data still reports
+        ``Success``. Clearing a not-installed package emits ``Failed``
+        but isn't an error class — surfaces as ``cleared=False``.
+        """
+        self._assert_running()
+        # Package name is constrained by the API schema's
+        # ``ClearAppDataIn`` validator so by the time we get here
+        # ``package`` is safe to drop in a shell-quoted slot. We
+        # ``shlex.quote`` anyway as defense in depth — the controller
+        # is a callable boundary too, not just the HTTP API.
+        commands = [
+            "set -eu",
+            f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+            f"{_ADB} shell pm clear {shlex.quote(package)}",
+        ]
+        result = ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=commands,
+            timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
+            return_on_script_failure=True,
+        )
+        # ``pm clear`` writes either ``Success\n`` or ``Failed\n`` to stdout;
+        # the command's exit code is 0 in both cases (it only non-zeroes on
+        # malformed args). Match the local-side semantics where ``Success``
+        # is the boolean we surface.
+        cleared = "Success" in result.stdout
+        return ClearAppDataResult(package=package, cleared=cleared)
+
+    def repair_driver(self) -> RepairDriverResult:
+        """Clear wedged Maestro gRPC instrumentation state.
+
+        Runs ``pm uninstall -k --user 0 dev.mobile.maestro{,.test}`` —
+        the explicit ``--user 0`` form clears wedged instrumentation
+        that a plain ``adb uninstall`` doesn't fully reach. Live-debugged
+        2026-05-14 in turmeric/20260513-2243 retry #2; the local-side
+        fix lives in ``MaestroBackend.repairDriver`` (commit ebf4560).
+
+        Best-effort: package not installed is treated as "nothing to
+        repair" (not an error). Surface which packages were actually
+        present + removed so callers know whether the wedge cleared.
+        """
+        self._assert_running()
+        commands = [
+            "set -eu",
+            f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+            # ``pm uninstall -k --user 0`` returns:
+            #   ``Success``   — package was installed, now uninstalled
+            #   ``Failure ... Unknown package`` — wasn't installed (ok)
+            # We emit a per-package marker so the Python side can
+            # decode which subset cleared without parsing every variant.
+            f"for pkg in dev.mobile.maestro dev.mobile.maestro.test; do "
+            "  result=$("
+            f"    {_ADB} shell pm uninstall -k --user 0 \"$pkg\" 2>&1 || true"
+            "  );"
+            "  case \"$result\" in"
+            "    *Success*) echo \"REMOVED=$pkg\" ;;"
+            "  esac;"
+            "done",
+        ]
+        result = ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=commands,
+            timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
+            return_on_script_failure=True,
+        )
+        uninstalled = [
+            line.removeprefix("REMOVED=").strip()
+            for line in result.stdout.splitlines()
+            if line.startswith("REMOVED=")
+        ]
+        return RepairDriverResult(uninstalled_packages=uninstalled)
+
+    def install_driver(self) -> InstallDriverResult:
+        """Idempotently install the Maestro driver APK halves on the AVD.
+
+        Mirrors local ``MaestroBackend.ensureDriverInstalled`` (commit
+        b2838cb). The local fix exists because Maestro CLI's auto-push
+        of the driver APK races the AVD's early-boot ``pm`` service on
+        fresh AVDs ("Install failed: cmd: Can't find service: package")
+        with no retry inside the CLI. Subsequent ``maestro hierarchy``
+        probes then see an empty port 7001 and exit with
+        ``UNAVAILABLE: io exception``.
+
+        On cloud the same race surfaces in two cases:
+          1. After ``repair-driver`` uninstalled the packages and the
+             next ``run-recipe`` relies on auto-push to put them back.
+          2. (Future) When the AMI's pre-baked snapshot is dropped and
+             every dispatch cold-boots the AVD — Maestro has never
+             touched this AVD before, so there's no driver installed.
+
+        Flow:
+          1. Probe ``pm list packages dev.mobile.maestro`` — early-return
+             if both halves are present (warm path, ~150ms).
+          2. Wait for the ``cmd package`` service to bind on cold AVDs.
+          3. Extract ``maestro-app.apk`` + ``maestro-server.apk`` from
+             the bundled Maestro jar into a per-jar-mtime cache dir.
+          4. ``adb install -r`` both halves (idempotent across re-runs).
+          5. Verify both packages are present afterward.
+        """
+        self._assert_running()
+        # Single in-VM shell script so loop / function-like control flow
+        # works cleanly (SSM concatenates an array of statements with
+        # newlines, but `case ... esac` + `exit` patterns are brittle
+        # when split across array entries — one script is more robust).
+        # Emit ``ACTION=<token>`` markers as we go; Python parses them
+        # back into the result. ``ERROR=<tag>`` + non-zero exit on the
+        # failure paths gives the operator a structured signal.
+        script = f"""
+set -eu
+touch {shlex.quote(_IDLE_MARKER_PATH)} || true
+
+# ---- Step 1: warm-path probe --------------------------------------
+# Both halves already installed? Skip the extract+install.
+PKG_LIST=$({_ADB} shell pm list packages dev.mobile.maestro 2>/dev/null || true)
+HAS_APP=$(printf '%s\\n' "$PKG_LIST" | grep -c '^package:dev\\.mobile\\.maestro$' || true)
+HAS_TEST=$(printf '%s\\n' "$PKG_LIST" | grep -c '^package:dev\\.mobile\\.maestro\\.test$' || true)
+if [ "$HAS_APP" -ge 1 ] && [ "$HAS_TEST" -ge 1 ]; then
+  echo "ACTION=already-installed"
+  exit 0
+fi
+
+# ---- Step 2: wait for `pm` package service to bind ----------------
+# Fresh AVDs race here for ~5-15s after sys.boot_completed=1; without
+# this poll the first ``adb install`` hits "Can't find service: package".
+WAIT_END=$(($(date +%s)+30))
+while [ $(date +%s) -lt $WAIT_END ]; do
+  if {_ADB} shell cmd package list packages 2>/dev/null | grep -q '^package:'; then
+    break
+  fi
+  sleep 1
+done
+echo "ACTION=pm-ready"
+
+# ---- Step 3: extract driver APKs from the Maestro jar -------------
+if [ ! -f {shlex.quote(_MAESTRO_JAR_PATH)} ]; then
+  echo "ERROR=MAESTRO_JAR_MISSING:{_MAESTRO_JAR_PATH}"
+  exit 1
+fi
+JAR_MTIME=$(stat -c %Y {shlex.quote(_MAESTRO_JAR_PATH)})
+JAR_SIZE=$(stat -c %s {shlex.quote(_MAESTRO_JAR_PATH)})
+CACHE_DIR={shlex.quote(_MAESTRO_DRIVER_CACHE_ROOT)}/${{JAR_SIZE}}-${{JAR_MTIME}}
+mkdir -p "$CACHE_DIR"
+if [ ! -f "$CACHE_DIR/maestro-app.apk" ] || [ ! -f "$CACHE_DIR/maestro-server.apk" ]; then
+  unzip -o -q {shlex.quote(_MAESTRO_JAR_PATH)} maestro-app.apk maestro-server.apk -d "$CACHE_DIR"
+fi
+echo "ACTION=extracted"
+
+# ---- Step 4: install both halves ----------------------------------
+{_ADB} install -r "$CACHE_DIR/maestro-app.apk"
+echo "ACTION=installed:app"
+{_ADB} install -r "$CACHE_DIR/maestro-server.apk"
+echo "ACTION=installed:test"
+
+# ---- Step 5: verify ------------------------------------------------
+POST=$({_ADB} shell pm list packages dev.mobile.maestro 2>/dev/null || true)
+VHAS_APP=$(printf '%s\\n' "$POST" | grep -c '^package:dev\\.mobile\\.maestro$' || true)
+VHAS_TEST=$(printf '%s\\n' "$POST" | grep -c '^package:dev\\.mobile\\.maestro\\.test$' || true)
+if [ "$VHAS_APP" -ge 1 ] && [ "$VHAS_TEST" -ge 1 ]; then
+  echo "ACTION=verified"
+else
+  echo "ERROR=MAESTRO_DRIVER_VERIFY_FAILED"
+  exit 1
+fi
+"""
+        result = ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=[script],
+            timeout_seconds=_SSM_OP_TIMEOUT_SEC,
+            return_on_script_failure=True,
+        )
+        if result.exit_code != 0:
+            # Surface the in-VM error tag the SSM script emitted so the
+            # operator gets a structured signal, not a generic exit-1.
+            tag = next(
+                (
+                    line.removeprefix("ERROR=")
+                    for line in result.stdout.splitlines()
+                    if line.startswith("ERROR=")
+                ),
+                "MAESTRO_DRIVER_INSTALL_FAILED",
+            )
+            raise MobileError(
+                f"install_driver: {tag} (stderr: {result.stderr[:200]!r})"
+            )
+        actions = [
+            line.removeprefix("ACTION=").strip()
+            for line in result.stdout.splitlines()
+            if line.startswith("ACTION=")
+        ]
+        return InstallDriverResult(actions=actions)
 
     def run_recipe(
         self,

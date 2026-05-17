@@ -4,11 +4,15 @@ from __future__ import annotations
 import datetime as dt
 
 from apps.mobile.schemas import (
+    ClearAppDataIn,
+    ClearAppDataOut,
     DiagnoseOut,
+    InstallDriverOut,
     JobOut,
     LaunchScriptPatchIn,
     LaunchScriptPatchOut,
     MobileStatusOut,
+    RepairDriverOut,
     RunRecipeAcceptedOut,
     RunRecipeIn,
     SnapshotIn,
@@ -139,3 +143,52 @@ def test_launch_script_patch_out_round_trip():
 def test_snapshot_in():
     s = SnapshotIn(name="7plus")
     assert s.name == "7plus"
+
+
+def test_clear_app_data_in_default_package():
+    body = ClearAppDataIn()
+    assert body.package == "org.commcare.dalvik"
+
+
+def test_clear_app_data_in_accepts_valid_package():
+    body = ClearAppDataIn(package="com.example.thing")
+    assert body.package == "com.example.thing"
+
+
+def test_clear_app_data_in_rejects_shell_unsafe_package():
+    import pytest
+    from pydantic import ValidationError
+
+    for bad in ["foo;rm -rf /", "$(id)", "com.foo bar", "-flag"]:
+        with pytest.raises(ValidationError, match="package must match"):
+            ClearAppDataIn(package=bad)
+
+
+def test_clear_app_data_out():
+    out = ClearAppDataOut(package="org.commcare.dalvik", cleared=True)
+    assert out.cleared is True
+
+
+def test_repair_driver_out_empty():
+    out = RepairDriverOut(uninstalled_packages=[])
+    assert out.uninstalled_packages == []
+
+
+def test_repair_driver_out_with_packages():
+    out = RepairDriverOut(
+        uninstalled_packages=["dev.mobile.maestro", "dev.mobile.maestro.test"]
+    )
+    assert len(out.uninstalled_packages) == 2
+
+
+def test_install_driver_out_warm_path():
+    out = InstallDriverOut(actions=["already-installed"])
+    assert out.actions == ["already-installed"]
+
+
+def test_install_driver_out_cold_path():
+    out = InstallDriverOut(
+        actions=["pm-ready", "extracted", "installed:app", "installed:test", "verified"]
+    )
+    assert len(out.actions) == 5
+    assert out.actions[-1] == "verified"

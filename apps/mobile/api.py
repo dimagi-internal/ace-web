@@ -14,11 +14,15 @@ from apps.api.deps import require_write_global
 from apps.api.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
 
 from .schemas import (
+    ClearAppDataIn,
+    ClearAppDataOut,
     DiagnoseOut,
+    InstallDriverOut,
     JobOut,
     LaunchScriptPatchIn,
     LaunchScriptPatchOut,
     MobileStatusOut,
+    RepairDriverOut,
     RunRecipeAcceptedOut,
     RunRecipeIn,
     SnapshotIn,
@@ -424,6 +428,90 @@ def install_apk(request: HttpRequest, apk_url: str) -> HttpResponse:
     from django.http import JsonResponse
 
     result = install_apk_op(apk_url)
+    return JsonResponse(result)
+
+
+# ---------------------------------------------------------------------------
+# POST /mobile/clear-app-data — wipe per-app data dir via pm clear
+# ---------------------------------------------------------------------------
+
+
+def clear_app_data_op(package: str) -> dict:
+    from .exceptions import MobileError
+
+    _assert_configured()
+    try:
+        result = _make_controller().clear_app_data(package=package)
+    except MobileError as e:
+        raise _mobile_problem(e) from e
+    return _to_payload(result)
+
+
+@router.post(
+    "/clear-app-data",
+    response={200: ClearAppDataOut},
+    summary="Clear per-app data via pm clear",
+)
+def clear_app_data(request: HttpRequest, body: ClearAppDataIn) -> HttpResponse:
+    from django.http import JsonResponse
+
+    result = clear_app_data_op(body.package)
+    return JsonResponse(result)
+
+
+# ---------------------------------------------------------------------------
+# POST /mobile/repair-driver — clear wedged Maestro instrumentation
+# ---------------------------------------------------------------------------
+
+
+def repair_driver_op() -> dict:
+    from .exceptions import MobileError
+
+    _assert_configured()
+    try:
+        result = _make_controller().repair_driver()
+    except MobileError as e:
+        raise _mobile_problem(e) from e
+    return _to_payload(result)
+
+
+@router.post(
+    "/repair-driver",
+    response={200: RepairDriverOut},
+    summary="Clear wedged Maestro instrumentation (pm uninstall -k --user 0)",
+)
+def repair_driver(request: HttpRequest) -> HttpResponse:
+    from django.http import JsonResponse
+
+    result = repair_driver_op()
+    return JsonResponse(result)
+
+
+# ---------------------------------------------------------------------------
+# POST /mobile/install-driver — explicitly install Maestro driver APKs
+# ---------------------------------------------------------------------------
+
+
+def install_driver_op() -> dict:
+    from .exceptions import MobileError
+
+    _assert_configured()
+    try:
+        result = _make_controller().install_driver()
+    except MobileError as e:
+        raise _mobile_problem(e) from e
+    return _to_payload(result)
+
+
+@router.post(
+    "/install-driver",
+    response={200: InstallDriverOut},
+    summary="Idempotently install Maestro driver APKs on the AVD",
+)
+def install_driver(request: HttpRequest) -> HttpResponse:
+    from django.http import JsonResponse
+
+    result = install_driver_op()
     return JsonResponse(result)
 
 

@@ -247,3 +247,85 @@ def test_list_patches_admin_200(admin_client, monkeypatch):
     resp = client.get("/api/mobile/admin/launch-script-patches")
     assert resp.status_code == 200
     assert resp.json()["total"] == 0
+
+
+# ---------------------------------------------------------------------------
+# POST /mobile/clear-app-data
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_clear_app_data_200(auth_client, monkeypatch):
+    client, _ = auth_client
+    monkeypatch.setattr(
+        "apps.mobile.api.clear_app_data_op",
+        lambda package: {"package": package, "cleared": True},
+    )
+    resp = client.post(
+        "/api/mobile/clear-app-data",
+        {"package": "org.commcare.dalvik"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["package"] == "org.commcare.dalvik"
+    assert body["cleared"] is True
+
+
+@pytest.mark.django_db
+def test_clear_app_data_rejects_unsafe_package(auth_client):
+    client, _ = auth_client
+    resp = client.post(
+        "/api/mobile/clear-app-data",
+        {"package": "foo;rm -rf /"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 422
+    assert "package must match" in resp.json()["extras"]["errors"][0]["msg"]
+
+
+# ---------------------------------------------------------------------------
+# POST /mobile/repair-driver
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_repair_driver_200(auth_client, monkeypatch):
+    client, _ = auth_client
+    monkeypatch.setattr(
+        "apps.mobile.api.repair_driver_op",
+        lambda: {
+            "uninstalled_packages": [
+                "dev.mobile.maestro",
+                "dev.mobile.maestro.test",
+            ]
+        },
+    )
+    resp = client.post(
+        "/api/mobile/repair-driver",
+        {},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["uninstalled_packages"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# POST /mobile/install-driver
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_install_driver_200(auth_client, monkeypatch):
+    client, _ = auth_client
+    monkeypatch.setattr(
+        "apps.mobile.api.install_driver_op",
+        lambda: {"actions": ["already-installed"]},
+    )
+    resp = client.post(
+        "/api/mobile/install-driver",
+        {},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["actions"] == ["already-installed"]
