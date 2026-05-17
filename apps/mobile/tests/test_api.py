@@ -308,3 +308,24 @@ def test_repair_driver_200(auth_client, monkeypatch):
     )
     assert resp.status_code == 200
     assert len(resp.json()["uninstalled_packages"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# POST /mobile/install-driver
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_install_driver_200(auth_client, monkeypatch):
+    client, _ = auth_client
+    monkeypatch.setattr(
+        "apps.mobile.api.install_driver_op",
+        lambda: {"actions": ["already-installed"]},
+    )
+    resp = client.post(
+        "/api/mobile/install-driver",
+        {},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["actions"] == ["already-installed"]

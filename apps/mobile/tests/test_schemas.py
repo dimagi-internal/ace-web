@@ -7,6 +7,7 @@ from apps.mobile.schemas import (
     ClearAppDataIn,
     ClearAppDataOut,
     DiagnoseOut,
+    InstallDriverOut,
     JobOut,
     LaunchScriptPatchIn,
     LaunchScriptPatchOut,
@@ -178,3 +179,16 @@ def test_repair_driver_out_with_packages():
         uninstalled_packages=["dev.mobile.maestro", "dev.mobile.maestro.test"]
     )
     assert len(out.uninstalled_packages) == 2
+
+
+def test_install_driver_out_warm_path():
+    out = InstallDriverOut(actions=["already-installed"])
+    assert out.actions == ["already-installed"]
+
+
+def test_install_driver_out_cold_path():
+    out = InstallDriverOut(
+        actions=["pm-ready", "extracted", "installed:app", "installed:test", "verified"]
+    )
+    assert len(out.actions) == 5
+    assert out.actions[-1] == "verified"

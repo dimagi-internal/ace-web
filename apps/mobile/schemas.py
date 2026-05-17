@@ -218,6 +218,20 @@ class RepairDriverOut(StrictModel):
     uninstalled_packages: list[str]
 
 
+class InstallDriverOut(StrictModel):
+    """Response from /api/mobile/install-driver.
+
+    ``actions`` is a short audit trail mirroring local
+    ``MaestroBackend.ensureDriverInstalled``: tokens like
+    ``already-installed`` (warm path, ~150ms), ``pm-ready``,
+    ``extracted``, ``installed:app``, ``installed:test``,
+    ``verified``. Lets the caller log whether the call did the full
+    extract+install or short-circuited on the warm path.
+    """
+
+    actions: list[str]
+
+
 class LaunchScriptPatchIn(StrictModel):
     """POST /api/mobile/admin/patch-launch-script body.
 

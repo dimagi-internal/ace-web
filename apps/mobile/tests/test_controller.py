@@ -661,6 +661,102 @@ def test_repair_driver_returns_empty_when_neither_was_installed(controller_facto
     assert result.uninstalled_packages == []
 
 
+# ── Operations: install_driver ──────────────────────────────────────
+
+
+def test_install_driver_warm_path_short_circuits(controller_factory):
+    """When both maestro packages are already installed, the SSM
+    script emits ``ACTION=already-installed`` and exits before doing
+    any extract / install work. Verify the actions list reflects that
+    fast path."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(
+        controller_factory.ssm_stub,
+        stdout="ACTION=already-installed\n",
+    )
+    result = c.install_driver()
+    assert result.actions == ["already-installed"]
+
+
+def test_install_driver_cold_path_extracts_and_installs(controller_factory):
+    """On a fresh AVD with no driver installed, the script walks the
+    full extract+install+verify path. Each stage emits a marker; the
+    Python side collects them in order."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(
+        controller_factory.ssm_stub,
+        stdout=(
+            "ACTION=pm-ready\n"
+            "ACTION=extracted\n"
+            "ACTION=installed:app\n"
+            "ACTION=installed:test\n"
+            "ACTION=verified\n"
+        ),
+    )
+    result = c.install_driver()
+    assert result.actions == [
+        "pm-ready",
+        "extracted",
+        "installed:app",
+        "installed:test",
+        "verified",
+    ]
+
+
+def test_install_driver_jar_missing_raises_with_tag(controller_factory):
+    """When the bundled Maestro jar isn't on disk (AMI bake didn't
+    install Maestro), the SSM script writes the structured
+    ``ERROR=MAESTRO_JAR_MISSING:<path>`` line and exits non-zero. We
+    surface that tag in the MobileError message so the operator
+    knows the bake is the root cause, not the AVD."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(
+        controller_factory.ssm_stub,
+        stdout="ERROR=MAESTRO_JAR_MISSING:/opt/maestro/maestro/lib/maestro-client.jar\n",
+        exit_code=1,
+    )
+    with pytest.raises(MobileError, match="MAESTRO_JAR_MISSING"):
+        c.install_driver()
+
+
+def test_install_driver_verify_failure_raises(controller_factory):
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+    _queue_ssm_command(
+        controller_factory.ssm_stub,
+        stdout=(
+            "ACTION=pm-ready\n"
+            "ACTION=extracted\n"
+            "ACTION=installed:app\n"
+            "ACTION=installed:test\n"
+            "ERROR=MAESTRO_DRIVER_VERIFY_FAILED\n"
+        ),
+        exit_code=1,
+    )
+    with pytest.raises(MobileError, match="MAESTRO_DRIVER_VERIFY_FAILED"):
+        c.install_driver()
+
+
+def test_install_driver_when_not_running_raises(controller_factory):
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("stopped")
+    )
+    with pytest.raises(MobileError):
+        c.install_driver()
+
+
 def test_repair_driver_uses_user_0_scoped_uninstall(controller_factory, monkeypatch):
     """Pin the exact ``pm uninstall -k --user 0`` form — this is the
     clear-wedged-instrumentation incantation; without ``--user 0`` the

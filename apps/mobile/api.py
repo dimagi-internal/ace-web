@@ -17,6 +17,7 @@ from .schemas import (
     ClearAppDataIn,
     ClearAppDataOut,
     DiagnoseOut,
+    InstallDriverOut,
     JobOut,
     LaunchScriptPatchIn,
     LaunchScriptPatchOut,
@@ -483,6 +484,34 @@ def repair_driver(request: HttpRequest) -> HttpResponse:
     from django.http import JsonResponse
 
     result = repair_driver_op()
+    return JsonResponse(result)
+
+
+# ---------------------------------------------------------------------------
+# POST /mobile/install-driver — explicitly install Maestro driver APKs
+# ---------------------------------------------------------------------------
+
+
+def install_driver_op() -> dict:
+    from .exceptions import MobileError
+
+    _assert_configured()
+    try:
+        result = _make_controller().install_driver()
+    except MobileError as e:
+        raise _mobile_problem(e) from e
+    return _to_payload(result)
+
+
+@router.post(
+    "/install-driver",
+    response={200: InstallDriverOut},
+    summary="Idempotently install Maestro driver APKs on the AVD",
+)
+def install_driver(request: HttpRequest) -> HttpResponse:
+    from django.http import JsonResponse
+
+    result = install_driver_op()
     return JsonResponse(result)
 
 
