@@ -94,7 +94,15 @@ const ProgramVideo: React.FC<VideoProps> = ({
   return (
     <AbsoluteFill>
       <Sequence durationInFrames={byId.handoff.startFrame + byId.handoff.durationFrames}>
-        <Intro programName={spec.name} brand={brand} beatFrames={introBeats} />
+        <Intro
+          programName={spec.name}
+          brand={brand}
+          beatFrames={introBeats}
+          // Cycle highlight syncs to the keyword positions in this
+          // beat's narration ("learn"/"deliver"/"verif"/"pay") so the
+          // ring lights up the right step as the voiceover names it.
+          cycleNarration={spec.narration?.by_beat?.cycle}
+        />
       </Sequence>
       <Sequence
         from={bodyBeats[0].startFrame}
