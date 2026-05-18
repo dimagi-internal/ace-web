@@ -18,6 +18,7 @@ URL structure mirrors opps/runs:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Annotated
 
 from django.conf import settings
@@ -687,6 +688,45 @@ def serve_library_html(
     return _serve_rewritten_html(workspace_slug, program_slug, run_id, "library.html")
 
 
+# Pattern that matches the hydrate cache convention:
+#   <HOME>/.cache/connect-videos/<gdriveId>.<ext>
+# Captures the gdrive id so we can re-fetch via the SA.
+_HYDRATE_CACHE_RE = re.compile(
+    r"\.cache/connect-videos/(?P<gid>[A-Za-z0-9_-]{20,})\.(?P<ext>mp4|webm|m4v)$"
+)
+
+
+def _resolve_symlink_via_drive(target):
+    """If `target` is a symlink to the hydrate cache, fetch the linked
+    gdrive file through the workspace SA, write it to a stable on-disk
+    cache, and return the cached Path. Returns None if the target isn't
+    a recognisable symlink or the fetch fails.
+    """
+    from pathlib import Path
+
+    try:
+        link_dest = str(target.readlink()) if target.is_symlink() else None
+    except OSError:
+        return None
+    if not link_dest:
+        return None
+    m = _HYDRATE_CACHE_RE.search(link_dest)
+    if not m:
+        return None
+    gid, ext = m.group("gid"), m.group("ext")
+    cache = service._root() / "assets" / "clip-cache" / f"{gid}.{ext}"
+    if not cache.is_file():
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        client = service.drive.get_drive_client()
+        try:
+            content = client.get_binary(gid)
+        except Exception as e:  # pragma: no cover — surfaces as 404 to caller
+            log.warning("serve_media: Drive fetch failed for %s: %s", gid, e)
+            return None
+        cache.write_bytes(content)
+    return Path(cache)
+
+
 @router.get(
     "/programs/{program_slug}/runs/{run_id}/media/{file_name}",
     summary="Serve an MP4 from the run's explorer media directory (Range-aware)",
@@ -713,7 +753,20 @@ def serve_media(
     media_dir = service.explorer_dir(program_slug, run_id) / "media"
     target = media_dir / file_name
     if not target.is_file():
-        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+        # The clip-explorer build symlinks each `@alias.mp4` to the
+        # hydrate cache (``<HOME>/.cache/connect-videos/<gdriveId>.<ext>``).
+        # When the cache lives on the host (laptop hydrate, container
+        # render) the symlink resolves to a path that doesn't exist
+        # inside the Django container. Recover by parsing the gdrive
+        # id out of the broken symlink target and fetching the clip
+        # through the workspace's Drive SA, lazy-caching it under
+        # ``<videos_root>/assets/clip-cache/`` so subsequent requests
+        # serve straight off disk. Same pattern as the audio library
+        # stream endpoint.
+        resolved = _resolve_symlink_via_drive(target)
+        if resolved is None:
+            raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+        target = resolved
 
     response = FileResponse(target.open("rb"), as_attachment=False)
     suffix = target.suffix.lower()

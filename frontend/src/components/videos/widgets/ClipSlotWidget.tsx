@@ -31,12 +31,17 @@ export function ClipSlotWidget({ beatId, clipKind, index }: Props) {
       : "untrimmed";
 
   // Source-clip MP4 served by the existing serve_media endpoint.
-  // 404s if the host hasn't run `npm run hydrate` to pull the Drive
-  // alias into ~/.cache/connect-videos/<gdriveId>.<ext>. On error we
-  // swap to a placeholder rather than leaving an empty black box.
+  // The backend resolves broken symlinks (host-side hydrate cache that
+  // the container can't see) by re-fetching the gdrive id via the
+  // workspace SA, so previews now work even when the explorer media
+  // dir is full of symlinks pointing into a non-mounted host home.
+  // The `/api/...` URL is prefixed with BASE_URL so ace-web's `/ace/*`
+  // ALB tenant path is honoured in production (Vite's bare-prefix
+  // proxy was masking this locally).
+  const prefix = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const mediaUrl =
     alias && alias !== "(literal path)"
-      ? `/api/w/${workspaceSlug}/videos/programs/${programSlug}/runs/${runId}/media/${alias}.mp4`
+      ? `${prefix}/api/w/${workspaceSlug}/videos/programs/${programSlug}/runs/${runId}/media/${alias}.mp4`
       : null;
   const showVideo = mediaUrl && !mediaLoadFailed;
 
