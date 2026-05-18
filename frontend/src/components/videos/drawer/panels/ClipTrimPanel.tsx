@@ -164,7 +164,13 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
         <TrimBar
           sourceDuration={sourceDuration}
           start={draft.start}
-          duration={draft.duration || sourceDuration}
+          // When slotSeconds is set (always, for beat clip slots), the
+          // TrimBar enters fixed-window mode: a draggable slotSeconds-
+          // wide window the user slides along the source. Two-handle
+          // resize is hidden because the renderer always plays exactly
+          // slotSeconds from start_seconds regardless of duration.
+          duration={draft.duration || slotSeconds || sourceDuration}
+          playWindow={slotSeconds > 0 ? slotSeconds : undefined}
           onChange={(next) => setDraft({ ...draft, start: next.start_seconds, duration: next.duration_seconds })}
         />
       ) : (
@@ -191,23 +197,30 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
           />
           s
         </label>
-        <label
-          className="flex items-center gap-1"
-          title="How much of the source the slot consumes. Playback duration is fixed at the slot length — this just bounds how far past the start the renderer is allowed to read."
-        >
-          selection
-          <input
-            type="number" step="0.1" min={0.3} max={sourceDuration}
-            disabled={!ready}
-            value={(draft.duration || sourceDuration).toFixed(2)}
-            onChange={(e) => {
-              const raw = parseFloat(e.target.value) || 0;
-              setDraft({ ...draft, duration: clampDuration(raw, draft.start) });
-            }}
-            className="w-20 rounded border bg-background px-1 py-0.5 disabled:opacity-50"
-          />
-          s
-        </label>
+        {slotSeconds <= 0 && (
+          // Variable-length selection: kept for any future caller that
+          // genuinely needs to pick a duration. For normal beat slots
+          // (slotSeconds > 0) the playback duration is fixed by the
+          // beat split, so showing an editable "selection" input would
+          // misleadingly imply the user can change playback length.
+          <label
+            className="flex items-center gap-1"
+            title="How much of the source the slot consumes."
+          >
+            selection
+            <input
+              type="number" step="0.1" min={0.3} max={sourceDuration}
+              disabled={!ready}
+              value={(draft.duration || sourceDuration).toFixed(2)}
+              onChange={(e) => {
+                const raw = parseFloat(e.target.value) || 0;
+                setDraft({ ...draft, duration: clampDuration(raw, draft.start) });
+              }}
+              className="w-20 rounded border bg-background px-1 py-0.5 disabled:opacity-50"
+            />
+            s
+          </label>
+        )}
         {ready && (
           <span className="ml-auto text-xs">
             source: {sourceDuration.toFixed(1)}s
