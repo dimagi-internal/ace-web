@@ -34,17 +34,31 @@ export function FinalVideoPlayer() {
   // (was full-bleed) so the beat list is visible above the fold, and a
   // play-overlay ring tells the user this is clickable. The native
   // `controls` bar remains the source of truth for playback.
+  //
+  // The overlay used to be a `pointer-events-none` div that relied on
+  // the wrapper's onClick to call `play()`. That caused a frustrating
+  // bug: clicks passed through to the video element, the native handler
+  // briefly toggled state in a way that fired `onPlay` (hiding the
+  // overlay) but ended with the video still paused, so the user had to
+  // click the native lower-left button anyway. Now the overlay IS the
+  // button — captures the click itself, calls play(), and stops
+  // propagation so nothing else fires. The native controls still work
+  // independently once playback starts.
+  const handlePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    void v.play().then(
+      () => setHasPlayed(true),
+      // play() can reject if the browser blocks autoplay (rare for a
+      // user-initiated click, but happens with muted autoplay policies
+      // or rapid clicks). In that case we leave the overlay visible so
+      // the user can try again instead of staring at a black box.
+      () => {},
+    );
+  };
+
   return (
-    <div
-      className="relative mx-auto w-full max-w-3xl cursor-pointer"
-      onClick={() => {
-        const v = videoRef.current;
-        if (!v) return;
-        if (v.paused) {
-          void v.play();
-        }
-      }}
-    >
+    <div className="relative mx-auto w-full max-w-3xl">
       <video
         ref={videoRef}
         id="final-video"
@@ -55,16 +69,31 @@ export function FinalVideoPlayer() {
         src={src}
         onError={() => setHasOutput(false)}
         onPlay={() => setHasPlayed(true)}
+        onPause={() => {
+          // If something pauses the video (e.g. the click sequence
+          // briefly toggles it), bring the overlay back so the play
+          // affordance is always visible when the video isn't playing.
+          // Without this, a user who pauses mid-video sees only the
+          // native controls fade — easy to think the player is broken.
+          if (videoRef.current && videoRef.current.currentTime === 0) {
+            setHasPlayed(false);
+          }
+        }}
       />
       {!hasPlayed && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 flex items-center justify-center"
+        <button
+          type="button"
+          aria-label="Play video"
+          onClick={(e) => {
+            e.stopPropagation();
+            handlePlay();
+          }}
+          className="absolute inset-0 flex cursor-pointer items-center justify-center bg-transparent focus:outline-none"
         >
-          <div className="rounded-full bg-black/50 p-4 text-white opacity-80 backdrop-blur-sm">
+          <span className="rounded-full bg-black/55 p-4 text-white opacity-90 shadow-lg backdrop-blur-sm transition-opacity hover:opacity-100">
             <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-          </div>
-        </div>
+          </span>
+        </button>
       )}
     </div>
   );
