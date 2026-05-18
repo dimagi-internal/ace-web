@@ -149,8 +149,16 @@ async function main() {
   if (!cli.noVoice && spec.voice.provider === "elevenlabs") {
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) {
-      console.warn(
-        "ELEVENLABS_API_KEY not set; rendering silent video. Pass --no-voice to silence this warning."
+      // Hard fail. The previous behaviour (console.warn + render
+      // silent) made it possible to ship a "successful" render with
+      // no narration — a regression nobody noticed until opening the
+      // player. If the spec genuinely calls for voice (elevenlabs
+      // provider in spec.yaml), the caller has to either provide a
+      // key or opt out explicitly with --no-voice. Silent-by-accident
+      // is no longer an option.
+      throw new Error(
+        "ELEVENLABS_API_KEY not set in environment, but spec.voice.provider=elevenlabs. " +
+          "Set ELEVENLABS_API_KEY to render with voice, or pass --no-voice to render silent on purpose."
       );
     } else if (spec.narration.by_beat) {
       console.log("Synthesizing per-beat voiceover…");

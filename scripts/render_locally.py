@@ -43,6 +43,7 @@ you want labs to see it.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -50,6 +51,33 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 WORKSPACE = "dimagi-team"
+
+
+def load_dotenv_into_env() -> None:
+    """Merge the repo's `.env` into os.environ for subprocess inheritance.
+
+    The renderer's per-beat voiceover synthesis (ElevenLabs) reads
+    `ELEVENLABS_API_KEY` from process env. Docker-compose loads `.env`
+    automatically when starting containers, but plain `subprocess.run`
+    out of a fresh shell doesn't — so without this, a host-side render
+    silently drops voice (logs the "not set; rendering silent video"
+    warning and skips synthesis). Existing env values win so a caller
+    can override per-invocation. Keys with embedded newlines (Drive SA
+    JSON) are skipped — they'd break naive line parsing and the host
+    npm chain doesn't need them anyway.
+    """
+    env_path = REPO / ".env"
+    if not env_path.is_file():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def parse_target(s: str) -> tuple[str, str]:
@@ -106,7 +134,25 @@ def main() -> int:
     else:
         slug, run_id = parse_target(args.target)
 
-    print(f"==> workspace={args.workspace} program={slug} run={run_id} publish={args.publish}")
+    load_dotenv_into_env()
+    have_eleven = bool(os.environ.get("ELEVENLABS_API_KEY"))
+    print(f"==> workspace={args.workspace} program={slug} run={run_id} "
+          f"publish={args.publish} voice={'on' if have_eleven else 'MISSING KEY'}")
+    if not have_eleven:
+        # The renderer (post-2026-05-18) hard-fails when the spec asks
+        # for elevenlabs voice and the key isn't set. We pre-check here
+        # so the user sees the actionable error before npm spins up its
+        # whole pipeline. If you genuinely want a silent render, edit
+        # render_locally.py and pass --no-voice to npm run render, or
+        # set spec.voice.provider to something non-elevenlabs.
+        print(
+            "\nERROR: ELEVENLABS_API_KEY not found in env or in .env.\n"
+            "       The renderer will refuse to render a silent video by "
+            "default (it used to silently warn — that hid real failures).\n"
+            "       Drop the key into .env, then re-run.",
+            file=sys.stderr,
+        )
+        return 2
 
     print("\n==> [1/3] Stage spec + shared content from Drive (container)")
     run_in_container(f"""

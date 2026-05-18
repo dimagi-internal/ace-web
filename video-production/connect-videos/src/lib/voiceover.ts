@@ -111,14 +111,29 @@ export async function synthesizePerBeat(args: {
   for (const [beatId, rawText] of Object.entries(args.byBeat)) {
     const text = rawText.trim();
     if (!text) continue;
-    const audioPath = await synthesize({
-      script: text,
-      voiceId: args.voiceId,
-      model: args.model,
-      cacheDir: args.cacheDir,
-      apiKey: args.apiKey,
-      fetchImpl: args.fetchImpl,
-    });
+    let audioPath: string;
+    try {
+      audioPath = await synthesize({
+        script: text,
+        voiceId: args.voiceId,
+        model: args.model,
+        cacheDir: args.cacheDir,
+        apiKey: args.apiKey,
+        fetchImpl: args.fetchImpl,
+      });
+    } catch (e) {
+      // Wrap to include which beat blew up. Without this, a 401 from
+      // ElevenLabs surfaces as `ElevenLabs HTTP 401: ...` with no
+      // hint that the failure came from the hook beat vs the impact
+      // beat vs etc. — and the caller has to grep the spec to figure
+      // out which text triggered it. Surface the beat id + first 80
+      // chars of the text so debugging is one read away.
+      const preview = text.length > 80 ? text.slice(0, 80) + "…" : text;
+      const message = e instanceof Error ? e.message : String(e);
+      throw new Error(
+        `Voiceover synthesis failed for beat '${beatId}' ("${preview}"): ${message}`
+      );
+    }
     out.push({ beatId, text, audioPath });
   }
   return out;
