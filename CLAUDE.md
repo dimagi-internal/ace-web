@@ -232,6 +232,21 @@ they read through to Google Drive.
   iframe remains only as a fallback for older runs without a parsed spec.
   Spec: `docs/specs/2026-05-15-video-beat-editor-react-port-design.md`.
   Plan: `docs/plans/2026-05-15-video-beat-editor-react-rewrite.md`.
+  **Editor visual caveats** (looks like UI bugs, isn't): the rendered
+  `final.mp4` opens on a black frame because Remotion's intro animation
+  starts there, and the tagline text ("Pay for verified service…") that
+  appears overlaid on the player is part of the rendered video content,
+  not a UI element — both are visible because we now show a play
+  overlay on the paused player (PR #445). Clip-slot thumbnails were
+  similarly mysterious before that PR: the explorer build symlinks
+  every `@alias.mp4` into `~/.cache/connect-videos/<gdriveId>.<ext>`,
+  which is a host path the Django container can't follow. `serve_media`
+  now handles the broken-symlink case by parsing the gdrive id out and
+  refetching via the workspace SA into `<videos_root>/assets/clip-cache/`.
+  The narration drawer embeds the cached TTS clip by computing the
+  same hash the renderer uses (`sha256("voiceId::model::script")[:16]`,
+  see `video-production/connect-videos/src/lib/voiceover.ts`); changing
+  voice_id or model in spec.yaml invalidates the existing audio.
 - **Cloud mobile emulator (`apps/mobile/`)**: ace-web orchestrates a single EC2
   instance (`m8i.xlarge` with nested virtualization) running an Android AVD via
   SSM. Packer bake in `infra/mobile-ami/`; runtime API at `/api/mobile/*`
