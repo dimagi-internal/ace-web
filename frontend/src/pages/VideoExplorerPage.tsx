@@ -196,11 +196,12 @@ export default function VideoExplorerPage() {
                 type="button"
                 disabled={busyAction !== null}
                 onClick={handleCopyRun}
+                aria-label="Copy this run into a new run-NNN — both stay mutable."
                 title="Snapshot this run into a new run-NNN — both stay mutable."
                 className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
               >
                 <Copy className="h-3 w-3" />
-                Copy
+                Copy run
               </button>
             </div>
           ) : null}

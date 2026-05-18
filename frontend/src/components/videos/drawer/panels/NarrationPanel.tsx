@@ -7,14 +7,51 @@ interface Props {
   onCancel: () => void;
 }
 
+// Mirrors `cacheKey(script, voiceId, model)` in
+// video-production/connect-videos/src/lib/voiceover.ts (sha256 of
+// `${voiceId}::${model}::${script}`, truncated to 16 hex chars). Used
+// to compute the audio-library stream URL for the current narration
+// so the user can preview the cached voiceover before editing.
+async function audioCacheKey(text: string, voiceId: string, model: string): Promise<string> {
+  const data = new TextEncoder().encode(`${voiceId}::${model}::${text}`);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  const hex = Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return hex.slice(0, 16);
+}
+
 export function NarrationPanel({ beatId, onCommit, onCancel }: Props) {
-  const { effectiveSpec, dispatch } = useBeatEditor();
+  const { effectiveSpec, workspaceSlug, dispatch } = useBeatEditor();
   const initial = effectiveSpec.narration?.by_beat?.[beatId] ?? "";
   const [text, setText] = useState(initial);
   const dirty = text !== initial;
 
   const voice = effectiveSpec.voice?.voice_id ?? "(default)";
   const model = effectiveSpec.voice?.model ?? "(default)";
+
+  // Resolve the cached audio URL for the *initial* narration so the
+  // user can hear what's currently in the rendered video before
+  // typing replacement text. As soon as text is dirty, we mark the
+  // clip as "stale" (still playable, but the labels reflect that
+  // a re-render is needed).
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioMissing, setAudioMissing] = useState<boolean>(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (!initial || !voice || voice === "(default)") {
+      setAudioUrl(null);
+      return;
+    }
+    audioCacheKey(initial, voice, model).then((hash) => {
+      if (cancelled) return;
+      const prefix = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      setAudioUrl(`${prefix}/api/w/${workspaceSlug}/videos/library/audio/${hash}/stream`);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [initial, voice, model, workspaceSlug]);
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
   const estSec = Math.round((text.length / 15) * 10) / 10;
 
@@ -56,6 +93,20 @@ export function NarrationPanel({ beatId, onCommit, onCancel }: Props) {
         Voice <code className="rounded bg-muted px-1">{voice}</code> ·
         model <code className="rounded bg-muted px-1">{model}</code>
       </div>
+      {audioUrl && !audioMissing && (
+        <div>
+          <div className="mb-1 text-xs text-muted-foreground">
+            {dirty ? "Currently rendered (will resynth on Re-render):" : "Currently rendered:"}
+          </div>
+          <audio
+            controls
+            preload="metadata"
+            className="h-9 w-full"
+            src={audioUrl}
+            onError={() => setAudioMissing(true)}
+          />
+        </div>
+      )}
       <textarea
         ref={taRef}
         value={text}

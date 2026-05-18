@@ -39,15 +39,24 @@ export function TimelineStrip() {
   let cursor = 0;
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {beats.map((b) => (
-          <span key={b.id} className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            key={b.id}
+            className="inline-flex items-center gap-1 rounded px-1 -mx-1 hover:bg-muted hover:text-foreground"
+            onClick={() => {
+              document
+                .querySelector(`[data-beat-id="${b.id}"]`)
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          >
             <span
               className="inline-block h-2 w-2 rounded-full"
               style={{ background: KIND_COLORS[b.kind] ?? "#3843D0" }}
             />
             {SECTION_LABELS[b.id] ?? b.id}
-          </span>
+          </button>
         ))}
       </div>
       <div className="relative h-4 w-full overflow-hidden rounded bg-muted">
