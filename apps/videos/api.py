@@ -18,6 +18,7 @@ URL structure mirrors opps/runs:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Annotated
 
 from django.conf import settings
@@ -690,8 +691,7 @@ def serve_library_html(
 # Pattern that matches the hydrate cache convention:
 #   <HOME>/.cache/connect-videos/<gdriveId>.<ext>
 # Captures the gdrive id so we can re-fetch via the SA.
-import re as _re_clip
-_HYDRATE_CACHE_RE = _re_clip.compile(
+_HYDRATE_CACHE_RE = re.compile(
     r"\.cache/connect-videos/(?P<gid>[A-Za-z0-9_-]{20,})\.(?P<ext>mp4|webm|m4v)$"
 )
 
