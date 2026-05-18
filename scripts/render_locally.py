@@ -112,7 +112,9 @@ def main() -> int:
     run_in_container(f"""
 import django; django.setup()
 from apps.workspaces.models import Workspace
-from apps.videos.service import _stage_spec, stage_existing_content_locally, prefetch_manifest_to_cache
+from apps.videos.service import (
+    _stage_spec, stage_existing_content_locally, prefetch_manifest_to_cache,
+)
 ws = Workspace.objects.get(slug={args.workspace!r})
 _stage_spec(ws, {slug!r}, {run_id!r})
 stage_existing_content_locally(ws)
@@ -132,7 +134,10 @@ print('prefetch:', prefetch_manifest_to_cache(ws, {slug!r}, {run_id!r}))
     else:
         print("\n==> [3/3] Skipping publish (pass --publish to push to Drive)")
 
-    out = REPO / "video-production" / "connect-videos" / "programs" / slug / "runs" / run_id / "output.mp4"
+    out = (
+        REPO / "video-production" / "connect-videos"
+        / "programs" / slug / "runs" / run_id / "output.mp4"
+    )
     print(f"\n==> Done. Output: {out}")
     return 0
 
