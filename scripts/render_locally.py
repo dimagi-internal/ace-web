@@ -170,21 +170,35 @@ print('prefetch:', prefetch_manifest_to_cache(ws, {slug!r}, {run_id!r}))
     print("\n==> [2/3] Run npm chain on host (bare-metal Mac)")
     host_npm(slug, run_id)
 
+    print("\n==> [3/4] Level-1 QA probe")
+    # Run the smoke probe in-process so its output streams to the same
+    # terminal. Don't `check=True` — a WARN (exit 1) should print but
+    # not abort the render; a FAIL (exit 2) prints a clear "FAILED"
+    # banner at the end so the user notices.
+    qa_rc = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "qa_render.py"), slug, run_id],
+        cwd=REPO,
+    ).returncode
+
     if args.publish:
-        print("\n==> [3/3] Publish artifacts to Drive (container)")
+        print("\n==> [4/4] Publish artifacts to Drive (container)")
         subprocess.run([
             "docker", "compose", "exec", "-T", "app",
             "python", "manage.py", "videos_publish_artifacts",
             f"--workspace={args.workspace}", f"--program={slug}", f"--run={run_id}",
         ], cwd=REPO, check=True)
     else:
-        print("\n==> [3/3] Skipping publish (pass --publish to push to Drive)")
+        print("\n==> [4/4] Skipping publish (pass --publish to push to Drive)")
 
     out = (
         REPO / "video-production" / "connect-videos"
         / "programs" / slug / "runs" / run_id / "output.mp4"
     )
     print(f"\n==> Done. Output: {out}")
+    if qa_rc == 2:
+        print("==> ⚠ QA probe reported FAIL — see checks above before shipping.")
+    elif qa_rc == 1:
+        print("==> ⚠ QA probe reported WARN — worth eyeballing the noted beats.")
     return 0
 
 

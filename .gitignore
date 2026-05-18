@@ -61,3 +61,6 @@ frontend/bun.lock
 docker-compose.override.yml
 .claude/scheduled_tasks.lock
 qa-results/
+
+# Per-render QA frames extracted by scripts/qa_render.py
+video-production/connect-videos/programs/*/runs/*/qa-frames/
