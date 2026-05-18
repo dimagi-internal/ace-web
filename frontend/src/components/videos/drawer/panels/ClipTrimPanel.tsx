@@ -107,8 +107,37 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
     return Math.max(MIN_DURATION, Math.min(sourceDuration - start, v));
   }
 
+  // Format a seconds value as M:SS.s for human-readable display.
+  const fmtMS = (n: number) => {
+    const m = Math.floor(n / 60);
+    const s = n - m * 60;
+    return `${m}:${s.toFixed(1).padStart(4, "0")}`;
+  };
+
   return (
     <div className="flex flex-col gap-3">
+      {/* Bold up-front summary. The two numbers that matter most are
+          (a) how long this clip plays in the final video, and (b) where
+          in the source clip the playback reads from. Putting them at
+          the top — above the source preview — removes the "what am I
+          even editing?" cold-open feel of the older layout where the
+          play time only appeared in a paragraph at the bottom. */}
+      {slotSeconds > 0 && (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+          <div className="font-medium text-foreground">
+            Plays <span className="text-base">{slotSeconds.toFixed(1)}s</span> in the final video
+          </div>
+          <div className="mt-0.5 text-muted-foreground">
+            Reading from <span className="font-mono">{fmtMS(draft.start)} → {fmtMS(draft.start + slotSeconds)}</span>
+            {sourceDuration > 0 && (
+              <> of the <span className="font-mono">{fmtMS(sourceDuration)}</span> source clip</>
+            )}
+            {totalSlots > 1 && (
+              <> · clip {index + 1} of {totalSlots} in this beat ({(slotSeconds * totalSlots).toFixed(1)}s total)</>
+            )}
+          </div>
+        </div>
+      )}
       {src && !mediaLoadFailed && (
         <video
           ref={videoRef}
@@ -135,7 +164,13 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
         <TrimBar
           sourceDuration={sourceDuration}
           start={draft.start}
-          duration={draft.duration || sourceDuration}
+          // When slotSeconds is set (always, for beat clip slots), the
+          // TrimBar enters fixed-window mode: a draggable slotSeconds-
+          // wide window the user slides along the source. Two-handle
+          // resize is hidden because the renderer always plays exactly
+          // slotSeconds from start_seconds regardless of duration.
+          duration={draft.duration || slotSeconds || sourceDuration}
+          playWindow={slotSeconds > 0 ? slotSeconds : undefined}
           onChange={(next) => setDraft({ ...draft, start: next.start_seconds, duration: next.duration_seconds })}
         />
       ) : (
@@ -147,8 +182,8 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
         </div>
       )}
       <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground">
-        <label className="flex items-center gap-1">
-          start
+        <label className="flex items-center gap-1" title="Where in the source clip playback starts.">
+          source start
           <input
             type="number" step="0.1" min={0} max={sourceDuration}
             disabled={!ready}
@@ -162,34 +197,36 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
           />
           s
         </label>
-        <label className="flex items-center gap-1">
-          duration
-          <input
-            type="number" step="0.1" min={0.3} max={sourceDuration}
-            disabled={!ready}
-            value={(draft.duration || sourceDuration).toFixed(2)}
-            onChange={(e) => {
-              const raw = parseFloat(e.target.value) || 0;
-              setDraft({ ...draft, duration: clampDuration(raw, draft.start) });
-            }}
-            className="w-20 rounded border bg-background px-1 py-0.5 disabled:opacity-50"
-          />
-          s
-        </label>
+        {slotSeconds <= 0 && (
+          // Variable-length selection: kept for any future caller that
+          // genuinely needs to pick a duration. For normal beat slots
+          // (slotSeconds > 0) the playback duration is fixed by the
+          // beat split, so showing an editable "selection" input would
+          // misleadingly imply the user can change playback length.
+          <label
+            className="flex items-center gap-1"
+            title="How much of the source the slot consumes."
+          >
+            selection
+            <input
+              type="number" step="0.1" min={0.3} max={sourceDuration}
+              disabled={!ready}
+              value={(draft.duration || sourceDuration).toFixed(2)}
+              onChange={(e) => {
+                const raw = parseFloat(e.target.value) || 0;
+                setDraft({ ...draft, duration: clampDuration(raw, draft.start) });
+              }}
+              className="w-20 rounded border bg-background px-1 py-0.5 disabled:opacity-50"
+            />
+            s
+          </label>
+        )}
         {ready && (
           <span className="ml-auto text-xs">
             source: {sourceDuration.toFixed(1)}s
           </span>
         )}
       </div>
-      {slotSeconds > 0 && (
-        <p className="rounded border border-dashed bg-muted/20 p-2 text-xs text-muted-foreground">
-          The trim picks <strong className="text-foreground">where in the source clip</strong> the
-          slot reads from. The on-screen duration is fixed at{" "}
-          <strong className="text-foreground">{slotSeconds.toFixed(1)}s</strong>
-          {totalSlots > 1 && ` (1 of ${totalSlots} clips sharing the beat's ${(slotSeconds * totalSlots).toFixed(1)}s)`}.
-        </p>
-      )}
       <div className="mt-2 flex justify-end gap-2">
         <button type="button" onClick={onCancel}
                 className="rounded border px-3 py-1.5 text-sm">
