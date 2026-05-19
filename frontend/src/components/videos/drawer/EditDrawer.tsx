@@ -3,6 +3,7 @@ import { useBeatEditor } from "../BeatEditorContext";
 import { sectionLabel } from "../sectionLabels";
 import { DrawerShell } from "./DrawerShell";
 import { ModalShell } from "./ModalShell";
+import { ClipPickerPanel } from "./panels/ClipPickerPanel";
 import { ClipTrimPanel } from "./panels/ClipTrimPanel";
 import { NarrationPanel } from "./panels/NarrationPanel";
 import { StatPanel } from "./panels/StatPanel";
@@ -44,6 +45,16 @@ export function EditDrawer() {
     title = clipSlotTitle(effectiveSpec, target.clipKind, target.index);
     body = (
       <ClipTrimPanel
+        clipKind={target.clipKind}
+        index={target.index}
+        onCommit={close}
+        onCancel={close}
+      />
+    );
+  } else if (target.kind === "clip-picker") {
+    title = `Swap clip — ${clipSlotTitle(effectiveSpec, target.clipKind, target.index)}`;
+    body = (
+      <ClipPickerPanel
         clipKind={target.clipKind}
         index={target.index}
         onCommit={close}

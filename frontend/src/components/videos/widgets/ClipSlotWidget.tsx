@@ -91,7 +91,26 @@ export function ClipSlotWidget({ beatId, clipKind, index }: Props) {
             trimmed
           </span>
         )}
-        <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors group-hover:text-foreground">
+        {/* Right-side affordances. "Swap" opens the clip picker for
+            this slot; the rest of the card (and the legacy "Edit trim"
+            hint) keeps opening the trim drawer. Both buttons stop
+            propagation so the card's catch-all onClick (which routes
+            to trim) doesn't fire alongside. */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            dispatch({
+              type: "OPEN_DRAWER",
+              target: { kind: "clip-picker", clipKind, beatId, index },
+            });
+          }}
+          className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Pick a different clip from this program's manifest"
+        >
+          ↔ Swap
+        </button>
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors group-hover:text-foreground">
           ✏ Edit trim
         </span>
       </header>

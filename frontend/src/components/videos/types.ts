@@ -42,6 +42,7 @@ export type PendingChange =
 // What the drawer is currently editing.
 export type WidgetRef =
   | { kind: "clip-trim"; clipKind: "scene-clip" | "product-beat"; beatId: string; index: number }
+  | { kind: "clip-picker"; clipKind: "scene-clip" | "product-beat"; beatId: string; index: number }
   | { kind: "narration"; beatId: string }
   | { kind: "stat"; beatId: string; path: string };
 
