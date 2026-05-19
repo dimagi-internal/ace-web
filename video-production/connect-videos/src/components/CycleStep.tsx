@@ -1,5 +1,4 @@
-import { Gif } from "@remotion/gif";
-import { spring, staticFile, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
+import { spring, useCurrentFrame, useVideoConfig, interpolate } from "remotion";
 import { theme } from "../theme";
 
 interface Props {
@@ -9,18 +8,76 @@ interface Props {
   active?: boolean;
 }
 
-// Each cycle step has a matching animated gif fetched from
-// connect.dimagi.com's prelogin marketing surface (downloaded into
-// public/cycle/). Using @remotion/gif means each frame of the gif is
-// composited into the rendered mp4 (vs. <Img> which would freeze on
-// frame 0). Falls back gracefully — if the gif fails to load (cache
-// miss, broken file), Remotion renders nothing and the surrounding
-// label/ring still indicate which step is highlighted.
-const GIF_PATH: Record<Props["label"], string> = {
-  Learn: "cycle/learn.gif",
-  Deliver: "cycle/deliver.gif",
-  Verify: "cycle/verify.gif",
-  Pay: "cycle/pay.gif",
+// Each cycle step has a brand color and a matching glyph, lifted from
+// the "click a step" graphic on connect.dimagi.com's prelogin homepage.
+// Two visual states per step:
+//
+//   active  = filled circle in BRAND[label], glyph stroked in white
+//   passive = white-fill circle outlined in BRAND[label], glyph stroked
+//             in BRAND[label]
+//
+// SVG path data is inlined (not loaded from public/) so the renderer
+// has zero asset-loading risk for this template element. Bake-once,
+// render-everywhere.
+const BRAND: Record<Props["label"], string> = {
+  Learn: "#16006D",
+  Deliver: "#5D70D2",
+  Verify: "#FC5F36",
+  Pay: "#1B998B",
+};
+
+// Inline icon glyphs centered on (0,0), drawn with stroke=currentColor.
+// Sized to fit comfortably inside a 144px-diameter circle.
+const Glyph: React.FC<{ label: Props["label"] }> = ({ label }) => {
+  const stroke = { stroke: "currentColor", fill: "none", strokeLinecap: "round", strokeLinejoin: "round" } as const;
+  switch (label) {
+    case "Learn":
+      // A laptop/screen with three text-lines and two stand legs —
+      // mirrors the homepage "Learn" glyph.
+      return (
+        <g {...stroke} strokeWidth={2.4}>
+          <rect x={-26} y={-16} width={52} height={26} rx={2.5} />
+          <line x1={-18} y1={-9} x2={2} y2={-9} />
+          <line x1={-18} y1={-2} x2={16} y2={-2} />
+          <line x1={-18} y1={6} x2={-2} y2={6} />
+          <line x1={-14} y1={11} x2={-14} y2={17} />
+          <line x1={14} y1={11} x2={14} y2={17} />
+        </g>
+      );
+    case "Deliver":
+      // Heart with a small + (cross) inside — the "care" mark.
+      return (
+        <g {...stroke} strokeWidth={2.4}>
+          <path d="M0 17 C -19 0, -19 -17, -9 -17 C -5 -17, 0 -12, 0 -7 C 0 -12, 5 -17, 9 -17 C 19 -17, 19 0, 0 17 Z" />
+          <line x1={-5} y1={-4} x2={5} y2={-4} strokeWidth={2.8} />
+          <line x1={0} y1={-9} x2={0} y2={1} strokeWidth={2.8} />
+        </g>
+      );
+    case "Verify":
+      // Shield with checkmark — the verification mark.
+      return (
+        <g {...stroke} strokeWidth={2.4}>
+          <path d="M0 -26 L-24 -17 L-24 5 L0 26 L24 5 L24 -17 Z" />
+          <path d="M-11 -1 L-3 7 L11 -9" strokeWidth={3} />
+        </g>
+      );
+    case "Pay":
+      // Dollar sign — drawn as a glyph so it inherits currentColor.
+      return (
+        <text
+          x={0}
+          y={0}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontFamily="Work Sans, Inter, sans-serif"
+          fontSize={52}
+          fontWeight={700}
+          fill="currentColor"
+        >
+          $
+        </text>
+      );
+  }
 };
 
 export const CycleStep: React.FC<Props> = ({ label, index, active = false }) => {
@@ -38,7 +95,9 @@ export const CycleStep: React.FC<Props> = ({ label, index, active = false }) => 
     to: active ? 1 : 0,
   });
   const scale = interpolate(focus, [0, 1], [0.88, 1.06]);
-  const dim = interpolate(focus, [0, 1], [0.35, 1]);
+  const dim = interpolate(focus, [0, 1], [0.55, 1]);
+
+  const brand = BRAND[label];
 
   return (
     <div
@@ -46,7 +105,7 @@ export const CycleStep: React.FC<Props> = ({ label, index, active = false }) => 
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 12,
+        gap: 14,
         opacity: enter * dim,
         transform: `translateY(${(1 - enter) * 20}px) scale(${scale})`,
         transition: "none",
@@ -54,33 +113,30 @@ export const CycleStep: React.FC<Props> = ({ label, index, active = false }) => 
         color: theme.colors.foreground,
       }}
     >
-      <div
+      <svg
+        width={176}
+        height={176}
+        viewBox="-88 -88 176 176"
+        // Glyph inherits currentColor — white when active, brand when
+        // passive. The matching circle below uses brand for the
+        // stroke/fill so the whole step reads as one color family.
         style={{
-          width: 220,
-          height: 220,
-          borderRadius: 9999,
-          // Accent-colored ring around the gif. Becomes deeper + larger
-          // shadow when the step is the one being narrated.
-          background: active ? theme.colors.accentDeep : theme.colors.accent,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-          padding: 8,
-          boxShadow: active
-            ? "0 12px 36px rgba(40, 50, 160, 0.45)"
-            : "0 4px 12px rgba(40, 50, 160, 0.18)",
+          color: active ? "#FFFFFF" : brand,
+          filter: active
+            ? `drop-shadow(0 14px 30px ${brand}55)`
+            : `drop-shadow(0 4px 10px ${brand}22)`,
         }}
       >
-        <Gif
-          src={staticFile(GIF_PATH[label])}
-          width={204}
-          height={204}
-          fit="cover"
-          loopBehavior="loop"
-          style={{ borderRadius: 9999 }}
+        <circle
+          cx={0}
+          cy={0}
+          r={70}
+          fill={active ? brand : "#FFFFFF"}
+          stroke={brand}
+          strokeWidth={active ? 0 : 3}
         />
-      </div>
+        <Glyph label={label} />
+      </svg>
       <div
         style={{
           fontSize: 38,

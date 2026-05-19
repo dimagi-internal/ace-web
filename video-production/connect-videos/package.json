@@ -24,7 +24,6 @@
     "@remotion/bundler": "^4.0.0",
     "@remotion/captions": "^4.0.0",
     "@remotion/cli": "^4.0.0",
-    "@remotion/gif": "^4.0.460",
     "@remotion/google-fonts": "^4.0.460",
     "@remotion/renderer": "^4.0.0",
     "react": "^18.3.0",
