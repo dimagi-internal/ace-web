@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import { loadProgramSpec } from "../src/lib/spec.node";
 import { loadDefaults, resolveBeats, type ResolvedTimeline, type ResolvedBeat } from "../src/lib/beats.node";
 import { resolveRun, specPath, outputPath } from "../src/lib/runs.node";
-import { synthesize, synthesizePerBeat, type PerBeatNarration } from "../src/lib/voiceover";
+import { synthesize, synthesizePerBeat, readAlignment, wordStartSeconds, type PerBeatNarration } from "../src/lib/voiceover";
 import { estimateCaptionTimeline, captionsFromBeats } from "../src/lib/captions";
 import { resolveAssetRefs, formatMissingError } from "../src/lib/asset-resolver.node";
 
@@ -227,7 +227,34 @@ async function main() {
   for (const b of timeline.beats) {
     beatOverrides[b.id] = { seconds: b.seconds };
   }
-  const props = { programSlug: cli.program, specYaml, beatOverrides, captions };
+
+  // Extract cycle-step timestamps from the cycle beat's TTS alignment.
+  // ElevenLabs' /with-timestamps endpoint returns per-character start
+  // seconds in the synthesized audio. We look up where the four cycle
+  // keywords actually start being spoken (case-insensitive stem match:
+  // "verif" matches verify/verified, "paid" matches paid/paying) and
+  // pass those as concrete numbers to the Cycle component. With these,
+  // the highlight transitions on the spoken word — not on a guessed
+  // proportional position.
+  const cyclePerBeat = perBeat.find((p) => p.beatId === "cycle");
+  let cycleStepStartSeconds:
+    | { learn?: number; deliver?: number; verify?: number; pay?: number }
+    | undefined;
+  if (cyclePerBeat) {
+    const sidecar = cyclePerBeat.audioPath.replace(/\.mp3$/, ".json");
+    const alignment = readAlignment(sidecar);
+    if (alignment) {
+      cycleStepStartSeconds = {
+        learn: wordStartSeconds(alignment, "learn") ?? undefined,
+        deliver: wordStartSeconds(alignment, "deliver") ?? undefined,
+        verify: wordStartSeconds(alignment, "verif") ?? undefined,
+        pay: wordStartSeconds(alignment, "paid") ?? wordStartSeconds(alignment, "pay") ?? undefined,
+      };
+      console.log("Cycle step timings (seconds into cycle audio):", cycleStepStartSeconds);
+    }
+  }
+
+  const props = { programSlug: cli.program, specYaml, beatOverrides, captions, cycleStepStartSeconds };
   const tmpPropsFile = path.join(os.tmpdir(), `remotion-props-${Date.now()}.json`);
   fs.writeFileSync(tmpPropsFile, JSON.stringify(props));
   const propsArg = `--props=${JSON.stringify(tmpPropsFile)}`;

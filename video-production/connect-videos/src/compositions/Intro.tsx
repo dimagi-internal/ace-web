@@ -12,12 +12,20 @@ interface Props {
   programName: string;
   brand: Brand;
   beatFrames: { hook: number; cycle: number; handoff: number };
-  // Optional narration text for the cycle beat. When provided, the
-  // cycle highlight walks at the timestamps where "learn", "deliver",
-  // "verify(ied)" and "pay(ied/paid)" appear in the audio (estimated
-  // proportional to word position). Without it, falls back to evenly
-  // spaced quarters.
+  // Optional narration text for the cycle beat. Used only when
+  // cycleStepStartSeconds isn't provided — falls back to the
+  // word-index proportional estimate.
   cycleNarration?: string;
+  // Exact seconds-into-cycle-audio at which each spoken keyword
+  // starts. Extracted from ElevenLabs' alignment data at render time
+  // (see voiceover.ts::wordStartSeconds). When provided, the highlight
+  // transitions on the spoken word — no estimation.
+  cycleStepStartSeconds?: {
+    learn?: number;
+    deliver?: number;
+    verify?: number;
+    pay?: number;
+  };
 }
 
 const Hook: React.FC<{ tagline: string }> = ({ tagline }) => {
@@ -110,27 +118,63 @@ const Cycle: React.FC<{
   durationFrames: number;
   steps: readonly [string, string, string, string];
   narration?: string;
-}> = ({ durationFrames, steps, narration }) => {
+  stepStartSeconds?: {
+    learn?: number;
+    deliver?: number;
+    verify?: number;
+    pay?: number;
+  };
+}> = ({ durationFrames, steps, narration, stepStartSeconds }) => {
   const frame = useCurrentFrame();
-  // Reserve the first 12 frames (0.4s @ 30fps) for the stagger-in.
-  const STAGGER = 12;
-  const walkBudget = durationFrames - STAGGER;
-  const positions = keywordPositions(narration);
-  let activeIndex: number;
-  if (positions) {
-    // The highlight switches to step i at positions[i] * walkBudget.
-    // We pick the highest i whose boundary is already past.
-    const t = (frame - STAGGER) / walkBudget; // 0..1
-    activeIndex = 0;
-    for (let i = 0; i < 4; i++) {
-      if (t >= positions[i]) activeIndex = i;
+  const { fps } = useVideoConfig();
+
+  // Three timing strategies, in order of preference:
+  //   1. Concrete second-offsets from ElevenLabs alignment data
+  //      (stepStartSeconds). The highlight transitions on the spoken
+  //      word — what the user wants.
+  //   2. Word-index proportional positions parsed from the narration
+  //      text (positions[]). Reasonable estimate when alignment isn't
+  //      available (e.g. Studio preview, or programs that haven't
+  //      re-rendered post-alignment-switch).
+  //   3. Even quarters across the beat duration. Last-resort fallback
+  //      when there's no narration text at all.
+  let activeIndex = 0;
+
+  if (stepStartSeconds && (
+    stepStartSeconds.learn !== undefined ||
+    stepStartSeconds.deliver !== undefined ||
+    stepStartSeconds.verify !== undefined ||
+    stepStartSeconds.pay !== undefined
+  )) {
+    // The cycle audio runs synchronously with the cycle beat (the mux
+    // step places the per-beat clip at beat.startFrame). So
+    // "seconds into cycle audio" == "seconds into this Sequence" ==
+    // frame / fps.
+    const t = frame / fps;
+    if (stepStartSeconds.pay !== undefined && t >= stepStartSeconds.pay) {
+      activeIndex = 3;
+    } else if (stepStartSeconds.verify !== undefined && t >= stepStartSeconds.verify) {
+      activeIndex = 2;
+    } else if (stepStartSeconds.deliver !== undefined && t >= stepStartSeconds.deliver) {
+      activeIndex = 1;
+    } else if (stepStartSeconds.learn !== undefined && t >= stepStartSeconds.learn) {
+      activeIndex = 0;
+    }
+  } else {
+    // Reserve the first 12 frames for the stagger-in.
+    const STAGGER = 12;
+    const walkBudget = durationFrames - STAGGER;
+    const positions = keywordPositions(narration);
+    if (positions) {
+      const t = (frame - STAGGER) / walkBudget;
+      for (let i = 0; i < 4; i++) {
+        if (t >= positions[i]) activeIndex = i;
+      }
+    } else {
+      const stepDuration = walkBudget / 4;
+      activeIndex = Math.floor((frame - STAGGER) / stepDuration);
     }
     activeIndex = Math.min(3, Math.max(0, activeIndex));
-  } else {
-    // Fallback: even quarters (legacy behaviour for programs that
-    // don't provide a cycle narration string).
-    const stepDuration = walkBudget / 4;
-    activeIndex = Math.min(3, Math.max(0, Math.floor((frame - STAGGER) / stepDuration)));
   }
   return (
     <AbsoluteFill
@@ -169,13 +213,24 @@ const Handoff: React.FC<{ programName: string }> = ({ programName }) => (
   </AbsoluteFill>
 );
 
-export const Intro: React.FC<Props> = ({ programName, brand, beatFrames, cycleNarration }) => (
+export const Intro: React.FC<Props> = ({
+  programName,
+  brand,
+  beatFrames,
+  cycleNarration,
+  cycleStepStartSeconds,
+}) => (
   <>
     <Sequence durationInFrames={beatFrames.hook}>
       <Hook tagline={brand.tagline} />
     </Sequence>
     <Sequence from={beatFrames.hook} durationInFrames={beatFrames.cycle}>
-      <Cycle durationFrames={beatFrames.cycle} steps={brand.cycleSteps} narration={cycleNarration} />
+      <Cycle
+        durationFrames={beatFrames.cycle}
+        steps={brand.cycleSteps}
+        narration={cycleNarration}
+        stepStartSeconds={cycleStepStartSeconds}
+      />
     </Sequence>
     <Sequence from={beatFrames.hook + beatFrames.cycle} durationInFrames={beatFrames.handoff}>
       <Handoff programName={programName} />

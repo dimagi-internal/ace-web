@@ -31,6 +31,19 @@ interface VideoProps {
    */
   beatOverrides?: Record<string, { seconds?: number }>;
   captions?: { startFrame: number; endFrame: number; text: string }[];
+  /**
+   * Exact seconds-into-cycle-audio for each cycle keyword, extracted
+   * from the ElevenLabs alignment data at render time. When present,
+   * the Intro/Cycle component switches the highlight on the spoken
+   * word; when absent, falls back to the word-index proportional
+   * estimate. Studio preview omits this (no audio synth).
+   */
+  cycleStepStartSeconds?: {
+    learn?: number;
+    deliver?: number;
+    verify?: number;
+    pay?: number;
+  };
 }
 
 // Programs registered for Studio preview. Add new entries here as program
@@ -61,6 +74,7 @@ const ProgramVideo: React.FC<VideoProps> = ({
   specYaml,
   beatOverrides,
   captions = [],
+  cycleStepStartSeconds,
 }) => {
   // Render-CLI path: spec passed verbatim via props. Studio-preview
   // path: look up the slug in the bundled registry. The render CLI
@@ -101,7 +115,12 @@ const ProgramVideo: React.FC<VideoProps> = ({
           // Cycle highlight syncs to the keyword positions in this
           // beat's narration ("learn"/"deliver"/"verif"/"pay") so the
           // ring lights up the right step as the voiceover names it.
+          // When cycleStepStartSeconds is provided (post-2026-05-19,
+          // from ElevenLabs alignment), Cycle uses the exact spoken
+          // timestamps; otherwise it falls back to a word-index
+          // proportional estimate parsed from the narration text.
           cycleNarration={spec.narration?.by_beat?.cycle}
+          cycleStepStartSeconds={cycleStepStartSeconds}
         />
       </Sequence>
       <Sequence
