@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { probeDurationSeconds } from "./probe";
 
@@ -19,49 +19,124 @@ export interface SynthesizeArgs {
   fetchImpl?: typeof fetch;
 }
 
+/**
+ * Per-character alignment timings returned by ElevenLabs'
+ * /with-timestamps endpoint. `characters[i]` is the literal character,
+ * `*_seconds[i]` is when it starts/ends within the synthesized clip.
+ * Used to compute exact moments for "learn"/"deliver"/"verify"/"paid"
+ * so the cycle highlight transitions on the spoken word rather than
+ * on a proportional word-index estimate.
+ */
+export interface Alignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+}
+
+/**
+ * Find the start time (in seconds, relative to the clip) where `word`
+ * first appears in the alignment. Case-insensitive prefix match: passing
+ * "verif" matches both "verify" and "verified"; "paid" matches "paid"
+ * but not "pay". Returns `null` if the word never appears.
+ *
+ * Implementation: rebuild the synthesized string from `characters[]`,
+ * find the word boundary index, look up its start_seconds.
+ */
+export function wordStartSeconds(
+  alignment: Alignment, wordStem: string,
+): number | null {
+  const stem = wordStem.toLowerCase();
+  const text = alignment.characters.join("").toLowerCase();
+  // Match word boundary: preceded by non-letter (or start of string)
+  // and starts with the stem.
+  const re = new RegExp(`(^|[^a-z])${stem}`);
+  const m = text.match(re);
+  if (!m || m.index === undefined) return null;
+  const idx = m.index + (m[1] ? m[1].length : 0);
+  if (idx < 0 || idx >= alignment.character_start_times_seconds.length) {
+    return null;
+  }
+  return alignment.character_start_times_seconds[idx];
+}
+
+/**
+ * Read the alignment sidecar for an already-synthesized clip. Returns
+ * `null` if the file is missing or was written before the timestamps
+ * endpoint switch (legacy sidecars don't carry `alignment`).
+ */
+export function readAlignment(jsonPath: string): Alignment | null {
+  try {
+    const raw = JSON.parse(readFileSync(jsonPath, "utf8"));
+    if (raw && Array.isArray(raw.alignment?.characters)) {
+      return raw.alignment as Alignment;
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
 export async function synthesize(args: SynthesizeArgs): Promise<string> {
   const { script, voiceId, model, cacheDir, apiKey } = args;
   const key = cacheKey(script, voiceId, model);
   mkdirSync(cacheDir, { recursive: true });
   const mp3Path = path.join(cacheDir, `${key}.mp3`);
   const jsonPath = path.join(cacheDir, `${key}.json`);
-  if (existsSync(mp3Path) && existsSync(jsonPath)) return mp3Path;
 
-  if (!existsSync(mp3Path)) {
-    const fetchImpl = args.fetchImpl ?? fetch;
-    const resp = await fetchImpl(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": apiKey,
-          "content-type": "application/json",
-          accept: "audio/mpeg",
-        },
-        body: JSON.stringify({
-          text: script,
-          model_id: model,
-          // Softer, more documentary-style delivery: higher stability for
-          // calmer pacing, lower similarity_boost for a more natural read,
-          // small style nudge away from a flat baseline.
-          voice_settings: {
-            stability: 0.6,
-            similarity_boost: 0.45,
-            style: 0.2,
-            use_speaker_boost: true,
-          },
-        }),
-      }
-    );
-    if (!resp.ok) {
-      throw new Error(`ElevenLabs HTTP ${resp.status}: ${await safeText(resp)}`);
-    }
-    const buf = Buffer.from(await resp.arrayBuffer());
-    writeFileSync(mp3Path, buf);
+  // Cache hit only when BOTH mp3 and sidecar with alignment exist —
+  // if the sidecar predates the alignment switch we re-synth so the
+  // cycle's word-timing path can drive off real character timings.
+  if (existsSync(mp3Path) && existsSync(jsonPath)) {
+    const cached = readAlignment(jsonPath);
+    if (cached) return mp3Path;
   }
 
-  // Always (re)write the sidecar when missing — covers (a) brand-new
-  // synthesis and (b) pre-sidecar mp3s left over from an earlier render.
+  let alignment: Alignment | null = null;
+
+  const fetchImpl = args.fetchImpl ?? fetch;
+  // /with-timestamps returns base64-encoded mp3 + per-character timing.
+  // Both arrive in one call so the audio bytes and the alignment can't
+  // disagree (which they would if we synthesized once for the mp3 and
+  // re-synthesized later just for timings — ElevenLabs samples a fresh
+  // delivery each time even with stability tuned high).
+  const resp = await fetchImpl(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        text: script,
+        model_id: model,
+        voice_settings: {
+          stability: 0.6,
+          similarity_boost: 0.45,
+          style: 0.2,
+          use_speaker_boost: true,
+        },
+      }),
+    },
+  );
+  if (!resp.ok) {
+    throw new Error(`ElevenLabs HTTP ${resp.status}: ${await safeText(resp)}`);
+  }
+  const payload = (await resp.json()) as {
+    audio_base64?: string;
+    alignment?: Alignment;
+  };
+  if (!payload.audio_base64) {
+    throw new Error("ElevenLabs response missing audio_base64");
+  }
+  const buf = Buffer.from(payload.audio_base64, "base64");
+  writeFileSync(mp3Path, buf);
+  alignment = payload.alignment ?? null;
+
+  // Write the sidecar with alignment data. Legacy fields (voice_id,
+  // model, text, duration_sec, generated_at) stay so the audio library
+  // sync still parses them.
   writeFileSync(
     jsonPath,
     JSON.stringify(
@@ -71,6 +146,7 @@ export async function synthesize(args: SynthesizeArgs): Promise<string> {
         text: script,
         duration_sec: probeDurationSeconds(mp3Path),
         generated_at: new Date().toISOString(),
+        alignment,
       },
       null,
       2,
