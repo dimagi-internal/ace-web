@@ -81,6 +81,15 @@ export function FinalVideoPlayer() {
         }}
       />
       {!hasPlayed && (
+        // Centered, button-sized — NOT inset-0. The previous full-bleed
+        // version covered the native controls strip at the bottom of
+        // the video, so users trying to drag the seek bar before first
+        // play hit the overlay button instead and the video would just
+        // start from currentTime=0. Now the overlay is a single round
+        // affordance over the visual middle of the player; the native
+        // scrubber / volume / fullscreen controls along the bottom are
+        // always reachable. `top-1/2 left-1/2 -translate-*` centers it
+        // without claiming the whole frame.
         <button
           type="button"
           aria-label="Play video"
@@ -88,11 +97,9 @@ export function FinalVideoPlayer() {
             e.stopPropagation();
             handlePlay();
           }}
-          className="absolute inset-0 flex cursor-pointer items-center justify-center bg-transparent focus:outline-none"
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/55 p-4 text-white opacity-90 shadow-lg backdrop-blur-sm transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/60"
         >
-          <span className="rounded-full bg-black/55 p-4 text-white opacity-90 shadow-lg backdrop-blur-sm transition-opacity hover:opacity-100">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-          </span>
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
         </button>
       )}
     </div>
