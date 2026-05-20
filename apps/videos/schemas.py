@@ -129,6 +129,14 @@ class ClipEditIn(StrictModel):
     start_seconds: float | None = None
     duration_seconds: float | None = None
     alias: str | None = None
+    # set-clip-asset: alternative to `alias`. Looks like
+    # "library:video/<subfolder>/<filename>". When the implied alias
+    # isn't already in spec.manifest, the server resolves the gdrive
+    # id from the workspace's VideoLibraryEntry, inserts a manifest
+    # entry, then sets the slot to @alias. One op = swap to any
+    # workspace-library clip without a separate "add to manifest"
+    # round-trip from the frontend.
+    ref: str | None = None
     # set-narration
     beatId: str | None = None
     text: str | None = None

@@ -581,6 +581,31 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/videos/library/video/{subfolder}/{filename}/stream": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Stream a video library clip's bytes (Range-aware)
+         * @description Serve raw bytes for one video library entry — used by the clip
+         *     picker so the user can scrub thumbnails for clips that aren't yet
+         *     in the open program's manifest. Lazy-caches into
+         *     ``<videos_root>/assets/clip-cache/<gdriveId>.<ext>`` so repeat
+         *     requests skip the Drive round-trip. Mirrors the audio library
+         *     stream path above.
+         */
+        readonly get: operations["apps_videos_api_stream_library_video"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/videos/library/audio/{hash}/stream": {
         readonly parameters: {
             readonly query?: never;
@@ -2582,6 +2607,8 @@ export interface components {
             readonly duration_seconds?: number | null;
             /** Alias */
             readonly alias?: string | null;
+            /** Ref */
+            readonly ref?: string | null;
             /** Beatid */
             readonly beatId?: string | null;
             /** Text */
@@ -4754,6 +4781,28 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["MediaLibraryAudioOut"];
                 };
+            };
+        };
+    };
+    readonly apps_videos_api_stream_library_video: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly subfolder: string;
+                readonly filename: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

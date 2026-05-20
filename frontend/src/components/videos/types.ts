@@ -35,7 +35,11 @@ export interface Stat {
 export type PendingChange =
   | { op: "set-clip-trim"; kind: "scene-clip" | "product-beat"; index: number;
       start_seconds: number; duration_seconds: number }
-  | { op: "set-clip-asset"; kind: "scene-clip" | "product-beat"; index: number; alias: string }
+  | { op: "set-clip-asset"; kind: "scene-clip" | "product-beat"; index: number;
+      // Provide one of: `alias` (existing manifest entry) or `ref`
+      // ("library:video/<subfolder>/<filename>" — server auto-adds to
+      // manifest if not already present).
+      alias?: string; ref?: string }
   | { op: "set-narration"; beatId: string; text: string }
   | { op: "set-stat"; path: string; big?: string; caption?: string; source?: string };
 
