@@ -214,6 +214,81 @@ def list_media_library_audio(
 
 
 @router.get(
+    "/library/video/{subfolder}/{filename}/stream",
+    summary="Stream a video library clip's bytes (Range-aware)",
+)
+def stream_library_video(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    subfolder: Annotated[str, PathParam()],
+    filename: Annotated[str, PathParam()],
+) -> HttpResponse | StreamingHttpResponse:
+    """Serve raw bytes for one video library entry — used by the clip
+    picker so the user can scrub thumbnails for clips that aren't yet
+    in the open program's manifest. Lazy-caches into
+    ``<videos_root>/assets/clip-cache/<gdriveId>.<ext>`` so repeat
+    requests skip the Drive round-trip. Mirrors the audio library
+    stream path above.
+    """
+    import os.path as _osp
+    import re as _re
+    # Defensive path validation — neither argument should slip out of
+    # its component. The library reader uses these verbatim as PK-like
+    # lookups; reject anything that smells like traversal.
+    if (
+        not _re.fullmatch(r"[A-Za-z0-9_.-]+", subfolder)
+        or not _re.fullmatch(r"[A-Za-z0-9_.-]+", filename)
+        or filename != _osp.basename(filename)
+    ):
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+
+    from apps.videos.models import VideoLibraryEntry
+    try:
+        entry = VideoLibraryEntry.objects.get(
+            workspace=workspace, subfolder=subfolder, filename=filename,
+        )
+    except VideoLibraryEntry.DoesNotExist:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from None
+
+    ext = filename.rsplit(".", 1)[-1] if "." in filename else "mp4"
+    cache_path = service._root() / "assets" / "clip-cache" / f"{entry.drive_id}.{ext}"
+    if not cache_path.is_file():
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        client = service.drive.get_drive_client()
+        # Library entries are typically Drive *shortcuts* — populated by
+        # ``scripts/seed_video_library`` to keep the canonical clip files
+        # in place under their original CHC Media Shoot folders. Drive
+        # refuses to ``get_binary`` a shortcut directly ("fileNotDownloadable"
+        # → 403). Resolve to the target id first, then fetch.
+        meta = client._service.files().get(
+            fileId=entry.drive_id,
+            fields="id,mimeType,shortcutDetails",
+            supportsAllDrives=True,
+        ).execute()
+        target_id = entry.drive_id
+        if meta.get("mimeType") == "application/vnd.google-apps.shortcut":
+            target_id = meta.get("shortcutDetails", {}).get("targetId") or target_id
+        try:
+            content = client.get_binary(target_id)
+        except Exception as e:  # pragma: no cover — surfaces as 502
+            raise ProblemError(
+                502, "Drive fetch failed", detail=str(e)[:200],
+            ) from e
+        cache_path.write_bytes(content)
+
+    response = FileResponse(cache_path.open("rb"), as_attachment=False)
+    suffix = cache_path.suffix.lower()
+    if suffix in {".mp4", ".m4v"}:
+        response["Content-Type"] = "video/mp4"
+    elif suffix == ".webm":
+        response["Content-Type"] = "video/webm"
+    response["Cache-Control"] = "private, max-age=3600"
+    return response
+
+
+@router.get(
     "/library/audio/{hash}/stream",
     summary="Stream the audio clip bytes (Range-aware)",
 )

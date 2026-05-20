@@ -500,10 +500,20 @@ class EditResult:
     message: str
 
 
-def _apply_single_op(doc: Any, op: dict[str, Any]) -> EditResult:
+def _apply_single_op(
+    doc: Any,
+    op: dict[str, Any],
+    workspace: Workspace | None = None,
+) -> EditResult:
     """Apply one edit op to an in-memory ruamel YAML doc. Pure mutation,
-    no I/O. Returns ok=False on validation failure (caller decides whether
-    to abort the whole batch)."""
+    no I/O **except** the set-clip-asset op when given a ``library:``
+    ref — that path queries VideoLibraryEntry to resolve the gdrive id
+    and auto-add a manifest entry. Returns ok=False on validation
+    failure (caller decides whether to abort the whole batch).
+
+    `workspace` is needed only by the library-ref code path; other ops
+    accept None.
+    """
     name = op.get("op")
 
     if name in {"set-clip-start", "set-clip-trim", "set-clip-asset"}:
@@ -548,8 +558,49 @@ def _apply_single_op(doc: Any, op: dict[str, Any]) -> EditResult:
 
         if name == "set-clip-asset":
             alias = op.get("alias")
+            lib_ref = op.get("ref")
+            # Two entry shapes:
+            #   {alias: "mobile-learn"}                    → uses an existing
+            #     spec.manifest alias verbatim
+            #   {ref: "library:video/<sub>/<filename>.mp4"} → looks up the
+            #     gdrive id in the workspace's VideoLibraryEntry, auto-adds
+            #     a manifest entry if one doesn't exist, then sets the slot
+            #     to @<derived-alias>. The picker uses this so users can
+            #     pick any workspace-library clip in one click.
+            if (not alias) and isinstance(lib_ref, str) and lib_ref.startswith("library:video/"):
+                if workspace is None:
+                    return EditResult(False, "library ref requires workspace context")
+                # Parse "library:video/<sub>/<filename>" — tolerate
+                # trailing extension or not.
+                tail = lib_ref[len("library:video/"):]
+                parts = tail.split("/", 1)
+                if len(parts) != 2:
+                    return EditResult(False, f"malformed ref: {lib_ref!r}")
+                subfolder, filename = parts
+                from apps.videos.models import VideoLibraryEntry
+                try:
+                    entry = VideoLibraryEntry.objects.get(
+                        workspace=workspace, subfolder=subfolder, filename=filename,
+                    )
+                except VideoLibraryEntry.DoesNotExist:
+                    return EditResult(
+                        False,
+                        f"library entry not found: {subfolder}/{filename}",
+                    )
+                # Derive an alias from filename: strip extension. The
+                # filename was chosen at library-seed time to match the
+                # alias convention (kebab-case, no spaces) so this is a
+                # clean transform.
+                stem = filename.rsplit(".", 1)[0]
+                ext = (
+                    filename.rsplit(".", 1)[1] if "." in filename else "mp4"
+                )
+                alias = stem
+                manifest = doc.setdefault("manifest", {})
+                if alias not in manifest:
+                    manifest[alias] = f"gdrive:{entry.drive_id}.{ext}"
             if not isinstance(alias, str) or not alias:
-                return EditResult(False, "alias must be a non-empty string")
+                return EditResult(False, "alias or library ref required")
             new_ref = f"@{alias}"
             if isinstance(node, str):
                 if kind == "scene-clip":
@@ -669,7 +720,9 @@ def apply_edit_batch(
     doc = y.load(spec_yaml)
     messages: list[str] = []
     for i, op in enumerate(ops):
-        result = _apply_single_op(doc, op)
+        # Thread the workspace through so set-clip-asset with a library
+        # ref can look up VideoLibraryEntry rows. Other ops ignore it.
+        result = _apply_single_op(doc, op, workspace=workspace)
         if not result.ok:
             return BatchResult(False, 0, f"op[{i}] failed: {result.message}")
         messages.append(result.message)
