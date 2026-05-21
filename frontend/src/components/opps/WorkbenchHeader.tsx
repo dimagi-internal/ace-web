@@ -159,10 +159,10 @@ export function WorkbenchHeader({
                 "inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500",
                 onJumpToPhases ? "transition hover:bg-amber-500/20" : "cursor-default",
               )}
-              aria-label={`${decisionsSummary.open} open decisions — jump to Phases`}
+              aria-label={openDecisionsLabel(decisionsSummary.open)}
             >
               <HelpCircle className="h-3 w-3" />
-              {decisionsSummary.open} open
+              {openDecisionsLabel(decisionsSummary.open)}
             </button>
           )}
           <TagEditor workspaceSlug={workspaceSlug} slug={opp.slug} initialTags={opp.tags ?? []} />
@@ -218,6 +218,23 @@ export function WorkbenchHeader({
       />
     </>
   );
+}
+
+/**
+ * Visible + ARIA label for the "open decisions" chip in the workbench header.
+ *
+ * Caller guarantees `count > 0` (the chip isn't rendered for 0), but the
+ * function still handles 0 cleanly so a unit test can pin the full range.
+ * Pluralizes via simple ternary — Intl.PluralRules would be overkill for
+ * the only-English UI and a dependency we don't pull in elsewhere here.
+ *
+ * Previously rendered "{n} open" as the visible label with a separate
+ * "{n} open decisions — jump to Phases" ARIA label, which (1) hid the
+ * noun from sighted users (issue #486) and (2) repeated an interaction
+ * hint already implied by the chip being a button.
+ */
+export function openDecisionsLabel(count: number): string {
+  return `${count} open ${count === 1 ? "decision" : "decisions"}`;
 }
 
 function secondsAgoLabel(when: number): string {
