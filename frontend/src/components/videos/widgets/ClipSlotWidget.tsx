@@ -54,7 +54,20 @@ export function ClipSlotWidget({ beatId, clipKind, index }: Props) {
     : (obj.start_seconds !== undefined && obj.duration_seconds !== undefined
         ? `${obj.start_seconds.toFixed(1)}s → ${(obj.start_seconds + obj.duration_seconds).toFixed(1)}s · ${obj.duration_seconds.toFixed(1)}s`
         : "untrimmed");
-  const isExplicitlyTrimmed = obj.start_seconds !== undefined && obj.start_seconds > 0;
+  // A slot is "trimmed" if it doesn't play the entire source clip —
+  // either the IN-point is past 0 (head discard) OR the play window
+  // ends before the source ends (tail discard). The original predicate
+  // only checked head discard, which made identical-shaped slots
+  // inconsistent: e.g. start=0 plays=2.3s of 5.7s source looked
+  // untrimmed while start=3.0 plays=2.3s of 23.4s source was tagged.
+  // Tail discard needs sourceDuration, which is probed async from the
+  // <video> element — until that resolves we conservatively answer
+  // based on head discard alone.
+  const TRIM_EPSILON = 0.05;
+  const inPointTrimmed = inPoint > 0;
+  const playEnd = inPoint + (slotSeconds > 0 ? slotSeconds : (obj.duration_seconds ?? 0));
+  const tailTrimmed = sourceDuration != null && playEnd + TRIM_EPSILON < sourceDuration;
+  const isExplicitlyTrimmed = inPointTrimmed || tailTrimmed;
 
   // Source-clip MP4 served by the existing serve_media endpoint.
   // The backend resolves broken symlinks (host-side hydrate cache that
