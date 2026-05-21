@@ -1,0 +1,104 @@
+name: Sync video library on Labs
+
+# Walks the workspace's Drive `videos/library/{video,audio}` folders and
+# upserts VideoLibraryEntry / AudioLibraryEntry rows on labs. Use when:
+#
+# - the library tables are empty (founding deploy, fresh DB),
+# - content landed directly in Drive (out-of-band uploads — admins
+#   dropping clips into the shared "ACE" folder),
+# - a row's metadata sidecar (name/description/tags/status) drifted.
+#
+# This is the labs counterpart to `python manage.py videos_sync_library
+# --workspace=<slug>` on local dev. The ECS run-task pattern mirrors the
+# `migrate` step in deploy-ace-web-labs.yml — same task definition,
+# same network config, same wait-and-check exit semantics.
+
+on:
+  workflow_dispatch:
+    inputs:
+      workspace:
+        description: 'Workspace slug to sync (e.g. dimagi-team)'
+        type: string
+        required: true
+        default: 'dimagi-team'
+      direction:
+        description: 'import (Drive→DB), export (DB→Drive), or both'
+        type: choice
+        required: true
+        default: 'import'
+        options:
+          - import
+          - export
+          - both
+
+concurrency:
+  group: sync-video-library-labs-${{ inputs.workspace }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ECS_CLUSTER: labs-jj-cluster
+  TASK_FAMILY: labs-jj-ace-web
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  sync:
+    name: Sync ${{ inputs.workspace }} library on Labs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve latest task definition
+        id: task-def
+        run: |
+          ARN=$(aws ecs describe-task-definition \
+            --task-definition "${{ env.TASK_FAMILY }}" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+          echo "::notice::Using task definition $ARN"
+
+      - name: Run videos_sync_library
+        run: |
+          TASK_DEF_ARN="${{ steps.task-def.outputs.arn }}"
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition "$TASK_DEF_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.LABS_SUBNET }}],securityGroups=[${{ secrets.LABS_SECURITY_GROUP }}],assignPublicIp=ENABLED}" \
+            --overrides '{"containerOverrides":[{"name":"api","command":["python","manage.py","videos_sync_library","--workspace=${{ inputs.workspace }}","--direction=${{ inputs.direction }}"]}]}' \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "Sync task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[?name==`api`].exitCode | [0]' \
+            --output text)
+
+          if [ "$EXIT_CODE" = "0" ]; then
+            echo "Library sync completed successfully."
+          else
+            echo "::error::Library sync failed (exit code $EXIT_CODE)."
+            # Surface the last lines of the task's logs for quick triage.
+            TASK_ID=$(basename "$TASK_ARN")
+            aws logs tail "/ecs/${{ env.TASK_FAMILY }}" \
+              --since 10m \
+              --filter-pattern "$TASK_ID" \
+              --format short \
+              | tail -50 || true
+            exit 1
+          fi
