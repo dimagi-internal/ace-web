@@ -287,7 +287,32 @@ def read_parsed_spec(workspace: Workspace, slug: str, run_id: str) -> dict | Non
     # Resolve defaults' beats + apply per-run overrides.
     if "beats" not in parsed:
         parsed["beats"] = _resolved_beats(parsed.get("beat_overrides") or {})
-    return parsed
+    # Scrub ruamel's round-trip wrappers (ScalarFloat / ScalarInt /
+    # CommentedMap / CommentedSeq) to plain Python types. orjson refuses
+    # to serialize float/int subclasses, so the moment a trim edit writes
+    # `start_seconds: 8.0` and we re-read the spec, GET /runs/<id> 500s
+    # with "Type is not JSON serializable: ScalarFloat". CommentedMap
+    # and CommentedSeq inherit dict/list and serialize fine on their
+    # own, but their nested values still need recursion. Done here at
+    # the read boundary so callers downstream get vanilla Python dicts.
+    return _scrub_ruamel(parsed)
+
+
+def _scrub_ruamel(node: Any) -> Any:
+    """Recursively unwrap ruamel.yaml round-trip types to plain
+    Python. Safe to call on any nested dict/list/scalar structure."""
+    if isinstance(node, dict):
+        return {k: _scrub_ruamel(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_scrub_ruamel(v) for v in node]
+    # bool must come before int (bool is a subclass of int)
+    if isinstance(node, bool):
+        return bool(node)
+    if isinstance(node, float):
+        return float(node)
+    if isinstance(node, int):
+        return int(node)
+    return node
 
 
 def _resolved_beats(overrides: dict) -> list[dict]:

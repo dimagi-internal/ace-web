@@ -147,6 +147,38 @@ def test_get_run_detail_includes_parsed_spec(member_client, videos_root, fake_dr
 
 
 @pytest.mark.django_db
+def test_get_run_detail_serializes_trim_floats(member_client, videos_root, fake_drive):
+    """Regression: a clip-trim edit writes float start_seconds/duration_seconds
+    via ruamel.yaml, which loads them back as `ScalarFloat` (a float
+    subclass orjson refuses to serialize). Without the scrub step at the
+    service boundary, the next GET /runs/<id> 500s with
+    `Type is not JSON serializable: ScalarFloat`. See fix in
+    apps/videos/service._scrub_ruamel."""
+    client, _ = member_client
+    # Save a trim — same path the React drawer uses.
+    edit = client.post(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/edit-batch",
+        data={"ops": [{
+            "op": "set-clip-trim",
+            "kind": "scene-clip",
+            "index": 0,
+            "start_seconds": 8.0,
+            "duration_seconds": 2.3,
+        }]},
+        content_type="application/json",
+    )
+    assert edit.status_code == 200, edit.content
+    # Re-read — would 500 without the scrub.
+    resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-001")
+    assert resp.status_code == 200, resp.content
+    clip = resp.json()["spec"]["scene"]["clips"][0]
+    assert clip["start_seconds"] == 8.0
+    assert clip["duration_seconds"] == 2.3
+    assert type(clip["start_seconds"]) is float
+    assert type(clip["duration_seconds"]) is float
+
+
+@pytest.mark.django_db
 def test_get_run_404_unknown_run(member_client, videos_root):
     client, _ = member_client
     resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-999")
