@@ -40,17 +40,15 @@ from .exceptions import (
 # How long to wait for the EC2 instance + SSM agent to come ready
 # after a cold ``StartInstances`` call.
 _BOOT_HARD_TIMEOUT_SEC = 180
-# How long to wait for the in-VM Android emulator + cold-boot
-# registration to complete. ``ace-emulator-launch`` writes
-# ``/run/ace-mobile/ready`` once the +7426 demo registration recipes
-# finish — that's the signal we wait for. Budget: AVD boot ~60-90s,
-# adb install ~10s, the new pre-recipe pm-settle wait ~3-15s, two
-# registration recipes ~60s each, total ~3-4 min.
-# 8-min ceiling gives headroom for transient slowness without masking
-# real failures (bumped from 5 min after leep Phase 5 attempt 6
-# surfaced a 300s-wait timeout during a state-switch cold-boot —
-# even though the underlying cold-boot was healthy, the wait window
-# was just slightly tight).
+# How long to wait for the in-VM Android emulator cold-boot to
+# complete. ``ace-emulator-launch`` writes ``/run/ace-mobile/ready``
+# once the AVD is booted + CommCare is installed — that's the signal
+# we wait for. Post-Phase-D the launch script no longer registers a
+# Connect user (that's deferred to the on-demand
+# ``/api/mobile/register-test-user`` endpoint), so the budget is
+# AVD boot ~60-90s + adb install ~10s + pm-settle wait ~3-15s,
+# total ~75-115s. 8-min ceiling kept to absorb transient slowness
+# without masking real failures.
 _EMULATOR_READY_TIMEOUT_SEC = 480
 _EMULATOR_READY_MARKER = "/run/ace-mobile/ready"
 # Per-call SSM timeouts. Tuned for the typical command class.
@@ -1303,17 +1301,20 @@ fi
         )
 
     def _wait_for_emulator(self) -> None:
-        """Probe the in-VM AVD until cold-boot registration completes.
+        """Probe the in-VM AVD until cold-boot staging completes.
 
         ``ace-emulator-launch`` writes ``_EMULATOR_READY_MARKER`` after:
           1. AVD boots (sys.boot_completed=1)
           2. CommCare APK is installed
-          3. Both +7426 demo registration recipes succeed
+          3. pm is stable (probed via `pm path org.commcare.dalvik`)
 
         We poll for that marker rather than just ``sys.boot_completed``
-        — the latter fires before registration, so callers would see
-        "running" while the launcher is still typing into PersonalID.
-        Budget: ~3 min on a cold instance start.
+        — the latter fires before the APK install completes, so callers
+        would see "running" while the launcher is still mid-install
+        and Maestro's driver push would race a half-booted pm service.
+        Connect-id registration is now on-demand (driven by
+        ``/api/mobile/register-test-user``), so the ready marker no
+        longer waits for that step. Budget: ~75-115s on a cold start.
 
         Single source of truth for the timeout is the SSM wrapper's
         ``timeout_seconds``; the in-VM loop runs unbounded and just

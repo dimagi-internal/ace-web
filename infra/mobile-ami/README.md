@@ -121,39 +121,30 @@ of the roll.
    `/opt/maestro` and symlinks `/usr/local/bin/maestro`.
 5. **`scripts/40-commcare-apk.sh`** — downloads CommCare 2.62.0,
    records the md5 sidecar, writes `/opt/ace/MANIFEST.txt`.
-6. **`scripts/50-bake-snapshot.sh`** — boots the AVD headless, disables
-   GMS (`pm disable-user --user 0 com.google.android.gms`), grants
-   CAMERA, installs the APK, runs the two registration recipes via the
-   `+7426` demo-bypass flow (no human OTP entry — Connect-id
-   short-circuits SMS for that prefix), saves
-   `registered-test-user` snapshot, kills the emulator.
+6. **`scripts/50-bake-snapshot.sh`** — writes `/opt/ace/states.yaml`
+   describing the named states (one per CommCare APK version). No
+   emulator boot, no snapshot bake, no register — the runtime
+   cold-boots + installs CommCare + signals ready per dispatch; the
+   Connect-id user is registered live on demand by ace-web's
+   `/api/mobile/register-test-user` endpoint at first dispatch.
 7. **`scripts/60-systemd.sh`** — installs `ace-mobile-runner.service`
    + the `ace-idle-shutdown.{service,timer}` pair, enables them.
 
 ---
 
-## Maestro recipes (vendored)
+## Register recipes — shipped from the plugin, not baked
 
-`files/recipes/connect-register-1-phone-entry.yaml` and
-`files/recipes/connect-register-2-app-lock.yaml` are **verbatim copies**
-from the canonical source in the ACE plugin:
+Register recipes (`connect-register-to-otp.yaml`,
+`connect-register-from-otp.yaml`) used to be baked into the AMI under
+`files/recipes/`. They no longer are. As of the Phase D convergence
+(2026-05-21), every dispatch ships its own register recipes from the
+ACE plugin's static palette (`mcp/mobile/recipes/static/`) as a
+base64-tar.gz palette to `/api/mobile/register-test-user`. The AMI
+stages CommCare on the AVD only; the rest is plugin-driven.
 
-```
-../ace/mcp/mobile/recipes/static/connect-register-1-phone-entry.yaml
-../ace/mcp/mobile/recipes/static/connect-register-2-app-lock.yaml
-```
-
-Don't edit the local copies. When CommCare's UI changes (typical pattern:
-selectors stop matching after a CommCare release), update the recipes in
-the ACE plugin first, verify on a laptop AVD via
-`mobile_register_test_user`, then refresh the copies here:
-
-```bash
-cp ../../../ace/mcp/mobile/recipes/static/connect-register-1-phone-entry.yaml   files/recipes/
-cp ../../../ace/mcp/mobile/recipes/static/connect-register-2-app-lock.yaml files/recipes/
-```
-
-(Adjust the relative path to wherever the `ace` repo lives in your worktree.)
+When CommCare's UI changes, fix the recipes in the ACE plugin and
+verify against a laptop AVD via `mobile_register_test_user`. No AMI
+rebake required for recipe changes.
 
 ---
 
@@ -161,12 +152,13 @@ cp ../../../ace/mcp/mobile/recipes/static/connect-register-2-app-lock.yaml files
 
 | Trigger | Re-bake? |
 |---|---|
-| CommCare APK rev (e.g., 2.62.0 → 2.63.0) | yes — selectors may drift |
+| CommCare APK rev (e.g., 2.62.0 → 2.63.0) | yes — APK is baked in for fast install on cold boot |
 | Maestro CLI rev | optional — pin version in `30-maestro.sh` to lock |
-| Demo phone rotated | yes — snapshot has the old phone's account |
-| Demo phone's ConnectID server-side session expires | yes |
+| Demo phone rotated | no — phone is read live by `register-test-user` |
+| Demo phone's ConnectID server-side session expires | no — live re-register handles |
 | Android system image security patch | quarterly cadence is fine |
-| Recipe changes in the ACE plugin (selector fixes etc.) | yes |
+| Recipe changes in the ACE plugin (selector fixes etc.) | no — recipes ship from the plugin per dispatch |
+| `ace-emulator-launch` changes | yes |
 
 Run `AWS_PROFILE=labs ./rebake.sh` to bake and roll. The script:
 

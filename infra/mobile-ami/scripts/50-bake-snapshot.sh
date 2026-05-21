@@ -6,11 +6,15 @@
 #
 # This step USED to bake AVD snapshots with the demo user pre-registered;
 # we removed that path on 2026-05-10 — the snapshot data didn't survive
-# AMI capture, and runtime cold-boot + register is fast enough (~2-3 min)
-# that the architectural simplification is worth it. See
-# docs/learnings/cloud-emulator-snapshot-persistence.md for the
-# investigation; docs/specs/2026-05-10-phase5-cloud-mobile-integration-design.md
-# for the design rationale.
+# AMI capture. The cold-boot path then carried a server-side register step
+# (driving two Maestro recipes against AWS-Secrets-Manager creds) until
+# 2026-05-21, when Phase D of the local↔cloud parity convergence dropped
+# that too. Today the AMI stages CommCare on the AVD only; the Connect-id
+# user is registered live by ace-web's /api/mobile/register-test-user
+# endpoint at first dispatch. See
+# docs/learnings/cloud-emulator-snapshot-persistence.md for the original
+# snapshot investigation; docs/specs/2026-05-10-phase5-cloud-mobile-integration-design.md
+# for the original design rationale.
 #
 # This script is idempotent and reads COMMCARE_VERSIONS from Packer's
 # environment (the same var that drove 40-commcare-apk.sh).
@@ -19,13 +23,13 @@ set -eu
 : "${COMMCARE_VERSIONS:?COMMCARE_VERSIONS is required}"
 
 APK_ROOT=/opt/ace/apks
-RECIPE_DIR=/opt/ace/recipes
 STATES_YAML=/opt/ace/states.yaml
 
-# Stage Maestro recipes Packer's file provisioner copied to /tmp.
-mkdir -p "$RECIPE_DIR"
-cp -v /tmp/recipes/*.yaml "$RECIPE_DIR/"
-chown -R ubuntu:ubuntu "$RECIPE_DIR"
+# No recipe staging here anymore — the launch script no longer runs
+# Maestro on cold boot. The register recipes are shipped from the
+# plugin per-dispatch as a palette tarball via
+# /api/mobile/register-test-user (see Phase D of the local↔cloud
+# parity convergence, 2026-05-21).
 
 IFS=',' read -ra VERSIONS <<< "$COMMCARE_VERSIONS"
 
@@ -50,11 +54,11 @@ for VERSION in "${VERSIONS[@]}"; do
 
   cat >> "$STATES_YAML" <<YAML
   - name: ${STATE_NAME}
-    snapshot: cold-boot-register
+    snapshot: cold-boot-stage
     commcare_version: "${VERSION}"
     commcare_apk_md5: ${CC_MD5}
     apk_path: ${APK_PATH}
-    description: "CommCare ${VERSION} — cold boot + register on every cold start (~2-3 min)."
+    description: "CommCare ${VERSION} — cold boot + APK install (~60-90s); live register on demand."
 YAML
 done
 

@@ -111,16 +111,11 @@ build {
     ]
   }
 
-  # Stage Maestro recipes, systemd units, idle script.
-  # `source = "files/recipes"` (no trailing slash) + `destination =
-  # "/tmp"` uploads the directory itself, so the recipes land at
-  # /tmp/recipes/{connect-register-1-phone-entry,connect-register-2-app-lock}.yaml.
-  # The trailing-slash variant requires the destination dir to already
-  # exist on the remote — which it doesn't on a fresh bake instance.
-  provisioner "file" {
-    source      = "files/recipes"
-    destination = "/tmp"
-  }
+  # Stage systemd units + idle script. Register recipes are no longer
+  # baked in — the launch script doesn't drive Maestro on cold boot
+  # anymore; on-demand registration ships its own recipes via the
+  # /api/mobile/register-test-user palette tarball. See Phase D
+  # convergence, 2026-05-21.
 
   provisioner "file" {
     source      = "files/ace-mobile-runner.service"
