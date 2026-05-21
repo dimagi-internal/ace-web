@@ -202,6 +202,7 @@ export function OppCardItem({
           <OppCardRunsStrip
             oppSlug={opp.slug}
             workspaceSlug={workspaceSlug}
+            runs={opp.runs_summary ?? []}
           />
         )}
 

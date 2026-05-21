@@ -16,10 +16,10 @@ interface Props {
  * quick scan of each run's state.yaml (no full snapshot load). Click a
  * row to jump to that run's workbench.
  *
- * Shares the useOppRuns hook with OppCardRunsStrip — the strip renders
- * inline on every card, this list renders only on expand. Both reading
- * from one hook means one network call per opp navigation regardless of
- * how many surfaces consume it.
+ * Renders only on user-expand. Fetches via ``useOppRuns`` lazily so
+ * the cost is paid per-expanded-opp, not per-rendered-card. The
+ * always-rendered phase-chip strip uses ``OppCard.runs_summary``
+ * from the main payload instead, to avoid an N-card fan-out (#512).
  */
 export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
   const runs = useOppRuns(workspaceSlug, oppSlug);

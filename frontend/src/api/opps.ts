@@ -81,6 +81,14 @@ export function parseTs(v: unknown): string | null {
 export function v2ToOppCard(raw: Record<string, unknown>): OppCard {
   const s = (v: unknown): string | null => (typeof v === "string" ? v : null);
   const updated = parseTs(raw.updated_at);
+  // runs_summary lives on the main /opps payload (#512) so the
+  // OppCardRunsStrip can read phase-chip data from props instead of
+  // firing a per-card /opps/<slug>/runs call. Pass through whatever
+  // the server sent; default to [] for backward compat with stale
+  // ETag-cached payloads from before the field shipped.
+  const runs_summary = Array.isArray(raw.runs_summary)
+    ? (raw.runs_summary as RunSummary[])
+    : [];
   return {
     slug: (raw.slug as string) ?? "",
     display_name: (raw.title as string) ?? (raw.slug as string) ?? "",
@@ -99,6 +107,7 @@ export function v2ToOppCard(raw: Record<string, unknown>): OppCard {
     eval_passed: null,
     last_activity_at: updated,
     run_count: typeof raw.run_count === "number" ? raw.run_count : 0,
+    runs_summary,
   } as OppCard;
 }
 

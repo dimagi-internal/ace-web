@@ -89,6 +89,13 @@ def list_opp_cards(workspace) -> list[dict]:
         log.warning("list_opp_cards: root Drive listing failed: %s", exc)
         return []
 
+    # Compute phase/skill display indices once per request — they're
+    # plugin-derived and shared across all cards. Used below to enrich
+    # each card's runs_summary so the Opps-list phase-chip strip can
+    # render "P{ordinal}" without per-card fan-out (#512).
+    phase_meta = _phase_display_index()
+    skill_phase_index = _skill_display_index()
+
     out: list[dict] = []
     for child in root_children:
         if child.mime_type != "application/vnd.google-apps.folder":
@@ -164,6 +171,11 @@ def list_opp_cards(workspace) -> list[dict]:
         rich["last_run_id"] = card.opp.current_run_id
         rich["updated_at"] = updated_at
         rich["last_activity_at"] = raw_ts
+        rich["runs_summary"] = _serialize_card_runs_summary(
+            getattr(card, "runs_summary", None) or [],
+            phase_meta=phase_meta,
+            skill_phase_index=skill_phase_index,
+        )
         out.append(rich)
 
     return out
@@ -728,6 +740,47 @@ def _skill_display_index() -> dict[str, str]:
         name: entry.get("skill_display") or name
         for name, entry in get_skill_phase_index().items()
     }
+
+
+def _serialize_card_runs_summary(
+    runs: list,
+    *,
+    phase_meta: dict[str, tuple[str, int]],
+    skill_phase_index: dict[str, str],
+) -> list[dict]:
+    """Serialize an OppCard.runs_summary list to the dict shape the Opps-list
+    frontend expects on each card.
+
+    Mirrors the enrichment ``list_opp_runs_for_workspace`` applies to its
+    own RunSummary dicts (current_phase_display / current_phase_ordinal /
+    latest_phase_done_display / latest_phase_done_ordinal /
+    current_step_display) so the OppCardRunsStrip can render colored
+    "P{ordinal}" chips without firing a per-card /opps/<slug>/runs call.
+    See #512.
+
+    Drops the internal ``folder_id`` field — the frontend doesn't need
+    it and the legacy RunSummary type doesn't declare it.
+    """
+    from dataclasses import asdict  # noqa: PLC0415
+
+    out: list[dict] = []
+    for r in runs:
+        rich = asdict(r)
+        rich.pop("folder_id", None)
+        cur_display, cur_ord = phase_meta.get(r.current_phase or "", (None, None))
+        rich["current_phase_display"] = cur_display
+        rich["current_phase_ordinal"] = cur_ord
+        done_display, done_ord = phase_meta.get(r.latest_phase_done or "", (None, None))
+        rich["latest_phase_done_display"] = done_display
+        rich["latest_phase_done_ordinal"] = done_ord
+        rich["current_step_display"] = skill_phase_index.get(r.current_step or "")
+        # Normalise last_actor_at to ISO string (yaml may parse it as
+        # datetime). Matches serialize_opp_snapshot's handling.
+        raw_ts = rich.get("last_actor_at")
+        if isinstance(raw_ts, dt.datetime):
+            rich["last_actor_at"] = raw_ts.isoformat().replace("+00:00", "Z")
+        out.append(rich)
+    return out
 
 
 def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
