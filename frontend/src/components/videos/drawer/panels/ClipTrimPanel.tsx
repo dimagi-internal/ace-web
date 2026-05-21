@@ -43,6 +43,11 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
   const [draft, setDraft] = useState(initial);
   const [sourceDuration, setSourceDuration] = useState<number>(0);
   const [mediaLoadFailed, setMediaLoadFailed] = useState(false);
+  // Tracks whether the preview video is currently playing so we can
+  // disable + relabel the "Play selected clip" button. Mirrors the
+  // <video> element's play/pause events — covers our auto-stop at the
+  // OUT-point, native controls, and end-of-media all in one signal.
+  const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   // End-time guard for the "Play selected clip" button. While set, a
   // timeupdate listener pauses playback once currentTime crosses this
@@ -93,11 +98,24 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
     // doesn't surprise-pause at the previous slot end. Our own auto-
     // pause already nulled the ref, so the duplicate clear is a no-op.
     const clearGuard = () => { playUntilRef.current = null; };
+    // Mirror the element's play/pause state into React so the
+    // "Play selected clip" button can disable + relabel itself.
+    // Covers all stop paths in one listener: our auto-stop at the
+    // OUT-point, native controls, end-of-media, drawer-close.
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onEnded = () => setIsPlaying(false);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("pause", clearGuard);
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onPause);
+    v.addEventListener("ended", onEnded);
     return () => {
       v.removeEventListener("timeupdate", onTime);
       v.removeEventListener("pause", clearGuard);
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onPause);
+      v.removeEventListener("ended", onEnded);
     };
   }, []);
 
@@ -303,10 +321,18 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
         )}
       </div>
       <div className="mt-2 flex justify-end gap-2">
-        <button type="button" onClick={playSelectedClip} disabled={!ready || mediaLoadFailed}
-                title={`Play just this ${playWindow.toFixed(1)}s slice`}
-                className="mr-auto rounded border px-3 py-1.5 text-sm disabled:opacity-50">
-          Play selected clip
+        <button
+          type="button"
+          onClick={playSelectedClip}
+          disabled={!ready || mediaLoadFailed || isPlaying}
+          title={
+            isPlaying
+              ? "Playback in progress — wait for the slice to finish"
+              : `Play just this ${playWindow.toFixed(1)}s slice`
+          }
+          className="mr-auto rounded border px-3 py-1.5 text-sm disabled:opacity-50"
+        >
+          {isPlaying ? "Playing…" : "Play selected clip"}
         </button>
         <button type="button" onClick={onCancel}
                 className="rounded border px-3 py-1.5 text-sm">
