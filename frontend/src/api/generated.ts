@@ -2673,6 +2673,8 @@ export interface components {
             readonly tagline?: string | null;
             /** Cycle Steps */
             readonly cycle_steps?: readonly string[] | null;
+            /** Name */
+            readonly name?: string | null;
         };
         /** EditBatchOut */
         readonly EditBatchOut: {
