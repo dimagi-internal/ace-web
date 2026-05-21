@@ -4,6 +4,7 @@ import { getSession } from "../../api/sessions";
 import type { Session } from "../../api/types.ws";
 import { useCliAuthStatus } from "../../hooks/useCliAuthStatus";
 import { useSessionSocket } from "../../hooks/useSessionSocket";
+import { useStickyBottom } from "../../hooks/useStickyBottom";
 import { isDraftIdle, msUntilDraftIdle } from "../../lib/drafts";
 import { ConnectionStatus } from "../ConnectionStatus";
 import { MessageList } from "../MessageList";
@@ -76,6 +77,19 @@ export function ChatPanel({ slug, workspaceSlug }: Props) {
     );
   }, [socket.state.messages]);
 
+  // Sticky-bottom scroll: dep changes on (a) new message arrival and
+  // (b) streaming text growth on the last message. Using length-only
+  // (cheap) instead of the full string so we don't re-run the effect
+  // on every character that happens to be equal — the deps array does
+  // shallow compare. See docs/learnings/draft-soft-lock-idle-timer.md
+  // for the broader "React UIs need explicit timer ticks" pattern;
+  // this is the streaming analog.
+  const messages = socket.state.messages;
+  const lastMessageLen =
+    messages.length > 0 ? messages[messages.length - 1].plaintext.length : 0;
+  const scrollDep = `${messages.length}:${lastMessageLen}`;
+  const { containerRef, onScroll } = useStickyBottom(scrollDep);
+
   if (metaError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 p-4 text-center text-sm text-muted-foreground">
@@ -109,7 +123,11 @@ export function ChatPanel({ slug, workspaceSlug }: Props) {
           />
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div
+        ref={containerRef}
+        onScroll={onScroll}
+        className="flex-1 overflow-y-auto"
+      >
         <MessageList
           messages={socket.state.messages}
           onUseSuggestion={
