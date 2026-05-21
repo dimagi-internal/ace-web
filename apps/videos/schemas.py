@@ -69,6 +69,11 @@ class RunDetailOut(StrictModel):
     # user knows whether the embedded player is showing a fresh render
     # vs. something from a week ago.
     output_rendered_at: str | None = None
+    # ISO-8601 modifiedTime of spec.yaml in Drive. The frontend
+    # compares this against output_rendered_at to flag stale renders
+    # ("rendered 1h ago · stale (edited since)") so the user knows
+    # the embedded player isn't showing their latest saves.
+    spec_modified_at: str | None = None
 
 
 class LibraryEntryOut(StrictModel):

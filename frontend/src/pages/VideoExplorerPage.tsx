@@ -11,6 +11,7 @@ import {
 
 import {
   copyRun,
+  getRenderLog,
   getRenderStatus,
   getVideoProgram,
   getVideoRun,
@@ -46,6 +47,10 @@ export default function VideoExplorerPage() {
   const [status, setStatus] = useState<RenderStatus | null>(null);
   const [busyAction, setBusyAction] = useState<"render" | "save" | "copy" | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  // Captured tail of render.log, set once when render-status transitions
+  // to appears_failed=true. Drives the inline error banner under the
+  // header. `null` while loading; "" if log empty / missing.
+  const [renderErrorLog, setRenderErrorLog] = useState<string | null>(null);
   const wasBusyRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -106,6 +111,34 @@ export default function VideoExplorerPage() {
         }
         wasBusyRef.current = next.busy;
         setStatus(next);
+        if (next.busy) {
+          // User kicked off a new render — drop the cached error so
+          // the banner only ever shows the most recent failure.
+          setRenderErrorLog(null);
+        } else if (next.appears_failed) {
+          // On the leading edge of appears_failed, pull render.log
+          // once so we can surface the actual error to the user. Mac
+          // development bumps this all the time (in-container render
+          // hits esbuild platform-mismatch — see render_locally.py
+          // module doc). Use a functional setter so we only fire the
+          // fetch if the log isn't already cached, without needing
+          // renderErrorLog in the effect deps (which would restart
+          // the polling loop).
+          setRenderErrorLog((prev) => {
+            if (prev !== null) return prev;
+            // Async fetch is intentionally unawaited inside this
+            // setter — we just need to know "no fetch in flight yet";
+            // empty string acts as the placeholder.
+            getRenderLog(workspaceSlug!, programSlug!, resolvedRunId!)
+              .then((r) => {
+                if (!cancelled) setRenderErrorLog(r.log ?? "");
+              })
+              .catch(() => {
+                if (!cancelled) setRenderErrorLog("");
+              });
+            return "";
+          });
+        }
       } catch {
         /* swallow */
       }
@@ -276,6 +309,14 @@ export default function VideoExplorerPage() {
         <RunSummaryLine run={run} />
       </header>
 
+      {status?.appears_failed && (
+        <RenderErrorBanner
+          log={renderErrorLog}
+          programSlug={programSlug ?? ""}
+          startedAt={status.started_at}
+        />
+      )}
+
       {error ? (
         <div className="flex flex-1 items-center justify-center p-8">
           <div className="flex max-w-md items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">
@@ -340,20 +381,46 @@ function RunSummaryLine({ run }: { run: RunDetail | null }) {
       <span aria-hidden>·</span>
       <span>{total.toFixed(1)}s total</span>
       <span aria-hidden>·</span>
-      <span
-        className={
-          run.has_output
+      {(() => {
+        // Three states for the render-freshness chip:
+        //   - no render yet                 (amber)
+        //   - rendered Nm ago               (emerald)
+        //   - rendered Nm ago · stale       (amber, when spec.yaml in
+        //                                    Drive is newer than final.mp4 —
+        //                                    the user has saved edits that
+        //                                    haven't been re-rendered yet).
+        // Stale beats the green state so a user mid-edit never sees the
+        // green "all good" badge while their saves still aren't in the
+        // embedded player.
+        const isStale =
+          run.has_output &&
+          run.output_rendered_at !== null &&
+          run.spec_modified_at !== null &&
+          new Date(run.spec_modified_at).getTime() >
+            new Date(run.output_rendered_at).getTime();
+        const colorClass =
+          run.has_output && !isStale
             ? "text-emerald-700 dark:text-emerald-500"
-            : "text-amber-700 dark:text-amber-500"
-        }
-        title={run.output_rendered_at ?? undefined}
-      >
-        {run.has_output
-          ? run.output_rendered_at
-            ? `rendered ${relativeTime(run.output_rendered_at)}`
-            : "rendered"
-          : "no render yet"}
-      </span>
+            : "text-amber-700 dark:text-amber-500";
+        const titleAttr = [
+          run.output_rendered_at ? `final.mp4: ${run.output_rendered_at}` : null,
+          run.spec_modified_at ? `spec.yaml: ${run.spec_modified_at}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        const label = !run.has_output
+          ? "no render yet"
+          : run.output_rendered_at
+            ? isStale
+              ? `rendered ${relativeTime(run.output_rendered_at)} · stale (edited since)`
+              : `rendered ${relativeTime(run.output_rendered_at)}`
+            : "rendered";
+        return (
+          <span className={colorClass} title={titleAttr || undefined}>
+            {label}
+          </span>
+        );
+      })()}
       {voice && (
         <>
           <span aria-hidden>·</span>
@@ -362,6 +429,84 @@ function RunSummaryLine({ run }: { run: RunDetail | null }) {
       )}
       <span aria-hidden>·</span>
       <span>1280×720</span>
+    </div>
+  );
+}
+
+// Inline error banner shown when the in-container render fails. The
+// most common case in dev — by a wide margin — is the Mac/Docker
+// esbuild platform mismatch: the host installed `@esbuild/darwin-arm64`
+// into node_modules, but the Django container is `@esbuild/linux-arm64`,
+// and the tsx runner can't find a binary it can exec. We detect that
+// signature explicitly and surface the known recovery path
+// (scripts/render_locally.py). All other failures fall through to a
+// generic banner with the last 12 lines of render.log so the user has
+// something to work with.
+function RenderErrorBanner({
+  log,
+  programSlug,
+  startedAt,
+}: {
+  log: string | null;
+  programSlug: string;
+  startedAt: string | null;
+}) {
+  // Mac signature: esbuild prints a multi-line explainer that always
+  // contains this exact substring when @esbuild/<platform> is wrong.
+  const isMacEsbuildFailure =
+    log !== null && log.includes("@esbuild/darwin-arm64");
+  const tail = (log ?? "")
+    .split("\n")
+    .filter((l) => l.trim().length > 0)
+    .slice(-12)
+    .join("\n");
+  return (
+    <div className="border-b border-amber-700/30 bg-amber-950/5 px-4 py-3 text-sm">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 font-medium text-amber-700 dark:text-amber-500">
+            Render failed
+            {startedAt && (
+              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                · started {new Date(startedAt).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+          {log === null ? (
+            <div className="text-xs text-muted-foreground">Loading render log…</div>
+          ) : isMacEsbuildFailure ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                In-container render hit the macOS/Linux esbuild mismatch —
+                a known dev-only failure (the host's node_modules has
+                <code className="mx-1 rounded bg-muted px-1 font-mono text-[10px]">
+                  @esbuild/darwin-arm64
+                </code>
+                but the Django container needs the linux build). Run the
+                render on Mac metal instead:
+              </p>
+              <pre className="mt-1.5 overflow-x-auto rounded bg-muted/40 px-2 py-1.5 font-mono text-[11px]">
+                uv run --extra walkthrough python scripts/render_locally.py {programSlug}
+              </pre>
+            </>
+          ) : tail ? (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                Show last 12 lines of render.log
+              </summary>
+              <pre className="mt-1.5 max-h-48 overflow-auto rounded bg-muted/40 px-2 py-1.5 font-mono text-[10px] leading-tight">
+                {tail}
+              </pre>
+            </details>
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              No render log available. The container may have died before
+              writing output.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

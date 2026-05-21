@@ -186,6 +186,24 @@ def read_spec(
     return body.content
 
 
+def spec_modified_time(
+    layout: DriveLayout, client: DriveClient, program_slug: str, run_id: str,
+) -> str | None:
+    """Return spec.yaml's `modifiedTime` from Drive, or None if absent.
+
+    Used by the run detail endpoint to drive the "stale render"
+    indicator: the editor compares this Drive-source-of-truth mtime
+    against final.mp4's local mtime to tell the user when their saved
+    edits haven't been re-rendered yet."""
+    rid = run_folder_id(layout, client, program_slug, run_id)
+    if rid is None:
+        return None
+    spec_meta = _find_child(client, rid, SPEC_FILENAME)
+    if spec_meta is None:
+        return None
+    return spec_meta.modified_time
+
+
 def write_spec(
     layout: DriveLayout, client: DriveClient, program_slug: str, run_id: str,
     content: str,
