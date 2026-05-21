@@ -521,6 +521,10 @@ def get_run(
     rendered_at: str | None = None
     spec_modified_at: str | None = None
     drive_output_meta = None
+    # Tracks whether the local cached output.mp4 was invalidated below
+    # (Drive had a newer copy). Flips has_output back to "Drive truth
+    # only" so the same request doesn't lie about local presence.
+    invalidated_local = False
     if record.has_output:
         from datetime import UTC, datetime
         out_p = service.output_path(program_slug, run_id)
@@ -539,10 +543,41 @@ def get_run(
         drive_output_meta = drive.output_mp4_drive_meta(layout, client, program_slug, run_id)
         if rendered_at is None and drive_output_meta is not None:
             rendered_at = drive_output_meta.modified_time
+        # Cache invalidation: if Drive's modifiedTime is newer than the
+        # local cached output.mp4, the local copy is from a previous
+        # publish — drop it so the next /media/final.mp4 request
+        # lazy-pulls fresh bytes. Without this, labs keeps serving the
+        # stale cached copy forever after a republish (the lazy-pull
+        # only fires when local is missing).
+        if (
+            record.has_output
+            and drive_output_meta is not None
+            and drive_output_meta.modified_time
+        ):
+            from datetime import datetime as _dt
+            try:
+                drive_iso = drive_output_meta.modified_time.replace("Z", "+00:00")
+                drive_mtime = _dt.fromisoformat(drive_iso).timestamp()
+                local_mtime = service.output_path(program_slug, run_id).stat().st_mtime
+                # 2s grace window for clock skew between hosts.
+                if drive_mtime > local_mtime + 2:
+                    log.info(
+                        "videos: invalidating stale local cache for %s/%s "
+                        "(drive=%s > local=%s)",
+                        program_slug, run_id, drive_mtime, local_mtime,
+                    )
+                    service.output_path(program_slug, run_id).unlink(missing_ok=True)
+                    link = service.explorer_dir(program_slug, run_id) / "media" / "final.mp4"
+                    if link.is_symlink() or link.exists():
+                        link.unlink(missing_ok=True)
+                    invalidated_local = True
+                    rendered_at = drive_output_meta.modified_time
+            except (ValueError, OSError):
+                pass
     except Exception:
         # Drive flake — keep the locally-derived values, don't 500.
         pass
-    has_output = record.has_output or drive_output_meta is not None
+    has_output = (record.has_output and not invalidated_local) or drive_output_meta is not None
     output_drive_url = (
         drive_output_meta.web_view_link if drive_output_meta is not None else None
     )

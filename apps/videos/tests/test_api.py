@@ -408,6 +408,57 @@ def test_has_output_falls_through_to_drive(member_client, videos_root, fake_driv
 
 
 @pytest.mark.django_db
+def test_get_run_invalidates_stale_local_output_mp4(
+    member_client, videos_root, fake_drive,
+):
+    """Regression: after a republish, labs's lazy-pulled local cache
+    would serve the OLD bytes forever (lazy-pull only fires when local
+    is missing). Now `get_run` checks Drive's modifiedTime against the
+    local mtime and unlinks the stale cache so the next
+    `/media/final.mp4` request re-fetches the fresh bytes.
+
+    Without this fix, the only way to flush a republish on labs was a
+    task restart (ephemeral FS → file gone → next request lazy-pulls)."""
+    client, _ = member_client
+    # Seed: old local output.mp4 (mtime in the past), newer copy on Drive.
+    import os
+    out_local = videos_root / "programs" / "demo" / "runs" / "run-001" / "output.mp4"
+    out_local.parent.mkdir(parents=True, exist_ok=True)
+    out_local.write_bytes(b"\x00OLD-LOCAL-BYTES")
+    old_mtime = 1_700_000_000  # any timestamp safely in the past
+    os.utime(out_local, (old_mtime, old_mtime))
+    # Also seed the symlink that lazy-pull creates, to make sure
+    # we also clean it up.
+    media_dir = videos_root / "programs" / "demo" / "runs" / "run-001" / "explorer" / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    final_link = media_dir / "final.mp4"
+    final_link.symlink_to(Path("../..") / "output.mp4")
+
+    # Drive: newer file (FakeDrive lets us pin modified_time explicitly).
+    ws_root = fake_drive.folder_id("ws1-drive-root")
+    videos_id = fake_drive.list_folder(ws_root)[0].id
+    demo_id = fake_drive.list_folder(videos_id)[0].id
+    runs_id = fake_drive.list_folder(demo_id)[0].id
+    run001_id = fake_drive.list_folder(runs_id)[0].id
+    fake_drive.upload_binary(run001_id, "output.mp4", b"\x00NEW-DRIVE-BYTES", "video/mp4")
+    fake_drive.set_modified_time(
+        "ws1-drive-root/videos/demo/runs/run-001/output.mp4",
+        "2026-05-21T22:00:00Z",  # well past old_mtime (1700M = 2023)
+    )
+
+    # Hit run-detail — should invalidate the stale local file.
+    resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-001")
+    assert resp.status_code == 200, resp.content
+    assert not out_local.exists(), "stale local output.mp4 should be unlinked"
+    assert not final_link.exists(), "stale final.mp4 symlink should be unlinked"
+    # Rendered_at now reflects Drive's modifiedTime.
+    body = resp.json()
+    assert body["output_rendered_at"] == "2026-05-21T22:00:00Z"
+    # has_output stays True because Drive has the artifact (will lazy-pull on next /media request).
+    assert body["has_output"] is True
+
+
+@pytest.mark.django_db
 def test_has_explorer_falls_through_to_drive(member_client, videos_root, fake_drive):
     """Same fallthrough pattern for explorer.tar.gz — when the
     archive is published on Drive but no local extraction exists,
