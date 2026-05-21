@@ -124,6 +124,20 @@ def list_opp_cards(workspace) -> list[dict]:
                 continue
         else:
             access.overlay_workspace_display_name(card.opp, child.name, workspace=workspace)
+            # #495: refresh listing-derived card fields on cache hit. See
+            # apps/opps/freshness_overlays.CARD_OVERLAYS.
+            from apps.opps.freshness_overlays import (
+                CARD_OVERLAYS,
+                OverlayContext,
+                apply_freshness_overlays,
+            )
+            apply_freshness_overlays(
+                card, client,
+                context=OverlayContext(
+                    ace_folder_id=ace_folder_id, slug=child.name,
+                ),
+                overlays=CARD_OVERLAYS,
+            )
 
         # Normalise last_activity_at (Drive ISO-8601 string) to a datetime.
         # When the opp has no completed run, raw_ts is None — pass that
@@ -195,51 +209,6 @@ def list_opps(
 # ---------------------------------------------------------------------------
 
 
-def _refresh_runs_summary_from_drive(cached_snap, *, client, ace_folder_id: str, slug: str) -> None:
-    """Re-list ``<opp>/runs/`` from Drive and overlay the result onto a cached
-    snapshot's ``runs_summary``.
-
-    Why: ``snapshot_cache`` invalidation is driven by the Drive Changes API,
-    which reports the file_ids of newly-created files but NOT their parent
-    folders. When orchestration creates a new ``runs/<id>/`` folder externally
-    (e.g. via the CLI on another machine), the changes feed reports the new
-    run folder's id — which is not in any cached snapshot's tracked file_ids,
-    so invalidation never fires. The cached snapshot then keeps serving its
-    stale ``runs_summary``, leaving the workbench run selector blind to new
-    runs (issue #484).
-
-    Fix: on every cache hit, re-list the runs/ folder fresh (a single Drive
-    folder listing) and overlay the result. Costs ~one Drive call per
-    workbench request; surfaces new runs as soon as they appear on disk.
-
-    To beat the underlying ``CachedDriveClient`` TTL (default 30s), we run
-    the listing through ``snapshot_cache.cold_load_client`` which wraps the
-    same inner Drive client with ``bypass=True`` — reads go straight to
-    Google. Without this, a sub-TTL refresh would return the same stale
-    listing the snapshot was built from.
-
-    Failures (network, missing opp folder, missing runs/) are non-fatal —
-    we keep the cached runs_summary as a best-effort fallback.
-    """
-    from apps.opps import snapshot_cache
-    from apps.opps.sync import list_opp_runs
-
-    fresh_client = snapshot_cache.cold_load_client(client)
-    try:
-        fresh = list_opp_runs(
-            fresh_client, ace_root_folder_id=ace_folder_id, opp_slug=slug,
-        )
-    except Exception as exc:  # noqa: BLE001
-        log.warning(
-            "refresh_runs_summary: list_opp_runs failed for %s: %s", slug, exc,
-        )
-        return
-    # Only overlay when we actually got something back. An empty list from a
-    # transient Drive blip would clobber a perfectly good cached run list.
-    if fresh:
-        cached_snap.runs_summary = fresh
-
-
 def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -> dict | None:
     """Like load_opp_snapshot but returns the full legacy serializer shape
     (opp + current_run with steps + decisions + phases + pdd_body) the
@@ -270,12 +239,18 @@ def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -
     cached = snapshot_cache.get(workspace_id=workspace.pk, slug=slug, run_id=run_id)
     if cached is not None:
         access.overlay_workspace_display_name(cached.opp, slug, workspace=workspace)
-        # #484: cache-hit path must still detect runs added in Drive after
-        # this snapshot was cached. Changes API reports the new folder's
-        # file_id, which is not in our tracked set, so invalidation misses
-        # it. Always refresh runs_summary from a fresh Drive listing.
-        _refresh_runs_summary_from_drive(
-            cached, client=client, ace_folder_id=ace_folder_id, slug=slug,
+        # #484 / #495: cache-hit path must still detect Drive listings that
+        # grew externally (Changes API doesn't reliably report parent-folder
+        # modifications when children are added). The registry refreshes each
+        # listing-derived field on every cache hit. See
+        # apps/opps/freshness_overlays.py.
+        from apps.opps.freshness_overlays import (
+            OverlayContext,
+            apply_freshness_overlays,
+        )
+        apply_freshness_overlays(
+            cached, client,
+            context=OverlayContext(ace_folder_id=ace_folder_id, slug=slug),
         )
         return serialize_opp_snapshot(cached)
     bypass_client = snapshot_cache.cold_load_client(client)
@@ -338,9 +313,15 @@ def load_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -> dic
     cached = snapshot_cache.get(workspace_id=workspace.pk, slug=slug, run_id=run_id)
     if cached is not None:
         access.overlay_workspace_display_name(cached.opp, slug, workspace=workspace)
-        # #484: refresh runs_summary on cache hit — see _refresh_runs_summary_from_drive.
-        _refresh_runs_summary_from_drive(
-            cached, client=client, ace_folder_id=ace_folder_id, slug=slug,
+        # #484 / #495: refresh listing-derived fields on cache hit — see
+        # apps/opps/freshness_overlays.py.
+        from apps.opps.freshness_overlays import (
+            OverlayContext,
+            apply_freshness_overlays,
+        )
+        apply_freshness_overlays(
+            cached, client,
+            context=OverlayContext(ace_folder_id=ace_folder_id, slug=slug),
         )
         return _snapshot_to_dict(cached)
 

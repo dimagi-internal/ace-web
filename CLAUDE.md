@@ -338,6 +338,7 @@ Cost / timing / structure:
 Opp Workbench (`apps/opps/`):
 - [opp-cache-architecture](docs/learnings/opp-cache-architecture.md) — Drive Changes API per-request poll + long-lived `OppSnapshot` / `OppCard` cache + ETag round-trip. `workspace.pk` is a slug not an int; cold-load needs `bypass=True`; ETag is `sha256` of the serialized payload; 410 on `pageToken` clears the workspace cache; `_KEY_VERSION` must bump when `OppSnapshot` shape changes.
 - [opps-access-module](docs/learnings/opps-access-module.md) — patch on `apps.opps.access.X`, not on per-view modules. Views call `access.X(...)` via attribute lookup so a single patch intercepts every caller.
+- [drive-changes-api-parent-folder-blind-spot](docs/learnings/drive-changes-api-parent-folder-blind-spot.md) — Drive Changes API reports new file_ids but does NOT consistently report their parent folder as modified, so cached folder LISTINGS (`runs_summary`, `OppCard.run_count`) never invalidate when children are added externally. `apps/opps/freshness_overlays.py` is a registry of listing-derived fields that get re-listed on every cache hit (one Drive call per overlay). Add an overlay when a new cached field is listing-derived + externally-appendable; never clobber the cached value on a Drive blip.
 
 Frontend:
 - [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs showing wall-clock-driven transitions need explicit `setTimeout`-driven re-renders.
