@@ -108,10 +108,46 @@ def _program_card(workspace, latest: service.ProgramRecord) -> dict:
         "status": latest.status,
         "program_url": latest.program_url,
         "manifest_count": latest.manifest_count,
-        "has_explorer_build": latest.has_explorer_build,
+        "has_explorer_build": _has_explorer_anywhere(workspace, latest.slug, latest.run_id, latest.has_explorer_build),
         "latest_run_id": latest.run_id,
         "run_count": len(runs),
     }
+
+
+def _has_explorer_anywhere(workspace, slug: str, run_id: str, local_truth: bool) -> bool:
+    """Local-FS first, fall through to Drive metadata existence.
+
+    The local check (`explorer/index.html` exists) is correct for the
+    rendering host but lies on every other host. Labs ECS — the
+    motivating case — never runs the render chain (no ElevenLabs
+    key); a published explorer.tar.gz on Drive is the truth. Without
+    this fallback, every program reads "not built" on labs even when
+    a Mac-host ran ``render_locally.py --publish`` and the artifact
+    is sitting in Drive ready to serve.
+
+    Drive flake collapses to the local truth so a metadata-API hiccup
+    doesn't break the program list.
+    """
+    if local_truth:
+        return True
+    try:
+        layout, client = service.layout_for(workspace)
+        return drive.explorer_archive_drive_meta(layout, client, slug, run_id) is not None
+    except Exception:
+        return False
+
+
+def _has_output_anywhere(workspace, slug: str, run_id: str, local_truth: bool) -> bool:
+    """Sibling of `_has_explorer_anywhere` for the output.mp4 flag.
+    Falls through to Drive's output.mp4 metadata when local FS doesn't
+    have the file. Same Drive-flake fallthrough."""
+    if local_truth:
+        return True
+    try:
+        layout, client = service.layout_for(workspace)
+        return drive.output_mp4_drive_meta(layout, client, slug, run_id) is not None
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -419,8 +455,12 @@ def get_program(
         exp_p = service.explorer_dir(program_slug, rid) / "index.html"
         runs.append(RunSummaryOut(
             run_id=rid,
-            has_output=out_p.exists(),
-            has_explorer_build=exp_p.exists(),
+            # Local FS first, fall through to Drive metadata so the
+            # run picker on hosts that didn't render (labs, fresh
+            # dev) doesn't lie. Same pattern as _has_explorer_anywhere
+            # and the program card.
+            has_output=_has_output_anywhere(workspace, program_slug, rid, out_p.exists()),
+            has_explorer_build=_has_explorer_anywhere(workspace, program_slug, rid, exp_p.exists()),
         ))
     return ProgramDetailOut(
         slug=latest.slug,
@@ -474,39 +514,43 @@ def get_run(
     workspace = resolve_workspace_for_member(request, workspace_slug)
     record = _require_run(workspace, program_slug, run_id)
     # final.mp4 mtime is the render completion time; the UI uses it to
-    # render "rendered Nm ago" in the run summary. Falls back to None
-    # when has_output is False (no render yet) — UI hides the timestamp.
+    # render "rendered Nm ago" in the run summary. Local FS mtime
+    # first; if no local file exists (labs, fresh dev), fall back to
+    # the Drive-side modifiedTime on the published output.mp4 so the
+    # chip works on every host that can see Drive.
     rendered_at: str | None = None
+    spec_modified_at: str | None = None
+    drive_output_meta = None
     if record.has_output:
         from datetime import UTC, datetime
         out_p = service.output_path(program_slug, run_id)
         try:
             rendered_at = datetime.fromtimestamp(out_p.stat().st_mtime, tz=UTC).isoformat()
         except OSError:
-            # File disappeared between has_output check and stat — rare.
-            # Leaving rendered_at as None reads as "no render" in the UI,
-            # which is consistent with has_output going False on next fetch.
             rendered_at = None
-    # spec.yaml's modifiedTime from Drive — used by the frontend to
-    # decide if the rendered video is stale relative to the latest
-    # saved edits. Caches into the local layout result, so this is a
-    # second Drive metadata read (cheap; one Drive call).
-    spec_modified_at: str | None = None
+    # One Drive metadata batch — spec.yaml's modifiedTime (drives the
+    # "stale" qualifier) + output.mp4 metadata (falls back the
+    # rendered-at + has_output flags when local FS is empty).
     try:
         layout, client = service.layout_for(workspace)
         spec_modified_at = drive.spec_modified_time(layout, client, program_slug, run_id)
+        if rendered_at is None:
+            drive_output_meta = drive.output_mp4_drive_meta(layout, client, program_slug, run_id)
+            if drive_output_meta is not None:
+                rendered_at = drive_output_meta.modified_time
     except Exception:
-        # Drive flake shouldn't break run detail load. Falling back to
-        # None means the UI won't render the "stale" qualifier; on the
-        # next fetch, Drive will usually be reachable again.
-        spec_modified_at = None
+        # Drive flake — keep the locally-derived values, don't 500.
+        pass
+    has_output = record.has_output or drive_output_meta is not None
     return RunDetailOut(
         program_slug=program_slug,
         run_id=run_id,
         name=record.name,
         manifest_count=record.manifest_count,
-        has_output=record.has_output,
-        has_explorer_build=record.has_explorer_build,
+        has_output=has_output,
+        has_explorer_build=_has_explorer_anywhere(
+            workspace, program_slug, run_id, record.has_explorer_build,
+        ),
         explorer_url=_explorer_url(workspace_slug, program_slug, run_id),
         yaml_path=record.yaml_path,
         spec=service.read_parsed_spec(workspace, program_slug, run_id),

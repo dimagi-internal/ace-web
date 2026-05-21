@@ -376,6 +376,67 @@ def test_serve_media_lazy_pulls_final_mp4_from_drive(
 
 
 @pytest.mark.django_db
+def test_has_output_falls_through_to_drive(member_client, videos_root, fake_drive):
+    """When local FS has no final.mp4 but Drive does, the run-detail
+    + program-list endpoints should report has_output=True. Without
+    this, labs (which never runs the render chain) shows every
+    program as 'not built' even when artifacts are published on
+    Drive."""
+    client, _ = member_client
+    ws_root = fake_drive.folder_id("ws1-drive-root")
+    videos_id = fake_drive.list_folder(ws_root)[0].id
+    demo_id = fake_drive.list_folder(videos_id)[0].id
+    runs_id = fake_drive.list_folder(demo_id)[0].id
+    run001_id = fake_drive.list_folder(runs_id)[0].id
+    fake_drive.upload_binary(run001_id, "output.mp4", b"\x00FAKE", "video/mp4")
+
+    # Local FS has no output.mp4 (seed only put alpha.mp4 in explorer/media/).
+    assert not (videos_root / "programs" / "demo" / "runs" / "run-001" / "output.mp4").exists()
+
+    # FakeDrive's upload_binary doesn't set modified_time; the Drive
+    # SDK does. Set it explicitly so the rendered_at fallthrough has
+    # a value to surface.
+    fake_drive.set_modified_time("ws1-drive-root/videos/demo/runs/run-001/output.mp4",
+                                 "2026-05-21T20:30:00Z")
+
+    detail = client.get("/api/w/ws1/videos/programs/demo/runs/run-001").json()
+    assert detail["has_output"] is True
+    assert detail["output_rendered_at"] == "2026-05-21T20:30:00Z"
+
+    program = client.get("/api/w/ws1/videos/programs/demo").json()
+    assert program["runs"][0]["has_output"] is True
+
+
+@pytest.mark.django_db
+def test_has_explorer_falls_through_to_drive(member_client, videos_root, fake_drive):
+    """Same fallthrough pattern for explorer.tar.gz — when the
+    archive is published on Drive but no local extraction exists,
+    has_explorer_build still reads True so the program card stops
+    saying 'not built'."""
+    client, _ = member_client
+    ws_root = fake_drive.folder_id("ws1-drive-root")
+    videos_id = fake_drive.list_folder(ws_root)[0].id
+    demo_id = fake_drive.list_folder(videos_id)[0].id
+    runs_id = fake_drive.list_folder(demo_id)[0].id
+    run001_id = fake_drive.list_folder(runs_id)[0].id
+    fake_drive.upload_binary(
+        run001_id, "explorer.tar.gz", b"\x1f\x8bFAKE-GZ", "application/gzip",
+    )
+
+    # Local FS has no explorer/index.html — but the videos_root fixture
+    # creates one for the seed, so remove it to test the fallthrough.
+    (videos_root / "programs" / "demo" / "runs" / "run-001"
+     / "explorer" / "index.html").unlink()
+
+    program_list = client.get("/api/w/ws1/videos/programs").json()
+    [demo] = program_list
+    assert demo["has_explorer_build"] is True
+
+    detail = client.get("/api/w/ws1/videos/programs/demo/runs/run-001").json()
+    assert detail["has_explorer_build"] is True
+
+
+@pytest.mark.django_db
 def test_serve_media_404_when_drive_also_missing(
     member_client, videos_root, fake_drive,
 ):
