@@ -1296,6 +1296,17 @@ class CLIBackend:
         if token:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token
 
+        # Force the ACE mobile MCP onto the cloud backend. The plugin's
+        # local backend tries to spawn the ``emulator`` binary (Android SDK),
+        # which doesn't exist in this container — leading to a
+        # ``spawn emulator ENOENT`` failure during ``mobile_ensure_avd_running``.
+        # The plugin's session-file toggle (``~/.ace/mobile-backend.<PPID>``)
+        # doesn't line up across the bash-skill → MCP process tree in a way
+        # we can rely on from a chat session, so set the env var directly:
+        # ``backend-toggle.ts`` reads ``ACE_MOBILE_BACKEND`` before the
+        # session file. Surfaced live in malaria-itn-app chat 2026-05-21.
+        env.setdefault("ACE_MOBILE_BACKEND", "cloud")
+
         env[NOVA_BEARER_TOKEN_ENV] = self._resolve_nova_bearer()
         return env, str(staged_root), source
 

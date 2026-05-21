@@ -67,3 +67,40 @@ def test_stage_env_for_swallows_nova_refresh_errors(session):
         assert env[NOVA_BEARER_TOKEN_ENV] == ""
     finally:
         backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
+def test_stage_env_for_forces_ace_mobile_backend_cloud(session):
+    """The ACE plugin's mobile MCP must run in cloud mode inside the
+    ace-web container — there's no Android SDK / emulator binary
+    available, so the local backend would fail with
+    ``spawn emulator ENOENT``. The session-file toggle the plugin
+    skill (``/ace:mobile-backend cloud``) writes doesn't reliably
+    propagate across the bash → MCP process tree in the spawned
+    subprocess, so we set the env var directly. The plugin's
+    ``backend-toggle.ts`` reads ``ACE_MOBILE_BACKEND`` ahead of the
+    session file. Caught live in malaria-itn-app chat 2026-05-21.
+    """
+    backend = CLIBackend()
+    with patch("apps.common.cli_backend.get_fresh_nova_token", return_value=None):
+        env, staged_home, _ = backend._stage_env_for(session)
+    try:
+        assert env["ACE_MOBILE_BACKEND"] == "cloud"
+    finally:
+        backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
+def test_stage_env_for_respects_pre_set_ace_mobile_backend(session, monkeypatch):
+    """Use ``setdefault`` so an operator override (env var or task-def
+    setting) wins. Defensible posture: the cloud-only default ships
+    with the container, but an admin can flip to ``local`` for a
+    debug task without redeploying."""
+    monkeypatch.setenv("ACE_MOBILE_BACKEND", "local")
+    backend = CLIBackend()
+    with patch("apps.common.cli_backend.get_fresh_nova_token", return_value=None):
+        env, staged_home, _ = backend._stage_env_for(session)
+    try:
+        assert env["ACE_MOBILE_BACKEND"] == "local"
+    finally:
+        backend._teardown_staged_home(staged_home)
