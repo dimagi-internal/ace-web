@@ -2,7 +2,7 @@
 
 **Date**: 2026-05-21
 **Context**: `apps/opps/snapshot_cache.py` caches assembled `OppSnapshot` and `OppCard` payloads long-lived, invalidated only when Google's Drive Changes API reports a tracked file_id has changed. The cache works correctly for **file content** (an edited `run_state.yaml` shows up in the changes feed and invalidates the snapshot). It is reliably broken for **folder listings** — when a new file or subfolder is created externally, the changes feed reports the new child's id but **does not consistently report the parent folder as modified**, so cached snapshots whose only signal that something new exists is "the listing of folder X grew" never get invalidated.
-**Status**: Active. Fix shipped 2026-05-21 in #495 (registry pattern). See `apps/opps/freshness_overlays.py` and the cross-link to [opp-cache-architecture](opp-cache-architecture.md).
+**Status**: Active. Fix shipped 2026-05-21 in #495 (registry pattern). See `apps/opps/freshness_overlays.py` and the cross-link to [opp-cache-architecture](opp-cache-architecture.md). **Trade-off refined 2026-05-21 in #510** — the registry only covers fields visible to ONE cached item per request (workbench detail). See "Registry registration is not free" below.
 
 ## The gotcha in one sentence
 
@@ -25,16 +25,34 @@ Trade-off: a bounded constant extra Drive call per cache hit, versus rebuilding 
 - The full cold-load is 25–40 Drive calls — the overlay is a rounding error.
 - Drive's own propagation lag remains the only staleness floor.
 
+## Registry registration is not free (#510)
+
+Overlays cost one Drive listing per cache hit. For a single workbench **detail** request that's a rounding error against the 25-40 calls a cold load fans out. For a **list** view (N opps shown at once) it would be `N × len(REGISTRY)` parallel Drive listings on every page render, and the page render blocks on the slowest of them.
+
+Concretely: PR #497 originally registered an `OppCard.run_count` overlay alongside `OppSnapshot.runs_summary`. On a 5-opp workspace this produced 5 parallel Drive listings per Opps-list page load — observed 8-12s page loads (#510). PR #511 dropped the card overlay.
+
+The trade we made when dropping it:
+
+- `OppCard.run_count` is the count shown on each card in the Opps list.
+- The Drive Changes API DOES correctly invalidate the underlying card cache when **existing** files inside `<opp>/runs/` are touched (e.g., a `run_state.yaml` update during an active run). So during normal use the count keeps updating.
+- The count only goes stale when a brand-new run folder appears in Drive externally AND nobody has clicked into that opp's workbench since. The moment someone opens the workbench detail view, the `runs_summary` overlay re-lists `<opp>/runs/`, refreshes the snapshot, and the next Opps-list render shows the correct count.
+- That's an acceptable staleness window for a card-level decorative count. It is NOT an acceptable staleness window for the workbench run-selector dropdown, which is why `runs_summary` keeps its overlay.
+
+**Rule of thumb**: registry registration is not free. Overlays are appropriate for fields visible to ONE opp at a time (workbench detail). Overlays are inappropriate for fields visible to N opps at once (list views, dashboards, activity timelines). Prefer the cached value over the overlay whenever a field is rendered across N cached items per request.
+
 ## When to add a new overlay
 
 Add a `FreshnessOverlay` to `apps/opps/freshness_overlays.py` when a cached field:
 
 1. Is sourced from a Drive **folder listing** (not a file content read), AND
-2. Gets **externally appended to** by orchestration or other out-of-band writers mid-cache-lifetime.
+2. Gets **externally appended to** by orchestration or other out-of-band writers mid-cache-lifetime, AND
+3. Is visible to ONE cached item per request (workbench detail), not N (list / dashboard / timeline).
 
 Examples that ARE covered today:
 - `OppSnapshot.runs_summary` — new run folders under `<opp>/runs/` (the original symptom in #484)
-- `OppCard.run_count` — same listing, derived count
+
+Examples that USED to be covered and were intentionally removed:
+- `OppCard.run_count` — same listing, derived count. Removed in #510 / #511 because the list view's N-fanout regressed page load to 8-12s. Falls back to the cached value, which the Drive Changes API keeps roughly fresh during normal use. Heals on next workbench visit.
 
 Examples that are NOT covered today (intentional — see "out of scope" in `freshness_overlays.py`):
 - Per-phase artifact lists (`<opp>/<phase-N>/`)
@@ -91,3 +109,4 @@ Then write per-overlay tests in `apps/opps/tests/test_freshness_overlays.py`:
 - [opps-access-module](opps-access-module.md) — the patching boundary for `apps.opps.access.*` (overlays don't live in `access.py` but follow the same module-attribute-lookup discipline).
 - PR #494 — the one-off `_refresh_runs_summary_from_drive` helper that #495 generalized into the registry.
 - PR #495 — the registry refactor.
+- #510 / PR #511 — dropped the `OppCard.run_count` overlay; established the "registration is not free, prefer cached over overlay for N-card-per-request fields" rule.

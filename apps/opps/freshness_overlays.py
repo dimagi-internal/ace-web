@@ -27,14 +27,52 @@ content fetches the Changes API DOES invalidate correctly remain cached and
 free) while keeping the cheap listings fresh.
 
 Cost: ``len(OVERLAYS)`` Drive folder-listing calls per cache hit. Today: 1
-overlay per registry = 1 extra Drive call per cache hit (`<opp>/runs/`).
+overlay (``OppSnapshot.runs_summary``) = 1 extra Drive call per workbench
+**detail** request. The list view's ``OppCard``s deliberately have NO
+overlays — see "Where overlays live, and where they DON'T" below.
+
+## Where overlays live, and where they DON'T
+
+Overlays cost one Drive listing per cache hit. For a single workbench
+**detail** request that's a rounding error against the 25-40 calls a cold
+load fans out. For the Opps **list** view (N opps shown at once) it would be
+``N × len(CARD_OVERLAYS)`` parallel Drive listings on every page render, and
+the page render blocks on the slowest of them.
+
+Concretely: PR #497 originally registered an ``OppCard.run_count`` overlay
+alongside ``OppSnapshot.runs_summary``. On a 5-opp workspace this produced
+5 parallel Drive listings per Opps-list page load — observed 8-12s page
+loads (#510). PR #511 (this file) dropped the card overlay.
+
+The trade we made when dropping it:
+
+- ``OppCard.run_count`` is the count shown on each card in the Opps list.
+- The Drive Changes API DOES correctly invalidate the underlying card cache
+  when **existing** files inside ``<opp>/runs/`` are touched (e.g., a
+  ``run_state.yaml`` update during an active run). So during normal use the
+  count keeps updating.
+- The count only goes stale when a brand-new run folder appears in Drive
+  externally AND nobody has clicked into that opp's workbench since. The
+  moment someone opens the workbench detail view, the ``runs_summary``
+  overlay re-lists ``<opp>/runs/``, refreshes the snapshot, and the next
+  Opps-list render shows the correct count.
+- That's an acceptable staleness window for a card-level decorative count.
+  It is NOT an acceptable staleness window for the workbench run-selector
+  dropdown, which is why ``runs_summary`` keeps its overlay.
+
+**Rule of thumb**: registry registration is not free. Overlays are
+appropriate for fields visible to ONE opp at a time (workbench detail).
+Overlays are inappropriate for fields visible to N opps at once (list
+views, dashboards, activity timelines). Prefer the cached value over the
+overlay whenever a field is rendered across N cached items per request.
 
 ## Adding a new overlay
 
 When you find a new cached field that:
 
 1. Is sourced from a Drive folder listing (not a file content read), AND
-2. Gets externally appended to by orchestration / out-of-band writes
+2. Gets externally appended to by orchestration / out-of-band writes, AND
+3. Is visible to ONE cached item per request (workbench detail), not N
 
 ...register a `FreshnessOverlay` here. The overlay's `fetch_fn` should do
 one Drive folder listing + parse + return the new field value. Failure
@@ -148,46 +186,13 @@ def _apply_runs_summary(snapshot: Any, fresh: list[Any]) -> None:
     snapshot.runs_summary = fresh
 
 
-def _fetch_fresh_run_count(client: Any, card: Any, context: OverlayContext) -> Any:
-    """Re-list ``<opp>/runs/`` and return the count of valid runs.
-
-    "Valid" matches ``load_opp_card``'s definition: a run folder is only
-    counted when it contains a ``run_state.yaml``. ``list_opp_runs``
-    enforces that same gate (it skips run folders without
-    ``run_state.yaml``), so its length is the canonical valid count and
-    we reuse it here for free.
-
-    Returns None when ``list_opp_runs`` returned an empty list — preserves
-    the cached count (which might legitimately be 1 for a flat-layout
-    opp) rather than overwriting with 0.
-    """
-    from apps.opps import snapshot_cache
-    from apps.opps.sync import list_opp_runs
-
-    if not context.ace_folder_id or not context.slug:
-        return None
-    fresh_client = snapshot_cache.cold_load_client(client)
-    runs = list_opp_runs(
-        fresh_client,
-        ace_root_folder_id=context.ace_folder_id,
-        opp_slug=context.slug,
-    )
-    if not runs:
-        return None
-    return len(runs)
-
-
-def _apply_run_count(card: Any, fresh: int) -> None:
-    card.run_count = fresh
-
-
 # ---------------------------------------------------------------------------
 # Registries
 # ---------------------------------------------------------------------------
 
 
 # Overlays for cached ``OppSnapshot`` payloads (load_opp_snapshot /
-# load_rich_opp_snapshot).
+# load_rich_opp_snapshot). One Drive listing per workbench detail request.
 SNAPSHOT_OVERLAYS: list[FreshnessOverlay] = [
     FreshnessOverlay(
         name="runs_summary",
@@ -197,16 +202,17 @@ SNAPSHOT_OVERLAYS: list[FreshnessOverlay] = [
 ]
 
 
-# Overlays for cached ``OppCard`` payloads (list_opp_cards). Cards are
-# narrower than snapshots — only the runs/-derived count needs refreshing
-# today.
-CARD_OVERLAYS: list[FreshnessOverlay] = [
-    FreshnessOverlay(
-        name="run_count",
-        fetch_fn=_fetch_fresh_run_count,
-        apply_fn=_apply_run_count,
-    ),
-]
+# Overlays for cached ``OppCard`` payloads (list_opp_cards). Deliberately
+# EMPTY — see the module docstring's "Where overlays live, and where they
+# DON'T" section. PR #497 originally registered ``OppCard.run_count`` here;
+# #510 / #511 removed it because the list view renders N cards per request
+# and N parallel Drive listings turned page load into an 8-12s wait. The
+# card's ``run_count`` falls back to the cached value, which the Drive
+# Changes API keeps roughly fresh during normal use (existing-file edits
+# under ``<opp>/runs/`` invalidate the underlying snapshot). The only
+# staleness path is "new run added externally + nobody has clicked into
+# this opp's workbench since", which heals on the next workbench visit.
+CARD_OVERLAYS: list[FreshnessOverlay] = []
 
 
 # Default registry used by ``apply_freshness_overlays`` — kept for
