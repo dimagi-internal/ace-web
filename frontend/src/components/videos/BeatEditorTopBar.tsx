@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { useBeatEditor } from "./BeatEditorContext";
 import { sectionLabel } from "./sectionLabels";
 import { submitEditBatch, getVideoRun } from "@/api/videos";
@@ -233,14 +234,38 @@ export function BeatEditorTopBar({ onSpecRefetched, onRerender }: Props) {
           </button>
         </>
       )}
-      {!dirty && status === "saved" && onRerender && (
-        <button
-          type="button"
-          onClick={onRerender}
-          className="ml-auto rounded bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground"
-        >
-          Re-render to see changes →
-        </button>
+      {!dirty && status === "saved" && (
+        <>
+          {onRerender && (
+            <button
+              type="button"
+              onClick={onRerender}
+              className="ml-auto rounded bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground"
+            >
+              Re-render to see changes →
+            </button>
+          )}
+          {/* Dismiss the post-save bar without committing to re-render
+              — keyboard equivalent is ESC (registered above), this is
+              the discoverable affordance. The bar otherwise sticks
+              around until the user kicks off a render, which traps
+              users who saved an edit they don't yet want to render. */}
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "SAVE_IDLE" })}
+            aria-label="Dismiss save confirmation"
+            title="Dismiss (ESC)"
+            className={
+              "flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground " +
+              // When there's no Re-render CTA (e.g. before the run is
+              // wired with onRerender), the close button is the ONLY
+              // right-side action — push it to the right edge.
+              (onRerender ? "" : "ml-auto")
+            }
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </>
       )}
     </div>
   );
