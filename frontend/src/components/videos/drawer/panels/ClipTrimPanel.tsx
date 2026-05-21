@@ -134,9 +134,38 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
     if (!v || !ready) return;
     const start = Math.max(0, Math.min(sourceDuration - 0.05, draft.start));
     const end = Math.min(sourceDuration, start + playWindow);
-    try { v.currentTime = start; } catch { /* swallow */ }
-    playUntilRef.current = end;
-    void v.play().catch(() => { playUntilRef.current = null; });
+
+    const startPlayback = () => {
+      // Set the guard right before play() so a `pause` event from the
+      // immediately-prior seek can't null it out. Our auto-stop reads
+      // this ref in the timeupdate listener.
+      playUntilRef.current = end;
+      void v.play().catch(() => { playUntilRef.current = null; });
+    };
+
+    // Chrome lets v.play() begin from the *previous* currentTime
+    // briefly while a just-queued seek is still landing — so naively
+    // doing `currentTime=start; play();` makes "Play selected clip"
+    // start from wherever the slider effect last left the playhead,
+    // not the IN-point the user actually picked. Defer play() until
+    // `seeked` fires. If currentTime is already at the target the
+    // assignment is a no-op and `seeked` never fires, so guard with
+    // a same-frame fast path.
+    const SEEK_EPSILON = 0.05;
+    if (Math.abs(v.currentTime - start) < SEEK_EPSILON) {
+      startPlayback();
+      return;
+    }
+    const onSeeked = () => {
+      v.removeEventListener("seeked", onSeeked);
+      startPlayback();
+    };
+    v.addEventListener("seeked", onSeeked);
+    try {
+      v.currentTime = start;
+    } catch {
+      v.removeEventListener("seeked", onSeeked);
+    }
   };
 
   // Clamp helper used by both numeric inputs so a user typing 999 into
