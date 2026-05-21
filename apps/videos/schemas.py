@@ -74,6 +74,11 @@ class RunDetailOut(StrictModel):
     # ("rendered 1h ago · stale (edited since)") so the user knows
     # the embedded player isn't showing their latest saves.
     spec_modified_at: str | None = None
+    # Drive webViewLink for the published output.mp4. Null when the
+    # run hasn't been published. The editor's kebab menu surfaces this
+    # so users can grab a shareable Drive URL without going hunting
+    # through the workspace folder.
+    output_drive_url: str | None = None
 
 
 class LibraryEntryOut(StrictModel):

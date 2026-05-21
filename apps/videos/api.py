@@ -529,19 +529,23 @@ def get_run(
         except OSError:
             rendered_at = None
     # One Drive metadata batch — spec.yaml's modifiedTime (drives the
-    # "stale" qualifier) + output.mp4 metadata (falls back the
-    # rendered-at + has_output flags when local FS is empty).
+    # "stale" qualifier) + output.mp4 metadata. The output meta is
+    # also needed for has_output fallthrough on non-rendering hosts
+    # AND for exposing the Drive webViewLink in the editor's kebab
+    # menu (so always fetched, not just when rendered_at is None).
     try:
         layout, client = service.layout_for(workspace)
         spec_modified_at = drive.spec_modified_time(layout, client, program_slug, run_id)
-        if rendered_at is None:
-            drive_output_meta = drive.output_mp4_drive_meta(layout, client, program_slug, run_id)
-            if drive_output_meta is not None:
-                rendered_at = drive_output_meta.modified_time
+        drive_output_meta = drive.output_mp4_drive_meta(layout, client, program_slug, run_id)
+        if rendered_at is None and drive_output_meta is not None:
+            rendered_at = drive_output_meta.modified_time
     except Exception:
         # Drive flake — keep the locally-derived values, don't 500.
         pass
     has_output = record.has_output or drive_output_meta is not None
+    output_drive_url = (
+        drive_output_meta.web_view_link if drive_output_meta is not None else None
+    )
     return RunDetailOut(
         program_slug=program_slug,
         run_id=run_id,
@@ -556,6 +560,7 @@ def get_run(
         spec=service.read_parsed_spec(workspace, program_slug, run_id),
         output_rendered_at=rendered_at,
         spec_modified_at=spec_modified_at,
+        output_drive_url=output_drive_url,
     )
 
 

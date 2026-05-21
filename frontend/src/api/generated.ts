@@ -2548,6 +2548,8 @@ export interface components {
             readonly output_rendered_at?: string | null;
             /** Spec Modified At */
             readonly spec_modified_at?: string | null;
+            /** Output Drive Url */
+            readonly output_drive_url?: string | null;
         };
         /** LibraryEntryOut */
         readonly LibraryEntryOut: {

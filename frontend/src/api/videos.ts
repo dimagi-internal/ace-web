@@ -104,6 +104,10 @@ export interface RunDetail {
   // compares against output_rendered_at and shows "stale (edited
   // since)" when the saved spec is newer than the embedded video.
   spec_modified_at: string | null;
+  // Drive webViewLink for the published output.mp4 — null when the
+  // run hasn't been published. Surfaced in the editor's kebab menu
+  // as a shareable URL.
+  output_drive_url: string | null;
 }
 
 export interface RenderStatus {
