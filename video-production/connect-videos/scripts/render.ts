@@ -358,9 +358,14 @@ async function main() {
       // through as the muxed output so the clip-explorer still has a
       // playable preview at out/<slug>-draft-mux.mp4.
       console.warn(
-        `No audio sources resolved — copying silent render → ${path.relative(root, muxed)}.`
+        `No audio sources resolved — remuxing silent render → ${path.relative(root, muxed)}.`
       );
-      fs.copyFileSync(outPath, muxed);
+      // Remux (no transcode) with faststart so the browser can scrub
+      // the silent fallback the same as the audio-muxed path.
+      execSync(
+        `ffmpeg -y -i ${JSON.stringify(outPath)} -c copy -movflags +faststart ${JSON.stringify(muxed)}`,
+        { stdio: "inherit" },
+      );
     } else {
       const filterComplex =
         mixLabels.length > 1
@@ -379,6 +384,13 @@ async function main() {
         "-c:v copy -c:a aac",
         `-map 0:v:0 -map ${JSON.stringify(mapLabel)}`,
         `-t ${totalSeconds}`,
+        // Move the MP4 moov atom (the keyframe/timing index) to the
+        // front of the file so the browser can seek as soon as the
+        // first chunk arrives. Without this, the moov lands at the
+        // end and scrubber clicks no-op until the full file
+        // downloads — `preload="auto"` on the <video> masked the
+        // worst case but didn't fix it.
+        "-movflags +faststart",
         JSON.stringify(muxed),
       ].join(" ");
       console.log(`Muxing audio → ${path.relative(root, muxed)}…`);
@@ -386,8 +398,12 @@ async function main() {
     }
   } else {
     // No audio sources referenced in the spec at all — fall through to
-    // the silent video as the run's output.
-    fs.copyFileSync(outPath, muxedFinal);
+    // the silent video as the run's output. Remux through ffmpeg
+    // (no transcode) with faststart so the browser can scrub it.
+    execSync(
+      `ffmpeg -y -i ${JSON.stringify(outPath)} -c copy -movflags +faststart ${JSON.stringify(muxedFinal)}`,
+      { stdio: "inherit" },
+    );
   }
 
   console.log(`Done → ${path.relative(root, muxedFinal)}`);
