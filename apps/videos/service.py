@@ -982,16 +982,28 @@ def stage_existing_content_locally(workspace: Workspace) -> dict[str, int]:
 def _tar_gz_explorer_dir(local_dir: Path) -> bytes:
     """Tarball + gzip an explorer directory into bytes for Drive upload.
 
-    Symlinks are dereferenced (the media/ subdir holds symlinks into the
-    cache that don't exist on a fresh host). For typical explorer trees
-    this is well under a megabyte sans media, and a few hundred KB even
-    with the media MP4 contents pulled in via symlink-follow.
+    Archives the explorer tree as-is, recording symlinks AS symlinks
+    rather than dereferencing them. The media/ subdir is full of
+    relative symlinks into the hydrate cache
+    (``~/.cache/connect-videos/<gdriveId>.<ext>``) that point at paths
+    on the rendering host's filesystem. With ``dereference=True`` the
+    tar follows them and FileNotFoundErrors out the moment publish
+    runs in a context that can't see those host paths — which is
+    every time publish runs in the Django container after a Mac
+    render (``render_locally.py --publish``).
+
+    With ``dereference=False`` the tar carries the symlinks as
+    metadata. The receiving host extracts them as dangling symlinks
+    and ``apps.videos.api._resolve_symlink_via_drive`` lazy-pulls
+    each clip's bytes through the workspace SA on first request.
+    Net: smaller archive, no host-FS coupling, Drive is the source of
+    truth.
     """
     import io
     import tarfile
 
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz", dereference=True) as tar:
+    with tarfile.open(fileobj=buf, mode="w:gz", dereference=False) as tar:
         # arcname="" so paths inside the archive are relative to the
         # explorer/ dir itself (index.html at root, media/ subfolder).
         tar.add(str(local_dir), arcname="")
