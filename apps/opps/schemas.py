@@ -30,7 +30,10 @@ class OppCardOut(StrictModel):
     current_skill: SkillId | None = None
     run_count: int = Field(ge=0)
     last_run_id: RunId | None = None
-    updated_at: dt.datetime
+    # None when the opp has no completed run yet (idea-only / pre-run opps).
+    # Previously serialised as the Unix epoch, which the frontend rendered
+    # as "last 12/31/1969" on the workspace opps list (#466).
+    updated_at: dt.datetime | None = None
 
 
 class ArtifactOut(StrictModel):

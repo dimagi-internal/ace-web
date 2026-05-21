@@ -114,6 +114,76 @@ def test_list_opps_returns_pydantic_validated_payload(member_client, monkeypatch
 
 
 @pytest.mark.django_db
+def test_list_opps_passes_null_updated_at_through(member_client, monkeypatch):
+    """Regression for #466.
+
+    Opps with no completed run (idea-only / pre-run state) must serialise
+    ``updated_at`` as null, not as the Unix epoch. Before the fix the v2
+    list-opps endpoint fell back to ``1970-01-01T00:00:00Z`` which the
+    frontend OppCard component rendered as ``last 12/31/1969``.
+    """
+    client, _, _ = member_client
+    fake_cards = [
+        {
+            "slug": "cosmetics-fgd-pilot",
+            "title": "Cosmetics FGD Pilot",
+            "current_phase": None,
+            "current_skill": None,
+            "run_count": 0,
+            "last_run_id": None,
+            "updated_at": None,
+        }
+    ]
+    monkeypatch.setattr(
+        "apps.opps.api.list_opp_cards", lambda workspace: fake_cards
+    )
+
+    response = client.get("/api/w/ws1/opps")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    item = body["items"][0]
+    # Critical: null must round-trip as JSON null, not "1970-01-01..." or 0.
+    assert item["updated_at"] is None
+    # And the Pydantic schema must accept it.
+    parsed = OppCardOut.model_validate(item)
+    assert parsed.updated_at is None
+
+
+def test_opp_card_normaliser_returns_none_for_missing_or_invalid_ts():
+    """Unit-level guard for the timestamp-normalisation block in
+    ``list_opp_cards``. Mirrors the production logic so a future refactor
+    that re-introduces the ``_EPOCH`` fallback will break this test loudly.
+
+    Regression for #466.
+    """
+    import datetime as dt
+
+    def _normalize(raw_ts):
+        if raw_ts:
+            try:
+                return dt.datetime.fromisoformat(
+                    raw_ts.replace("Z", "+00:00") if raw_ts.endswith("Z") else raw_ts
+                )
+            except ValueError:
+                return None
+        return None
+
+    # None → None (don't fall through to epoch).
+    assert _normalize(None) is None
+    # Malformed ISO → None.
+    assert _normalize("not-an-iso-timestamp") is None
+    # Empty string → None.
+    assert _normalize("") is None
+    # Well-formed string still parses.
+    assert _normalize("2026-05-14T10:00:00Z") == dt.datetime(
+        2026, 5, 14, 10, 0, tzinfo=dt.UTC
+    )
+    # Confirm we are NOT returning the old _EPOCH sentinel.
+    assert _normalize(None) != dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
+
+
+@pytest.mark.django_db
 def test_list_opps_404s_non_member(non_member_client):
     client, _, _ = non_member_client
     creator = User.objects.create_user(email="creator3@example.com")

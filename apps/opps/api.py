@@ -57,7 +57,12 @@ def list_opp_cards(workspace) -> list[dict]:
       current_skill <- card.current_step
       run_count    <- card.run_count
       last_run_id  <- card.opp.current_run_id
-      updated_at   <- card.last_activity_at (ISO-8601 string) or epoch fallback
+      updated_at   <- card.last_activity_at (ISO-8601 string) or None.
+                     Pre-2026-05-20 this used to fall back to Unix epoch
+                     (1970-01-01) which the frontend then rendered as
+                     "last 12/31/1969" on opp cards with no completed runs.
+                     See #466 for the bug + fix; the frontend OppCard guards
+                     on truthy `last_activity_at` so None renders nothing.
     """
     from apps.opps import access, snapshot_cache
     from apps.opps.drive_cache import CachedDriveClient
@@ -121,16 +126,20 @@ def list_opp_cards(workspace) -> list[dict]:
             access.overlay_workspace_display_name(card.opp, child.name, workspace=workspace)
 
         # Normalise last_activity_at (Drive ISO-8601 string) to a datetime.
+        # When the opp has no completed run, raw_ts is None — pass that
+        # through as None instead of falling back to the Unix epoch, which
+        # the frontend would otherwise render as "last 12/31/1969". (#466)
         raw_ts = card.last_activity_at
+        updated_at: dt.datetime | None
         if raw_ts:
             try:
                 updated_at = dt.datetime.fromisoformat(
                     raw_ts.replace("Z", "+00:00") if raw_ts.endswith("Z") else raw_ts
                 )
             except ValueError:
-                updated_at = _EPOCH
+                updated_at = None
         else:
-            updated_at = _EPOCH
+            updated_at = None
 
         # Produce the FULL legacy OppCard shape the frontend expects
         # (display_name, tags, labels, eval_score, etc.) — see
@@ -479,7 +488,9 @@ def create_opp_and_return_card(workspace, user, body: OppCreateIn) -> dict:
         "current_skill": None,
         "run_count": 1,
         "last_run_id": None,
-        "updated_at": _EPOCH,
+        # Newly created opp has no run yet — leave None so the UI doesn't
+        # render an epoch-zero "last 12/31/1969" timestamp. (#466)
+        "updated_at": None,
     }
 
 
@@ -541,7 +552,8 @@ def patch_opp_and_return_card(workspace, slug: str, body: OppPatchIn) -> dict:
             "current_skill": None,
             "run_count": 0,
             "last_run_id": None,
-            "updated_at": _EPOCH,
+            # No run completed yet — None instead of epoch-zero. (#466)
+            "updated_at": None,
         }
 
     ow, _ = OppWorkspace.objects.get_or_create(
@@ -558,7 +570,8 @@ def patch_opp_and_return_card(workspace, slug: str, body: OppPatchIn) -> dict:
         "current_skill": None,
         "run_count": 0,
         "last_run_id": None,
-        "updated_at": _EPOCH,
+        # No run completed yet — None instead of epoch-zero. (#466)
+        "updated_at": None,
     }
 
 

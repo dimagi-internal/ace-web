@@ -61,14 +61,32 @@ export async function listOpps(
   return data;
 }
 
-function v2ToOppCard(raw: Record<string, unknown>): OppCard {
+/**
+ * Normalise a backend timestamp into an ISO string or null.
+ *
+ * Treats null, missing, empty string, and Unix epoch-zero variants as null.
+ * Pre-2026-05-20 the v2 list-opps endpoint serialised opps with no completed
+ * run as `updated_at: "1970-01-01T00:00:00Z"`, which the OppCard component
+ * happily rendered as `last 12/31/1969` (#466). Even after the backend fix
+ * we keep this guard so any stale ETag-cached payload or future regression
+ * still renders the empty state instead of a 1969 date.
+ */
+export function parseTs(v: unknown): string | null {
+  if (typeof v !== "string" || v === "") return null;
+  const ms = Date.parse(v);
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return v;
+}
+
+export function v2ToOppCard(raw: Record<string, unknown>): OppCard {
   const s = (v: unknown): string | null => (typeof v === "string" ? v : null);
+  const updated = parseTs(raw.updated_at);
   return {
     slug: (raw.slug as string) ?? "",
     display_name: (raw.title as string) ?? (raw.slug as string) ?? "",
     labels: [],
     tags: [],
-    created_at: s(raw.updated_at),
+    created_at: updated,
     created_by: null,
     current_run_id: s(raw.last_run_id),
     current_phase: s(raw.current_phase),
@@ -79,7 +97,7 @@ function v2ToOppCard(raw: Record<string, unknown>): OppCard {
     eval_score: null,
     eval_score_pct: null,
     eval_passed: null,
-    last_activity_at: s(raw.updated_at),
+    last_activity_at: updated,
     run_count: typeof raw.run_count === "number" ? raw.run_count : 0,
   } as OppCard;
 }
