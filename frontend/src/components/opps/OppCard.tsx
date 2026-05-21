@@ -6,6 +6,7 @@ import { OppCardRunsStrip } from "../views/hierarchy/OppCardRunsStrip";
 import { OppChatChildren } from "../views/hierarchy/OppChatChildren";
 import { OppRunsList } from "../views/hierarchy/OppRunsList";
 import { relativeTime } from "../../lib/relativeTime";
+import { Tooltip } from "../ui/tooltip";
 
 interface OppCardProps {
   opp: OppCardData;
@@ -41,11 +42,18 @@ export function OppCardItem({
   const goToWorkbench = () => navigate(`/opps/${encodeURIComponent(opp.slug)}`);
   const scorePct = opp.eval_score_pct ?? toPct(opp.eval_score);
 
+  // Single, clean accessible name for the card-level button.
+  // Without aria-label, AT computes the name by concatenating descendant
+  // text — including every nested icon-button's aria-label — so the slug
+  // ends up announced 3-5 times. Pin it explicitly here.
+  const cardLabel = opp.display_name || opp.slug;
+
   return (
     <div
       className="group overflow-hidden rounded border border-border bg-card transition hover:border-primary"
       role="button"
       tabIndex={0}
+      aria-label={cardLabel}
       onClick={(e) => {
         // Card-level click navigates. Buttons / links inside call
         // stopPropagation so they don't trigger this. We use a div +
@@ -68,26 +76,27 @@ export function OppCardItem({
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-start gap-1.5">
-            <button
-              type="button"
-              aria-label={
-                isExpanded
-                  ? `Collapse ${opp.slug} chats`
-                  : `Show chats linked to ${opp.slug}`
-              }
-              title={isExpanded ? "Hide linked chats" : "Show linked chats"}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleExpanded(opp.slug);
-              }}
-              className="-ml-1 mt-0.5 shrink-0 rounded p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            >
-              {isExpanded ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-            </button>
+            <Tooltip label={isExpanded ? "Hide linked chats" : "Show linked chats"}>
+              <button
+                type="button"
+                aria-label={
+                  isExpanded
+                    ? `Collapse ${opp.slug} chats`
+                    : `Show chats linked to ${opp.slug}`
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleExpanded(opp.slug);
+                }}
+                className="-ml-1 mt-0.5 shrink-0 rounded p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </button>
+            </Tooltip>
             <div className="min-w-0">
               <h2
                 className="truncate font-semibold text-foreground group-hover:text-primary"
@@ -111,35 +120,39 @@ export function OppCardItem({
             {/* Trash sits LEFT of compare so the destructive action
                 isn't the easy mis-click target at the row's right
                 edge. */}
-            <button
-              type="button"
-              aria-label={`Delete ${opp.slug}`}
-              title="Delete this opp"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRequestDelete(opp);
-              }}
-              className="rounded p-1 text-muted-foreground/40 transition hover:bg-destructive/10 hover:text-destructive group-hover:text-muted-foreground/80"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label={`Compare ${opp.slug} with another opp`}
-              title={
+            <Tooltip label="Delete this opp">
+              <button
+                type="button"
+                aria-label={`Delete ${opp.slug}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRequestDelete(opp);
+                }}
+                className="rounded p-1 text-muted-foreground/40 transition hover:bg-destructive/10 hover:text-destructive group-hover:text-muted-foreground/80"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </Tooltip>
+            <Tooltip
+              label={
                 canCompare
                   ? "Compare with another opp"
                   : "Compare requires at least 2 opps"
               }
-              onClick={(e) => {
-                e.stopPropagation();
-                onRequestCompare(opp);
-              }}
-              disabled={!canCompare}
-              className="rounded p-1 text-muted-foreground/40 transition hover:bg-primary/10 hover:text-primary group-hover:text-muted-foreground/80 disabled:cursor-not-allowed disabled:opacity-30"
             >
-              <GitCompareArrows className="h-4 w-4" />
-            </button>
+              <button
+                type="button"
+                aria-label={`Compare ${opp.slug} with another opp`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRequestCompare(opp);
+                }}
+                disabled={!canCompare}
+                className="rounded p-1 text-muted-foreground/40 transition hover:bg-primary/10 hover:text-primary group-hover:text-muted-foreground/80 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <GitCompareArrows className="h-4 w-4" />
+              </button>
+            </Tooltip>
             <StatusBadge status={opp.status} />
           </div>
         </div>
