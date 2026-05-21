@@ -1,6 +1,5 @@
 import { BeatEditorProvider } from "./BeatEditorContext";
 import { BeatEditorTopBar } from "./BeatEditorTopBar";
-import { TimelineStrip } from "./TimelineStrip";
 import { FinalVideoPlayer } from "./FinalVideoPlayer";
 import { BeatList } from "./BeatList";
 import { EditDrawer } from "./drawer/EditDrawer";
@@ -30,7 +29,6 @@ export function BeatEditor({
     >
       <div className="flex flex-col gap-4">
         <BeatEditorTopBar onSpecRefetched={onSpecRefetched} onRerender={onRerender} />
-        <TimelineStrip />
         <FinalVideoPlayer />
         <BeatList />
         <EditDrawer />

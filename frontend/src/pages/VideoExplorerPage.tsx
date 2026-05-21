@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   Copy,
   Loader2,
+  MoreHorizontal,
   RefreshCw,
 } from "lucide-react";
 
@@ -19,6 +20,13 @@ import {
   type VideoProgramDetail,
 } from "@/api/videos";
 import { BeatEditor } from "@/components/videos/BeatEditor";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const POLL_INTERVAL_MS = 4000;
 
@@ -160,30 +168,35 @@ export default function VideoExplorerPage() {
 
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-2">
-        <div className="flex flex-wrap items-center gap-3">
-          <Link
-            to={`/w/${workspaceSlug}/videos`}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            All programs
-          </Link>
-          <h1 className="text-sm font-medium">{run?.name ?? program?.name ?? programSlug}</h1>
+      {/* Compact run summary header (variant B from the prototype sandbox).
+          The previous header carried a colored beat-strip + dot legend
+          (TimelineStrip) plus the spec.yaml path + Copy run button —
+          three competing visualisations on a page where the BeatList
+          below already lists every beat. Now: just identity +
+          actions, with a single one-line stat (beats · duration ·
+          render status · voice · resolution) that tells you the
+          things you actually want to know at a glance. spec.yaml path
+          and Copy run live behind a kebab menu — they're rarely-used
+          power-user affordances, not header chrome. */}
+      <header className="flex flex-col gap-1 border-b border-border bg-card px-4 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to={`/w/${workspaceSlug}/videos`}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              All programs
+            </Link>
+            <h1 className="text-sm font-medium">{run?.name ?? program?.name ?? programSlug}</h1>
 
-          {program?.runs?.length ? (
-            <div className="flex items-center gap-1.5">
-              <label
-                htmlFor="run-picker"
-                className="text-[10px] uppercase tracking-wider text-muted-foreground"
-              >
-                Run
-              </label>
+            {program?.runs?.length ? (
               <select
                 id="run-picker"
                 value={resolvedRunId ?? ""}
                 onChange={handleRunPick}
                 className="rounded-md border border-border bg-card px-1.5 py-0.5 text-xs font-medium"
+                aria-label="Run"
               >
                 {program.runs.map((r) => (
                   <option key={r.run_id} value={r.run_id}>
@@ -192,47 +205,26 @@ export default function VideoExplorerPage() {
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                disabled={busyAction !== null}
-                onClick={handleCopyRun}
-                aria-label="Copy this run into a new run-NNN — both stay mutable."
-                title="Snapshot this run into a new run-NNN — both stay mutable."
-                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-              >
-                <Copy className="h-3 w-3" />
-                Copy run
-              </button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
 
-          {run?.yaml_path && (
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-              {run.yaml_path}
-            </code>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {actionMsg && !status?.busy && (
-            <span className="text-xs text-muted-foreground">{actionMsg}</span>
-          )}
-          {status?.busy ? (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Re-render in progress
-              {status.started_at && (
-                <span className="text-muted-foreground/70">
-                  · started {new Date(status.started_at).toLocaleTimeString()}
-                </span>
-              )}
-            </div>
-          ) : (
-            <>
-              {/* Save lives in the BeatEditor's sticky TopBar — only that button
-                  is wired to the React buffer + POST /edit-batch. The old
-                  page-header Save called window.saveAllPending on the iframe,
-                  which doesn't exist with the React tree. */}
+          <div className="flex items-center gap-1.5">
+            {actionMsg && !status?.busy && (
+              <span className="text-xs text-muted-foreground">{actionMsg}</span>
+            )}
+            {status?.busy ? (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Re-render in progress
+                {status.started_at && (
+                  <span className="text-muted-foreground/70">
+                    · started {new Date(status.started_at).toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
+            ) : (
+              // Save lives in the BeatEditor's sticky TopBar — only that
+              // button is wired to the React buffer + POST /edit-batch.
               <button
                 type="button"
                 disabled={busyAction !== null || !resolvedRunId}
@@ -243,9 +235,44 @@ export default function VideoExplorerPage() {
                 <RefreshCw className="h-3.5 w-3.5" />
                 Re-render
               </button>
-            </>
-          )}
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label="More actions"
+                title="More actions"
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-48">
+                <DropdownMenuItem
+                  onClick={handleCopyRun}
+                  disabled={busyAction !== null || !resolvedRunId}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy run
+                </DropdownMenuItem>
+                {run?.yaml_path && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (run.yaml_path) navigator.clipboard?.writeText(run.yaml_path).catch(() => {});
+                      }}
+                      title={`Copy ${run.yaml_path} to clipboard`}
+                    >
+                      <span className="truncate font-mono text-[10px] text-muted-foreground">
+                        {run.yaml_path}
+                      </span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
+
+        <RunSummaryLine run={run} />
       </header>
 
       {error ? (
@@ -292,6 +319,43 @@ export default function VideoExplorerPage() {
           allow="fullscreen"
         />
       )}
+    </div>
+  );
+}
+
+// One-line run summary rendered under the breadcrumb. Pure presentational:
+// pulls beats / voice / dimensions out of the parsed spec and renders a
+// dot-separated row. Renders nothing while the run is still loading so the
+// header doesn't reflow once the data arrives.
+function RunSummaryLine({ run }: { run: RunDetail | null }) {
+  if (!run) return null;
+  const beats = run.spec?.beats ?? [];
+  const total = beats.reduce((s: number, b) => s + (b.seconds ?? 0), 0);
+  const voice =
+    (run.spec?.voice as { provider?: string } | undefined)?.provider ?? null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+      <span>{beats.length} beats</span>
+      <span aria-hidden>·</span>
+      <span>{total.toFixed(1)}s total</span>
+      <span aria-hidden>·</span>
+      <span
+        className={
+          run.has_output
+            ? "text-emerald-700 dark:text-emerald-500"
+            : "text-amber-700 dark:text-amber-500"
+        }
+      >
+        {run.has_output ? "rendered" : "no render yet"}
+      </span>
+      {voice && (
+        <>
+          <span aria-hidden>·</span>
+          <span>voice: {voice}</span>
+        </>
+      )}
+      <span aria-hidden>·</span>
+      <span>1280×720</span>
     </div>
   );
 }
