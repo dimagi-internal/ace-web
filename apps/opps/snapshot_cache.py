@@ -43,7 +43,10 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #   v3 — post #277 (CachedDriveClient.list_files now records parent
 #        folder_id; old entries don't track parent IDs so a new run
 #        folder appearing under runs/ never invalidated their cards)
-_KEY_VERSION = "v3"
+#   v4 — post #512 (OppCard grew a ``runs_summary: list[RunSummary]``
+#        field; entries written before this bump deserialise without it
+#        and the Opps-list strip would render an empty chip row)
+_KEY_VERSION = "v4"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

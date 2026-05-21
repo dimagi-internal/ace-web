@@ -215,6 +215,11 @@ export interface OppCard {
   eval_passed: boolean | null;
   last_activity_at: string | null;
   run_count: number;
+  // Per-run summary populated by the workspace /opps list endpoint so the
+  // OppCardRunsStrip can render phase-chip data without per-card fan-out.
+  // Newest-first; empty for flat-layout opps with no runs/ subfolder.
+  // See #512 — this replaced N parallel /opps/{slug}/runs calls.
+  runs_summary: RunSummary[];
 }
 
 export interface Artifact {

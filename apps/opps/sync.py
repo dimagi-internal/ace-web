@@ -995,6 +995,13 @@ class OppCard:
     eval_passed: bool | None            # latest opp-eval verdict pass/fail, if any
     last_activity_at: str | None        # run_state.yaml modifiedTime (ISO-8601), if present
     run_count: int = 1                  # number of runs; flat-layout opps are always 1
+    # Lightweight per-run rows so the Opps-list page can render the
+    # phase-chip strip without each card firing a /opps/<slug>/runs call.
+    # Newest-first (same order as list_opp_runs). Empty for flat-layout
+    # opps that have no runs/ subfolder. Lives on the card cache; the
+    # Drive Changes API invalidates the card when any run's state.yaml
+    # changes. See #512.
+    runs_summary: list[RunSummary] = field(default_factory=list)
 
 
 def load_opp_card(
@@ -1034,6 +1041,7 @@ def load_opp_card(
     state_source_children: list[DriveFile] = opp_children
     run_count = 1
     latest_run_name: str | None = None
+    runs_summary: list[RunSummary] = []
 
     runs_folder = _find_child_folder(opp_children, "runs")
     if runs_folder is not None:
@@ -1054,6 +1062,34 @@ def load_opp_card(
             if sf is None:
                 continue
             valid_runs += 1
+            # Read each run's state.yaml so the card payload carries the
+            # full runs_summary used by the Opps-list phase-chip strip.
+            # Pre-#512 the frontend fanned out N parallel /opps/<slug>/runs
+            # calls (one per card) to get this data; now we read it once
+            # during the card's cold load and serve from cache thereafter.
+            try:
+                run_state_body = _read_text(client, sf)
+                run_state = yaml.safe_load(run_state_body) or {}
+            except (yaml.YAMLError, OSError) as exc:
+                log.warning("load_opp_card: failed to read %s: %s", sf.id, exc)
+                run_state = {}
+            run_phase = run_state.get("phase") or run_state.get("current_phase")
+            run_progress = _derive_phase_progress(run_state, run_phase)
+            runs_summary.append(
+                RunSummary(
+                    run_id=rf.name,
+                    folder_id=rf.id,
+                    current_phase=run_phase,
+                    current_step=run_state.get("step") or run_state.get("current_step"),
+                    mode=run_state.get("mode"),
+                    last_actor=run_state.get("last_actor"),
+                    last_actor_at=run_state.get("last_actor_at"),
+                    lifecycle_status=run_progress["status"],
+                    phases_total=run_progress["phases_total"],
+                    phases_done=run_progress["phases_done"],
+                    latest_phase_done=run_progress["latest_phase_done"],
+                )
+            )
             if state_file is None:
                 state_file = sf
                 state_source_children = run_inner
@@ -1107,10 +1143,35 @@ def load_opp_card(
     # subfolder AND it contains an opp-eval-*.yaml.
     eval_score, eval_passed = _load_opp_eval_summary(client, state_source_children)
 
-    # The plugin's run_state.yaml key names diverged between layouts:
-    # flat opps use ``current_phase`` / ``current_step``; multi-run runs
-    # use ``phase`` / ``step`` (matching ``list_opp_runs``). Accept both
-    # so this card loader works regardless of which the plugin emits.
+    # Flat-layout fallback: no runs/ subfolder but the opp has its own
+    # run_state.yaml at the root. Synthesise a single RunSummary so the
+    # Opps-list strip can still render a chip on those opps. The plugin's
+    # run_state.yaml key names diverged between layouts (flat uses
+    # ``current_phase`` / ``current_step``; multi-run uses ``phase`` /
+    # ``step``), so accept both — same as the OppCard fields above.
+    if not runs_summary and runs_folder is None and state_data:
+        flat_phase = (
+            state_data.get("phase") or state_data.get("current_phase")
+        )
+        flat_progress = _derive_phase_progress(state_data, flat_phase)
+        runs_summary = [
+            RunSummary(
+                run_id=current_run_id,
+                folder_id=opp_folder.id,
+                current_phase=flat_phase,
+                current_step=(
+                    state_data.get("step") or state_data.get("current_step")
+                ),
+                mode=state_data.get("mode"),
+                last_actor=state_data.get("last_actor"),
+                last_actor_at=state_data.get("last_actor_at"),
+                lifecycle_status=flat_progress["status"],
+                phases_total=flat_progress["phases_total"],
+                phases_done=flat_progress["phases_done"],
+                latest_phase_done=flat_progress["latest_phase_done"],
+            )
+        ]
+
     return OppCard(
         opp=opp_manifest,
         current_phase=state_data.get("current_phase") or state_data.get("phase"),
@@ -1120,6 +1181,7 @@ def load_opp_card(
         eval_passed=eval_passed,
         last_activity_at=state_file.modified_time if state_file is not None else None,
         run_count=run_count,
+        runs_summary=runs_summary,
     )
 
 

@@ -1,12 +1,12 @@
 import { Link } from "react-router-dom";
 
 import type { RunSummary } from "@/api/types.ws";
-import { useOppRuns } from "@/hooks/useOppRuns";
 import { relativeTime } from "@/lib/relativeTime";
 
 interface Props {
   oppSlug: string;
   workspaceSlug: string;
+  runs: RunSummary[];
 }
 
 /**
@@ -24,12 +24,13 @@ interface Props {
  * phase + step + last activity, so the chip is informative on hover
  * without needing the expanded panel.
  *
- * Lazy-fetched via useOppRuns. Hidden on cards whose opp has no runs/
- * subfolder (flat-layout) or while the fetch is in flight.
+ * Reads ``runs`` from the parent OppCard's runs_summary prop — the
+ * main /opps payload carries it (#512), so the Opps-list page no
+ * longer fans out N parallel /opps/<slug>/runs calls (one per card).
+ * Hidden on cards whose opp has no runs (flat-layout pre-state opps).
  */
-export function OppCardRunsStrip({ oppSlug, workspaceSlug }: Props) {
-  const runs = useOppRuns(workspaceSlug, oppSlug);
-  if (runs === null || runs.length === 0) return null;
+export function OppCardRunsStrip({ oppSlug, workspaceSlug, runs }: Props) {
+  if (!runs || runs.length === 0) return null;
 
   return (
     <div
