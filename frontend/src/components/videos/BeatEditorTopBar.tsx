@@ -19,7 +19,7 @@ function describeOp(op: PendingChange, spec: ProgramSpec): { beatId: string; lab
     // Brand overrides land on the cycle beat as the "anchor" for the
     // edit-pending row — the tagline + cycle steps both belong to the
     // hook/cycle visual cluster.
-    return { beatId: "cycle", label: "Brand template — program override" };
+    return { beatId: "cycle", label: "Global template — program override" };
   }
   // set-clip-trim / set-clip-asset
   const beatId = op.kind === "scene-clip" ? "scene" : "product";

@@ -47,14 +47,14 @@ export function BrandTemplateWidget({ beatId, kind }: Props) {
         bg: "bg-emerald-950/5",
         iconColor: "text-emerald-600/70",
         labelColor: "text-emerald-700/80 dark:text-emerald-500/80",
-        label: "Brand template · program override",
+        label: "Global template · overridden",
       }
     : {
         border: "border-amber-700/40",
         bg: "bg-amber-950/5",
         iconColor: "text-amber-600/70",
         labelColor: "text-amber-700/80 dark:text-amber-500/80",
-        label: "Brand template · global",
+        label: "Global template",
       };
 
   const openEditor = () =>

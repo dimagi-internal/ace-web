@@ -66,7 +66,7 @@ export function EditDrawer() {
     title = `Voiceover — ${sectionLabel(target.beatId).name}`;
     body = <NarrationPanel beatId={target.beatId} onCommit={close} onCancel={close} />;
   } else if (target.kind === "brand-template") {
-    title = `Brand template — ${sectionLabel(target.beatId).name}`;
+    title = `Global template — ${sectionLabel(target.beatId).name}`;
     body = <BrandTemplatePanel onCommit={close} onCancel={close} />;
   } else {
     title = statTitle(target.path);
