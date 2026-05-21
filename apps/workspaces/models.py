@@ -28,6 +28,10 @@ class Workspace(models.Model):
         related_name="workspaces_created",
     )
     settings = models.JSONField(default=dict, blank=True)
+    # Email domains (lowercased, no leading "@") whose users are auto-added as
+    # Editor on first login. Stored as JSON list for portability across the
+    # Postgres prod DB and the in-memory SQLite test DB.
+    auto_join_domains = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

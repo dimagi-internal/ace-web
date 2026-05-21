@@ -10,6 +10,7 @@ import {
   listActivity,
   listMembers,
   removeMember,
+  updateWorkspace,
   verifyDriveAccess,
   type ActivityRow,
   type WorkspaceDetail,
@@ -38,6 +39,9 @@ export default function WorkspaceSettingsPage() {
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
   const [driveBroken, setDriveBroken] = useState<string | null>(null);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
+  const [domainsInput, setDomainsInput] = useState("");
+  const [domainsMsg, setDomainsMsg] = useState<string | null>(null);
+  const [domainsSaving, setDomainsSaving] = useState(false);
 
   useEffect(() => {
     if (!workspaceSlug) return;
@@ -54,6 +58,11 @@ export default function WorkspaceSettingsPage() {
     if (!workspaceSlug || !ws || ws.role !== "owner") return;
     listActivity(workspaceSlug).then(setActivity).catch(() => {});
   }, [workspaceSlug, ws, reload]);
+
+  useEffect(() => {
+    setDomainsInput((ws?.auto_join_domains ?? []).join(", "));
+    setDomainsMsg(null);
+  }, [ws?.slug, ws?.auto_join_domains?.join(",")]);
 
   if (!workspaceSlug) return null;
   if (error) return <div className="p-6 text-destructive">{error}</div>;
@@ -106,6 +115,30 @@ export default function WorkspaceSettingsPage() {
       setVerifyMsg(`OK — ${r.total_visible} files visible at root.`);
     } catch (e) {
       setVerifyMsg(String((e as Error).message));
+    }
+  }
+
+  async function handleSaveDomains() {
+    setDomainsMsg(null);
+    setDomainsSaving(true);
+    try {
+      const domains = domainsInput
+        .split(/[,\s]+/)
+        .map((d) => d.trim().toLowerCase().replace(/^@/, ""))
+        .filter(Boolean);
+      const updated = await updateWorkspace(workspaceSlug!, {
+        auto_join_domains: domains,
+      });
+      setWs(updated);
+      setDomainsMsg(
+        domains.length
+          ? `Saved. ${domains.length} domain${domains.length === 1 ? "" : "s"} auto-join.`
+          : "Saved. Auto-join disabled.",
+      );
+    } catch (e) {
+      setDomainsMsg(String((e as Error).message));
+    } finally {
+      setDomainsSaving(false);
     }
   }
 
@@ -208,6 +241,32 @@ export default function WorkspaceSettingsPage() {
           </tbody>
         </table>
       </section>
+
+      {isOwner && (
+        <section className="mt-8">
+          <h2 className="text-lg font-medium text-foreground">Auto-join domains</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Anyone who signs in with an email at these domains is added as
+            Editor automatically. Comma- or space-separated. Leave blank to
+            disable.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <input
+              type="text"
+              placeholder="dimagi.com, dimagi-ai.com"
+              value={domainsInput}
+              onChange={(e) => setDomainsInput(e.target.value)}
+              className="flex-1 rounded border border-input bg-background px-3 py-2 text-sm text-foreground"
+            />
+            <Button onClick={handleSaveDomains} disabled={domainsSaving}>
+              {domainsSaving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+          {domainsMsg && (
+            <p className="mt-2 text-sm text-muted-foreground">{domainsMsg}</p>
+          )}
+        </section>
+      )}
 
       {isOwner && (
         <section className="mt-8">

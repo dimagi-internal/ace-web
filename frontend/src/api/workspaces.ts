@@ -88,19 +88,23 @@ export async function getWorkspace(slug: string): Promise<WorkspaceDetail> {
     params: { path: { slug } },
   });
   if (error) throw new Error((error as { title?: string }).title || "Failed to get workspace");
-  return data;
+  return data as unknown as WorkspaceDetail;
 }
 
 export async function updateWorkspace(
   slug: string,
-  input: { name?: string; drive_root_folder_id?: string },
+  input: {
+    name?: string;
+    drive_root_folder_id?: string;
+    auto_join_domains?: string[];
+  },
 ): Promise<WorkspaceDetail> {
   const { data, error } = await apiClient.PATCH("/api/workspaces/{slug}", {
     params: { path: { slug } },
     body: input,
   });
   if (error) throw new Error((error as { title?: string }).title || "Failed to update workspace");
-  return data;
+  return data as unknown as WorkspaceDetail;
 }
 
 export async function listMembers(slug: string): Promise<WorkspaceMember[]> {
