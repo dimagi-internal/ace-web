@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Annotated
 
 from django.conf import settings
@@ -278,14 +280,14 @@ def stream_library_video(
             ) from e
         cache_path.write_bytes(content)
 
-    response = FileResponse(cache_path.open("rb"), as_attachment=False)
     suffix = cache_path.suffix.lower()
     if suffix in {".mp4", ".m4v"}:
-        response["Content-Type"] = "video/mp4"
+        content_type = "video/mp4"
     elif suffix == ".webm":
-        response["Content-Type"] = "video/webm"
-    response["Cache-Control"] = "private, max-age=3600"
-    return response
+        content_type = "video/webm"
+    else:
+        content_type = "application/octet-stream"
+    return _range_aware_file_response(request, cache_path, content_type)
 
 
 @router.get(
@@ -327,10 +329,7 @@ def stream_library_audio(
             ) from e
         cache_path.write_bytes(content)
 
-    response = FileResponse(cache_path.open("rb"), as_attachment=False)
-    response["Content-Type"] = "audio/mpeg"
-    response["Cache-Control"] = "private, max-age=3600"
-    return response
+    return _range_aware_file_response(request, cache_path, "audio/mpeg")
 
 
 # ---------------------------------------------------------------------------
@@ -872,12 +871,87 @@ def serve_media(
             raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
         target = resolved
 
-    response = FileResponse(target.open("rb"), as_attachment=False)
     suffix = target.suffix.lower()
     if suffix in {".mp4", ".m4v"}:
-        response["Content-Type"] = "video/mp4"
+        content_type = "video/mp4"
     elif suffix == ".webm":
-        response["Content-Type"] = "video/webm"
+        content_type = "video/webm"
+    else:
+        content_type = "application/octet-stream"
+    return _range_aware_file_response(request, target, content_type)
+
+
+def _range_aware_file_response(
+    request: HttpRequest, path: Path, content_type: str,
+) -> HttpResponse | StreamingHttpResponse:
+    """Serve a static file with HTTP Range support so HTML5 <video>
+    elements can seek.
+
+    Django 5.x FileResponse does NOT honor Range headers — it always
+    returns the full body with 200, which means the browser scrubber
+    can't actually move the playhead (it requests bytes=N- and the
+    server hands back bytes=0-). We parse the Range header here and
+    return 206 Partial Content + Content-Range when it's present, or
+    fall through to the full file with Accept-Ranges: bytes so the
+    browser learns the endpoint supports ranged requests.
+
+    Supports the only Range forms HTML5 <video> sends in practice:
+      bytes=N-           (open-ended, from N to end-of-file)
+      bytes=N-M          (closed, N through M inclusive)
+    Other forms (suffix ranges `bytes=-N`, multi-range) return 416
+    Range Not Satisfiable so the browser falls back cleanly.
+    """
+    file_size = path.stat().st_size
+    range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
+    if range_header:
+        m = re.fullmatch(r"\s*bytes=(\d+)-(\d*)\s*", range_header)
+        if m is None:
+            # Unsupported Range form (suffix ranges, multi-range, etc.)
+            # — clean 416 lets the browser drop back to full GET.
+            from django.http import HttpResponse as _HR
+            resp = _HR(status=416)
+            resp["Content-Range"] = f"bytes */{file_size}"
+            return resp
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) else file_size - 1
+        end = min(end, file_size - 1)
+        if start > end or start >= file_size:
+            from django.http import HttpResponse as _HR
+            resp = _HR(status=416)
+            resp["Content-Range"] = f"bytes */{file_size}"
+            return resp
+        length = end - start + 1
+
+        def _chunks() -> Iterator[bytes]:
+            # 64KB chunks — large enough to amortise syscall overhead,
+            # small enough that one stuck client doesn't pin a worker
+            # for long. Bookended by an explicit close on the generator
+            # exit so Python doesn't rely on GC to release the fd.
+            chunk = 64 * 1024
+            with path.open("rb") as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    data = f.read(min(chunk, remaining))
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+
+        response = StreamingHttpResponse(_chunks(), status=206, content_type=content_type)
+        response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+        response["Content-Length"] = str(length)
+        response["Accept-Ranges"] = "bytes"
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+    # No Range header: full file, but advertise range support so the
+    # next seek goes through the 206 path above.
+    response = FileResponse(path.open("rb"), as_attachment=False)
+    response["Content-Type"] = content_type
+    response["Content-Length"] = str(file_size)
+    response["Accept-Ranges"] = "bytes"
+    response["Cache-Control"] = "private, max-age=3600"
     return response
 
 

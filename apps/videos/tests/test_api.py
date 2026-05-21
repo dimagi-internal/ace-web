@@ -342,6 +342,61 @@ def test_qa_frame_404_when_no_render(member_client, videos_root, fake_drive):
 
 
 @pytest.mark.django_db
+def test_serve_media_honors_range_header(member_client, videos_root, fake_drive):
+    """Regression: Django 5's FileResponse silently ignores Range headers,
+    so the <video> scrubber on the editor page was a no-op (browser sends
+    `Range: bytes=N-`, server returned 200 + full body, video couldn't
+    seek). _range_aware_file_response parses Range, returns 206, and
+    advertises Accept-Ranges so the browser knows it can re-request."""
+    client, _ = member_client
+    # Seed a tiny MP4-ish blob (content doesn't matter for header behavior).
+    media_dir = videos_root / "programs" / "demo" / "runs" / "run-001" / "explorer" / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    (media_dir / "final.mp4").write_bytes(b"\x00" * 4096)
+
+    # No Range → 200 + Accept-Ranges so the browser knows to use Range next.
+    resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-001/media/final.mp4")
+    assert resp.status_code == 200
+    assert resp.headers["Accept-Ranges"] == "bytes"
+    assert int(resp.headers["Content-Length"]) == 4096
+
+    # Closed range → 206 with Content-Range.
+    resp = client.get(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/media/final.mp4",
+        HTTP_RANGE="bytes=100-199",
+    )
+    assert resp.status_code == 206
+    assert resp.headers["Content-Range"] == "bytes 100-199/4096"
+    assert int(resp.headers["Content-Length"]) == 100
+    body = b"".join(resp.streaming_content) if resp.streaming else resp.content
+    assert len(body) == 100
+
+    # Open-ended range (browser's most common form).
+    resp = client.get(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/media/final.mp4",
+        HTTP_RANGE="bytes=4000-",
+    )
+    assert resp.status_code == 206
+    assert resp.headers["Content-Range"] == "bytes 4000-4095/4096"
+    assert int(resp.headers["Content-Length"]) == 96
+
+    # Out-of-range → 416 with Content-Range: bytes */<size>.
+    resp = client.get(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/media/final.mp4",
+        HTTP_RANGE="bytes=99999-",
+    )
+    assert resp.status_code == 416
+    assert resp.headers["Content-Range"] == "bytes */4096"
+
+    # Unsupported form (suffix range) → also 416 so the browser drops back.
+    resp = client.get(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/media/final.mp4",
+        HTTP_RANGE="bytes=-200",
+    )
+    assert resp.status_code == 416
+
+
+@pytest.mark.django_db
 def test_qa_frame_serves_png_when_present(member_client, videos_root, fake_drive):
     """When the QA probe has written hook.png, the endpoint returns
     it as image/png with a short private cache-control."""
