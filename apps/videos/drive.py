@@ -621,6 +621,17 @@ def read_explorer_archive(
     )
 
 
+def explorer_archive_drive_meta(
+    layout: DriveLayout, client: DriveClient, slug: str, run_id: str,
+) -> DriveFile | None:
+    """Return Drive metadata (id, modifiedTime, size) for the
+    explorer.tar.gz if it's been published. Lets the program-list /
+    run-detail endpoints flip the "not built" badge to "built" on
+    hosts that didn't render (labs, fresh dev) without forcing a
+    full byte download."""
+    return _find_in_run(layout, client, slug, run_id, EXPLORER_ARCHIVE_FILENAME)
+
+
 # feedback.md  (text — uses upload_file/update_file, not the binary surface)
 
 def write_feedback(
