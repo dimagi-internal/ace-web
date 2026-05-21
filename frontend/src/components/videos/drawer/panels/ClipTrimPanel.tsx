@@ -44,6 +44,11 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
   const [sourceDuration, setSourceDuration] = useState<number>(0);
   const [mediaLoadFailed, setMediaLoadFailed] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // End-time guard for the "Play selected clip" button. While set, a
+  // timeupdate listener pauses playback once currentTime crosses this
+  // mark. Cleared on manual pause/seek so the user regains normal
+  // scrubbing without an invisible auto-pause lurking.
+  const playUntilRef = useRef<number | null>(null);
 
   // Probe the source video for its real duration on load.
   useEffect(() => {
@@ -66,9 +71,35 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
     const v = videoRef.current;
     if (!v || !draft || v.readyState < 1) return;
     if (!v.paused) v.pause();
+    playUntilRef.current = null;
     const safe = Math.max(0, Math.min((v.duration || sourceDuration) - 0.05, draft.start));
     try { v.currentTime = safe; } catch { /* swallow */ }
   }, [draft?.start, sourceDuration]);
+
+  // Auto-pause the player when "Play selected clip" reaches the end of
+  // the slot window. timeupdate fires ~4×/sec which is plenty for the
+  // 2–4s slots we typically render; overshoot is bounded by one frame.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onTime = () => {
+      const stopAt = playUntilRef.current;
+      if (stopAt != null && v.currentTime >= stopAt) {
+        v.pause();
+        playUntilRef.current = null;
+      }
+    };
+    // Clear the guard on user-driven pause so a later native Play
+    // doesn't surprise-pause at the previous slot end. Our own auto-
+    // pause already nulled the ref, so the duplicate clear is a no-op.
+    const clearGuard = () => { playUntilRef.current = null; };
+    v.addEventListener("timeupdate", onTime);
+    v.addEventListener("pause", clearGuard);
+    return () => {
+      v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("pause", clearGuard);
+    };
+  }, []);
 
   if (!initial || !draft) return <div>(clip not found)</div>;
 
@@ -92,6 +123,21 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
   const dirty = draft.start !== initial.start || draft.duration !== initial.duration;
 
   const ready = sourceDuration > 0;
+
+  // Slot length actually played in the final video — slotSeconds for
+  // beat clips (the fixed window), draft.duration for the rare
+  // variable-length caller.
+  const playWindow = slotSeconds > 0 ? slotSeconds : (draft.duration || sourceDuration);
+
+  const playSelectedClip = () => {
+    const v = videoRef.current;
+    if (!v || !ready) return;
+    const start = Math.max(0, Math.min(sourceDuration - 0.05, draft.start));
+    const end = Math.min(sourceDuration, start + playWindow);
+    try { v.currentTime = start; } catch { /* swallow */ }
+    playUntilRef.current = end;
+    void v.play().catch(() => { playUntilRef.current = null; });
+  };
 
   // Clamp helper used by both numeric inputs so a user typing 999 into
   // duration doesn't silently bypass [0, sourceDuration]. The TrimBar
@@ -228,6 +274,11 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
         )}
       </div>
       <div className="mt-2 flex justify-end gap-2">
+        <button type="button" onClick={playSelectedClip} disabled={!ready || mediaLoadFailed}
+                title={`Play just this ${playWindow.toFixed(1)}s slice`}
+                className="mr-auto rounded border px-3 py-1.5 text-sm disabled:opacity-50">
+          Play selected clip
+        </button>
         <button type="button" onClick={onCancel}
                 className="rounded border px-3 py-1.5 text-sm">
           Cancel
