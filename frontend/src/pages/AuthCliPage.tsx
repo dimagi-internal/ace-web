@@ -18,7 +18,7 @@ function serverBaseUrl(): string {
 }
 
 export function AuthCliPage() {
-  const cliConnected = useCliAuthStatus(5000);
+  const { authenticated, hasBlob } = useCliAuthStatus(5000);
   const baseUrl = serverBaseUrl();
 
   return (
@@ -31,7 +31,7 @@ export function AuthCliPage() {
         your laptop.
       </p>
 
-      {cliConnected === true ? (
+      {authenticated === true ? (
         <div className="rounded border border-green-300 bg-green-50 p-4 text-green-900">
           <div className="font-semibold">Claude CLI is connected</div>
           <p className="mt-1 text-sm">
@@ -43,7 +43,20 @@ export function AuthCliPage() {
             .
           </p>
         </div>
-      ) : cliConnected === false ? (
+      ) : hasBlob === true ? (
+        <div className="rounded border border-amber-300 bg-amber-50 p-4 text-amber-900">
+          <div className="font-semibold">Credentials uploaded — live check pending</div>
+          <p className="mt-1 text-sm">
+            The server has a credential blob, but the most recent live check
+            against Anthropic didn't pass. This is normal for a few minutes
+            after a deploy while the CLI warms up. You can still try to{" "}
+            <Link to="/chat" className="font-semibold underline">
+              start chatting
+            </Link>
+            ; real auth failures will show up as a chat error.
+          </p>
+        </div>
+      ) : hasBlob === false ? (
         <div className="rounded border border-amber-300 bg-amber-50 p-4 text-amber-900">
           <div className="font-semibold">Not connected</div>
           <p className="mt-1 text-sm">

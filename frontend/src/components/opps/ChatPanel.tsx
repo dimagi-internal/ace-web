@@ -29,7 +29,7 @@ export function ChatPanel({ slug, workspaceSlug }: Props) {
   const [meta, setMeta] = useState<Session | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
   const socket = useSessionSocket(slug);
-  const cliConnected = useCliAuthStatus();
+  const cliStatus = useCliAuthStatus();
 
   // Force a re-render when the draft lock transitions from live to idle
   // so PresenceChips' amber-highlight updates at T+2s without waiting for
@@ -112,7 +112,7 @@ export function ChatPanel({ slug, workspaceSlug }: Props) {
       <div className="flex items-center gap-3 border-b border-border bg-background px-3 py-1.5 text-xs">
         <ConnectionStatus
           wsConnected={socket.connected}
-          cliAuthenticated={cliConnected}
+          cliAuthenticated={cliStatus.authenticated}
         />
         <div className="ml-auto">
           <PresenceChips
@@ -148,7 +148,8 @@ export function ChatPanel({ slug, workspaceSlug }: Props) {
         streamingMessageId={inFlightMessage?.id ?? null}
         sessionSource={meta.source}
         sessionStatus={meta.status}
-        cliConnected={cliConnected}
+        cliHasBlob={cliStatus.hasBlob}
+        cliAuthenticated={cliStatus.authenticated}
         onUpdate={socket.updateDraft}
         onSend={socket.sendChat}
         onStop={socket.stopChat}
