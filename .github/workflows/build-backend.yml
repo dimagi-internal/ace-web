@@ -16,6 +16,12 @@ on:
       - 'pyproject.toml'
       - 'uv.lock'
       - 'Dockerfile'
+      # The video-production renderer is bundled into the backend image
+      # (Dockerfile COPY + `npm install` of connect-videos), so changes
+      # there must rebuild the image too. Missing this trigger silently
+      # shipped main + image out-of-sync: PR #502's faststart fix in
+      # render.ts merged but wasn't deployed until a manual dispatch.
+      - 'video-production/**'
       - '.github/workflows/build-backend.yml'
   workflow_dispatch:
 
