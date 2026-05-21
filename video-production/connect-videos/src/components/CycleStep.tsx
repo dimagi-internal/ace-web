@@ -62,20 +62,23 @@ const Glyph: React.FC<{ label: Props["label"] }> = ({ label }) => {
         </g>
       );
     case "Pay":
-      // Dollar sign — drawn as a glyph so it inherits currentColor.
+      // Dollar sign rendered as line-art paths (vertical stroke + S-curve)
+      // to match the line-weight + stroke vocabulary of Learn/Deliver/Verify.
+      // Was previously an SVG <text>$</text> — under the cycle entrance
+      // animation (the `enter` spring at damping:14 overshoots before
+      // settling), the text element wobbled noticeably while the parent's
+      // transform was changing: font hinting snaps each glyph to the pixel
+      // grid at every scale increment, so the dollar sign appeared to
+      // "shake" while the three vector-path glyphs scaled cleanly.
+      // Switching to paths makes Pay scale geometrically like the rest.
       return (
-        <text
-          x={0}
-          y={0}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontFamily="Work Sans, Inter, sans-serif"
-          fontSize={52}
-          fontWeight={700}
-          fill="currentColor"
-        >
-          $
-        </text>
+        <g {...stroke} strokeWidth={3}>
+          {/* Vertical stroke through the center */}
+          <line x1={0} y1={-26} x2={0} y2={26} />
+          {/* S-curve: upper half curves left, lower half curves right —
+              mirrors the typographic dollar sign without the font path. */}
+          <path d="M 13 -14 C 13 -22, 4 -22, -4 -22 C -12 -22, -13 -16, -13 -10 C -13 -4, -8 0, 0 0 C 8 0, 13 4, 13 10 C 13 16, 12 22, 4 22 C -4 22, -13 22, -13 14" />
+        </g>
       );
   }
 };
