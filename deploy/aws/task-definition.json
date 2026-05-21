@@ -1,7 +1,9 @@
 {
   "family": "labs-jj-ace-web",
   "networkMode": "awsvpc",
-  "requiresCompatibilities": ["FARGATE"],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
   "cpu": "1024",
   "memory": "4096",
   "executionRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ecs-task-execution-role",
@@ -12,37 +14,118 @@
       "image": "858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-ace-web:latest",
       "essential": true,
       "portMappings": [
-        {"containerPort": 8000, "protocol": "tcp"}
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
       ],
       "environment": [
-        {"name": "DJANGO_SETTINGS_MODULE", "value": "config.settings.connectlabs"},
-        {"name": "DJANGO_DEBUG", "value": "False"},
-        {"name": "DJANGO_ALLOWED_HOSTS", "value": "labs.connect.dimagi.com,localhost"},
-        {"name": "CONNECT_PRODUCTION_URL", "value": "https://connect.dimagi.com"},
-        {"name": "FORCE_SCRIPT_NAME", "value": "/ace"},
-        {"name": "SECURE_SSL_REDIRECT", "value": "False"},
-        {"name": "CSRF_TRUSTED_ORIGINS", "value": "https://labs.connect.dimagi.com"},
-        {"name": "ACE_E2E_AUTH_TOKEN", "value": "GKE9bz1V04B_cWNOpkYBA1n3ILuXrNrfKputjEQ0gRI"},
-        {"name": "ACE_ALLOWED_EMAIL_DOMAINS", "value": "dimagi.com,dimagi-ai.com"},
-        {"name": "AWS_REGION", "value": "us-east-1"},
-        {"name": "ACE_MOBILE_AWS_REGION", "value": "us-east-1"},
-        {"name": "ACE_MOBILE_INSTANCE_ID", "value": "i-0ed64635634dbcc36"},
-        {"name": "ACE_MOBILE_S3_BUCKET", "value": "ace-mobile-artifacts-labs"},
-        {"name": "ACE_MOBILE_AMI_VERSION", "value": "2026-05-12-2142"}
+        {
+          "name": "DJANGO_SETTINGS_MODULE",
+          "value": "config.settings.connectlabs"
+        },
+        {
+          "name": "DJANGO_DEBUG",
+          "value": "False"
+        },
+        {
+          "name": "DJANGO_ALLOWED_HOSTS",
+          "value": "labs.connect.dimagi.com,localhost"
+        },
+        {
+          "name": "CONNECT_PRODUCTION_URL",
+          "value": "https://connect.dimagi.com"
+        },
+        {
+          "name": "FORCE_SCRIPT_NAME",
+          "value": "/ace"
+        },
+        {
+          "name": "SECURE_SSL_REDIRECT",
+          "value": "False"
+        },
+        {
+          "name": "CSRF_TRUSTED_ORIGINS",
+          "value": "https://labs.connect.dimagi.com"
+        },
+        {
+          "name": "ACE_E2E_AUTH_TOKEN",
+          "value": "GKE9bz1V04B_cWNOpkYBA1n3ILuXrNrfKputjEQ0gRI"
+        },
+        {
+          "name": "ACE_ALLOWED_EMAIL_DOMAINS",
+          "value": "dimagi.com,dimagi-ai.com"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "ACE_MOBILE_AWS_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "ACE_MOBILE_INSTANCE_ID",
+          "value": "i-09d3deb3c02f92d20"
+        },
+        {
+          "name": "ACE_MOBILE_S3_BUCKET",
+          "value": "ace-mobile-artifacts-labs"
+        },
+        {
+          "name": "ACE_MOBILE_AMI_VERSION",
+          "value": "2026-05-21-1639"
+        }
       ],
       "secrets": [
-        {"name": "DJANGO_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-django-secret-key-2XSt10"},
-        {"name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-database-url-5KLKYs"},
-        {"name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-redis-url-H4HN9I"},
-        {"name": "CONNECT_OAUTH_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-id-jzsNCM"},
-        {"name": "CONNECT_OAUTH_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-secret-kXQI9s"},
-        {"name": "ACE_DRIVE_SA_KEY_JSON", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-drive-sa-key-json-lIHSY8"},
-        {"name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-anthropic-api-key-x6p0ij"},
-        {"name": "ACE_FIELD_ENCRYPTION_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/field-encryption-key-D40eTj"},
-        {"name": "OP_SERVICE_ACCOUNT_TOKEN", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-op-service-account-token-aW4N8Y"},
-        {"name": "SLACK_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-client-id-tNVN7G"},
-        {"name": "SLACK_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-client-secret-KaEozS"},
-        {"name": "SLACK_SIGNING_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-signing-secret-9CmCYh"}
+        {
+          "name": "DJANGO_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-django-secret-key-2XSt10"
+        },
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-database-url-5KLKYs"
+        },
+        {
+          "name": "REDIS_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-redis-url-H4HN9I"
+        },
+        {
+          "name": "CONNECT_OAUTH_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-id-jzsNCM"
+        },
+        {
+          "name": "CONNECT_OAUTH_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-secret-kXQI9s"
+        },
+        {
+          "name": "ACE_DRIVE_SA_KEY_JSON",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-drive-sa-key-json-lIHSY8"
+        },
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-anthropic-api-key-x6p0ij"
+        },
+        {
+          "name": "ACE_FIELD_ENCRYPTION_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/field-encryption-key-D40eTj"
+        },
+        {
+          "name": "OP_SERVICE_ACCOUNT_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-op-service-account-token-aW4N8Y"
+        },
+        {
+          "name": "SLACK_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-client-id-tNVN7G"
+        },
+        {
+          "name": "SLACK_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-client-secret-KaEozS"
+        },
+        {
+          "name": "SLACK_SIGNING_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-signing-secret-9CmCYh"
+        }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
@@ -54,7 +137,10 @@
         }
       },
       "healthCheck": {
-        "command": ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"],
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:8000/api/health || exit 1"
+        ],
         "interval": 30,
         "timeout": 5,
         "retries": 3,
@@ -66,10 +152,16 @@
       "image": "858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-ace-web-frontend:latest",
       "essential": true,
       "portMappings": [
-        {"containerPort": 3000, "protocol": "tcp"}
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
       ],
       "dependsOn": [
-        {"containerName": "api", "condition": "HEALTHY"}
+        {
+          "containerName": "api",
+          "condition": "HEALTHY"
+        }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
