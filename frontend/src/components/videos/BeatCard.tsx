@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useBeatEditor } from "./BeatEditorContext";
 import { sectionLabel } from "./sectionLabels";
@@ -10,6 +10,11 @@ interface Props {
   startSec: number;
   endSec: number;
   children: ReactNode;
+  // Controlled collapse state — owned by BeatList so the page can
+  // offer expand-all / collapse-all (collapsed beats act as an outline
+  // of the video).
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
 function fmt(sec: number): string {
@@ -30,11 +35,10 @@ function beatIsDirty(beatId: string, kind: string, buffer: PendingChange[]): boo
   });
 }
 
-export function BeatCard({ beatId, kind, startSec, endSec, children }: Props) {
+export function BeatCard({ beatId, kind, startSec, endSec, children, collapsed, onToggleCollapsed }: Props) {
   const { state } = useBeatEditor();
   const label = sectionLabel(beatId);
   const dirty = beatIsDirty(beatId, kind, state.buffer);
-  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <section
@@ -53,7 +57,7 @@ export function BeatCard({ beatId, kind, startSec, endSec, children }: Props) {
       >
         <button
           type="button"
-          onClick={() => setCollapsed((v) => !v)}
+          onClick={onToggleCollapsed}
           aria-expanded={!collapsed}
           aria-controls={`beat-body-${beatId}`}
           title={collapsed ? "Expand" : "Collapse"}
@@ -63,7 +67,7 @@ export function BeatCard({ beatId, kind, startSec, endSec, children }: Props) {
         </button>
         <h3
           className="cursor-pointer text-base font-semibold"
-          onClick={() => setCollapsed((v) => !v)}
+          onClick={onToggleCollapsed}
         >
           {label.name}
         </h3>
