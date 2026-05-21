@@ -100,6 +100,10 @@ export interface RunDetail {
   // VideoExplorerPage's RunSummaryLine renders this as "rendered Nm ago"
   // so the user knows how fresh the embedded player's video is.
   output_rendered_at: string | null;
+  // ISO-8601 modifiedTime of spec.yaml in Drive. RunSummaryLine
+  // compares against output_rendered_at and shows "stale (edited
+  // since)" when the saved spec is newer than the embedded video.
+  spec_modified_at: string | null;
 }
 
 export interface RenderStatus {
@@ -107,6 +111,20 @@ export interface RenderStatus {
   run_id: string;
   busy: boolean;
   started_at: string | null;
+  // True when the in-container render chain spawned but the sentinel
+  // (explorer/index.html) hasn't appeared after the longest-plausible
+  // render window. UI shows the captured render-log so the user can
+  // recover (the Mac-host case has a known signature + a known fix —
+  // see VideoExplorerPage's render-error block).
+  appears_failed?: boolean;
+}
+
+export interface RenderLogResult {
+  program_slug: string;
+  run_id: string;
+  started_at: string | null;
+  log: string;
+  size: number;
 }
 
 export interface CopyRunResult {
@@ -142,6 +160,10 @@ export function getVideoRun(ws: string, p: string, r: string): Promise<RunDetail
 
 export function getRenderStatus(ws: string, p: string, r: string): Promise<RenderStatus> {
   return v2Fetch(`${runBase(ws, p, r)}/render-status`);
+}
+
+export function getRenderLog(ws: string, p: string, r: string): Promise<RenderLogResult> {
+  return v2Fetch(`${runBase(ws, p, r)}/render-log`);
 }
 
 export function copyRun(ws: string, p: string): Promise<CopyRunResult> {

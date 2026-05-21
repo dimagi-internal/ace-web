@@ -30,7 +30,7 @@ from apps.api.auth import session_auth
 from apps.api.deps import resolve_workspace_for_member
 from apps.api.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
 
-from . import service, templates
+from . import drive, service, templates
 from .library import reader as library_reader
 from .schemas import (
     BuildTriggerIn,
@@ -488,6 +488,19 @@ def get_run(
             # Leaving rendered_at as None reads as "no render" in the UI,
             # which is consistent with has_output going False on next fetch.
             rendered_at = None
+    # spec.yaml's modifiedTime from Drive — used by the frontend to
+    # decide if the rendered video is stale relative to the latest
+    # saved edits. Caches into the local layout result, so this is a
+    # second Drive metadata read (cheap; one Drive call).
+    spec_modified_at: str | None = None
+    try:
+        layout, client = service.layout_for(workspace)
+        spec_modified_at = drive.spec_modified_time(layout, client, program_slug, run_id)
+    except Exception:
+        # Drive flake shouldn't break run detail load. Falling back to
+        # None means the UI won't render the "stale" qualifier; on the
+        # next fetch, Drive will usually be reachable again.
+        spec_modified_at = None
     return RunDetailOut(
         program_slug=program_slug,
         run_id=run_id,
@@ -499,6 +512,7 @@ def get_run(
         yaml_path=record.yaml_path,
         spec=service.read_parsed_spec(workspace, program_slug, run_id),
         output_rendered_at=rendered_at,
+        spec_modified_at=spec_modified_at,
     )
 
 

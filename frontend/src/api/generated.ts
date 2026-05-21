@@ -2546,6 +2546,8 @@ export interface components {
             } | null;
             /** Output Rendered At */
             readonly output_rendered_at?: string | null;
+            /** Spec Modified At */
+            readonly spec_modified_at?: string | null;
         };
         /** LibraryEntryOut */
         readonly LibraryEntryOut: {
