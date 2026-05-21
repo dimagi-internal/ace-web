@@ -2596,7 +2596,7 @@ export interface components {
              * Op
              * @enum {string}
              */
-            readonly op: "set-clip-start" | "set-clip-trim" | "set-clip-asset" | "set-narration" | "set-stat" | "set-brand";
+            readonly op: "set-clip-start" | "set-clip-trim" | "set-clip-asset" | "set-narration" | "set-stat" | "set-global-template";
             /** Kind */
             readonly kind?: ("scene-clip" | "product-beat") | null;
             /** Index */

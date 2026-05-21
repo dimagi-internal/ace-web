@@ -53,26 +53,31 @@ function applyOne(spec: ProgramSpec, op: PendingChange): void {
       }
       return;
     }
-    case "set-brand": {
-      // Project the override into spec.brand so widgets keying off
-      // effectiveSpec.brand can flip their "global / program-override"
-      // visual without waiting for the save round-trip. Empty values
-      // clear the field, matching server semantics.
-      const specWithBrand = spec as ProgramSpec & {
+    case "set-global-template": {
+      // Project the override into spec.global_template so widgets
+      // keying off effectiveSpec.global_template can flip their
+      // "global / program-override" visual without waiting for the
+      // save round-trip. Empty values clear the field, matching
+      // server semantics. Legacy `spec.brand` from pre-rename writes
+      // is also cleared on first edit so we don't leave both keys
+      // populated.
+      const specWithGlobal = spec as ProgramSpec & {
+        global_template?: { tagline?: string; cycle_steps?: string[] };
         brand?: { tagline?: string; cycle_steps?: string[] };
       };
-      specWithBrand.brand ??= {};
-      const brand = specWithBrand.brand;
+      delete specWithGlobal.brand;
+      specWithGlobal.global_template ??= {};
+      const gt = specWithGlobal.global_template;
       if (op.tagline !== undefined) {
-        if (op.tagline === "") delete brand.tagline;
-        else brand.tagline = op.tagline;
+        if (op.tagline === "") delete gt.tagline;
+        else gt.tagline = op.tagline;
       }
       if (op.cycle_steps !== undefined) {
-        if (op.cycle_steps.length === 0) delete brand.cycle_steps;
-        else brand.cycle_steps = op.cycle_steps;
+        if (op.cycle_steps.length === 0) delete gt.cycle_steps;
+        else gt.cycle_steps = op.cycle_steps;
       }
-      if (!brand.tagline && !brand.cycle_steps) {
-        delete specWithBrand.brand;
+      if (!gt.tagline && !gt.cycle_steps) {
+        delete specWithGlobal.global_template;
       }
       return;
     }

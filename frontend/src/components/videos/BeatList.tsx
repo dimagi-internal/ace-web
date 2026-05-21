@@ -5,7 +5,7 @@ import { BeatCard } from "./BeatCard";
 import { ClipSlotWidget } from "./widgets/ClipSlotWidget";
 import { NarrationWidget } from "./widgets/NarrationWidget";
 import { StatsWidget } from "./widgets/StatsWidget";
-import { BrandTemplateWidget } from "./widgets/BrandTemplateWidget";
+import { GlobalTemplateWidget } from "./widgets/GlobalTemplateWidget";
 import type { ProgramSpec } from "./types";
 
 export function BeatList() {
@@ -96,5 +96,5 @@ function renderKindBody(beatId: string, kind: string, spec: ProgramSpec) {
       <StatsWidget key={i} beatId={beatId} path={`impact[${i}]`} />
     ));
   }
-  return <BrandTemplateWidget beatId={beatId} kind={kind} />;
+  return <GlobalTemplateWidget beatId={beatId} kind={kind} />;
 }

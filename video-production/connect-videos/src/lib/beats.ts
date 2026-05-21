@@ -21,16 +21,24 @@ export const MusicBedSchema = z.object({
 });
 export type MusicBed = z.infer<typeof MusicBedSchema>;
 
-export const BrandSchema = z.object({
+export const GlobalTemplateSchema = z.object({
   tagline: z.string().min(1),
   differentiator: z.string().min(1).optional(),
   cycle_steps: z.array(z.string()).length(4),
   cta: z.string().min(1).optional(),
 });
-export type Brand = z.infer<typeof BrandSchema>;
+export type GlobalTemplate = z.infer<typeof GlobalTemplateSchema>;
+// Re-export the legacy name so any in-flight imports keep building
+// while the rest of the rename rolls out.
+export const BrandSchema = GlobalTemplateSchema;
+export type Brand = GlobalTemplate;
 
 export const DefaultsSchema = z.object({
-  brand: BrandSchema.optional(),
+  // New canonical key. Legacy `brand:` is read as a fallback by callers
+  // (Root.tsx::resolveBrand) so any in-the-wild spec.yaml that hasn't
+  // been migrated still renders.
+  global_template: GlobalTemplateSchema.optional(),
+  brand: GlobalTemplateSchema.optional(),
   fps: z.number().int().positive(),
   total_seconds: z.number().positive(),
   beats: z.array(

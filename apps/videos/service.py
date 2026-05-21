@@ -105,6 +105,15 @@ def explorer_dir(slug: str, run_id: str) -> Path:
     return run_dir(slug, run_id) / "explorer"
 
 
+def qa_frames_dir(slug: str, run_id: str) -> Path:
+    """Local dir where the QA probe writes per-beat preview PNGs after each
+    render. The probe seeks ~the middle of each beat, captures a frame, and
+    writes it as ``<beat_id>.png``. Used by the editor's GlobalTemplateWidget
+    (and any future thumbnail surface) to show "what the rendered template
+    actually looks like" without re-running the renderer."""
+    return run_dir(slug, run_id) / "qa-frames"
+
+
 def feedback_path(slug: str, run_id: str) -> Path:
     return explorer_dir(slug, run_id) / "feedback.md"
 
@@ -694,14 +703,25 @@ def _apply_single_op(
 
         return EditResult(True, f"Updated stat {path}")
 
-    if name == "set-brand":
-        # Per-program override of the global brand template. Writes
-        # under spec.brand; Root.tsx already prefers spec.brand over
-        # programs/_defaults.yaml > brand at render time. Absent
-        # fields mean "no change to that field". Pass empty string to
-        # tagline OR an empty list to cycle_steps to clear that
-        # override (falls back to global default).
-        brand = doc.setdefault("brand", {})
+    if name == "set-global-template":
+        # Per-program override of the global template. Writes under
+        # spec.global_template; the renderer's resolveGlobalTemplate()
+        # in Root.tsx prefers spec.global_template over
+        # programs/_defaults.yaml > global_template at render time.
+        # Absent fields mean "no change to that field". Pass empty
+        # string to tagline OR an empty list to cycle_steps to clear
+        # that override (falls back to global default).
+        #
+        # Renamed from `spec.brand` 2026-05-21 to match the editor UI
+        # label ("Global template"). Any pre-rename `spec.brand` block
+        # is migrated to `spec.global_template` on first edit so the
+        # spec doesn't carry both keys.
+        if "brand" in doc and "global_template" not in doc:
+            doc["global_template"] = doc.pop("brand")
+        else:
+            # Drop any stale legacy key once new key exists.
+            doc.pop("brand", None)
+        gt = doc.setdefault("global_template", {})
         tagline = op.get("tagline")
         cycle_steps = op.get("cycle_steps")
         any_change = False
@@ -709,28 +729,28 @@ def _apply_single_op(
             if not isinstance(tagline, str):
                 return EditResult(False, "tagline must be a string")
             if tagline == "":
-                brand.pop("tagline", None)
+                gt.pop("tagline", None)
             else:
-                brand["tagline"] = tagline
+                gt["tagline"] = tagline
             any_change = True
         if cycle_steps is not None:
             if not isinstance(cycle_steps, list):
                 return EditResult(False, "cycle_steps must be a list")
             if len(cycle_steps) == 0:
-                brand.pop("cycle_steps", None)
+                gt.pop("cycle_steps", None)
             else:
                 if len(cycle_steps) != 4:
                     return EditResult(False, "cycle_steps must have exactly 4 entries")
                 if not all(isinstance(s, str) and s for s in cycle_steps):
                     return EditResult(False, "every cycle_steps entry must be a non-empty string")
-                brand["cycle_steps"] = list(cycle_steps)
+                gt["cycle_steps"] = list(cycle_steps)
             any_change = True
         if not any_change:
-            return EditResult(False, "set-brand requires tagline or cycle_steps")
-        # If the brand section is now empty (all overrides cleared), drop it.
-        if not brand:
-            doc.pop("brand", None)
-        return EditResult(True, "Updated program brand override")
+            return EditResult(False, "set-global-template requires tagline or cycle_steps")
+        # If the section is now empty (all overrides cleared), drop it.
+        if not gt:
+            doc.pop("global_template", None)
+        return EditResult(True, "Updated program global-template override")
 
     return EditResult(False, f"Unknown op: {name!r}")
 

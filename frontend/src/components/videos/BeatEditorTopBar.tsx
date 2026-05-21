@@ -15,7 +15,7 @@ function describeOp(op: PendingChange, spec: ProgramSpec): { beatId: string; lab
     if (m) return { beatId: "impact", label: `${sectionLabel("impact").name} — Big number ${parseInt(m[1], 10) + 1}` };
     return { beatId: "impact", label: `Stat (${op.path})` };
   }
-  if (op.op === "set-brand") {
+  if (op.op === "set-global-template") {
     // Brand overrides land on the cycle beat as the "anchor" for the
     // edit-pending row — the tagline + cycle steps both belong to the
     // hook/cycle visual cluster.

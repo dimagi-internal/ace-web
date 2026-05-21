@@ -1,8 +1,11 @@
-# Connect brand strings — single source of truth.
+# Global template — text shared across every program's video.
 # Mirrors the messaging on labs.connect.dimagi.com so every video stays
 # in sync with the marketing site. Per-program override is possible but
 # unusual; the whole point of these defaults is brand consistency.
-brand:
+# Renamed from `brand:` 2026-05-21 to match the editor UI label
+# ("GLOBAL TEMPLATE"). Renderer falls back to legacy `brand:` reads for
+# any in-the-wild spec.yaml that hasn't been migrated yet.
+global_template:
   # Hero tagline rendered on screen during the opening hook beat.
   tagline: "Pay for verified service delivery, not planned activity."
   # Connect's differentiator one-liner (used in voiceover defaults).

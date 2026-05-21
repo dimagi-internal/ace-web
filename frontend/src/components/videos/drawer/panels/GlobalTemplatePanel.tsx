@@ -6,34 +6,43 @@ interface Props {
   onCancel: () => void;
 }
 
-// Defaults from programs/_defaults.yaml > brand. The renderer's
-// resolveBrand() in Root.tsx falls back to these when spec.brand
-// doesn't override them. Mirrored here so the drawer can show the
-// global value as the placeholder / reset target.
+// Defaults from programs/_defaults.yaml > global_template. The
+// renderer's resolveGlobalTemplate() in Root.tsx falls back to these
+// when spec.global_template doesn't override them. Mirrored here so
+// the drawer can show the global value as the placeholder / reset
+// target.
 const GLOBAL_TAGLINE = "Pay for verified service delivery, not planned activity.";
 const GLOBAL_CYCLE_STEPS = ["Learn", "Deliver", "Verify", "Pay"] as const;
 
 /**
- * Per-program brand override editor.
+ * Per-program global-template override editor.
  *
- * The brand template (tagline + four cycle step labels) lives globally
- * in programs/_defaults.yaml — every program inherits it. A program can
- * override either field by setting `brand.tagline` and/or
- * `brand.cycle_steps` on its spec.yaml. This drawer is the entry
- * point: shows the current value, what it would fall back to, and
- * lets the user edit either or both.
+ * The global template (tagline + four cycle step labels) lives in
+ * programs/_defaults.yaml — every program inherits it. A program can
+ * override either field by setting `global_template.tagline` and/or
+ * `global_template.cycle_steps` on its spec.yaml. This drawer is the
+ * entry point: shows the current value, what it would fall back to,
+ * and lets the user edit either or both.
  *
  * Clearing a field (empty tagline / blank step) drops the override and
  * falls back to global.
+ *
+ * Reads either `spec.global_template` (new canonical key) or
+ * `spec.brand` (legacy, pre-rename) so any spec the user edits is
+ * handled regardless of which key is present.
  */
-export function BrandTemplatePanel({ onCommit, onCancel }: Props) {
+export function GlobalTemplatePanel({ onCommit, onCancel }: Props) {
   const { effectiveSpec, dispatch } = useBeatEditor();
 
-  const specBrand = (effectiveSpec as { brand?: { tagline?: string; cycle_steps?: string[] } }).brand;
+  const specWithGlobal = effectiveSpec as {
+    global_template?: { tagline?: string; cycle_steps?: string[] };
+    brand?: { tagline?: string; cycle_steps?: string[] };
+  };
+  const overrides = specWithGlobal.global_template ?? specWithGlobal.brand;
 
-  const initialTagline = specBrand?.tagline ?? "";
-  const initialSteps = specBrand?.cycle_steps && specBrand.cycle_steps.length === 4
-    ? specBrand.cycle_steps
+  const initialTagline = overrides?.tagline ?? "";
+  const initialSteps = overrides?.cycle_steps && overrides.cycle_steps.length === 4
+    ? overrides.cycle_steps
     : ["", "", "", ""];
 
   const [tagline, setTagline] = useState(initialTagline);
@@ -67,7 +76,7 @@ export function BrandTemplatePanel({ onCommit, onCancel }: Props) {
     dispatch({
       type: "APPEND_OP",
       op: {
-        op: "set-brand",
+        op: "set-global-template",
         tagline: trimmed,                                  // "" clears
         cycle_steps: allStepsBlank ? [] : stepsTrimmed,    // [] clears
       },
