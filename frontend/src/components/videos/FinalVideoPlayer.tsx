@@ -63,12 +63,41 @@ export function FinalVideoPlayer() {
         ref={videoRef}
         id="final-video"
         controls
-        preload="metadata"
+        // Was preload="metadata": only enough HTTP range to get
+        // duration + dimensions. Cheap, but scrubbing the timeline
+        // before pressing play silently no-ops because the browser
+        // has no data at the seeked position to actually move the
+        // playhead — so users click the scrubber, nothing visibly
+        // changes, and the player looks broken. final.mp4 is ~60s of
+        // 1080p (single-digit MB), so eager-loading the whole asset
+        // is a fair trade for "clicks on the timeline actually
+        // work." If campaign video size grows, switch back to
+        // metadata + buffer-ahead-on-first-seek.
+        preload="auto"
         playsInline
         className="aspect-video w-full rounded-md border bg-black"
         src={src}
         onError={() => setHasOutput(false)}
         onPlay={() => setHasPlayed(true)}
+        onSeeked={() => {
+          // First-time scrub UX: if the user clicks anywhere on the
+          // timeline before ever pressing play, their intent is "play
+          // from here" — not "load a single still frame I'll never
+          // watch." The native control just seeks + stays paused,
+          // which to the user reads as a no-op (the play button
+          // overlay is still sitting in the middle, nothing visibly
+          // changes). Auto-start playback on first-ever seek so the
+          // click actually does what it looks like it should.
+          //
+          // Gated on `!hasPlayed` so deliberate mid-video frame
+          // hunting (pause → scrub → look) still works after the
+          // user has started playback at least once.
+          const v = videoRef.current;
+          if (!v) return;
+          if (!hasPlayed && v.paused && v.currentTime > 0) {
+            void v.play();
+          }
+        }}
         onPause={() => {
           // If something pauses the video (e.g. the click sequence
           // briefly toggles it), bring the overlay back so the play
