@@ -42,7 +42,7 @@ export type PendingChange =
       alias?: string; ref?: string }
   | { op: "set-narration"; beatId: string; text: string }
   | { op: "set-stat"; path: string; big?: string; caption?: string; source?: string }
-  | { op: "set-brand"; tagline?: string; cycle_steps?: string[] };
+  | { op: "set-global-template"; tagline?: string; cycle_steps?: string[] };
 
 // What the drawer is currently editing.
 export type WidgetRef =
@@ -50,7 +50,7 @@ export type WidgetRef =
   | { kind: "clip-picker"; clipKind: "scene-clip" | "product-beat"; beatId: string; index: number }
   | { kind: "narration"; beatId: string }
   | { kind: "stat"; beatId: string; path: string }
-  | { kind: "brand-template"; beatId: string };
+  | { kind: "global-template"; beatId: string };
 
 export interface EditorState {
   spec: ProgramSpec;
@@ -73,11 +73,11 @@ export function opCoalesceKey(op: PendingChange): string {
       return `set-narration:${op.beatId}`;
     case "set-stat":
       return `set-stat:${op.path}`;
-    case "set-brand":
+    case "set-global-template":
       // Coalesce all brand edits to one slot — last write wins. Both
       // tagline and cycle_steps belong to the same logical "brand
       // override", so a user editing both in one drawer session
       // shouldn't end up with two ops in the buffer.
-      return "set-brand";
+      return "set-global-template";
   }
 }

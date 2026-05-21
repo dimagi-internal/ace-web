@@ -888,6 +888,33 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/qa-frame/{beat_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Serve the post-render QA preview PNG for a beat (or 404)
+         * @description Serve the per-beat preview PNG the QA probe writes after each
+         *     render (``programs/<slug>/runs/<run>/qa-frames/<beat>.png``). 404
+         *     if the run hasn't been rendered yet or the beat isn't a known
+         *     template beat — callers should fall back to a static icon.
+         *
+         *     Beat-id allowlist (``_QA_FRAME_BEATS``) blocks path traversal:
+         *     only canonical beat slugs render qa-frames, so unknown values
+         *     return 404 without touching the filesystem.
+         */
+        readonly get: operations["apps_videos_api_serve_qa_frame"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/opps/public/{workspace}/{slug}/runs/{run_id}/summary": {
         readonly parameters: {
             readonly query?: never;
@@ -2613,7 +2640,7 @@ export interface components {
              * Op
              * @enum {string}
              */
-            readonly op: "set-clip-start" | "set-clip-trim" | "set-clip-asset" | "set-narration" | "set-stat" | "set-brand";
+            readonly op: "set-clip-start" | "set-clip-trim" | "set-clip-asset" | "set-narration" | "set-stat" | "set-global-template";
             /** Kind */
             readonly kind?: ("scene-clip" | "product-beat") | null;
             /** Index */
@@ -5278,6 +5305,29 @@ export interface operations {
                 readonly program_slug: string;
                 readonly run_id: string;
                 readonly file_name: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_videos_api_serve_qa_frame: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly program_slug: string;
+                readonly run_id: string;
+                readonly beat_id: string;
             };
             readonly cookie?: never;
         };

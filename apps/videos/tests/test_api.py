@@ -285,6 +285,57 @@ def test_post_edit_saves_spec_without_triggering_render(member_client, videos_ro
 
 
 @pytest.mark.django_db
+def test_set_global_template_writes_under_new_key(member_client, videos_root, fake_drive):
+    """Regression for the 2026-05-21 rename: `set-global-template` op
+    persists to `spec.global_template` (was `spec.brand` pre-rename).
+    Renderer's resolveGlobalTemplate() in Root.tsx reads the new key
+    with fallback to the legacy one; this test pins down the write
+    side so the keys don't silently diverge."""
+    client, _ = member_client
+    resp = client.post(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/edit-batch",
+        data={"ops": [{"op": "set-global-template",
+                       "tagline": "Verified care, every visit.",
+                       "cycle_steps": []}]},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    spec = client.get("/api/w/ws1/videos/programs/demo/runs/run-001").json()["spec"]
+    assert spec.get("global_template", {}).get("tagline") == "Verified care, every visit."
+    assert "brand" not in spec, "legacy `brand` key should not be re-written"
+
+
+@pytest.mark.django_db
+def test_qa_frame_404_when_no_render(member_client, videos_root, fake_drive):
+    """The qa-frame endpoint serves the per-beat preview PNG written by
+    the QA probe. Before the first render lands (or for unknown beat
+    ids) it 404s so the GlobalTemplateWidget falls back to icon-only."""
+    client, _ = member_client
+    # Run hasn't been rendered → no qa-frames dir.
+    resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-001/qa-frame/hook")
+    assert resp.status_code == 404
+    # Unknown beat id is blocked at the allowlist, never touches disk.
+    resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-001/qa-frame/../../etc/passwd")
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_qa_frame_serves_png_when_present(member_client, videos_root, fake_drive):
+    """When the QA probe has written hook.png, the endpoint returns
+    it as image/png with a short private cache-control."""
+    from apps.videos import service as svc
+    qa_dir = svc.qa_frames_dir("demo", "run-001")
+    qa_dir.mkdir(parents=True, exist_ok=True)
+    # Minimal valid PNG magic header — enough for the endpoint to serve.
+    (qa_dir / "hook.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+    client, _ = member_client
+    resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-001/qa-frame/hook")
+    assert resp.status_code == 200
+    assert resp.headers["Content-Type"] == "image/png"
+    assert "private" in resp.headers.get("Cache-Control", "")
+
+
+@pytest.mark.django_db
 def test_post_edit_batch_applies_multiple_ops(member_client, videos_root, fake_drive):
     client, _ = member_client
     with mock.patch("apps.videos.service.subprocess.Popen") as popen:

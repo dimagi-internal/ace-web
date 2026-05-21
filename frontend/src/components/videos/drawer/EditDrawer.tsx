@@ -3,7 +3,7 @@ import { useBeatEditor } from "../BeatEditorContext";
 import { sectionLabel } from "../sectionLabels";
 import { DrawerShell } from "./DrawerShell";
 import { ModalShell } from "./ModalShell";
-import { BrandTemplatePanel } from "./panels/BrandTemplatePanel";
+import { GlobalTemplatePanel } from "./panels/GlobalTemplatePanel";
 import { ClipPickerPanel } from "./panels/ClipPickerPanel";
 import { ClipTrimPanel } from "./panels/ClipTrimPanel";
 import { NarrationPanel } from "./panels/NarrationPanel";
@@ -65,9 +65,9 @@ export function EditDrawer() {
   } else if (target.kind === "narration") {
     title = `Voiceover — ${sectionLabel(target.beatId).name}`;
     body = <NarrationPanel beatId={target.beatId} onCommit={close} onCancel={close} />;
-  } else if (target.kind === "brand-template") {
+  } else if (target.kind === "global-template") {
     title = `Global template — ${sectionLabel(target.beatId).name}`;
-    body = <BrandTemplatePanel onCommit={close} onCancel={close} />;
+    body = <GlobalTemplatePanel onCommit={close} onCancel={close} />;
   } else {
     title = statTitle(target.path);
     body = <StatPanel path={target.path} onCommit={close} onCancel={close} />;

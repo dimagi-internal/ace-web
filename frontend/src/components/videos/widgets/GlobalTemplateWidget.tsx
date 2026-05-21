@@ -1,15 +1,27 @@
+import { useState } from "react";
 import { useBeatEditor } from "../BeatEditorContext";
+
+// kind → beat-id mapping for the qa-frame URL. The qa-frame PNGs are
+// keyed by beat id (hook, cycle, handoff, cta), but the widget's props
+// give us the BeatKind (intro_hook, intro_cycle, intro_handoff,
+// outro_cta). Map once instead of asking the caller to pass both.
+const KIND_TO_BEAT_ID: Record<string, string> = {
+  intro_hook: "hook",
+  intro_cycle: "cycle",
+  intro_handoff: "handoff",
+  outro_cta: "cta",
+};
 
 // Per-beat metadata: which global-template field(s) it actually consumes,
 // what to label it as, and whether the user can override anything on this
 // beat at all. Keeping the source-of-truth table inline (one screen,
 // one file) — if the renderer adds a new brand field we update both
 // here and Root.tsx's resolveBrand().
-type BrandField = "tagline" | "cycle_steps";
+type GlobalTemplateField = "tagline" | "cycle_steps";
 
 interface BeatDescriptor {
   description: string;
-  overridableFields: BrandField[];  // empty → informational only, no override
+  overridableFields: GlobalTemplateField[];  // empty → informational only, no override
   readOnlyReason?: string;          // shown when overridableFields is empty
 }
 
@@ -55,8 +67,12 @@ interface Props {
  * shows the global value as a placeholder and lets the user fall back
  * by clearing.
  */
-export function BrandTemplateWidget({ beatId, kind }: Props) {
-  const { effectiveSpec, dispatch } = useBeatEditor();
+export function GlobalTemplateWidget({ beatId, kind }: Props) {
+  const { effectiveSpec, dispatch, workspaceSlug, programSlug, runId } = useBeatEditor();
+  // Tracks whether the qa-frame for this beat 404'd so we collapse the
+  // thumbnail without flashing a broken-image placeholder. Defaults to
+  // false (try to show); flips to true on the first error.
+  const [previewMissing, setPreviewMissing] = useState(false);
 
   const beat: BeatDescriptor = BEATS[kind] ?? {
     description: "Brand-template beat — no per-program content.",
@@ -68,16 +84,25 @@ export function BrandTemplateWidget({ beatId, kind }: Props) {
   // one of the fields IT consumes is overridden. Setting just the
   // tagline shouldn't flip the cycle beat's badge to green, and the
   // handoff beat is read-only so it never shows overridden.
-  const specBrand = (effectiveSpec as { brand?: { tagline?: string; cycle_steps?: string[] } }).brand;
-  const fieldOverridden = (f: BrandField): boolean => {
-    if (!specBrand) return false;
+  //
+  // Reads `spec.global_template`; falls back to legacy `spec.brand`
+  // for any spec that hasn't been migrated to the new key yet.
+  const specGlobal = (
+    effectiveSpec as {
+      global_template?: { tagline?: string; cycle_steps?: string[] };
+      brand?: { tagline?: string; cycle_steps?: string[] };
+    }
+  );
+  const overrides = specGlobal.global_template ?? specGlobal.brand;
+  const fieldOverridden = (f: GlobalTemplateField): boolean => {
+    if (!overrides) return false;
     if (f === "tagline") {
-      return typeof specBrand.tagline === "string" && specBrand.tagline.trim().length > 0;
+      return typeof overrides.tagline === "string" && overrides.tagline.trim().length > 0;
     }
     return (
-      Array.isArray(specBrand.cycle_steps) &&
-      specBrand.cycle_steps.length === 4 &&
-      specBrand.cycle_steps.every((s) => typeof s === "string" && s.trim().length > 0)
+      Array.isArray(overrides.cycle_steps) &&
+      overrides.cycle_steps.length === 4 &&
+      overrides.cycle_steps.every((s) => typeof s === "string" && s.trim().length > 0)
     );
   };
   const overridden = beat.overridableFields.some(fieldOverridden);
@@ -101,7 +126,7 @@ export function BrandTemplateWidget({ beatId, kind }: Props) {
   const openEditor = () =>
     dispatch({
       type: "OPEN_DRAWER",
-      target: { kind: "brand-template", beatId },
+      target: { kind: "global-template", beatId },
     });
 
   // Read-only beats render as a styled <div> so they don't look like
@@ -115,11 +140,42 @@ export function BrandTemplateWidget({ beatId, kind }: Props) {
         onClick: openEditor,
       };
 
+  const previewBeatId = KIND_TO_BEAT_ID[kind];
+  // Prefix-aware URL — same shape as FinalVideoPlayer / explorer iframe.
+  // BASE_URL is `/ace` in prod (path-tenanted ALB) and `/` locally.
+  const apiPrefix = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const previewSrc = previewBeatId
+    ? `${apiPrefix}/api/w/${workspaceSlug}/videos/programs/${programSlug}/runs/${runId}/qa-frame/${previewBeatId}`
+    : null;
+  const showPreview = previewSrc && !previewMissing;
+
   return (
     <Tag
       {...interactiveProps}
-      className={`group w-full rounded border border-dashed ${palette.border} ${palette.bg} p-3 text-left ${readOnly ? "" : "transition-colors hover:border-solid focus:outline-none focus:ring-1 focus:ring-primary"}`}
+      className={`group flex w-full gap-3 rounded border border-dashed ${palette.border} ${palette.bg} p-3 text-left ${readOnly ? "" : "transition-colors hover:border-solid focus:outline-none focus:ring-1 focus:ring-primary"}`}
     >
+      {/* QA-frame preview: a still from the rendered video at this
+          beat's midpoint. Backend writes it after each render to
+          programs/<slug>/runs/<run>/qa-frames/<beat>.png. Falls back
+          gracefully (preview hides, layout collapses) when:
+            - the run hasn't been rendered yet (404),
+            - the beat doesn't have a qa-frame (e.g. unknown kind),
+            - the image fails to decode.
+          Aspect ratio matches the rendered video (16:9) so the
+          thumbnail reads as a video still, not an arbitrary image. */}
+      {showPreview && (
+        <div className="flex-shrink-0">
+          <img
+            src={previewSrc}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setPreviewMissing(true)}
+            className="aspect-video w-28 rounded border border-border/40 bg-muted object-cover"
+          />
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
       <div className="mb-1 flex items-center gap-1.5">
         {overridden ? (
           <svg
@@ -171,6 +227,7 @@ export function BrandTemplateWidget({ beatId, kind }: Props) {
             ? "This program overrides the global default."
             : "Click to set a program-specific override."}
       </p>
+      </div>
     </Tag>
   );
 }

@@ -850,3 +850,44 @@ def serve_media(
     elif suffix == ".webm":
         response["Content-Type"] = "video/webm"
     return response
+
+
+_QA_FRAME_BEATS = frozenset({
+    "hook", "cycle", "handoff", "scene",
+    "problem", "product", "impact", "cta",
+})
+
+
+@router.get(
+    "/programs/{program_slug}/runs/{run_id}/qa-frame/{beat_id}",
+    summary="Serve the post-render QA preview PNG for a beat (or 404)",
+)
+def serve_qa_frame(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    program_slug: Annotated[str, PathParam()],
+    run_id: Annotated[str, PathParam()],
+    beat_id: Annotated[str, PathParam()],
+) -> HttpResponse:
+    """Serve the per-beat preview PNG the QA probe writes after each
+    render (``programs/<slug>/runs/<run>/qa-frames/<beat>.png``). 404
+    if the run hasn't been rendered yet or the beat isn't a known
+    template beat — callers should fall back to a static icon.
+
+    Beat-id allowlist (``_QA_FRAME_BEATS``) blocks path traversal:
+    only canonical beat slugs render qa-frames, so unknown values
+    return 404 without touching the filesystem."""
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    _require_run(workspace, program_slug, run_id)
+    if beat_id not in _QA_FRAME_BEATS:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    target = service.qa_frames_dir(program_slug, run_id) / f"{beat_id}.png"
+    if not target.is_file():
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    response = FileResponse(target.open("rb"), as_attachment=False)
+    response["Content-Type"] = "image/png"
+    # qa-frames are regenerated atomically on every render; cache for a
+    # short window so consecutive widget renders hit disk once, but
+    # invalidate quickly after a re-render lands.
+    response["Cache-Control"] = "private, max-age=60"
+    return response
