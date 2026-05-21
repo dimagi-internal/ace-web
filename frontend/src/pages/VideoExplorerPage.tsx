@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ChevronLeft,
   Copy,
+  ExternalLink,
   Loader2,
   MoreHorizontal,
   RefreshCw,
@@ -286,6 +287,21 @@ export default function VideoExplorerPage() {
                   <Copy className="h-3.5 w-3.5" />
                   Copy run
                 </DropdownMenuItem>
+                {run?.output_drive_url && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => {
+                        if (run.output_drive_url)
+                          window.open(run.output_drive_url, "_blank", "noopener,noreferrer");
+                      }}
+                      title="Open the published output.mp4 on Drive"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Open MP4 on Drive
+                    </DropdownMenuItem>
+                  </>
+                )}
                 {run?.yaml_path && (
                   <>
                     <DropdownMenuSeparator />
