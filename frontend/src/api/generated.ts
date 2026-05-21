@@ -2544,6 +2544,8 @@ export interface components {
             readonly spec?: {
                 readonly [key: string]: unknown;
             } | null;
+            /** Output Rendered At */
+            readonly output_rendered_at?: string | null;
         };
         /** LibraryEntryOut */
         readonly LibraryEntryOut: {

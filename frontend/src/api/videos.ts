@@ -96,6 +96,10 @@ export interface RunDetail {
   explorer_url: string;
   yaml_path: string;
   spec: ProgramSpec | null;
+  // ISO-8601 mtime of final.mp4 — null when no render exists.
+  // VideoExplorerPage's RunSummaryLine renders this as "rendered Nm ago"
+  // so the user knows how fresh the embedded player's video is.
+  output_rendered_at: string | null;
 }
 
 export interface RenderStatus {
