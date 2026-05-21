@@ -45,9 +45,20 @@ export interface WorkspaceActivityParams {
 export const fetchWorkspaceActivity = async (
   params: WorkspaceActivityParams,
 ): Promise<WorkspaceActivityResponse> => {
-  // Using bare fetch — the new endpoint isn't in the generated types yet.
-  // Swap to apiClient.GET("/api/w/{slug}/activity/runs", ...) after the
-  // next openapi regen.
+  // Bare ``fetch`` (not ``apiClient``) because the endpoint's query
+  // params (``include_completed``, ``limit``) aren't declared in
+  // ``generated.ts`` yet — the openapi emitter declares
+  // ``parameters.query?: never`` for this path. Once the server-side
+  // schema declares them, swap to ``apiClient.GET("/api/w/{slug}/activity/runs", ...)``
+  // and this whole helper collapses.
+  //
+  // CRITICAL: the bare URL must include Vite's ``BASE_URL`` prefix.
+  // In prod that's ``/ace`` (ace-web is ALB-mounted at ``/ace/*``).
+  // Without this, ``fetch("/api/...")`` resolves to
+  // ``labs.connect.dimagi.com/api/...`` which is NOT routed to
+  // ace-web and 404s. ``apiClient`` handles this automatically; the
+  // bare fetch path has to do it manually.
+  const baseUrl = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
   const query = new URLSearchParams();
   if (params.includeCompleted !== undefined) {
     query.set("include_completed", String(params.includeCompleted));
@@ -57,7 +68,7 @@ export const fetchWorkspaceActivity = async (
   }
   const qs = query.toString();
   const url =
-    `/api/w/${encodeURIComponent(params.workspaceSlug)}/activity/runs` +
+    `${baseUrl}/api/w/${encodeURIComponent(params.workspaceSlug)}/activity/runs` +
     (qs ? `?${qs}` : "");
   const resp = await fetch(url, { credentials: "include" });
   if (!resp.ok) {
