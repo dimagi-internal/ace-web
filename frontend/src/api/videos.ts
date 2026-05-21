@@ -194,7 +194,8 @@ export type EditBatchOp =
       alias?: string; ref?: string }
   | { op: "set-narration"; beatId: string; text: string }
   | { op: "set-stat"; path: string; big?: string; caption?: string; source?: string }
-  | { op: "set-global-template"; tagline?: string; cycle_steps?: string[] };
+  | { op: "set-global-template"; tagline?: string; cycle_steps?: string[] }
+  | { op: "set-program-name"; name: string };
 
 export interface EditBatchResult {
   ok: boolean;

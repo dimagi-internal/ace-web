@@ -306,6 +306,28 @@ def test_set_global_template_writes_under_new_key(member_client, videos_root, fa
 
 
 @pytest.mark.django_db
+def test_set_program_name_renames(member_client, videos_root, fake_drive):
+    """`set-program-name` writes spec.name, trims whitespace, rejects empty."""
+    client, _ = member_client
+    # Happy path
+    resp = client.post(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/edit-batch",
+        data={"ops": [{"op": "set-program-name", "name": "  Renamed Demo  "}]},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    spec = client.get("/api/w/ws1/videos/programs/demo/runs/run-001").json()["spec"]
+    assert spec["name"] == "Renamed Demo"
+    # Empty / whitespace-only is rejected
+    resp = client.post(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/edit-batch",
+        data={"ops": [{"op": "set-program-name", "name": "   "}]},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
 def test_qa_frame_404_when_no_render(member_client, videos_root, fake_drive):
     """The qa-frame endpoint serves the per-beat preview PNG written by
     the QA probe. Before the first render lands (or for unknown beat

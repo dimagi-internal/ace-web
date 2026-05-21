@@ -34,14 +34,9 @@ const BEATS: Record<string, BeatDescriptor> = {
     description: "Four-step cycle animation: Learn → Deliver → Verify → Pay.",
     overridableFields: ["cycle_steps"],
   },
-  intro_handoff: {
-    // The handoff card renders `spec.name` directly — it's not part of
-    // the global template's brand section. Render as read-only so users
-    // don't open a drawer that can't change anything about this beat.
-    description: "Handoff card — uses program name from spec.yaml.",
-    overridableFields: [],
-    readOnlyReason: "Program name comes from spec.yaml, not the global template.",
-  },
+  // intro_handoff is no longer routed here — BeatList renders
+  // <ProgramNameWidget /> for it because the handoff card edits
+  // spec.name, not anything in the global template.
   outro_cta: {
     description: "End card — logo, tagline, 'Request a demo' link.",
     overridableFields: ["tagline"],

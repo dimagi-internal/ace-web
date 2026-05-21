@@ -42,7 +42,8 @@ export type PendingChange =
       alias?: string; ref?: string }
   | { op: "set-narration"; beatId: string; text: string }
   | { op: "set-stat"; path: string; big?: string; caption?: string; source?: string }
-  | { op: "set-global-template"; tagline?: string; cycle_steps?: string[] };
+  | { op: "set-global-template"; tagline?: string; cycle_steps?: string[] }
+  | { op: "set-program-name"; name: string };
 
 // What the drawer is currently editing.
 export type WidgetRef =
@@ -50,7 +51,8 @@ export type WidgetRef =
   | { kind: "clip-picker"; clipKind: "scene-clip" | "product-beat"; beatId: string; index: number }
   | { kind: "narration"; beatId: string }
   | { kind: "stat"; beatId: string; path: string }
-  | { kind: "global-template"; beatId: string };
+  | { kind: "global-template"; beatId: string }
+  | { kind: "program-name"; beatId: string };
 
 export interface EditorState {
   spec: ProgramSpec;
@@ -79,5 +81,8 @@ export function opCoalesceKey(op: PendingChange): string {
       // override", so a user editing both in one drawer session
       // shouldn't end up with two ops in the buffer.
       return "set-global-template";
+    case "set-program-name":
+      // Same idea — only one program name; coalesce to a single slot.
+      return "set-program-name";
   }
 }

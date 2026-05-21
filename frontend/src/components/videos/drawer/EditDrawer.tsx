@@ -7,6 +7,7 @@ import { GlobalTemplatePanel } from "./panels/GlobalTemplatePanel";
 import { ClipPickerPanel } from "./panels/ClipPickerPanel";
 import { ClipTrimPanel } from "./panels/ClipTrimPanel";
 import { NarrationPanel } from "./panels/NarrationPanel";
+import { ProgramNamePanel } from "./panels/ProgramNamePanel";
 import { StatPanel } from "./panels/StatPanel";
 import type { ProgramSpec } from "../types";
 
@@ -68,6 +69,9 @@ export function EditDrawer() {
   } else if (target.kind === "global-template") {
     title = `Global template — ${sectionLabel(target.beatId).name}`;
     body = <GlobalTemplatePanel onCommit={close} onCancel={close} />;
+  } else if (target.kind === "program-name") {
+    title = "Rename program";
+    body = <ProgramNamePanel onCommit={close} onCancel={close} />;
   } else {
     title = statTitle(target.path);
     body = <StatPanel path={target.path} onCommit={close} onCancel={close} />;

@@ -21,6 +21,12 @@ function describeOp(op: PendingChange, spec: ProgramSpec): { beatId: string; lab
     // hook/cycle visual cluster.
     return { beatId: "cycle", label: "Global template — program override" };
   }
+  if (op.op === "set-program-name") {
+    // Program-name edits anchor to the handoff beat — that's where
+    // the name renders ("Here's how that works for <name>") and where
+    // the rename drawer opens from.
+    return { beatId: "handoff", label: `Rename program → "${op.name}"` };
+  }
   // set-clip-trim / set-clip-asset
   const beatId = op.kind === "scene-clip" ? "scene" : "product";
   const totalSlots = op.kind === "scene-clip"
