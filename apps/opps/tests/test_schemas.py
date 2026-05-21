@@ -31,6 +31,31 @@ def test_opp_card_round_trip():
     assert parsed.run_count == 3
 
 
+def test_opp_card_accepts_null_updated_at():
+    """Regression for #466.
+
+    Opps with no completed run must serialise ``updated_at`` as null
+    rather than the Unix epoch — the frontend OppCard guards on truthy
+    ``last_activity_at`` to render "last —" instead of "last 12/31/1969".
+    """
+    raw = {
+        "slug": "cosmetics-fgd-pilot",
+        "title": "Cosmetics FGD Pilot",
+        "current_phase": None,
+        "current_skill": None,
+        "run_count": 0,
+        "last_run_id": None,
+        "updated_at": None,
+    }
+    parsed = OppCardOut.model_validate(raw)
+    assert parsed.updated_at is None
+    # And the field can be omitted entirely (defaults to None).
+    raw2 = {**raw}
+    del raw2["updated_at"]
+    parsed2 = OppCardOut.model_validate(raw2)
+    assert parsed2.updated_at is None
+
+
 def test_fork_in_validation():
     with pytest.raises(ValueError):
         OppForkIn(fork_at_phase="")
