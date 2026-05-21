@@ -27,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { relativeTime } from "@/lib/relativeTime";
 
 const POLL_INTERVAL_MS = 4000;
 
@@ -345,8 +346,13 @@ function RunSummaryLine({ run }: { run: RunDetail | null }) {
             ? "text-emerald-700 dark:text-emerald-500"
             : "text-amber-700 dark:text-amber-500"
         }
+        title={run.output_rendered_at ?? undefined}
       >
-        {run.has_output ? "rendered" : "no render yet"}
+        {run.has_output
+          ? run.output_rendered_at
+            ? `rendered ${relativeTime(run.output_rendered_at)}`
+            : "rendered"
+          : "no render yet"}
       </span>
       {voice && (
         <>

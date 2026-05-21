@@ -64,6 +64,11 @@ class RunDetailOut(StrictModel):
     explorer_url: str  # /api/w/<ws>/videos/programs/<slug>/runs/<run>/explorer.html
     yaml_path: str  # repo-relative for surfacing in the UI
     spec: dict[str, Any] | None = None  # full parsed spec.yaml — feeds the beat editor
+    # ISO-8601 mtime of final.mp4 (None when has_output is False).
+    # The header summary uses this to render "rendered Nm ago" so the
+    # user knows whether the embedded player is showing a fresh render
+    # vs. something from a week ago.
+    output_rendered_at: str | None = None
 
 
 class LibraryEntryOut(StrictModel):

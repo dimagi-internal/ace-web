@@ -474,6 +474,20 @@ def get_run(
 ) -> RunDetailOut:
     workspace = resolve_workspace_for_member(request, workspace_slug)
     record = _require_run(workspace, program_slug, run_id)
+    # final.mp4 mtime is the render completion time; the UI uses it to
+    # render "rendered Nm ago" in the run summary. Falls back to None
+    # when has_output is False (no render yet) — UI hides the timestamp.
+    rendered_at: str | None = None
+    if record.has_output:
+        from datetime import UTC, datetime
+        out_p = service.output_path(program_slug, run_id)
+        try:
+            rendered_at = datetime.fromtimestamp(out_p.stat().st_mtime, tz=UTC).isoformat()
+        except OSError:
+            # File disappeared between has_output check and stat — rare.
+            # Leaving rendered_at as None reads as "no render" in the UI,
+            # which is consistent with has_output going False on next fetch.
+            rendered_at = None
     return RunDetailOut(
         program_slug=program_slug,
         run_id=run_id,
@@ -484,6 +498,7 @@ def get_run(
         explorer_url=_explorer_url(workspace_slug, program_slug, run_id),
         yaml_path=record.yaml_path,
         spec=service.read_parsed_spec(workspace, program_slug, run_id),
+        output_rendered_at=rendered_at,
     )
 
 

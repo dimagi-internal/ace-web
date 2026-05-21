@@ -64,3 +64,11 @@ qa-results/
 
 # Per-render QA frames extracted by scripts/qa_render.py
 video-production/connect-videos/programs/*/runs/*/qa-frames/
+
+# Clip-cache: video-production/scripts/build-clip-explorer.ts symlinks each
+# @alias.mp4 into ~/.cache/connect-videos/<driveId>.<ext>. apps/videos/api.py
+# detects the broken symlink (host-cache path doesn't exist in the Django
+# container) and re-fetches the asset into <videos_root>/assets/clip-cache/
+# via the workspace's Drive SA. Pure on-disk cache — every entry is
+# re-derivable from Drive on demand. See CLAUDE.md "Editor visual caveats".
+video-production/connect-videos/assets/clip-cache/
