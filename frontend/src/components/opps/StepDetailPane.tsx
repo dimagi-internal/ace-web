@@ -5,7 +5,6 @@ import { getStepDetail } from "../../api/opps";
 import type { Artifact, StepDetail } from "../../api/types.ws";
 import { cn } from "@/lib/utils";
 import { ArtifactBody } from "./ArtifactBody";
-import { DiscussInChatButton } from "./DiscussInChatButton";
 import { EditArtifactDialog } from "./EditArtifactDialog";
 import { JudgeVerdict } from "./JudgeVerdict";
 import { PatientLoader } from "./LoadingStates";
@@ -153,13 +152,12 @@ export function StepDetailPane({ workspaceSlug, slug, runId, skill, skillDisplay
             artifactName={activeArtifact.name}
             mimeType={activeArtifact.mime_type ?? ""}
             webViewLink={activeArtifact.drive_web_link}
+            driveFileId={activeArtifact.drive_file_id}
           />
         </div>
       )}
 
       <JudgeVerdict judge={detail.judge} />
-
-      <DiscussInChatButton workspaceSlug={workspaceSlug} slug={slug} runId={runId} skill={skill} />
 
       {editing && (
         <EditArtifactDialog
