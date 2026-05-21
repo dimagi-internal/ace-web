@@ -70,7 +70,7 @@ export function AgentCard({ agent, skills, phases, isSelected, onClick }: Props)
                 <div className="text-xs font-medium text-foreground">{skill.display_name}</div>
                 <div className="text-[10px] text-muted-foreground">
                   {[
-                    skill.has_judge && "Judge",
+                    skill.has_judge && "Eval",
                     skill.is_recurring && "Recurring",
                   ].filter(Boolean).join(" · ") || ""}
                 </div>

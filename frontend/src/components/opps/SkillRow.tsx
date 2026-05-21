@@ -53,8 +53,8 @@ export function SkillRow({
         </>
       ) : (
         <>
-          {/* Preserve the judge-column widths so skill names line up across
-              rows, but drop the "no judge" label — it was internal-speak
+          {/* Preserve the eval-column widths so skill names line up across
+              rows, but drop the "no eval" label — it was internal-speak
               leaking into the UI. */}
           <span className="w-[54px] shrink-0" />
           <span className="w-[44px] shrink-0" />
@@ -101,7 +101,7 @@ function statusGlyph(status: string): string {
 function statusLabel(status: string): string {
   if (status === "complete") return "complete";
   if (status === "running") return "running";
-  if (status === "judge-fail") return "judge failed";
+  if (status === "judge-fail") return "eval failed";
   if (status === "error") return "error";
   if (status === "skipped") return "skipped";
   if (status === "pending") return "pending";

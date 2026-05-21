@@ -60,7 +60,7 @@ export function PipelineSidebar({ skills, phases, filter, onFilterChange }: Prop
       <SidebarItem
         active={filter === "judge"}
         onClick={() => onFilterChange("judge")}
-        label="Has Judge"
+        label="Has Eval"
         count={judgeCount}
         dotColor="bg-purple-500"
       />

@@ -17,7 +17,7 @@ interface Props {
 
 const KIND_LABEL: Record<ActivityKind, string> = {
   chat: "Chats",
-  verdict: "Verdicts",
+  verdict: "Evals",
 };
 
 const ALL_KINDS: ActivityKind[] = ["chat", "verdict"];
@@ -222,7 +222,7 @@ export function TimelineView({ oppSlug }: Props) {
           <>
             {driveLoading && (
               <p className="mb-3 text-xs text-muted-foreground/80">
-                Loading verdicts… (chats already shown below)
+                Loading evals… (chats already shown below)
               </p>
             )}
             {visibleEvents.length === 0 ? (

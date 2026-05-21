@@ -75,7 +75,7 @@ export function AgentDetailPane({ agent, skills, phases }: Props) {
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
           <MetaItem label="Phase" value={ownedPhase?.display_name ?? "Lifecycle"} />
           <MetaItem label="Skills" value={String(ownedSkills.length)} />
-          <MetaItem label="Judges" value={String(judgeCount)} />
+          <MetaItem label="Evals" value={String(judgeCount)} />
           <MetaItem label="Recurring" value={String(recurringCount)} />
           <MetaItem label="Model" value={agent.model || "—"} />
         </div>
