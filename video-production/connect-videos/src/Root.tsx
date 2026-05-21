@@ -55,19 +55,34 @@ const PROGRAMS_REGISTRY: Record<string, string> = {
 };
 
 const defaults = parseDefaults(defaultsYaml);
-// Brand strings live in _defaults.yaml — single source of truth.
-// Fallback values match what was hardcoded before the brand section
-// was introduced, so older defaults files still render.
+// Brand strings live in _defaults.yaml — single source of truth at
+// the template level. Programs may override individual fields by
+// setting `brand.tagline` and/or `brand.cycle_steps` on their own
+// spec.yaml (see resolveBrand below — written when the user clicks
+// "Edit override" on a BRAND TEMPLATE panel in ace-web's video
+// editor). Fallback values match what was hardcoded before the brand
+// section was introduced, so older defaults files still render.
 const BRAND_FALLBACK = {
   tagline: "Pay for verified service delivery, not planned activity.",
   cycleSteps: ["Learn", "Deliver", "Verify", "Pay"] as const,
 };
-const brand = defaults.brand
-  ? {
-      tagline: defaults.brand.tagline,
-      cycleSteps: defaults.brand.cycle_steps as readonly [string, string, string, string],
-    }
-  : BRAND_FALLBACK;
+function resolveBrand(spec: ProgramSpec): {
+  tagline: string;
+  cycleSteps: readonly [string, string, string, string];
+} {
+  const specBrand = (spec as { brand?: { tagline?: string; cycle_steps?: readonly string[] } }).brand;
+  const base = defaults.brand
+    ? {
+        tagline: defaults.brand.tagline,
+        cycleSteps: defaults.brand.cycle_steps as readonly [string, string, string, string],
+      }
+    : BRAND_FALLBACK;
+  const tagline = specBrand?.tagline ?? base.tagline;
+  const cycleSteps = (specBrand?.cycle_steps && specBrand.cycle_steps.length === 4
+    ? (specBrand.cycle_steps as readonly [string, string, string, string])
+    : base.cycleSteps);
+  return { tagline, cycleSteps };
+}
 
 const ProgramVideo: React.FC<VideoProps> = ({
   programSlug,
@@ -89,6 +104,9 @@ const ProgramVideo: React.FC<VideoProps> = ({
     );
   }
   const spec: ProgramSpec = applyManifestRefs(parseProgramSpec(yamlText));
+  // Brand is resolved per-render so spec.brand overrides are picked up
+  // (renderer doesn't restart between renders in Studio preview).
+  const brand = resolveBrand(spec);
   // Merge: per-prop overrides (from render-CLI's audio-alignment pass)
   // win over spec.beat_overrides win over defaults.
   const mergedOverrides = { ...(spec.beat_overrides ?? {}), ...(beatOverrides ?? {}) };

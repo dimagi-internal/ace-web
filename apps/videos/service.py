@@ -669,6 +669,44 @@ def _apply_single_op(
 
         return EditResult(True, f"Updated stat {path}")
 
+    if name == "set-brand":
+        # Per-program override of the global brand template. Writes
+        # under spec.brand; Root.tsx already prefers spec.brand over
+        # programs/_defaults.yaml > brand at render time. Absent
+        # fields mean "no change to that field". Pass empty string to
+        # tagline OR an empty list to cycle_steps to clear that
+        # override (falls back to global default).
+        brand = doc.setdefault("brand", {})
+        tagline = op.get("tagline")
+        cycle_steps = op.get("cycle_steps")
+        any_change = False
+        if tagline is not None:
+            if not isinstance(tagline, str):
+                return EditResult(False, "tagline must be a string")
+            if tagline == "":
+                brand.pop("tagline", None)
+            else:
+                brand["tagline"] = tagline
+            any_change = True
+        if cycle_steps is not None:
+            if not isinstance(cycle_steps, list):
+                return EditResult(False, "cycle_steps must be a list")
+            if len(cycle_steps) == 0:
+                brand.pop("cycle_steps", None)
+            else:
+                if len(cycle_steps) != 4:
+                    return EditResult(False, "cycle_steps must have exactly 4 entries")
+                if not all(isinstance(s, str) and s for s in cycle_steps):
+                    return EditResult(False, "every cycle_steps entry must be a non-empty string")
+                brand["cycle_steps"] = list(cycle_steps)
+            any_change = True
+        if not any_change:
+            return EditResult(False, "set-brand requires tagline or cycle_steps")
+        # If the brand section is now empty (all overrides cleared), drop it.
+        if not brand:
+            doc.pop("brand", None)
+        return EditResult(True, "Updated program brand override")
+
     return EditResult(False, f"Unknown op: {name!r}")
 
 

@@ -2596,7 +2596,7 @@ export interface components {
              * Op
              * @enum {string}
              */
-            readonly op: "set-clip-start" | "set-clip-trim" | "set-clip-asset" | "set-narration" | "set-stat";
+            readonly op: "set-clip-start" | "set-clip-trim" | "set-clip-asset" | "set-narration" | "set-stat" | "set-brand";
             /** Kind */
             readonly kind?: ("scene-clip" | "product-beat") | null;
             /** Index */
@@ -2621,6 +2621,10 @@ export interface components {
             readonly caption?: string | null;
             /** Source */
             readonly source?: string | null;
+            /** Tagline */
+            readonly tagline?: string | null;
+            /** Cycle Steps */
+            readonly cycle_steps?: readonly string[] | null;
         };
         /** EditBatchOut */
         readonly EditBatchOut: {

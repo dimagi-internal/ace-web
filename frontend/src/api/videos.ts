@@ -167,7 +167,8 @@ export type EditBatchOp =
       // manifest before swapping).
       alias?: string; ref?: string }
   | { op: "set-narration"; beatId: string; text: string }
-  | { op: "set-stat"; path: string; big?: string; caption?: string; source?: string };
+  | { op: "set-stat"; path: string; big?: string; caption?: string; source?: string }
+  | { op: "set-brand"; tagline?: string; cycle_steps?: string[] };
 
 export interface EditBatchResult {
   ok: boolean;
