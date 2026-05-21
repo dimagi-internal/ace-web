@@ -1,6 +1,6 @@
 import type { Judge, JudgeCriterionValue } from "../../api/types.ws";
 
-// Judge verdicts emit criteria in two shapes:
+// Eval results emit criteria in two shapes:
 //   - legacy: Record<string, number>            (just a score)
 //   - plugin: Record<string, {score, weight, ...}>
 // Returning the value verbatim through JSX crashes (React error #31).
@@ -23,12 +23,12 @@ function extractMeta(value: JudgeCriterionValue): { strength: string; weakness: 
   return { strength: "", weakness: "" };
 }
 
-export function JudgeVerdict({ judge }: { judge: Judge | null }) {
+export function EvalResult({ judge }: { judge: Judge | null }) {
   if (!judge) {
     return (
       <div className="rounded bg-card p-2.5">
         <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-          Judge · no LLM judge for this step
+          Eval · no eval for this step
         </div>
       </div>
     );
@@ -44,7 +44,7 @@ export function JudgeVerdict({ judge }: { judge: Judge | null }) {
   return (
     <div className="rounded bg-card p-2.5">
       <div className="flex items-center justify-between">
-        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Judge</div>
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Eval</div>
         <div className="text-xs font-semibold text-green-400">{scoreLabel}</div>
       </div>
       {entries.length > 0 && (

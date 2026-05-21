@@ -290,7 +290,7 @@ function StatusLegend() {
         "  ✓  complete (artifacts present)",
         "  ○  not started",
         "  ▶  running",
-        "  ✗  judge failed (artifacts there but judge said no)",
+        "  ✗  eval failed (artifacts there but eval said no)",
         "  ⚠  qa-failed (structural QA blocked eval)",
         "  ✗  error (load failure)",
         "  —  skipped",

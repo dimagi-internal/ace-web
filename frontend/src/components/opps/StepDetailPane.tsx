@@ -6,7 +6,7 @@ import type { Artifact, StepDetail } from "../../api/types.ws";
 import { cn } from "@/lib/utils";
 import { ArtifactBody } from "./ArtifactBody";
 import { EditArtifactDialog } from "./EditArtifactDialog";
-import { JudgeVerdict } from "./JudgeVerdict";
+import { EvalResult } from "./EvalResult";
 import { PatientLoader } from "./LoadingStates";
 
 interface Props {
@@ -157,7 +157,7 @@ export function StepDetailPane({ workspaceSlug, slug, runId, skill, skillDisplay
         </div>
       )}
 
-      <JudgeVerdict judge={detail.judge} />
+      <EvalResult judge={detail.judge} />
 
       {editing && (
         <EditArtifactDialog
@@ -186,7 +186,7 @@ function StatusPill({ status }: { status: string }) {
   const label =
     status === "complete" ? "complete"
     : status === "running" ? "running"
-    : status === "judge-fail" ? "judge failed"
+    : status === "judge-fail" ? "eval failed"
     : status === "error" ? "error"
     : status === "skipped" ? "skipped"
     : status === "pending" ? "not started"

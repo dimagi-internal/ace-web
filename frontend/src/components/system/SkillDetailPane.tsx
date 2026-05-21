@@ -71,7 +71,7 @@ export function SkillDetailPane({ skill }: Props) {
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
           <MetaItem label="Phase" value={skill.phase ?? "utility"} />
           <MetaItem label="Ordinal" value={skill.ordinal ? String(skill.ordinal) : "—"} />
-          <MetaItem label="Judge" value={skill.has_judge ? "Yes" : "No"} />
+          <MetaItem label="Eval" value={skill.has_judge ? "Yes" : "No"} />
           <MetaItem label="Recurring" value={skill.is_recurring ? "Yes" : "No"} />
           <MetaItem label="Primary output" value={skill.primary_output ?? "—"} />
         </div>
