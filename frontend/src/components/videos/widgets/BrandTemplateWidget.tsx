@@ -1,10 +1,39 @@
 import { useBeatEditor } from "../BeatEditorContext";
 
-const BRAND_DESCRIPTIONS: Record<string, string> = {
-  intro_hook: 'Animated tagline (from brand template).',
-  intro_cycle: "Four-step cycle animation: Learn → Deliver → Verify → Pay.",
-  intro_handoff: "Brand handoff card — uses program name from spec.yaml.",
-  outro_cta: "End card — logo, tagline, 'Request a demo' link.",
+// Per-beat metadata: which global-template field(s) it actually consumes,
+// what to label it as, and whether the user can override anything on this
+// beat at all. Keeping the source-of-truth table inline (one screen,
+// one file) — if the renderer adds a new brand field we update both
+// here and Root.tsx's resolveBrand().
+type BrandField = "tagline" | "cycle_steps";
+
+interface BeatDescriptor {
+  description: string;
+  overridableFields: BrandField[];  // empty → informational only, no override
+  readOnlyReason?: string;          // shown when overridableFields is empty
+}
+
+const BEATS: Record<string, BeatDescriptor> = {
+  intro_hook: {
+    description: "Animated tagline (from global template).",
+    overridableFields: ["tagline"],
+  },
+  intro_cycle: {
+    description: "Four-step cycle animation: Learn → Deliver → Verify → Pay.",
+    overridableFields: ["cycle_steps"],
+  },
+  intro_handoff: {
+    // The handoff card renders `spec.name` directly — it's not part of
+    // the global template's brand section. Render as read-only so users
+    // don't open a drawer that can't change anything about this beat.
+    description: "Handoff card — uses program name from spec.yaml.",
+    overridableFields: [],
+    readOnlyReason: "Program name comes from spec.yaml, not the global template.",
+  },
+  outro_cta: {
+    description: "End card — logo, tagline, 'Request a demo' link.",
+    overridableFields: ["tagline"],
+  },
 };
 
 interface Props {
@@ -29,17 +58,29 @@ interface Props {
 export function BrandTemplateWidget({ beatId, kind }: Props) {
   const { effectiveSpec, dispatch } = useBeatEditor();
 
-  // Detect whether this spec overrides any brand field at all. A truthy
-  // tagline OR a 4-entry cycle_steps array counts as override; anything
-  // else falls through to the global default.
+  const beat: BeatDescriptor = BEATS[kind] ?? {
+    description: "Brand-template beat — no per-program content.",
+    overridableFields: [],
+  };
+  const readOnly = beat.overridableFields.length === 0;
+
+  // Per-beat override check: this widget shows "overridden" only when
+  // one of the fields IT consumes is overridden. Setting just the
+  // tagline shouldn't flip the cycle beat's badge to green, and the
+  // handoff beat is read-only so it never shows overridden.
   const specBrand = (effectiveSpec as { brand?: { tagline?: string; cycle_steps?: string[] } }).brand;
-  const overridden =
-    !!specBrand &&
-    (
-      (typeof specBrand.tagline === "string" && specBrand.tagline.trim().length > 0) ||
-      (Array.isArray(specBrand.cycle_steps) && specBrand.cycle_steps.length === 4
-        && specBrand.cycle_steps.every((s) => typeof s === "string" && s.trim().length > 0))
+  const fieldOverridden = (f: BrandField): boolean => {
+    if (!specBrand) return false;
+    if (f === "tagline") {
+      return typeof specBrand.tagline === "string" && specBrand.tagline.trim().length > 0;
+    }
+    return (
+      Array.isArray(specBrand.cycle_steps) &&
+      specBrand.cycle_steps.length === 4 &&
+      specBrand.cycle_steps.every((s) => typeof s === "string" && s.trim().length > 0)
     );
+  };
+  const overridden = beat.overridableFields.some(fieldOverridden);
 
   const palette = overridden
     ? {
@@ -63,11 +104,21 @@ export function BrandTemplateWidget({ beatId, kind }: Props) {
       target: { kind: "brand-template", beatId },
     });
 
+  // Read-only beats render as a styled <div> so they don't look like
+  // they invite a click. Editable beats render as a <button> with hover
+  // affordance and the "Edit override" hint in the corner.
+  const Tag = readOnly ? "div" : "button";
+  const interactiveProps = readOnly
+    ? {}
+    : {
+        type: "button" as const,
+        onClick: openEditor,
+      };
+
   return (
-    <button
-      type="button"
-      onClick={openEditor}
-      className={`group w-full rounded border border-dashed ${palette.border} ${palette.bg} p-3 text-left transition-colors hover:border-solid focus:outline-none focus:ring-1 focus:ring-primary`}
+    <Tag
+      {...interactiveProps}
+      className={`group w-full rounded border border-dashed ${palette.border} ${palette.bg} p-3 text-left ${readOnly ? "" : "transition-colors hover:border-solid focus:outline-none focus:ring-1 focus:ring-primary"}`}
     >
       <div className="mb-1 flex items-center gap-1.5">
         {overridden ? (
@@ -104,18 +155,22 @@ export function BrandTemplateWidget({ beatId, kind }: Props) {
         >
           {palette.label}
         </span>
-        <span className="ml-auto text-xs text-muted-foreground transition-colors group-hover:text-foreground">
-          ✏ Edit override
-        </span>
+        {!readOnly && (
+          <span className="ml-auto text-xs text-muted-foreground transition-colors group-hover:text-foreground">
+            ✏ Edit override
+          </span>
+        )}
       </div>
       <p className="text-sm text-muted-foreground">
-        {BRAND_DESCRIPTIONS[kind] ?? "Brand-template beat — no per-program content."}
+        {beat.description}
       </p>
       <p className="mt-1 text-xs text-muted-foreground/70">
-        {overridden
-          ? "This program overrides the global default."
-          : "Click to set a program-specific override."}
+        {readOnly
+          ? beat.readOnlyReason ?? "Not configurable from the global template."
+          : overridden
+            ? "This program overrides the global default."
+            : "Click to set a program-specific override."}
       </p>
-    </button>
+    </Tag>
   );
 }
