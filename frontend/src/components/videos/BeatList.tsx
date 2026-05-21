@@ -6,6 +6,7 @@ import { ClipSlotWidget } from "./widgets/ClipSlotWidget";
 import { NarrationWidget } from "./widgets/NarrationWidget";
 import { StatsWidget } from "./widgets/StatsWidget";
 import { GlobalTemplateWidget } from "./widgets/GlobalTemplateWidget";
+import { ProgramNameWidget } from "./widgets/ProgramNameWidget";
 import type { ProgramSpec } from "./types";
 
 export function BeatList() {
@@ -95,6 +96,11 @@ function renderKindBody(beatId: string, kind: string, spec: ProgramSpec) {
     return (spec.impact ?? []).map((_, i) => (
       <StatsWidget key={i} beatId={beatId} path={`impact[${i}]`} />
     ));
+  }
+  if (kind === "intro_handoff") {
+    // The handoff card edits spec.name, not anything in the global
+    // template — different concept, different drawer.
+    return <ProgramNameWidget beatId={beatId} />;
   }
   return <GlobalTemplateWidget beatId={beatId} kind={kind} />;
 }

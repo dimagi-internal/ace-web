@@ -752,6 +752,18 @@ def _apply_single_op(
             doc.pop("global_template", None)
         return EditResult(True, "Updated program global-template override")
 
+    if name == "set-program-name":
+        # Rename the program — writes spec.name. The Remotion <Handoff>
+        # composition renders this directly ("Here's how that works for
+        # <name>"), and the editor breadcrumb + program list also surface
+        # it. Empty / whitespace-only is rejected; every program needs
+        # a display name (the slug stays separate and isn't editable here).
+        new_name = op.get("name")
+        if not isinstance(new_name, str) or not new_name.strip():
+            return EditResult(False, "name must be a non-empty string")
+        doc["name"] = new_name.strip()
+        return EditResult(True, "Renamed program")
+
     return EditResult(False, f"Unknown op: {name!r}")
 
 

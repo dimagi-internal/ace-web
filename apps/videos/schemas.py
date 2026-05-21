@@ -133,6 +133,7 @@ class ClipEditIn(StrictModel):
         "set-narration",
         "set-stat",
         "set-global-template",
+        "set-program-name",
     ]
     # set-clip-*
     kind: Literal["scene-clip", "product-beat"] | None = None
@@ -162,6 +163,11 @@ class ClipEditIn(StrictModel):
     # Either field is optional — absent means "no change to that field".
     tagline: str | None = None
     cycle_steps: list[str] | None = None  # exactly 4 entries when set
+    # set-program-name: rename the program (writes spec.name). The handoff
+    # beat ("Here's how that works for <name>") renders this directly and
+    # the editor breadcrumb / program list also surface it. Empty string
+    # is rejected — every program needs a display name.
+    name: str | None = None
 
 
 class ClipEditOut(StrictModel):

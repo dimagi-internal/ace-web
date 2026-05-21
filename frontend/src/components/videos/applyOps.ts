@@ -81,6 +81,14 @@ function applyOne(spec: ProgramSpec, op: PendingChange): void {
       }
       return;
     }
+    case "set-program-name": {
+      // Update the program display name. The handoff card renders this
+      // directly and the editor header / breadcrumb pick it up via the
+      // refetched spec after save. Server already trims; we mirror that
+      // so the in-memory projection matches what'll come back.
+      spec.name = op.name.trim();
+      return;
+    }
     case "set-stat": {
       const node = resolveStatNode(spec, op.path);
       if (!node) return;
