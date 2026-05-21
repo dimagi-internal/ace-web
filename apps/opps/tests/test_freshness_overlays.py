@@ -1,16 +1,20 @@
 """Tests for ``apps/opps/freshness_overlays.py``.
 
-Coverage targets — one per acceptance criterion in #495:
+Coverage targets:
 
-  1. Per-overlay: cache-hit overlay surfaces newly-added Drive children.
+  1. Per-overlay: cache-hit overlay surfaces newly-added Drive children
+     (snapshot only — see (5) for why card overlays were removed).
   2. Per-overlay: Drive failure preserves the cached value (no
      empty-list regressions on transient Drive blips).
   3. Integration: full ``load_opp_snapshot`` / ``load_rich_opp_snapshot``
-     cache-hit path applies ALL overlays in order, mutating each
+     cache-hit path applies ALL snapshot overlays in order, mutating each
      listing-derived field.
   4. Performance guard: total Drive ``list_folder`` calls on a cache hit
-     equals exactly ``len(OVERLAYS)`` (no n+1 from future overlays
-     accidentally walking deeper).
+     equals exactly ``len(SNAPSHOT_OVERLAYS)`` for snapshots and 0 for
+     ``CARD_OVERLAYS`` (no n+1 from future overlays accidentally walking
+     deeper, no N-fanout on the list view).
+  5. Regression for #510 — the Opps-list path never fans out per-opp
+     Drive list calls on a cache hit.
 
 The list_opp_runs path is stubbed at ``apps.opps.sync.list_opp_runs`` —
 that's the same monkeypatch target the #484 tests use, so an overlay
@@ -155,38 +159,30 @@ def test_runs_summary_overlay_surfaces_new_run(monkeypatch):
     assert calls["list_opp_runs"] == 1
 
 
-def test_run_count_overlay_surfaces_new_count(monkeypatch):
-    """Card overlay sees that runs/ has grown to N folders and updates
-    the cached run_count from 1 → N."""
-    from apps.opps.freshness_overlays import (
-        CARD_OVERLAYS,
-        OverlayContext,
-        apply_freshness_overlays,
+def test_card_overlays_registry_is_empty():
+    """CARD_OVERLAYS is deliberately empty as of #510 / #511.
+
+    The list view (``list_opp_cards``) renders N cards per request; any
+    overlay registered here fans out to N parallel Drive listings on every
+    page load. The freshness-overlay rule of thumb is documented in the
+    module docstring: overlays are appropriate for fields visible to ONE
+    cached item per request (workbench detail), not N (list views).
+
+    If you're tempted to add an overlay here, ask: is this field rendered
+    across N opps at once? If yes, prefer the cached value. The Drive
+    Changes API correctly invalidates underlying card caches when existing
+    files inside the opp folder are touched, which covers the normal-use
+    refresh path.
+    """
+    from apps.opps.freshness_overlays import CARD_OVERLAYS
+
+    assert CARD_OVERLAYS == [], (
+        "CARD_OVERLAYS must stay empty — N-fanout on the Opps list view "
+        "regresses page load to 8-12s+ (see #510). If you have a real "
+        "card-level staleness bug, document the trade in the module "
+        "docstring AND the drive-changes-api-parent-folder-blind-spot "
+        "learning before registering an overlay here."
     )
-
-    card = _make_card(run_count=1)
-
-    fresh_runs = [
-        _make_run_summary("20260517-1829"),
-        _make_run_summary("20260516-1200"),
-        _make_run_summary("20260515-1600"),
-    ]
-
-    def _fake_list_opp_runs(client, *, ace_root_folder_id, opp_slug, opp_children=None):
-        return list(fresh_runs)
-
-    monkeypatch.setattr("apps.opps.sync.list_opp_runs", _fake_list_opp_runs)
-
-    class _StubClient:
-        _inner = None
-
-    apply_freshness_overlays(
-        card, _StubClient(),
-        context=OverlayContext(ace_folder_id="ace-root", slug="opp-1"),
-        overlays=CARD_OVERLAYS,
-    )
-
-    assert card.run_count == 3
 
 
 # ---------------------------------------------------------------------------
@@ -253,34 +249,6 @@ def test_runs_summary_overlay_empty_listing_preserves_cached(monkeypatch):
     )
 
     assert [r.run_id for r in snap.runs_summary] == ["20260515-1600"]
-
-
-def test_run_count_overlay_drive_failure_preserves_cached(monkeypatch):
-    """Same posture for the card.run_count overlay — a Drive failure
-    must not zero out the count."""
-    from apps.opps.freshness_overlays import (
-        CARD_OVERLAYS,
-        OverlayContext,
-        apply_freshness_overlays,
-    )
-
-    card = _make_card(run_count=3)
-
-    def _boom(*args, **kwargs):
-        raise RuntimeError("drive down")
-
-    monkeypatch.setattr("apps.opps.sync.list_opp_runs", _boom)
-
-    class _StubClient:
-        _inner = None
-
-    apply_freshness_overlays(
-        card, _StubClient(),
-        context=OverlayContext(ace_folder_id="ace-root", slug="opp-1"),
-        overlays=CARD_OVERLAYS,
-    )
-
-    assert card.run_count == 3
 
 
 def test_apply_freshness_overlays_continues_after_single_overlay_failure(monkeypatch):
@@ -435,8 +403,16 @@ def test_apply_freshness_overlays_drive_call_count_matches_overlays(monkeypatch)
     )
 
 
-def test_card_overlay_drive_call_count_matches_overlays(monkeypatch):
-    """Same perf guard for ``CARD_OVERLAYS``."""
+def test_card_overlay_zero_drive_calls(monkeypatch):
+    """``CARD_OVERLAYS`` is empty as of #510 / #511 — applying it must
+    trigger zero Drive list calls. This is the perf-guard that protects
+    the Opps-list view from a regressed N-fanout.
+
+    If ``CARD_OVERLAYS`` ever becomes non-empty again, this test fails and
+    the author has to either justify the N parallel Drive calls per
+    page-load on the Opps list view, or factor out the listing some
+    other way.
+    """
     from apps.opps.freshness_overlays import (
         CARD_OVERLAYS,
         OverlayContext,
@@ -462,12 +438,133 @@ def test_card_overlay_drive_call_count_matches_overlays(monkeypatch):
         overlays=CARD_OVERLAYS,
     )
 
-    assert calls["list_opp_runs"] == len(CARD_OVERLAYS)
+    assert calls["list_opp_runs"] == 0
+    assert len(CARD_OVERLAYS) == 0
 
 
 # ---------------------------------------------------------------------------
 # Context handling
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Regression: Opps-list view does NOT fan out per-opp Drive list calls (#510)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_list_opp_cards_does_not_fan_out_per_opp_drive_calls(monkeypatch):
+    """Regression for #510.
+
+    PR #497 registered an ``OppCard.run_count`` overlay that re-listed
+    ``<opp>/runs/`` on every Opps-list page render. With N opps, this
+    fanned out to N parallel ``list_opp_runs`` calls — observed 8-12s
+    page loads at N=5, would be unusable at N=50.
+
+    The Opps-list path (``apps.opps.api.list_opp_cards``) must NOT trigger
+    any ``list_opp_runs`` call on a cache hit. The card's ``run_count``
+    serves from the cached snapshot; the Drive Changes API keeps it
+    roughly fresh during normal use, and the workbench detail view's
+    ``runs_summary`` overlay recovers the count on next visit when an
+    external run lands.
+    """
+    from apps.opps import snapshot_cache
+    from apps.opps.api import list_opp_cards
+    from apps.opps.drive_client import DriveFile
+
+    creator = User.objects.create_user(
+        email=f"list-card-perf-{id(monkeypatch)}@example.com",
+    )
+    workspace = Workspace.objects.create(
+        slug=f"ws-list-perf-{id(monkeypatch)}",
+        display_name="Perf WS",
+        drive_root_folder_id="ace-root",
+        created_by=creator,
+    )
+
+    # Stub the Drive client: root listing returns N opp folders. Each
+    # opp's child listing is a single ``opp.yaml`` so it qualifies as an
+    # opp without triggering deep recursion.
+    n_opps = 5
+    opp_folders = [
+        DriveFile(
+            id=f"opp-folder-{i}",
+            name=f"opp-{i}",
+            mime_type="application/vnd.google-apps.folder",
+            web_view_link="",
+        )
+        for i in range(n_opps)
+    ]
+
+    def _list_files(folder_id):
+        if folder_id == "ace-root":
+            return list(opp_folders)
+        # Each opp folder has an opp.yaml so list_opp_cards considers it
+        # a valid opp (the gate at api.py:97-104).
+        return [
+            DriveFile(
+                id=f"{folder_id}-opp-yaml",
+                name="opp.yaml",
+                mime_type="text/yaml",
+                web_view_link="",
+            )
+        ]
+
+    class _StubDrive:
+        def list_files(self, folder_id, recursive=False, page_size=100):
+            return _list_files(folder_id)
+
+        def list_folder(self, folder_id):
+            return _list_files(folder_id)
+
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client",
+        lambda workspace=None: _StubDrive(),
+    )
+    monkeypatch.setattr(
+        "apps.opps.access.resolve_ace_root_folder_id", lambda ws: "ace-root",
+    )
+    monkeypatch.setattr(
+        "apps.opps.access.overlay_workspace_display_name",
+        lambda manifest, slug, workspace=None: None,
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_changes.observe", lambda workspace, client: set(),
+    )
+
+    # Pre-populate the card cache for all N opps so we hit the cached
+    # branch in list_opp_cards (the only branch the run_count overlay
+    # used to run on).
+    for i in range(n_opps):
+        card = _make_card(slug=f"opp-{i}", run_count=1)
+        snapshot_cache.set_card(
+            workspace_id=workspace.pk,
+            slug=f"opp-{i}",
+            card=card,
+            file_ids={f"opp-folder-{i}"},
+        )
+
+    # Sentinel: any call to list_opp_runs is the regression we're guarding
+    # against. The list view must never invoke it.
+    calls = {"list_opp_runs": 0}
+
+    def _forbidden_list_opp_runs(*args, **kwargs):
+        calls["list_opp_runs"] += 1
+        return []
+
+    monkeypatch.setattr(
+        "apps.opps.sync.list_opp_runs", _forbidden_list_opp_runs,
+    )
+
+    cards = list_opp_cards(workspace)
+
+    assert len(cards) == n_opps
+    assert calls["list_opp_runs"] == 0, (
+        f"Opps-list view triggered {calls['list_opp_runs']} list_opp_runs "
+        f"calls — this is the N-fanout regression from #510. The list "
+        f"view must never overlay per-card freshness; the cached value "
+        f"is the source of truth on the list page."
+    )
 
 
 def test_apply_freshness_overlays_no_context_no_ops(monkeypatch):

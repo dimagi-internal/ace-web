@@ -124,20 +124,12 @@ def list_opp_cards(workspace) -> list[dict]:
                 continue
         else:
             access.overlay_workspace_display_name(card.opp, child.name, workspace=workspace)
-            # #495: refresh listing-derived card fields on cache hit. See
-            # apps/opps/freshness_overlays.CARD_OVERLAYS.
-            from apps.opps.freshness_overlays import (
-                CARD_OVERLAYS,
-                OverlayContext,
-                apply_freshness_overlays,
-            )
-            apply_freshness_overlays(
-                card, client,
-                context=OverlayContext(
-                    ace_folder_id=ace_folder_id, slug=child.name,
-                ),
-                overlays=CARD_OVERLAYS,
-            )
+            # #510 / #511: NO card-level freshness overlays. The list view
+            # renders N cards per request; per-card Drive listings fan out
+            # to N parallel calls and block page render on the slowest
+            # (observed 8-12s at N=5). card.run_count falls back to the
+            # cached value, which the Drive Changes API keeps roughly fresh
+            # for normal use. See apps/opps/freshness_overlays.CARD_OVERLAYS.
 
         # Normalise last_activity_at (Drive ISO-8601 string) to a datetime.
         # When the opp has no completed run, raw_ts is None — pass that
