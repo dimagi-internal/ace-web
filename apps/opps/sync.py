@@ -25,10 +25,8 @@ See docs/plans/2026-04-20-drop-multi-run-simplify.md § deferred work.
 """
 from __future__ import annotations
 
-import contextvars
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -1006,94 +1004,6 @@ class OppCard:
     runs_summary: list[RunSummary] = field(default_factory=list)
 
 
-# Maximum concurrent Drive reads used by ``_fetch_runs_summary_parallel`` to
-# parallelize the per-run state.yaml fetch inside ``load_opp_card``. Capped
-# to a modest value so a 50-run opp doesn't fan out to 50 simultaneous Drive
-# HTTP calls and trip the Drive API's per-user quota / rate limits. Override
-# via ``OPPS_RUNS_SUMMARY_MAX_WORKERS`` if a workspace's typical opp has many
-# runs and the surrounding cold load is still slow. See #516.
-_DEFAULT_RUNS_SUMMARY_MAX_WORKERS = 10
-
-
-def _runs_summary_max_workers() -> int:
-    return int(
-        getattr(
-            settings,
-            "OPPS_RUNS_SUMMARY_MAX_WORKERS",
-            _DEFAULT_RUNS_SUMMARY_MAX_WORKERS,
-        )
-    )
-
-
-def _fetch_one_run_summary(
-    client: DriveClient, rf: DriveFile
-) -> tuple[DriveFile, list[DriveFile], DriveFile | None, dict]:
-    """Fetch the listing + state.yaml body for one run folder.
-
-    Returns ``(rf, run_inner, sf, run_state)`` so the caller can:
-      - skip folders with no run_state.yaml (``sf is None``);
-      - reuse ``run_inner`` (the run-folder listing) for the
-        ``state_source_children`` slot;
-      - read fields off ``run_state`` to build a RunSummary.
-
-    YAML / Drive errors degrade to ``run_state = {}`` with a warning,
-    matching the serial path's behavior.
-    """
-    run_inner = client.list_files(rf.id)
-    sf = _find_state_file(run_inner)
-    if sf is None:
-        return rf, run_inner, None, {}
-    try:
-        run_state_body = _read_text(client, sf)
-        run_state = yaml.safe_load(run_state_body) or {}
-    except (yaml.YAMLError, OSError) as exc:
-        log.warning("load_opp_card: failed to read %s: %s", sf.id, exc)
-        run_state = {}
-    return rf, run_inner, sf, run_state
-
-
-def _fetch_runs_summary_parallel(
-    client: DriveClient, run_folders: list[DriveFile]
-) -> list[tuple[DriveFile, list[DriveFile], DriveFile | None, dict]]:
-    """Parallelize the per-run ``list_files`` + ``get_content`` Drive reads.
-
-    Each worker calls ``_fetch_one_run_summary``. Drive HTTP calls release
-    the GIL, so a ThreadPoolExecutor parallelizes them effectively. Results
-    are returned in the same order as ``run_folders`` (newest-first), so
-    callers iterate as if the loop were serial.
-
-    The ContextVar carrying the per-request TouchedFileTracker must be
-    propagated into worker threads — ``ThreadPoolExecutor`` does not copy
-    contextvars by default — so each task runs inside a copied context.
-    Without this, reads inside worker threads would skip the tracker and
-    the snapshot cache's reverse-index would miss the per-run file IDs.
-
-    Single-run opps skip the pool entirely (no benefit from parallelism;
-    avoids the ~1 ms thread-start overhead).
-    """
-    if not run_folders:
-        return []
-    if len(run_folders) == 1:
-        return [_fetch_one_run_summary(client, run_folders[0])]
-
-    # cap concurrency: don't fire 50 Drive calls at once for a 50-run opp
-    max_workers = max(1, min(_runs_summary_max_workers(), len(run_folders)))
-    with ThreadPoolExecutor(
-        max_workers=max_workers, thread_name_prefix="opps-runs-summary"
-    ) as pool:
-        # Each task gets its OWN copy of the current context — a single
-        # shared ``Context`` cannot be entered concurrently from multiple
-        # threads (Python raises ``RuntimeError: cannot enter context``).
-        # ``copy_context`` is cheap; the per-task copy carries the
-        # TouchedFileTracker contextvar into the worker thread so cached
-        # Drive reads still record into the per-request tracker.
-        futures = [
-            pool.submit(contextvars.copy_context().run, _fetch_one_run_summary, client, rf)
-            for rf in run_folders
-        ]
-        return [fut.result() for fut in futures]
-
-
 def load_opp_card(
     client: DriveClient,
     *,
@@ -1145,20 +1055,24 @@ def load_opp_card(
         # partially-deleted run folders (folder exists, no run_state.yaml)
         # must not inflate the count, or the card disagrees with the
         # expanded runs list.
-        #
-        # Parallelize the per-run Drive reads: this loop dominates cold-load
-        # wall time (#516). Each iteration does one ``list_files`` + one
-        # ``get_content`` against Drive, both blocking HTTP calls that
-        # release the GIL — so a ThreadPoolExecutor parallelizes them
-        # cleanly. The work is independent per run (no shared mutable
-        # state during the read), and we re-sort by submission order
-        # afterwards so output ordering matches the serial path.
-        per_run_results = _fetch_runs_summary_parallel(client, run_folders)
         valid_runs = 0
-        for rf, run_inner, sf, run_state in per_run_results:
+        for rf in run_folders:
+            run_inner = client.list_files(rf.id)
+            sf = _find_state_file(run_inner)
             if sf is None:
                 continue
             valid_runs += 1
+            # Read each run's state.yaml so the card payload carries the
+            # full runs_summary used by the Opps-list phase-chip strip.
+            # Pre-#512 the frontend fanned out N parallel /opps/<slug>/runs
+            # calls (one per card) to get this data; now we read it once
+            # during the card's cold load and serve from cache thereafter.
+            try:
+                run_state_body = _read_text(client, sf)
+                run_state = yaml.safe_load(run_state_body) or {}
+            except (yaml.YAMLError, OSError) as exc:
+                log.warning("load_opp_card: failed to read %s: %s", sf.id, exc)
+                run_state = {}
             run_phase = run_state.get("phase") or run_state.get("current_phase")
             run_progress = _derive_phase_progress(run_state, run_phase)
             runs_summary.append(
