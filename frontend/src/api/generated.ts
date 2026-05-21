@@ -1383,6 +1383,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/mobile/register-test-user": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Submit two-recipe Connect-id registration for async execution */
+        readonly post: operations["apps_mobile_api_register_test_user"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/mobile/capture-ui-dump": {
         readonly parameters: {
             readonly query?: never;
@@ -3273,6 +3290,57 @@ export interface components {
         readonly InstallDriverOut: {
             /** Actions */
             readonly actions: readonly string[];
+        };
+        /**
+         * RegisterTestUserAcceptedOut
+         * @description 202 response — registration accepted, poll jobs/<job_id> for result.
+         */
+        readonly RegisterTestUserAcceptedOut: {
+            /** Job Id */
+            readonly job_id: string;
+            /**
+             * Status
+             * @default running
+             * @constant
+             */
+            readonly status: "running";
+        };
+        /**
+         * RegisterTestUserIn
+         * @description POST /api/mobile/register-test-user body.
+         *
+         *     Mirrors the local-side ``MobileClient.registerTestUser`` call shape.
+         *     The controller drives the two register recipes — first
+         *     ``to_otp_recipe`` (launch → phone entry → Continue) with GMS enabled,
+         *     then ``from_otp_recipe`` (snackbar OK → App Lock + PIN → name →
+         *     backup code → photo capture) with GMS disabled so the in-app
+         *     face-capture step falls back to ManualMode.
+         *
+         *     Recipes ship as a base64-encoded ``tar.gz`` of the resolved palette
+         *     via ``palette_tar_b64`` — same producer as ``RunRecipeIn`` (see
+         *     ``mcp/mobile/recipe-resolver.ts``). ``to_otp_recipe`` and
+         *     ``from_otp_recipe`` name the two top recipes within the palette by
+         *     basename — must be plain ``[A-Za-z0-9._-]+`` (no path traversal).
+         */
+        readonly RegisterTestUserIn: {
+            /** Phone */
+            readonly phone: string;
+            /** Phone Local */
+            readonly phone_local: string;
+            /** Country Code */
+            readonly country_code: string;
+            /** Pin */
+            readonly pin: string;
+            /** Backup Code */
+            readonly backup_code: string;
+            /** Name */
+            readonly name: string;
+            /** Palette Tar B64 */
+            readonly palette_tar_b64: string;
+            /** To Otp Recipe */
+            readonly to_otp_recipe: string;
+            /** From Otp Recipe */
+            readonly from_otp_recipe: string;
         };
         /**
          * LaunchScriptPatchOut
@@ -5904,6 +5972,30 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["InstallDriverOut"];
+                };
+            };
+        };
+    };
+    readonly apps_mobile_api_register_test_user: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["RegisterTestUserIn"];
+            };
+        };
+        readonly responses: {
+            /** @description Accepted */
+            readonly 202: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RegisterTestUserAcceptedOut"];
                 };
             };
         };

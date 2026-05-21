@@ -12,6 +12,9 @@ from apps.mobile.schemas import (
     LaunchScriptPatchIn,
     LaunchScriptPatchOut,
     MobileStatusOut,
+    RegisterTestUserAcceptedOut,
+    RegisterTestUserIn,
+    RegisterTestUserResultOut,
     RepairDriverOut,
     RunRecipeAcceptedOut,
     RunRecipeIn,
@@ -192,3 +195,101 @@ def test_install_driver_out_cold_path():
     )
     assert len(out.actions) == 5
     assert out.actions[-1] == "verified"
+
+
+# ── RegisterTestUser ─────────────────────────────────────────────────
+
+
+_REGISTER_IN = {
+    "phone": "+74260000100",
+    "phone_local": "4260000100",
+    "country_code": "+7",
+    "pin": "111111",
+    "backup_code": "222222",
+    "name": "ACE Test",
+    "palette_tar_b64": "ZmFrZS10YXJiYWxs",
+    "to_otp_recipe": "connect-register-to-otp.yaml",
+    "from_otp_recipe": "connect-register-from-otp.yaml",
+}
+
+
+def test_register_test_user_in_accepts_valid_demo_credentials():
+    body = RegisterTestUserIn(**_REGISTER_IN)
+    assert body.phone == "+74260000100"
+    assert body.to_otp_recipe == "connect-register-to-otp.yaml"
+
+
+def test_register_test_user_in_rejects_path_traversal_recipe_name():
+    import pytest
+    from pydantic import ValidationError
+
+    for bad in [
+        "../../etc/passwd",
+        "subdir/recipe.yaml",
+        "recipe.yml.sh",
+        "no-extension",
+        "recipe",
+    ]:
+        body = dict(_REGISTER_IN, to_otp_recipe=bad)
+        with pytest.raises(ValidationError):
+            RegisterTestUserIn(**body)
+
+
+def test_register_test_user_in_accepts_both_yaml_extensions():
+    body_yaml = RegisterTestUserIn(**dict(_REGISTER_IN, to_otp_recipe="recipe.yaml"))
+    body_yml = RegisterTestUserIn(**dict(_REGISTER_IN, to_otp_recipe="recipe.yml"))
+    assert body_yaml.to_otp_recipe == "recipe.yaml"
+    assert body_yml.to_otp_recipe == "recipe.yml"
+
+
+def test_register_test_user_in_rejects_oversized_palette():
+    import pytest
+    from pydantic import ValidationError
+
+    body = dict(_REGISTER_IN, palette_tar_b64="A" * (256 * 1024 + 1))
+    with pytest.raises(ValidationError, match="palette_tar_b64 exceeds 256 KB"):
+        RegisterTestUserIn(**body)
+
+
+def test_register_test_user_in_rejects_non_digit_phone():
+    import pytest
+    from pydantic import ValidationError
+
+    body = dict(_REGISTER_IN, phone_local="+74260000100")  # leading + not allowed on phone_local
+    with pytest.raises(ValidationError):
+        RegisterTestUserIn(**body)
+
+
+def test_register_test_user_in_rejects_country_code_without_plus():
+    import pytest
+    from pydantic import ValidationError
+
+    body = dict(_REGISTER_IN, country_code="7")
+    with pytest.raises(ValidationError):
+        RegisterTestUserIn(**body)
+
+
+def test_register_test_user_in_rejects_non_digit_pin():
+    import pytest
+    from pydantic import ValidationError
+
+    for bad in [("pin", "abc123"), ("backup_code", "12;34")]:
+        with pytest.raises(ValidationError):
+            RegisterTestUserIn(**dict(_REGISTER_IN, **{bad[0]: bad[1]}))
+
+
+def test_register_test_user_accepted_out_default_status():
+    out = RegisterTestUserAcceptedOut(job_id="job-abc")
+    assert out.status == "running"
+
+
+def test_register_test_user_result_out_already_registered_omits_backup():
+    out = RegisterTestUserResultOut(already_registered=True, phone="+74260000100")
+    assert out.backup_code is None
+
+
+def test_register_test_user_result_out_fresh_carries_backup():
+    out = RegisterTestUserResultOut(
+        already_registered=False, phone="+74260000100", backup_code="222222"
+    )
+    assert out.backup_code == "222222"

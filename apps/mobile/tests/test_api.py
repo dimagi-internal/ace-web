@@ -329,3 +329,66 @@ def test_install_driver_200(auth_client, monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.json()["actions"] == ["already-installed"]
+
+
+# ---------------------------------------------------------------------------
+# POST /mobile/register-test-user — 202
+# ---------------------------------------------------------------------------
+
+
+_VALID_REGISTER_BODY = {
+    "phone": "+74260000100",
+    "phone_local": "4260000100",
+    "country_code": "+7",
+    "pin": "111111",
+    "backup_code": "222222",
+    "name": "ACE Test",
+    "palette_tar_b64": "ZmFrZS10YXJiYWxs",
+    "to_otp_recipe": "connect-register-to-otp.yaml",
+    "from_otp_recipe": "connect-register-from-otp.yaml",
+}
+
+
+@pytest.mark.django_db
+def test_register_test_user_202(auth_client, monkeypatch):
+    client, _ = auth_client
+    monkeypatch.setattr(
+        "apps.mobile.api.submit_register_test_user",
+        lambda body: {"job_id": "job-reg", "status": "running"},
+    )
+    resp = client.post(
+        "/api/mobile/register-test-user",
+        _VALID_REGISTER_BODY,
+        content_type="application/json",
+    )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["job_id"] == "job-reg"
+    assert body["status"] == "running"
+
+
+@pytest.mark.django_db
+def test_register_test_user_rejects_path_traversal_recipe_name(auth_client):
+    client, _ = auth_client
+    bad = dict(_VALID_REGISTER_BODY)
+    bad["to_otp_recipe"] = "../../etc/passwd"
+    resp = client.post(
+        "/api/mobile/register-test-user",
+        bad,
+        content_type="application/json",
+    )
+    assert resp.status_code == 422
+    # The validator's message should mention the basename rule.
+    body = resp.json()
+    msgs = " ".join(e.get("msg", "") for e in body["extras"]["errors"])
+    assert "basename" in msgs.lower() or "recipe filename" in msgs.lower()
+
+
+@pytest.mark.django_db
+def test_register_test_user_anon_401(anon_client):
+    resp = anon_client.post(
+        "/api/mobile/register-test-user",
+        _VALID_REGISTER_BODY,
+        content_type="application/json",
+    )
+    assert resp.status_code == 401

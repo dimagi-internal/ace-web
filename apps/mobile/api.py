@@ -22,6 +22,8 @@ from .schemas import (
     LaunchScriptPatchIn,
     LaunchScriptPatchOut,
     MobileStatusOut,
+    RegisterTestUserAcceptedOut,
+    RegisterTestUserIn,
     RepairDriverOut,
     RunRecipeAcceptedOut,
     RunRecipeIn,
@@ -513,6 +515,118 @@ def install_driver(request: HttpRequest) -> HttpResponse:
 
     result = install_driver_op()
     return JsonResponse(result)
+
+
+# ---------------------------------------------------------------------------
+# POST /mobile/register-test-user — async (202 + job_id)
+# ---------------------------------------------------------------------------
+
+
+def submit_register_test_user(body: RegisterTestUserIn) -> dict:
+    """Kick off the two-recipe registration walk-through as an async job.
+
+    Mirrors ``submit_run_recipe`` — acquires the cross-task singleton at
+    the view layer (so 503 surfaces fast on a busy emulator), spawns a
+    worker thread that holds the lock through completion, returns
+    ``{job_id, status: 'running'}`` for the client to poll
+    ``GET /api/mobile/jobs/<id>`` against.
+
+    Async because the two register recipes plus the GMS toggle between
+    them take ~30-60s, well past ALB's 60s idle timeout.
+    """
+    from .exceptions import MobileError
+
+    _assert_configured()
+    from . import jobs, singleton
+
+    owner = singleton.make_owner()
+    acquired, current = singleton.try_acquire(owner)
+    if not acquired:
+        raise ProblemError(
+            503,
+            f"Emulator busy; singleton held by {current or 'unknown'}",
+            type_=TYPE_VALIDATION,
+        )
+
+    # Capture by value — body is bound to the request lifecycle; the
+    # worker thread outlives that.
+    phone = body.phone
+    phone_local = body.phone_local
+    country_code = body.country_code
+    pin = body.pin
+    backup_code = body.backup_code
+    name = body.name
+    palette_tar_b64 = body.palette_tar_b64
+    to_otp_recipe = body.to_otp_recipe
+    from_otp_recipe = body.from_otp_recipe
+
+    def worker_holding(job_id: str) -> None:
+        try:
+            try:
+                controller = _make_controller()
+                result = controller.register_test_user(
+                    phone=phone,
+                    phone_local=phone_local,
+                    country_code=country_code,
+                    pin=pin,
+                    backup_code=backup_code,
+                    name=name,
+                    palette_tar_b64=palette_tar_b64,
+                    to_otp_recipe=to_otp_recipe,
+                    from_otp_recipe=from_otp_recipe,
+                )
+                jobs.mark_completed(job_id, _to_payload(result))
+            except MobileError as e:
+                jobs.mark_failed(job_id, error=e.message, error_code=e.code)
+            except Exception as e:  # noqa: BLE001
+                jobs.mark_failed(
+                    job_id,
+                    error=f"unexpected error: {e}",
+                    error_code="unexpected-error",
+                    include_traceback=True,
+                )
+        finally:
+            singleton.release(owner)
+
+    job_id = jobs.make_job_id()
+    job = jobs.JobRecord(
+        job_id=job_id,
+        operation="register_test_user",
+        status="running",
+        owner=owner,
+        started_at=jobs._iso_now(),  # noqa: SLF001
+    )
+    jobs.write(job)
+    try:
+        threading.Thread(
+            target=worker_holding,
+            args=(job_id,),
+            name=f"mobile-job-{job_id}",
+            daemon=True,
+        ).start()
+    except Exception as e:  # noqa: BLE001
+        singleton.release(owner)
+        jobs.mark_failed(
+            job_id, error=f"failed to start worker: {e}", error_code="thread-start-failed"
+        )
+        raise ProblemError(
+            500, f"Could not start worker thread: {e}", type_=TYPE_VALIDATION
+        ) from e
+
+    return {"job_id": job_id, "status": "running"}
+
+
+@router.post(
+    "/register-test-user",
+    response={202: RegisterTestUserAcceptedOut},
+    summary="Submit two-recipe Connect-id registration for async execution",
+)
+def register_test_user(request: HttpRequest, body: RegisterTestUserIn) -> HttpResponse:
+    from django.http import JsonResponse
+
+    result = submit_register_test_user(body)
+    payload = RegisterTestUserAcceptedOut.model_validate(result).model_dump(mode="json")
+    return JsonResponse(payload, status=202)
 
 
 # ---------------------------------------------------------------------------

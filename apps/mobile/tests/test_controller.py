@@ -783,6 +783,235 @@ def test_repair_driver_uses_user_0_scoped_uninstall(controller_factory, monkeypa
     assert "dev.mobile.maestro.test" in joined
 
 
+# ── Operations: register_test_user ──────────────────────────────────
+
+
+_REGISTER_KWARGS = dict(
+    phone="+74260000100",
+    phone_local="4260000100",
+    country_code="+7",
+    pin="111111",
+    backup_code="222222",
+    name="ACE Test",
+    palette_tar_b64="ZmFrZS10YXJiYWxs",  # 'fake-tarball'
+    to_otp_recipe="connect-register-to-otp.yaml",
+    from_otp_recipe="connect-register-from-otp.yaml",
+)
+
+
+class _SsmRecorder:
+    """Drop-in replacement for ``ssm.run_command`` that records every
+    invocation and returns a scripted sequence of ``CommandResult``s.
+
+    The register flow makes up to 6 SSM calls in sequence:
+      1. setup (mkdir + extract palette)
+      2. GMS enable
+      3. Part A maestro
+      4. GMS disable
+      5. Part B maestro
+      6. finally cleanup (idle bump + rm run_dir)
+
+    Pass a list of (stdout, exit_code) tuples; each call pops the next.
+    Any extra call after the script is exhausted returns Success/0.
+    """
+
+    def __init__(self, script: list[tuple[str, int]] | None = None) -> None:
+        from apps.mobile.ssm import CommandResult
+
+        self._script = list(script or [])
+        self.calls: list[list[str]] = []
+        self._CommandResult = CommandResult
+
+    def __call__(self, client, instance_id, *, commands, timeout_seconds, **_):
+        self.calls.append(list(commands))
+        if self._script:
+            stdout, exit_code = self._script.pop(0)
+        else:
+            stdout, exit_code = "", 0
+        return self._CommandResult(
+            status="Success" if exit_code == 0 else "Failed",
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr="",
+        )
+
+
+def test_register_test_user_returns_already_registered_when_part_a_short_circuits(
+    controller_factory, monkeypatch,
+):
+    """If Part A's stdout contains ``PHONE_ALREADY_REGISTERED`` (Connect
+    snackbar telling the user the phone is already provisioned), the
+    flow short-circuits without running Part B and returns
+    ``already_registered=True``. The cleanup branch still runs so the
+    run_dir is removed and the idle marker bumped.
+    """
+    recorder = _SsmRecorder([
+        ("", 0),                                  # setup
+        ("", 0),                                  # GMS enable
+        ("...maestro...\nPHONE_ALREADY_REGISTERED\n", 0),  # Part A
+        ("", 0),                                  # cleanup (finally)
+    ])
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", recorder)
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+
+    result = c.register_test_user(**_REGISTER_KWARGS)
+    assert result.already_registered is True
+    assert result.phone == "+74260000100"
+    assert result.backup_code is None  # never echoed on short-circuit
+    # 4 SSM calls — setup, GMS enable, Part A, finally cleanup.
+    assert len(recorder.calls) == 4
+
+
+def test_register_test_user_runs_both_recipes_on_fresh_registration(
+    controller_factory, monkeypatch,
+):
+    """Happy-path full walkthrough: both recipes pass clean, GMS gets
+    toggled enabled→disabled between them, result includes the backup
+    code so callers can persist it.
+    """
+    recorder = _SsmRecorder([
+        ("", 0),               # setup
+        ("", 0),               # GMS enable
+        ("step ok\n", 0),      # Part A
+        ("", 0),               # GMS disable
+        ("step ok\n", 0),      # Part B
+        ("", 0),               # cleanup
+    ])
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", recorder)
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+
+    result = c.register_test_user(**_REGISTER_KWARGS)
+    assert result.already_registered is False
+    assert result.phone == "+74260000100"
+    assert result.backup_code == "222222"
+    assert len(recorder.calls) == 6
+
+    # GMS toggle ordering: enable BEFORE Part A, disable AFTER Part A.
+    gms_enable_cmd = "\n".join(recorder.calls[1])
+    gms_disable_cmd = "\n".join(recorder.calls[3])
+    assert "pm enable com.google.android.gms" in gms_enable_cmd
+    assert "pm disable-user --user 0 com.google.android.gms" in gms_disable_cmd
+
+    # Recipes invoked in the right order with the right env vars.
+    part_a_cmd = "\n".join(recorder.calls[2])
+    part_b_cmd = "\n".join(recorder.calls[4])
+    assert "connect-register-to-otp.yaml" in part_a_cmd
+    assert "PHONE_LOCAL=4260000100" in part_a_cmd
+    assert "COUNTRY_CODE=+7" in part_a_cmd
+    assert "PIN=111111" in part_a_cmd
+    # Part A must NOT leak the backup code or name.
+    assert "BACKUP_CODE" not in part_a_cmd
+    assert "NAME=" not in part_a_cmd
+    assert "connect-register-from-otp.yaml" in part_b_cmd
+    assert "NAME=ACE Test" in part_b_cmd
+    assert "BACKUP_CODE=222222" in part_b_cmd
+    assert "PIN=111111" in part_b_cmd
+    # Maestro invoked from inside run_dir (cd /tmp/register-*).
+    assert "cd /tmp/register-" in part_a_cmd
+    assert "/usr/local/bin/maestro test" in part_a_cmd
+
+
+def test_register_test_user_part_b_short_circuit_still_succeeds(
+    controller_factory, monkeypatch,
+):
+    """If Part A passes but Part B sees PHONE_ALREADY_REGISTERED (rare —
+    only on a partial prior registration where the snackbar surfaces
+    in the second flow), still short-circuit with already_registered.
+    """
+    recorder = _SsmRecorder([
+        ("", 0),              # setup
+        ("", 0),              # GMS enable
+        ("step ok\n", 0),     # Part A
+        ("", 0),              # GMS disable
+        ("PHONE_ALREADY_REGISTERED\n", 0),  # Part B
+        ("", 0),              # cleanup
+    ])
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", recorder)
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+
+    result = c.register_test_user(**_REGISTER_KWARGS)
+    assert result.already_registered is True
+    assert result.backup_code is None
+
+
+def test_register_test_user_part_a_failure_raises_mobile_error(
+    controller_factory, monkeypatch,
+):
+    """A non-zero Part A exit without the short-circuit marker is a hard
+    failure — surface it as MobileError. Cleanup still runs."""
+    recorder = _SsmRecorder([
+        ("", 0),              # setup
+        ("", 0),              # GMS enable
+        ("selector not found\n", 1),  # Part A FAILS
+        ("", 0),              # cleanup
+    ])
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", recorder)
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+
+    with pytest.raises(MobileError, match="part A failed"):
+        c.register_test_user(**_REGISTER_KWARGS)
+    # Cleanup must still fire even on error.
+    assert len(recorder.calls) == 4
+
+
+def test_register_test_user_when_not_running_raises(controller_factory):
+    """Like every other controller op — refuses to fire if the EC2
+    instance isn't running."""
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("stopped")
+    )
+    with pytest.raises(MobileError):
+        c.register_test_user(**_REGISTER_KWARGS)
+
+
+def test_register_test_user_extracts_palette_into_run_dir(
+    controller_factory, monkeypatch,
+):
+    """Setup step must extract the base64 tarball into the per-run
+    /tmp/register-<id> directory. The Maestro invocation that follows
+    references files inside that directory."""
+    recorder = _SsmRecorder([
+        ("", 0),              # setup
+        ("", 0),              # GMS enable
+        ("PHONE_ALREADY_REGISTERED\n", 0),  # short-circuit
+        ("", 0),              # cleanup
+    ])
+    monkeypatch.setattr("apps.mobile.controller.ssm.run_command", recorder)
+    c = controller_factory()
+    controller_factory.ec2_stub.add_response(
+        "describe_instances", _describe_resp("running")
+    )
+
+    c.register_test_user(**_REGISTER_KWARGS)
+
+    setup_cmd = "\n".join(recorder.calls[0])
+    # Palette tar piped through base64 -d into tar xzf -.
+    assert "base64 -d" in setup_cmd
+    assert "tar xzf -" in setup_cmd
+    # Same run_dir referenced in setup and in the cleanup branch.
+    import re
+    setup_dirs = re.findall(r"/tmp/register-[0-9a-f]+", setup_cmd)
+    cleanup_cmd = "\n".join(recorder.calls[3])
+    cleanup_dirs = re.findall(r"/tmp/register-[0-9a-f]+", cleanup_cmd)
+    assert setup_dirs, "setup must reference a /tmp/register-* run_dir"
+    assert setup_dirs[0] in cleanup_dirs
+    # Cleanup must include rm -rf of the run_dir.
+    assert "rm -rf" in cleanup_cmd
+
+
 # ── Operations: run_recipe ──────────────────────────────────────────
 
 

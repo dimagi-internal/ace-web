@@ -259,6 +259,24 @@ class InstallDriverResult:
 
 
 @dataclass
+class RegisterTestUserResult:
+    """Outcome of the two-recipe Connect-id registration walk-through.
+
+    Mirrors local-side ``TestUserRegistrationResult`` so the cloud +
+    local backends return interchangeably. ``already_registered=True``
+    short-circuits when either register recipe sees the
+    ``PHONE_ALREADY_REGISTERED`` marker emitted by Connect when the
+    demo phone is already provisioned. ``backup_code`` is echoed back
+    only on a fresh registration; on an already-registered short-
+    circuit it's None.
+    """
+
+    already_registered: bool
+    phone: str
+    backup_code: str | None = None
+
+
+@dataclass
 class State:
     """One named state baked into the AMI (1:1 with a CommCare APK version)."""
 
@@ -745,6 +763,216 @@ fi
             if line.startswith("ACTION=")
         ]
         return InstallDriverResult(actions=actions)
+
+    def register_test_user(
+        self,
+        *,
+        phone: str,
+        phone_local: str,
+        country_code: str,
+        pin: str,
+        backup_code: str,
+        name: str,
+        palette_tar_b64: str,
+        to_otp_recipe: str,
+        from_otp_recipe: str,
+    ) -> RegisterTestUserResult:
+        """Register the ACE test user end-to-end via Maestro on the cloud AVD.
+
+        Mirrors local-side ``MobileClient.registerTestUser`` (see
+        ``mcp/mobile/client.ts``). Drives two recipes back-to-back, with
+        a GMS enable/disable toggle in between:
+
+          1. ``to_otp_recipe`` (Part A) — launch → phone entry → Continue,
+             needs GMS *enabled* so CommCare 2.62.0's launch-time GMS check
+             doesn't surface the blocking "Enable Google Play services"
+             dialog.
+          2. ``from_otp_recipe`` (Part B) — snackbar OK → App Lock + PIN →
+             name → backup code → photo capture. Needs GMS *disabled*
+             so the in-app face-capture step falls back to
+             ManualMode (the emulated front camera can never satisfy
+             ML Kit face detection).
+
+        Demo users (``+7426`` prefix) skip OTP server-side, so the
+        end-to-end walk-through is ~30-60s. The phone is expected to be
+        pre-invited to a Connect opportunity (Phase 4 of
+        ``/ace:run`` invites ``${ACE_E2E_PHONE}`` before Phase 6).
+
+        If either recipe's stdout contains ``PHONE_ALREADY_REGISTERED``
+        (the marker Maestro emits when Connect's snackbar reports the
+        phone is already provisioned), short-circuit and return
+        ``already_registered=True``.
+
+        Caller (the view) is responsible for the singleton lock.
+        """
+        self._assert_running()
+        run_id = uuid.uuid4().hex
+        run_dir = f"/tmp/register-{run_id}"
+
+        # Step 1: stage the palette in run_dir.
+        # The local-side ``prepareRecipeForMaestro`` resolves the
+        # ``${SELECTOR:...}`` placeholders inside every recipe in the
+        # static palette and tars the temp dir. We extract it under
+        # run_dir so Maestro's ``runFlow: file: "./..."`` siblings
+        # resolve correctly when invoked from ``cd run_dir`` below.
+        commands_setup = [
+            "set -eu",
+            f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+            f"mkdir -p {shlex.quote(run_dir)}",
+            f"chown -R ubuntu:ubuntu {shlex.quote(run_dir)}",
+            f"echo {shlex.quote(palette_tar_b64)} | base64 -d "
+            f"| sudo -u ubuntu tar xzf - -C {shlex.quote(run_dir)}",
+        ]
+        ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=commands_setup,
+            timeout_seconds=_SSM_OP_TIMEOUT_SEC,
+        )
+
+        try:
+            # Step 2: enable GMS for Part A. ``pm enable`` is idempotent.
+            # Best-effort — a stale GMS state will surface as a Maestro
+            # selector miss in Part A, not a silent corruption.
+            self._set_gms_enabled(True)
+
+            # Step 3: Part A — launch → phone entry → Continue.
+            part_a = self._run_register_recipe(
+                run_dir=run_dir,
+                recipe_name=to_otp_recipe,
+                env={
+                    "PHONE_LOCAL": phone_local,
+                    "COUNTRY_CODE": country_code,
+                    "PIN": pin,
+                },
+            )
+            if "PHONE_ALREADY_REGISTERED" in part_a.stdout:
+                return RegisterTestUserResult(
+                    already_registered=True, phone=phone
+                )
+            if part_a.exit_code != 0:
+                raise MobileError(
+                    f"register_test_user part A failed (exit {part_a.exit_code}): "
+                    f"{(part_a.stderr or part_a.stdout)[:500]}"
+                )
+
+            # Step 4: disable GMS between parts so face-capture in Part B
+            # picks ManualMode. CommCare already passed its launch check
+            # in Part A and doesn't re-check GMS mid-session.
+            self._set_gms_enabled(False)
+
+            # Step 5: Part B — snackbar OK → App Lock + PIN → name →
+            # backup code → photo capture.
+            part_b = self._run_register_recipe(
+                run_dir=run_dir,
+                recipe_name=from_otp_recipe,
+                env={
+                    "NAME": name,
+                    "BACKUP_CODE": backup_code,
+                    "PIN": pin,
+                },
+            )
+            if "PHONE_ALREADY_REGISTERED" in part_b.stdout:
+                return RegisterTestUserResult(
+                    already_registered=True, phone=phone
+                )
+            if part_b.exit_code != 0:
+                raise MobileError(
+                    f"register_test_user part B failed (exit {part_b.exit_code}): "
+                    f"{(part_b.stderr or part_b.stdout)[:500]}"
+                )
+
+            return RegisterTestUserResult(
+                already_registered=False,
+                phone=phone,
+                backup_code=backup_code,
+            )
+        finally:
+            # Best-effort cleanup + idle marker bump. The idle marker
+            # bump matters even on failure paths so a stuck recipe
+            # doesn't leak a stale activity timestamp and trip the
+            # 10 min in-VM auto-stop while the caller is still
+            # finalizing.
+            try:
+                ssm.run_command(
+                    self.ssm,
+                    self.instance_id,
+                    commands=[
+                        f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+                        f"rm -rf {shlex.quote(run_dir)} || true",
+                    ],
+                    timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
+                )
+            except Exception:
+                pass
+
+    def _set_gms_enabled(self, enabled: bool) -> None:
+        """Toggle ``com.google.android.gms`` on the running AVD.
+
+        Mirrors local-side ``AvdBackend.setGmsEnabled``. ``pm enable``
+        and ``pm disable-user --user 0`` are both idempotent. Best-
+        effort — the call returns successfully even if pm itself
+        surfaces a no-op message, since a stale GMS state surfaces as
+        a Maestro selector miss further down rather than a silent
+        corruption.
+        """
+        if enabled:
+            adb_cmd = "pm enable com.google.android.gms"
+        else:
+            adb_cmd = "pm disable-user --user 0 com.google.android.gms"
+        commands = [
+            f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+            f"{_ADB} shell {adb_cmd} || true",
+        ]
+        ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=commands,
+            timeout_seconds=_SSM_PROBE_TIMEOUT_SEC,
+            return_on_script_failure=True,
+        )
+
+    def _run_register_recipe(
+        self,
+        *,
+        run_dir: str,
+        recipe_name: str,
+        env: dict[str, str],
+    ) -> Any:
+        """Invoke Maestro on a recipe that lives at ``{run_dir}/{recipe_name}``.
+
+        Caller is responsible for extracting the palette into ``run_dir``
+        beforehand. Returns the raw ``ssm.CommandResult`` so the caller
+        can introspect both ``stdout`` (for ``PHONE_ALREADY_REGISTERED``
+        markers) and ``exit_code`` (for hard failures).
+
+        Uses ``return_on_script_failure=True`` so a non-zero Maestro
+        exit (recipe assertion fail, parse error, selector miss)
+        comes back as a CommandResult rather than bubbling up as
+        SSMFailure — matches ``run_recipe``'s contract.
+        """
+        env_flags = " ".join(
+            f"--env {shlex.quote(f'{k}={v}')}" for k, v in (env or {}).items()
+        )
+        recipe_path = f"{run_dir}/{recipe_name}"
+        commands = [
+            "set -eu",
+            f"touch {shlex.quote(_IDLE_MARKER_PATH)} || true",
+            # ``cd run_dir`` so Maestro's relative ``runFlow: file: "./..."``
+            # refs resolve to palette siblings, and so the
+            # ``--debug-output`` artifacts land inside run_dir for the
+            # cleanup branch.
+            f"(cd {shlex.quote(run_dir)} && sudo -u ubuntu {_MAESTRO} test "
+            f"--debug-output {shlex.quote(run_dir)} "
+            f"{env_flags} {shlex.quote(recipe_path)})",
+        ]
+        return ssm.run_command(
+            self.ssm,
+            self.instance_id,
+            commands=commands,
+            timeout_seconds=_SSM_RECIPE_TIMEOUT_SEC,
+            return_on_script_failure=True,
+        )
 
     def run_recipe(
         self,
