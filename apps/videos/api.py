@@ -805,8 +805,6 @@ def _resolve_symlink_via_drive(target):
     cache, and return the cached Path. Returns None if the target isn't
     a recognisable symlink or the fetch fails.
     """
-    from pathlib import Path
-
     try:
         link_dest = str(target.readlink()) if target.is_symlink() else None
     except OSError:
@@ -828,6 +826,58 @@ def _resolve_symlink_via_drive(target):
             return None
         cache.write_bytes(content)
     return Path(cache)
+
+
+def _lazy_pull_output_mp4(workspace, slug: str, run_id: str) -> Path | None:
+    """Fetch the published ``output.mp4`` for a run from Drive into the
+    local FS so we can serve it. Returns the local Path, or None when
+    nothing is published yet.
+
+    Why this exists: hosts that don't run the render chain (e.g. labs
+    ECS — no ElevenLabs key, no node_modules at the right path) end up
+    here when a user requests ``/media/final.mp4`` for a run whose
+    output was published from another host. Without this, labs 404s
+    even though the asset is sitting in Drive ready to serve. With it,
+    a ``render_locally.py --publish`` from any Mac becomes "labs can
+    play the result" without provisioning a render stack on labs.
+
+    The fetch writes to the canonical local path (``output.mp4`` at
+    the run dir) and re-creates the explorer's relative symlink
+    (``explorer/media/final.mp4 → ../../output.mp4``) so a later
+    ``build-clip-explorer`` run keeps working and subsequent requests
+    serve from disk without re-fetching.
+    """
+    try:
+        layout, client = service.layout_for(workspace)
+        content = service.drive.read_output_mp4(layout, client, slug, run_id)
+    except Exception as e:  # pragma: no cover — Drive flake → 404 to caller
+        log.warning("serve_media: Drive output.mp4 fetch failed for %s/%s: %s",
+                    slug, run_id, e)
+        return None
+    if content is None:
+        return None
+    out_p = service.output_path(slug, run_id)
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+    out_p.write_bytes(content)
+    media_dir = service.explorer_dir(slug, run_id) / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    link = media_dir / "final.mp4"
+    # Recreate the relative symlink build-clip-explorer creates so we
+    # match the post-render directory shape. Tolerate a stale broken
+    # symlink by unlinking first.
+    if link.is_symlink() or link.exists():
+        try:
+            link.unlink()
+        except OSError:
+            pass
+    try:
+        link.symlink_to(Path("../..") / "output.mp4")
+    except OSError:
+        # Symlinks may not be supported (rare on Linux containers, but
+        # safe-guard). Caller still gets the canonical Path back so
+        # the request serves; subsequent requests will refetch + retry.
+        pass
+    return out_p
 
 
 @router.get(
@@ -856,17 +906,23 @@ def serve_media(
     media_dir = service.explorer_dir(program_slug, run_id) / "media"
     target = media_dir / file_name
     if not target.is_file():
-        # The clip-explorer build symlinks each `@alias.mp4` to the
-        # hydrate cache (``<HOME>/.cache/connect-videos/<gdriveId>.<ext>``).
-        # When the cache lives on the host (laptop hydrate, container
-        # render) the symlink resolves to a path that doesn't exist
-        # inside the Django container. Recover by parsing the gdrive
-        # id out of the broken symlink target and fetching the clip
-        # through the workspace's Drive SA, lazy-caching it under
-        # ``<videos_root>/assets/clip-cache/`` so subsequent requests
-        # serve straight off disk. Same pattern as the audio library
-        # stream endpoint.
+        # Two recovery paths before 404'ing:
+        #
+        # 1. Clip-media broken symlink — the explorer build symlinks each
+        #    ``@alias.mp4`` into the hydrate cache
+        #    (``<HOME>/.cache/connect-videos/<gdriveId>.<ext>``); on a
+        #    host that didn't do the hydrate (Django container, fresh
+        #    labs task) the symlink dangles. Parse the gdrive id out and
+        #    fetch through the workspace SA into ``assets/clip-cache/``.
+        #
+        # 2. Final.mp4 published from another host — labs doesn't run
+        #    the render chain (no ElevenLabs key, see CLAUDE.md), so a
+        #    ``render_locally.py --publish`` from a Mac is the only way
+        #    final.mp4 ends up in Drive. Lazy-pull it on demand so the
+        #    publish flow actually surfaces on labs.
         resolved = _resolve_symlink_via_drive(target)
+        if resolved is None and file_name == "final.mp4":
+            resolved = _lazy_pull_output_mp4(workspace, program_slug, run_id)
         if resolved is None:
             raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
         target = resolved

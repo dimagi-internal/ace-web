@@ -328,6 +328,66 @@ def test_set_program_name_renames(member_client, videos_root, fake_drive):
 
 
 @pytest.mark.django_db
+def test_serve_media_lazy_pulls_final_mp4_from_drive(
+    member_client, videos_root, fake_drive,
+):
+    """When labs (or any host that doesn't render) is asked for
+    final.mp4 and has no local copy, it should fetch the published
+    output.mp4 from Drive on demand. Without this, labs serves a
+    permanent 404 for any video published from another host — which
+    is the only way videos land on labs (no ElevenLabs key in the
+    task def). See _lazy_pull_output_mp4 in apps/videos/api.py."""
+    client, _ = member_client
+    # Seed Drive with a published output.mp4 (mimics what
+    # render_locally.py --publish does after a Mac render).
+    ws_root = fake_drive.folder_id("ws1-drive-root")
+    videos_id = fake_drive.list_folder(ws_root)[0].id
+    demo_id = fake_drive.list_folder(videos_id)[0].id
+    runs_id = fake_drive.list_folder(demo_id)[0].id
+    run001_id = fake_drive.list_folder(runs_id)[0].id
+    fake_drive.upload_binary(
+        run001_id, "output.mp4", b"\x00FAKE-MP4-BYTES", "video/mp4",
+    )
+    # Local FS has no final.mp4 yet (the seed only puts alpha.mp4 in
+    # explorer/media/, never final.mp4 or output.mp4).
+    final_local = (
+        videos_root / "programs" / "demo" / "runs" / "run-001"
+        / "explorer" / "media" / "final.mp4"
+    )
+    output_local = (
+        videos_root / "programs" / "demo" / "runs" / "run-001" / "output.mp4"
+    )
+    assert not final_local.exists()
+    assert not output_local.exists()
+
+    resp = client.get(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/media/final.mp4",
+    )
+    assert resp.status_code == 200, resp.content
+    assert resp.headers["Accept-Ranges"] == "bytes"
+    body = b"".join(resp.streaming_content) if resp.streaming else resp.content
+    assert body.startswith(b"\x00FAKE-MP4-BYTES")
+
+    # output.mp4 cached at the canonical local path, plus the symlink
+    # the explorer build expects.
+    assert output_local.is_file()
+    assert output_local.read_bytes() == b"\x00FAKE-MP4-BYTES"
+    assert final_local.is_symlink()
+
+
+@pytest.mark.django_db
+def test_serve_media_404_when_drive_also_missing(
+    member_client, videos_root, fake_drive,
+):
+    """Neither local FS nor Drive has the output.mp4 → clean 404."""
+    client, _ = member_client
+    resp = client.get(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/media/final.mp4",
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
 def test_qa_frame_404_when_no_render(member_client, videos_root, fake_drive):
     """The qa-frame endpoint serves the per-beat preview PNG written by
     the QA probe. Before the first render lands (or for unknown beat
