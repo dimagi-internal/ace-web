@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, RefreshCw } from "lucide-react";
 
 import { artifactBodyUrl } from "@/api/opps";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
@@ -18,9 +18,10 @@ interface Props {
   artifactName: string;
   mimeType: string;
   webViewLink?: string;
+  driveFileId?: string;
 }
 
-export function ArtifactBody({ workspaceSlug, slug, runId, skill, artifactName, mimeType, webViewLink }: Props) {
+export function ArtifactBody({ workspaceSlug, slug, runId, skill, artifactName, mimeType, webViewLink, driveFileId }: Props) {
   const [state, setState] = useState<
     | { kind: "loading" }
     | { kind: "error"; message: string }
@@ -32,6 +33,10 @@ export function ArtifactBody({ workspaceSlug, slug, runId, skill, artifactName, 
         metadata: Frontmatter | null;
       }
   >({ kind: "loading" });
+  // Bumped by the Retry button to force the loader effect to re-run on
+  // the same URL (the dependency array intentionally does not include
+  // mutable state).
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     setState({ kind: "loading" });
@@ -73,7 +78,7 @@ export function ArtifactBody({ workspaceSlug, slug, runId, skill, artifactName, 
     return () => {
       cancelled = true;
     };
-  }, [workspaceSlug, slug, runId, skill, artifactName, mimeType]);
+  }, [workspaceSlug, slug, runId, skill, artifactName, mimeType, retryNonce]);
 
   if (state.kind === "loading") {
     return (
@@ -85,24 +90,37 @@ export function ArtifactBody({ workspaceSlug, slug, runId, skill, artifactName, 
     );
   }
   if (state.kind === "error") {
+    // Prefer the Drive web link the API gave us; fall back to the
+    // canonical /file/d/<id>/view URL if we only have the file_id.
+    const driveHref =
+      webViewLink ||
+      (driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : null);
     return (
       <div className="p-3 text-xs text-destructive">
-        Couldn't load this artifact.
-        {webViewLink && (
-          <>
-            {" "}
+        <div>Couldn't load this artifact.</div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setRetryNonce((n) => n + 1)}
+            className="inline-flex items-center gap-1 rounded border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] font-medium text-destructive hover:bg-destructive/20"
+            aria-label="Retry loading this artifact"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Retry load
+          </button>
+          {driveHref && (
             <a
-              href={webViewLink}
+              href={driveHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-primary underline"
+              className="inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent"
             >
+              <ExternalLink className="h-3 w-3" />
               Open in Drive
             </a>
-            .
-          </>
-        )}
-        <details className="mt-1 opacity-70">
+          )}
+        </div>
+        <details className="mt-2 opacity-70">
           <summary className="cursor-pointer">details</summary>
           <pre className="mt-1 whitespace-pre-wrap break-all">{state.message}</pre>
         </details>

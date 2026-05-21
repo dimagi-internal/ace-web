@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ExternalLink, MessageSquare, Plus } from "lucide-react";
 
 import { discussStep, getLinkedChats } from "../../api/opps";
@@ -33,6 +33,7 @@ interface Props {
  */
 export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Props) {
   const { workspaceSlug = "" } = useParams<{ workspaceSlug?: string }>();
+  const navigate = useNavigate();
   const [chats, setChats] = useState<LinkedChat[] | null>(null);
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -65,15 +66,16 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
     setStartError(null);
     try {
       const r = await discussStep(workspaceSlug, slug, runId, skill);
-      // Discuss seeds a new session and returns its slug; immediately
-      // make it active and refresh the chat list so it shows up at top.
-      setActiveSlug(r.session_slug);
-      // Refresh in the background — the new session won't have a
-      // first-user message yet, but it'll show as a "step" entry.
-      setTimeout(refresh, 250);
+      // Seed-chat takes ~20s. The user needs to land on the new
+      // session, not stare at a "Starting…" button. Navigate
+      // immediately on 201; the destination page will load the
+      // fresh transcript on its own.
+      const dest = workspaceSlug
+        ? `/w/${workspaceSlug}/chat/${r.session_slug}`
+        : `/chat/${r.session_slug}`;
+      navigate(dest);
     } catch (e) {
       setStartError(String((e as Error)?.message ?? e));
-    } finally {
       setStarting(false);
     }
   };
