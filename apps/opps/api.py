@@ -1,13 +1,10 @@
 """Django Ninja v2 router for the opps Workbench surface."""
 from __future__ import annotations
 
-import contextvars
 import datetime as dt
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
-from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from ninja import Path, Router
 
@@ -99,25 +96,11 @@ def list_opp_cards(workspace) -> list[dict]:
     phase_meta = _phase_display_index()
     skill_phase_index = _skill_display_index()
 
-    # Parallelize the per-opp work: each card needs a ``client.list_files``
-    # on its folder + (on cache miss) a ``load_opp_card`` cold load that
-    # does another ~3+ Drive reads. Serial, this compounded to 53s on a
-    # 5-opp workspace post-deploy (#516). Drive HTTP calls release the
-    # GIL, so a ThreadPoolExecutor parallelizes them; we cap concurrency
-    # at ``OPPS_LIST_MAX_WORKERS`` to avoid melting the Drive API on
-    # workspaces with many opps.
-    opp_folders = [
-        child
-        for child in root_children
-        if child.mime_type == "application/vnd.google-apps.folder"
-    ]
-
-    def _process_one_card(child) -> dict | None:
-        try:
-            opp_children = client.list_files(child.id)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("list_opp_cards: failed to list %r: %s", child.name, exc)
-            return None
+    out: list[dict] = []
+    for child in root_children:
+        if child.mime_type != "application/vnd.google-apps.folder":
+            continue
+        opp_children = client.list_files(child.id)
         names = {f.name for f in opp_children}
         if not (
             "idea.md" in names
@@ -125,7 +108,7 @@ def list_opp_cards(workspace) -> list[dict]:
             or "opp.yaml" in names
             or "runs" in names
         ):
-            return None
+            continue
 
         card = snapshot_cache.get_card(workspace.pk, child.name)
         if card is None:
@@ -135,12 +118,8 @@ def list_opp_cards(workspace) -> list[dict]:
                     tracker.record(child.id, child.modified_time)
                     for f in opp_children:
                         tracker.record(f.id, f.modified_time)
-                    card = load_opp_card(
-                        cold_client, opp_folder=child, opp_children=opp_children
-                    )
-                access.overlay_workspace_display_name(
-                    card.opp, child.name, workspace=workspace
-                )
+                    card = load_opp_card(cold_client, opp_folder=child, opp_children=opp_children)
+                access.overlay_workspace_display_name(card.opp, child.name, workspace=workspace)
                 snapshot_cache.set_card(
                     workspace_id=workspace.pk,
                     slug=child.name,
@@ -148,14 +127,10 @@ def list_opp_cards(workspace) -> list[dict]:
                     file_ids=tracker.file_ids,
                 )
             except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "list_opp_cards: failed to load card for %r: %s", child.name, exc
-                )
-                return None
+                log.warning("list_opp_cards: failed to load card for %r: %s", child.name, exc)
+                continue
         else:
-            access.overlay_workspace_display_name(
-                card.opp, child.name, workspace=workspace
-            )
+            access.overlay_workspace_display_name(card.opp, child.name, workspace=workspace)
             # #510 / #511: NO card-level freshness overlays. The list view
             # renders N cards per request; per-card Drive listings fan out
             # to N parallel calls and block page render on the slowest
@@ -201,36 +176,9 @@ def list_opp_cards(workspace) -> list[dict]:
             phase_meta=phase_meta,
             skill_phase_index=skill_phase_index,
         )
-        return rich
+        out.append(rich)
 
-    if not opp_folders:
-        return []
-    if len(opp_folders) == 1:
-        rich = _process_one_card(opp_folders[0])
-        return [rich] if rich is not None else []
-
-    max_workers = max(
-        1,
-        min(
-            int(getattr(settings, "OPPS_LIST_MAX_WORKERS", 10)),
-            len(opp_folders),
-        ),
-    )
-    with ThreadPoolExecutor(
-        max_workers=max_workers, thread_name_prefix="opps-list"
-    ) as pool:
-        # Each future gets its own contextvar copy. A shared ``Context``
-        # cannot be entered concurrently — so we call
-        # ``copy_context().run(...)`` per submitted task. Each worker
-        # also enters its OWN ``TouchedFileTracker`` block inside the
-        # processed copy, isolating the per-opp tracker properly.
-        futures = [
-            pool.submit(contextvars.copy_context().run, _process_one_card, child)
-            for child in opp_folders
-        ]
-        results = [fut.result() for fut in futures]
-
-    return [r for r in results if r is not None]
+    return out
 
 
 @router.get(
