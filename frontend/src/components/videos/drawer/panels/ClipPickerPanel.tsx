@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useBeatEditor } from "../../BeatEditorContext";
+import type { ClipObject } from "../../types";
 import {
   listMediaLibraryVideo,
   type MediaLibraryVideoOut,
@@ -16,17 +17,25 @@ function aliasFromRef(r: string): string | null {
   return r.startsWith("@") ? r.slice(1) : null;
 }
 
-// Tile shown in the picker grid. Combines a library entry with the
-// view-state we need to render badges + dispatch the right op:
-//   inProgram = true means the alias is already in spec.manifest
-//   isCurrent = true means this tile *is* the slot's current source
+// Format seconds as m:ss.t for human-readable durations on tiles.
+function fmtDuration(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs - m * 60;
+  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
+}
+
 interface Tile {
   subfolder: string;
   filename: string;
-  alias: string;          // derived from filename (stem)
+  alias: string;
   inProgram: boolean;
   isCurrent: boolean;
   name: string | null;
+  // Count of OTHER slots in this spec already using this alias (not
+  // counting the slot being edited). Helps the user spot that picking
+  // it here will orphan the alias from one place but keep it used
+  // elsewhere — useful context, not a hard block.
+  usedByOtherCount: number;
 }
 
 type FilterKey = "all" | "in-program" | "field-broll" | "mobile-screencast" | "web-screencast";
@@ -39,24 +48,39 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   "web-screencast": "Web dashboard",
 };
 
-/**
- * Swap the source clip in a beat slot. Sourced from the workspace's
- * full video library (library/video/<subfolder>/*) — not just the
- * subset already in spec.manifest. Picking a clip outside the
- * manifest dispatches `set-clip-asset` with a `library:` ref, and the
- * server auto-inserts the matching manifest entry before setting the
- * slot's asset. Existing trim values are preserved.
- *
- * Filter pills:
- *   - All: every workspace library entry
- *   - This program: only entries already in spec.manifest
- *   - Field b-roll / Mobile app / Web dashboard: by subfolder
- *
- * Tiles render with a thumbnail (via the per-library streaming
- * endpoint /library/video/<sub>/<file>/stream — handles Drive
- * shortcuts), name, subfolder badge, and a "Current" badge on the
- * slot's existing source.
- */
+// Which subfolders make sense for each slot kind. scene-clip is the
+// "Field footage" beat — b-roll only. product-beat is the "Connect
+// app walkthrough" beat — phone or web screencasts. Picking a
+// mismatched kind isn't blocked (the renderer accepts it), but the
+// tile flags the mismatch so the user notices before clicking.
+const EXPECTED_SUBFOLDERS: Record<Props["clipKind"], string[]> = {
+  "scene-clip": ["field-broll"],
+  "product-beat": ["mobile-screencast", "web-screencast"],
+};
+
+// Count how many times each alias appears across scene.clips and
+// product.beats in the current spec, excluding the slot being edited.
+// Used for the "Used elsewhere" hint on tiles.
+function countAliasUsages(
+  spec: { scene?: { clips: (string | ClipObject)[] }; product?: { beats: (string | ClipObject)[] } },
+  excludeKind: Props["clipKind"],
+  excludeIndex: number,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  const walk = (clips: (string | ClipObject)[] | undefined, kind: Props["clipKind"]) => {
+    if (!clips) return;
+    clips.forEach((slot, i) => {
+      if (kind === excludeKind && i === excludeIndex) return;
+      const ref = typeof slot === "string" ? slot : slot.asset;
+      const alias = aliasFromRef(ref);
+      if (alias) counts[alias] = (counts[alias] ?? 0) + 1;
+    });
+  };
+  walk(spec.scene?.clips, "scene-clip");
+  walk(spec.product?.beats, "product-beat");
+  return counts;
+}
+
 export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) {
   const { effectiveSpec, workspaceSlug, dispatch } = useBeatEditor();
 
@@ -68,14 +92,19 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
 
   const manifest = effectiveSpec.manifest ?? {};
 
-  // Default filter — when swapping a scene-clip (b-roll) slot, start
-  // on field-broll; product-beat slots typically want mobile/web. Falls
-  // back to "all" if the slot kind doesn't pre-suggest a subfolder.
+  // Slot-aware default filter:
+  //   - scene-clip → Field b-roll
+  //   - product-beat → Mobile app (most common in this template;
+  //     web-screencast is one click away if needed)
   const defaultFilter: FilterKey =
-    clipKind === "scene-clip" ? "field-broll" : "all";
+    clipKind === "scene-clip" ? "field-broll" : "mobile-screencast";
   const [filter, setFilter] = useState<FilterKey>(defaultFilter);
   const [data, setData] = useState<MediaLibraryVideoOut | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Per-tile loaded duration (in seconds), keyed by "subfolder/filename".
+  // Captured from <video onLoadedMetadata> as each tile's metadata loads.
+  const [durations, setDurations] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -87,8 +116,13 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
     return () => { cancelled = true; };
   }, [workspaceSlug]);
 
-  // Flatten subfolders into Tile rows; mark which entries are already
-  // in the program's manifest so the picker can show that distinction.
+  // Other-slot usage counts. Memoized so we don't re-walk the spec on
+  // every render.
+  const usageCounts = useMemo(
+    () => countAliasUsages(effectiveSpec, clipKind, index),
+    [effectiveSpec, clipKind, index],
+  );
+
   const allTiles: Tile[] = useMemo(() => {
     if (!data) return [];
     const rows: Tile[] = [];
@@ -102,14 +136,22 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
           inProgram: alias in manifest,
           isCurrent: alias === currentAlias,
           name: item.name,
+          usedByOtherCount: usageCounts[alias] ?? 0,
         });
       }
     }
     return rows;
-  }, [data, manifest, currentAlias]);
+  }, [data, manifest, currentAlias, usageCounts]);
 
-  // Apply the active filter; sort current-first, then in-program, then
-  // alphabetical by alias.
+  // "In manifest" badge is only useful when the library has MORE
+  // entries than the manifest does — otherwise every non-current tile
+  // would carry the badge as redundant noise. Show it only when
+  // there's at least one library-only tile.
+  const showInManifestBadge = useMemo(
+    () => allTiles.some((t) => !t.inProgram),
+    [allTiles],
+  );
+
   const tiles: Tile[] = useMemo(() => {
     let xs = allTiles;
     if (filter === "in-program") {
@@ -134,16 +176,11 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
       return;
     }
     if (tile.inProgram) {
-      // Existing manifest alias — cheap path: just set the slot's
-      // asset to @alias. No manifest edit needed.
       dispatch({
         type: "APPEND_OP",
         op: { op: "set-clip-asset", kind: clipKind, index, alias: tile.alias },
       });
     } else {
-      // Library entry not yet in this program's manifest — server
-      // resolves the gdrive id and auto-inserts a manifest entry,
-      // then sets the slot's asset.
       dispatch({
         type: "APPEND_OP",
         op: {
@@ -155,12 +192,46 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
     onCommit();
   };
 
-  // Counts in the filter row so the user can see what each pill will
-  // narrow down to.
   const filterCount = (key: FilterKey): number => {
     if (key === "all") return allTiles.length;
     if (key === "in-program") return allTiles.filter((t) => t.inProgram).length;
     return allTiles.filter((t) => t.subfolder === key).length;
+  };
+
+  // ---- Hover preview ---------------------------------------------------
+  // Play the muted preview after a short hover delay so the user can
+  // see the clip's content without clicking. Pause + reset on leave so
+  // the next hover starts from frame 0. We track ONE hovered tile at a
+  // time via state; the <video> refs let us call play/pause directly.
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const hoverTimer = useRef<number | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
+    };
+  }, []);
+
+  const onTileEnter = (key: string) => {
+    setHovered(key);
+    if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => {
+      const v = videoRefs.current[key];
+      if (v) {
+        try { v.currentTime = 0; } catch { /* swallow */ }
+        v.play().catch(() => { /* autoplay blocked, ignore */ });
+      }
+    }, 250);
+  };
+  const onTileLeave = (key: string) => {
+    if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
+    setHovered((h) => (h === key ? null : h));
+    const v = videoRefs.current[key];
+    if (v) {
+      v.pause();
+      try { v.currentTime = 0; } catch { /* swallow */ }
+    }
   };
 
   if (error) {
@@ -175,6 +246,8 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
     return <div className="text-sm text-muted-foreground">Loading library…</div>;
   }
 
+  const expectedSubs = EXPECTED_SUBFOLDERS[clipKind];
+
   return (
     <div className="flex flex-col gap-3">
       <div className="text-xs text-muted-foreground">
@@ -183,7 +256,6 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
         needed.
       </div>
 
-      {/* Filter pills */}
       <div className="flex flex-wrap gap-1.5">
         {(["all", "in-program", "field-broll", "mobile-screencast", "web-screencast"] as FilterKey[]).map((key) => {
           const count = filterCount(key);
@@ -212,46 +284,105 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3">
-          {tiles.map((tile) => (
-            <button
-              type="button"
-              key={`${tile.subfolder}/${tile.filename}`}
-              onClick={() => swap(tile)}
-              className={`flex flex-col gap-2 rounded border p-2 text-left transition-colors ${
-                tile.isCurrent
-                  ? "border-primary bg-primary/5"
-                  : "border-muted hover:border-primary"
-              }`}
-            >
-              <div className="relative">
-                <video
-                  src={streamUrl(tile.subfolder, tile.filename)}
-                  preload="metadata"
-                  muted
-                  className="h-24 w-full rounded bg-black object-cover"
-                />
-                {tile.isCurrent && (
-                  <span className="absolute right-1 top-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
-                    Current
-                  </span>
-                )}
-                {!tile.isCurrent && tile.inProgram && (
-                  <span className="absolute right-1 top-1 rounded-full bg-muted/90 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-foreground">
-                    In manifest
-                  </span>
-                )}
-              </div>
-              {tile.name && (
-                <div className="line-clamp-2 text-xs font-medium text-foreground">
-                  {tile.name}
+          {tiles.map((tile) => {
+            const key = `${tile.subfolder}/${tile.filename}`;
+            const mismatched = !expectedSubs.includes(tile.subfolder);
+            const dur = durations[key];
+            return (
+              <button
+                type="button"
+                key={key}
+                onClick={() => swap(tile)}
+                onMouseEnter={() => onTileEnter(key)}
+                onMouseLeave={() => onTileLeave(key)}
+                onFocus={() => onTileEnter(key)}
+                onBlur={() => onTileLeave(key)}
+                className={`flex flex-col gap-2 rounded border p-2 text-left transition-colors ${
+                  tile.isCurrent
+                    ? "border-primary bg-primary/5"
+                    : mismatched
+                      ? "border-amber-500/40 hover:border-amber-500"
+                      : "border-muted hover:border-primary"
+                }`}
+              >
+                <div className="relative">
+                  <video
+                    ref={(el) => { videoRefs.current[key] = el; }}
+                    src={streamUrl(tile.subfolder, tile.filename)}
+                    preload="metadata"
+                    muted
+                    playsInline
+                    loop
+                    onLoadedMetadata={(e) => {
+                      const d = e.currentTarget.duration;
+                      if (Number.isFinite(d) && d > 0) {
+                        setDurations((prev) => prev[key] === d ? prev : { ...prev, [key]: d });
+                      }
+                    }}
+                    className="h-24 w-full rounded bg-black object-cover"
+                  />
+                  {tile.isCurrent && (
+                    <span className="absolute right-1 top-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+                      Current
+                    </span>
+                  )}
+                  {!tile.isCurrent && tile.inProgram && showInManifestBadge && (
+                    <span className="absolute right-1 top-1 rounded-full bg-muted/90 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-foreground">
+                      In manifest
+                    </span>
+                  )}
+                  {!tile.isCurrent && !tile.inProgram && (
+                    <span className="absolute right-1 top-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                      Library
+                    </span>
+                  )}
+                  {/* Source duration in the bottom-left so the user sees
+                      how much material they're picking — a 60s clip into a
+                      2.3s slot means only 4% plays. */}
+                  {dur !== undefined && (
+                    <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-white">
+                      {fmtDuration(dur)}
+                    </span>
+                  )}
+                  {/* Hover indicator — the muted clip starts playing
+                      after a 250ms delay, but a subtle outline on the
+                      thumbnail confirms the hover registered. */}
+                  {hovered === key && (
+                    <span className="pointer-events-none absolute inset-0 rounded ring-2 ring-primary/40" />
+                  )}
                 </div>
-              )}
-              <div className="flex items-center justify-between gap-2">
-                <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">@{tile.alias}</code>
-                <span className="text-[10px] text-muted-foreground">{tile.subfolder}</span>
-              </div>
-            </button>
-          ))}
+                {tile.name && (
+                  <div className="line-clamp-2 text-xs font-medium text-foreground">
+                    {tile.name}
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-2">
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">@{tile.alias}</code>
+                  <span className="text-[10px] text-muted-foreground">{tile.subfolder}</span>
+                </div>
+                {(mismatched || tile.usedByOtherCount > 0) && (
+                  <div className="flex flex-wrap gap-1.5 text-[10px]">
+                    {mismatched && (
+                      <span
+                        className="rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-400"
+                        title={`This slot's beat usually wants ${expectedSubs.join(" or ")}, but this clip is from ${tile.subfolder}. The renderer will accept it; the result may not match the beat's visual intent.`}
+                      >
+                        ⚠ kind mismatch
+                      </span>
+                    )}
+                    {tile.usedByOtherCount > 0 && (
+                      <span
+                        className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground"
+                        title={`Used by ${tile.usedByOtherCount} other slot${tile.usedByOtherCount === 1 ? "" : "s"} in this spec.`}
+                      >
+                        used in {tile.usedByOtherCount} other slot{tile.usedByOtherCount === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 
