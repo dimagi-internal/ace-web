@@ -1307,6 +1307,17 @@ class CLIBackend:
         # session file. Surfaced live in malaria-itn-app chat 2026-05-21.
         env.setdefault("ACE_MOBILE_BACKEND", "cloud")
 
+        # Phase E of the local↔cloud register-parity convergence:
+        # enable live registration for cloud dispatches by default. Pre-
+        # 2026-05-21 the cloud branch of ``MobileClient.registerTestUser``
+        # no-op'd on the assumption that the AMI's cold-boot path
+        # pre-registered the +7426 demo user from AWS Secrets Manager.
+        # Phase D dropped that pre-bake from the AMI, so without this
+        # flag the cloud heal would surface as "Connect not registered"
+        # at every dispatch. ``setdefault`` so a session-level explicit
+        # override (e.g. for testing the legacy no-op path) still wins.
+        env.setdefault("ACE_MOBILE_CLOUD_LIVE_REGISTER", "true")
+
         env[NOVA_BEARER_TOKEN_ENV] = self._resolve_nova_bearer()
         return env, str(staged_root), source
 
