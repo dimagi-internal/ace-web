@@ -92,15 +92,18 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
 
   const manifest = effectiveSpec.manifest ?? {};
 
-  // Slot-aware default filter:
-  //   - scene-clip → Field b-roll
-  //   - product-beat → Mobile app (most common in this template;
-  //     web-screencast is one click away if needed)
-  const defaultFilter: FilterKey =
+  // Default filter — picked once when the library lands. Heuristic:
+  //   1. If we can resolve the current clip to a library entry, use
+  //      its subfolder (so swapping @web-superset-graphs opens on
+  //      "Web dashboard", not the slot-kind guess).
+  //   2. Otherwise fall back to a slot-kind heuristic: scene-clip →
+  //      Field b-roll, product-beat → Mobile app.
+  const fallbackFilter: FilterKey =
     clipKind === "scene-clip" ? "field-broll" : "mobile-screencast";
-  const [filter, setFilter] = useState<FilterKey>(defaultFilter);
+  const [filter, setFilter] = useState<FilterKey>(fallbackFilter);
   const [data, setData] = useState<MediaLibraryVideoOut | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const filterInitialized = useRef(false);
 
   // Per-tile loaded duration (in seconds), keyed by "subfolder/filename".
   // Captured from <video onLoadedMetadata> as each tile's metadata loads.
@@ -109,12 +112,34 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
   useEffect(() => {
     let cancelled = false;
     listMediaLibraryVideo(workspaceSlug)
-      .then((d) => { if (!cancelled) setData(d); })
+      .then((d) => {
+        if (cancelled) return;
+        setData(d);
+        // Once we know the library, re-pick the default filter using
+        // the current clip's actual subfolder (if it's in the lib).
+        // Only fires once per mount so the user's own filter clicks
+        // aren't overridden.
+        if (!filterInitialized.current && currentAlias) {
+          for (const sub of d.subfolders) {
+            for (const item of sub.items) {
+              const a = item.filename.replace(/\.[^.]+$/, "");
+              if (a === currentAlias) {
+                const key = sub.subfolder as FilterKey;
+                if (key === "field-broll" || key === "mobile-screencast" || key === "web-screencast") {
+                  setFilter(key);
+                }
+                break;
+              }
+            }
+          }
+        }
+        filterInitialized.current = true;
+      })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       });
     return () => { cancelled = true; };
-  }, [workspaceSlug]);
+  }, [workspaceSlug, currentAlias]);
 
   // Other-slot usage counts. Memoized so we don't re-walk the spec on
   // every render.

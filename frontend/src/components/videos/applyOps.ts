@@ -31,7 +31,17 @@ function applyOne(spec: ProgramSpec, op: PendingChange): void {
     case "set-clip-asset": {
       const slot = getClipSlot(spec, op.kind, op.index);
       if (!slot) return;
-      const newRef = `@${op.alias}`;
+      // Two op shapes: {alias} or {ref: "library:video/<sub>/<file>"}.
+      // For the ref path, derive an alias from the filename stem so
+      // the in-memory projection stays consistent until the server
+      // round-trip materializes the manifest entry.
+      let alias = op.alias;
+      if (!alias && op.ref) {
+        const m = /^library:video\/[^/]+\/([^/]+?)(\.[^.]+)?$/.exec(op.ref);
+        if (m) alias = m[1];
+      }
+      if (!alias) return;
+      const newRef = `@${alias}`;
       if (typeof slot === "string") {
         if (op.kind === "scene-clip") {
           spec.scene!.clips[op.index] = newRef;
@@ -40,6 +50,29 @@ function applyOne(spec: ProgramSpec, op: PendingChange): void {
         }
       } else {
         slot.asset = newRef;
+      }
+      return;
+    }
+    case "set-brand": {
+      // Project the override into spec.brand so widgets keying off
+      // effectiveSpec.brand can flip their "global / program-override"
+      // visual without waiting for the save round-trip. Empty values
+      // clear the field, matching server semantics.
+      const specWithBrand = spec as ProgramSpec & {
+        brand?: { tagline?: string; cycle_steps?: string[] };
+      };
+      specWithBrand.brand ??= {};
+      const brand = specWithBrand.brand;
+      if (op.tagline !== undefined) {
+        if (op.tagline === "") delete brand.tagline;
+        else brand.tagline = op.tagline;
+      }
+      if (op.cycle_steps !== undefined) {
+        if (op.cycle_steps.length === 0) delete brand.cycle_steps;
+        else brand.cycle_steps = op.cycle_steps;
+      }
+      if (!brand.tagline && !brand.cycle_steps) {
+        delete specWithBrand.brand;
       }
       return;
     }
