@@ -14,7 +14,20 @@ interface Props {
   streamingMessageId: number | null;
   sessionSource?: SessionSource;
   sessionStatus?: SessionStatus;
-  cliConnected?: boolean | null;
+  /**
+   * Whether the server has a credential blob (per-user or global fallback).
+   * This is the real gate — ``CLIBackend._stage_env_for`` only needs a
+   * blob in the DB to spawn a chat subprocess. ``null`` = still loading.
+   */
+  cliHasBlob?: boolean | null;
+  /**
+   * Whether the live ``claude -p`` check passed. ``false`` here while
+   * ``cliHasBlob`` is ``true`` means "live-check failed transiently" —
+   * we show a passive warning chip but DON'T disable send, because the
+   * real auth failure (if any) will surface on the first chat message.
+   * ``null`` = still loading.
+   */
+  cliAuthenticated?: boolean | null;
   onUpdate: (body: string) => void;
   onSend: () => void;
   onStop: (messageId: number) => void;
@@ -29,7 +42,8 @@ export function SendBox({
   streamingMessageId,
   sessionSource,
   sessionStatus,
-  cliConnected,
+  cliHasBlob,
+  cliAuthenticated,
   onUpdate,
   onSend,
   onStop,
@@ -70,9 +84,21 @@ export function SendBox({
   }, [canEdit, isHolder]);
 
   const body = draft?.body ?? "";
-  // Block sends when the Claude CLI is explicitly known to be disconnected.
-  // null means "still loading" — don't block in that window.
-  const cliBlocked = cliConnected === false;
+  // Send button is gated on whether the server has a credential blob at
+  // all (per-user OR global fallback). The chat backend reads the blob
+  // from DB independently — the live-check failure that previously
+  // gated this button is "decorative" from the user's perspective and
+  // produced a phantom "Claude CLI not connected" lie across deploys
+  // (issue #479). Real auth failures surface as chat-level errors on
+  // first message, which is the right place + time.
+  //
+  // ``null`` means "still loading" — don't block in that window.
+  const cliBlocked = cliHasBlob === false;
+  // Live-check failed but a blob exists → show a passive warning, but
+  // let the user send anyway. The first message will either succeed
+  // (the live check was wrong / cold-start lied) or surface a real
+  // auth error inline.
+  const cliLiveCheckWarning = cliHasBlob === true && cliAuthenticated === false;
   const canSend = canEdit && body.trim().length > 0 && !isStreaming && !cliBlocked;
 
   const handleKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -93,7 +119,7 @@ export function SendBox({
   const placeholder = !draft
     ? "Connecting…"
     : cliBlocked
-      ? "Claude CLI not connected — sending is disabled"
+      ? "No Claude CLI credentials uploaded — sending is disabled"
       : canEdit
         ? "Type a message… (Enter to send, Shift+Enter for newline)"
         : "Another teammate is editing…";
@@ -104,12 +130,26 @@ export function SendBox({
         <div className="flex items-center gap-2 border-b border-border bg-amber-50 px-3 py-1.5 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           <span>
-            Claude CLI is not connected — sending is disabled.{" "}
+            No Claude CLI credentials uploaded — sending is disabled.{" "}
             <Link
               to="/auth/cli"
               className="font-medium underline underline-offset-2"
             >
               Connect now →
+            </Link>
+          </span>
+        </div>
+      )}
+      {!cliBlocked && cliLiveCheckWarning && (
+        <div className="flex items-center gap-2 border-b border-border bg-amber-50/60 px-3 py-1.5 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            Live check failed — chat may fail.{" "}
+            <Link
+              to="/auth/cli"
+              className="font-medium underline underline-offset-2"
+            >
+              Click to re-validate →
             </Link>
           </span>
         </div>

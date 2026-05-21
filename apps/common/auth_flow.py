@@ -35,6 +35,7 @@ when the blob actually changes.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -51,6 +52,7 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_DB_KEY = "claude_oauth_token"
 _BLOB_DB_KEY = "claude_credentials_blob"
+_VALIDATION_STATE_DB_KEY = "cli_validation_state"
 
 _TOKEN_REDACT_PATTERN = re.compile(r"sk-ant-oat\S+")
 
@@ -315,12 +317,35 @@ def token_looks_real(token: str | None) -> bool:
 
 # ── Live validation (cached) ──────────────────────────────────────
 
-# Positive results are cached for longer — running ``claude -p`` once per
-# 30-second status poll would thrash the CLI and is wasted work when the
-# token is clearly valid. Negative results are cached briefly so recovery
-# after a fresh upload happens within seconds rather than minutes.
+# Two-tier cache so cli/status survives ECS task replacement and doesn't
+# thrash ``claude -p`` on the hot poll path.
+#
+#  Tier 1 (in-memory, fast):
+#     * Positive results cached for ``_POSITIVE_CACHE_TTL`` (~5m default).
+#     * Negative results cached briefly (``_NEGATIVE_CACHE_TTL``, ~15s) so
+#       recovery after a fresh upload happens within seconds.
+#     * Lost when the Python process exits — that's the cold-start window
+#       the persistent tier covers.
+#
+#  Tier 2 (SystemConfig row ``cli_validation_state``, persistent):
+#     * Survives ECS task replacement. A new task reads this on its first
+#       /api/auth/cli/status poll and returns the cached result without
+#       spawning the 30s-timeout subprocess that times out under cold-MCP
+#       load and lies "Claude CLI not connected" to users.
+#     * Long TTL (~60m) — well above any reasonable deploy cadence, low
+#       enough that a stale-credential incident still self-heals within
+#       an hour without any operator action.
+#     * Keyed on (token_hash, source) so a real token rotation invalidates
+#       correctly: rotation changes the hash → cache miss → re-validate.
+#     * Written through whenever the live check actually runs (positive
+#       or negative). ``store_credentials_blob`` /
+#       ``store_user_credentials_blob`` invalidate both tiers via
+#       ``_invalidate_validation_cache``.
 _POSITIVE_CACHE_TTL = float(os.environ.get("ACE_TOKEN_VALIDATION_TTL", "300"))
 _NEGATIVE_CACHE_TTL = float(os.environ.get("ACE_TOKEN_VALIDATION_NEGATIVE_TTL", "15"))
+_PERSISTED_CACHE_TTL = float(
+    os.environ.get("ACE_TOKEN_VALIDATION_PERSISTED_TTL", "3600")
+)
 _validation_cache: dict = {
     "valid": False,
     "checked_at": 0.0,
@@ -329,10 +354,93 @@ _validation_cache: dict = {
 }
 
 
+def _hash_token(token: str) -> str:
+    """SHA-256 of the access token. Used as the persisted cache key part.
+
+    Hashing avoids re-storing the bearer token in a second DB row.
+    Rotation changes the hash → cache miss → re-validate, as required.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def _invalidate_validation_cache() -> None:
+    """Drop both in-memory and persisted validation caches.
+
+    Called on every credential write (upload, promote, refresh) so the
+    very next /api/auth/cli/status poll re-runs the live check instead of
+    serving a stale cached result.
+    """
     _validation_cache["checked_at"] = 0.0
     _validation_cache["token"] = ""
     _validation_cache["source"] = ""
+    try:
+        from .models import SystemConfig
+
+        SystemConfig.objects.filter(key=_VALIDATION_STATE_DB_KEY).delete()
+    except Exception:
+        # DB may not be available (e.g. during migrations). The in-memory
+        # tier still got cleared, which is the only thing the current
+        # process can see anyway.
+        logger.debug(
+            "Could not clear persisted validation cache (DB unavailable)",
+            exc_info=True,
+        )
+
+
+def _read_persisted_validation(token: str, source: str) -> tuple[bool, float] | None:
+    """Return ``(valid, age_seconds)`` from the persisted cache, or None.
+
+    None means: no row, malformed row, key mismatch (different
+    token/source), or row older than the persisted TTL.
+    """
+    try:
+        from .models import SystemConfig
+
+        row = SystemConfig.objects.filter(key=_VALIDATION_STATE_DB_KEY).first()
+    except Exception:
+        logger.debug("Persisted validation cache read failed", exc_info=True)
+        return None
+    if not row or not row.value:
+        return None
+    try:
+        state = json.loads(row.value)
+    except ValueError:
+        logger.warning("Persisted validation cache row has invalid JSON; ignoring")
+        return None
+    if not isinstance(state, dict):
+        return None
+    if state.get("token_hash") != _hash_token(token):
+        return None
+    if state.get("source") != source:
+        return None
+    checked_at = state.get("checked_at")
+    if not isinstance(checked_at, (int, float)):
+        return None
+    age = time.time() - float(checked_at)
+    if age >= _PERSISTED_CACHE_TTL or age < 0:
+        return None
+    return bool(state.get("valid")), age
+
+
+def _write_persisted_validation(token: str, source: str, valid: bool) -> None:
+    """Upsert the persisted validation row."""
+    state = {
+        "checked_at": time.time(),
+        "valid": valid,
+        "token_hash": _hash_token(token),
+        "source": source,
+    }
+    try:
+        from .models import SystemConfig
+
+        SystemConfig.objects.update_or_create(
+            key=_VALIDATION_STATE_DB_KEY,
+            defaults={"value": json.dumps(state)},
+        )
+    except Exception:
+        logger.warning(
+            "Failed to persist validation cache to DB", exc_info=True
+        )
 
 
 def _load_blob_for_source(user, source: str) -> str:
@@ -355,14 +463,22 @@ def validate_stored_token(user=None) -> bool:
 
     Runs ``claude -p "ok"`` as a subprocess — same auth path as real chat
     — and looks for a ``result`` event with ``subtype == "success"`` and no
-    auth-error markers. Positive results cache for ``_POSITIVE_CACHE_TTL``
-    seconds, negative for ``_NEGATIVE_CACHE_TTL`` seconds, so the
-    /api/auth/cli/status poll (every 30s) doesn't thrash the CLI but
-    recovery after a fresh upload still happens within seconds.
-    ``store_credentials_blob`` invalidates the cache on write. The cache is
-    keyed on ``(token, source)`` so per-user results don't collide with
-    global, and because ``get_stored_token()`` always reads fresh from the
-    DB, other tasks pick up the new token on their next call.
+    auth-error markers. The result is cached in two tiers:
+
+      * In-memory (process-local): positive ``_POSITIVE_CACHE_TTL`` s,
+        negative ``_NEGATIVE_CACHE_TTL`` s. Hot-path; the only tier the
+        Phase 3 single-task deploy used.
+      * Persisted (SystemConfig row, ``_PERSISTED_CACHE_TTL`` s ~ 60m).
+        Survives ECS task replacement — when a new task boots into the
+        cold-MCP window, its first ``cli/status`` poll reads the recent
+        persisted result instead of timing out the subprocess and lying
+        "Claude CLI not connected" until creds get re-uploaded.
+
+    Both caches are keyed on ``(token_hash, source)`` so per-user results
+    don't collide with global and token rotation correctly invalidates.
+    ``store_credentials_blob`` / ``store_user_credentials_blob`` /
+    refresh-persisters drop both caches via
+    ``_invalidate_validation_cache``.
     """
     resolved = get_stored_token(user=user)
     if resolved is None:
@@ -395,6 +511,23 @@ def validate_stored_token(user=None) -> bool:
         )
         return _validation_cache["valid"]
 
+    # In-memory miss → check the persisted DB cache before paying the
+    # subprocess cold-start cost.
+    persisted = _read_persisted_validation(token, source)
+    if persisted is not None:
+        valid, age = persisted
+        logger.info(
+            "validate_stored_token: returning persisted result=%s "
+            "(age=%.0fs, ttl=%ds)",
+            valid, age, int(_PERSISTED_CACHE_TTL),
+        )
+        # Promote into the in-memory cache so subsequent hot-path calls
+        # within this process don't re-hit the DB.
+        _validation_cache.update(
+            valid=valid, checked_at=now, token=token, source=source
+        )
+        return valid
+
     logger.info("validate_stored_token: cache miss, running CLI check")
     # Pick the blob that matches the resolved source so the live check uses
     # the SAME credentials we'd actually hand a chat subprocess.
@@ -408,6 +541,7 @@ def validate_stored_token(user=None) -> bool:
     )
     valid = _check_token_via_cli(blob_json=blob_json, on_refresh=on_refresh)
     _validation_cache.update(valid=valid, checked_at=now, token=token, source=source)
+    _write_persisted_validation(token, source, valid)
     logger.info("validate_stored_token: token %s CLI check", "PASSED" if valid else "FAILED")
     return valid
 
