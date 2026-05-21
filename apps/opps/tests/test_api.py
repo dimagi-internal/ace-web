@@ -280,6 +280,248 @@ def test_get_opp_404_unknown_slug(member_client, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# #484 — run selector freshness regression
+#
+# When a cached OppSnapshot exists and orchestration adds a new run folder
+# in Drive externally, the Drive Changes API reports the new file's id but
+# NOT its parent — so snapshot_cache.invalidate misses it, the cached
+# snapshot keeps serving its stale runs_summary, and the workbench's run
+# selector blinds itself to runs created after the page first loaded.
+#
+# Fix: on every cache hit, re-list the runs/ folder fresh and overlay the
+# result onto the cached snapshot before serializing.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_load_rich_opp_snapshot_refreshes_runs_on_cache_hit(monkeypatch, db):
+    """Cache-hit path must re-read runs/ from Drive so newly-created runs
+    appear in the snapshot's runs[] (and thus the workbench dropdown)
+    without waiting for cache invalidation. #484."""
+    from apps.opps import access, snapshot_cache
+    from apps.opps.api import load_rich_opp_snapshot
+    from apps.opps.sync import (
+        OppManifest,
+        OppSnapshot,
+        RunDetail,
+        RunSummary,
+    )
+
+    user = User.objects.create_user(email=f"r484-1-{id(monkeypatch)}@example.com")
+    workspace = Workspace.objects.filter(created_by=user).first()
+    if workspace is None:
+        workspace = Workspace.objects.first()
+
+    cache_calls = {"list_opp_runs": 0}
+
+    stale_run = RunSummary(
+        run_id="20260515-1600",
+        folder_id="folder-stale",
+        current_phase="design",
+        current_step=None,
+        mode="default",
+        last_actor="ace@dimagi-ai.com",
+        last_actor_at="2026-05-15T16:00:00Z",
+        lifecycle_status="in_progress",
+        phases_total=10,
+        phases_done=2,
+        latest_phase_done="idea-to-pdd",
+    )
+    fresh_runs = [
+        RunSummary(
+            run_id="20260517-1829",
+            folder_id="folder-new",
+            current_phase="design",
+            current_step=None,
+            mode="default",
+            last_actor="ace@dimagi-ai.com",
+            last_actor_at="2026-05-17T18:29:00Z",
+            lifecycle_status="in_progress",
+            phases_total=10,
+            phases_done=1,
+            latest_phase_done="idea-to-pdd",
+        ),
+        stale_run,
+    ]
+
+    # Pre-populate the cache with a snapshot whose runs_summary only sees
+    # the older run — simulating "cache was warm before orchestration
+    # added a newer run in Drive externally."
+    cached_snap = OppSnapshot(
+        opp=OppManifest(
+            slug="opp-1",
+            display_name="Opp One",
+            created_at=None,
+            created_by=None,
+            labels=[],
+            current_run_id="20260515-1600",
+        ),
+        pdd_body="",
+        opp_folder_id="opp-folder",
+        current_run=RunDetail(
+            run_id="20260515-1600",
+            mode="default",
+            status="ok",
+            started_at=None,
+            completed_at=None,
+            current_phase="design",
+            current_step=None,
+            skill_versions={},
+            notes="",
+            steps=[],
+            folder_id="folder-stale",
+            decisions=[],
+        ),
+        runs_summary=[stale_run],
+    )
+    snapshot_cache.set(
+        workspace_id=workspace.pk, slug="opp-1", run_id="20260515-1600",
+        snap=cached_snap, file_ids={"opp-folder"},
+    )
+
+    # Stub the Drive client + access helpers so load_rich_opp_snapshot
+    # takes the cache-hit branch and doesn't try to talk to real Drive.
+    class _StubDrive:
+        pass
+
+    monkeypatch.setattr(
+        "apps.opps.access.resolve_ace_root_folder_id",
+        lambda ws: "ace-root",
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client",
+        lambda workspace=None: _StubDrive(),
+    )
+    # observe() → empty set (Changes API reported nothing, so invalidation
+    # never fires — exactly the bug scenario).
+    monkeypatch.setattr(
+        "apps.opps.drive_changes.observe", lambda workspace, client: set(),
+    )
+
+    def _fake_list_opp_runs(client, *, ace_root_folder_id, opp_slug, opp_children=None):
+        cache_calls["list_opp_runs"] += 1
+        return list(fresh_runs)
+
+    monkeypatch.setattr(
+        "apps.opps.sync.list_opp_runs", _fake_list_opp_runs,
+    )
+
+    # Also stub overlay_workspace_display_name and CachedDriveClient so
+    # the function doesn't touch unrelated paths.
+    monkeypatch.setattr(
+        access, "overlay_workspace_display_name",
+        lambda manifest, slug, workspace=None: None,
+    )
+
+    payload = load_rich_opp_snapshot(workspace, "opp-1", run_id="20260515-1600")
+    assert payload is not None
+    # The serialized runs list must include the newer run that only Drive
+    # knows about — proving the cache hit refreshed runs_summary.
+    run_ids = [r["run_id"] for r in payload["runs"]]
+    assert "20260517-1829" in run_ids
+    assert "20260515-1600" in run_ids
+    # And we did call list_opp_runs once — the fresh listing.
+    assert cache_calls["list_opp_runs"] == 1
+
+
+@pytest.mark.django_db
+def test_load_rich_opp_snapshot_refresh_drive_failure_keeps_cached_runs(
+    monkeypatch, db
+):
+    """If the runs/ re-listing fails (network blip, missing folder), the
+    cached runs_summary survives — we degrade gracefully rather than
+    serving an empty dropdown. #484."""
+    from apps.opps import access, snapshot_cache
+    from apps.opps.api import load_rich_opp_snapshot
+    from apps.opps.sync import (
+        OppManifest,
+        OppSnapshot,
+        RunDetail,
+        RunSummary,
+    )
+
+    user = User.objects.create_user(email=f"r484-2-{id(monkeypatch)}@example.com")
+    workspace = Workspace.objects.filter(created_by=user).first()
+    if workspace is None:
+        workspace = Workspace.objects.first()
+
+    stale_run = RunSummary(
+        run_id="20260515-1600",
+        folder_id="folder-stale",
+        current_phase="design",
+        current_step=None,
+        mode="default",
+        last_actor="ace@dimagi-ai.com",
+        last_actor_at="2026-05-15T16:00:00Z",
+        lifecycle_status="in_progress",
+        phases_total=10,
+        phases_done=2,
+        latest_phase_done="idea-to-pdd",
+    )
+
+    cached_snap = OppSnapshot(
+        opp=OppManifest(
+            slug="opp-1",
+            display_name="Opp One",
+            created_at=None,
+            created_by=None,
+            labels=[],
+            current_run_id="20260515-1600",
+        ),
+        pdd_body="",
+        opp_folder_id="opp-folder",
+        current_run=RunDetail(
+            run_id="20260515-1600",
+            mode="default",
+            status="ok",
+            started_at=None,
+            completed_at=None,
+            current_phase="design",
+            current_step=None,
+            skill_versions={},
+            notes="",
+            steps=[],
+            folder_id="folder-stale",
+            decisions=[],
+        ),
+        runs_summary=[stale_run],
+    )
+    snapshot_cache.set(
+        workspace_id=workspace.pk, slug="opp-1", run_id="20260515-1600",
+        snap=cached_snap, file_ids={"opp-folder"},
+    )
+
+    class _StubDrive:
+        pass
+
+    monkeypatch.setattr(
+        "apps.opps.access.resolve_ace_root_folder_id", lambda ws: "ace-root",
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client",
+        lambda workspace=None: _StubDrive(),
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_changes.observe", lambda workspace, client: set(),
+    )
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("drive down")
+
+    monkeypatch.setattr("apps.opps.sync.list_opp_runs", _boom)
+    monkeypatch.setattr(
+        access, "overlay_workspace_display_name",
+        lambda manifest, slug, workspace=None: None,
+    )
+
+    payload = load_rich_opp_snapshot(workspace, "opp-1", run_id="20260515-1600")
+    assert payload is not None
+    run_ids = [r["run_id"] for r in payload["runs"]]
+    # Cached runs_summary preserved — empty list would be a regression.
+    assert run_ids == ["20260515-1600"]
+
+
+# ---------------------------------------------------------------------------
 # Task 2.1.4 — POST /w/{workspace_slug}/opps  (create opp)
 # ---------------------------------------------------------------------------
 
