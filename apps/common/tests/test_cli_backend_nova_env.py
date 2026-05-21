@@ -104,3 +104,35 @@ def test_stage_env_for_respects_pre_set_ace_mobile_backend(session, monkeypatch)
         assert env["ACE_MOBILE_BACKEND"] == "local"
     finally:
         backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
+def test_stage_env_for_defaults_ace_mobile_cloud_live_register_true(session):
+    """Phase E of the local↔cloud parity convergence: the cloud branch
+    of the ACE plugin's ``MobileClient.registerTestUser`` gates on
+    ``ACE_MOBILE_CLOUD_LIVE_REGISTER=true``. Post-Phase-D the AMI no
+    longer pre-bakes the +7426 demo user, so every dispatch needs
+    this flag set to drive the on-demand register endpoint.
+    """
+    backend = CLIBackend()
+    with patch("apps.common.cli_backend.get_fresh_nova_token", return_value=None):
+        env, staged_home, _ = backend._stage_env_for(session)
+    try:
+        assert env["ACE_MOBILE_CLOUD_LIVE_REGISTER"] == "true"
+    finally:
+        backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
+def test_stage_env_for_respects_pre_set_ace_mobile_cloud_live_register(session, monkeypatch):
+    """``setdefault`` semantics: an operator override (task-def env or
+    a session-scoped env var, for debugging the legacy no-op path)
+    wins over the default ``"true"``."""
+    monkeypatch.setenv("ACE_MOBILE_CLOUD_LIVE_REGISTER", "false")
+    backend = CLIBackend()
+    with patch("apps.common.cli_backend.get_fresh_nova_token", return_value=None):
+        env, staged_home, _ = backend._stage_env_for(session)
+    try:
+        assert env["ACE_MOBILE_CLOUD_LIVE_REGISTER"] == "false"
+    finally:
+        backend._teardown_staged_home(staged_home)
