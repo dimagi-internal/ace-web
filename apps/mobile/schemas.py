@@ -232,6 +232,128 @@ class InstallDriverOut(StrictModel):
     actions: list[str]
 
 
+# ── Register test user ────────────────────────────────────────────────────────
+
+
+class RegisterTestUserIn(StrictModel):
+    """POST /api/mobile/register-test-user body.
+
+    Mirrors the local-side ``MobileClient.registerTestUser`` call shape.
+    The controller drives the two register recipes — first
+    ``to_otp_recipe`` (launch → phone entry → Continue) with GMS enabled,
+    then ``from_otp_recipe`` (snackbar OK → App Lock + PIN → name →
+    backup code → photo capture) with GMS disabled so the in-app
+    face-capture step falls back to ManualMode.
+
+    Recipes ship as a base64-encoded ``tar.gz`` of the resolved palette
+    via ``palette_tar_b64`` — same producer as ``RunRecipeIn`` (see
+    ``mcp/mobile/recipe-resolver.ts``). ``to_otp_recipe`` and
+    ``from_otp_recipe`` name the two top recipes within the palette by
+    basename — must be plain ``[A-Za-z0-9._-]+`` (no path traversal).
+    """
+
+    phone: str
+    phone_local: str
+    country_code: str
+    pin: str
+    backup_code: str
+    name: str
+    palette_tar_b64: str
+    to_otp_recipe: str
+    from_otp_recipe: str
+
+    @field_validator("phone")
+    @classmethod
+    def _validate_phone(cls, v: str) -> str:
+        import re as _re
+
+        # E.164-shaped — leading + then digits. The +7426 prefix is the
+        # demo-bypass space; production phones would also satisfy this.
+        if not _re.match(r"^\+[0-9]+$", v):
+            raise ValueError(f"phone must look like '+<digits>'; got {v!r}")
+        return v
+
+    @field_validator("phone_local")
+    @classmethod
+    def _validate_phone_local(cls, v: str) -> str:
+        import re as _re
+
+        # Digits only — the recipe injects this into PHONE_LOCAL as the
+        # numeric body shown next to the country-code picker.
+        if not _re.match(r"^[0-9]+$", v):
+            raise ValueError(f"phone_local must be digits only; got {v!r}")
+        return v
+
+    @field_validator("country_code")
+    @classmethod
+    def _validate_country_code(cls, v: str) -> str:
+        import re as _re
+
+        if not _re.match(r"^\+[0-9]+$", v):
+            raise ValueError(f"country_code must look like '+N..'; got {v!r}")
+        return v
+
+    @field_validator("pin", "backup_code")
+    @classmethod
+    def _validate_pin(cls, v: str) -> str:
+        import re as _re
+
+        if not _re.match(r"^[0-9]+$", v):
+            raise ValueError(f"pin/backup_code must be digits; got {v!r}")
+        return v
+
+    @field_validator("to_otp_recipe", "from_otp_recipe")
+    @classmethod
+    def _validate_recipe_name(cls, v: str) -> str:
+        import re as _re
+
+        # Basename only — no slashes, no parent-dir refs. The controller
+        # joins this onto a server-side run_dir before invoking maestro,
+        # so anything but a plain filename is a path-traversal vector.
+        if not _re.match(r"^[A-Za-z0-9._-]+\.ya?ml$", v):
+            raise ValueError(
+                f"recipe filename must be a basename matching [A-Za-z0-9._-]+\\.ya?ml (got {v!r})"
+            )
+        return v
+
+    @field_validator("palette_tar_b64")
+    @classmethod
+    def _cap_palette_size(cls, v: str) -> str:
+        # Same cap as RunRecipeIn — SSM SendCommand inlines this in a shell
+        # command, so keeping well below 100 KB margin matters.
+        if len(v) > 256 * 1024:
+            raise ValueError(
+                f"palette_tar_b64 exceeds 256 KB (got {len(v)} bytes)"
+            )
+        return v
+
+
+class RegisterTestUserAcceptedOut(StrictModel):
+    """202 response — registration accepted, poll jobs/<job_id> for result."""
+
+    job_id: str
+    status: Literal["running"] = "running"
+
+
+class RegisterTestUserResultOut(StrictModel):
+    """Job result envelope, returned via ``GET /api/mobile/jobs/<id>``.
+
+    Mirrors the local-side ``TestUserRegistrationResult`` shape so the
+    cloud + local backends can return interchangeably to
+    ``MobileClient.registerTestUser`` callers.
+
+    ``already_registered=True`` short-circuits when either register
+    recipe sees the ``PHONE_ALREADY_REGISTERED`` marker emitted by
+    Connect when the demo phone is already provisioned. ``backup_code``
+    is echoed back only on a fresh registration so callers can persist
+    it; on an already-registered short-circuit it's null.
+    """
+
+    already_registered: bool
+    phone: str
+    backup_code: str | None = None
+
+
 class LaunchScriptPatchIn(StrictModel):
     """POST /api/mobile/admin/patch-launch-script body.
 
