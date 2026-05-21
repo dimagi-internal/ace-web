@@ -78,7 +78,7 @@ export function BrandTemplatePanel({ onCommit, onCancel }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <div className="text-xs text-muted-foreground">
-        These strings ship with the brand template (
+        These strings ship with the global template (
         <code className="rounded bg-muted px-1">programs/_defaults.yaml</code>
         ). Setting any field here writes a per-program override into this
         spec; clearing it falls back to the global value.
