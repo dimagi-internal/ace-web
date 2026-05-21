@@ -896,8 +896,12 @@ def _lazy_pull_output_mp4(workspace, slug: str, run_id: str) -> Path | None:
     ``build-clip-explorer`` run keeps working and subsequent requests
     serve from disk without re-fetching.
     """
+    from apps.videos import file_cache
     try:
         layout, client = service.layout_for(workspace)
+        meta = service.drive.output_mp4_drive_meta(layout, client, slug, run_id)
+        if meta is None:
+            return None
         content = service.drive.read_output_mp4(layout, client, slug, run_id)
     except Exception as e:  # pragma: no cover — Drive flake → 404 to caller
         log.warning("serve_media: Drive output.mp4 fetch failed for %s/%s: %s",
@@ -926,6 +930,10 @@ def _lazy_pull_output_mp4(workspace, slug: str, run_id: str) -> Path | None:
         # safe-guard). Caller still gets the canonical Path back so
         # the request serves; subsequent requests will refetch + retry.
         pass
+    # Record the (file_id → local path) mapping so the next time Drive
+    # reports this file_id as changed (republish), file_cache.invalidate
+    # will unlink our local copy and force a fresh lazy-pull.
+    file_cache.record(workspace.pk, slug, run_id, "output_mp4", meta.id)
     return out_p
 
 
@@ -952,6 +960,21 @@ def serve_media(
         or file_name != os.path.basename(file_name)
     ):
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    # Drive Changes API: poll for changed file_ids in this workspace
+    # since the last call. file_cache.invalidate unlinks any local
+    # files whose Drive source has been updated (e.g. a republish from
+    # another host). After this, the file-existence check below sees
+    # the gap and falls through to the lazy-pull path.
+    from apps.videos import drive_changes as _vchanges
+    from apps.videos import file_cache as _vcache
+    try:
+        _layout, _client = service.layout_for(workspace)
+        changed = _vchanges.observe(workspace, _client)
+        if changed:
+            _vcache.invalidate(workspace.pk, changed)
+    except Exception as exc:  # noqa: BLE001 — never block a serve on Drive flake
+        log.warning("serve_media: drive_changes observe failed: %s", exc)
+
     media_dir = service.explorer_dir(program_slug, run_id) / "media"
     target = media_dir / file_name
     if not target.is_file():

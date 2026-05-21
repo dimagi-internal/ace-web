@@ -1054,6 +1054,12 @@ def publish_render_artifacts(
     archive_id: str | None = None
     feedback_id: str | None = None
 
+    # Record file_id mappings as we publish so the file_cache reverse
+    # index is populated even on the rendering host (otherwise the
+    # rendering host's local copy would never receive invalidation
+    # signals from Drive Changes for republishes done elsewhere).
+    from apps.videos import file_cache  # noqa: PLC0415 — avoid circular at import time
+
     mp4_path = output_path(slug, run_id)
     if mp4_path.exists():
         content = mp4_path.read_bytes()
@@ -1062,6 +1068,7 @@ def publish_render_artifacts(
         log.info(
             "videos.publish: output.mp4 → drive id=%s size=%d", mp4_id, len(content),
         )
+        file_cache.record(workspace.slug, slug, run_id, "output_mp4", mp4_id)
 
     exp_dir = explorer_dir(slug, run_id)
     if exp_dir.is_dir() and any(exp_dir.iterdir()):
@@ -1074,6 +1081,7 @@ def publish_render_artifacts(
             "videos.publish: explorer.tar.gz → drive id=%s size=%d",
             archive_id, len(archive),
         )
+        file_cache.record(workspace.slug, slug, run_id, "explorer_archive", archive_id)
 
     feedback = feedback_path(slug, run_id)
     if feedback.exists():
