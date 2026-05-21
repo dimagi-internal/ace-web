@@ -1576,6 +1576,16 @@ _OPP_EVAL_VERDICT_RE = re.compile(
 )
 
 
+_EMPTY_SCORECARD = ScorecardSnapshot(
+    latest_verdict=None,
+    latest_verdict_variant=None,
+    latest_scorecard_path=None,
+    latest_scorecard_body="",
+    trend_path=None,
+    trend_body="",
+)
+
+
 def load_scorecard(
     client: DriveClient, *, ace_folder_id: str, slug: str
 ) -> ScorecardSnapshot:
@@ -1586,13 +1596,39 @@ def load_scorecard(
     default 6-phase pipeline).
 
     Raises FileNotFoundError if the opp folder itself doesn't exist.
+
+    Fast-path (issue #467): the opp-eval scorecard + verdict + trend files
+    all live at the opp root under ``scorecards/`` and ``verdicts/``.
+    Walking the entire opp tree (``runs/*`` included) just to find them is
+    5-12s on a real opp and returns null for the common case. Instead, list
+    the opp's immediate children first; if neither subfolder exists, return
+    an empty snapshot without recursing. Otherwise list only those two
+    subfolders.
     """
     ace_children = client.list_files(ace_folder_id)
     opp_folder = _find_child_folder(ace_children, slug)
     if opp_folder is None:
         raise FileNotFoundError(f"no opp folder named {slug!r} under ACE/")
 
-    tree = client.list_files(opp_folder.id, recursive=True)
+    opp_children = client.list_files(opp_folder.id)
+    scorecards_folder = _find_child_folder(opp_children, "scorecards")
+    verdicts_folder = _find_child_folder(opp_children, "verdicts")
+
+    if scorecards_folder is None and verdicts_folder is None:
+        # Fast path: no opp-eval artifacts at the opp root. Don't recurse
+        # the rest of the tree (which can be hundreds of files under runs/).
+        return _EMPTY_SCORECARD
+
+    # Build a path-prefixed listing of only the scorecard + verdict folders,
+    # mirroring the path shape the regex patterns expect ("scorecards/..."
+    # and "verdicts/...").
+    tree: list[DriveFile] = []
+    if verdicts_folder is not None:
+        for f in client.list_files(verdicts_folder.id, recursive=True):
+            tree.append(_with_path_prefix(f, "verdicts/"))
+    if scorecards_folder is not None:
+        for f in client.list_files(scorecards_folder.id, recursive=True):
+            tree.append(_with_path_prefix(f, "scorecards/"))
 
     # --- latest verdict ------------------------------------------------
     # deep > monitor > quick for tiebreak; otherwise newest evaluated_at.
@@ -1669,6 +1705,21 @@ def load_scorecard(
         latest_scorecard_body=sc_body,
         trend_path=trend_path,
         trend_body=trend_body,
+    )
+
+
+def _with_path_prefix(f: DriveFile, prefix: str) -> DriveFile:
+    """Return a copy of ``f`` with ``prefix`` prepended to its path."""
+    return DriveFile(
+        id=f.id,
+        name=f.name,
+        mime_type=f.mime_type,
+        web_view_link=f.web_view_link,
+        path=f"{prefix}{f.path}" if f.path else prefix.rstrip("/"),
+        size_bytes=f.size_bytes,
+        modified_time=f.modified_time,
+        parent_id=f.parent_id,
+        drive_id=f.drive_id,
     )
 
 
