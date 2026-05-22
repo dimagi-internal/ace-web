@@ -91,6 +91,7 @@ def fork_opp(
     source_run_id: str | None = None,
     workspace=None,
     progress_cb: ProgressCb | None = None,
+    edits: list[dict[str, str]] | None = None,
     now: _dt.datetime | None = None,
 ) -> ForkOppResult:
     """Fork the source opp's named run (or its latest if ``source_run_id``
@@ -198,7 +199,9 @@ def fork_opp(
     # one — otherwise nothing to trim).
     if decisions_dest_id is not None:
         trimmed = _rewrite_decisions_yaml(
-            decisions_source_body or "", fork_ordinal=fork_ordinal,
+            decisions_source_body or "",
+            fork_ordinal=fork_ordinal,
+            edits=edits,
         )
         drive.update_file(decisions_dest_id, trimmed, "text/yaml")
 
