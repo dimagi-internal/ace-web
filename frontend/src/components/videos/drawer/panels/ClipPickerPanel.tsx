@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import { useBeatEditor } from "../../BeatEditorContext";
 import type { ClipObject } from "../../types";
 import {
@@ -31,6 +32,7 @@ interface Tile {
   inProgram: boolean;
   isCurrent: boolean;
   name: string | null;
+  driveUrl: string;
   // Count of OTHER slots in this spec already using this alias (not
   // counting the slot being edited). Helps the user spot that picking
   // it here will orphan the alias from one place but keep it used
@@ -161,6 +163,7 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
           inProgram: alias in manifest,
           isCurrent: alias === currentAlias,
           name: item.name,
+          driveUrl: item.drive_url,
           usedByOtherCount: usageCounts[alias] ?? 0,
         });
       }
@@ -314,15 +317,15 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
             const mismatched = !expectedSubs.includes(tile.subfolder);
             const dur = durations[key];
             return (
+              <div key={key} className="relative">
               <button
                 type="button"
-                key={key}
                 onClick={() => swap(tile)}
                 onMouseEnter={() => onTileEnter(key)}
                 onMouseLeave={() => onTileLeave(key)}
                 onFocus={() => onTileEnter(key)}
                 onBlur={() => onTileLeave(key)}
-                className={`flex flex-col gap-2 rounded border p-2 text-left transition-colors ${
+                className={`flex w-full flex-col gap-2 rounded border p-2 text-left transition-colors ${
                   tile.isCurrent
                     ? "border-primary bg-primary/5"
                     : mismatched
@@ -406,6 +409,26 @@ export function ClipPickerPanel({ clipKind, index, onCommit, onCancel }: Props) 
                   </div>
                 )}
               </button>
+              {/* Drive link as a sibling of the swap-<button> rather than
+                  nested inside it: <a> inside <button> is invalid HTML and
+                  routes clicks ambiguously (see
+                  card-click-and-grid-stretch learning). Positioned over
+                  the top-left corner of the thumbnail (top-right is taken
+                  by the Current / In manifest / Library badges).
+                  stopPropagation keeps a click on the link from also
+                  firing the tile's swap onClick. */}
+              <a
+                href={tile.driveUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title="Open source clip in Drive"
+                className="absolute left-3 top-3 z-10 inline-flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white opacity-80 transition-opacity hover:opacity-100"
+              >
+                <ExternalLink className="h-2.5 w-2.5" />
+                Drive
+              </a>
+              </div>
             );
           })}
         </div>
