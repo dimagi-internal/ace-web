@@ -1,4 +1,4 @@
-import { useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { ChevronRight, GitFork, Workflow } from "lucide-react";
 
 import type { OppSnapshot, PhaseInfo, Step } from "@/api/types.ws";
@@ -82,6 +82,29 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
     [allDecisions, editState.buffer, snapshot.phases],
   );
 
+  // Warn before a tab close / reload eats pending edits. The browser
+  // shows its generic confirmation prompt — the returned string isn't
+  // surfaced in modern browsers but `event.returnValue` is the contract.
+  useEffect(() => {
+    if (editState.buffer.length === 0) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [editState.buffer.length]);
+
+  // Close the fork dialog if the buffer empties out from under it
+  // (e.g. user clicked Discard all from a different code path). The
+  // dialog's render conditional already hides it, but this clears the
+  // open-state flag so reopening behaves correctly.
+  useEffect(() => {
+    if (editState.buffer.length === 0 && forkDialogOpen) {
+      setForkDialogOpen(false);
+    }
+  }, [editState.buffer.length, forkDialogOpen]);
+
   // No auto-select on mount: the user has to pick a phase. Earlier
   // versions auto-landed them on the most-urgent phase (qa-failed →
   // open-decision → first-with-steps), but that hijacked the entry
@@ -146,6 +169,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
                     (r) => r.run_id === snapshot.current_run.run_id,
                   )?.last_actor_at ?? null
                 }
+                hidePerPhaseFork={editState.buffer.length > 0}
               />
               <div className="flex-1 overflow-y-auto px-4 pb-6">
                 <DecisionsPanel
@@ -170,7 +194,11 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
                   }
                 />
                 {selectedPhaseRunning && (
-                  <div className="mt-2 text-xs text-muted-foreground">
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="mt-2 text-xs text-muted-foreground"
+                  >
                     Editing locked while phase is in progress.
                   </div>
                 )}
@@ -339,6 +367,11 @@ interface PhasePanelHeaderProps {
   oppSlug: string;
   sourceRunId: string;
   sourceLastActorAt: string | null;
+  /** When true, the "Fork from here" button is hidden — there's a
+   * sticky "Fork & re-run" bar at the page bottom that picks up the
+   * buffered edits and is the right CTA. Two fork buttons on screen
+   * at once would be a footgun. */
+  hidePerPhaseFork?: boolean;
 }
 
 function PhasePanelHeader({
@@ -347,6 +380,7 @@ function PhasePanelHeader({
   oppSlug,
   sourceRunId,
   sourceLastActorAt,
+  hidePerPhaseFork,
 }: PhasePanelHeaderProps) {
   const [forkOpen, setForkOpen] = useState(false);
   const total = steps.length;
@@ -376,17 +410,22 @@ function PhasePanelHeader({
         </div>
         {/* Fork CTA: mints a NEW RUN under this opp seeded from the
             current run's upstream phase artifacts. Per-opp state
-            (opp.yaml, inputs, calibration) stays shared. */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setForkOpen(true)}
-          className="shrink-0 text-xs"
-          title={`Fork a new run starting at ${phase.display_name}`}
-        >
-          <GitFork className="mr-1.5 h-3.5 w-3.5" />
-          Fork from here
-        </Button>
+            (opp.yaml, inputs, calibration) stays shared.
+            Hidden when there are pending decision edits — the sticky
+            "Fork & re-run" bar at the page bottom is the right CTA
+            in that case (it carries the edits into the new run). */}
+        {!hidePerPhaseFork && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setForkOpen(true)}
+            className="shrink-0 text-xs"
+            title={`Fork a new run starting at ${phase.display_name}`}
+          >
+            <GitFork className="mr-1.5 h-3.5 w-3.5" />
+            Fork from here
+          </Button>
+        )}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
         <span>

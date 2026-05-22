@@ -184,7 +184,13 @@ function DecisionRow({
         : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
 
   return (
-    <div>
+    <div
+      className={cn(
+        // Left-edge violet bar when edited, so a scan down the panel
+        // immediately picks out which rows have pending changes.
+        isEdited && "border-l-2 border-violet-500/60 bg-violet-500/[0.03]",
+      )}
+    >
       <button
         type="button"
         onClick={() =>
@@ -207,7 +213,10 @@ function DecisionRow({
           → <span className="font-medium text-foreground">{effectiveValue}</span>
         </span>
         {isEdited && (
-          <span className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-400">
+          <span
+            className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-400"
+            aria-label="this row has a pending edit"
+          >
             edited
           </span>
         )}
