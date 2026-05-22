@@ -20,6 +20,25 @@ interface OppGroup {
 }
 
 /**
+ * djb2 string hash → 0..359 hue. Stable across renders, so the same opp
+ * slug always gets the same color. Issue #527: used to tint the left
+ * edge of every session row in a group so the eye can follow the
+ * grouping without re-reading the header on every row.
+ *
+ * Saturation/lightness are pinned to mid-range values that render
+ * legibly against both light (oklch ~1.0 background) and dark
+ * (oklch ~0.145 background) themes without theme-switching.
+ */
+function oppAccentColor(oppSlug: string): string {
+  let hash = 5381;
+  for (let i = 0; i < oppSlug.length; i += 1) {
+    hash = ((hash << 5) + hash + oppSlug.charCodeAt(i)) | 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 45%, 55%)`;
+}
+
+/**
  * Partition sessions by opp_slug. Each opp the user has discussed becomes
  * its own group, in order of most-recently-touched (the input list is
  * already sorted by updated_at desc, so the first occurrence wins).
@@ -96,18 +115,30 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
     }
   };
 
-  const renderRow = (s: Session) => {
+  const renderRow = (s: Session, accentColor: string | null) => {
     const isActive = s.slug === currentSlug;
     const isEditing = editingSlug === s.slug;
-    const rowClass = `group relative block rounded px-3 py-2 text-sm ${
+    // Issue #527: leave room on the left for the 2px colored accent bar
+    // (rendered via an absolutely-positioned span) so the bar lines up
+    // with the row's content area without shifting text on hover.
+    const rowClass = `group relative block rounded pl-3.5 pr-3 py-2 text-sm ${
       isActive
         ? "bg-accent text-accent-foreground"
         : "text-muted-foreground hover:bg-accent"
     }`;
+    const accentBar = accentColor ? (
+      <span
+        aria-hidden="true"
+        data-testid="opp-accent-bar"
+        className="pointer-events-none absolute inset-y-1 left-0 w-0.5 rounded-full"
+        style={{ backgroundColor: accentColor }}
+      />
+    ) : null;
 
     if (isEditing) {
       return (
         <div key={s.slug} className={rowClass}>
+          {accentBar}
           <input
             autoFocus
             value={draftTitle}
@@ -125,6 +156,7 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
 
     return (
       <Link key={s.slug} to={`/chat/${s.slug}`} className={rowClass}>
+        {accentBar}
         <div className="flex items-center gap-1">
           <span className="flex-1 truncate font-medium">
             {s.title || "Untitled"}
@@ -178,18 +210,35 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
         {sessions.length === 0 && (
           <div className="px-2 py-4 text-sm text-muted-foreground">No chats yet.</div>
         )}
-        {!showGroupHeaders && sessions.map(renderRow)}
+        {!showGroupHeaders && sessions.map((s) => renderRow(s, null))}
         {showGroupHeaders &&
-          groups.map((g) => {
+          groups.map((g, idx) => {
             const headerLabel =
               g.oppDisplayName || g.oppSlug || "Other chats";
             const encOpp = g.oppSlug ? encodeURIComponent(g.oppSlug) : "";
             const oppHref = workspaceSlug
               ? `/w/${workspaceSlug}/opps/${encOpp}`
               : `/opps/${encOpp}`;
+            // Issue #527: stronger group separation. Linked opps get a
+            // per-slug colored accent bar on each row + a subtle 1px
+            // divider above every group except the first. The unlinked
+            // "Other chats" bucket keeps a no-accent treatment so it
+            // reads as a recognizable end-of-list state, but still gets
+            // the divider so it doesn't visually fuse with the last
+            // opp group.
+            const accentColor = g.oppSlug ? oppAccentColor(g.oppSlug) : null;
+            const isFirst = idx === 0;
+            const wrapperClass = isFirst
+              ? "pb-3"
+              : "mt-3 border-t border-border/60 pt-3 pb-3";
             return (
-              <div key={g.oppSlug || "__unlinked__"} className="mt-2 first:mt-0">
-                <div className="flex items-center justify-between px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              <div
+                key={g.oppSlug || "__unlinked__"}
+                className={wrapperClass}
+                data-testid="opp-group"
+                data-opp-slug={g.oppSlug || ""}
+              >
+                <div className="flex items-center justify-between px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                   {g.oppSlug ? (
                     <Link
                       to={oppHref}
@@ -203,10 +252,10 @@ export function RecentSessionsSidebar({ currentSlug }: Props) {
                       {headerLabel}
                     </Link>
                   ) : (
-                    <span className="truncate">{headerLabel}</span>
+                    <span className="truncate italic">{headerLabel}</span>
                   )}
                 </div>
-                {g.sessions.map(renderRow)}
+                {g.sessions.map((s) => renderRow(s, accentColor))}
               </div>
             );
           })}
