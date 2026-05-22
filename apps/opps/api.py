@@ -1179,6 +1179,7 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
         workspace=workspace,
         progress_cb=_write_progress,
         edits=[e.model_dump() for e in body.edits] if body.edits else None,
+        mode=body.mode,
     )
     return {
         "slug": result.opp_slug,
