@@ -42,11 +42,21 @@ export function OppCardItem({
   const goToWorkbench = () => navigate(`/opps/${encodeURIComponent(opp.slug)}`);
   const scorePct = opp.eval_score_pct ?? toPct(opp.eval_score);
 
+  // The slug is the canonical identifier — it's what appears in URLs,
+  // logs, and CLI commands — so always render it as the card's title.
+  // When ``display_name`` is set AND different from the slug, surface it
+  // as a smaller secondary line below the slug; when they match (the
+  // common case) we suppress it to avoid the redundancy seen pre-#526.
+  const hasDistinctDisplayName =
+    !!opp.display_name && opp.display_name !== opp.slug;
+
   // Single, clean accessible name for the card-level button.
   // Without aria-label, AT computes the name by concatenating descendant
   // text — including every nested icon-button's aria-label — so the slug
   // ends up announced 3-5 times. Pin it explicitly here.
-  const cardLabel = opp.display_name || opp.slug;
+  const cardLabel = hasDistinctDisplayName
+    ? `${opp.slug} (${opp.display_name})`
+    : opp.slug;
 
   return (
     <div
@@ -102,18 +112,20 @@ export function OppCardItem({
                 className="truncate font-semibold text-foreground group-hover:text-primary"
                 title={
                   opp.created_at
-                    ? `${opp.display_name || opp.slug}\nCreated ${new Date(opp.created_at).toLocaleString()}${opp.created_by ? " by " + opp.created_by : ""}`
-                    : opp.display_name || opp.slug
+                    ? `${opp.slug}\nCreated ${new Date(opp.created_at).toLocaleString()}${opp.created_by ? " by " + opp.created_by : ""}`
+                    : opp.slug
                 }
               >
-                {opp.display_name || opp.slug}
-              </h2>
-              <div
-                className="truncate text-xs text-muted-foreground"
-                title={opp.slug}
-              >
                 {opp.slug}
-              </div>
+              </h2>
+              {hasDistinctDisplayName && (
+                <div
+                  className="truncate text-xs text-muted-foreground"
+                  title={opp.display_name}
+                >
+                  {opp.display_name}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
