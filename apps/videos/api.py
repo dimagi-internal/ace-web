@@ -848,7 +848,7 @@ _HYDRATE_CACHE_RE = re.compile(
 )
 
 
-def _resolve_symlink_via_drive(target):
+def _resolve_symlink_via_drive(workspace, target):
     """If `target` is a symlink to the hydrate cache, fetch the linked
     gdrive file through the workspace SA, write it to a stable on-disk
     cache, and return the cached Path. Returns None if the target isn't
@@ -864,17 +864,79 @@ def _resolve_symlink_via_drive(target):
     if not m:
         return None
     gid, ext = m.group("gid"), m.group("ext")
-    cache = service._root() / "assets" / "clip-cache" / f"{gid}.{ext}"
+    return _fetch_clip_to_cache(workspace, gid, ext)
+
+
+def _fetch_clip_to_cache(workspace, drive_id: str, ext: str) -> Path | None:
+    """Fetch a Drive file into ``assets/clip-cache/<id>.<ext>`` and return
+    the cached Path. Returns None when the Drive fetch fails. Shared by
+    the broken-symlink recovery and the manifest-alias recovery paths.
+    Uses the workspace-aware Drive client so tests can monkeypatch
+    ``drive.client_for_workspace`` (matches the rest of the videos
+    module).
+    """
+    cache = service._root() / "assets" / "clip-cache" / f"{drive_id}.{ext}"
     if not cache.is_file():
         cache.parent.mkdir(parents=True, exist_ok=True)
-        client = service.drive.get_drive_client()
+        client = drive.client_for_workspace(workspace)
         try:
-            content = client.get_binary(gid)
+            content = client.get_binary(drive_id)
         except Exception as e:  # pragma: no cover — surfaces as 404 to caller
-            log.warning("serve_media: Drive fetch failed for %s: %s", gid, e)
+            log.warning("serve_media: Drive fetch failed for %s: %s", drive_id, e)
             return None
         cache.write_bytes(content)
-    return Path(cache)
+    return cache
+
+
+# `gdrive:<id>.<ext>` form used by spec manifests after library-ref
+# rewrite. Matches service._GDRIVE_RE but kept local to avoid reaching
+# into a private symbol from another module.
+_MANIFEST_GDRIVE_RE = re.compile(r"^gdrive:([A-Za-z0-9_\-]+)\.([A-Za-z0-9]+)$")
+
+
+def _resolve_alias_via_manifest(
+    workspace, slug: str, run_id: str, file_name: str,
+) -> Path | None:
+    """Recovery path for clip-media files that don't exist on disk at all
+    (no symlink to follow either) — fresh ECS tasks have never run the
+    explorer build, so the canonical ``media/<alias>.mp4`` path is just
+    missing. Look up the alias in the run's spec.yaml manifest, parse
+    the gdrive id out of the manifest value (``gdrive:<id>.<ext>`` or
+    ``library:video/<sub>/<file>``), fetch via the workspace SA, cache
+    on disk, return the local Path. None on no match / fetch failure.
+    """
+    stem, dot, ext = file_name.rpartition(".")
+    if not dot or ext.lower() not in {"mp4", "webm", "m4v"}:
+        return None
+    parsed_spec = service.read_parsed_spec(workspace, slug, run_id)
+    if parsed_spec is None:
+        return None
+    manifest = parsed_spec.get("manifest")
+    if not isinstance(manifest, dict):
+        return None
+    ref = manifest.get(stem)
+    if not isinstance(ref, str):
+        return None
+
+    m = _MANIFEST_GDRIVE_RE.match(ref)
+    if m:
+        return _fetch_clip_to_cache(workspace, m.group(1), m.group(2))
+
+    # library:video/<sub>/<filename> — resolve to a drive_id via the
+    # workspace's VideoLibraryEntry table, then fetch like the gdrive:
+    # branch. Keeps a freshly-picked library clip serveable before any
+    # explorer rebuild has materialised the alias on disk.
+    from apps.videos.library import refs as lib_refs
+    if not lib_refs.is_library_ref(ref):
+        return None
+    try:
+        resolved = lib_refs.resolve_library_ref(workspace, ref)
+    except lib_refs.LibraryRefError:
+        return None
+    if resolved is None:
+        return None
+    target_ext = Path(resolved.parsed.filename).suffix.lstrip(".") or ext
+    return _fetch_clip_to_cache(workspace, resolved.drive_id, target_ext)
 
 
 def _lazy_pull_output_mp4(workspace, slug: str, run_id: str) -> Path | None:
@@ -978,7 +1040,7 @@ def serve_media(
     media_dir = service.explorer_dir(program_slug, run_id) / "media"
     target = media_dir / file_name
     if not target.is_file():
-        # Two recovery paths before 404'ing:
+        # Three recovery paths before 404'ing:
         #
         # 1. Clip-media broken symlink — the explorer build symlinks each
         #    ``@alias.mp4`` into the hydrate cache
@@ -987,12 +1049,22 @@ def serve_media(
         #    labs task) the symlink dangles. Parse the gdrive id out and
         #    fetch through the workspace SA into ``assets/clip-cache/``.
         #
-        # 2. Final.mp4 published from another host — labs doesn't run
+        # 2. Clip-media missing entirely — labs ECS tasks never run the
+        #    explorer build, so the canonical ``media/<alias>.mp4`` path
+        #    isn't even a (broken) symlink, it just doesn't exist. Look
+        #    up the alias in the run's spec.yaml manifest and lazy-pull
+        #    the gdrive: / library: ref the same way.
+        #
+        # 3. Final.mp4 published from another host — labs doesn't run
         #    the render chain (no ElevenLabs key, see CLAUDE.md), so a
         #    ``render_locally.py --publish`` from a Mac is the only way
         #    final.mp4 ends up in Drive. Lazy-pull it on demand so the
         #    publish flow actually surfaces on labs.
-        resolved = _resolve_symlink_via_drive(target)
+        resolved = _resolve_symlink_via_drive(workspace, target)
+        if resolved is None and file_name != "final.mp4":
+            resolved = _resolve_alias_via_manifest(
+                workspace, program_slug, run_id, file_name,
+            )
         if resolved is None and file_name == "final.mp4":
             resolved = _lazy_pull_output_mp4(workspace, program_slug, run_id)
         if resolved is None:

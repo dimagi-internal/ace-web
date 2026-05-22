@@ -516,6 +516,80 @@ def test_serve_media_404_when_drive_also_missing(
 
 
 @pytest.mark.django_db
+def test_serve_media_lazy_pulls_clip_via_manifest_alias(
+    member_client, videos_root, fake_drive,
+):
+    """A fresh labs ECS task never ran the explorer build, so
+    ``explorer/media/<alias>.mp4`` doesn't exist on disk at all — not
+    as a file, not even as a broken symlink. ``serve_media`` should
+    resolve the alias against the run's spec.yaml manifest, parse the
+    ``gdrive:<id>.<ext>`` ref, and lazy-pull the bytes via the workspace
+    SA. Without this, every snippet preview in the beat editor renders
+    as 'preview not cached on host' on labs."""
+    client, _ = member_client
+    # Seed Drive with the clip's binary, then rewrite the spec's manifest
+    # alias to point at the FakeDrive-assigned file id (FakeDrive uses
+    # `fake-N` ids; the seed's literal `gdrive:abc.mp4` wouldn't resolve).
+    ws_root = fake_drive.folder_id("ws1-drive-root")
+    clip_id = fake_drive.upload_binary(
+        ws_root, "alpha.mp4", b"\x00ALPHA-BYTES", "video/mp4",
+    )
+    videos_id = fake_drive.list_folder(ws_root)[0].id
+    demo_id = fake_drive.list_folder(videos_id)[0].id
+    runs_id = fake_drive.list_folder(demo_id)[0].id
+    run001_id = fake_drive.list_folder(runs_id)[0].id
+    spec_node = next(
+        n for n in fake_drive.list_folder(run001_id) if n.name == "spec.yaml"
+    )
+    fake_drive.update_file(
+        spec_node.id,
+        SPEC_YAML.replace("gdrive:abc.mp4", f"gdrive:{clip_id}.mp4"),
+        "application/x-yaml",
+    )
+
+    # Delete the local seeded copy so the recovery path is forced.
+    alpha_local = (
+        videos_root / "programs" / "demo" / "runs" / "run-001"
+        / "explorer" / "media" / "alpha.mp4"
+    )
+    assert alpha_local.exists()
+    alpha_local.unlink()
+
+    resp = client.get(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/media/alpha.mp4",
+    )
+    assert resp.status_code == 200, resp.content
+    body = b"".join(resp.streaming_content) if resp.streaming else resp.content
+    assert body.startswith(b"\x00ALPHA")
+
+    # Bytes land in the shared clip-cache so subsequent requests skip
+    # the Drive round-trip (matches the symlink-recovery cache path).
+    cached = videos_root / "assets" / "clip-cache"
+    assert any(p.suffix == ".mp4" for p in cached.iterdir())
+
+
+@pytest.mark.django_db
+def test_serve_media_unknown_alias_404s(
+    member_client, videos_root, fake_drive,
+):
+    """When the requested alias isn't in the manifest at all, the
+    recovery path returns None and the endpoint produces a clean 404
+    — no AttributeError, no 500."""
+    client, _ = member_client
+    # Remove the local seeded file so we reach the recovery path.
+    alpha_local = (
+        videos_root / "programs" / "demo" / "runs" / "run-001"
+        / "explorer" / "media" / "alpha.mp4"
+    )
+    if alpha_local.exists():
+        alpha_local.unlink()
+    resp = client.get(
+        "/api/w/ws1/videos/programs/demo/runs/run-001/media/not-in-manifest.mp4",
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
 def test_qa_frame_404_when_no_render(member_client, videos_root, fake_drive):
     """The qa-frame endpoint serves the per-beat preview PNG written by
     the QA probe. Before the first render lands (or for unknown beat
