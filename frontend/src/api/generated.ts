@@ -1614,6 +1614,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/system/skill-products": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Skill -> product paths map
+         * @description Returns {skill_slug: [artifact_path, ...]} derived from the ACE plugin's artifact-manifest.ts. Used by the in-app decisions editor to show which files a forked re-run will regenerate.
+         */
+        readonly get: operations["apps_system_api_skill_products"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/system/cli-diag": {
         readonly parameters: {
             readonly query?: never;
@@ -2050,12 +2070,30 @@ export interface components {
              */
             readonly decided_at: string;
         };
+        /**
+         * OppForkEditIn
+         * @description A single answer override to apply during fork.
+         *
+         *     The forker finds the row by ``row_id`` in the source run's
+         *     ``decisions.yaml``, sets its ``default`` to ``new_answer``, and
+         *     marks ``status: overridden`` — matching the contract that
+         *     ``decisions-sync`` already uses, so downstream phases on re-run
+         *     honor the human's value verbatim.
+         */
+        readonly OppForkEditIn: {
+            /** Row Id */
+            readonly row_id: string;
+            /** New Answer */
+            readonly new_answer: string;
+        };
         /** OppForkIn */
         readonly OppForkIn: {
             /** Fork At Phase */
             readonly fork_at_phase: string;
             /** Source Run Id */
             readonly source_run_id?: string | null;
+            /** Edits */
+            readonly edits?: readonly components["schemas"]["OppForkEditIn"][];
         };
         /** ForkProgress */
         readonly ForkProgress: {
@@ -6284,6 +6322,24 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["VersionOut"];
                 };
+            };
+        };
+    };
+    readonly apps_system_api_skill_products: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -9,6 +9,7 @@ from ninja import Path, Router
 
 from apps.api.auth import session_auth
 from apps.api.errors import TYPE_FORBIDDEN, TYPE_NOT_FOUND, ProblemError
+from apps.system.manifest import get_skill_products_map
 
 from .schemas import (
     AgentDetailOut,
@@ -188,6 +189,24 @@ def version(request: HttpRequest) -> HttpResponse:
     data = get_version_info()
     payload = VersionOut.model_validate(data).model_dump(mode="json")
     return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# GET /system/skill-products
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/skill-products",
+    summary="Skill -> product paths map",
+    description=(
+        "Returns {skill_slug: [artifact_path, ...]} derived from the ACE "
+        "plugin's artifact-manifest.ts. Used by the in-app decisions editor "
+        "to show which files a forked re-run will regenerate."
+    ),
+)
+def skill_products(request: HttpRequest) -> dict[str, list[str]]:
+    return get_skill_products_map()
 
 
 # ---------------------------------------------------------------------------
