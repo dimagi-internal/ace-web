@@ -1264,6 +1264,95 @@ def test_fork_opp_404_unknown_run(member_client, monkeypatch):
     assert response.status_code == 404
 
 
+@pytest.mark.django_db
+def test_fork_opp_forwards_edits_to_forker(member_client, monkeypatch):
+    """A5: body.edits must be forwarded as list[dict] to opp_forker.fork_opp."""
+    from types import SimpleNamespace
+
+    client, workspace, _user = member_client
+
+    captured: dict = {}
+
+    def _spy_fork_opp(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            opp_slug="opp-1",
+            new_run_id="run-002",
+            new_run_folder_id="folder-run-002",
+            working_session=SimpleNamespace(slug="sess-xyz"),
+        )
+
+    # Stub external dependencies of fork_opp_and_return so it reaches the call.
+    monkeypatch.setattr(
+        "apps.opps.access.resolve_ace_root_folder_id",
+        lambda ws: "ace-root-folder-id",
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client",
+        lambda workspace: object(),
+    )
+    monkeypatch.setattr("apps.opps.opp_forker.fork_opp", _spy_fork_opp)
+
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/fork",
+        data={
+            "fork_at_phase": "design",
+            "edits": [
+                {"row_id": "row-7", "new_answer": "Q4 2026"},
+                {"row_id": "row-12", "new_answer": "alpha-only"},
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201, response.content
+    assert captured.get("edits") == [
+        {"row_id": "row-7", "new_answer": "Q4 2026"},
+        {"row_id": "row-12", "new_answer": "alpha-only"},
+    ]
+    # Sanity: other fields still flow through.
+    assert captured.get("source_slug") == "opp-1"
+    assert captured.get("fork_at_phase") == "design"
+
+
+@pytest.mark.django_db
+def test_fork_opp_empty_edits_passes_none(member_client, monkeypatch):
+    """A5: an empty edits list (or omitted) should pass None to the forker."""
+    from types import SimpleNamespace
+
+    client, _workspace, _user = member_client
+
+    captured: dict = {}
+
+    def _spy_fork_opp(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            opp_slug="opp-1",
+            new_run_id="run-002",
+            new_run_folder_id="folder-run-002",
+            working_session=SimpleNamespace(slug="sess-xyz"),
+        )
+
+    monkeypatch.setattr(
+        "apps.opps.access.resolve_ace_root_folder_id",
+        lambda ws: "ace-root-folder-id",
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client",
+        lambda workspace: object(),
+    )
+    monkeypatch.setattr("apps.opps.opp_forker.fork_opp", _spy_fork_opp)
+
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/fork",
+        data={"fork_at_phase": "design"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201, response.content
+    assert captured.get("edits") is None
+
+
 # ---------------------------------------------------------------------------
 # Task 2.1.14 — GET /w/{ws}/opps/{slug}/fork/status
 # ---------------------------------------------------------------------------
