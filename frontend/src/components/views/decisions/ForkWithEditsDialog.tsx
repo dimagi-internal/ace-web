@@ -75,7 +75,7 @@ export function ForkWithEditsDialog({
           Fork run with {edits.length} answer change{edits.length === 1 ? "" : "s"}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Your edits touch <code className="rounded bg-muted/40 px-1">{initialForkAtPhase}</code>.
+          Your edits touch <code className="rounded bg-muted/40 px-1">{forkAtPhase}</code>.
           The new run will re-run from there and regenerate:
         </p>
 
