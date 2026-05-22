@@ -96,6 +96,33 @@ describe("DecisionsPanel — edit mode", () => {
     expect(screen.getByText(/edited/i)).toBeInTheDocument();
   });
 
+  it("collapsing the row while editing resets the draft", () => {
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec()]}
+        editBuffer={[]}
+        onEdit={vi.fn()}
+        onRevert={vi.fn()}
+      />,
+    );
+    // Open panel + row
+    fireEvent.click(screen.getByText("Decisions").closest("button")!);
+    const rowButton = screen.getByText("Who is the target population?").closest("button")!;
+    fireEvent.click(rowButton);
+    // Enter edit mode and type a partial draft
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "WIP draft" } });
+    // Collapse the row
+    fireEvent.click(rowButton);
+    // Re-expand
+    fireEvent.click(rowButton);
+    // Edit mode should be off; textbox should not exist
+    expect(screen.queryByRole("textbox")).toBeNull();
+    // Edit button should be visible again (not Save/Cancel)
+    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+  });
+
   it("reverting calls onRevert with row_id", () => {
     const onRevert = vi.fn();
     render(

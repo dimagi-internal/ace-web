@@ -187,7 +187,17 @@ function DecisionRow({
     <div>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() =>
+          setOpen((v) => {
+            const next = !v;
+            if (!next) {
+              // Reset edit state when collapsing so re-expanding doesn't show a stale draft.
+              setEditing(false);
+              setDraft("");
+            }
+            return next;
+          })
+        }
         aria-expanded={open}
         className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs hover:bg-accent/40"
       >
