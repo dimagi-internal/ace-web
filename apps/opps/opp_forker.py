@@ -40,6 +40,7 @@ from dataclasses import dataclass
 
 import yaml
 
+from apps.opps.decisions_edit import apply_edits_to_decisions_data
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.sessions.models import Message, Session
 
@@ -551,8 +552,6 @@ def _rewrite_decisions_yaml(
     ignored — either the row was trimmed (the user edited a row from a
     phase being re-run from scratch) or the id is bogus.
     """
-    from apps.opps.decisions_edit import apply_edits_to_decisions_data
-
     if fork_ordinal is None and not edits:
         return original
     try:
