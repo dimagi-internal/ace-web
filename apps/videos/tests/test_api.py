@@ -408,6 +408,73 @@ def test_has_output_falls_through_to_drive(member_client, videos_root, fake_driv
 
 
 @pytest.mark.django_db
+def test_drive_changes_invalidates_stale_local_cache(
+    member_client, videos_root, fake_drive,
+):
+    """End-to-end: lazy-pull populates the file_cache reverse-index,
+    then a Drive Changes API report of the same file_id flips the
+    next /media/final.mp4 request to a fresh lazy-pull. This is the
+    proper invalidation flow that replaces the run-detail mtime
+    band-aid I shipped + reverted earlier."""
+    from unittest.mock import patch
+
+    client, workspace = member_client
+
+    # Seed Drive with output.mp4
+    ws_root = fake_drive.folder_id("ws1-drive-root")
+    videos_id = fake_drive.list_folder(ws_root)[0].id
+    demo_id = fake_drive.list_folder(videos_id)[0].id
+    runs_id = fake_drive.list_folder(demo_id)[0].id
+    run001_id = fake_drive.list_folder(runs_id)[0].id
+    fake_drive.upload_binary(
+        run001_id, "output.mp4", b"\x00OLD-BYTES", "video/mp4",
+    )
+    out_local = (
+        videos_root / "programs" / "demo" / "runs" / "run-001" / "output.mp4"
+    )
+    assert not out_local.exists()
+
+    # First request: lazy-pulls the OLD bytes + records file_id in reverse-index.
+    resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-001/media/final.mp4")
+    assert resp.status_code == 200
+    body = b"".join(resp.streaming_content) if resp.streaming else resp.content
+    assert body == b"\x00OLD-BYTES"
+    assert out_local.exists()
+
+    # Locate the recorded file_id (whatever the fake assigned).
+    from apps.videos import service as svc
+    layout, drv_client = svc.layout_for(workspace)
+    meta = drive.output_mp4_drive_meta(layout, drv_client, "demo", "run-001")
+    assert meta is not None
+    recorded_fid = meta.id
+
+    # Confirm the file_cache reverse-index has the mapping.
+    from django.core.cache import cache as dj_cache
+    entry = dj_cache.get(f"videos:fcache:v1:fid:ws1:{recorded_fid}")
+    assert entry == {"slug": "demo", "run_id": "run-001", "kind": "output_mp4"}
+
+    # Republish: change the Drive bytes to NEW content (FakeDrive
+    # update_binary keeps the same file_id; that mirrors real Drive
+    # where upload_output_mp4 updates the existing file in place).
+    fake_drive.update_binary(recorded_fid, b"\x00NEW-BYTES", "video/mp4")
+
+    # Stub drive_changes.observe to report this file_id as changed —
+    # that's what the real Drive Changes API would surface after the
+    # update_binary call. (FakeDrive doesn't simulate the changes
+    # feed, so we stub at the observer boundary.)
+    with patch(
+        "apps.videos.drive_changes.observe",
+        return_value={recorded_fid},
+    ):
+        # Second request: observe reports the file_id changed,
+        # invalidate unlinks the local cache, lazy-pull refetches.
+        resp = client.get("/api/w/ws1/videos/programs/demo/runs/run-001/media/final.mp4")
+        assert resp.status_code == 200
+        body = b"".join(resp.streaming_content) if resp.streaming else resp.content
+        assert body == b"\x00NEW-BYTES", "should serve fresh bytes after Drive change"
+
+
+@pytest.mark.django_db
 def test_has_explorer_falls_through_to_drive(member_client, videos_root, fake_drive):
     """Same fallthrough pattern for explorer.tar.gz — when the
     archive is published on Drive but no local extraction exists,
