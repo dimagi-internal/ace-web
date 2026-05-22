@@ -74,9 +74,9 @@ export function SharePopover({ slug, workspaceSlug }: Props) {
     return (
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
-        className="h-7 text-xs"
+        className="h-7 px-1.5 text-xs font-normal text-muted-foreground hover:text-foreground"
         onClick={() => setOpen(true)}
       >
         share
