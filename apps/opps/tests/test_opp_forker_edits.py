@@ -1,7 +1,14 @@
-"""Tests for fork-with-edits at the _rewrite_decisions_yaml seam."""
+"""Tests for fork-with-edits at the _rewrite_decisions_yaml seam.
+
+Also includes an integration test: fork_opp() applies edits end-to-end
+via a fake DriveClient.
+"""
+import datetime as dt
+from unittest.mock import MagicMock
+
 import yaml
 
-from apps.opps.opp_forker import _rewrite_decisions_yaml
+from apps.opps.opp_forker import _rewrite_decisions_yaml, fork_opp
 
 
 def _decisions_yaml(rows):
@@ -61,13 +68,6 @@ def test_edits_targeting_trimmed_row_are_skipped():
 
     parsed = yaml.safe_load(out)
     assert parsed["decisions"] == []
-
-
-"""Integration test: fork_opp() applies edits end-to-end via a fake DriveClient."""
-import datetime as dt
-from unittest.mock import MagicMock
-
-from apps.opps.opp_forker import fork_opp
 
 
 class _FakeFile:
@@ -146,8 +146,6 @@ def test_fork_opp_passes_edits_to_rewrite(monkeypatch):
     Uses the stub plugin's 'commcare-setup' phase (ordinal 2) as the fork point;
     the row tagged 'design-review' (ordinal 1) survives the trim.
     """
-    import yaml
-
     source_body = yaml.safe_dump({
         "decisions": [
             {"id": "answer-1", "phase": "design-review", "default": "before",
@@ -191,8 +189,6 @@ def test_fork_opp_passes_edits_to_rewrite(monkeypatch):
 
 def test_fork_opp_without_edits_unchanged_behavior(monkeypatch):
     """Backwards compat: fork_opp called without 'edits' kwarg works as before."""
-    import yaml
-
     source_body = yaml.safe_dump({
         "decisions": [
             {"id": "answer-1", "phase": "design-review", "default": "v1",
