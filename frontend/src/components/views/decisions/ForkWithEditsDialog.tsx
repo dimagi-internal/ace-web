@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { forkOpp, type ForkOppBody } from "@/api/opps";
+import { forkOpp, type ForkMode, type ForkOppBody } from "@/api/opps";
 import type { PhaseInfo } from "@/api/types.ws";
 import type { EditOp } from "./decisionsReducer";
 
@@ -38,6 +38,12 @@ export function ForkWithEditsDialog({
   __forkOppForTest,
 }: Props) {
   const [forkAtPhase, setForkAtPhase] = useState(initialForkAtPhase);
+  // Default to keep-overrides-only in the edit-aware flow: the user has
+  // already expressed intent (the buffered edits), so dropping AI
+  // defaults so phases can re-derive them under the new overrides is
+  // the right behavior. The legacy ForkOppDialog defaults to keep-all
+  // because that flow has no edits to anchor on.
+  const [mode, setMode] = useState<ForkMode>("keep-overrides-only");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -65,6 +71,7 @@ export function ForkWithEditsDialog({
       fork_at_phase: forkAtPhase,
       source_run_id: sourceRunId,
       edits: edits.map((e) => ({ row_id: e.row_id, new_answer: e.new_answer })),
+      mode,
     };
     try {
       const fn = __forkOppForTest ?? forkOpp;
@@ -121,6 +128,46 @@ export function ForkWithEditsDialog({
             ))}
           </select>
         </label>
+
+        <fieldset className="mt-4 flex flex-col gap-2 text-xs" disabled={submitting}>
+          <legend className="text-muted-foreground">Decisions</legend>
+          <label className="flex items-start gap-2">
+            <input
+              type="radio"
+              name="fork-with-edits-mode"
+              checked={mode === "keep-overrides-only"}
+              onChange={() => setMode("keep-overrides-only")}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium text-foreground">
+                Keep only my overrides
+              </span>
+              <span className="block text-muted-foreground">
+                Only your explicit overrides carry forward; AI defaults are
+                dropped so phases re-derive them with the new context.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input
+              type="radio"
+              name="fork-with-edits-mode"
+              checked={mode === "keep-all"}
+              onChange={() => setMode("keep-all")}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium text-foreground">
+                Keep all decisions
+              </span>
+              <span className="block text-muted-foreground">
+                Every upstream decision carries forward — both AI defaults and
+                your overrides. Skills won't re-derive the unchanged rows.
+              </span>
+            </span>
+          </label>
+        </fieldset>
 
         {error && (
           <div className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">

@@ -45,6 +45,16 @@ from apps.opps.parsers import (
 
 log = logging.getLogger(__name__)
 
+# Files at the run-folder root that the artifact manifest attributes to
+# a specific skill (e.g. decisions.yaml → producedBy: idea-to-pdd) but
+# that are actually shared substrates appended to by many skills across
+# the lifecycle. Their presence in the run folder is NOT evidence that
+# the attributed skill ran — after a fork, they're carried verbatim by
+# the run-root copy list even when the producing skill hasn't yet run
+# in the new run. _build_steps excludes these from the artifact-presence
+# completeness check.
+_SHARED_SUBSTRATE_FILES = frozenset({"decisions.yaml", "decisions.yml"})
+
 # --- Output dataclasses ---
 
 
@@ -1609,12 +1619,26 @@ def _build_steps(
     for skill_meta in skill_registry:
         artifacts = artifacts_by_skill.get(skill_meta.name, [])
         qa_result = qa_results_by_skill.get(skill_meta.name)
+        # Shared-substrate files in the run-root (decisions.yaml,
+        # decisions.yml) get attributed to idea-to-pdd in the artifact
+        # manifest because idea-to-pdd is the first writer, but in
+        # practice many phases append to them. After a fork, these
+        # files are carried verbatim by `_RUN_ROOT_FILES_TO_COPY` even
+        # when the producing skill hasn't actually run in the new run —
+        # so their presence is not evidence the skill ran. Exclude them
+        # from the artifact-presence check so a freshly forked Phase-1
+        # run doesn't show idea-to-pdd as complete just because
+        # decisions.yaml got carried over.
+        load_bearing_artifacts = [
+            a for a in artifacts
+            if getattr(a, "name", None) not in _SHARED_SUBSTRATE_FILES
+        ]
         if qa_result is not None and qa_result.verdict == "fail":
             # QA failed irrecoverably; eval was skipped.
             # Surface as a distinct status so the UI can show the
             # auto-fix attempts + remaining failures.
             status = "qa-failed"
-        elif artifacts:
+        elif load_bearing_artifacts:
             status = "complete"
         else:
             status = "pending"
