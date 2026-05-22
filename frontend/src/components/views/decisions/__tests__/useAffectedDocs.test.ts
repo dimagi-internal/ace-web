@@ -4,16 +4,19 @@ import type { Decision } from "@/api/types.ws";
 import type { EditOp } from "../decisionsReducer";
 import { computeAffectedDocs } from "../useAffectedDocs";
 
-function dec(id: string, source: string): Decision {
+function dec(id: string, skill: string): Decision {
   return {
     id,
     phase: "design",
     phase_raw: "design",
-    skill: source,
+    skill,
     question: `q-${id}`,
     default: "v",
     options_considered: [],
-    source,
+    // `source` is a free-text description in the wire schema (not a skill
+    // slug). Set it to something obviously non-skill so a regression that
+    // mistakenly keys the crosswalk off `source` will return no products.
+    source: `description for ${id}`,
     status: "applied",
     notes: "",
   };

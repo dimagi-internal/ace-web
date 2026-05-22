@@ -12,7 +12,11 @@ interface Args {
 
 /** Pure: given edits, decisions, and the manifest map, return the unique
  * set of artifact paths the forked re-run will regenerate. Returns [] when
- * no edits, or when none of the edited rows' source skills are known. */
+ * no edits, or when none of the edited rows' producer skills are known.
+ *
+ * The crosswalk keys off `decision.skill` (the producer-skill slug, e.g.
+ * "idea-to-pdd"). Don't confuse with `decision.source`, which is a
+ * free-text human description of where the question came from. */
 export function computeAffectedDocs({ decisions, edits, skillProducts }: Args): string[] {
   if (edits.length === 0) return [];
 
@@ -22,7 +26,7 @@ export function computeAffectedDocs({ decisions, edits, skillProducts }: Args): 
   for (const edit of edits) {
     const decision = decisionById.get(edit.row_id);
     if (!decision) continue;
-    const paths = skillProducts[decision.source] ?? [];
+    const paths = skillProducts[decision.skill] ?? [];
     for (const p of paths) seen.add(p);
   }
 

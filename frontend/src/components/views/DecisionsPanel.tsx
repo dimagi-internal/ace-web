@@ -242,7 +242,7 @@ function DecisionRow({
                       key={opt}
                       className={cn(
                         "rounded border px-1.5 py-0.5",
-                        opt === decision.default
+                        opt === effectiveValue
                           ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
                           : "border-border bg-muted/30 text-muted-foreground",
                       )}
