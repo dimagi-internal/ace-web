@@ -272,7 +272,7 @@ export default function OppWorkbenchPage() {
       )}
       {view === "phase" && (
         <div className="min-h-0 flex-1">
-          <PhaseView snapshot={snapshot} oppSlug={slug} />
+          <PhaseView snapshot={snapshot} oppSlug={slug} workspaceSlug={workspaceSlug ?? ""} />
         </div>
       )}
       {view === "heatmap" && workspaceSlug && (

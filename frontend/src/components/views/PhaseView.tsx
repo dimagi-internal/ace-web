@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useReducer, useState } from "react";
 import { ChevronRight, GitFork, Workflow } from "lucide-react";
 
 import type { OppSnapshot, PhaseInfo, Step } from "@/api/types.ws";
@@ -6,11 +6,20 @@ import { ForkOppDialog } from "@/components/opps/ForkOppDialog";
 import { Button } from "@/components/ui/button";
 import { DecisionsPanel } from "@/components/views/DecisionsPanel";
 import { PhaseSkillRow } from "@/components/views/PhaseSkillRow";
+import {
+  decisionsReducer,
+  initialDecisionsEditState,
+} from "@/components/views/decisions/decisionsReducer";
+import { useAffectedDocs } from "@/components/views/decisions/useAffectedDocs";
+import { computeForkPoint } from "@/components/views/decisions/forkPoint";
+import { PendingEditsBar } from "@/components/views/decisions/PendingEditsBar";
+import { ForkWithEditsDialog } from "@/components/views/decisions/ForkWithEditsDialog";
 import { cn } from "@/lib/utils";
 
 interface Props {
   snapshot: OppSnapshot;
   oppSlug: string;
+  workspaceSlug: string;
 }
 
 /**
@@ -21,7 +30,7 @@ interface Props {
  * Pure snapshot-driven — no extra API calls. Replaces both the broken
  * React-Flow DAG and the earlier 8-card phase grid.
  */
-export function PhaseView({ snapshot, oppSlug }: Props) {
+export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
   const phases = useMemo(
     () => [...snapshot.phases].sort((a, b) => a.ordinal - b.ordinal),
     [snapshot.phases],
@@ -38,6 +47,41 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
     return m;
   }, [snapshot.current_run.steps]);
 
+  // A phase is "running" if any step in it has status "running". Editing
+  // decisions is locked while the phase is in progress — otherwise a
+  // mid-run write race could clobber freshly-produced decisions.
+  const isPhaseRunning = (phaseName: string) => {
+    const steps = stepsByPhase.get(phaseName) ?? [];
+    return steps.some((s) => s.status === "running");
+  };
+
+  // Local-only edit buffer. Nothing persists until the user opens
+  // ForkWithEditsDialog and confirms — the current run stays untouched.
+  const [editState, dispatchEdit] = useReducer(
+    decisionsReducer,
+    undefined,
+    initialDecisionsEditState,
+  );
+  const [forkDialogOpen, setForkDialogOpen] = useState(false);
+
+  const allDecisions = useMemo(
+    () => snapshot.current_run.decisions ?? [],
+    [snapshot.current_run.decisions],
+  );
+  const affectedDocs = useAffectedDocs({
+    decisions: allDecisions,
+    edits: editState.buffer,
+  });
+  const forkPoint = useMemo(
+    () =>
+      computeForkPoint({
+        decisions: allDecisions,
+        edits: editState.buffer,
+        phases: snapshot.phases,
+      }),
+    [allDecisions, editState.buffer, snapshot.phases],
+  );
+
   // No auto-select on mount: the user has to pick a phase. Earlier
   // versions auto-landed them on the most-urgent phase (qa-failed →
   // open-decision → first-with-steps), but that hijacked the entry
@@ -52,8 +96,13 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
     ? stepsByPhase.get(selectedPhase) ?? []
     : [];
 
+  const selectedPhaseRunning = selectedPhaseInfo
+    ? isPhaseRunning(selectedPhaseInfo.name)
+    : false;
+
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
       <aside className="w-[340px] shrink-0 overflow-y-auto border-r border-border bg-background p-4">
         <ul className="flex flex-col gap-2">
           {phases.map((phase) => {
@@ -97,8 +146,25 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
               <div className="flex-1 overflow-y-auto px-4 pb-6">
                 <DecisionsPanel
                   phase={selectedPhaseInfo.name}
-                  decisions={snapshot.current_run.decisions ?? []}
+                  decisions={allDecisions}
+                  editBuffer={selectedPhaseRunning ? undefined : editState.buffer}
+                  onEdit={
+                    selectedPhaseRunning
+                      ? undefined
+                      : (row_id, new_answer) =>
+                          dispatchEdit({ type: "APPLY_EDIT", row_id, new_answer })
+                  }
+                  onRevert={
+                    selectedPhaseRunning
+                      ? undefined
+                      : (row_id) => dispatchEdit({ type: "REVERT_EDIT", row_id })
+                  }
                 />
+                {selectedPhaseRunning && (
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    Editing locked while phase is in progress.
+                  </div>
+                )}
                 {selectedPhaseSteps.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
                     No steps recorded for this phase yet.
@@ -135,6 +201,25 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
           </div>
         )}
       </section>
+      </div>
+      <PendingEditsBar
+        count={editState.buffer.length}
+        onDiscardAll={() => dispatchEdit({ type: "DISCARD_ALL" })}
+        onForkAndRerun={() => setForkDialogOpen(true)}
+      />
+      {forkDialogOpen && forkPoint && snapshot.current_run.run_id && (
+        <ForkWithEditsDialog
+          open={forkDialogOpen}
+          onClose={() => setForkDialogOpen(false)}
+          workspaceSlug={workspaceSlug}
+          sourceSlug={oppSlug}
+          sourceRunId={snapshot.current_run.run_id}
+          initialForkAtPhase={forkPoint}
+          phases={snapshot.phases}
+          edits={editState.buffer}
+          affectedDocs={affectedDocs}
+        />
+      )}
     </div>
   );
 }
