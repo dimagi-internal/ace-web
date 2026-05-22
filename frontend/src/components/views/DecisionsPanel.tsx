@@ -311,7 +311,22 @@ function DecisionRow({
                   <textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Escape cancels without saving. Ctrl/Cmd+Enter saves
+                      // (plain Enter inserts a newline — answers are
+                      // free-form and may legitimately span lines).
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        setEditing(false);
+                      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        onEdit(decision.id, draft);
+                        setEditing(false);
+                      }
+                    }}
+                    autoFocus
                     rows={3}
+                    aria-label={`Edit answer for: ${decision.question}`}
                     className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
                   />
                   <div className="flex gap-2">

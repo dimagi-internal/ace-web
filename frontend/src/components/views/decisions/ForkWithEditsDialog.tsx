@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { forkOpp, type ForkOppBody } from "@/api/opps";
@@ -41,6 +41,20 @@ export function ForkWithEditsDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // Escape closes the modal (web/macOS convention). Skip while submitting
+  // — closing mid-flight would orphan the in-flight fork.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !submitting) {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open, submitting, onClose]);
 
   if (!open) return null;
 
