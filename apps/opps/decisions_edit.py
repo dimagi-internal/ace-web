@@ -13,7 +13,8 @@ after the trim step. Matches the override contract used by the
 from __future__ import annotations
 
 import copy
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 
 def apply_edits_to_decisions_data(

@@ -89,7 +89,9 @@ def test_data_mutation_isolation():
     """Caller's dict shouldn't be mutated."""
     data = {"decisions": [_row("a", "v1")]}
     snapshot = {"decisions": [dict(data["decisions"][0])]}
-    snapshot["decisions"][0]["options_considered"] = list(data["decisions"][0]["options_considered"])
+    snapshot["decisions"][0]["options_considered"] = list(
+        data["decisions"][0]["options_considered"]
+    )
 
     apply_edits_to_decisions_data(data, edits=[{"row_id": "a", "new_answer": "v2"}])
 
