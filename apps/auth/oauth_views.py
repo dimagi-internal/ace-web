@@ -262,6 +262,15 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
     # Log the user in via Django's standard auth
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
 
+    # Auto-join any workspaces that declared this user's email domain.
+    # Idempotent; safe to call on every login (not just first).
+    try:
+        from apps.workspaces.auto_join import ensure_auto_join_memberships
+
+        ensure_auto_join_memberships(user)
+    except Exception as exc:  # noqa: BLE001 — never block login on auto-join
+        logger.warning("auto_join failed for %s: %s", email, exc)
+
     # Clean up temporary session keys
     request.session.pop("oauth_state", None)
     request.session.pop("oauth_code_verifier", None)

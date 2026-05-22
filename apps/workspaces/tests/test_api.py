@@ -220,6 +220,63 @@ def test_patch_workspace_member_403(member_client, monkeypatch):
     assert resp.status_code == 403
 
 
+@pytest.mark.django_db
+def test_patch_workspace_sets_auto_join_domains(owner_client):
+    client, workspace, _ = owner_client
+    resp = client.patch(
+        f"/api/workspaces/{workspace.slug}",
+        {"auto_join_domains": ["DIMAGI.com", "@dimagi-ai.com", " example.org "]},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    # Normalized: lowercased, leading @ stripped, whitespace stripped, deduped
+    assert body["auto_join_domains"] == ["dimagi.com", "dimagi-ai.com", "example.org"]
+
+    workspace.refresh_from_db()
+    assert workspace.auto_join_domains == ["dimagi.com", "dimagi-ai.com", "example.org"]
+
+
+@pytest.mark.django_db
+def test_patch_workspace_can_clear_auto_join_domains(owner_client):
+    client, workspace, _ = owner_client
+    workspace.auto_join_domains = ["dimagi.com"]
+    workspace.save(update_fields=["auto_join_domains"])
+
+    resp = client.patch(
+        f"/api/workspaces/{workspace.slug}",
+        {"auto_join_domains": []},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["auto_join_domains"] == []
+    workspace.refresh_from_db()
+    assert workspace.auto_join_domains == []
+
+
+@pytest.mark.django_db
+def test_patch_workspace_rejects_invalid_domain(owner_client):
+    client, workspace, _ = owner_client
+    resp = client.patch(
+        f"/api/workspaces/{workspace.slug}",
+        {"auto_join_domains": ["not a domain!"]},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_patch_workspace_auto_join_member_403(member_client):
+    """Non-owner cannot edit auto_join_domains."""
+    client, workspace, _ = member_client
+    resp = client.patch(
+        f"/api/workspaces/{workspace.slug}",
+        {"auto_join_domains": ["dimagi.com"]},
+        content_type="application/json",
+    )
+    assert resp.status_code == 403
+
+
 # ---------------------------------------------------------------------------
 # GET /workspaces/{slug}/members — list members
 # ---------------------------------------------------------------------------

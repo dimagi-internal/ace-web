@@ -17,6 +17,9 @@ class WorkspaceOut(StrictModel, TimestampMixin):
     drive_root_folder_id: str
     role: WorkspaceRole  # the requesting user's role in this workspace
     member_count: int = Field(ge=0)
+    # Lowercased email domains (no leading "@") whose users are auto-added
+    # as Editor on login. Editable by Owners via PATCH /workspaces/{slug}.
+    auto_join_domains: list[str] = Field(default_factory=list)
 
 
 class WorkspaceMemberOut(StrictModel):
@@ -35,6 +38,7 @@ class WorkspaceCreateIn(StrictModel):
 class WorkspacePatchIn(StrictModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     drive_root_folder_id: str | None = Field(default=None, min_length=1)
+    auto_join_domains: list[str] | None = Field(default=None)
 
 
 class WorkspaceInviteIn(StrictModel):

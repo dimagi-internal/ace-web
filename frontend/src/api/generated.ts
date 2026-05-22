@@ -2740,6 +2740,8 @@ export interface components {
             readonly role: "owner" | "editor" | "viewer";
             /** Member Count */
             readonly member_count: number;
+            /** Auto Join Domains */
+            readonly auto_join_domains?: readonly string[];
         };
         /** WorkspaceCreateIn */
         readonly WorkspaceCreateIn: {
@@ -2756,6 +2758,8 @@ export interface components {
             readonly name?: string | null;
             /** Drive Root Folder Id */
             readonly drive_root_folder_id?: string | null;
+            /** Auto Join Domains */
+            readonly auto_join_domains?: readonly string[] | null;
         };
         /**
          * UserRefOut

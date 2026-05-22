@@ -1773,6 +1773,63 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/activity/runs": {
+      "get": {
+        "operationId": "apps_activity_api_workspace_activity",
+        "summary": "Workspace 'what's running' view",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "include_completed",
+            "schema": {
+              "default": true,
+              "title": "Include Completed",
+              "type": "boolean"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceActivityOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "activity"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/videos/templates": {
       "get": {
         "operationId": "apps_videos_api_list_video_templates",
@@ -1936,6 +1993,95 @@
           }
         ],
         "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/library/video/{subfolder}/{filename}/stream": {
+      "get": {
+        "operationId": "apps_videos_api_stream_library_video",
+        "summary": "Stream a video library clip's bytes (Range-aware)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "subfolder",
+            "schema": {
+              "title": "Subfolder",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Serve raw bytes for one video library entry \u2014 used by the clip\npicker so the user can scrub thumbnails for clips that aren't yet\nin the open program's manifest. Lazy-caches into\n``<videos_root>/assets/clip-cache/<gdriveId>.<ext>`` so repeat\nrequests skip the Drive round-trip. Mirrors the audio library\nstream path above.",
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/library/audio/{hash}/stream": {
+      "get": {
+        "operationId": "apps_videos_api_stream_library_audio",
+        "summary": "Stream the audio clip bytes (Range-aware)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "hash",
+            "schema": {
+              "title": "Hash",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Serve the raw MP3 bytes for one library audio entry.\n\nLazy-caches into the same on-disk audio cache the renderer uses\n(``<videos_root>/assets/audio/<hash>.mp3``) so repeat playback hits\nlocal disk. First playback fetches via the workspace's Drive SA.",
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
       }
     },
     "/api/w/{workspace_slug}/videos/programs": {
@@ -2802,6 +2948,64 @@
             "description": "OK"
           }
         },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/programs/{program_slug}/runs/{run_id}/qa-frame/{beat_id}": {
+      "get": {
+        "operationId": "apps_videos_api_serve_qa_frame",
+        "summary": "Serve the post-render QA preview PNG for a beat (or 404)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "program_slug",
+            "schema": {
+              "title": "Program Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "beat_id",
+            "schema": {
+              "title": "Beat Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Serve the per-beat preview PNG the QA probe writes after each\nrender (``programs/<slug>/runs/<run>/qa-frames/<beat>.png``). 404\nif the run hasn't been rendered yet or the beat isn't a known\ntemplate beat \u2014 callers should fall back to a static icon.\n\nBeat-id allowlist (``_QA_FRAME_BEATS``) blocks path traversal:\nonly canonical beat slugs render qa-frames, so unknown values\nreturn 404 without touching the filesystem.",
         "tags": [
           "videos"
         ],
@@ -3829,6 +4033,134 @@
         ]
       }
     },
+    "/api/mobile/clear-app-data": {
+      "post": {
+        "operationId": "apps_mobile_api_clear_app_data",
+        "summary": "Clear per-app data via pm clear",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearAppDataOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearAppDataIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/mobile/repair-driver": {
+      "post": {
+        "operationId": "apps_mobile_api_repair_driver",
+        "summary": "Clear wedged Maestro instrumentation (pm uninstall -k --user 0)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepairDriverOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/mobile/install-driver": {
+      "post": {
+        "operationId": "apps_mobile_api_install_driver",
+        "summary": "Idempotently install Maestro driver APKs on the AVD",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallDriverOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/mobile/register-test-user": {
+      "post": {
+        "operationId": "apps_mobile_api_register_test_user",
+        "summary": "Submit two-recipe Connect-id registration for async execution",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterTestUserAcceptedOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "mobile"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterTestUserIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/mobile/capture-ui-dump": {
       "post": {
         "operationId": "apps_mobile_api_capture_ui_dump",
@@ -4355,6 +4687,27 @@
             "description": "OK"
           }
         },
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auth/pat-to-session": {
+      "post": {
+        "operationId": "apps_auth_api_pat_to_session",
+        "summary": "Trade a Bearer PAT for a Django session cookie",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Set a session cookie for the Bearer-authenticated caller.\n\nBrowsers can't set custom headers on WebSocket handshakes, so\nPAT-only clients can't connect to Channels routes (the ASGI auth\nmiddleware only sees the cookie jar from a browser-driven WS). This\nendpoint bridges that gap: a scripted client mints a PAT, calls\n/pat-to-session once with the Bearer header, and the response sets\nthe same session cookie a regular OAuth login would have set. From\nthat point the client can hand the cookie to a browser context\n(Playwright, etc.) and full session-based auth \u2014 including\nWebSockets \u2014 Just Works.\n\nThe Bearer-token side of ``DjangoSessionAuth`` resolves the user\nbefore this view runs, so any valid PAT-bearer caller succeeds.",
         "tags": [
           "auth"
         ],
@@ -5570,6 +5923,150 @@
         "title": "ActivityFeedOut",
         "type": "object"
       },
+      "WorkspaceActivityOut": {
+        "additionalProperties": false,
+        "description": "Response wrapper for GET /api/w/{slug}/activity/runs.",
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceActivityRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "server_now": {
+            "title": "Server Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rows",
+          "server_now"
+        ],
+        "title": "WorkspaceActivityOut",
+        "type": "object"
+      },
+      "WorkspaceActivityRowOut": {
+        "additionalProperties": false,
+        "description": "One row in the 'what's running across the workspace' view.\n\nAll fields are observable facts (Drive content, ORM rows, derived\nURLs). NO inferred liveness claims \u2014 the caller renders timestamps\nand lets the user decide what's actually alive. See the design doc\n`docs/specs/2026-05-16-workspace-activity-view-design.md`.",
+        "properties": {
+          "opp_slug": {
+            "title": "Opp Slug",
+            "type": "string"
+          },
+          "opp_display_name": {
+            "title": "Opp Display Name",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
+          "current_phase_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Phase Name"
+          },
+          "current_phase_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Phase Display"
+          },
+          "current_step_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step Name"
+          },
+          "current_step_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Step Display"
+          },
+          "lifecycle_status": {
+            "title": "Lifecycle Status",
+            "type": "string"
+          },
+          "last_actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Actor"
+          },
+          "source_hint": {
+            "enum": [
+              "ace-web",
+              "drive-only"
+            ],
+            "title": "Source Hint",
+            "type": "string"
+          },
+          "source_actor_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Actor Email"
+          },
+          "phase_url": {
+            "title": "Phase Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "opp_slug",
+          "opp_display_name",
+          "run_id",
+          "lifecycle_status",
+          "source_hint",
+          "phase_url"
+        ],
+        "title": "WorkspaceActivityRowOut",
+        "type": "object"
+      },
       "TemplateMetaOut": {
         "additionalProperties": false,
         "properties": {
@@ -6146,6 +6643,39 @@
               }
             ],
             "title": "Spec"
+          },
+          "output_rendered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Rendered At"
+          },
+          "spec_modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec Modified At"
+          },
+          "output_drive_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Drive Url"
           }
         },
         "required": [
@@ -6438,7 +6968,9 @@
               "set-clip-trim",
               "set-clip-asset",
               "set-narration",
-              "set-stat"
+              "set-stat",
+              "set-global-template",
+              "set-program-name"
             ],
             "title": "Op",
             "type": "string"
@@ -6501,6 +7033,17 @@
               }
             ],
             "title": "Alias"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref"
           },
           "beatId": {
             "anyOf": [
@@ -6567,6 +7110,42 @@
               }
             ],
             "title": "Source"
+          },
+          "tagline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagline"
+          },
+          "cycle_steps": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cycle Steps"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           }
         },
         "required": [
@@ -6705,6 +7284,13 @@
             "minimum": 0,
             "title": "Member Count",
             "type": "integer"
+          },
+          "auto_join_domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Auto Join Domains",
+            "type": "array"
           }
         },
         "required": [
@@ -6776,6 +7362,20 @@
               }
             ],
             "title": "Drive Root Folder Id"
+          },
+          "auto_join_domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Join Domains"
           }
         },
         "title": "WorkspacePatchIn",
@@ -7603,7 +8203,7 @@
       },
       "RunRecipeIn": {
         "additionalProperties": false,
-        "description": "POST /api/mobile/run-recipe \u2014 kick off a Maestro recipe.\n\n``recipe_yaml`` is the YAML string; ``env`` overrides env vars inside\nthe recipe; ``screenshot_prefix`` sets the S3 key namespace;\n``state`` names the baked AVD snapshot to ensure is loaded before\nthe recipe runs.",
+        "description": "POST /api/mobile/run-recipe \u2014 kick off a Maestro recipe.\n\n``recipe_yaml`` is the YAML string; ``env`` overrides env vars inside\nthe recipe; ``screenshot_prefix`` sets the S3 key namespace;\n``state`` names the baked AVD snapshot to ensure is loaded before\nthe recipe runs.\n\n``palette_tar_b64`` ships sibling palette recipes (the files referenced\nby ``runFlow: file: \"./...\"`` in the top recipe). Base64-encoded\n``tar.gz``. When present, the controller extracts it into the run\ndirectory before invoking Maestro \u2014 keeps local + cloud at parity\nsince the local path resolves the palette into a temp dir and runs\nMaestro from there. See ``mcp/mobile/recipe-resolver.ts`` \u00a7\nprepareRecipeForMaestro for the producer.",
         "properties": {
           "recipe_yaml": {
             "title": "Recipe Yaml",
@@ -7638,6 +8238,17 @@
               }
             ],
             "title": "State"
+          },
+          "palette_tar_b64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Palette Tar B64"
           }
         },
         "required": [
@@ -7720,6 +8331,151 @@
           "started_at"
         ],
         "title": "JobOut",
+        "type": "object"
+      },
+      "ClearAppDataOut": {
+        "additionalProperties": false,
+        "description": "Response from /api/mobile/clear-app-data.",
+        "properties": {
+          "package": {
+            "title": "Package",
+            "type": "string"
+          },
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "package",
+          "cleared"
+        ],
+        "title": "ClearAppDataOut",
+        "type": "object"
+      },
+      "ClearAppDataIn": {
+        "additionalProperties": false,
+        "description": "POST /api/mobile/clear-app-data body.\n\n``package`` defaults to ``org.commcare.dalvik`` \u2014 the only app the\ncloud heal flow needs to wipe between dispatches. Constrained to\nthe Android package-name grammar so the controller can drop it\ninto a shell command without further escaping concerns.",
+        "properties": {
+          "package": {
+            "default": "org.commcare.dalvik",
+            "title": "Package",
+            "type": "string"
+          }
+        },
+        "title": "ClearAppDataIn",
+        "type": "object"
+      },
+      "RepairDriverOut": {
+        "additionalProperties": false,
+        "description": "Response from /api/mobile/repair-driver.\n\n``uninstalled_packages`` is the subset of\n``[dev.mobile.maestro, dev.mobile.maestro.test]`` that was actually\npresent + removed. Empty list means the wedge cleared with no\nwork (neither was installed), which is a no-op success.",
+        "properties": {
+          "uninstalled_packages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Uninstalled Packages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "uninstalled_packages"
+        ],
+        "title": "RepairDriverOut",
+        "type": "object"
+      },
+      "InstallDriverOut": {
+        "additionalProperties": false,
+        "description": "Response from /api/mobile/install-driver.\n\n``actions`` is a short audit trail mirroring local\n``MaestroBackend.ensureDriverInstalled``: tokens like\n``already-installed`` (warm path, ~150ms), ``pm-ready``,\n``extracted``, ``installed:app``, ``installed:test``,\n``verified``. Lets the caller log whether the call did the full\nextract+install or short-circuited on the warm path.",
+        "properties": {
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "actions"
+        ],
+        "title": "InstallDriverOut",
+        "type": "object"
+      },
+      "RegisterTestUserAcceptedOut": {
+        "additionalProperties": false,
+        "description": "202 response \u2014 registration accepted, poll jobs/<job_id> for result.",
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "running",
+            "default": "running",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "RegisterTestUserAcceptedOut",
+        "type": "object"
+      },
+      "RegisterTestUserIn": {
+        "additionalProperties": false,
+        "description": "POST /api/mobile/register-test-user body.\n\nMirrors the local-side ``MobileClient.registerTestUser`` call shape.\nThe controller drives the two register recipes \u2014 first\n``to_otp_recipe`` (launch \u2192 phone entry \u2192 Continue) with GMS enabled,\nthen ``from_otp_recipe`` (snackbar OK \u2192 App Lock + PIN \u2192 name \u2192\nbackup code \u2192 photo capture) with GMS disabled so the in-app\nface-capture step falls back to ManualMode.\n\nRecipes ship as a base64-encoded ``tar.gz`` of the resolved palette\nvia ``palette_tar_b64`` \u2014 same producer as ``RunRecipeIn`` (see\n``mcp/mobile/recipe-resolver.ts``). ``to_otp_recipe`` and\n``from_otp_recipe`` name the two top recipes within the palette by\nbasename \u2014 must be plain ``[A-Za-z0-9._-]+`` (no path traversal).",
+        "properties": {
+          "phone": {
+            "title": "Phone",
+            "type": "string"
+          },
+          "phone_local": {
+            "title": "Phone Local",
+            "type": "string"
+          },
+          "country_code": {
+            "title": "Country Code",
+            "type": "string"
+          },
+          "pin": {
+            "title": "Pin",
+            "type": "string"
+          },
+          "backup_code": {
+            "title": "Backup Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "palette_tar_b64": {
+            "title": "Palette Tar B64",
+            "type": "string"
+          },
+          "to_otp_recipe": {
+            "title": "To Otp Recipe",
+            "type": "string"
+          },
+          "from_otp_recipe": {
+            "title": "From Otp Recipe",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone",
+          "phone_local",
+          "country_code",
+          "pin",
+          "backup_code",
+          "name",
+          "palette_tar_b64",
+          "to_otp_recipe",
+          "from_otp_recipe"
+        ],
+        "title": "RegisterTestUserIn",
         "type": "object"
       },
       "LaunchScriptPatchOut": {

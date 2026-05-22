@@ -85,4 +85,11 @@ def e2e_login(request: HttpRequest) -> HttpResponse:
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
     logger.info("e2e_login: authenticated %s", email)
 
+    try:
+        from apps.workspaces.auto_join import ensure_auto_join_memberships
+
+        ensure_auto_join_memberships(user)
+    except Exception as exc:  # noqa: BLE001 — never block login on auto-join
+        logger.warning("auto_join failed for %s: %s", email, exc)
+
     return JsonResponse({"user_id": user.pk, "email": user.email})

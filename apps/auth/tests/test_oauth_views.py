@@ -114,6 +114,46 @@ def test_callback_rejects_email_outside_allowlist_when_set(client, settings):
     assert not User.objects.filter(email="ext@example.com").exists()
 
 
+def test_callback_auto_joins_workspace_on_domain_match(client, settings, db):
+    """When a workspace declares the user's domain in auto_join_domains,
+    the OAuth callback adds them as Editor."""
+    from apps.workspaces.models import Workspace, WorkspaceMembership
+
+    settings.ACE_ALLOWED_EMAIL_DOMAINS = []
+
+    founder = User.objects.create_user(email="founder@dimagi.com")
+    ws = Workspace.objects.create(
+        slug="dimagi-team",
+        display_name="Dimagi Team",
+        drive_root_folder_id="folder-aj-oauth",
+        created_by=founder,
+        auto_join_domains=["dimagi.com"],
+    )
+    WorkspaceMembership.objects.create(workspace=ws, user=founder, role="owner")
+
+    session = client.session
+    session["oauth_state"] = "s123"
+    session["oauth_code_verifier"] = "v123"
+    session["oauth_next"] = "/"
+    session.save()
+
+    token_json = {"access_token": "tok", "expires_in": 3600}
+    profile = {"id": 99, "username": "newbie", "email": ""}
+    userinfo = {"email": "newbie@dimagi.com"}
+
+    with patch("apps.auth.oauth_views.httpx.post") as mock_post, \
+         patch("apps.auth.oauth_views.introspect_token", return_value=profile), \
+         patch("apps.auth.oauth_views.fetch_userinfo", return_value=userinfo):
+        mock_post.return_value.raise_for_status = lambda: None
+        mock_post.return_value.json.return_value = token_json
+        resp = client.get("/auth/callback/?state=s123&code=authcode")
+
+    assert resp.status_code == 302
+    user = User.objects.get(email="newbie@dimagi.com")
+    m = WorkspaceMembership.objects.get(workspace=ws, user=user)
+    assert m.role == "editor"
+
+
 def test_callback_allows_any_email_when_allowlist_empty(client, settings):
     """Default behavior post-multi-tenancy: empty ACE_ALLOWED_EMAIL_DOMAINS
     means any Connect-authenticated email signs in. Workspace membership
