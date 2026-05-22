@@ -90,42 +90,46 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
 
   const selectedPhaseInfo = selectedPhase
-    ? phases.find((p) => p.name === selectedPhase) ?? null
+    ? (phases.find((p) => p.name === selectedPhase) ?? null)
     : null;
   const selectedPhaseSteps = selectedPhase
-    ? stepsByPhase.get(selectedPhase) ?? []
+    ? (stepsByPhase.get(selectedPhase) ?? [])
     : [];
 
   const selectedPhaseRunning = selectedPhaseInfo
     ? isPhaseRunning(selectedPhaseInfo.name)
     : false;
+  // Editing is disabled while the phase is running (mid-run write race)
+  // or when we don't have a workspaceSlug to scope the fork POST to —
+  // an empty slug would silently 404 against `/api/w//opps/...`.
+  const editingDisabled = selectedPhaseRunning || !workspaceSlug;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex flex-1 overflow-hidden">
-      <aside className="w-[340px] shrink-0 overflow-y-auto border-r border-border bg-background p-4">
-        <ul className="flex flex-col gap-2">
-          {phases.map((phase) => {
-            const phaseDecisions = (snapshot.current_run.decisions ?? []).filter(
-              (d) => d.phase === phase.name,
-            );
-            return (
-              <li key={phase.name}>
-                <PhaseTile
-                  phase={phase}
-                  steps={stepsByPhase.get(phase.name) ?? []}
-                  decisions={phaseDecisions}
-                  isSelected={selectedPhase === phase.name}
-                  onClick={() => setSelectedPhase(phase.name)}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      </aside>
+        <aside className="w-[340px] shrink-0 overflow-y-auto border-r border-border bg-background p-4">
+          <ul className="flex flex-col gap-2">
+            {phases.map((phase) => {
+              const phaseDecisions = (
+                snapshot.current_run.decisions ?? []
+              ).filter((d) => d.phase === phase.name);
+              return (
+                <li key={phase.name}>
+                  <PhaseTile
+                    phase={phase}
+                    steps={stepsByPhase.get(phase.name) ?? []}
+                    decisions={phaseDecisions}
+                    isSelected={selectedPhase === phase.name}
+                    onClick={() => setSelectedPhase(phase.name)}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        </aside>
 
-      <section className="relative flex-1 overflow-hidden">
-        {selectedPhaseInfo ? (
+        <section className="relative flex-1 overflow-hidden">
+          {selectedPhaseInfo ? (
             <div
               key={selectedPhaseInfo.name}
               className="flex h-full animate-in fade-in slide-in-from-right-2 flex-col duration-200"
@@ -147,17 +151,22 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
                 <DecisionsPanel
                   phase={selectedPhaseInfo.name}
                   decisions={allDecisions}
-                  editBuffer={selectedPhaseRunning ? undefined : editState.buffer}
+                  editBuffer={editingDisabled ? undefined : editState.buffer}
                   onEdit={
-                    selectedPhaseRunning
+                    editingDisabled
                       ? undefined
                       : (row_id, new_answer) =>
-                          dispatchEdit({ type: "APPLY_EDIT", row_id, new_answer })
+                          dispatchEdit({
+                            type: "APPLY_EDIT",
+                            row_id,
+                            new_answer,
+                          })
                   }
                   onRevert={
-                    selectedPhaseRunning
+                    editingDisabled
                       ? undefined
-                      : (row_id) => dispatchEdit({ type: "REVERT_EDIT", row_id })
+                      : (row_id) =>
+                          dispatchEdit({ type: "REVERT_EDIT", row_id })
                   }
                 />
                 {selectedPhaseRunning && (
@@ -195,31 +204,34 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
                 )}
               </div>
             </div>
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Select a phase to see its skills.
-          </div>
-        )}
-      </section>
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              Select a phase to see its skills.
+            </div>
+          )}
+        </section>
       </div>
       <PendingEditsBar
         count={editState.buffer.length}
         onDiscardAll={() => dispatchEdit({ type: "DISCARD_ALL" })}
         onForkAndRerun={() => setForkDialogOpen(true)}
       />
-      {forkDialogOpen && forkPoint && snapshot.current_run.run_id && (
-        <ForkWithEditsDialog
-          open={forkDialogOpen}
-          onClose={() => setForkDialogOpen(false)}
-          workspaceSlug={workspaceSlug}
-          sourceSlug={oppSlug}
-          sourceRunId={snapshot.current_run.run_id}
-          initialForkAtPhase={forkPoint}
-          phases={snapshot.phases}
-          edits={editState.buffer}
-          affectedDocs={affectedDocs}
-        />
-      )}
+      {forkDialogOpen &&
+        forkPoint &&
+        snapshot.current_run.run_id &&
+        workspaceSlug && (
+          <ForkWithEditsDialog
+            open={forkDialogOpen}
+            onClose={() => setForkDialogOpen(false)}
+            workspaceSlug={workspaceSlug}
+            sourceSlug={oppSlug}
+            sourceRunId={snapshot.current_run.run_id}
+            initialForkAtPhase={forkPoint}
+            phases={snapshot.phases}
+            edits={editState.buffer}
+            affectedDocs={affectedDocs}
+          />
+        )}
     </div>
   );
 }
@@ -232,7 +244,13 @@ interface PhaseTileProps {
   onClick: () => void;
 }
 
-function PhaseTile({ phase, steps, decisions, isSelected, onClick }: PhaseTileProps) {
+function PhaseTile({
+  phase,
+  steps,
+  decisions,
+  isSelected,
+  onClick,
+}: PhaseTileProps) {
   const total = steps.length;
   const complete = steps.filter((s) => s.status === "complete").length;
   const qaFailed = steps.filter((s) => s.status === "qa-failed").length;
@@ -241,7 +259,9 @@ function PhaseTile({ phase, steps, decisions, isSelected, onClick }: PhaseTilePr
     .map((s) => s.judge?.score_pct ?? s.judge?.score ?? null)
     .filter((v): v is number => v !== null);
   const meanScore =
-    judged.length > 0 ? judged.reduce((a, b) => a + b, 0) / judged.length : null;
+    judged.length > 0
+      ? judged.reduce((a, b) => a + b, 0) / judged.length
+      : null;
   const completionPct = total === 0 ? 0 : (complete / total) * 100;
 
   return (
@@ -286,7 +306,10 @@ function PhaseTile({ phase, steps, decisions, isSelected, onClick }: PhaseTilePr
           )}
         />
       </div>
-      <div className="truncate text-sm font-semibold text-foreground" title={phase.display_name}>
+      <div
+        className="truncate text-sm font-semibold text-foreground"
+        title={phase.display_name}
+      >
         {phase.display_name}
       </div>
       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
@@ -336,7 +359,9 @@ function PhasePanelHeader({
     .map((s) => s.judge?.score_pct ?? s.judge?.score ?? null)
     .filter((v): v is number => v !== null);
   const meanScore =
-    judged.length > 0 ? judged.reduce((a, b) => a + b, 0) / judged.length : null;
+    judged.length > 0
+      ? judged.reduce((a, b) => a + b, 0) / judged.length
+      : null;
 
   return (
     <header className="shrink-0 border-b border-border bg-card/30 px-6 py-4">
@@ -365,12 +390,15 @@ function PhasePanelHeader({
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
         <span>
-          <span className="font-medium tabular-nums text-foreground">{complete}</span>
+          <span className="font-medium tabular-nums text-foreground">
+            {complete}
+          </span>
           <span className="text-muted-foreground">/{total} done</span>
         </span>
         {qaFailed > 0 && (
           <span className="text-rose-500">
-            <span className="font-medium tabular-nums">{qaFailed}</span> qa-failed
+            <span className="font-medium tabular-nums">{qaFailed}</span>{" "}
+            qa-failed
           </span>
         )}
         {failed > 0 && (
