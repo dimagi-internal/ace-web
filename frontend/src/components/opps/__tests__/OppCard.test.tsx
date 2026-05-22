@@ -45,11 +45,13 @@ function renderCard(overrides: Partial<OppCardData> = {}) {
 }
 
 describe("OppCardItem accessibility", () => {
-  it("wrapper exposes the opp display name as its accessible name without leaking nested button labels", () => {
+  it("wrapper exposes the slug as the primary accessible name with display_name in parens (distinct), without leaking nested button labels", () => {
     renderCard();
-    // The card-level button should be reachable by its display_name and
-    // not have the slug repeated 3+ times like the pre-fix bug.
-    const card = screen.getByRole("button", { name: "Malaria ITN App" });
+    // Slug is the canonical identifier; the accessible name leads with
+    // it and appends ``(display_name)`` only when display_name differs.
+    const card = screen.getByRole("button", {
+      name: "malaria-itn-app (Malaria ITN App)",
+    });
     expect(card).toBeInTheDocument();
 
     // Regression guard: the wrapper's accessible name must not contain
@@ -59,7 +61,7 @@ describe("OppCardItem accessibility", () => {
     expect(slugOccurrences).toBeLessThanOrEqual(1);
   });
 
-  it("falls back to slug when display_name is empty", () => {
+  it("uses the bare slug as the accessible name when display_name is empty", () => {
     renderCard({ display_name: "" });
     expect(screen.getByRole("button", { name: "malaria-itn-app" })).toBeInTheDocument();
   });
@@ -88,6 +90,49 @@ describe("OppCardItem accessibility", () => {
     expect(cmp).not.toHaveAttribute("title");
     const chats = screen.getByRole("button", { name: "Show chats linked to malaria-itn-app" });
     expect(chats).not.toHaveAttribute("title");
+  });
+});
+
+/**
+ * Regression for #526.
+ *
+ * The opp card used to render ``display_name OR slug`` as the title with
+ * the slug as a smaller subtitle. That meant:
+ *   - When display_name differed, side-by-side cards had inconsistent
+ *     "what's the canonical name?" stories.
+ *   - When display_name == slug, the subtitle duplicated the title
+ *     verbatim ("malaria-itn-app" / "malaria-itn-app").
+ * The slug is the canonical identifier (URLs, logs, CLI). Always render
+ * it as the title; render display_name as a smaller secondary line only
+ * when it's set AND distinct from the slug.
+ */
+describe("OppCardItem slug-as-title (#526)", () => {
+  it("renders the slug as the title and display_name as a secondary line when display_name differs", () => {
+    renderCard({ slug: "malaria-itn-fgd", display_name: "Malaria ITN FGD" });
+    // The <h2> title is the slug.
+    const title = screen.getByRole("heading", { level: 2 });
+    expect(title.textContent).toBe("malaria-itn-fgd");
+    // The display_name shows up as a smaller secondary line.
+    expect(screen.getByText("Malaria ITN FGD")).toBeInTheDocument();
+  });
+
+  it("does NOT render the secondary line when display_name == slug (no redundancy)", () => {
+    renderCard({ slug: "malaria-itn-app", display_name: "malaria-itn-app" });
+    const title = screen.getByRole("heading", { level: 2 });
+    expect(title.textContent).toBe("malaria-itn-app");
+    // Only one DOM node should contain the slug-string within the card's
+    // title block — the <h2>. The pre-fix duplicate subtitle is gone.
+    const matches = screen.getAllByText("malaria-itn-app");
+    expect(matches).toHaveLength(1);
+  });
+
+  it("renders only the slug as the title when display_name is empty", () => {
+    renderCard({ slug: "leep", display_name: "" });
+    const title = screen.getByRole("heading", { level: 2 });
+    expect(title.textContent).toBe("leep");
+    // No secondary line at all.
+    const matches = screen.getAllByText("leep");
+    expect(matches).toHaveLength(1);
   });
 });
 
