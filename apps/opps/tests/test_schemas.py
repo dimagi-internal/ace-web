@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from apps.opps.schemas import (  # noqa: F401 — import-existence smoke test
     ArtifactOut,
@@ -149,10 +150,10 @@ def test_opp_fork_in_accepts_edits_list():
 
 
 def test_opp_fork_edit_rejects_empty_row_id():
-    with pytest.raises(Exception):  # pydantic ValidationError
+    with pytest.raises(ValidationError):
         OppForkEditIn.model_validate({"row_id": "", "new_answer": "x"})
 
 
 def test_opp_fork_edit_rejects_missing_new_answer():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         OppForkEditIn.model_validate({"row_id": "abc"})
