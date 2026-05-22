@@ -272,10 +272,16 @@ export async function deleteOppRun(
   }
 }
 
+export interface ForkOppBody {
+  fork_at_phase: string;
+  source_run_id?: string | null;
+  edits?: { row_id: string; new_answer: string }[];
+}
+
 export async function forkOpp(
   workspaceSlug: string,
   slug: string,
-  payload: { fork_at_phase: string; source_run_id?: string | null },
+  payload: ForkOppBody,
 ): Promise<{ slug: string; run_id: string; working_session_slug: string }> {
   const { data, response } = await apiClient.POST("/api/w/{workspace_slug}/opps/{slug}/fork", {
     params: { path: { workspace_slug: workspaceSlug, slug } },
