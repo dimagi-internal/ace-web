@@ -40,6 +40,7 @@ from dataclasses import dataclass
 
 import yaml
 
+from apps.opps.decisions_edit import apply_edits_to_decisions_data
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.sessions.models import Message, Session
 
@@ -90,6 +91,7 @@ def fork_opp(
     source_run_id: str | None = None,
     workspace=None,
     progress_cb: ProgressCb | None = None,
+    edits: list[dict[str, str]] | None = None,
     now: _dt.datetime | None = None,
 ) -> ForkOppResult:
     """Fork the source opp's named run (or its latest if ``source_run_id``
@@ -197,7 +199,9 @@ def fork_opp(
     # one — otherwise nothing to trim).
     if decisions_dest_id is not None:
         trimmed = _rewrite_decisions_yaml(
-            decisions_source_body or "", fork_ordinal=fork_ordinal,
+            decisions_source_body or "",
+            fork_ordinal=fork_ordinal,
+            edits=edits,
         )
         drive.update_file(decisions_dest_id, trimmed, "text/yaml")
 
@@ -531,15 +535,27 @@ def _build_run_state_yaml(
     return yaml.safe_dump(data, sort_keys=False)
 
 
-def _rewrite_decisions_yaml(original: str, *, fork_ordinal: int | None) -> str:
-    """Trim ``decisions.yaml`` to rows from phases strictly before the fork.
+def _rewrite_decisions_yaml(
+    original: str,
+    *,
+    fork_ordinal: int | None,
+    edits: list[dict[str, str]] | None = None,
+) -> str:
+    """Trim ``decisions.yaml`` to rows from phases strictly before the fork,
+    then apply any human answer edits.
 
     Each row carries its own ``phase`` tag (agent-declared phase name).
     Rows whose phase ordinal >= ``fork_ordinal`` are dropped. Rows whose
     phase isn't recognized stay (safer than silently dropping content
     when the registry / decisions file disagree).
+
+    If ``edits`` is provided, each edit is applied to the trimmed rows
+    via :func:`apps.opps.decisions_edit.apply_edits_to_decisions_data`.
+    Edits whose ``row_id`` doesn't match any surviving row are silently
+    ignored — either the row was trimmed (the user edited a row from a
+    phase being re-run from scratch) or the id is bogus.
     """
-    if fork_ordinal is None:
+    if fork_ordinal is None and not edits:
         return original
     try:
         data = yaml.safe_load(original) or {}
@@ -552,18 +568,22 @@ def _rewrite_decisions_yaml(original: str, *, fork_ordinal: int | None) -> str:
     if not isinstance(rows, list):
         return original
 
-    kept: list = []
-    for row in rows:
-        if not isinstance(row, dict):
-            kept.append(row)
-            continue
-        phase_name = str(row.get("phase") or "").strip()
-        if not phase_name:
-            kept.append(row)
-            continue
-        ordinal = _resolve_phase_ordinal(phase_name)
-        if ordinal is None or ordinal < fork_ordinal:
-            kept.append(row)
+    if fork_ordinal is not None:
+        kept: list = []
+        for row in rows:
+            if not isinstance(row, dict):
+                kept.append(row)
+                continue
+            phase_name = str(row.get("phase") or "").strip()
+            if not phase_name:
+                kept.append(row)
+                continue
+            ordinal = _resolve_phase_ordinal(phase_name)
+            if ordinal is None or ordinal < fork_ordinal:
+                kept.append(row)
+        data["decisions"] = kept
 
-    data["decisions"] = kept
+    if edits:
+        data = apply_edits_to_decisions_data(data, edits=edits)
+
     return yaml.safe_dump(data, sort_keys=False)

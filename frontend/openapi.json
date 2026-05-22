@@ -4500,6 +4500,27 @@
         ]
       }
     },
+    "/api/system/skill-products": {
+      "get": {
+        "operationId": "apps_system_api_skill_products",
+        "summary": "Skill -> product paths map",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Returns {skill_slug: [artifact_path, ...]} derived from the ACE plugin's artifact-manifest.ts. Used by the in-app decisions editor to show which files a forked re-run will regenerate.",
+        "tags": [
+          "system"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/system/cli-diag": {
       "post": {
         "operationId": "apps_system_api_cli_diag",
@@ -5341,6 +5362,27 @@
         "title": "VerdictOut",
         "type": "object"
       },
+      "OppForkEditIn": {
+        "additionalProperties": false,
+        "description": "A single answer override to apply during fork.\n\nThe forker finds the row by ``row_id`` in the source run's\n``decisions.yaml``, sets its ``default`` to ``new_answer``, and\nmarks ``status: overridden`` \u2014 matching the contract that\n``decisions-sync`` already uses, so downstream phases on re-run\nhonor the human's value verbatim.",
+        "properties": {
+          "row_id": {
+            "minLength": 1,
+            "title": "Row Id",
+            "type": "string"
+          },
+          "new_answer": {
+            "title": "New Answer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "row_id",
+          "new_answer"
+        ],
+        "title": "OppForkEditIn",
+        "type": "object"
+      },
       "OppForkIn": {
         "additionalProperties": false,
         "properties": {
@@ -5359,6 +5401,13 @@
               }
             ],
             "title": "Source Run Id"
+          },
+          "edits": {
+            "items": {
+              "$ref": "#/components/schemas/OppForkEditIn"
+            },
+            "title": "Edits",
+            "type": "array"
           }
         },
         "required": [

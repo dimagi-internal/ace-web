@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { ChevronRight, GitFork, Workflow } from "lucide-react";
 
 import type { OppSnapshot, PhaseInfo, Step } from "@/api/types.ws";
@@ -6,11 +6,20 @@ import { ForkOppDialog } from "@/components/opps/ForkOppDialog";
 import { Button } from "@/components/ui/button";
 import { DecisionsPanel } from "@/components/views/DecisionsPanel";
 import { PhaseSkillRow } from "@/components/views/PhaseSkillRow";
+import {
+  decisionsReducer,
+  initialDecisionsEditState,
+} from "@/components/views/decisions/decisionsReducer";
+import { useAffectedDocs } from "@/components/views/decisions/useAffectedDocs";
+import { computeForkPoint } from "@/components/views/decisions/forkPoint";
+import { PendingEditsBar } from "@/components/views/decisions/PendingEditsBar";
+import { ForkWithEditsDialog } from "@/components/views/decisions/ForkWithEditsDialog";
 import { cn } from "@/lib/utils";
 
 interface Props {
   snapshot: OppSnapshot;
   oppSlug: string;
+  workspaceSlug: string;
 }
 
 /**
@@ -21,7 +30,7 @@ interface Props {
  * Pure snapshot-driven — no extra API calls. Replaces both the broken
  * React-Flow DAG and the earlier 8-card phase grid.
  */
-export function PhaseView({ snapshot, oppSlug }: Props) {
+export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
   const phases = useMemo(
     () => [...snapshot.phases].sort((a, b) => a.ordinal - b.ordinal),
     [snapshot.phases],
@@ -38,6 +47,64 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
     return m;
   }, [snapshot.current_run.steps]);
 
+  // A phase is "running" if any step in it has status "running". Editing
+  // decisions is locked while the phase is in progress — otherwise a
+  // mid-run write race could clobber freshly-produced decisions.
+  const isPhaseRunning = (phaseName: string) => {
+    const steps = stepsByPhase.get(phaseName) ?? [];
+    return steps.some((s) => s.status === "running");
+  };
+
+  // Local-only edit buffer. Nothing persists until the user opens
+  // ForkWithEditsDialog and confirms — the current run stays untouched.
+  const [editState, dispatchEdit] = useReducer(
+    decisionsReducer,
+    undefined,
+    initialDecisionsEditState,
+  );
+  const [forkDialogOpen, setForkDialogOpen] = useState(false);
+
+  const allDecisions = useMemo(
+    () => snapshot.current_run.decisions ?? [],
+    [snapshot.current_run.decisions],
+  );
+  const affectedDocs = useAffectedDocs({
+    decisions: allDecisions,
+    edits: editState.buffer,
+  });
+  const forkPoint = useMemo(
+    () =>
+      computeForkPoint({
+        decisions: allDecisions,
+        edits: editState.buffer,
+        phases: snapshot.phases,
+      }),
+    [allDecisions, editState.buffer, snapshot.phases],
+  );
+
+  // Warn before a tab close / reload eats pending edits. The browser
+  // shows its generic confirmation prompt — the returned string isn't
+  // surfaced in modern browsers but `event.returnValue` is the contract.
+  useEffect(() => {
+    if (editState.buffer.length === 0) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [editState.buffer.length]);
+
+  // Close the fork dialog if the buffer empties out from under it
+  // (e.g. user clicked Discard all from a different code path). The
+  // dialog's render conditional already hides it, but this clears the
+  // open-state flag so reopening behaves correctly.
+  useEffect(() => {
+    if (editState.buffer.length === 0 && forkDialogOpen) {
+      setForkDialogOpen(false);
+    }
+  }, [editState.buffer.length, forkDialogOpen]);
+
   // No auto-select on mount: the user has to pick a phase. Earlier
   // versions auto-landed them on the most-urgent phase (qa-failed →
   // open-decision → first-with-steps), but that hijacked the entry
@@ -46,37 +113,46 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
 
   const selectedPhaseInfo = selectedPhase
-    ? phases.find((p) => p.name === selectedPhase) ?? null
+    ? (phases.find((p) => p.name === selectedPhase) ?? null)
     : null;
   const selectedPhaseSteps = selectedPhase
-    ? stepsByPhase.get(selectedPhase) ?? []
+    ? (stepsByPhase.get(selectedPhase) ?? [])
     : [];
 
-  return (
-    <div className="flex h-full overflow-hidden">
-      <aside className="w-[340px] shrink-0 overflow-y-auto border-r border-border bg-background p-4">
-        <ul className="flex flex-col gap-2">
-          {phases.map((phase) => {
-            const phaseDecisions = (snapshot.current_run.decisions ?? []).filter(
-              (d) => d.phase === phase.name,
-            );
-            return (
-              <li key={phase.name}>
-                <PhaseTile
-                  phase={phase}
-                  steps={stepsByPhase.get(phase.name) ?? []}
-                  decisions={phaseDecisions}
-                  isSelected={selectedPhase === phase.name}
-                  onClick={() => setSelectedPhase(phase.name)}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      </aside>
+  const selectedPhaseRunning = selectedPhaseInfo
+    ? isPhaseRunning(selectedPhaseInfo.name)
+    : false;
+  // Editing is disabled while the phase is running (mid-run write race)
+  // or when we don't have a workspaceSlug to scope the fork POST to —
+  // an empty slug would silently 404 against `/api/w//opps/...`.
+  const editingDisabled = selectedPhaseRunning || !workspaceSlug;
 
-      <section className="relative flex-1 overflow-hidden">
-        {selectedPhaseInfo ? (
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
+        <aside className="w-[340px] shrink-0 overflow-y-auto border-r border-border bg-background p-4">
+          <ul className="flex flex-col gap-2">
+            {phases.map((phase) => {
+              const phaseDecisions = (
+                snapshot.current_run.decisions ?? []
+              ).filter((d) => d.phase === phase.name);
+              return (
+                <li key={phase.name}>
+                  <PhaseTile
+                    phase={phase}
+                    steps={stepsByPhase.get(phase.name) ?? []}
+                    decisions={phaseDecisions}
+                    isSelected={selectedPhase === phase.name}
+                    onClick={() => setSelectedPhase(phase.name)}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        </aside>
+
+        <section className="relative flex-1 overflow-hidden">
+          {selectedPhaseInfo ? (
             <div
               key={selectedPhaseInfo.name}
               className="flex h-full animate-in fade-in slide-in-from-right-2 flex-col duration-200"
@@ -93,12 +169,39 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
                     (r) => r.run_id === snapshot.current_run.run_id,
                   )?.last_actor_at ?? null
                 }
+                hidePerPhaseFork={editState.buffer.length > 0}
               />
               <div className="flex-1 overflow-y-auto px-4 pb-6">
                 <DecisionsPanel
                   phase={selectedPhaseInfo.name}
-                  decisions={snapshot.current_run.decisions ?? []}
+                  decisions={allDecisions}
+                  editBuffer={editingDisabled ? undefined : editState.buffer}
+                  onEdit={
+                    editingDisabled
+                      ? undefined
+                      : (row_id, new_answer) =>
+                          dispatchEdit({
+                            type: "APPLY_EDIT",
+                            row_id,
+                            new_answer,
+                          })
+                  }
+                  onRevert={
+                    editingDisabled
+                      ? undefined
+                      : (row_id) =>
+                          dispatchEdit({ type: "REVERT_EDIT", row_id })
+                  }
                 />
+                {selectedPhaseRunning && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="mt-2 text-xs text-muted-foreground"
+                  >
+                    Editing locked while phase is in progress.
+                  </div>
+                )}
                 {selectedPhaseSteps.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
                     No steps recorded for this phase yet.
@@ -129,12 +232,34 @@ export function PhaseView({ snapshot, oppSlug }: Props) {
                 )}
               </div>
             </div>
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            Select a phase to see its skills.
-          </div>
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              Select a phase to see its skills.
+            </div>
+          )}
+        </section>
+      </div>
+      <PendingEditsBar
+        count={editState.buffer.length}
+        onDiscardAll={() => dispatchEdit({ type: "DISCARD_ALL" })}
+        onForkAndRerun={() => setForkDialogOpen(true)}
+      />
+      {forkDialogOpen &&
+        forkPoint &&
+        snapshot.current_run.run_id &&
+        workspaceSlug && (
+          <ForkWithEditsDialog
+            open={forkDialogOpen}
+            onClose={() => setForkDialogOpen(false)}
+            workspaceSlug={workspaceSlug}
+            sourceSlug={oppSlug}
+            sourceRunId={snapshot.current_run.run_id}
+            initialForkAtPhase={forkPoint}
+            phases={snapshot.phases}
+            edits={editState.buffer}
+            affectedDocs={affectedDocs}
+          />
         )}
-      </section>
     </div>
   );
 }
@@ -147,7 +272,13 @@ interface PhaseTileProps {
   onClick: () => void;
 }
 
-function PhaseTile({ phase, steps, decisions, isSelected, onClick }: PhaseTileProps) {
+function PhaseTile({
+  phase,
+  steps,
+  decisions,
+  isSelected,
+  onClick,
+}: PhaseTileProps) {
   const total = steps.length;
   const complete = steps.filter((s) => s.status === "complete").length;
   const qaFailed = steps.filter((s) => s.status === "qa-failed").length;
@@ -156,7 +287,9 @@ function PhaseTile({ phase, steps, decisions, isSelected, onClick }: PhaseTilePr
     .map((s) => s.judge?.score_pct ?? s.judge?.score ?? null)
     .filter((v): v is number => v !== null);
   const meanScore =
-    judged.length > 0 ? judged.reduce((a, b) => a + b, 0) / judged.length : null;
+    judged.length > 0
+      ? judged.reduce((a, b) => a + b, 0) / judged.length
+      : null;
   const completionPct = total === 0 ? 0 : (complete / total) * 100;
 
   return (
@@ -201,7 +334,10 @@ function PhaseTile({ phase, steps, decisions, isSelected, onClick }: PhaseTilePr
           )}
         />
       </div>
-      <div className="truncate text-sm font-semibold text-foreground" title={phase.display_name}>
+      <div
+        className="truncate text-sm font-semibold text-foreground"
+        title={phase.display_name}
+      >
         {phase.display_name}
       </div>
       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
@@ -231,6 +367,11 @@ interface PhasePanelHeaderProps {
   oppSlug: string;
   sourceRunId: string;
   sourceLastActorAt: string | null;
+  /** When true, the "Fork from here" button is hidden — there's a
+   * sticky "Fork & re-run" bar at the page bottom that picks up the
+   * buffered edits and is the right CTA. Two fork buttons on screen
+   * at once would be a footgun. */
+  hidePerPhaseFork?: boolean;
 }
 
 function PhasePanelHeader({
@@ -239,6 +380,7 @@ function PhasePanelHeader({
   oppSlug,
   sourceRunId,
   sourceLastActorAt,
+  hidePerPhaseFork,
 }: PhasePanelHeaderProps) {
   const [forkOpen, setForkOpen] = useState(false);
   const total = steps.length;
@@ -251,7 +393,9 @@ function PhasePanelHeader({
     .map((s) => s.judge?.score_pct ?? s.judge?.score ?? null)
     .filter((v): v is number => v !== null);
   const meanScore =
-    judged.length > 0 ? judged.reduce((a, b) => a + b, 0) / judged.length : null;
+    judged.length > 0
+      ? judged.reduce((a, b) => a + b, 0) / judged.length
+      : null;
 
   return (
     <header className="shrink-0 border-b border-border bg-card/30 px-6 py-4">
@@ -266,26 +410,34 @@ function PhasePanelHeader({
         </div>
         {/* Fork CTA: mints a NEW RUN under this opp seeded from the
             current run's upstream phase artifacts. Per-opp state
-            (opp.yaml, inputs, calibration) stays shared. */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setForkOpen(true)}
-          className="shrink-0 text-xs"
-          title={`Fork a new run starting at ${phase.display_name}`}
-        >
-          <GitFork className="mr-1.5 h-3.5 w-3.5" />
-          Fork from here
-        </Button>
+            (opp.yaml, inputs, calibration) stays shared.
+            Hidden when there are pending decision edits — the sticky
+            "Fork & re-run" bar at the page bottom is the right CTA
+            in that case (it carries the edits into the new run). */}
+        {!hidePerPhaseFork && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setForkOpen(true)}
+            className="shrink-0 text-xs"
+            title={`Fork a new run starting at ${phase.display_name}`}
+          >
+            <GitFork className="mr-1.5 h-3.5 w-3.5" />
+            Fork from here
+          </Button>
+        )}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
         <span>
-          <span className="font-medium tabular-nums text-foreground">{complete}</span>
+          <span className="font-medium tabular-nums text-foreground">
+            {complete}
+          </span>
           <span className="text-muted-foreground">/{total} done</span>
         </span>
         {qaFailed > 0 && (
           <span className="text-rose-500">
-            <span className="font-medium tabular-nums">{qaFailed}</span> qa-failed
+            <span className="font-medium tabular-nums">{qaFailed}</span>{" "}
+            qa-failed
           </span>
         )}
         {failed > 0 && (
