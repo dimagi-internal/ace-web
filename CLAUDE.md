@@ -19,7 +19,8 @@ are the opp Workbench, the cloud mobile emulator, and the videos app.
 - **Learnings**: `docs/learnings/` (load-bearing gotchas — read these before
   touching the relevant area)
 - **Architecture docs**: `docs/architecture/cli-credentials.md`,
-  `docs/architecture/mcp-surface.md`
+  `docs/architecture/mcp-surface.md`, `docs/architecture/slack-integration.md`,
+  `docs/architecture/workspace-activity.md`
 - **QA**: `docs/qa/e2e-probe.md` — re-runnable Playwright probe of every UI
   surface; lives at `scripts/qa/labs_probe.py`. Run it after every deploy.
 - **Deploy runbook**: `docs/deploy.md`
@@ -76,6 +77,7 @@ To pick up a new ACE plugin release: rebuild the image (any push to main trigger
   deploys. AWS Secrets Manager for secrets. ECR for images.
 - **Tests**: pytest + pytest-django + pytest-asyncio, in-memory SQLite for unit
   tests. Frontend tests on vitest + @testing-library/react + jsdom (`bun run test`).
+  Playwright e2e under `e2e/` (separate bun workspace).
 - **Pattern sources**: `../connect-labs/` (Connect OAuth), `../canopy-web/`
   (CLI backend + PTY), `../connect-search/` (DriveClient ABC).
 
@@ -93,18 +95,23 @@ ace-web/
 │   ├── opps/            # ACE opp Workbench (Drive-backed) + summary page + cache
 │   ├── service_accounts/ # Personal tokens + share tokens
 │   ├── sessions/        # Sessions + WebSocket consumer + presence + structure
+│   ├── slack/           # /ace activity slash command + async dispatcher + run threads
 │   ├── system/          # System Overview tab — reads bundled plugin metadata
 │   ├── videos/          # Video program editor (Drive-backed) + render orchestration
 │   └── workspaces/      # Multi-tenant workspace + invites + audit log
 ├── config/              # Split settings (base, connectlabs, development, production, e2e, test)
 ├── frontend/src/        # api, components, hooks, pages, router (Vite + bun)
+├── e2e/                 # Playwright smoke/regression suite (separate bun workspace)
 ├── tests/               # Project-level tests (asgi smoke)
+├── tools/               # Walkthrough/demo helpers
+├── video-production/    # connect-videos/ — Remotion renderer the videos app shells out to
 ├── docs/                # specs/, plans/, learnings/, architecture/, qa/, deploy.md
 ├── scripts/qa/          # Re-runnable Playwright probe of the deployed UI
 ├── infra/mobile-ami/    # Packer bake for the mobile EC2 AMI + rebake.sh
 ├── deploy/aws/          # task-definition.json + one-time-setup.sh
 ├── .github/workflows/   # build-backend, build-frontend, deploy-ace-web-labs, ci,
-│                        # contract-tests, regen-openapi, typecheck
+│                        # contract-tests, regen-openapi, typecheck,
+│                        # sync-video-library-labs
 └── pyproject.toml
 ```
 
@@ -133,7 +140,13 @@ they read through to Google Drive.
   `ACE_DRIVE_ROOT_FOLDER_ID`; after that the env var is no longer read at runtime.
   URL structure: `/w/<slug>/opps/`, `/w/<slug>/sessions/`, etc. Onboarding wizard
   at `/welcome`, invites at `/invite/<token>`, settings at
-  `/w/<slug>/workspace-settings`. Spec:
+  `/w/<slug>/workspace-settings`. **Auto-join via domain match (PR #523):**
+  `Workspace.auto_join_domains` (JSONField, lowercased) — on every OAuth callback
+  and e2e-login, users whose email domain matches a workspace's list are added
+  as Editor (idempotent; never downgrades). `dimagi-team` is seeded with
+  `[dimagi.com, dimagi-ai.com]` so Dimagi sign-ins land inside the workspace
+  instead of the empty `/welcome` wizard. Owners can edit the list via
+  `PATCH /api/workspaces/{slug}` or the Workspace Settings page. Spec:
   `docs/specs/2026-04-27-multi-tenant-workspaces-design.md`.
 - **Automation auth on labs — `/auth/e2e-login/`**: token-gated endpoint for
   scripted tools. POST `{"email": "ace@dimagi-ai.com", "token":
@@ -207,7 +220,10 @@ they read through to Google Drive.
   snapshots with an ETag header; `If-None-Match` round-trips return 304. Frontend
   keeps a per-tab `Map<key, {data, etag}>` cache. Net effect: ~46-55× speedup on
   a real opp. Spec: `docs/specs/2026-05-08-opp-cache-redesign.md`. Gotchas:
-  `opp-cache-architecture.md` and `opps-access-module.md`.
+  `opp-cache-architecture.md` and `opps-access-module.md`. As of PR #524 the
+  same `drive_changes.observe` pattern also drives videos cache invalidation —
+  videos uses a separate Redis pageToken key so opps + videos don't drain each
+  other's change feeds.
 - **Videos app (`apps/videos/`)**: workspace-scoped Django app for the video
   program editor. **Drive is the source of truth as of 2026-05-15**: spec.yaml
   lives in Drive under `videos/<program-slug>/runs/<run-id>/spec.yaml`; local FS
@@ -220,6 +236,10 @@ they read through to Google Drive.
   endpoints are MCP-exposed via `x-mcp-expose: true`. Programs declare ownership
   via a top-level `workspace: <slug>` field; non-members get 404. Slug
   validation in `service.is_valid_slug` is mandatory before any subprocess spawn.
+  **Media serving**: `serve_media` honors `Range` requests (PR #507) so the
+  scrubber works pre-buffer, and lazy-pulls `output.mp4` from Drive on local
+  cache miss (PR #514) so a fresh ECS task or sibling worker can serve a
+  render it didn't produce. MP4s are emitted with faststart (PR #502).
 - **Videos beat editor (React)**: as of 2026-05-15, the per-run editor
   is a native React tree under `frontend/src/components/videos/`
   (`<BeatEditor>` + reducer + drawer). Local-buffer dirty state with
@@ -325,11 +345,11 @@ Auth & identity:
 - [drive-service-account](docs/learnings/drive-service-account.md) — opps Workbench talks to Drive via a shared SA, not per-user OAuth; key JSON in `ACE_DRIVE_SA_KEY_JSON`.
 - [connect-oauth-openid-email](docs/learnings/connect-oauth-openid-email.md) — Connect's token introspection returns empty `email` for HQ-linked accounts; request `openid` scope AND `response_type=token` on the token-exchange POST.
 - [nova-mcp-oauth](docs/learnings/nova-mcp-oauth.md) — Nova MCP auth: RFC 8707 `resource` indicator is mandatory; `${VAR:-}` expansion in `.mcp.json` headers beats `headersHelper`; Better-Auth rotates refresh_tokens (need `nova:refresh-lock` SETNX); bot identity uses `_can_write_global` not `is_staff`.
-- [slack-integration](docs/learnings/slack-integration.md) — `SlackConfig.ready()` runs in every management command (guard with env + sys.argv); `channel_not_found` is silent (wrapper normalises to `SlackChannelGone`); `(channel_id, ts)` must be stored together; dedup lock must be `cache.add` (SETNX); `Workspace` field is `name` not `display_name`; `bot_token` is a property (no `set_bot_token`); use `asyncio.get_running_loop()` not `get_event_loop()`.
 
 Conversation engine:
 - [cli-stream-json-format](docs/learnings/cli-stream-json-format.md) — Claude CLI stream-json event shapes captured as fixtures; recapture if the CLI is upgraded.
 - [sse-django-async](docs/learnings/sse-django-async.md) — historical (SSE was superseded by WebSocket in Phase 3); kept for the async-cleanup patterns.
+- [api-envelope-convention](docs/learnings/api-envelope-convention.md) — historical (`{data, error}` envelope retired in PR #352 alongside DRF); kept for context when grepping older code that still references the shape.
 - [stream-resume-vercel-open-agents](docs/learnings/stream-resume-vercel-open-agents.md) — two stream-resume hazards: stop-during-reconnect drops the stop frame (Hazard 1, addressed); reconnect-during-stream loses up to 250ms of characters (Hazard 2, deferred).
 
 Cost / timing / structure:
@@ -339,6 +359,9 @@ Opp Workbench (`apps/opps/`):
 - [opp-cache-architecture](docs/learnings/opp-cache-architecture.md) — Drive Changes API per-request poll + long-lived `OppSnapshot` / `OppCard` cache + ETag round-trip. `workspace.pk` is a slug not an int; cold-load needs `bypass=True`; ETag is `sha256` of the serialized payload; 410 on `pageToken` clears the workspace cache; `_KEY_VERSION` must bump when `OppSnapshot` shape changes.
 - [opps-access-module](docs/learnings/opps-access-module.md) — patch on `apps.opps.access.X`, not on per-view modules. Views call `access.X(...)` via attribute lookup so a single patch intercepts every caller.
 - [drive-changes-api-parent-folder-blind-spot](docs/learnings/drive-changes-api-parent-folder-blind-spot.md) — Drive Changes API reports new file_ids but does NOT consistently report their parent folder as modified, so cached folder LISTINGS (`runs_summary`, `OppCard.run_count`) never invalidate when children are added externally. `apps/opps/freshness_overlays.py` is a registry of listing-derived fields that get re-listed on every cache hit (one Drive call per overlay). Add an overlay when a new cached field is listing-derived + externally-appendable; never clobber the cached value on a Drive blip.
+
+Slack:
+- [slack-integration](docs/learnings/slack-integration.md) — `SlackConfig.ready()` runs in every management command (guard with env + sys.argv); `channel_not_found` is silent (wrapper normalises to `SlackChannelGone`); `(channel_id, ts)` must be stored together; dedup lock must be `cache.add` (SETNX); `Workspace` field is `name` not `display_name`; `bot_token` is a property (no `set_bot_token`); use `asyncio.get_running_loop()` not `get_event_loop()`.
 
 Frontend:
 - [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs showing wall-clock-driven transitions need explicit `setTimeout`-driven re-renders.
