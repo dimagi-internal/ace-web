@@ -59,7 +59,7 @@ describe("ForkWithEditsDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("Fork & re-run posts edits to the API", async () => {
+  it("Fork & re-run posts edits to the API with keep-overrides-only as default", async () => {
     const forkSpy = vi.fn().mockResolvedValue({
       slug: "test-opp",
       run_id: "20260522-1500",
@@ -72,6 +72,21 @@ describe("ForkWithEditsDialog", () => {
       fork_at_phase: "design",
       source_run_id: "20260101-1000",
       edits: [{ row_id: "a", new_answer: "v2" }],
+      mode: "keep-overrides-only",
     });
+  });
+
+  it("switching to keep-all sends mode=keep-all", async () => {
+    const forkSpy = vi.fn().mockResolvedValue({
+      slug: "test-opp",
+      run_id: "20260522-1500",
+      working_session_slug: "abc",
+    });
+    renderDialog({ ...baseProps, __forkOppForTest: forkSpy });
+    // Click the "Keep all decisions" radio.
+    fireEvent.click(screen.getByRole("radio", { name: /keep all decisions/i }));
+    fireEvent.click(screen.getByRole("button", { name: /fork & re-run/i }));
+    await waitFor(() => expect(forkSpy).toHaveBeenCalled());
+    expect(forkSpy.mock.calls[0][2]).toMatchObject({ mode: "keep-all" });
   });
 });
