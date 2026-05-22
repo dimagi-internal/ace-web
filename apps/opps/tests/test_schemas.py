@@ -6,6 +6,7 @@ from apps.opps.schemas import (  # noqa: F401 — import-existence smoke test
     GateOut,
     OppCardOut,
     OppCreateIn,
+    OppForkEditIn,
     OppForkIn,
     OppForkOut,
     OppPatchIn,
@@ -126,3 +127,32 @@ def test_opp_patch_in_round_trip():
 def test_opp_patch_in_rejects_empty_title():
     with pytest.raises(ValueError):
         OppPatchIn.model_validate({"title": ""})
+
+
+def test_opp_fork_in_accepts_no_edits():
+    """Backwards compat: existing callers send no edits."""
+    parsed = OppForkIn.model_validate({"fork_at_phase": "design"})
+    assert parsed.fork_at_phase == "design"
+    assert parsed.edits == []
+
+
+def test_opp_fork_in_accepts_edits_list():
+    parsed = OppForkIn.model_validate({
+        "fork_at_phase": "design",
+        "edits": [
+            {"row_id": "pdd-target-population", "new_answer": "FLWs in rural Tanzania"},
+        ],
+    })
+    assert len(parsed.edits) == 1
+    assert parsed.edits[0].row_id == "pdd-target-population"
+    assert parsed.edits[0].new_answer == "FLWs in rural Tanzania"
+
+
+def test_opp_fork_edit_rejects_empty_row_id():
+    with pytest.raises(Exception):  # pydantic ValidationError
+        OppForkEditIn.model_validate({"row_id": "", "new_answer": "x"})
+
+
+def test_opp_fork_edit_rejects_missing_new_answer():
+    with pytest.raises(Exception):
+        OppForkEditIn.model_validate({"row_id": "abc"})
