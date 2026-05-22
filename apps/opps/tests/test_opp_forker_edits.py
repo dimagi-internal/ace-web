@@ -335,6 +335,8 @@ def test_fork_opp_without_edits_unchanged_behavior(monkeypatch):
 
 def test_fork_opp_rejects_invalid_mode(monkeypatch):
     """The forker rejects unknown mode values with ForkOppError(invalid-mode)."""
+    import pytest
+
     from apps.opps.opp_forker import ForkOppError
 
     source_body = yaml.safe_dump({"schema_version": 2, "decisions": []})
@@ -342,7 +344,7 @@ def test_fork_opp_rejects_invalid_mode(monkeypatch):
     _stub_post_rewrite_side_effects(monkeypatch)
 
     owner = MagicMock()
-    try:
+    with pytest.raises(ForkOppError) as exc_info:
         fork_opp(
             drive=drive,
             ace_root_folder_id="ace-root",
@@ -354,7 +356,4 @@ def test_fork_opp_rejects_invalid_mode(monkeypatch):
             mode="with-feedback",  # legacy mode — no longer valid
             now=dt.datetime(2026, 5, 22, 12, 0, tzinfo=dt.UTC),
         )
-    except ForkOppError as e:
-        assert e.code == "invalid-mode"
-    else:
-        assert False, "expected ForkOppError for invalid mode"
+    assert exc_info.value.code == "invalid-mode"
