@@ -41,3 +41,14 @@ def test_build_map_skips_entries_with_no_path():
     ]
     out = build_skill_products_map(entries)
     assert out == {}
+
+
+def test_build_map_excludes_decisions_yaml():
+    """decisions.yaml is the edit target itself — never list it as 'regenerated'."""
+    entries = [
+        {"path": "decisions.yaml", "produced_by": "idea-to-pdd"},
+        {"path": "decisions.yml", "produced_by": "idea-to-pdd"},
+        {"path": "1-design/idea-to-pdd.md", "produced_by": "idea-to-pdd"},
+    ]
+    out = build_skill_products_map(entries)
+    assert out == {"idea-to-pdd": ["1-design/idea-to-pdd.md"]}

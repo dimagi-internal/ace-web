@@ -22,17 +22,30 @@ from apps.system.reader import _load_artifacts
 logger = logging.getLogger(__name__)
 
 
+# Paths excluded from the skill→products map. These are paths that some
+# skill technically "produces" but the in-app decisions editor should
+# never list as "the fork will regenerate this":
+#   - decisions.yaml / decisions.yml: the edit target itself; the forker
+#     carries it forward with edits applied, not regenerated.
+_EXCLUDED_PATHS = frozenset({"decisions.yaml", "decisions.yml"})
+
+
 def build_skill_products_map(entries: list[dict]) -> dict[str, list[str]]:
     """Group manifest entries by ``produced_by`` skill slug.
 
     Entries without a ``produced_by`` or a ``path`` are skipped — they
-    describe inputs, scratch files, or other non-product rows.
+    describe inputs, scratch files, or other non-product rows. Paths in
+    ``_EXCLUDED_PATHS`` are also skipped to keep the affected-docs UI
+    from showing tautological entries (e.g. decisions.yaml when the user
+    is editing decisions.yaml).
     """
     out: dict[str, list[str]] = {}
     for entry in entries:
         skill = entry.get("produced_by")
         path = entry.get("path")
         if not skill or not path:
+            continue
+        if path in _EXCLUDED_PATHS:
             continue
         out.setdefault(skill, []).append(path)
     return out
