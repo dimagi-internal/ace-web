@@ -657,6 +657,24 @@ def _load_decisions(
     raw_rows = data.get("decisions") or []
     if not isinstance(raw_rows, list):
         return []
+    return _parse_decision_rows(raw_rows)
+
+
+def _parse_decision_rows(raw_rows: list) -> list[Decision]:
+    """Convert raw decisions.yaml rows into Decision dataclasses.
+
+    Handles both schema versions transparently (PR #541 introduced v2):
+
+    * v1 shape:  ``{default: <value>, status: applied|open|overridden}``
+    * v2 shape:  ``{ai-default: <value>, override?: <value>,
+                    status: applied|overridden}``
+
+    The Decision surfaces a single "effective" answer on its ``default``
+    field — override (v2 human edit) > ai-default (v2 AI proposal) >
+    default (v1 fallback) — so frontend consumers don't need to know the
+    schema version. ``open`` status collapses to ``applied`` to match
+    the v2 enum (open == AI defaulted == applied).
+    """
     out: list[Decision] = []
     for row in raw_rows:
         if not isinstance(row, dict):
@@ -665,16 +683,24 @@ def _load_decisions(
         if not rid:
             continue
         opts = row.get("options_considered") or []
+        effective_default = (
+            row.get("override")
+            or row.get("ai-default")
+            or row.get("default")
+            or ""
+        )
+        raw_status = str(row.get("status") or "applied").strip().lower()
+        status = "applied" if raw_status == "open" else raw_status
         out.append(
             Decision(
                 id=rid,
                 phase=str(row.get("phase") or "").strip(),
                 skill=str(row.get("skill") or "").strip(),
                 question=str(row.get("question") or "").strip(),
-                default=str(row.get("default") or "").strip(),
+                default=str(effective_default).strip(),
                 options_considered=[str(o) for o in opts] if isinstance(opts, list) else [],
                 source=str(row.get("source") or "").strip(),
-                status=str(row.get("status") or "applied").strip().lower(),
+                status=status,
                 notes=str(row.get("notes") or "").strip(),
             )
         )
