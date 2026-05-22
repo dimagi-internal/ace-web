@@ -272,10 +272,19 @@ export async function deleteOppRun(
   }
 }
 
+export type ForkMode = "keep-overrides-only" | "keep-all";
+
 export interface ForkOppBody {
   fork_at_phase: string;
   source_run_id?: string | null;
   edits?: { row_id: string; new_answer: string }[];
+  /**
+   * Controls how upstream decisions carry forward:
+   *   - "keep-all" (default): every upstream row survives the fork.
+   *   - "keep-overrides-only": only rows with status=overridden survive
+   *     (AI defaults are dropped so downstream phases re-derive them).
+   */
+  mode?: ForkMode;
 }
 
 export async function forkOpp(

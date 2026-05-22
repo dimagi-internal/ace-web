@@ -135,6 +135,8 @@ def test_opp_fork_in_accepts_no_edits():
     parsed = OppForkIn.model_validate({"fork_at_phase": "design"})
     assert parsed.fork_at_phase == "design"
     assert parsed.edits == []
+    # Default mode is keep-all so existing callers' behavior is unchanged.
+    assert parsed.mode == "keep-all"
 
 
 def test_opp_fork_in_accepts_edits_list():
@@ -147,6 +149,22 @@ def test_opp_fork_in_accepts_edits_list():
     assert len(parsed.edits) == 1
     assert parsed.edits[0].row_id == "pdd-target-population"
     assert parsed.edits[0].new_answer == "FLWs in rural Tanzania"
+
+
+def test_opp_fork_in_accepts_mode():
+    parsed = OppForkIn.model_validate({
+        "fork_at_phase": "design",
+        "mode": "keep-overrides-only",
+    })
+    assert parsed.mode == "keep-overrides-only"
+
+
+def test_opp_fork_in_rejects_invalid_mode():
+    with pytest.raises(ValueError):
+        OppForkIn.model_validate({
+            "fork_at_phase": "design",
+            "mode": "with-feedback",  # legacy mode — no longer valid
+        })
 
 
 def test_opp_fork_edit_rejects_empty_row_id():

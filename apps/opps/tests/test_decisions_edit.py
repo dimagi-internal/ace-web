@@ -1,11 +1,15 @@
-"""Tests for apps.opps.decisions_edit.apply_edits_to_decisions_data."""
-from apps.opps.decisions_edit import apply_edits_to_decisions_data
+"""Tests for apps.opps.decisions_edit.apply_edits_to_decisions_data
+and upgrade_decisions_v1_to_v2."""
+from apps.opps.decisions_edit import (
+    apply_edits_to_decisions_data,
+    upgrade_decisions_v1_to_v2,
+)
 
 
-def _row(row_id, default, options=None, status="applied"):
-    return {
+def _row(row_id, ai_default, options=None, status="applied", **extras):
+    row = {
         "id": row_id,
-        "default": default,
+        "ai-default": ai_default,
         "options_considered": list(options or []),
         "status": status,
         "phase": "design",
@@ -13,6 +17,8 @@ def _row(row_id, default, options=None, status="applied"):
         "source": "idea-to-pdd",
         "question": f"q for {row_id}",
     }
+    row.update(extras)
+    return row
 
 
 def test_no_edits_returns_data_unchanged():
@@ -21,7 +27,8 @@ def test_no_edits_returns_data_unchanged():
     assert out == data
 
 
-def test_apply_single_edit_overrides_default_and_status():
+def test_apply_single_edit_writes_override_field():
+    """Edit populates `override:` and flips status; `ai-default:` is preserved."""
     data = {"decisions": [_row("a", "v1")]}
     edits = [{"row_id": "a", "new_answer": "v2"}]
 
@@ -29,31 +36,24 @@ def test_apply_single_edit_overrides_default_and_status():
 
     rows = out["decisions"]
     assert len(rows) == 1
-    assert rows[0]["default"] == "v2"
+    assert rows[0]["ai-default"] == "v1"   # immutable
+    assert rows[0]["override"] == "v2"      # new field
     assert rows[0]["status"] == "overridden"
 
 
-def test_prior_default_preserved_in_options_considered():
-    """Matches decisions-sync's contract: original default kept as an option."""
-    data = {"decisions": [_row("a", "v1", options=["v1"])]}
-    edits = [{"row_id": "a", "new_answer": "v2"}]
+def test_edit_matching_ai_default_clears_override():
+    """If the human reverts to the AI default, override is dropped and
+    status flips back to applied."""
+    data = {"decisions": [
+        _row("a", "v1", options=["v1", "v2"], status="overridden",
+             override="v2"),
+    ]}
+    edits = [{"row_id": "a", "new_answer": "v1"}]
 
     out = apply_edits_to_decisions_data(data, edits=edits)
 
-    assert "v1" in out["decisions"][0]["options_considered"]
-    assert "v2" not in out["decisions"][0]["options_considered"]
-
-
-def test_options_considered_dedup_on_repeat_override():
-    """Re-overriding an already-overridden row preserves only the original default."""
-    data = {"decisions": [_row("a", "v1", options=["v1"], status="overridden")]}
-    edits = [{"row_id": "a", "new_answer": "v3"}]
-
-    out = apply_edits_to_decisions_data(data, edits=edits)
-
-    assert out["decisions"][0]["options_considered"] == ["v1"]
-    assert out["decisions"][0]["default"] == "v3"
-    assert out["decisions"][0]["status"] == "overridden"
+    assert "override" not in out["decisions"][0]
+    assert out["decisions"][0]["status"] == "applied"
 
 
 def test_edit_targeting_unknown_row_is_silently_ignored():
@@ -75,13 +75,15 @@ def test_multi_edit_applies_each():
 
     out = apply_edits_to_decisions_data(data, edits=edits)
 
-    assert out["decisions"][0]["default"] == "v2"
-    assert out["decisions"][1]["default"] == "w2"
+    assert out["decisions"][0]["override"] == "v2"
+    assert out["decisions"][1]["override"] == "w2"
 
 
 def test_missing_decisions_key_returns_input_unchanged():
     """No 'decisions' field → can't apply edits, return as-is."""
-    out = apply_edits_to_decisions_data({"foo": "bar"}, edits=[{"row_id": "a", "new_answer": "x"}])
+    out = apply_edits_to_decisions_data(
+        {"foo": "bar"}, edits=[{"row_id": "a", "new_answer": "x"}],
+    )
     assert out == {"foo": "bar"}
 
 
@@ -93,6 +95,65 @@ def test_data_mutation_isolation():
         data["decisions"][0]["options_considered"]
     )
 
-    apply_edits_to_decisions_data(data, edits=[{"row_id": "a", "new_answer": "v2"}])
+    apply_edits_to_decisions_data(
+        data, edits=[{"row_id": "a", "new_answer": "v2"}],
+    )
 
     assert data == snapshot, "input dict was mutated"
+
+
+def test_upgrade_v1_renames_default_to_ai_default():
+    v1 = {
+        "schema_version": 1,
+        "decisions": [
+            {"id": "a", "default": "v1", "options_considered": [],
+             "status": "applied", "phase": "design", "skill": "idea-to-pdd",
+             "source": "x", "question": "q"},
+        ],
+    }
+    v2 = upgrade_decisions_v1_to_v2(v1)
+    assert v2["schema_version"] == 2
+    row = v2["decisions"][0]
+    assert "default" not in row
+    assert row["ai-default"] == "v1"
+
+
+def test_upgrade_v1_collapses_open_to_applied():
+    v1 = {
+        "schema_version": 1,
+        "decisions": [
+            {"id": "a", "default": "v1", "options_considered": [],
+             "status": "open", "phase": "design", "skill": "idea-to-pdd",
+             "source": "x", "question": "q"},
+        ],
+    }
+    v2 = upgrade_decisions_v1_to_v2(v1)
+    assert v2["decisions"][0]["status"] == "applied"
+
+
+def test_upgrade_v1_overridden_row_copies_default_to_override():
+    """v1 destroyed AI default on override; upgrade copies the value
+    into both ai-default and override so the v2 invariant holds."""
+    v1 = {
+        "schema_version": 1,
+        "decisions": [
+            {"id": "a", "default": "v2", "options_considered": ["v1", "v2"],
+             "status": "overridden", "phase": "design", "skill": "idea-to-pdd",
+             "source": "x", "question": "q"},
+        ],
+    }
+    v2 = upgrade_decisions_v1_to_v2(v1)
+    row = v2["decisions"][0]
+    assert row["ai-default"] == "v2"
+    assert row["override"] == "v2"
+    assert row["status"] == "overridden"
+
+
+def test_upgrade_v2_is_idempotent():
+    v2 = {
+        "schema_version": 2,
+        "decisions": [_row("a", "v1")],
+    }
+    out = upgrade_decisions_v1_to_v2(v2)
+    assert out["schema_version"] == 2
+    assert out["decisions"][0]["ai-default"] == "v1"

@@ -3,7 +3,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, GitFork, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { forkOpp, getForkStatus, type ForkProgress } from "@/api/opps";
+import {
+  forkOpp,
+  getForkStatus,
+  type ForkMode,
+  type ForkProgress,
+} from "@/api/opps";
 import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,6 +70,7 @@ export function ForkOppDialog({
   const [submitting, setSubmitting] = useState(false);
   const [slow, setSlow] = useState(false);
   const [progress, setProgress] = useState<ForkProgress | null>(null);
+  const [mode, setMode] = useState<ForkMode>("keep-all");
   const navigate = useNavigate();
   const { workspaceSlug } = useParams<{ workspaceSlug?: string }>();
 
@@ -72,6 +78,7 @@ export function ForkOppDialog({
     if (!open) return;
     setSlow(false);
     setProgress(null);
+    setMode("keep-all");
   }, [open, sourceSlug]);
 
   // Promote to "still copying…" after SLOW_AFTER_MS so the dialog
@@ -112,6 +119,7 @@ export function ForkOppDialog({
       const result = await forkOpp(workspaceSlug ?? "", sourceSlug, {
         fork_at_phase: forkAtPhase,
         source_run_id: sourceRunId || null,
+        mode,
       });
       toast.success(`Forked to run ${result.run_id}`);
       onOpenChange(false);
@@ -164,6 +172,39 @@ export function ForkOppDialog({
           <span className="text-muted-foreground">Resume at</span>
           <code className="font-mono text-foreground">{forkAtPhase}</code>
         </div>
+        <fieldset className="flex flex-col gap-2 text-xs" disabled={submitting}>
+          <legend className="text-muted-foreground">Decisions</legend>
+          <label className="flex items-start gap-2">
+            <input
+              type="radio"
+              name="fork-mode"
+              checked={mode === "keep-all"}
+              onChange={() => setMode("keep-all")}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium text-foreground">Keep all decisions</span>
+              <span className="block text-muted-foreground">
+                Every upstream decision carries forward — both AI defaults and your overrides.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input
+              type="radio"
+              name="fork-mode"
+              checked={mode === "keep-overrides-only"}
+              onChange={() => setMode("keep-overrides-only")}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium text-foreground">Keep only my overrides</span>
+              <span className="block text-muted-foreground">
+                Only your explicit overrides carry forward; AI defaults are dropped so phases can re-derive them.
+              </span>
+            </span>
+          </label>
+        </fieldset>
         <DialogFooter>
           <Button
             variant="outline"

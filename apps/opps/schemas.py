@@ -139,10 +139,11 @@ class OppForkEditIn(StrictModel):
     """A single answer override to apply during fork.
 
     The forker finds the row by ``row_id`` in the source run's
-    ``decisions.yaml``, sets its ``default`` to ``new_answer``, and
-    marks ``status: overridden`` — matching the contract that
-    ``decisions-sync`` already uses, so downstream phases on re-run
-    honor the human's value verbatim.
+    ``decisions.yaml``, sets its ``override`` to ``new_answer``, and
+    marks ``status: overridden`` — matching the schema-v2 contract that
+    ``decisions-sync`` uses. The original AI value remains in
+    ``ai-default`` for audit trail; downstream phases on re-run see the
+    effective value (``override`` if present else ``ai-default``).
     """
 
     row_id: str = Field(min_length=1)
@@ -153,6 +154,7 @@ class OppForkIn(StrictModel):
     fork_at_phase: str = Field(min_length=1)
     source_run_id: RunId | None = None
     edits: list[OppForkEditIn] = Field(default_factory=list)
+    mode: Literal["keep-overrides-only", "keep-all"] = "keep-all"
 
 
 class OppForkOut(StrictModel):

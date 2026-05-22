@@ -11,8 +11,10 @@ import yaml
 from apps.opps.opp_forker import _rewrite_decisions_yaml, fork_opp
 
 
-def _decisions_yaml(rows):
-    return yaml.safe_dump({"decisions": rows}, sort_keys=False)
+def _decisions_yaml(rows, *, schema_version=2):
+    return yaml.safe_dump(
+        {"schema_version": schema_version, "decisions": rows}, sort_keys=False,
+    )
 
 
 def test_rewrite_with_no_edits_matches_legacy_trim():
@@ -23,9 +25,9 @@ def test_rewrite_with_no_edits_matches_legacy_trim():
     `_resolve_phase_ordinal` returns the expected ordinals during tests.
     """
     rows = [
-        {"id": "a", "phase": "design-review", "default": "v1",
+        {"id": "a", "phase": "design-review", "ai-default": "v1",
          "options_considered": [], "status": "applied"},
-        {"id": "b", "phase": "commcare-setup", "default": "w1",
+        {"id": "b", "phase": "commcare-setup", "ai-default": "w1",
          "options_considered": [], "status": "applied"},
     ]
     src = _decisions_yaml(rows)
@@ -39,7 +41,7 @@ def test_rewrite_with_no_edits_matches_legacy_trim():
 
 def test_rewrite_with_edits_applies_after_trim():
     rows = [
-        {"id": "a", "phase": "design-review", "default": "v1",
+        {"id": "a", "phase": "design-review", "ai-default": "v1",
          "options_considered": [], "status": "applied"},
     ]
     src = _decisions_yaml(rows)
@@ -48,9 +50,30 @@ def test_rewrite_with_edits_applies_after_trim():
     out = _rewrite_decisions_yaml(src, fork_ordinal=8, edits=edits)
 
     parsed = yaml.safe_load(out)
-    assert parsed["decisions"][0]["default"] == "v2"
-    assert parsed["decisions"][0]["status"] == "overridden"
-    assert "v1" in parsed["decisions"][0]["options_considered"]
+    row = parsed["decisions"][0]
+    assert row["ai-default"] == "v1"   # immutable
+    assert row["override"] == "v2"      # new override field
+    assert row["status"] == "overridden"
+
+
+def test_rewrite_edit_matching_ai_default_reverts_to_applied():
+    """If the human enters a value matching the AI default, the override
+    is cleared and status flips back to applied. Round-trip path."""
+    rows = [
+        {"id": "a", "phase": "design-review", "ai-default": "v1",
+         "override": "v2", "options_considered": ["v1", "v2"],
+         "status": "overridden"},
+    ]
+    src = _decisions_yaml(rows)
+    edits = [{"row_id": "a", "new_answer": "v1"}]
+
+    out = _rewrite_decisions_yaml(src, fork_ordinal=8, edits=edits)
+
+    parsed = yaml.safe_load(out)
+    row = parsed["decisions"][0]
+    assert row["ai-default"] == "v1"
+    assert "override" not in row
+    assert row["status"] == "applied"
 
 
 def test_edits_targeting_trimmed_row_are_skipped():
@@ -59,7 +82,7 @@ def test_edits_targeting_trimmed_row_are_skipped():
     """
     rows = [
         {"id": "trimmed-row", "phase": "commcare-setup",
-         "default": "v1", "options_considered": [], "status": "applied"},
+         "ai-default": "v1", "options_considered": [], "status": "applied"},
     ]
     src = _decisions_yaml(rows)
     edits = [{"row_id": "trimmed-row", "new_answer": "v2"}]
@@ -68,6 +91,88 @@ def test_edits_targeting_trimmed_row_are_skipped():
 
     parsed = yaml.safe_load(out)
     assert parsed["decisions"] == []
+
+
+def test_keep_overrides_only_drops_applied_rows():
+    """In keep-overrides-only mode, only status=overridden rows survive."""
+    rows = [
+        {"id": "applied-row", "phase": "design-review", "ai-default": "v1",
+         "options_considered": [], "status": "applied"},
+        {"id": "overridden-row", "phase": "design-review", "ai-default": "v1",
+         "override": "v2", "options_considered": ["v1", "v2"],
+         "status": "overridden"},
+    ]
+    src = _decisions_yaml(rows)
+
+    out = _rewrite_decisions_yaml(
+        src, fork_ordinal=8, mode="keep-overrides-only",
+    )
+
+    parsed = yaml.safe_load(out)
+    ids = [r["id"] for r in parsed["decisions"]]
+    assert ids == ["overridden-row"]
+
+
+def test_keep_all_preserves_both_applied_and_overridden():
+    """In keep-all mode (the default), every upstream row survives."""
+    rows = [
+        {"id": "applied-row", "phase": "design-review", "ai-default": "v1",
+         "options_considered": [], "status": "applied"},
+        {"id": "overridden-row", "phase": "design-review", "ai-default": "v1",
+         "override": "v2", "options_considered": ["v1", "v2"],
+         "status": "overridden"},
+    ]
+    src = _decisions_yaml(rows)
+
+    out = _rewrite_decisions_yaml(src, fork_ordinal=8, mode="keep-all")
+
+    parsed = yaml.safe_load(out)
+    ids = sorted(r["id"] for r in parsed["decisions"])
+    assert ids == ["applied-row", "overridden-row"]
+
+
+def test_keep_overrides_only_still_drops_downstream_rows():
+    """Phase trim runs BEFORE the mode filter; downstream overridden
+    rows still get dropped."""
+    rows = [
+        {"id": "upstream-override", "phase": "design-review",
+         "ai-default": "v1", "override": "v2",
+         "options_considered": ["v1", "v2"], "status": "overridden"},
+        {"id": "downstream-override", "phase": "commcare-setup",
+         "ai-default": "w1", "override": "w2",
+         "options_considered": ["w1", "w2"], "status": "overridden"},
+    ]
+    src = _decisions_yaml(rows)
+
+    out = _rewrite_decisions_yaml(
+        src, fork_ordinal=2, mode="keep-overrides-only",
+    )
+
+    parsed = yaml.safe_load(out)
+    ids = [r["id"] for r in parsed["decisions"]]
+    assert ids == ["upstream-override"]
+
+
+def test_v1_input_upgrades_in_memory_on_rewrite():
+    """v1-shape source decisions.yaml gets upgraded transparently.
+    `default:` becomes `ai-default:`; `status: open` becomes `applied`."""
+    rows = [
+        {"id": "old-applied", "phase": "design-review", "default": "v1",
+         "options_considered": [], "status": "applied"},
+        {"id": "old-open", "phase": "design-review", "default": "w1",
+         "options_considered": [], "status": "open"},
+    ]
+    src = _decisions_yaml(rows, schema_version=1)
+
+    out = _rewrite_decisions_yaml(src, fork_ordinal=8)
+
+    parsed = yaml.safe_load(out)
+    assert parsed["schema_version"] == 2
+    for row in parsed["decisions"]:
+        assert "default" not in row
+        assert "ai-default" in row
+    statuses = [r["status"] for r in parsed["decisions"]]
+    assert statuses == ["applied", "applied"]  # open collapsed
 
 
 class _FakeFile:
@@ -147,8 +252,9 @@ def test_fork_opp_passes_edits_to_rewrite(monkeypatch):
     the row tagged 'design-review' (ordinal 1) survives the trim.
     """
     source_body = yaml.safe_dump({
+        "schema_version": 2,
         "decisions": [
-            {"id": "answer-1", "phase": "design-review", "default": "before",
+            {"id": "answer-1", "phase": "design-review", "ai-default": "before",
              "options_considered": [], "status": "applied"},
         ],
     })
@@ -182,16 +288,18 @@ def test_fork_opp_passes_edits_to_rewrite(monkeypatch):
     assert write_log["updated_decisions"] is not None
     parsed = yaml.safe_load(write_log["updated_decisions"])
     assert len(parsed["decisions"]) == 1
-    assert parsed["decisions"][0]["default"] == "after"
-    assert parsed["decisions"][0]["status"] == "overridden"
-    assert "before" in parsed["decisions"][0]["options_considered"]
+    row = parsed["decisions"][0]
+    assert row["ai-default"] == "before"   # AI default preserved
+    assert row["override"] == "after"       # override carries the edit
+    assert row["status"] == "overridden"
 
 
 def test_fork_opp_without_edits_unchanged_behavior(monkeypatch):
     """Backwards compat: fork_opp called without 'edits' kwarg works as before."""
     source_body = yaml.safe_dump({
+        "schema_version": 2,
         "decisions": [
-            {"id": "answer-1", "phase": "design-review", "default": "v1",
+            {"id": "answer-1", "phase": "design-review", "ai-default": "v1",
              "options_considered": [], "status": "applied"},
         ],
     })
@@ -221,5 +329,32 @@ def test_fork_opp_without_edits_unchanged_behavior(monkeypatch):
     )
 
     parsed = yaml.safe_load(write_log["updated_decisions"])
-    assert parsed["decisions"][0]["default"] == "v1"
+    assert parsed["decisions"][0]["ai-default"] == "v1"
     assert parsed["decisions"][0]["status"] == "applied"  # unchanged
+
+
+def test_fork_opp_rejects_invalid_mode(monkeypatch):
+    """The forker rejects unknown mode values with ForkOppError(invalid-mode)."""
+    from apps.opps.opp_forker import ForkOppError
+
+    source_body = yaml.safe_dump({"schema_version": 2, "decisions": []})
+    drive, _ = _build_fake_drive(source_body)
+    _stub_post_rewrite_side_effects(monkeypatch)
+
+    owner = MagicMock()
+    try:
+        fork_opp(
+            drive=drive,
+            ace_root_folder_id="ace-root",
+            owner=owner,
+            source_slug="source-opp",
+            fork_at_phase="commcare-setup",
+            source_run_id="20260101-1000",
+            workspace=None,
+            mode="with-feedback",  # legacy mode — no longer valid
+            now=dt.datetime(2026, 5, 22, 12, 0, tzinfo=dt.UTC),
+        )
+    except ForkOppError as e:
+        assert e.code == "invalid-mode"
+    else:
+        assert False, "expected ForkOppError for invalid mode"

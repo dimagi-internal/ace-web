@@ -40,9 +40,25 @@ from dataclasses import dataclass
 
 import yaml
 
-from apps.opps.decisions_edit import apply_edits_to_decisions_data
+from apps.opps.decisions_edit import (
+    apply_edits_to_decisions_data,
+    upgrade_decisions_v1_to_v2,
+)
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.sessions.models import Message, Session
+
+# Fork modes — both copy upstream artifacts; they differ only in how
+# decisions.yaml rows from upstream phases are filtered.
+#
+# * keep-overrides-only: only rows where status == "overridden" carry
+#   forward (and only from phases strictly before the fork point).
+#   AI defaults from upstream are dropped so downstream phases re-derive.
+# * keep-all: every row upstream of the fork point carries forward
+#   regardless of status — both AI defaults and overrides.
+#
+# In both modes, rows at or downstream of the fork-phase are dropped.
+FORK_MODES = ("keep-overrides-only", "keep-all")
+DEFAULT_FORK_MODE = "keep-all"
 
 _FOLDER_MIME = "application/vnd.google-apps.folder"
 
@@ -92,17 +108,29 @@ def fork_opp(
     workspace=None,
     progress_cb: ProgressCb | None = None,
     edits: list[dict[str, str]] | None = None,
+    mode: str = DEFAULT_FORK_MODE,
     now: _dt.datetime | None = None,
 ) -> ForkOppResult:
     """Fork the source opp's named run (or its latest if ``source_run_id``
     is None) into a new run under the same opp.
 
+    ``mode`` controls how upstream decisions carry forward:
+    ``keep-overrides-only`` keeps only ``status: overridden`` rows from
+    phases strictly before the fork point; ``keep-all`` keeps every
+    upstream row regardless of status. See ``FORK_MODES`` at module top.
+
     Raises ``ForkOppError`` for caller-friendly validation failures
-    (source not found, no runs to fork from, run-id collision). Drive
-    failures during the copy bubble up; partial state may be left
-    behind (the new run folder will exist but be incomplete) and the
-    operator can delete it via the existing run-trash flow.
+    (source not found, no runs to fork from, run-id collision, unknown
+    mode). Drive failures during the copy bubble up; partial state may
+    be left behind (the new run folder will exist but be incomplete)
+    and the operator can delete it via the existing run-trash flow.
     """
+    if mode not in FORK_MODES:
+        raise ForkOppError(
+            "invalid-mode",
+            f"mode {mode!r} is not valid; expected one of {FORK_MODES}",
+        )
+
     fork_ordinal = _resolve_phase_ordinal(fork_at_phase)
     if fork_ordinal is None:
         # Fail fast rather than degenerate to "copy everything." A fork
@@ -202,6 +230,7 @@ def fork_opp(
             decisions_source_body or "",
             fork_ordinal=fork_ordinal,
             edits=edits,
+            mode=mode,
         )
         drive.update_file(decisions_dest_id, trimmed, "text/yaml")
 
@@ -540,29 +569,53 @@ def _rewrite_decisions_yaml(
     *,
     fork_ordinal: int | None,
     edits: list[dict[str, str]] | None = None,
+    mode: str = DEFAULT_FORK_MODE,
 ) -> str:
     """Trim ``decisions.yaml`` to rows from phases strictly before the fork,
-    then apply any human answer edits.
+    filter by ``mode``, then apply any human answer edits.
+
+    Schema upgrade: v1 inputs are upgraded in memory to the v2 shape
+    (``default`` → ``ai-default``, ``open`` → ``applied``, add ``override``
+    where ``status: overridden``) before any filtering. Output is always
+    serialized in v2 shape.
 
     Each row carries its own ``phase`` tag (agent-declared phase name).
     Rows whose phase ordinal >= ``fork_ordinal`` are dropped. Rows whose
     phase isn't recognized stay (safer than silently dropping content
     when the registry / decisions file disagree).
 
-    If ``edits`` is provided, each edit is applied to the trimmed rows
+    Mode filter (applied after the phase trim):
+
+    * ``keep-all``: no further filtering. Every surviving upstream row
+      carries forward regardless of status.
+    * ``keep-overrides-only``: only rows where ``status == "overridden"``
+      survive. AI defaults from upstream are dropped so downstream
+      phases re-derive them.
+
+    If ``edits`` is provided, each edit is applied to the surviving rows
     via :func:`apps.opps.decisions_edit.apply_edits_to_decisions_data`.
     Edits whose ``row_id`` doesn't match any surviving row are silently
     ignored — either the row was trimmed (the user edited a row from a
     phase being re-run from scratch) or the id is bogus.
     """
-    if fork_ordinal is None and not edits:
-        return original
+    if fork_ordinal is None and not edits and mode == DEFAULT_FORK_MODE:
+        # Nothing to do: no trim, no edits, default mode is keep-all.
+        # But we still want to upgrade v1 → v2 if needed for consistency.
+        # Only short-circuit when input is empty or unparseable; otherwise
+        # fall through to the upgrade + reserialize.
+        if not original.strip():
+            return original
+
     try:
         data = yaml.safe_load(original) or {}
         if not isinstance(data, dict):
             return original
     except yaml.YAMLError:
         return original
+
+    # Upgrade v1 → v2 in memory so all subsequent filtering / edits / output
+    # use the canonical schema. Idempotent for v2 inputs.
+    data = upgrade_decisions_v1_to_v2(data)
 
     rows = data.get("decisions")
     if not isinstance(rows, list):
@@ -582,6 +635,12 @@ def _rewrite_decisions_yaml(
             if ordinal is None or ordinal < fork_ordinal:
                 kept.append(row)
         data["decisions"] = kept
+
+    if mode == "keep-overrides-only":
+        data["decisions"] = [
+            row for row in data["decisions"]
+            if isinstance(row, dict) and row.get("status") == "overridden"
+        ]
 
     if edits:
         data = apply_edits_to_decisions_data(data, edits=edits)
