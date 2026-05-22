@@ -44,11 +44,3 @@ export function decisionsReducer(
     }
   }
 }
-
-/** Build a Map<row_id, new_answer> from a buffer — used by render logic to
- * overlay edits on top of fetched decisions without mutating the source. */
-export function bufferToMap(buffer: readonly EditOp[]): Map<string, string> {
-  const m = new Map<string, string>();
-  for (const e of buffer) m.set(e.row_id, e.new_answer);
-  return m;
-}
