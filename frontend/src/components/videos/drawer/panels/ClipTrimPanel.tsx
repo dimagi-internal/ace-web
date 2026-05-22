@@ -122,8 +122,15 @@ export function ClipTrimPanel({ clipKind, index, onCommit, onCancel }: Props) {
   if (!initial || !draft) return <div>(clip not found)</div>;
 
   const alias = aliasFromRef(initial.asset);
+  // Prefix BASE_URL so the request reaches ace-web behind the `/ace/*`
+  // ALB tenant path in production. Without this the trim drawer's
+  // <video> hits `/api/...` (no ace prefix), 404s at the ALB, fires
+  // onError, and renders the stale "isn't cached" fallback even though
+  // serve_media is happily lazy-pulling the same clip for the main
+  // page's ClipSlotWidget (which prefixes correctly).
+  const prefix = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const src = alias
-    ? `/api/w/${workspaceSlug}/videos/programs/${programSlug}/runs/${runId}/media/${alias}.mp4`
+    ? `${prefix}/api/w/${workspaceSlug}/videos/programs/${programSlug}/runs/${runId}/media/${alias}.mp4`
     : null;
 
   const commit = () => {
