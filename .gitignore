@@ -62,8 +62,14 @@ docker-compose.override.yml
 .claude/scheduled_tasks.lock
 qa-results/
 
-# Per-render QA frames extracted by scripts/qa_render.py
-video-production/connect-videos/programs/*/runs/*/qa-frames/
+# Per-run render scratch. Drive is the source of truth for spec.yaml,
+# output.mp4, and the explorer artifacts (see CLAUDE.md "Local FS at
+# ACE_VIDEOS_ROOT is render scratch only"). Anything under runs/<id>/
+# is re-derivable from a fresh hydrate + render OR a Drive fetch via
+# the lazy-pull path. Keeping it untracked stops every render +
+# every Drive edit from showing up in `git status`. `_defaults.yaml`
+# at programs/ root stays tracked — that's the global template.
+video-production/connect-videos/programs/*/runs/
 
 # Clip-cache: video-production/scripts/build-clip-explorer.ts symlinks each
 # @alias.mp4 into ~/.cache/connect-videos/<driveId>.<ext>. apps/videos/api.py
