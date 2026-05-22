@@ -291,30 +291,9 @@ def stream_library_video(
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from None
 
     ext = filename.rsplit(".", 1)[-1] if "." in filename else "mp4"
-    cache_path = service._root() / "assets" / "clip-cache" / f"{entry.drive_id}.{ext}"
-    if not cache_path.is_file():
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        client = service.drive.get_drive_client()
-        # Library entries are typically Drive *shortcuts* — populated by
-        # ``scripts/seed_video_library`` to keep the canonical clip files
-        # in place under their original CHC Media Shoot folders. Drive
-        # refuses to ``get_binary`` a shortcut directly ("fileNotDownloadable"
-        # → 403). Resolve to the target id first, then fetch.
-        meta = client._service.files().get(
-            fileId=entry.drive_id,
-            fields="id,mimeType,shortcutDetails",
-            supportsAllDrives=True,
-        ).execute()
-        target_id = entry.drive_id
-        if meta.get("mimeType") == "application/vnd.google-apps.shortcut":
-            target_id = meta.get("shortcutDetails", {}).get("targetId") or target_id
-        try:
-            content = client.get_binary(target_id)
-        except Exception as e:  # pragma: no cover — surfaces as 502
-            raise ProblemError(
-                502, "Drive fetch failed", detail=str(e)[:200],
-            ) from e
-        cache_path.write_bytes(content)
+    cache_path = _fetch_clip_to_cache(workspace, entry.drive_id, ext)
+    if cache_path is None:
+        raise ProblemError(502, "Drive fetch failed")
 
     suffix = cache_path.suffix.lower()
     if suffix in {".mp4", ".m4v"}:
@@ -868,23 +847,52 @@ def _resolve_symlink_via_drive(workspace, target):
 
 
 def _fetch_clip_to_cache(workspace, drive_id: str, ext: str) -> Path | None:
-    """Fetch a Drive file into ``assets/clip-cache/<id>.<ext>`` and return
-    the cached Path. Returns None when the Drive fetch fails. Shared by
-    the broken-symlink recovery and the manifest-alias recovery paths.
+    """Fetch a Drive clip into ``assets/clip-cache/<id>.<ext>`` and return
+    the cached Path. Returns None when the Drive fetch fails.
+
+    Single Drive-fetch path used by every clip-serving surface:
+    ``stream_library_video`` (picker drawer), ``_resolve_symlink_via_drive``
+    (broken-symlink recovery in ``serve_media``), and
+    ``_resolve_alias_via_manifest`` (manifest-alias recovery for hosts
+    that never ran the explorer build).
+
+    Cache key uses the *input* drive_id so callers can hash by whatever
+    id they have on hand (shortcut id or target id — Drive treats them
+    as different files, and a single workspace usually only references
+    one or the other for any given asset).
+
+    Resolves Drive shortcuts before fetching: library entries are
+    typically shortcuts pointing into the original CHC Media Shoot
+    folders, and Drive refuses ``get_binary`` on a shortcut directly
+    ("fileNotDownloadable" → 403). Looks up shortcutDetails.targetId
+    and fetches that instead.
+
     Uses the workspace-aware Drive client so tests can monkeypatch
     ``drive.client_for_workspace`` (matches the rest of the videos
     module).
     """
     cache = service._root() / "assets" / "clip-cache" / f"{drive_id}.{ext}"
-    if not cache.is_file():
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        client = drive.client_for_workspace(workspace)
-        try:
-            content = client.get_binary(drive_id)
-        except Exception as e:  # pragma: no cover — surfaces as 404 to caller
-            log.warning("serve_media: Drive fetch failed for %s: %s", drive_id, e)
-            return None
-        cache.write_bytes(content)
+    if cache.is_file():
+        return cache
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    client = drive.client_for_workspace(workspace)
+    target_id = drive_id
+    try:
+        meta = client._service.files().get(
+            fileId=drive_id,
+            fields="id,mimeType,shortcutDetails",
+            supportsAllDrives=True,
+        ).execute()
+        if meta.get("mimeType") == "application/vnd.google-apps.shortcut":
+            target_id = meta.get("shortcutDetails", {}).get("targetId") or drive_id
+    except Exception as e:  # pragma: no cover — fall through to get_binary
+        log.warning("serve_media: shortcut probe failed for %s: %s", drive_id, e)
+    try:
+        content = client.get_binary(target_id)
+    except Exception as e:  # pragma: no cover — surfaces as 404 to caller
+        log.warning("serve_media: Drive fetch failed for %s: %s", target_id, e)
+        return None
+    cache.write_bytes(content)
     return cache
 
 
