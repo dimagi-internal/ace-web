@@ -4,11 +4,21 @@ import { ChevronRight, HelpCircle, MessageSquareWarning } from "lucide-react";
 import type { Decision } from "@/api/types.ws";
 import { cn } from "@/lib/utils";
 
+import type { EditOp } from "./decisions/decisionsReducer";
+
 interface Props {
   /** The phase whose decisions we want to show — match `Decision.phase`. */
   phase: string;
   /** All decisions on the run — we filter to this phase. */
   decisions: Decision[];
+  /**
+   * Local edit buffer (per-row staged answer overrides). Pass alongside
+   * `onEdit` + `onRevert` to enable inline edit affordance. When any of the
+   * three are omitted, the panel renders read-only (legacy behavior).
+   */
+  editBuffer?: readonly EditOp[];
+  onEdit?: (row_id: string, new_answer: string) => void;
+  onRevert?: (row_id: string) => void;
 }
 
 /**
@@ -35,7 +45,7 @@ const STATUS_RANK: Record<Decision["status"], number> = {
   applied: 2,
 };
 
-export function DecisionsPanel({ phase, decisions }: Props) {
+export function DecisionsPanel({ phase, decisions, editBuffer, onEdit, onRevert }: Props) {
   const phaseRows = useMemo(
     () =>
       decisions
@@ -55,17 +65,32 @@ export function DecisionsPanel({ phase, decisions }: Props) {
   const open = phaseRows.filter((d) => d.status === "open").length;
   const overridden = phaseRows.filter((d) => d.status === "overridden").length;
 
-  return <DecisionsPanelInner phaseRows={phaseRows} open={open} overridden={overridden} />;
+  return (
+    <DecisionsPanelInner
+      phaseRows={phaseRows}
+      open={open}
+      overridden={overridden}
+      editBuffer={editBuffer}
+      onEdit={onEdit}
+      onRevert={onRevert}
+    />
+  );
 }
 
 function DecisionsPanelInner({
   phaseRows,
   open,
   overridden,
+  editBuffer,
+  onEdit,
+  onRevert,
 }: {
   phaseRows: Decision[];
   open: number;
   overridden: number;
+  editBuffer?: readonly EditOp[];
+  onEdit?: (row_id: string, new_answer: string) => void;
+  onRevert?: (row_id: string) => void;
 }) {
   // Section starts collapsed. Earlier versions auto-opened the whole
   // panel and every "open" row inside it, which made the phase-detail
@@ -113,7 +138,12 @@ function DecisionsPanelInner({
         <ul className="divide-y divide-border/60">
           {phaseRows.map((d) => (
             <li key={d.id}>
-              <DecisionRow decision={d} />
+              <DecisionRow
+                decision={d}
+                editBuffer={editBuffer}
+                onEdit={onEdit}
+                onRevert={onRevert}
+              />
             </li>
           ))}
         </ul>
@@ -122,13 +152,30 @@ function DecisionsPanelInner({
   );
 }
 
-function DecisionRow({ decision }: { decision: Decision }) {
+function DecisionRow({
+  decision,
+  editBuffer,
+  onEdit,
+  onRevert,
+}: {
+  decision: Decision;
+  editBuffer?: readonly EditOp[];
+  onEdit?: (row_id: string, new_answer: string) => void;
+  onRevert?: (row_id: string) => void;
+}) {
   // Start collapsed regardless of status. We used to auto-expand "open"
   // rows on the theory that they're the most actionable, but it meant
   // the panel was already mostly-expanded on first paint and the user
   // had no chance to scan titles before reading bodies. Everything
   // starts compact; user clicks a row to drill in.
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const pendingEdit = editBuffer?.find((e) => e.row_id === decision.id);
+  const effectiveValue = pendingEdit?.new_answer ?? decision.default;
+  const isEdited = !!pendingEdit;
+
   const tone =
     decision.status === "open"
       ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
@@ -147,8 +194,13 @@ function DecisionRow({ decision }: { decision: Decision }) {
         <span className="font-mono text-[10px] text-muted-foreground/70">{decision.id}</span>
         <span className="flex-1 truncate text-foreground">{decision.question}</span>
         <span className="hidden truncate text-[11px] text-muted-foreground sm:block sm:max-w-[260px]">
-          → <span className="font-medium text-foreground">{decision.default}</span>
+          → <span className="font-medium text-foreground">{effectiveValue}</span>
         </span>
+        {isEdited && (
+          <span className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-400">
+            edited
+          </span>
+        )}
         <span
           className={cn(
             "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
@@ -166,7 +218,10 @@ function DecisionRow({ decision }: { decision: Decision }) {
       </button>
       {open && (
         <div className="animate-in fade-in slide-in-from-top-1 grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 border-t border-border/40 bg-background/30 px-4 pb-3 pt-3 text-[11px] duration-150">
-          <DetailRow label="Default" value={<span className="font-medium text-foreground">{decision.default}</span>} />
+          <DetailRow
+            label="Default"
+            value={<span className="font-medium text-foreground">{effectiveValue}</span>}
+          />
           {decision.options_considered.length > 0 && (
             <DetailRow
               label="Options considered"
@@ -206,6 +261,62 @@ function DecisionRow({ decision }: { decision: Decision }) {
               label="Notes"
               value={<span className="whitespace-pre-line text-muted-foreground">{decision.notes}</span>}
             />
+          )}
+          {onEdit && (
+            <div className="col-span-2 mt-2 flex gap-2 border-t border-border/40 pt-3">
+              {!editing && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraft(effectiveValue);
+                      setEditing(true);
+                    }}
+                    className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
+                  >
+                    Edit
+                  </button>
+                  {isEdited && onRevert && (
+                    <button
+                      type="button"
+                      onClick={() => onRevert(decision.id)}
+                      className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
+                    >
+                      Revert
+                    </button>
+                  )}
+                </>
+              )}
+              {editing && (
+                <div className="flex w-full flex-col gap-2">
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onEdit(decision.id, draft);
+                        setEditing(false);
+                      }}
+                      className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400 hover:bg-emerald-500/20"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(false)}
+                      className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
