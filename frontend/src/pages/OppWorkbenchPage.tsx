@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 
 import { getOpp } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
 import { ApiError } from "../api/client";
 import type { OppSnapshot, Step } from "../api/types.ws";
 import { ForkOppDialog } from "../components/opps/ForkOppDialog";
-import { HeatmapView } from "../components/views/HeatmapView";
 import { PhaseView } from "../components/views/PhaseView";
-import { RunDiffView } from "../components/views/RunDiffView";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { SkillList } from "../components/opps/SkillList";
 import { StepDetailPane } from "../components/opps/StepDetailPane";
@@ -28,8 +26,6 @@ import { useViewMode } from "../hooks/useViewMode";
 const VIEW_TABS: ViewTab[] = [
   { kind: "phase", label: "Phases" },
   { kind: "workbench", label: "Workbench" },
-  { kind: "heatmap", label: "Heatmap" },
-  { kind: "diff", label: "Diff" },
 ];
 
 // Cheap human form for the initial loading label, before the API
@@ -184,7 +180,18 @@ export default function OppWorkbenchPage() {
         costRollup={costRollup}
         workspaceSlug={workspaceSlug ?? ""}
       />
-      <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
+      <div className="flex items-center border-b border-border bg-background">
+        <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
+        <a
+          href={`/ace/opps/${workspaceSlug}/${slug}/runs/${snapshot.current_run.run_id}/summary`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto flex items-center gap-1.5 px-6 text-xs text-muted-foreground hover:text-foreground transition"
+        >
+          Summary
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      </div>
       {view === "workbench" && (
         <>
           <div className="flex flex-1 overflow-hidden">
@@ -273,16 +280,6 @@ export default function OppWorkbenchPage() {
       {view === "phase" && (
         <div className="min-h-0 flex-1">
           <PhaseView snapshot={snapshot} oppSlug={slug} workspaceSlug={workspaceSlug ?? ""} />
-        </div>
-      )}
-      {view === "heatmap" && workspaceSlug && (
-        <div className="min-h-0 flex-1">
-          <HeatmapView oppSlug={slug} workspaceSlug={workspaceSlug} />
-        </div>
-      )}
-      {view === "diff" && workspaceSlug && (
-        <div className="min-h-0 flex-1">
-          <RunDiffView oppSlug={slug} workspaceSlug={workspaceSlug} />
         </div>
       )}
       {forkPhaseQuery && (

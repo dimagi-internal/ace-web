@@ -6,8 +6,6 @@ const VALID: readonly ViewKind[] = [
   "timeline",
   "workbench",
   "phase",
-  "heatmap",
-  "diff",
   "story",
 ] as const;
 
