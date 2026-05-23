@@ -139,7 +139,7 @@ def render_phase_tile(snapshot: dict, *, phase_name: str,
 
 
 def _active_phase(snapshot: dict) -> dict | None:
-    for p in sorted(snapshot["phases"], key=lambda x: x["ordinal"]):
+    for p in sorted(snapshot.get("phases") or [], key=lambda x: x["ordinal"]):
         stats = _phase_stats(snapshot, p["name"])
         if stats["total"] == 0:
             continue
