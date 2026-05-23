@@ -18,7 +18,12 @@ logger = logging.getLogger(__name__)
 def _load_snapshot(slug: str, workspace, run_id: str | None = None) -> dict | None:
     """Indirection so tests can patch."""
     from apps.opps.api import load_rich_opp_snapshot
-    return load_rich_opp_snapshot(workspace, slug, run_id=run_id)
+    snap = load_rich_opp_snapshot(workspace, slug, run_id=run_id)
+    if snap is not None:
+        opp = snap.get("opp") or {}
+        if "display_name" not in snap:
+            snap["display_name"] = opp.get("display_name", slug)
+    return snap
 
 
 def handle_status(*, installation, user_link, rest: str, channel_id: str) -> dict:

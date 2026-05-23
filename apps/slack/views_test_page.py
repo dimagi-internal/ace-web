@@ -21,6 +21,22 @@ from apps.opps.api import load_rich_opp_snapshot
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_snapshot(snapshot: dict) -> dict:
+    """Hoist nested fields to top level for Block Kit renderers.
+
+    The rich snapshot nests opp metadata under 'opp' and run data under
+    'current_run'. The Block Kit renderers (blocks.py) expect
+    'display_name' and 'current_run' at the top level. This bridges
+    the two shapes.
+    """
+    opp = snapshot.get("opp") or {}
+    if "display_name" not in snapshot and "display_name" in opp:
+        snapshot["display_name"] = opp["display_name"]
+    if "display_name" not in snapshot:
+        snapshot["display_name"] = snapshot.get("slug", "?")
+    return snapshot
+
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica,
@@ -211,6 +227,7 @@ def test_preview(request: HttpRequest, slug: str) -> HttpResponse:
     snapshot = load_rich_opp_snapshot(workspace, slug, run_id=run_id)
     if snapshot is None:
         return HttpResponse(f"Opp '{slug}' not found", status=404)
+    _normalize_snapshot(snapshot)
 
     from .blocks import render_parent_card, render_phase_tile
     from .blocks_decisions import render_decision_message
@@ -359,6 +376,7 @@ def test_post(request: HttpRequest, slug: str) -> HttpResponse:
     snapshot = load_rich_opp_snapshot(workspace, slug, run_id=run_id)
     if snapshot is None:
         return HttpResponse(f"Opp '{slug}' not found", status=404)
+    _normalize_snapshot(snapshot)
 
     from .blocks import render_parent_card, render_phase_tile
     from .blocks_decisions import render_decision_message
