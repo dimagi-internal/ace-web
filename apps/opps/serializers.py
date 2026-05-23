@@ -220,15 +220,14 @@ def _project_decision_phase(raw: str) -> str:
 
 
 def serialize_decision(d: Decision) -> dict:
-    ai_default = getattr(d, "ai_default", "") or getattr(d, "default", "")
     return {
         "id": d.id,
         "phase": _project_decision_phase(d.phase),
         "phase_raw": d.phase,
         "skill": d.skill,
         "question": d.question,
-        "default": ai_default,
-        "override": getattr(d, "override", ""),
+        "ai_default": d.ai_default,
+        "override": d.override,
         "options_considered": list(d.options_considered),
         "source": d.source,
         "status": d.status,
