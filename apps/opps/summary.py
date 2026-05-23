@@ -113,8 +113,9 @@ def _phase_products(state: dict, phase: str, block: str | None = None) -> dict:
 
 def _read_opp(state: dict, opp_yaml: dict, *, workspace_slug: str,
               opp_slug: str, run_id: str) -> dict:
-    pdd = _phase_products(state, "design", "pdd")
-    connect_opp = _phase_products(state, "connect-setup", "connect").get("opportunity") or {}
+    pdd = _phase_products(state, "idea-to-design", "pdd") or _phase_products(state, "design", "pdd")
+    connect = _phase_products(state, "connect-setup", "connect")
+    connect_opp = connect.get("opportunity") or {}
     cycle_grade = _phase_products(state, "closeout", "cycle_grade")
 
     display_name = (
@@ -123,7 +124,7 @@ def _read_opp(state: dict, opp_yaml: dict, *, workspace_slug: str,
         or opp_slug
     )
     description = pdd.get("description") or ""
-    end_date = connect_opp.get("end_date")
+    end_date = connect_opp.get("end_date") or connect.get("end_date")
 
     return {
         "workspace_slug": workspace_slug,
