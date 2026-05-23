@@ -15,6 +15,7 @@ import json
 import logging
 
 from django.http import HttpRequest, HttpResponse
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.opps.api import load_rich_opp_snapshot
@@ -357,6 +358,7 @@ def test_preview(request: HttpRequest, slug: str) -> HttpResponse:
     return HttpResponse(html)
 
 
+@csrf_exempt
 @require_POST
 @_require_auth
 def test_post(request: HttpRequest, slug: str) -> HttpResponse:
