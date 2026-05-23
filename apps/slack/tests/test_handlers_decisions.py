@@ -9,7 +9,6 @@ from apps.slack.verbs_decisions import (
     handle_answer_other_open,
     handle_answer_other_submission,
     handle_fork_with_answers,
-    handle_fork_submission,
 )
 
 
