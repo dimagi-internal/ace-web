@@ -673,17 +673,9 @@ def _load_decisions(
 def _parse_decision_rows(raw_rows: list) -> list[Decision]:
     """Convert raw decisions.yaml rows into Decision dataclasses.
 
-    Handles both schema versions transparently (PR #541 introduced v2):
-
-    * v1 shape:  ``{default: <value>, status: applied|open|overridden}``
-    * v2 shape:  ``{ai-default: <value>, override?: <value>,
-                    status: applied|overridden}``
-
-    The Decision surfaces a single "effective" answer on its ``default``
-    field — override (v2 human edit) > ai-default (v2 AI proposal) >
-    default (v1 fallback) — so frontend consumers don't need to know the
-    schema version. ``open`` status collapses to ``applied`` to match
-    the v2 enum (open == AI defaulted == applied).
+    Reads v2 fields directly: ``ai-default`` for the AI proposal,
+    ``override`` for the human edit. Falls back to v1 ``default`` →
+    ``ai_default`` so old rows still parse.
     """
     out: list[Decision] = []
     for row in raw_rows:
@@ -693,21 +685,19 @@ def _parse_decision_rows(raw_rows: list) -> list[Decision]:
         if not rid:
             continue
         opts = row.get("options_considered") or []
-        effective_default = (
-            row.get("override")
-            or row.get("ai-default")
-            or row.get("default")
-            or ""
-        )
-        raw_status = str(row.get("status") or "applied").strip().lower()
-        status = "applied" if raw_status == "open" else raw_status
+        ai_default = str(
+            row.get("ai-default") or row.get("default") or ""
+        ).strip()
+        override = str(row.get("override") or "").strip()
+        status = str(row.get("status") or "applied").strip().lower()
         out.append(
             Decision(
                 id=rid,
                 phase=str(row.get("phase") or "").strip(),
                 skill=str(row.get("skill") or "").strip(),
                 question=str(row.get("question") or "").strip(),
-                default=str(effective_default).strip(),
+                ai_default=ai_default,
+                override=override,
                 options_considered=[str(o) for o in opts] if isinstance(opts, list) else [],
                 source=str(row.get("source") or "").strip(),
                 status=status,

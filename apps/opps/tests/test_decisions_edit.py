@@ -118,7 +118,7 @@ def test_upgrade_v1_renames_default_to_ai_default():
     assert row["ai-default"] == "v1"
 
 
-def test_upgrade_v1_collapses_open_to_applied():
+def test_upgrade_v1_preserves_open_status():
     v1 = {
         "schema_version": 1,
         "decisions": [
@@ -128,7 +128,7 @@ def test_upgrade_v1_collapses_open_to_applied():
         ],
     }
     v2 = upgrade_decisions_v1_to_v2(v1)
-    assert v2["decisions"][0]["status"] == "applied"
+    assert v2["decisions"][0]["status"] == "open"
 
 
 def test_upgrade_v1_overridden_row_copies_default_to_override():

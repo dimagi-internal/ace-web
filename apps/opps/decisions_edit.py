@@ -76,7 +76,7 @@ def upgrade_decisions_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
 
     v1 → v2:
       * row field rename: ``default`` → ``ai-default``
-      * status enum: ``open`` collapses to ``applied``
+      * status enum: ``open`` is preserved (unanswered questions)
       * for status=overridden rows missing ``override:``, copy the v1
         ``default`` value into ``override`` (lossy: v1 destroyed the
         original AI value on override, so the migrated row carries the
@@ -104,8 +104,6 @@ def upgrade_decisions_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
         new_row = dict(row)
         if "default" in new_row and "ai-default" not in new_row:
             new_row["ai-default"] = new_row.pop("default")
-        if new_row.get("status") == "open":
-            new_row["status"] = "applied"
         if new_row.get("status") == "overridden" and "override" not in new_row:
             ai_default = new_row.get("ai-default")
             if isinstance(ai_default, str):

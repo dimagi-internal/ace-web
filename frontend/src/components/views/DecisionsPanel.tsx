@@ -173,7 +173,7 @@ function DecisionRow({
   const [draft, setDraft] = useState("");
 
   const pendingEdit = editBuffer?.find((e) => e.row_id === decision.id);
-  const effectiveValue = pendingEdit?.new_answer ?? decision.default;
+  const effectiveValue = pendingEdit?.new_answer ?? (decision.override || decision.ai_default);
   const isEdited = !!pendingEdit;
 
   const tone =

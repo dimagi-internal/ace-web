@@ -65,7 +65,8 @@ def _snapshot_with_decisions():
             ],
             "decisions": [
                 {"id": "d-001", "phase": "idea-to-design", "skill": "draft-pdd",
-                 "question": "Include supervisor?", "default": "Yes",
+                 "question": "Include supervisor?", "ai_default": "Yes",
+                 "override": "",
                  "options_considered": ["Yes", "No"], "source": "pdd",
                  "status": "open", "notes": ""},
             ],

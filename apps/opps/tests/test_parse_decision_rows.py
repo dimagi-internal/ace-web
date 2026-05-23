@@ -1,8 +1,8 @@
 """Pin _parse_decision_rows behavior across v1 and v2 schemas.
 
-The writer in PR #541 introduced v2 (`ai-default` + optional `override`,
-no `open` status). The reader must surface a single effective value to
-the frontend regardless of which schema the source row uses.
+The v2 schema uses `ai-default` + optional `override`. The reader maps
+both schemas to `Decision.ai_default` / `Decision.override` and preserves
+`open` status so the frontend can render unanswered questions.
 """
 from apps.opps.sync import _parse_decision_rows
 
@@ -22,46 +22,47 @@ def _base_row(extras: dict | None = None) -> dict:
     return row
 
 
-def test_v1_applied_row_surfaces_default_value():
+def test_v1_row_maps_default_to_ai_default():
     rows = [_base_row({"default": "english", "status": "applied"})]
     [d] = _parse_decision_rows(rows)
-    assert d.default == "english"
+    assert d.ai_default == "english"
+    assert d.override == ""
     assert d.status == "applied"
 
 
-def test_v1_open_status_collapses_to_applied():
-    """`open` is a v1-only status; the v2 enum is {applied, overridden}.
-    Reader collapses so the frontend sees the same status set regardless
-    of which schema the source row used."""
+def test_open_status_is_preserved():
+    """``open`` marks a question that still needs a human answer.
+    The frontend renders these with amber badges and sorts them first."""
     rows = [_base_row({"default": "english", "status": "open"})]
     [d] = _parse_decision_rows(rows)
-    assert d.status == "applied"
+    assert d.status == "open"
 
 
-def test_v2_row_with_only_ai_default_surfaces_ai_default():
+def test_v2_row_with_only_ai_default():
     rows = [_base_row({"ai-default": "english", "status": "applied"})]
     [d] = _parse_decision_rows(rows)
-    assert d.default == "english"
+    assert d.ai_default == "english"
+    assert d.override == ""
     assert d.status == "applied"
 
 
-def test_v2_row_with_override_surfaces_override_not_ai_default():
-    """When the human edited, the effective value is the override.
-    `ai-default` is the immutable AI proposal, not what the user sees."""
+def test_v2_row_with_override():
     rows = [_base_row({
         "ai-default": "english",
         "override": "french",
         "status": "overridden",
     })]
     [d] = _parse_decision_rows(rows)
-    assert d.default == "french"
+    assert d.ai_default == "english"
+    assert d.override == "french"
     assert d.status == "overridden"
 
 
 def test_row_with_neither_default_nor_ai_default_surfaces_empty():
     rows = [_base_row({"status": "applied"})]
     [d] = _parse_decision_rows(rows)
-    assert d.default == ""
+    assert d.ai_default == ""
+    assert d.override == ""
 
 
 def test_row_missing_id_is_dropped():

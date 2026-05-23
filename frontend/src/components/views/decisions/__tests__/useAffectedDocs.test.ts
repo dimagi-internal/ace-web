@@ -11,7 +11,8 @@ function dec(id: string, skill: string): Decision {
     phase_raw: "design",
     skill,
     question: `q-${id}`,
-    default: "v",
+    ai_default: "v",
+    override: "",
     options_considered: [],
     // `source` is a free-text description in the wire schema (not a skill
     // slug). Set it to something obviously non-skill so a regression that

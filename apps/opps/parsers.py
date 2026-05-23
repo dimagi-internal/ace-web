@@ -115,7 +115,8 @@ class Decision:
     phase: str
     skill: str
     question: str
-    default: str
+    ai_default: str
+    override: str = ""
     options_considered: list[str] = field(default_factory=list)
     source: str = ""
     status: str = "applied"  # applied | overridden | open

@@ -274,7 +274,7 @@ def test_pre_existing_override_in_fork_phase_also_survives():
 
 def test_v1_input_upgrades_in_memory_on_rewrite():
     """v1-shape source decisions.yaml gets upgraded transparently.
-    `default:` becomes `ai-default:`; `status: open` becomes `applied`."""
+    `default:` becomes `ai-default:`; `status: open` is preserved."""
     rows = [
         {"id": "old-applied", "phase": "design-review", "default": "v1",
          "options_considered": [], "status": "applied"},
@@ -291,7 +291,7 @@ def test_v1_input_upgrades_in_memory_on_rewrite():
         assert "default" not in row
         assert "ai-default" in row
     statuses = [r["status"] for r in parsed["decisions"]]
-    assert statuses == ["applied", "applied"]  # open collapsed
+    assert statuses == ["applied", "open"]
 
 
 class _FakeFile:

@@ -36,7 +36,7 @@ def render_decision_message(
     """
     decision_id = decision.get("id", "")
     question = decision.get("question", "(no question)")
-    ai_default = decision.get("default", "")
+    ai_default = decision.get("ai_default", "")
     skill = decision.get("skill", "")
     options = decision.get("options_considered") or []
 
