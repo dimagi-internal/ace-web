@@ -119,5 +119,5 @@ class Decision:
     override: str = ""
     options_considered: list[str] = field(default_factory=list)
     source: str = ""
-    status: str = "applied"  # applied | overridden | open
+    status: str = "ai-default"  # ai-default | overridden
     notes: str = ""

@@ -68,7 +68,7 @@ def _snapshot_with_decisions():
                  "question": "Include supervisor?", "ai_default": "Yes",
                  "override": "",
                  "options_considered": ["Yes", "No"], "source": "pdd",
-                 "status": "open", "notes": ""},
+                 "status": "ai-default", "notes": ""},
             ],
         },
         "phases": [

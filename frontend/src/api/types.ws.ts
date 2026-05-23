@@ -297,7 +297,7 @@ export interface Decision {
   override: string;
   options_considered: string[];
   source: string;
-  status: "applied" | "overridden" | "open";
+  status: "ai-default" | "overridden";
   notes: string;
 }
 

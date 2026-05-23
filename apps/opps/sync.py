@@ -675,7 +675,8 @@ def _parse_decision_rows(raw_rows: list) -> list[Decision]:
 
     Reads v2 fields directly: ``ai-default`` for the AI proposal,
     ``override`` for the human edit. Falls back to v1 ``default`` →
-    ``ai_default`` so old rows still parse.
+    ``ai_default`` so old rows still parse. Old status values
+    (``applied``, ``open``) map to ``ai-default``.
     """
     out: list[Decision] = []
     for row in raw_rows:
@@ -689,7 +690,8 @@ def _parse_decision_rows(raw_rows: list) -> list[Decision]:
             row.get("ai-default") or row.get("default") or ""
         ).strip()
         override = str(row.get("override") or "").strip()
-        status = str(row.get("status") or "applied").strip().lower()
+        raw_status = str(row.get("status") or "ai-default").strip().lower()
+        status = raw_status if raw_status == "overridden" else "ai-default"
         out.append(
             Decision(
                 id=rid,

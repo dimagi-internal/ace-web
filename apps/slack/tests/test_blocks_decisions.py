@@ -10,7 +10,7 @@ from apps.slack.blocks_decisions import (
 
 
 def _decision_fixture(*, decision_id="d-001", phase="idea-to-design",
-                       skill="draft-pdd", status="open"):
+                       skill="draft-pdd", status="ai-default"):
     return {
         "id": decision_id,
         "phase": phase,
@@ -41,8 +41,8 @@ def _snapshot_with_decisions():
                  "judge": {"score_pct": 82}},
             ],
             "decisions": [
-                _decision_fixture(decision_id="d-001", status="open"),
-                _decision_fixture(decision_id="d-002", status="applied",
+                _decision_fixture(decision_id="d-001", status="ai-default"),
+                _decision_fixture(decision_id="d-002", status="ai-default",
                                   skill="review-pdd"),
                 _decision_fixture(decision_id="d-003", status="overridden"),
             ],

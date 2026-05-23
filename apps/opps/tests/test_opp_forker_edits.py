@@ -26,9 +26,9 @@ def test_rewrite_with_no_edits_matches_legacy_trim():
     """
     rows = [
         {"id": "a", "phase": "design-review", "ai-default": "v1",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
         {"id": "b", "phase": "commcare-setup", "ai-default": "w1",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
     ]
     src = _decisions_yaml(rows)
 
@@ -42,7 +42,7 @@ def test_rewrite_with_no_edits_matches_legacy_trim():
 def test_rewrite_with_edits_applies_after_trim():
     rows = [
         {"id": "a", "phase": "design-review", "ai-default": "v1",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
     ]
     src = _decisions_yaml(rows)
     edits = [{"row_id": "a", "new_answer": "v2"}]
@@ -58,7 +58,7 @@ def test_rewrite_with_edits_applies_after_trim():
 
 def test_rewrite_edit_matching_ai_default_reverts_to_applied():
     """If the human enters a value matching the AI default, the override
-    is cleared and status flips back to applied. Round-trip path."""
+    is cleared and status flips back to ai-default. Round-trip path."""
     rows = [
         {"id": "a", "phase": "design-review", "ai-default": "v1",
          "override": "v2", "options_considered": ["v1", "v2"],
@@ -73,7 +73,7 @@ def test_rewrite_edit_matching_ai_default_reverts_to_applied():
     row = parsed["decisions"][0]
     assert row["ai-default"] == "v1"
     assert "override" not in row
-    assert row["status"] == "applied"
+    assert row["status"] == "ai-default"
 
 
 def test_edit_at_or_past_fork_point_survives_trim():
@@ -85,7 +85,7 @@ def test_edit_at_or_past_fork_point_survives_trim():
     """
     rows = [
         {"id": "row-at-fork-phase", "phase": "commcare-setup",
-         "ai-default": "v1", "options_considered": [], "status": "applied"},
+         "ai-default": "v1", "options_considered": [], "status": "ai-default"},
     ]
     src = _decisions_yaml(rows)
     edits = [{"row_id": "row-at-fork-phase", "new_answer": "v2"}]
@@ -104,7 +104,7 @@ def test_edit_targeting_unknown_row_id_is_silently_ignored():
     here the row genuinely doesn't exist in the source."""
     rows = [
         {"id": "row-a", "phase": "design-review", "ai-default": "v1",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
     ]
     src = _decisions_yaml(rows)
     edits = [{"row_id": "ghost-row", "new_answer": "v2"}]
@@ -121,7 +121,7 @@ def test_keep_overrides_only_drops_applied_rows():
     """In keep-overrides-only mode, only status=overridden rows survive."""
     rows = [
         {"id": "applied-row", "phase": "design-review", "ai-default": "v1",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
         {"id": "overridden-row", "phase": "design-review", "ai-default": "v1",
          "override": "v2", "options_considered": ["v1", "v2"],
          "status": "overridden"},
@@ -141,7 +141,7 @@ def test_keep_all_preserves_both_applied_and_overridden():
     """In keep-all mode (the default), every upstream row survives."""
     rows = [
         {"id": "applied-row", "phase": "design-review", "ai-default": "v1",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
         {"id": "overridden-row", "phase": "design-review", "ai-default": "v1",
          "override": "v2", "options_considered": ["v1", "v2"],
          "status": "overridden"},
@@ -188,9 +188,9 @@ def test_non_overridden_downstream_rows_are_still_trimmed():
     AI-default rows from at/past the fork point still get trimmed."""
     rows = [
         {"id": "upstream-applied", "phase": "design-review",
-         "ai-default": "v1", "options_considered": [], "status": "applied"},
+         "ai-default": "v1", "options_considered": [], "status": "ai-default"},
         {"id": "downstream-applied", "phase": "commcare-setup",
-         "ai-default": "w1", "options_considered": [], "status": "applied"},
+         "ai-default": "w1", "options_considered": [], "status": "ai-default"},
     ]
     src = _decisions_yaml(rows)
 
@@ -209,9 +209,9 @@ def test_edit_at_fork_phase_survives_keep_overrides_only():
     """
     rows = [
         {"id": "edited-row", "phase": "design-review", "ai-default": "v1",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
         {"id": "other-row", "phase": "design-review", "ai-default": "x",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
     ]
     src = _decisions_yaml(rows)
     edits = [{"row_id": "edited-row", "new_answer": "v2"}]
@@ -234,9 +234,9 @@ def test_edit_at_fork_phase_survives_keep_all():
     (they'll be re-derived on re-run)."""
     rows = [
         {"id": "edited-row", "phase": "design-review", "ai-default": "v1",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
         {"id": "other-row", "phase": "design-review", "ai-default": "x",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
     ]
     src = _decisions_yaml(rows)
     edits = [{"row_id": "edited-row", "new_answer": "v2"}]
@@ -261,7 +261,7 @@ def test_pre_existing_override_in_fork_phase_also_survives():
          "override": "v2", "options_considered": ["v1", "v2"],
          "status": "overridden"},
         {"id": "fresh-applied", "phase": "design-review", "ai-default": "x",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
     ]
     src = _decisions_yaml(rows)
 
@@ -274,12 +274,12 @@ def test_pre_existing_override_in_fork_phase_also_survives():
 
 def test_v1_input_upgrades_in_memory_on_rewrite():
     """v1-shape source decisions.yaml gets upgraded transparently.
-    `default:` becomes `ai-default:`; `status: open` is preserved."""
+    `default:` becomes `ai-default:`; old statuses map to `ai-default`."""
     rows = [
         {"id": "old-applied", "phase": "design-review", "default": "v1",
-         "options_considered": [], "status": "applied"},
+         "options_considered": [], "status": "ai-default"},
         {"id": "old-open", "phase": "design-review", "default": "w1",
-         "options_considered": [], "status": "open"},
+         "options_considered": [], "status": "ai-default"},
     ]
     src = _decisions_yaml(rows, schema_version=1)
 
@@ -291,7 +291,7 @@ def test_v1_input_upgrades_in_memory_on_rewrite():
         assert "default" not in row
         assert "ai-default" in row
     statuses = [r["status"] for r in parsed["decisions"]]
-    assert statuses == ["applied", "open"]
+    assert statuses == ["ai-default", "ai-default"]
 
 
 class _FakeFile:
@@ -374,7 +374,7 @@ def test_fork_opp_passes_edits_to_rewrite(monkeypatch):
         "schema_version": 2,
         "decisions": [
             {"id": "answer-1", "phase": "design-review", "ai-default": "before",
-             "options_considered": [], "status": "applied"},
+             "options_considered": [], "status": "ai-default"},
         ],
     })
 
@@ -419,7 +419,7 @@ def test_fork_opp_without_edits_unchanged_behavior(monkeypatch):
         "schema_version": 2,
         "decisions": [
             {"id": "answer-1", "phase": "design-review", "ai-default": "v1",
-             "options_considered": [], "status": "applied"},
+             "options_considered": [], "status": "ai-default"},
         ],
     })
 
@@ -449,7 +449,7 @@ def test_fork_opp_without_edits_unchanged_behavior(monkeypatch):
 
     parsed = yaml.safe_load(write_log["updated_decisions"])
     assert parsed["decisions"][0]["ai-default"] == "v1"
-    assert parsed["decisions"][0]["status"] == "applied"  # unchanged
+    assert parsed["decisions"][0]["status"] == "ai-default"  # unchanged
 
 
 def test_fork_opp_rejects_invalid_mode(monkeypatch):

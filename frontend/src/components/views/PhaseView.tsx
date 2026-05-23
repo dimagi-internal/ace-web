@@ -282,7 +282,7 @@ function PhaseTile({
   const total = steps.length;
   const complete = steps.filter((s) => s.status === "complete").length;
   const qaFailed = steps.filter((s) => s.status === "qa-failed").length;
-  const openDecisions = decisions.filter((d) => d.status === "open").length;
+  const overriddenDecisions = decisions.filter((d) => d.status === "overridden").length;
   const judged = steps
     .map((s) => s.judge?.score_pct ?? s.judge?.score ?? null)
     .filter((v): v is number => v !== null);
@@ -309,12 +309,12 @@ function PhaseTile({
           Phase {phase.ordinal}
         </span>
         <span className="ml-auto" />
-        {openDecisions > 0 && (
+        {overriddenDecisions > 0 && (
           <span
-            className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-500"
-            title={`${openDecisions} open decision${openDecisions === 1 ? "" : "s"}`}
+            className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-400"
+            title={`${overriddenDecisions} overridden decision${overriddenDecisions === 1 ? "" : "s"}`}
           >
-            ? {openDecisions}
+            {overriddenDecisions} overridden
           </span>
         )}
         {qaFailed > 0 && (

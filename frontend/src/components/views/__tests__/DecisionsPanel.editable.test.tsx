@@ -15,7 +15,7 @@ function dec(over: Partial<Decision> = {}): Decision {
     override: "",
     options_considered: [],
     source: "idea-to-pdd",
-    status: "applied",
+    status: "ai-default",
     notes: "",
     ...over,
   };

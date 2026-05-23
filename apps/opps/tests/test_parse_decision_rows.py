@@ -1,8 +1,9 @@
 """Pin _parse_decision_rows behavior across v1 and v2 schemas.
 
-The v2 schema uses `ai-default` + optional `override`. The reader maps
-both schemas to `Decision.ai_default` / `Decision.override` and preserves
-`open` status so the frontend can render unanswered questions.
+The v2 schema uses `ai-default` + optional `override` with status enum
+`ai-default | overridden`. The reader maps both schemas to
+`Decision.ai_default` / `Decision.override` and normalizes old status
+values (`applied`, `open`) to `ai-default`.
 """
 from apps.opps.sync import _parse_decision_rows
 
@@ -27,23 +28,21 @@ def test_v1_row_maps_default_to_ai_default():
     [d] = _parse_decision_rows(rows)
     assert d.ai_default == "english"
     assert d.override == ""
-    assert d.status == "applied"
+    assert d.status == "ai-default"
 
 
-def test_open_status_is_preserved():
-    """``open`` marks a question that still needs a human answer.
-    The frontend renders these with amber badges and sorts them first."""
+def test_v1_open_status_maps_to_ai_default():
     rows = [_base_row({"default": "english", "status": "open"})]
     [d] = _parse_decision_rows(rows)
-    assert d.status == "open"
+    assert d.status == "ai-default"
 
 
 def test_v2_row_with_only_ai_default():
-    rows = [_base_row({"ai-default": "english", "status": "applied"})]
+    rows = [_base_row({"ai-default": "english", "status": "ai-default"})]
     [d] = _parse_decision_rows(rows)
     assert d.ai_default == "english"
     assert d.override == ""
-    assert d.status == "applied"
+    assert d.status == "ai-default"
 
 
 def test_v2_row_with_override():
@@ -59,14 +58,14 @@ def test_v2_row_with_override():
 
 
 def test_row_with_neither_default_nor_ai_default_surfaces_empty():
-    rows = [_base_row({"status": "applied"})]
+    rows = [_base_row({"status": "ai-default"})]
     [d] = _parse_decision_rows(rows)
     assert d.ai_default == ""
     assert d.override == ""
 
 
 def test_row_missing_id_is_dropped():
-    rows = [_base_row({"id": "", "default": "x", "status": "applied"})]
+    rows = [_base_row({"id": "", "default": "x", "status": "ai-default"})]
     assert _parse_decision_rows(rows) == []
 
 

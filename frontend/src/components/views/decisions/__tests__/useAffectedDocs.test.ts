@@ -18,7 +18,7 @@ function dec(id: string, skill: string): Decision {
     // slug). Set it to something obviously non-skill so a regression that
     // mistakenly keys the crosswalk off `source` will return no products.
     source: `description for ${id}`,
-    status: "applied",
+    status: "ai-default",
     notes: "",
   };
 }
