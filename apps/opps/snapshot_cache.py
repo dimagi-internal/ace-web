@@ -46,7 +46,9 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #   v4 — post #512 (OppCard grew a ``runs_summary: list[RunSummary]``
 #        field; entries written before this bump deserialise without it
 #        and the Opps-list strip would render an empty chip row)
-_KEY_VERSION = "v4"
+#   v5 — post #548 (Decision.default → Decision.ai_default + .override;
+#        cached Decision objects from v4 lack the new attrs)
+_KEY_VERSION = "v5"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:
