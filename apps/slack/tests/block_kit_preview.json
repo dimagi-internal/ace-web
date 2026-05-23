@@ -1,0 +1,326 @@
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "\u2500\u2500 Phase tile (parent message) \u2500\u2500"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Phase 1 \u00b7 idea-to-design"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Idea to Design*"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "1/3 done \u00b7 mean 82/100"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`\u2593\u2593\u2593\u2591\u2591\u2591\u2591\u2591\u2591\u2591 30%`"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": ":clipboard: 3 decisions \u00b7 1 answered by 1 person"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View phase \u2197"
+          },
+          "action_id": "view_phase",
+          "url": "https://example.com"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "\ud83c\udf74 Fork & re-run with answers"
+          },
+          "action_id": "fork_with_answers",
+          "style": "primary",
+          "value": "x:y:z"
+        }
+      ]
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "\u2500\u2500 Decision #1 (voted) \u2500\u2500"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": ":clipboard: Decision #1 \u00b7 draft-pdd"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Should the Learn app include a supervisor dashboard?*\nAI default: `Yes \u2014 include a supervisor module with aggregate views`\nStatus: :grey_question: open"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": ":speech_balloon: <@U12345> \u2192 `No \u2014 keep it FLW-only for v1`"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Yes \u2014 include a supervisor module",
+            "emoji": true
+          },
+          "action_id": "answer_decision:d-001:1390a0ad",
+          "value": "rural-health:idea-to-design:d-001:Yes \u2014 include a supervisor module"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "No \u2014 keep it FLW-only for v1",
+            "emoji": true
+          },
+          "action_id": "answer_decision:d-001:5c1cb84e",
+          "value": "rural-health:idea-to-design:d-001:No \u2014 keep it FLW-only for v1"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Simplified dashboard only",
+            "emoji": true
+          },
+          "action_id": "answer_decision:d-001:547eb85b",
+          "value": "rural-health:idea-to-design:d-001:Simplified dashboard only"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Other\u2026",
+            "emoji": true
+          },
+          "action_id": "answer_decision_other:d-001",
+          "value": "rural-health:idea-to-design:d-001"
+        }
+      ]
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "\u2500\u2500 Decision #2 (no vote) \u2500\u2500"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": ":clipboard: Decision #2 \u00b7 draft-pdd"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Should verification require photo evidence or GPS only?*\nAI default: `Photo + GPS for all delivery types`\nStatus: :grey_question: open"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "_No answer yet_"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Photo + GPS",
+            "emoji": true
+          },
+          "action_id": "answer_decision:d-002:89c68720",
+          "value": "rural-health:idea-to-design:d-002:Photo + GPS"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "GPS only",
+            "emoji": true
+          },
+          "action_id": "answer_decision:d-002:44036a31",
+          "value": "rural-health:idea-to-design:d-002:GPS only"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Photo only",
+            "emoji": true
+          },
+          "action_id": "answer_decision:d-002:5ff6549f",
+          "value": "rural-health:idea-to-design:d-002:Photo only"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Configurable per delivery type",
+            "emoji": true
+          },
+          "action_id": "answer_decision:d-002:6bb64de8",
+          "value": "rural-health:idea-to-design:d-002:Configurable per delivery type"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Other\u2026",
+            "emoji": true
+          },
+          "action_id": "answer_decision_other:d-002",
+          "value": "rural-health:idea-to-design:d-002"
+        }
+      ]
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "\u2500\u2500 Decision #3 (applied) \u2500\u2500"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": ":clipboard: Decision #3 \u00b7 review-pdd"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Target number of FLWs for the pilot phase?*\nAI default: `50 FLWs across 3 districts`\nStatus: :white_check_mark: applied"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "_No answer yet_"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "25 FLWs in 1 district",
+            "emoji": true
+          },
+          "action_id": "answer_decision:d-003:ca287639",
+          "value": "rural-health:idea-to-design:d-003:25 FLWs in 1 district"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "50 FLWs across 3 districts",
+            "emoji": true
+          },
+          "action_id": "answer_decision:d-003:9925c52a",
+          "value": "rural-health:idea-to-design:d-003:50 FLWs across 3 districts"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "100 FLWs across 5 districts",
+            "emoji": true
+          },
+          "action_id": "answer_decision:d-003:30a6e61a",
+          "value": "rural-health:idea-to-design:d-003:100 FLWs across 5 districts"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Other\u2026",
+            "emoji": true
+          },
+          "action_id": "answer_decision_other:d-003",
+          "value": "rural-health:idea-to-design:d-003"
+        }
+      ]
+    }
+  ]
+}

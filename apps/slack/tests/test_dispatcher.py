@@ -68,11 +68,16 @@ def test_dispatch_tick_skips_unchanged_phase(setup):
     inst, user, ws = setup
     snap = _snap()
     from apps.slack.blocks import phase_state_hash
+    from apps.slack.blocks_decisions import decisions_state_hash
     h = phase_state_hash(snap, "idea-to-design")
+    phase_decisions = [d for d in (snap.get("current_run", {}).get("decisions") or [])
+                       if d.get("phase") == "idea-to-design"]
+    dh = decisions_state_hash(phase_decisions, {})
+    combined_hash = f"{h}:{dh}"
     thread = SlackRunThread.objects.create(
         installation=inst, channel_id="C1", parent_ts="1.1",
         opp_slug="my-opp", run_id="run-001", ace_user=user,
-        phase_messages={"idea-to-design": {"ts": "2.0", "last_state_hash": h}},
+        phase_messages={"idea-to-design": {"ts": "2.0", "last_state_hash": combined_hash}},
     )
     with patch("apps.slack.dispatcher._load_snapshot") as load, \
          patch("apps.slack.dispatcher._get_client") as get_client:

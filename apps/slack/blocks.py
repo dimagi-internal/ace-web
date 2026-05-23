@@ -62,10 +62,21 @@ def _phase_info(snapshot: dict, phase_name: str) -> dict:
 
 
 def render_phase_tile(snapshot: dict, *, phase_name: str,
-                      opp_slug: str, workspace_slug: str) -> list[dict]:
+                      opp_slug: str, workspace_slug: str,
+                      votes: dict | None = None) -> list[dict]:
+    """Render a phase tile with optional decision summary and fork button.
+
+    Args:
+        votes: dict of decision_id → vote from SlackRunThread.phase_messages.
+            When non-empty, the tile shows a decision summary line and a
+            "Fork & re-run with answers" button instead of the redirect.
+    """
+    from .blocks_decisions import render_decision_summary
+
     phase = _phase_info(snapshot, phase_name)
     stats = _phase_stats(snapshot, phase_name)
     bar = render_progress_bar(stats["complete"], stats["total"])
+    votes = votes or {}
 
     eyebrow = f"Phase {phase['ordinal']} · {phase['agent']}"
     title = f"*{phase['display_name']}*"
@@ -93,13 +104,30 @@ def render_phase_tile(snapshot: dict, *, phase_name: str,
                        "elements": [{"type": "mrkdwn",
                                      "text": f"Currently: {stats['current_skill']}"}]})
 
+    phase_decisions = [d for d in (snapshot.get("current_run", {}).get("decisions") or [])
+                       if d.get("phase") == phase_name]
+    if phase_decisions:
+        summary = render_decision_summary(phase_decisions, votes)
+        if summary:
+            blocks.append({"type": "context",
+                           "elements": [{"type": "mrkdwn", "text": summary}]})
+
     action_elements = [{
         "type": "button",
         "text": {"type": "plain_text", "text": "View phase ↗"},
         "url": f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}",
         "action_id": f"view_phase:{opp_slug}:{phase_name}",
     }]
-    if stats["has_any_complete"]:
+    if votes:
+        run_id = snapshot.get("current_run", {}).get("run_id", "")
+        action_elements.append({
+            "type": "button",
+            "text": {"type": "plain_text", "text": "🍴 Fork & re-run with answers"},
+            "action_id": "fork_with_answers",
+            "value": f"{opp_slug}:{phase_name}:{run_id}",
+            "style": "primary",
+        })
+    elif stats["has_any_complete"]:
         action_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "🍴 Fork from here…"},
