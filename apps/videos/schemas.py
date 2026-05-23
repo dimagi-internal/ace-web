@@ -79,6 +79,7 @@ class RunDetailOut(StrictModel):
     # so users can grab a shareable Drive URL without going hunting
     # through the workspace folder.
     output_drive_url: str | None = None
+    program_drive_folder_url: str | None = None
 
 
 class LibraryEntryOut(StrictModel):
