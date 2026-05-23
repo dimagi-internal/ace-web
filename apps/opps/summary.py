@@ -148,40 +148,65 @@ def _is_future(date_iso: str) -> bool:
 
 
 def _read_apps(state: dict) -> list[dict]:
-    apps_block = _phase_products(state, "commcare-setup", "apps")
+    all_products = _phase_products(state, "commcare-setup")
+    apps_block = all_products.get("apps") or {}
     out: list[dict] = []
     for kind_key, kind_label in (("learn", "Learn"), ("deliver", "Deliver")):
-        app = apps_block.get(kind_key)
+        # Old schema: products.apps.learn / products.apps.deliver
+        app = apps_block.get(kind_key) if isinstance(apps_block, dict) else None
+        # New schema: products.learn_app / products.deliver_app
+        if not app or not isinstance(app, dict):
+            app = all_products.get(f"{kind_key}_app")
         if not isinstance(app, dict) or not app:
             continue
+        nova_url = app.get("nova_url")
+        if not nova_url and app.get("nova_app_id"):
+            nova_url = f"https://nova.dimagi.com/apps/{app['nova_app_id']}"
+        hq_url = app.get("hq_url")
+        if not hq_url and app.get("hq_app_id"):
+            domain = app.get("domain") or _connect_domain(state)
+            if domain:
+                hq_url = f"https://www.commcarehq.org/a/{domain}/apps/view/{app['hq_app_id']}/"
         out.append({
             "kind": kind_label,
             "name": app.get("name") or f"{kind_label} app",
-            "nova_url": app.get("nova_url"),
-            "hq_url": app.get("hq_url"),
+            "nova_url": nova_url,
+            "hq_url": hq_url,
         })
     return out
 
 
+def _connect_domain(state: dict) -> str | None:
+    """Extract the HQ domain from connect-setup products."""
+    connect = _phase_products(state, "connect-setup", "connect")
+    return connect.get("domain") or connect.get("organization_slug")
+
+
 def _read_connect(state: dict, opp_yaml: dict) -> dict | None:
     connect = _phase_products(state, "connect-setup", "connect")
+    # Old schema: connect.program.{id, url}; new schema: connect.program_id
     program = (opp_yaml.get("connect") or {}).get("program") or connect.get("program") or {}
+    # Old schema: connect.opportunity.{id, name, url}; new schema: connect.opportunity_id
     opp = connect.get("opportunity") or {}
 
     opp_block = None
-    if opp.get("id") or opp.get("url"):
+    opp_id = opp.get("id") or connect.get("opportunity_id")
+    opp_url = opp.get("url") or connect.get("deep_link")
+    if opp_id or opp_url:
         opp_block = {
-            "name": opp.get("name") or "Connect opportunity",
-            "url": opp.get("url"),
-            "start_date": opp.get("start_date"),
-            "end_date": opp.get("end_date"),
+            "name": opp.get("name") or connect.get("opportunity_name") or "Connect opportunity",
+            "url": opp_url,
+            "start_date": opp.get("start_date") or connect.get("start_date"),
+            "end_date": opp.get("end_date") or connect.get("end_date"),
         }
 
     prog_block = None
-    if program.get("id") or program.get("url"):
+    prog_id = program.get("id") or connect.get("program_id")
+    prog_url = program.get("url")
+    if prog_id or prog_url:
         prog_block = {
-            "name": program.get("name") or "Program",
-            "url": program.get("url"),
+            "name": program.get("name") or connect.get("program_name") or "Program",
+            "url": prog_url,
         }
 
     if not opp_block and not prog_block:
