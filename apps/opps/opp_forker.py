@@ -592,11 +592,14 @@ def _rewrite_decisions_yaml(
       survive. AI defaults from upstream are dropped so downstream
       phases re-derive them.
 
-    If ``edits`` is provided, each edit is applied to the surviving rows
-    via :func:`apps.opps.decisions_edit.apply_edits_to_decisions_data`.
-    Edits whose ``row_id`` doesn't match any surviving row are silently
-    ignored — either the row was trimmed (the user edited a row from a
-    phase being re-run from scratch) or the id is bogus.
+    If ``edits`` is provided, edits are applied **before** the phase
+    trim so the edited rows flip to ``status: overridden`` and survive
+    the trim — user-supplied edits are authoritative human intent and
+    must survive regardless of which phase they target.
+
+    Edits whose ``row_id`` doesn't match any row in the source are
+    silently ignored — the forker can't synthesize a new decision row
+    out of thin air; the source must already contain it.
     """
     if fork_ordinal is None and not edits and mode == DEFAULT_FORK_MODE:
         # Nothing to do: no trim, no edits, default mode is keep-all.
@@ -621,10 +624,27 @@ def _rewrite_decisions_yaml(
     if not isinstance(rows, list):
         return original
 
+    # 1. Apply user edits FIRST. apply_edits_to_decisions_data flips
+    #    affected rows to status=overridden, populating the v2 `override`
+    #    field. This means the trim (step 2) sees the row as overridden
+    #    and preserves it — without this ordering, a Phase-1 edit forked
+    #    at Phase 1 would be silently eaten by the trim. (See #544.)
+    if edits:
+        data = apply_edits_to_decisions_data(data, edits=edits)
+
+    # 2. Phase trim: drop rows whose phase ordinal >= fork_ordinal, with
+    #    one exception — `status: overridden` rows survive the trim
+    #    regardless of which phase they belong to. Overrides represent
+    #    explicit human intent: the override is honored when the relevant
+    #    phase next runs (whether re-running as part of this fork, or
+    #    later in fresh execution).
     if fork_ordinal is not None:
         kept: list = []
-        for row in rows:
+        for row in data["decisions"]:
             if not isinstance(row, dict):
+                kept.append(row)
+                continue
+            if row.get("status") == "overridden":
                 kept.append(row)
                 continue
             phase_name = str(row.get("phase") or "").strip()
@@ -636,13 +656,13 @@ def _rewrite_decisions_yaml(
                 kept.append(row)
         data["decisions"] = kept
 
+    # 3. Mode filter: keep-overrides-only drops AI defaults from upstream
+    #    so downstream phases re-derive them with the new overrides in
+    #    context. keep-all is a no-op here.
     if mode == "keep-overrides-only":
         data["decisions"] = [
             row for row in data["decisions"]
             if isinstance(row, dict) and row.get("status") == "overridden"
         ]
-
-    if edits:
-        data = apply_edits_to_decisions_data(data, edits=edits)
 
     return yaml.safe_dump(data, sort_keys=False)
