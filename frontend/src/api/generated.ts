@@ -2075,10 +2075,11 @@ export interface components {
          * @description A single answer override to apply during fork.
          *
          *     The forker finds the row by ``row_id`` in the source run's
-         *     ``decisions.yaml``, sets its ``default`` to ``new_answer``, and
-         *     marks ``status: overridden`` — matching the contract that
-         *     ``decisions-sync`` already uses, so downstream phases on re-run
-         *     honor the human's value verbatim.
+         *     ``decisions.yaml``, sets its ``override`` to ``new_answer``, and
+         *     marks ``status: overridden`` — matching the schema-v2 contract that
+         *     ``decisions-sync`` uses. The original AI value remains in
+         *     ``ai-default`` for audit trail; downstream phases on re-run see the
+         *     effective value (``override`` if present else ``ai-default``).
          */
         readonly OppForkEditIn: {
             /** Row Id */
@@ -2094,6 +2095,12 @@ export interface components {
             readonly source_run_id?: string | null;
             /** Edits */
             readonly edits?: readonly components["schemas"]["OppForkEditIn"][];
+            /**
+             * Mode
+             * @default keep-all
+             * @enum {string}
+             */
+            readonly mode: "keep-overrides-only" | "keep-all";
         };
         /** ForkProgress */
         readonly ForkProgress: {
@@ -2588,6 +2595,8 @@ export interface components {
             readonly spec_modified_at?: string | null;
             /** Output Drive Url */
             readonly output_drive_url?: string | null;
+            /** Program Drive Folder Url */
+            readonly program_drive_folder_url?: string | null;
         };
         /** LibraryEntryOut */
         readonly LibraryEntryOut: {
