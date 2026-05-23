@@ -149,20 +149,20 @@ export function WorkbenchHeader({
               review
             </span>
           )}
-          {decisionsSummary.open > 0 && (
+          {decisionsSummary.overridden > 0 && (
             <button
               type="button"
               onClick={onJumpToPhases}
               disabled={!onJumpToPhases}
               title={decisionsSummary.tooltip}
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500",
-                onJumpToPhases ? "transition hover:bg-amber-500/20" : "cursor-default",
+                "inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-400",
+                onJumpToPhases ? "transition hover:bg-sky-500/20" : "cursor-default",
               )}
-              aria-label={openDecisionsLabel(decisionsSummary.open)}
+              aria-label={overriddenDecisionsLabel(decisionsSummary.overridden)}
             >
               <HelpCircle className="h-3 w-3" />
-              {openDecisionsLabel(decisionsSummary.open)}
+              {overriddenDecisionsLabel(decisionsSummary.overridden)}
             </button>
           )}
           <TagEditor workspaceSlug={workspaceSlug} slug={opp.slug} initialTags={opp.tags ?? []} />
@@ -233,8 +233,8 @@ export function WorkbenchHeader({
  * noun from sighted users (issue #486) and (2) repeated an interaction
  * hint already implied by the chip being a button.
  */
-export function openDecisionsLabel(count: number): string {
-  return `${count} open ${count === 1 ? "decision" : "decisions"}`;
+export function overriddenDecisionsLabel(count: number): string {
+  return `${count} overridden ${count === 1 ? "decision" : "decisions"}`;
 }
 
 function secondsAgoLabel(when: number): string {
@@ -248,45 +248,29 @@ function secondsAgoLabel(when: number): string {
 }
 
 interface DecisionsSummary {
-  open: number;
+  aiDefault: number;
   overridden: number;
-  applied: number;
   tooltip: string;
 }
 
 function summarizeDecisions(decisions: Decision[]): DecisionsSummary {
-  let open = 0;
+  let aiDefault = 0;
   let overridden = 0;
-  let applied = 0;
-  // Per-phase open counts so the tooltip can say "design: 2 · qa: 1"
-  // — the actionable signal a reviewer wants at a glance. We only break
-  // down "open" because that's the status that drives action; counting
-  // applied per-phase would be noise.
-  const openByPhase = new Map<string, number>();
   for (const d of decisions) {
-    if (d.status === "open") {
-      open += 1;
-      openByPhase.set(d.phase, (openByPhase.get(d.phase) ?? 0) + 1);
-    } else if (d.status === "overridden") {
+    if (d.status === "overridden") {
       overridden += 1;
-    } else if (d.status === "applied") {
-      applied += 1;
+    } else {
+      aiDefault += 1;
     }
   }
-  const breakdown = [...openByPhase.entries()]
-    .map(([phase, count]) => `${phase}: ${count}`)
-    .join(" · ");
   const summary = [
-    `${open} open`,
+    `${aiDefault} ai-default`,
     overridden > 0 && `${overridden} overridden`,
-    applied > 0 && `${applied} applied`,
   ]
     .filter(Boolean)
     .join(" · ");
-  const tooltip = breakdown
-    ? `Decisions — ${summary}\nOpen by phase: ${breakdown}\nClick to jump to Phases.`
-    : `Decisions — ${summary}\nClick to jump to Phases.`;
-  return { open, overridden, applied, tooltip };
+  const tooltip = `Decisions — ${summary}\nClick to jump to Phases.`;
+  return { aiDefault, overridden, tooltip };
 }
 
 function modeExplanation(mode: string): string {

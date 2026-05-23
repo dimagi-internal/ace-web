@@ -6,7 +6,7 @@ from apps.opps.decisions_edit import (
 )
 
 
-def _row(row_id, ai_default, options=None, status="applied", **extras):
+def _row(row_id, ai_default, options=None, status="ai-default", **extras):
     row = {
         "id": row_id,
         "ai-default": ai_default,
@@ -28,7 +28,6 @@ def test_no_edits_returns_data_unchanged():
 
 
 def test_apply_single_edit_writes_override_field():
-    """Edit populates `override:` and flips status; `ai-default:` is preserved."""
     data = {"decisions": [_row("a", "v1")]}
     edits = [{"row_id": "a", "new_answer": "v2"}]
 
@@ -36,14 +35,12 @@ def test_apply_single_edit_writes_override_field():
 
     rows = out["decisions"]
     assert len(rows) == 1
-    assert rows[0]["ai-default"] == "v1"   # immutable
-    assert rows[0]["override"] == "v2"      # new field
+    assert rows[0]["ai-default"] == "v1"
+    assert rows[0]["override"] == "v2"
     assert rows[0]["status"] == "overridden"
 
 
 def test_edit_matching_ai_default_clears_override():
-    """If the human reverts to the AI default, override is dropped and
-    status flips back to applied."""
     data = {"decisions": [
         _row("a", "v1", options=["v1", "v2"], status="overridden",
              override="v2"),
@@ -53,11 +50,10 @@ def test_edit_matching_ai_default_clears_override():
     out = apply_edits_to_decisions_data(data, edits=edits)
 
     assert "override" not in out["decisions"][0]
-    assert out["decisions"][0]["status"] == "applied"
+    assert out["decisions"][0]["status"] == "ai-default"
 
 
 def test_edit_targeting_unknown_row_is_silently_ignored():
-    """Forker shouldn't synthesize new rows; unknown ids are no-ops."""
     data = {"decisions": [_row("a", "v1")]}
     edits = [{"row_id": "nope", "new_answer": "x"}]
 
@@ -80,7 +76,6 @@ def test_multi_edit_applies_each():
 
 
 def test_missing_decisions_key_returns_input_unchanged():
-    """No 'decisions' field → can't apply edits, return as-is."""
     out = apply_edits_to_decisions_data(
         {"foo": "bar"}, edits=[{"row_id": "a", "new_answer": "x"}],
     )
@@ -88,7 +83,6 @@ def test_missing_decisions_key_returns_input_unchanged():
 
 
 def test_data_mutation_isolation():
-    """Caller's dict shouldn't be mutated."""
     data = {"decisions": [_row("a", "v1")]}
     snapshot = {"decisions": [dict(data["decisions"][0])]}
     snapshot["decisions"][0]["options_considered"] = list(
@@ -116,9 +110,10 @@ def test_upgrade_v1_renames_default_to_ai_default():
     row = v2["decisions"][0]
     assert "default" not in row
     assert row["ai-default"] == "v1"
+    assert row["status"] == "ai-default"
 
 
-def test_upgrade_v1_collapses_open_to_applied():
+def test_upgrade_v1_open_maps_to_ai_default():
     v1 = {
         "schema_version": 1,
         "decisions": [
@@ -128,12 +123,10 @@ def test_upgrade_v1_collapses_open_to_applied():
         ],
     }
     v2 = upgrade_decisions_v1_to_v2(v1)
-    assert v2["decisions"][0]["status"] == "applied"
+    assert v2["decisions"][0]["status"] == "ai-default"
 
 
 def test_upgrade_v1_overridden_row_copies_default_to_override():
-    """v1 destroyed AI default on override; upgrade copies the value
-    into both ai-default and override so the v2 invariant holds."""
     v1 = {
         "schema_version": 1,
         "decisions": [

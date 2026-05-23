@@ -293,10 +293,11 @@ export interface Decision {
   phase_raw: string;
   skill: string;
   question: string;
-  default: string;
+  ai_default: string;
+  override: string;
   options_considered: string[];
   source: string;
-  status: "applied" | "overridden" | "open";
+  status: "ai-default" | "overridden";
   notes: string;
 }
 

@@ -11,10 +11,11 @@ function dec(over: Partial<Decision> = {}): Decision {
     phase_raw: "design",
     skill: "idea-to-pdd",
     question: "Who is the target population?",
-    default: "FLWs in rural Kenya",
+    ai_default: "FLWs in rural Kenya",
+    override: "",
     options_considered: [],
     source: "idea-to-pdd",
-    status: "applied",
+    status: "ai-default",
     notes: "",
     ...over,
   };

@@ -10,14 +10,15 @@ from apps.slack.blocks_decisions import (
 
 
 def _decision_fixture(*, decision_id="d-001", phase="idea-to-design",
-                       skill="draft-pdd", status="open"):
+                       skill="draft-pdd", status="ai-default"):
     return {
         "id": decision_id,
         "phase": phase,
         "phase_raw": phase,
         "skill": skill,
         "question": "Should the Learn app include a supervisor dashboard?",
-        "default": "Yes — include a supervisor module with aggregate views",
+        "ai_default": "Yes — include a supervisor module with aggregate views",
+        "override": "",
         "options_considered": [
             "Yes — include a supervisor module",
             "No — keep it FLW-only for v1",
@@ -40,8 +41,8 @@ def _snapshot_with_decisions():
                  "judge": {"score_pct": 82}},
             ],
             "decisions": [
-                _decision_fixture(decision_id="d-001", status="open"),
-                _decision_fixture(decision_id="d-002", status="applied",
+                _decision_fixture(decision_id="d-001", status="ai-default"),
+                _decision_fixture(decision_id="d-002", status="ai-default",
                                   skill="review-pdd"),
                 _decision_fixture(decision_id="d-003", status="overridden"),
             ],

@@ -8,7 +8,7 @@ after the trim step. Matches the override contract used by the
   stays as the AI's original proposal).
 * ``status`` flips to ``"overridden"``.
 * If the new value matches the existing ``ai-default``, ``override`` is
-  cleared and ``status`` reverts to ``"applied"`` (revert path).
+  cleared and ``status`` reverts to ``"ai-default"`` (revert path).
 """
 from __future__ import annotations
 
@@ -56,9 +56,8 @@ def apply_edits_to_decisions_data(
         new_answer = edit_by_id[row_id]
         ai_default = row.get("ai-default")
         if new_answer == ai_default:
-            # Revert path — drop the override and flip back to applied.
             row.pop("override", None)
-            row["status"] = "applied"
+            row["status"] = "ai-default"
         else:
             row["override"] = new_answer
             row["status"] = "overridden"
@@ -69,14 +68,9 @@ def apply_edits_to_decisions_data(
 def upgrade_decisions_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
     """In-memory upgrade of a v1 decisions log dict to the v2 shape.
 
-    Mirrors the upgrade applied by the ACE plugin's ``parseDecisionsYaml``
-    so both sides agree on the v2 shape. Idempotent: v2 input is returned
-    unchanged (a shallow copy if it's a dict; the deep copy happens
-    upstream of any mutation).
-
     v1 → v2:
       * row field rename: ``default`` → ``ai-default``
-      * status enum: ``open`` collapses to ``applied``
+      * status enum: ``applied`` / ``open`` → ``ai-default``
       * for status=overridden rows missing ``override:``, copy the v1
         ``default`` value into ``override`` (lossy: v1 destroyed the
         original AI value on override, so the migrated row carries the
@@ -88,7 +82,6 @@ def upgrade_decisions_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
     if data.get("schema_version") == 2:
         return data
     if data.get("schema_version") not in (None, 1):
-        # Unknown shape — pass through.
         return data
 
     out = copy.deepcopy(data)
@@ -104,8 +97,8 @@ def upgrade_decisions_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
         new_row = dict(row)
         if "default" in new_row and "ai-default" not in new_row:
             new_row["ai-default"] = new_row.pop("default")
-        if new_row.get("status") == "open":
-            new_row["status"] = "applied"
+        if new_row.get("status") != "overridden":
+            new_row["status"] = "ai-default"
         if new_row.get("status") == "overridden" and "override" not in new_row:
             ai_default = new_row.get("ai-default")
             if isinstance(ai_default, str):

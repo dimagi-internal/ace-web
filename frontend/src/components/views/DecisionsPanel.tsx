@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, HelpCircle, MessageSquareWarning } from "lucide-react";
+import { ChevronRight, HelpCircle } from "lucide-react";
 
 import type { Decision } from "@/api/types.ws";
 import { cn } from "@/lib/utils";
@@ -24,25 +24,13 @@ interface Props {
 /**
  * Per-phase rollup of the decisions log.
  *
- * The decisions log (ACE PRs #160–#164) is a per-run YAML file at the
- * run-folder root. Each row is a load-bearing question + the default
- * the orchestrator picked + the alternatives it considered + a status
- * (applied / overridden / open). Rows carry a ``phase`` tag so we can
- * group them per phase here.
- *
- * Default rendering: collapsed list of question titles with a status
- * badge; click a row to reveal default, options considered, source,
- * notes. The "open" status is the most actionable — they appear in
- * amber and are expanded by default.
+ * Each row is a load-bearing question + the AI default + alternatives
+ * considered + a status (ai-default | overridden). Rows carry a
+ * ``phase`` tag so we can group them per phase here.
  */
-// Status order surfaces the most actionable rows first:
-//   open       — needs a human decision; default is just a guess
-//   overridden — human said "no" to the default; usually rare and worth reading
-//   applied    — default was kept; usually fine to glance past
 const STATUS_RANK: Record<Decision["status"], number> = {
-  open: 0,
-  overridden: 1,
-  applied: 2,
+  overridden: 0,
+  "ai-default": 1,
 };
 
 export function DecisionsPanel({ phase, decisions, editBuffer, onEdit, onRevert }: Props) {
@@ -50,7 +38,6 @@ export function DecisionsPanel({ phase, decisions, editBuffer, onEdit, onRevert 
     () =>
       decisions
         .filter((d) => d.phase === phase)
-        // Stable sort: status first, then preserve YAML order within status.
         .map((d, i) => ({ d, i }))
         .sort((a, b) => {
           const r = STATUS_RANK[a.d.status] - STATUS_RANK[b.d.status];
@@ -62,13 +49,11 @@ export function DecisionsPanel({ phase, decisions, editBuffer, onEdit, onRevert 
 
   if (phaseRows.length === 0) return null;
 
-  const open = phaseRows.filter((d) => d.status === "open").length;
   const overridden = phaseRows.filter((d) => d.status === "overridden").length;
 
   return (
     <DecisionsPanelInner
       phaseRows={phaseRows}
-      open={open}
       overridden={overridden}
       editBuffer={editBuffer}
       onEdit={onEdit}
@@ -79,24 +64,17 @@ export function DecisionsPanel({ phase, decisions, editBuffer, onEdit, onRevert 
 
 function DecisionsPanelInner({
   phaseRows,
-  open,
   overridden,
   editBuffer,
   onEdit,
   onRevert,
 }: {
   phaseRows: Decision[];
-  open: number;
   overridden: number;
   editBuffer?: readonly EditOp[];
   onEdit?: (row_id: string, new_answer: string) => void;
   onRevert?: (row_id: string) => void;
 }) {
-  // Section starts collapsed. Earlier versions auto-opened the whole
-  // panel and every "open" row inside it, which made the phase-detail
-  // view land on a wall of decision text before the user had a chance
-  // to scan the skills list. Master-toggle here, individual rows
-  // collapse separately in DecisionRow.
   const [expanded, setExpanded] = useState(false);
   return (
     <section className="mt-3 rounded-lg border border-border bg-card/30">
@@ -115,12 +93,6 @@ function DecisionsPanelInner({
         </span>
         <span className="text-xs font-medium text-foreground">{phaseRows.length}</span>
         <span className="ml-auto flex items-center gap-2 text-[11px]">
-          {open > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-500">
-              <MessageSquareWarning className="h-3 w-3" />
-              {open} open
-            </span>
-          )}
           {overridden > 0 && (
             <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-sky-400">
               {overridden} overridden
@@ -163,48 +135,38 @@ function DecisionRow({
   onEdit?: (row_id: string, new_answer: string) => void;
   onRevert?: (row_id: string) => void;
 }) {
-  // Start collapsed regardless of status. We used to auto-expand "open"
-  // rows on the theory that they're the most actionable, but it meant
-  // the panel was already mostly-expanded on first paint and the user
-  // had no chance to scan titles before reading bodies. Everything
-  // starts compact; user clicks a row to drill in.
-  const [open, setOpen] = useState(false);
+  const [rowOpen, setRowOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
   const pendingEdit = editBuffer?.find((e) => e.row_id === decision.id);
-  const effectiveValue = pendingEdit?.new_answer ?? decision.default;
+  const effectiveValue = pendingEdit?.new_answer ?? (decision.override || decision.ai_default);
   const isEdited = !!pendingEdit;
 
   const tone =
-    decision.status === "open"
-      ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
-      : decision.status === "overridden"
-        ? "border-sky-500/40 bg-sky-500/10 text-sky-400"
-        : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+    decision.status === "overridden"
+      ? "border-sky-500/40 bg-sky-500/10 text-sky-400"
+      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
 
   return (
     <div
       className={cn(
-        // Left-edge violet bar when edited, so a scan down the panel
-        // immediately picks out which rows have pending changes.
         isEdited && "border-l-2 border-violet-500/60 bg-violet-500/[0.03]",
       )}
     >
       <button
         type="button"
         onClick={() =>
-          setOpen((v) => {
+          setRowOpen((v) => {
             const next = !v;
             if (!next) {
-              // Reset edit state when collapsing so re-expanding doesn't show a stale draft.
               setEditing(false);
               setDraft("");
             }
             return next;
           })
         }
-        aria-expanded={open}
+        aria-expanded={rowOpen}
         className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs hover:bg-accent/40"
       >
         <span className="font-mono text-[10px] text-muted-foreground/70">{decision.id}</span>
@@ -231,16 +193,22 @@ function DecisionRow({
         <ChevronRight
           className={cn(
             "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-            open ? "rotate-90 text-foreground" : "",
+            rowOpen ? "rotate-90 text-foreground" : "",
           )}
         />
       </button>
-      {open && (
+      {rowOpen && (
         <div className="animate-in fade-in slide-in-from-top-1 grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 border-t border-border/40 bg-background/30 px-4 pb-3 pt-3 text-[11px] duration-150">
           <DetailRow
-            label="Default"
-            value={<span className="font-medium text-foreground">{effectiveValue}</span>}
+            label="AI default"
+            value={<span className="font-medium text-foreground">{decision.ai_default}</span>}
           />
+          {decision.override && (
+            <DetailRow
+              label="Override"
+              value={<span className="font-medium text-sky-400">{decision.override}</span>}
+            />
+          )}
           {decision.options_considered.length > 0 && (
             <DetailRow
               label="Options considered"
@@ -312,9 +280,6 @@ function DecisionRow({
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => {
-                      // Escape cancels without saving. Ctrl/Cmd+Enter saves
-                      // (plain Enter inserts a newline — answers are
-                      // free-form and may legitimately span lines).
                       if (e.key === "Escape") {
                         e.preventDefault();
                         setEditing(false);
