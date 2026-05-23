@@ -287,19 +287,33 @@ export default function VideoExplorerPage() {
                   <Copy className="h-3.5 w-3.5" />
                   Copy run
                 </DropdownMenuItem>
-                {run?.output_drive_url && (
+                {(run?.output_drive_url || run?.program_drive_folder_url) && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => {
-                        if (run.output_drive_url)
-                          window.open(run.output_drive_url, "_blank", "noopener,noreferrer");
-                      }}
-                      title="Open the published output.mp4 on Drive"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Open MP4 on Drive
-                    </DropdownMenuItem>
+                    {run.program_drive_folder_url && (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          if (run.program_drive_folder_url)
+                            window.open(run.program_drive_folder_url, "_blank", "noopener,noreferrer");
+                        }}
+                        title="Open the program folder on Drive"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Open folder on Drive
+                      </DropdownMenuItem>
+                    )}
+                    {run.output_drive_url && (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          if (run.output_drive_url)
+                            window.open(run.output_drive_url, "_blank", "noopener,noreferrer");
+                        }}
+                        title="Open the published output.mp4 on Drive"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Open MP4 on Drive
+                      </DropdownMenuItem>
+                    )}
                   </>
                 )}
                 {run?.yaml_path && (

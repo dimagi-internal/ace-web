@@ -108,6 +108,7 @@ export interface RunDetail {
   // run hasn't been published. Surfaced in the editor's kebab menu
   // as a shareable URL.
   output_drive_url: string | null;
+  program_drive_folder_url: string | null;
 }
 
 export interface RenderStatus {
@@ -213,6 +214,47 @@ export function submitEditBatch(
   return v2Fetch(`${runBase(ws, p, r)}/edit-batch`, {
     method: "POST",
     body: JSON.stringify({ ops }),
+  });
+}
+
+// ───────── templates + create ─────────
+
+export interface TemplateMeta {
+  id: string;
+  name: string;
+  description: string;
+  expected_duration_seconds: number;
+  intended_audience: string;
+  when_to_use: string;
+}
+
+export interface TemplateBundle {
+  meta: TemplateMeta;
+  skeleton_yaml: string;
+  prompt_md: string;
+}
+
+export interface CreateProgramResult {
+  program_slug: string;
+  run_id: string;
+  spec_path: string;
+  message: string;
+}
+
+export function listVideoTemplates(ws: string): Promise<TemplateMeta[]> {
+  return v2Fetch(`${base(ws)}/templates`);
+}
+
+export function getVideoTemplate(ws: string, id: string): Promise<TemplateBundle> {
+  return v2Fetch(`${base(ws)}/templates/${id}`);
+}
+
+export function createVideoProgram(
+  ws: string, slug: string, specYaml: string,
+): Promise<CreateProgramResult> {
+  return v2Fetch(`${base(ws)}/programs`, {
+    method: "POST",
+    body: JSON.stringify({ slug, spec_yaml: specYaml }),
   });
 }
 

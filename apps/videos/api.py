@@ -525,6 +525,13 @@ def get_run(
     output_drive_url = (
         drive_output_meta.web_view_link if drive_output_meta is not None else None
     )
+    program_folder_url: str | None = None
+    try:
+        pf_id = drive.program_folder_id(layout, client, program_slug)
+        if pf_id:
+            program_folder_url = f"https://drive.google.com/drive/folders/{pf_id}"
+    except Exception:
+        pass
     return RunDetailOut(
         program_slug=program_slug,
         run_id=run_id,
@@ -540,6 +547,7 @@ def get_run(
         output_rendered_at=rendered_at,
         spec_modified_at=spec_modified_at,
         output_drive_url=output_drive_url,
+        program_drive_folder_url=program_folder_url,
     )
 
 
