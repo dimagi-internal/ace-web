@@ -36,6 +36,17 @@ function formatConnectDateRange(start?: string | null, end?: string | null): str
   return s ?? e ?? null;
 }
 
+function NotCreated({ label }: { label: string }) {
+  return (
+    <div className="flex items-baseline gap-6 -mx-3 px-3 py-3.5 [&+&]:border-t [&+&]:border-border">
+      <span className="w-16 shrink-0 text-[11px] uppercase tracking-[0.16em] text-muted-foreground/50">
+        {label}
+      </span>
+      <span className="text-[0.975rem] italic text-muted-foreground/40">Not created</span>
+    </div>
+  );
+}
+
 export default function OppSummaryPage() {
   const params = useParams();
   const workspace = params.workspace ?? "";
@@ -118,66 +129,131 @@ export default function OppSummaryPage() {
       <SummaryHero opp={opp} cycleGrade={cycle_grade} />
 
       <main className="mx-auto max-w-3xl space-y-14 px-6 py-14">
-        {apps.length > 0 && (
-          <SummarySection title="CommCare apps">
-            {apps.map((app) => {
-              const links: { label: string; href: string }[] = [];
-              if (app.nova_url) links.push({ label: "Open in Nova", href: app.nova_url });
-              if (app.hq_url) links.push({ label: "Open in CommCare HQ", href: app.hq_url });
-              return (
-                <SummaryRow
-                  key={app.kind}
-                  label={app.kind}
-                  name={app.name}
-                  links={links}
-                />
-              );
-            })}
-          </SummarySection>
-        )}
+        {/* CommCare apps — always show Learn + Deliver slots */}
+        <SummarySection title="CommCare apps">
+          {(["Learn", "Deliver"] as const).map((kind) => {
+            const app = apps.find((a) => a.kind === kind);
+            if (!app) return <NotCreated key={kind} label={kind} />;
+            const links: { label: string; href: string }[] = [];
+            if (app.nova_url) links.push({ label: "Open in Nova", href: app.nova_url });
+            if (app.hq_url) links.push({ label: "Open in CommCare HQ", href: app.hq_url });
+            return <SummaryRow key={kind} label={kind} name={app.name} links={links} />;
+          })}
+        </SummarySection>
 
-        {connect && (connect.opportunity || connect.program) && (
-          <SummarySection title="Connect opportunity">
-            {connect.opportunity && (
+        {/* Connect opportunity — program + opp slots */}
+        <SummarySection title="Connect opportunity">
+          {connect?.program ? (
+            <SummaryRow
+              label="Program"
+              name={connect.program.name}
+              links={
+                connect.program.url
+                  ? [{ label: "Open on Connect", href: connect.program.url }]
+                  : []
+              }
+            />
+          ) : (
+            <NotCreated label="Program" />
+          )}
+          {connect?.opportunity ? (
+            <SummaryRow
+              label="Opp"
+              name={
+                <>
+                  {connect.opportunity.name}
+                  {(() => {
+                    const range = formatConnectDateRange(
+                      connect.opportunity.start_date,
+                      connect.opportunity.end_date,
+                    );
+                    return range ? (
+                      <span className="text-muted-foreground">{" · "}{range}</span>
+                    ) : null;
+                  })()}
+                </>
+              }
+              links={
+                connect.opportunity.url
+                  ? [{ label: "Open on Connect", href: connect.opportunity.url }]
+                  : []
+              }
+            />
+          ) : (
+            <NotCreated label="Opp" />
+          )}
+        </SummarySection>
+
+        {/* Support assistant */}
+        <SummarySection title="Support assistant">
+          {assistant ? (
+            <SummaryRow
+              label="Bot"
+              name="Trained on the design doc, training pack, and app guides for this opportunity."
+              links={
+                assistant.ocs_url
+                  ? [{ label: "View in OCS", href: assistant.ocs_url }]
+                  : []
+              }
+            />
+          ) : (
+            <NotCreated label="Bot" />
+          )}
+        </SummarySection>
+
+        {/* Training pack */}
+        <SummarySection title="Training pack">
+          {training && (training.deck || training.docs.length > 0) ? (
+            <>
+              {training.deck && (
+                <SummaryRow
+                  label="Deck"
+                  name={training.deck.title}
+                  links={[{ label: "Open in Slides", href: training.deck.url }]}
+                />
+              )}
+              {training.docs.map((doc) => (
+                <SummaryRow
+                  key={doc.url}
+                  label="Doc"
+                  name={doc.title}
+                  links={[{ label: "Open", href: doc.url }]}
+                />
+              ))}
+            </>
+          ) : (
+            <NotCreated label="Deck" />
+          )}
+        </SummarySection>
+
+        {/* Persona walkthroughs */}
+        <SummarySection title="Persona walkthroughs">
+          {walkthroughs.length > 0 ? (
+            walkthroughs.map((w) => (
               <SummaryRow
-                label="Opp"
+                key={w.url}
+                label="Demo"
                 name={
                   <>
-                    {connect.opportunity.name}
-                    {(() => {
-                      const range = formatConnectDateRange(
-                        connect.opportunity.start_date,
-                        connect.opportunity.end_date,
-                      );
-                      return range ? (
-                        <span className="text-muted-foreground">{" · "}{range}</span>
-                      ) : null;
-                    })()}
+                    {w.persona}
+                    {w.eval_score != null && (
+                      <span className="text-muted-foreground">
+                        {" · "}eval {w.eval_score}/10
+                      </span>
+                    )}
                   </>
                 }
-                links={
-                  connect.opportunity.url
-                    ? [{ label: "Open on Connect", href: connect.opportunity.url }]
-                    : []
-                }
+                links={[{ label: "Open deck", href: w.url }]}
               />
-            )}
-            {connect.program && (
-              <SummaryRow
-                label="Program"
-                name={connect.program.name}
-                links={
-                  connect.program.url
-                    ? [{ label: "Open on Connect", href: connect.program.url }]
-                    : []
-                }
-              />
-            )}
-          </SummarySection>
-        )}
+            ))
+          ) : (
+            <NotCreated label="Demo" />
+          )}
+        </SummarySection>
 
-        {solicitation && (
-          <SummarySection title="Solicitation">
+        {/* Solicitation */}
+        <SummarySection title="Solicitation">
+          {solicitation ? (
             <SummaryRow
               label="RFP"
               name={
@@ -197,157 +273,112 @@ export default function OppSummaryPage() {
               }
               links={[{ label: "Open solicitation", href: solicitation.url }]}
             />
-          </SummarySection>
-        )}
+          ) : (
+            <NotCreated label="RFP" />
+          )}
+        </SummarySection>
 
-        {(selected_llo || launch) && (
-          <SummarySection title="Execution">
-            {selected_llo && (
-              <SummaryRow
-                label="LLO"
-                name={
-                  <>
-                    {selected_llo.org_display_name}
-                    {selected_llo.awarded_at && (
-                      <span className="text-muted-foreground">
-                        {" · "}awarded {_formatShortDate(selected_llo.awarded_at)}
-                      </span>
-                    )}
-                  </>
-                }
-                links={
-                  selected_llo.contact_email
-                    ? [{ label: "Contact", href: `mailto:${selected_llo.contact_email}` }]
-                    : []
-                }
-              />
-            )}
-            {launch && (
-              <SummaryRow
-                label="Live"
-                name={
-                  <>
-                    Went live {_formatShortDate(launch.went_live_at)}
-                    {launch.llo_org_display_name && !selected_llo && (
-                      <span className="text-muted-foreground">
-                        {" · "}{launch.llo_org_display_name}
-                      </span>
-                    )}
-                  </>
-                }
-                links={[]}
-              />
-            )}
-          </SummarySection>
-        )}
-
-        {training && (training.deck || training.docs.length > 0) && (
-          <SummarySection title="Training pack">
-            {training.deck && (
-              <SummaryRow
-                label="Deck"
-                name={training.deck.title}
-                links={[{ label: "Open in Slides", href: training.deck.url }]}
-              />
-            )}
-            {training.docs.map((doc) => (
-              <SummaryRow
-                key={doc.url}
-                label="Doc"
-                name={doc.title}
-                links={[{ label: "Open", href: doc.url }]}
-              />
-            ))}
-          </SummarySection>
-        )}
-
-        {walkthroughs.length > 0 && (
-          <SummarySection title="Persona walkthroughs">
-            {walkthroughs.map((w) => (
-              <SummaryRow
-                key={w.url}
-                label="Demo"
-                name={
-                  <>
-                    {w.persona}
-                    {w.eval_score != null && (
-                      <span className="text-muted-foreground">
-                        {" · "}eval {w.eval_score}/10
-                      </span>
-                    )}
-                  </>
-                }
-                links={[{ label: "Open deck", href: w.url }]}
-              />
-            ))}
-          </SummarySection>
-        )}
-
-        {assistant && (
-          <SummarySection title="Support assistant">
+        {/* Execution */}
+        <SummarySection title="Execution">
+          {selected_llo ? (
             <SummaryRow
-              label="Bot"
-              name="Trained on the design doc, training pack, and app guides for this opportunity. Use the chat in the corner ↘ to ask it a question."
+              label="LLO"
+              name={
+                <>
+                  {selected_llo.org_display_name}
+                  {selected_llo.awarded_at && (
+                    <span className="text-muted-foreground">
+                      {" · "}awarded {_formatShortDate(selected_llo.awarded_at)}
+                    </span>
+                  )}
+                </>
+              }
               links={
-                assistant.ocs_url
-                  ? [{ label: "View in OCS", href: assistant.ocs_url }]
+                selected_llo.contact_email
+                  ? [{ label: "Contact", href: `mailto:${selected_llo.contact_email}` }]
                   : []
               }
             />
-          </SummarySection>
-        )}
+          ) : (
+            <NotCreated label="LLO" />
+          )}
+          {launch ? (
+            <SummaryRow
+              label="Live"
+              name={
+                <>
+                  Went live {_formatShortDate(launch.went_live_at)}
+                  {launch.llo_org_display_name && !selected_llo && (
+                    <span className="text-muted-foreground">
+                      {" · "}{launch.llo_org_display_name}
+                    </span>
+                  )}
+                </>
+              }
+              links={[]}
+            />
+          ) : (
+            <NotCreated label="Live" />
+          )}
+        </SummarySection>
 
-        {(opp_eval || learnings) && (
-          <SummarySection title="Outcomes">
-            {opp_eval && (
-              <SummaryRow
-                label="Score"
-                name={
-                  <>
-                    {opp_eval.overall_score}
-                    {opp_eval.verdict && (
-                      <span className="text-muted-foreground">
-                        {" · "}{opp_eval.verdict}
-                      </span>
-                    )}
-                    {opp_eval.mode && (
-                      <span className="text-muted-foreground">
-                        {" · "}{opp_eval.mode} eval
-                      </span>
-                    )}
-                  </>
-                }
-                links={[]}
-              />
-            )}
-            {learnings && (
-              <SummaryRow
-                label="Learnings"
-                name={
-                  learnings.iteration_warranted
-                    ? "Synthesis with follow-up PDD for the next cycle"
-                    : "Synthesis of what this run learned"
-                }
-                links={[
-                  { label: "Open in Drive", href: learnings.summary_url },
-                  ...(learnings.new_pdd_url
-                    ? [{ label: "Next PDD", href: learnings.new_pdd_url }]
-                    : []),
-                ]}
-              />
-            )}
-          </SummarySection>
-        )}
+        {/* Outcomes */}
+        <SummarySection title="Outcomes">
+          {opp_eval ? (
+            <SummaryRow
+              label="Score"
+              name={
+                <>
+                  {opp_eval.overall_score}
+                  {opp_eval.verdict && (
+                    <span className="text-muted-foreground">
+                      {" · "}{opp_eval.verdict}
+                    </span>
+                  )}
+                  {opp_eval.mode && (
+                    <span className="text-muted-foreground">
+                      {" · "}{opp_eval.mode} eval
+                    </span>
+                  )}
+                </>
+              }
+              links={[]}
+            />
+          ) : (
+            <NotCreated label="Score" />
+          )}
+          {learnings ? (
+            <SummaryRow
+              label="Learnings"
+              name={
+                learnings.iteration_warranted
+                  ? "Synthesis with follow-up PDD for the next cycle"
+                  : "Synthesis of what this run learned"
+              }
+              links={[
+                { label: "Open in Drive", href: learnings.summary_url },
+                ...(learnings.new_pdd_url
+                  ? [{ label: "Next PDD", href: learnings.new_pdd_url }]
+                  : []),
+              ]}
+            />
+          ) : (
+            <NotCreated label="Learnings" />
+          )}
+        </SummarySection>
 
-        {open_questions && (
-          <SummarySection title="Open questions">
+        {/* Open questions */}
+        <SummarySection title="Open questions">
+          {open_questions ? (
             <SummaryRow
               label="Doc"
               name="Outstanding design questions for this run"
               links={[{ label: "Open in Drive", href: open_questions.url }]}
             />
-          </SummarySection>
-        )}
+          ) : (
+            <NotCreated label="Doc" />
+          )}
+        </SummarySection>
 
         <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-8 text-sm text-muted-foreground">
           <span>
