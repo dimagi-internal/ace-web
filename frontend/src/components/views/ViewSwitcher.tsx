@@ -1,8 +1,6 @@
 import {
-  BarChart3,
   Clock,
   Film,
-  GitCompareArrows,
   Layers,
   LayoutGrid,
   ListTree,
@@ -13,8 +11,6 @@ export type ViewKind =
   | "timeline"
   | "workbench"
   | "phase"
-  | "heatmap"
-  | "diff"
   | "story";
 
 export interface ViewTab {
@@ -36,8 +32,6 @@ const ICONS: Record<ViewKind, React.ComponentType<{ className?: string }>> = {
   timeline: Clock,
   workbench: LayoutGrid,
   phase: Layers,
-  heatmap: BarChart3,
-  diff: GitCompareArrows,
   story: Film,
 };
 
