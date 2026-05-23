@@ -54,7 +54,7 @@ export function PhaseSkillRow({ step, oppSlug, runId }: Props) {
           {step.display_name || step.skill_name}
         </span>
         <QAChip step={step} />
-        <EvalBar scorePct={judgeScorePct} hasJudge={step.has_judge} qaFailed={step.qa_result?.verdict === "fail"} />
+        <EvalChip scorePct={judgeScorePct} hasJudge={step.has_judge} qaFailed={step.qa_result?.verdict === "fail"} />
         <span
           className="flex-1 truncate text-[11px] text-muted-foreground"
           title={step.preview_text}
@@ -160,7 +160,7 @@ function QAChip({ step }: { step: Step }) {
   );
 }
 
-function EvalBar({
+function EvalChip({
   scorePct,
   hasJudge,
   qaFailed,
@@ -171,48 +171,51 @@ function EvalBar({
 }) {
   if (qaFailed) {
     return (
-      <span className="flex shrink-0 items-center gap-2">
-        <span className="block h-1.5 w-[54px] rounded bg-card opacity-30" />
-        <span className="w-[44px] text-right text-[11px] text-muted-foreground/60">—</span>
-        <span className="w-[78px] text-[10px] text-muted-foreground/60">eval skipped</span>
+      <span
+        className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-border/60 bg-transparent px-1.5 text-[10px] font-semibold text-muted-foreground/60"
+        title="Eval skipped — QA failed"
+      >
+        <span>Eval</span>
+        <span>—</span>
       </span>
     );
   }
   if (!hasJudge) {
     return (
-      <span className="flex shrink-0 items-center gap-2">
-        <span className="block h-1.5 w-[54px] rounded bg-card opacity-25" />
-        <span className="w-[44px] text-right text-[11px] text-muted-foreground/60">—</span>
-        <span className="w-[78px] text-[10px] text-muted-foreground/60">no eval</span>
+      <span
+        className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-border/60 bg-transparent px-1.5 text-[10px] font-semibold text-muted-foreground/60"
+        title="No eval defined for this skill yet"
+      >
+        <span>Eval</span>
+        <span>—</span>
       </span>
     );
   }
-  const pct = scorePct !== null ? Math.min(100, Math.max(0, scorePct)) : 0;
-  const tone =
-    scorePct === null
-      ? "bg-muted"
-      : scorePct >= 80
-        ? "bg-green-500"
-        : scorePct >= 60
-          ? "bg-amber-500"
-          : "bg-red-500";
-  const scoreColor =
-    scorePct === null
-      ? "text-muted-foreground"
-      : scorePct >= 80
-        ? "text-green-400"
-        : scorePct >= 60
-          ? "text-amber-400"
-          : "text-red-400";
+  if (scorePct === null) {
+    return (
+      <span className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-semibold text-amber-500">
+        <span>Eval</span>
+        <span>⏳</span>
+      </span>
+    );
+  }
+  const score = Math.round(scorePct);
+  const chipClass =
+    scorePct >= 80
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500"
+      : scorePct >= 60
+        ? "border-amber-500/40 bg-amber-500/10 text-amber-500"
+        : "border-rose-500/40 bg-rose-500/10 text-rose-500";
   return (
-    <span className="flex shrink-0 items-center gap-2">
-      <span className="relative block h-1.5 w-[54px] overflow-hidden rounded bg-card">
-        <span className={cn("absolute inset-y-0 left-0", tone)} style={{ width: `${pct}%` }} />
-      </span>
-      <span className={cn("w-[44px] text-right text-[11px] tabular-nums", scoreColor)}>
-        {scorePct === null ? "—" : `${Math.round(scorePct)}`}
-      </span>
-      <span className="w-[78px] text-[10px] text-muted-foreground">/100 eval</span>
+    <span
+      className={cn(
+        "inline-flex h-[18px] shrink-0 items-center gap-1 rounded border px-1.5 text-[10px] font-semibold",
+        chipClass,
+      )}
+      title={`Eval score: ${score}/100`}
+    >
+      <span>Eval</span>
+      <span className="tabular-nums">{score}</span>
     </span>
   );
 }
