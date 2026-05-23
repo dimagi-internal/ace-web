@@ -76,21 +76,45 @@ def test_rewrite_edit_matching_ai_default_reverts_to_applied():
     assert row["status"] == "applied"
 
 
-def test_edits_targeting_trimmed_row_are_skipped():
-    """If the edited row was trimmed because its phase >= fork point,
-    the edit silently does nothing — the row no longer exists in the forked decisions.
+def test_edit_at_or_past_fork_point_survives_trim():
+    """User edits are explicit human intent and survive the phase trim
+    even when targeting a row whose phase would otherwise be dropped.
+
+    This is the #544 fix: edits apply BEFORE the trim so the edited row
+    flips to status=overridden, which is preserved through the trim.
     """
     rows = [
-        {"id": "trimmed-row", "phase": "commcare-setup",
+        {"id": "row-at-fork-phase", "phase": "commcare-setup",
          "ai-default": "v1", "options_considered": [], "status": "applied"},
     ]
     src = _decisions_yaml(rows)
-    edits = [{"row_id": "trimmed-row", "new_answer": "v2"}]
+    edits = [{"row_id": "row-at-fork-phase", "new_answer": "v2"}]
 
-    out = _rewrite_decisions_yaml(src, fork_ordinal=2, edits=edits)  # trims phase ordinal 2+
+    out = _rewrite_decisions_yaml(src, fork_ordinal=2, edits=edits)
 
     parsed = yaml.safe_load(out)
-    assert parsed["decisions"] == []
+    assert len(parsed["decisions"]) == 1
+    assert parsed["decisions"][0]["override"] == "v2"
+    assert parsed["decisions"][0]["status"] == "overridden"
+
+
+def test_edit_targeting_unknown_row_id_is_silently_ignored():
+    """The forker can't synthesize rows out of thin air; unknown row_ids
+    are silently dropped. Distinct from the previous trim-skip behavior:
+    here the row genuinely doesn't exist in the source."""
+    rows = [
+        {"id": "row-a", "phase": "design-review", "ai-default": "v1",
+         "options_considered": [], "status": "applied"},
+    ]
+    src = _decisions_yaml(rows)
+    edits = [{"row_id": "ghost-row", "new_answer": "v2"}]
+
+    out = _rewrite_decisions_yaml(src, fork_ordinal=2, edits=edits)
+
+    parsed = yaml.safe_load(out)
+    # Just the original row, no synthesized ghost.
+    ids = [r["id"] for r in parsed["decisions"]]
+    assert ids == ["row-a"]
 
 
 def test_keep_overrides_only_drops_applied_rows():
@@ -131,9 +155,12 @@ def test_keep_all_preserves_both_applied_and_overridden():
     assert ids == ["applied-row", "overridden-row"]
 
 
-def test_keep_overrides_only_still_drops_downstream_rows():
-    """Phase trim runs BEFORE the mode filter; downstream overridden
-    rows still get dropped."""
+def test_overridden_rows_survive_phase_trim_regardless_of_phase():
+    """Overridden rows are explicit human intent and survive the phase
+    trim regardless of which phase they belong to. They'll be honored
+    when the relevant phase next runs (which is whatever decisions.yaml
+    consumer-skill consumes them — re-running in this fork, or fresh in
+    a later run)."""
     rows = [
         {"id": "upstream-override", "phase": "design-review",
          "ai-default": "v1", "override": "v2",
@@ -149,8 +176,100 @@ def test_keep_overrides_only_still_drops_downstream_rows():
     )
 
     parsed = yaml.safe_load(out)
+    ids = {r["id"] for r in parsed["decisions"]}
+    # Both overrides survive: upstream-override is upstream of fork
+    # (would survive anyway), downstream-override is downstream but
+    # status=overridden grants survival regardless of phase.
+    assert ids == {"upstream-override", "downstream-override"}
+
+
+def test_non_overridden_downstream_rows_are_still_trimmed():
+    """The override-survives carveout is just for overridden rows.
+    AI-default rows from at/past the fork point still get trimmed."""
+    rows = [
+        {"id": "upstream-applied", "phase": "design-review",
+         "ai-default": "v1", "options_considered": [], "status": "applied"},
+        {"id": "downstream-applied", "phase": "commcare-setup",
+         "ai-default": "w1", "options_considered": [], "status": "applied"},
+    ]
+    src = _decisions_yaml(rows)
+
+    out = _rewrite_decisions_yaml(src, fork_ordinal=2)
+
+    parsed = yaml.safe_load(out)
     ids = [r["id"] for r in parsed["decisions"]]
-    assert ids == ["upstream-override"]
+    assert ids == ["upstream-applied"]
+
+
+def test_edit_at_fork_phase_survives_keep_overrides_only():
+    """The #544 repro flow: user edits a Phase X row, forks at Phase X
+    with mode=keep-overrides-only. The edit must produce exactly one
+    surviving row in the new decisions.yaml — not zero, which was the
+    pre-#544 bug.
+    """
+    rows = [
+        {"id": "edited-row", "phase": "design-review", "ai-default": "v1",
+         "options_considered": [], "status": "applied"},
+        {"id": "other-row", "phase": "design-review", "ai-default": "x",
+         "options_considered": [], "status": "applied"},
+    ]
+    src = _decisions_yaml(rows)
+    edits = [{"row_id": "edited-row", "new_answer": "v2"}]
+
+    out = _rewrite_decisions_yaml(
+        src, fork_ordinal=1, edits=edits, mode="keep-overrides-only",
+    )
+
+    parsed = yaml.safe_load(out)
+    assert len(parsed["decisions"]) == 1
+    [row] = parsed["decisions"]
+    assert row["id"] == "edited-row"
+    assert row["override"] == "v2"
+    assert row["status"] == "overridden"
+
+
+def test_edit_at_fork_phase_survives_keep_all():
+    """Same as above but with mode=keep-all. The edited row is overridden
+    and survives the trim; non-edited rows in the fork phase are trimmed
+    (they'll be re-derived on re-run)."""
+    rows = [
+        {"id": "edited-row", "phase": "design-review", "ai-default": "v1",
+         "options_considered": [], "status": "applied"},
+        {"id": "other-row", "phase": "design-review", "ai-default": "x",
+         "options_considered": [], "status": "applied"},
+    ]
+    src = _decisions_yaml(rows)
+    edits = [{"row_id": "edited-row", "new_answer": "v2"}]
+
+    out = _rewrite_decisions_yaml(
+        src, fork_ordinal=1, edits=edits, mode="keep-all",
+    )
+
+    parsed = yaml.safe_load(out)
+    ids = [r["id"] for r in parsed["decisions"]]
+    # Edited row survives via the overridden-survives carveout.
+    # other-row gets trimmed (Phase ordinal 1 = fork_ordinal, no edit).
+    assert ids == ["edited-row"]
+    assert parsed["decisions"][0]["status"] == "overridden"
+
+
+def test_pre_existing_override_in_fork_phase_also_survives():
+    """An overridden row from an earlier fork survives a subsequent
+    fork at the same phase. Cumulative-edit semantics."""
+    rows = [
+        {"id": "old-override", "phase": "design-review", "ai-default": "v1",
+         "override": "v2", "options_considered": ["v1", "v2"],
+         "status": "overridden"},
+        {"id": "fresh-applied", "phase": "design-review", "ai-default": "x",
+         "options_considered": [], "status": "applied"},
+    ]
+    src = _decisions_yaml(rows)
+
+    out = _rewrite_decisions_yaml(src, fork_ordinal=1)
+
+    parsed = yaml.safe_load(out)
+    ids = [r["id"] for r in parsed["decisions"]]
+    assert ids == ["old-override"]
 
 
 def test_v1_input_upgrades_in_memory_on_rewrite():
