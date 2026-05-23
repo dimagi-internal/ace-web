@@ -54,10 +54,16 @@ log = logging.getLogger(__name__)
 # ─── Helpers ───────────────────────────────────────────────────────
 
 
-def _read_yaml(drive: DriveClient, file_id: str) -> dict:
-    """Fetch and parse a YAML file by id. Returns ``{}`` on any failure."""
+def _read_yaml(drive: DriveClient, file_id: str,
+               mime_type: str = "application/x-yaml") -> dict:
+    """Fetch and parse a YAML file by id. Returns ``{}`` on any failure.
+
+    Google Docs store YAML as plain text; pass the file's actual
+    ``mime_type`` so ``get_content`` hits the export path instead of
+    the raw-download path (which fails for Docs).
+    """
     try:
-        content = drive.get_content(file_id, "application/x-yaml")
+        content = drive.get_content(file_id, mime_type)
         body = content.content or ""
     except Exception as exc:  # noqa: BLE001
         log.warning("summary: read yaml %s failed: %s", file_id, exc)
@@ -394,7 +400,7 @@ def build_summary_payload(
     opp_yaml_file = _find_in_folder(drive, opp_folder.id, "opp.yaml")
     opp_yaml: dict = {}
     if opp_yaml_file is not None:
-        opp_yaml = _read_yaml(drive, opp_yaml_file.id)
+        opp_yaml = _read_yaml(drive, opp_yaml_file.id, opp_yaml_file.mime_type)
 
     runs_folder = _find_folder(drive, opp_folder.id, "runs")
     if runs_folder is None:
@@ -407,7 +413,7 @@ def build_summary_payload(
     state_file = _find_in_folder(drive, run_folder.id, "run_state.yaml")
     state: dict = {}
     if state_file is not None:
-        state = _read_yaml(drive, state_file.id)
+        state = _read_yaml(drive, state_file.id, state_file.mime_type)
 
     workspace_slug = getattr(workspace, "slug", "")
     workbench_url = (
