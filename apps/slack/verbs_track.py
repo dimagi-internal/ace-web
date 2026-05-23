@@ -47,7 +47,8 @@ def _parse_track_arg(rest: str) -> tuple[str, str | None]:
     return rest, None
 
 
-def handle_track(*, installation, user_link, rest: str, channel_id: str) -> dict:
+def handle_track(*, installation, user_link, rest: str, channel_id: str,
+                 response_url: str = "") -> dict:
     try:
         slug, requested_run_id = _parse_track_arg(rest)
     except ValueError:
@@ -59,11 +60,25 @@ def handle_track(*, installation, user_link, rest: str, channel_id: str) -> dict
             ),
         }
 
+    if response_url:
+        from .async_response import run_async
+        run_async(response_url, _do_track,
+                  installation=installation, user_link=user_link,
+                  slug=slug, requested_run_id=requested_run_id,
+                  channel_id=channel_id)
+        return {
+            "response_type": "ephemeral",
+            "text": f":hourglass_flowing_sand: Looking up `{slug}`…",
+        }
+    return _do_track(installation=installation, user_link=user_link,
+                     slug=slug, requested_run_id=requested_run_id,
+                     channel_id=channel_id)
+
+
+def _do_track(*, installation, user_link, slug: str,
+              requested_run_id: str | None, channel_id: str) -> dict:
     workspace = installation.ace_workspace
 
-    # Load the snapshot to figure out which run to track (and to render the
-    # initial parent card). load_opp_snapshot returns None if the opp doesn't
-    # exist in this workspace.
     snapshot = _load_snapshot(slug, workspace, run_id=requested_run_id)
     if snapshot is None:
         return {
@@ -71,14 +86,14 @@ def handle_track(*, installation, user_link, rest: str, channel_id: str) -> dict
             "text": f":x: No opp `{slug}` in workspace `{workspace.slug}`.",
         }
 
-    run_id = requested_run_id or snapshot.get("current_run", {}).get("run_id") or ""
+    run_id = (requested_run_id
+              or snapshot.get("current_run", {}).get("run_id") or "")
     if not run_id:
         return {
             "response_type": "ephemeral",
             "text": f":x: Opp `{slug}` has no runs yet — nothing to track.",
         }
 
-    # Refuse to create a second active thread for the same (slug, run_id).
     existing = SlackRunThread.objects.filter(
         opp_slug=slug, run_id=run_id,
         broken_at__isnull=True, stopped_at__isnull=True,

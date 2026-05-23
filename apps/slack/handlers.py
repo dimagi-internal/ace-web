@@ -153,7 +153,8 @@ def dispatch_slash_command(*, text: str, slack_user_id: str, team_id: str,
     if verb == "track":
         from .verbs_track import handle_track
         return handle_track(installation=installation, user_link=user_link,
-                            rest=rest, channel_id=channel_id)
+                            rest=rest, channel_id=channel_id,
+                            response_url=response_url)
     if verb == "untrack":
         from .verbs_track import handle_untrack
         return handle_untrack(installation=installation, user_link=user_link,
