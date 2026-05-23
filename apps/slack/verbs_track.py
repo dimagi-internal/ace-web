@@ -29,8 +29,8 @@ def _get_client(installation) -> SlackClient:
 
 def _load_snapshot(slug: str, workspace, run_id: str | None = None) -> dict | None:
     """Indirection so tests can patch."""
-    from apps.opps.api import load_opp_snapshot
-    return load_opp_snapshot(workspace, slug, run_id=run_id)
+    from apps.opps.api import load_rich_opp_snapshot
+    return load_rich_opp_snapshot(workspace, slug, run_id=run_id)
 
 
 def _parse_track_arg(rest: str) -> tuple[str, str | None]:

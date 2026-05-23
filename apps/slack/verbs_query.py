@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 def _load_snapshot(slug: str, workspace, run_id: str | None = None) -> dict | None:
     """Indirection so tests can patch."""
-    from apps.opps.api import load_opp_snapshot
-    return load_opp_snapshot(workspace, slug, run_id=run_id)
+    from apps.opps.api import load_rich_opp_snapshot
+    return load_rich_opp_snapshot(workspace, slug, run_id=run_id)
 
 
 def handle_status(*, installation, user_link, rest: str, channel_id: str) -> dict:
