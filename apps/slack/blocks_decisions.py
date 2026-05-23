@@ -39,26 +39,17 @@ def render_decision_message(
     ai_default = decision.get("default", "")
     skill = decision.get("skill", "")
     options = decision.get("options_considered") or []
-    status = decision.get("status", "applied")
 
     eyebrow_parts = [f":clipboard: Decision #{decision_index}"]
     if skill:
         eyebrow_parts.append(skill)
     eyebrow = " · ".join(eyebrow_parts)
 
-    status_emojis = {
-        "open": ":grey_question:",
-        "overridden": ":blue_book:",
-        "applied": ":white_check_mark:",
-    }
-    status_emoji = status_emojis.get(status, "")
     question_line = f"*{question}*"
     default_line = f"AI default: `{_truncate(ai_default, 200)}`" if ai_default else ""
     body_parts = [question_line]
     if default_line:
         body_parts.append(default_line)
-    if status_emoji:
-        body_parts.append(f"Status: {status_emoji} {status}")
 
     blocks: list[dict] = [
         {"type": "context",
