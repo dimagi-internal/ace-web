@@ -27,7 +27,9 @@ Auth
 ====
 Two paths supported, picked from env:
 
-  - ``LABS_TOKEN`` set → uses ``POST /auth/e2e-login/`` (labs, prod)
+  - ``LABS_TOKEN`` set → trades the Bearer PAT for a session cookie via
+    ``POST /api/auth/pat-to-session`` (labs, prod). Mint via
+    ``/ace:ace-web-pat-mint``.
   - else → uses ``POST /auth/test-login/`` (local dev; requires
     ``ACE_ALLOW_TEST_LOGIN=True`` and ``DEBUG=True``)
 
@@ -41,7 +43,7 @@ Usage
 
     # Against labs (requires ACE_VIDEO_BEAT_EDITOR_REACT=True on the task):
     BASE=https://labs.connect.dimagi.com/ace \
-    LABS_TOKEN=$(op read 'op://Engineering/ace-web e2e token/credential') \
+    LABS_TOKEN=$ACE_WEB_PAT_TOKEN \
     uv run --extra walkthrough python scripts/qa/beat_editor_e2e.py
 
 Output
@@ -138,7 +140,8 @@ def _csrf_headers(ctx) -> dict[str, str]:
 
     Django's CsrfViewMiddleware accepts the token via X-CSRFToken header;
     Playwright's request.post() doesn't auto-include it. Cookie is set
-    by /auth/test-login/ and /auth/e2e-login/ as part of session bootstrap.
+    by /auth/test-login/ and /api/auth/pat-to-session as part of session
+    bootstrap.
     """
     for c in ctx.cookies():
         if c.get("name") == "csrftoken_ace" or c.get("name") == "csrftoken":
@@ -147,17 +150,20 @@ def _csrf_headers(ctx) -> dict[str, str]:
 
 
 def login(ctx) -> bool:
-    """Hit /auth/e2e-login/ (labs) or /auth/test-login/ (dev) for a session cookie."""
+    """Trade Bearer PAT for session (labs) or call /auth/test-login/ (dev)."""
     if TOKEN:
         resp = ctx.request.post(
-            f"{BASE}/auth/e2e-login/",
-            data=json.dumps({"email": EMAIL, "token": TOKEN}),
-            headers={"Content-Type": "application/json"},
+            f"{BASE}/api/auth/pat-to-session",
+            headers={"Authorization": f"Bearer {TOKEN}"},
         )
-        if resp.status != 200:
-            print(f"[auth] e2e-login FAILED status={resp.status} body={resp.text()[:200]}", file=sys.stderr)
+        if resp.status not in (200, 204):
+            print(
+                f"[auth] pat-to-session FAILED status={resp.status} "
+                f"body={resp.text()[:200]}",
+                file=sys.stderr,
+            )
             return False
-        print(f"[auth] OK via e2e-login ({EMAIL})")
+        print("[auth] OK via pat-to-session (bearer PAT)")
         return True
 
     # Dev fallback — test-login (only enabled when DEBUG + ACE_ALLOW_TEST_LOGIN).
@@ -169,7 +175,8 @@ def login(ctx) -> bool:
     if resp.status != 200:
         print(
             f"[auth] test-login FAILED status={resp.status} body={resp.text()[:200]}\n"
-            "  Set LABS_TOKEN for labs, or ensure ACE_ALLOW_TEST_LOGIN=True + DEBUG=True locally.",
+            "  Set LABS_TOKEN to a Bearer PAT for labs, or ensure "
+            "ACE_ALLOW_TEST_LOGIN=True + DEBUG=True locally.",
             file=sys.stderr,
         )
         return False

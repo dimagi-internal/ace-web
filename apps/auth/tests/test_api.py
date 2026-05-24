@@ -83,51 +83,6 @@ def test_logout_anon_401(anon_client):
 
 
 # ---------------------------------------------------------------------------
-# POST /auth/e2e-login
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_e2e_login_disabled_by_default(anon_client, settings):
-    settings.ACE_E2E_AUTH_TOKEN = ""
-    resp = anon_client.post(
-        "/api/auth/e2e-login",
-        {"email": "ace@dimagi-ai.com", "token": "bad"},
-        content_type="application/json",
-    )
-    # 404 because e2e login is disabled
-    assert resp.status_code == 404
-
-
-@pytest.mark.django_db
-def test_e2e_login_wrong_token_403(anon_client, settings, monkeypatch):
-    settings.ACE_E2E_AUTH_TOKEN = "correct-token"
-    resp = anon_client.post(
-        "/api/auth/e2e-login",
-        {"email": "ace@dimagi-ai.com", "token": "wrong-token"},
-        content_type="application/json",
-    )
-    assert resp.status_code == 403
-
-
-@pytest.mark.django_db
-def test_e2e_login_success_200(anon_client, settings, monkeypatch):
-    settings.ACE_E2E_AUTH_TOKEN = "secret-token"
-    settings.ACE_ALLOWED_EMAIL_DOMAINS = []
-    monkeypatch.setattr(
-        "apps.auth.api.do_e2e_login",
-        lambda req, body: {"user_id": 42, "email": body.email},
-    )
-    resp = anon_client.post(
-        "/api/auth/e2e-login",
-        {"email": "ace@dimagi-ai.com", "token": "secret-token"},
-        content_type="application/json",
-    )
-    assert resp.status_code == 200
-    assert resp.json()["email"] == "ace@dimagi-ai.com"
-
-
-# ---------------------------------------------------------------------------
 # GET /auth/cli/status
 # ---------------------------------------------------------------------------
 

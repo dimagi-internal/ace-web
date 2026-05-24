@@ -141,20 +141,24 @@ they read through to Google Drive.
   URL structure: `/w/<slug>/opps/`, `/w/<slug>/sessions/`, etc. Onboarding wizard
   at `/welcome`, invites at `/invite/<token>`, settings at
   `/w/<slug>/workspace-settings`. **Auto-join via domain match (PR #523):**
-  `Workspace.auto_join_domains` (JSONField, lowercased) — on every OAuth callback
-  and e2e-login, users whose email domain matches a workspace's list are added
+  `Workspace.auto_join_domains` (JSONField, lowercased) — on every OAuth callback,
+  users whose email domain matches a workspace's list are added
   as Editor (idempotent; never downgrades). `dimagi-team` is seeded with
   `[dimagi.com, dimagi-ai.com]` so Dimagi sign-ins land inside the workspace
   instead of the empty `/welcome` wizard. Owners can edit the list via
   `PATCH /api/workspaces/{slug}` or the Workspace Settings page. Spec:
   `docs/specs/2026-04-27-multi-tenant-workspaces-design.md`.
-- **Automation auth on labs — `/auth/e2e-login/`**: token-gated endpoint for
-  scripted tools. POST `{"email": "ace@dimagi-ai.com", "token":
-  "<ACE_E2E_AUTH_TOKEN>"}` → session cookie. Bypasses OAuth; the
-  `ace@dimagi-ai.com` bot identity is the canonical automation user.
-  Implementation in `apps/auth/e2e_login_views.py`. The URL only registers when
-  `ACE_E2E_AUTH_TOKEN` is non-empty. **Use this — not personal tokens — for any
-  scripted ace-web API access.**
+- **Automation auth on labs — Bearer PAT**: scripted tools authenticate with
+  `Authorization: Bearer $ACE_WEB_PAT_TOKEN`. Per-human tokens are minted via
+  the `/ace:ace-web-pat-mint` skill (one-time gh-style loopback browser flow;
+  the token belongs to the authorizing human, not the `ace@dimagi-ai.com` bot
+  identity). The `PersonalToken` model + `BearerTokenAuthMiddleware`
+  (`apps/auth/middleware.py`) handle HTTP; `AceSessionAuthMiddleware`
+  (`apps/common/channels_auth.py`) handles WebSocket Bearer auth so PAT-only
+  callers can connect to Channels. For browser contexts that can't set
+  custom WS headers, `POST /api/auth/pat-to-session` trades a Bearer for a
+  session cookie. Reference walkthrough: `tools/walkthrough/run_chat.py`
+  uses Bearer PAT end-to-end.
 - **Nova MCP integration**: ace-web runs Nova's OAuth 2.1 + PKCE dance server-side
   and injects a fresh access_token into every `claude -p` subprocess so the
   bundled Nova plugin's HTTP MCP can authenticate without prompting. Auth flow in

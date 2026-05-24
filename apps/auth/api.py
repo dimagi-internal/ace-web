@@ -17,8 +17,6 @@ from .schemas import (
     CliAuthPromoteOut,
     CliAuthStatusOut,
     CliAuthUploadOut,
-    E2ELoginIn,
-    E2ELoginOut,
     MeOut,
     NovaAuthStatusOut,
 )
@@ -104,60 +102,6 @@ def pat_to_session(request: HttpRequest) -> HttpResponse:
     # for ace-web, so we don't need to specify which backend authenticated.
     login(request, request.user)
     return HttpResponse(status=204)
-
-
-# ---------------------------------------------------------------------------
-# POST /auth/e2e-login — automation auth (no session auth required)
-# ---------------------------------------------------------------------------
-
-
-def do_e2e_login(request: HttpRequest, body: E2ELoginIn) -> dict:
-    """Validate token and log in the automation user.
-
-    The monkeypatch target in contract tests is this module-level function.
-    """
-    from django.conf import settings
-    from django.contrib.auth import login
-
-    from apps.auth.models import User
-
-    expected_token = getattr(settings, "ACE_E2E_AUTH_TOKEN", "")
-    if not expected_token:
-        raise ProblemError(404, "E2E login is disabled", type_=TYPE_FORBIDDEN)
-
-    if not body.token or body.token != expected_token:
-        raise ProblemError(403, "Invalid token", type_=TYPE_FORBIDDEN)
-
-    email = body.email.strip().lower()
-    if not email:
-        raise ProblemError(400, "email is required")
-
-    domains = getattr(settings, "ACE_ALLOWED_EMAIL_DOMAINS", []) or []
-    if domains:
-        _, _, domain = email.rpartition("@")
-        if domain.lower() not in domains:
-            raise ProblemError(400, f"Email must be from: {', '.join(f'@{d}' for d in domains)}")
-
-    display_name = body.display_name.strip() or email
-    user, _created = User.objects.get_or_create(
-        email=email, defaults={"display_name": display_name}
-    )
-    login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-    return {"user_id": user.pk, "email": user.email}
-
-
-@router.post(
-    "/e2e-login",
-    auth=None,
-    response={200: E2ELoginOut},
-    summary="Automation login (token-gated)",
-)
-def e2e_login(request: HttpRequest, body: E2ELoginIn) -> HttpResponse:
-    from django.http import JsonResponse
-
-    result = do_e2e_login(request, body)
-    payload = E2ELoginOut.model_validate(result).model_dump(mode="json")
-    return JsonResponse(payload)
 
 
 # ---------------------------------------------------------------------------

@@ -4739,38 +4739,6 @@
         ]
       }
     },
-    "/api/auth/e2e-login": {
-      "post": {
-        "operationId": "apps_auth_api_e2e_login",
-        "summary": "Automation login (token-gated)",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/E2ELoginOut"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "auth"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/E2ELoginIn"
-              }
-            }
-          },
-          "required": true
-        }
-      }
-    },
     "/api/auth/cli/status": {
       "get": {
         "operationId": "apps_auth_api_cli_auth_status",
@@ -5364,7 +5332,7 @@
       },
       "OppForkEditIn": {
         "additionalProperties": false,
-        "description": "A single answer override to apply during fork.\n\nThe forker finds the row by ``row_id`` in the source run's\n``decisions.yaml``, sets its ``default`` to ``new_answer``, and\nmarks ``status: overridden`` \u2014 matching the contract that\n``decisions-sync`` already uses, so downstream phases on re-run\nhonor the human's value verbatim.",
+        "description": "A single answer override to apply during fork.\n\nThe forker finds the row by ``row_id`` in the source run's\n``decisions.yaml``, sets its ``override`` to ``new_answer``, and\nmarks ``status: overridden`` \u2014 matching the schema-v2 contract that\n``decisions-sync`` uses. The original AI value remains in\n``ai-default`` for audit trail; downstream phases on re-run see the\neffective value (``override`` if present else ``ai-default``).",
         "properties": {
           "row_id": {
             "minLength": 1,
@@ -5408,6 +5376,15 @@
             },
             "title": "Edits",
             "type": "array"
+          },
+          "mode": {
+            "default": "keep-all",
+            "enum": [
+              "keep-overrides-only",
+              "keep-all"
+            ],
+            "title": "Mode",
+            "type": "string"
           }
         },
         "required": [
@@ -6725,6 +6702,17 @@
               }
             ],
             "title": "Output Drive Url"
+          },
+          "program_drive_folder_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program Drive Folder Url"
           }
         },
         "required": [
@@ -9315,51 +9303,6 @@
           "name"
         ],
         "title": "WorkspaceRefOut",
-        "type": "object"
-      },
-      "E2ELoginOut": {
-        "additionalProperties": false,
-        "description": "200 response from /auth/e2e-login/.",
-        "properties": {
-          "user_id": {
-            "title": "User Id",
-            "type": "integer"
-          },
-          "email": {
-            "title": "Email",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "email"
-        ],
-        "title": "E2ELoginOut",
-        "type": "object"
-      },
-      "E2ELoginIn": {
-        "additionalProperties": false,
-        "description": "POST /auth/e2e-login/ body.\n\nUsed by automated tools (walkthroughs, smoke tests, CI harnesses)\nto authenticate without going through CommCare Connect OAuth.\n``token`` must match ``settings.ACE_E2E_AUTH_TOKEN``.",
-        "properties": {
-          "email": {
-            "title": "Email",
-            "type": "string"
-          },
-          "token": {
-            "title": "Token",
-            "type": "string"
-          },
-          "display_name": {
-            "default": "",
-            "title": "Display Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "email",
-          "token"
-        ],
-        "title": "E2ELoginIn",
         "type": "object"
       },
       "CliAuthStatusOut": {

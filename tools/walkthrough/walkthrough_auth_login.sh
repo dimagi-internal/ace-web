@@ -1,53 +1,47 @@
 #!/usr/bin/env bash
-# Log in as ace@dimagi-ai.com via /auth/e2e-login/ and persist the
-# session cookie to the shared cookie jar. Called by canopy:walkthrough
-# via any ace-web walkthrough's auth.login hook. Also imports cookies
-# into the gstack browse profile so the walkthrough's Chromium session
-# is authenticated for browser-driven scenes.
+# Trade an ACE_WEB_PAT_TOKEN PAT for a Django session cookie via
+# POST /api/auth/pat-to-session, then persist the cookie to the shared
+# cookie jar. Called by canopy:walkthrough via any ace-web walkthrough's
+# auth.login hook. Also imports cookies into the gstack browse profile
+# so the walkthrough's Chromium session is authenticated for
+# browser-driven scenes.
+#
+# Why the PAT-to-cookie hop: browsers can't set custom headers on
+# WebSocket upgrades and curl's cookie jar is the lingua franca for
+# subsequent CLI + browse calls. POST /api/auth/pat-to-session is
+# designed exactly for this hop (apps/auth/api.py:pat_to_session).
 #
 # Generic (not turmeric-specific) — works for any ace-web walkthrough
-# against any deployed instance that has ACE_E2E_AUTH_TOKEN wired up.
+# against any deployed instance.
 #
 # Required env:
-#   ACE_E2E_AUTH_TOKEN    shared-secret from deploy/aws/task-definition.json
+#   ACE_WEB_PAT_TOKEN     Bearer PAT. Mint one via /ace:ace-web-pat-mint.
 #
 # Optional env:
 #   ACE_WEB_BASE_URL      default: https://labs.connect.dimagi.com/ace
-#   ACE_E2E_EMAIL         default: ace@dimagi-ai.com
 #   ACE_WEB_COOKIE_JAR    default: /tmp/ace-web-walkthrough/cookies.txt
 set -euo pipefail
 
 BASE_URL="${ACE_WEB_BASE_URL:-https://labs.connect.dimagi.com/ace}"
-E2E_EMAIL="${ACE_E2E_EMAIL:-ace@dimagi-ai.com}"
 COOKIE_JAR="${ACE_WEB_COOKIE_JAR:-${TURMERIC_COOKIE_JAR:-/tmp/ace-web-walkthrough/cookies.txt}}"
 
 log() { echo "[walkthrough-auth-login] $*" >&2; }
 
-if [ -z "${ACE_E2E_AUTH_TOKEN:-}" ]; then
-  log "ACE_E2E_AUTH_TOKEN not set."
-  log "Copy it from deploy/aws/task-definition.json and export before running."
+if [ -z "${ACE_WEB_PAT_TOKEN:-}" ]; then
+  log "ACE_WEB_PAT_TOKEN not set."
+  log "Mint one via /ace:ace-web-pat-mint and export before running."
   exit 2
 fi
 
 mkdir -p "$(dirname "$COOKIE_JAR")"
 
-log "e2e-login as $E2E_EMAIL -> $BASE_URL"
-LOGIN_PAYLOAD="$(E2E_EMAIL="$E2E_EMAIL" ACE_E2E_AUTH_TOKEN="$ACE_E2E_AUTH_TOKEN" \
-  python3 -c "
-import json, os
-print(json.dumps({
-    'email': os.environ['E2E_EMAIL'],
-    'token': os.environ['ACE_E2E_AUTH_TOKEN'],
-}))
-")"
-
+log "pat-to-session -> $BASE_URL"
 HTTP_CODE=$(curl -sS -c "$COOKIE_JAR" -o /dev/null -w '%{http_code}' \
-  -X POST "$BASE_URL/auth/e2e-login/" \
-  -H "Content-Type: application/json" \
-  --data-raw "$LOGIN_PAYLOAD")
+  -X POST "$BASE_URL/api/auth/pat-to-session" \
+  -H "Authorization: Bearer $ACE_WEB_PAT_TOKEN")
 
-if [ "$HTTP_CODE" != "200" ]; then
-  log "e2e-login returned $HTTP_CODE"
+if [ "$HTTP_CODE" != "204" ] && [ "$HTTP_CODE" != "200" ]; then
+  log "pat-to-session returned $HTTP_CODE"
   exit 3
 fi
 

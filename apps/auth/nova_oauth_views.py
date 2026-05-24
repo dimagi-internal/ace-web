@@ -4,8 +4,8 @@ The HTML/redirect handlers — initiate the dance, catch the callback,
 store the blob, return the user to /settings. Restricted to staff +
 ACE automation accounts (``ace@dimagi-ai.com``) so the single shared
 credential blob isn't trampled by random users; the bot identity needs
-the same privilege so a script (e2e-login + initiate) can rotate Nova
-auth without a human in the loop. Mirrors the
+the same privilege so an admin script can rotate Nova auth without a
+human in the loop. Mirrors the
 ``apps.common.auth_views._can_write_global`` rule for the Claude
 credentials.
 

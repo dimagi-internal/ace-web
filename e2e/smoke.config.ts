@@ -13,13 +13,14 @@ const __dirname = path.dirname(__filename);
  * config:
  *   - does NOT start a webServer
  *   - points at ACE_SMOKE_BASE_URL (default: https://labs.connect.dimagi.com)
- *   - authenticates via /ace/auth/e2e-login/ using ACE_E2E_AUTH_TOKEN,
- *     which the labs environment has registered.
+ *   - authenticates via Bearer PAT (ACE_WEB_PAT_TOKEN) traded for a
+ *     session cookie at /ace/api/auth/pat-to-session. Mint the PAT
+ *     via /ace:ace-web-pat-mint.
  *
  * Run with:
- *   ACE_E2E_AUTH_TOKEN=<token> bun run smoke
+ *   ACE_WEB_PAT_TOKEN=<pat> bun run smoke
  * Or via npm:
- *   ACE_E2E_AUTH_TOKEN=<token> npx playwright test -c smoke.config.ts
+ *   ACE_WEB_PAT_TOKEN=<pat> npx playwright test -c smoke.config.ts
  */
 const baseURL =
   process.env.ACE_SMOKE_BASE_URL || "https://labs.connect.dimagi.com";

@@ -6,7 +6,8 @@ base_url: "https://labs.connect.dimagi.com/ace"
 # been run for real (no --dry-run), so downstream phases carry artifacts
 # + judge verdicts. Recommended path:
 #
-#   1. export ACE_E2E_AUTH_TOKEN="<value from deploy/aws/task-definition.json>"
+#   1. Mint a PAT via /ace:ace-web-pat-mint (one-time per machine);
+#      the token lands in $CLAUDE_PLUGIN_DATA/.env as ACE_WEB_PAT_TOKEN.
 #   2. Fetch the Turmeric PDD body to a local file:
 #        python tools/walkthrough/turmeric_pdd_finder.py \
 #          > /tmp/turmeric-smoketest/pdd.txt

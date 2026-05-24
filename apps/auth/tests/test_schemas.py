@@ -1,14 +1,9 @@
 """Round-trip tests for apps.auth.schemas."""
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
-
 from apps.auth.schemas import (
     CliAuthUploadOut,
     DevLoginIn,
-    E2ELoginIn,
-    E2ELoginOut,
     MeOut,
     NovaAuthStatusOut,
 )
@@ -33,22 +28,6 @@ def test_me_out_with_workspaces():
     d = me.model_dump()
     assert d["workspaces"][0]["slug"] == "dimagi-team"
     assert d["is_staff"] is True
-
-
-def test_e2e_login_in_round_trip():
-    body = E2ELoginIn(email="ace@dimagi-ai.com", token="secret-token-123")
-    assert body.display_name == ""
-    assert body.token == "secret-token-123"
-
-
-def test_e2e_login_in_rejects_unknown_field():
-    with pytest.raises(ValidationError):
-        E2ELoginIn(email="x@y.com", token="t", extra_field="bad")  # type: ignore[call-arg]
-
-
-def test_e2e_login_out():
-    out = E2ELoginOut(user_id=7, email="ace@dimagi-ai.com")
-    assert out.user_id == 7
 
 
 def test_nova_auth_status_not_connected():

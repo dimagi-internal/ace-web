@@ -8,7 +8,6 @@ initiate/callback) stay as plain Django views and have no Pydantic schemas.
 - ``GET  /api/auth/cli/status``     → ``CliAuthStatusOut``
 - ``POST /api/auth/cli/upload``     → ``CliAuthUploadOut``
 - ``GET  /api/auth/nova/status``    → ``NovaAuthStatusOut``
-- ``POST /auth/e2e-login/``         → ``E2ELoginIn`` / ``E2ELoginOut``
 - ``GET  /api/auth/me``             → ``MeOut``  (v2 endpoint)
 - ``POST /auth/test-login/``        → ``TestLoginIn``  (dev-only)
 
@@ -83,29 +82,6 @@ class CliAuthExpectedShapeOut(StrictModel):
     """GET /api/auth/cli/expected-shape — schema introspection (public)."""
 
     shape: dict
-
-
-# ── E2E login (automation) ────────────────────────────────────────────────────
-
-
-class E2ELoginIn(StrictModel):
-    """POST /auth/e2e-login/ body.
-
-    Used by automated tools (walkthroughs, smoke tests, CI harnesses)
-    to authenticate without going through CommCare Connect OAuth.
-    ``token`` must match ``settings.ACE_E2E_AUTH_TOKEN``.
-    """
-
-    email: str
-    token: str
-    display_name: str = ""
-
-
-class E2ELoginOut(StrictModel):
-    """200 response from /auth/e2e-login/."""
-
-    user_id: int
-    email: str
 
 
 # ── Nova OAuth status ─────────────────────────────────────────────────────────
