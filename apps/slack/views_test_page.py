@@ -231,7 +231,6 @@ def test_preview(request: HttpRequest, slug: str) -> HttpResponse:
     _normalize_snapshot(snapshot)
 
     from .blocks import render_parent_card, render_phase_tile
-    from .blocks_decisions import render_decision_message
 
     display_name = snapshot.get("display_name", slug)
     current_run = snapshot.get("current_run") or {}
@@ -256,7 +255,7 @@ def test_preview(request: HttpRequest, slug: str) -> HttpResponse:
         messages_html.append(
             f'<div class="result result-err">Parent card error: {exc}</div>')
 
-    # Phase tiles + decision messages
+    # Phase tiles
     for phase in sorted(phases, key=lambda p: p.get("ordinal", 0)):
         pname = phase.get("name", "")
         phase_steps = [s for s in steps if s.get("phase") == pname]
@@ -276,22 +275,6 @@ def test_preview(request: HttpRequest, slug: str) -> HttpResponse:
             messages_html.append(
                 f'<div class="result result-err">Phase tile error '
                 f'({pname}): {exc}</div>')
-
-        phase_decisions = [d for d in decisions
-                          if d.get("phase") == pname]
-        for idx, dec in enumerate(phase_decisions, 1):
-            try:
-                dec_blocks = render_decision_message(
-                    dec, opp_slug=slug, phase_name=pname,
-                    decision_index=idx,
-                )
-                messages_html.append(
-                    _render_message(dec_blocks,
-                                    f"Decision #{idx}", is_thread=True))
-            except Exception as exc:
-                messages_html.append(
-                    f'<div class="result result-err">Decision error '
-                    f'({dec.get("id", "?")}): {exc}</div>')
 
     # Raw JSON dump
     raw_json = json.dumps({
@@ -381,7 +364,6 @@ def test_post(request: HttpRequest, slug: str) -> HttpResponse:
     _normalize_snapshot(snapshot)
 
     from .blocks import render_parent_card, render_phase_tile
-    from .blocks_decisions import render_decision_message
     from .slack_client import client_for
 
     client = client_for(installation)
@@ -390,7 +372,6 @@ def test_post(request: HttpRequest, slug: str) -> HttpResponse:
     current_run = snapshot.get("current_run") or {}
     run_id_actual = current_run.get("run_id", "?")
     phases = snapshot.get("phases") or []
-    decisions = current_run.get("decisions") or []
     steps = current_run.get("steps") or []
 
     # Post parent card
@@ -410,7 +391,7 @@ def test_post(request: HttpRequest, slug: str) -> HttpResponse:
         results.append(f"Parent card FAILED: {exc}")
         parent_ts = None
 
-    # Post phase tiles + decisions as thread replies
+    # Post phase tiles as thread replies
     for phase in sorted(phases, key=lambda p: p.get("ordinal", 0)):
         pname = phase.get("name", "")
         phase_steps = [s for s in steps if s.get("phase") == pname]
@@ -430,23 +411,6 @@ def test_post(request: HttpRequest, slug: str) -> HttpResponse:
             results.append(f"Phase tile: {pname}")
         except Exception as exc:
             results.append(f"Phase tile FAILED ({pname}): {exc}")
-
-        phase_decisions = [d for d in decisions
-                          if d.get("phase") == pname]
-        for idx, dec in enumerate(phase_decisions, 1):
-            try:
-                dec_blocks = render_decision_message(
-                    dec, opp_slug=slug, phase_name=pname,
-                    decision_index=idx,
-                )
-                client.post_message(
-                    channel=channel_id, blocks=dec_blocks,
-                    text=f"Decision #{idx}: {dec.get('question', '')}",
-                    thread_ts=parent_ts,
-                )
-                results.append(f"Decision #{idx}: {dec.get('id', '?')}")
-            except Exception as exc:
-                results.append(f"Decision #{idx} FAILED: {exc}")
 
     result_items = "".join(f"<li>{r}</li>" for r in results)
     html = f"""<!DOCTYPE html><html><head>
