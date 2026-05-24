@@ -48,8 +48,12 @@ def _phase_info(snapshot: dict, phase_name: str) -> dict:
     raise KeyError(f"phase {phase_name!r} not in snapshot")
 
 
-def _opp_url(workspace_slug: str, opp_slug: str) -> str:
-    return f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}"
+def _opp_url(workspace_slug: str, opp_slug: str,
+             run_id: str = "") -> str:
+    base = f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}"
+    if run_id:
+        return f"{base}?run_id={run_id}"
+    return base
 
 
 def render_phase_tile(snapshot: dict, *, phase_name: str,
@@ -91,19 +95,22 @@ def render_phase_tile(snapshot: dict, *, phase_name: str,
          "text": {"type": "mrkdwn", "text": "\n".join(body_lines)}},
     ]
 
-    # Action buttons
-    base_url = _opp_url(workspace_slug, opp_slug)
+    # Action buttons — all URLs include run_id so the link lands on
+    # the exact run being tracked, not whatever's latest.
+    run_id = snapshot.get("current_run", {}).get("run_id", "")
+    base_url = _opp_url(workspace_slug, opp_slug, run_id)
+    sep = "&" if "?" in base_url else "?"
     action_elements: list[dict] = [{
         "type": "button",
         "text": {"type": "plain_text", "text": "Open phase"},
-        "url": f"{base_url}?view=phase&phase={phase_name}",
+        "url": f"{base_url}{sep}view=phase&phase={phase_name}",
         "action_id": f"view_phase:{opp_slug}:{phase_name}",
     }]
     if stats["decision_count"] > 0:
         action_elements.append({
             "type": "button",
             "text": {"type": "plain_text", "text": "Review decisions"},
-            "url": f"{base_url}?view=phase&phase={phase_name}",
+            "url": f"{base_url}{sep}view=phase&phase={phase_name}",
             "action_id": f"review_decisions:{opp_slug}:{phase_name}",
             "style": "primary",
         })
@@ -152,11 +159,11 @@ def render_parent_card(
     lines.append(active_line)
     text = "\n".join(lines)
 
-    base_url = _opp_url(workspace_slug, opp_slug)
+    opp_url = _opp_url(workspace_slug, opp_slug, run_id)
     action_elements: list[dict] = [{
         "type": "button",
         "text": {"type": "plain_text", "text": "Open in ace-web"},
-        "url": base_url,
+        "url": opp_url,
         "action_id": f"open_opp:{opp_slug}",
     }]
     if thread_id and not stopped_by_display:
