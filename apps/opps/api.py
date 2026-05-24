@@ -1191,6 +1191,8 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
         edits=[e.model_dump() for e in body.edits] if body.edits else None,
         mode=body.mode,
     )
+    from apps.opps.decisions_buffer import clear_edits
+    clear_edits(slug, source_run_id or "")
     return {
         "slug": result.opp_slug,
         "run_id": result.new_run_id,
