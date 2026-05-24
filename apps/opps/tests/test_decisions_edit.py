@@ -1,8 +1,8 @@
 """Tests for apps.opps.decisions_edit.apply_edits_to_decisions_data
-and upgrade_decisions_v1_to_v2."""
+and upgrade_decisions_to_v3."""
 from apps.opps.decisions_edit import (
     apply_edits_to_decisions_data,
-    upgrade_decisions_v1_to_v2,
+    upgrade_decisions_to_v3,
 )
 
 
@@ -10,7 +10,7 @@ def _row(row_id, ai_default, options=None, status="ai-default", **extras):
     row = {
         "id": row_id,
         "ai-default": ai_default,
-        "options_considered": list(options or []),
+        "options": list(options or []),
         "status": status,
         "phase": "design",
         "skill": "idea-to-pdd",
@@ -82,11 +82,25 @@ def test_missing_decisions_key_returns_input_unchanged():
     assert out == {"foo": "bar"}
 
 
+def test_edit_matching_ai_default_clears_override_reasoning():
+    data = {"decisions": [
+        _row("a", "v1", options=["v1", "v2"], status="overridden",
+             override="v2", override_reasoning="user rationale"),
+    ]}
+    edits = [{"row_id": "a", "new_answer": "v1"}]
+
+    out = apply_edits_to_decisions_data(data, edits=edits)
+
+    assert "override" not in out["decisions"][0]
+    assert "override_reasoning" not in out["decisions"][0]
+    assert out["decisions"][0]["status"] == "ai-default"
+
+
 def test_data_mutation_isolation():
     data = {"decisions": [_row("a", "v1")]}
     snapshot = {"decisions": [dict(data["decisions"][0])]}
-    snapshot["decisions"][0]["options_considered"] = list(
-        data["decisions"][0]["options_considered"]
+    snapshot["decisions"][0]["options"] = list(
+        data["decisions"][0]["options"]
     )
 
     apply_edits_to_decisions_data(
@@ -105,12 +119,14 @@ def test_upgrade_v1_renames_default_to_ai_default():
              "source": "x", "question": "q"},
         ],
     }
-    v2 = upgrade_decisions_v1_to_v2(v1)
-    assert v2["schema_version"] == 2
-    row = v2["decisions"][0]
+    v3 = upgrade_decisions_to_v3(v1)
+    assert v3["schema_version"] == 3
+    row = v3["decisions"][0]
     assert "default" not in row
     assert row["ai-default"] == "v1"
     assert row["status"] == "ai-default"
+    assert "options_considered" not in row
+    assert row["options"] == []
 
 
 def test_upgrade_v1_open_maps_to_ai_default():
@@ -122,8 +138,8 @@ def test_upgrade_v1_open_maps_to_ai_default():
              "source": "x", "question": "q"},
         ],
     }
-    v2 = upgrade_decisions_v1_to_v2(v1)
-    assert v2["decisions"][0]["status"] == "ai-default"
+    v3 = upgrade_decisions_to_v3(v1)
+    assert v3["decisions"][0]["status"] == "ai-default"
 
 
 def test_upgrade_v1_overridden_row_copies_default_to_override():
@@ -135,18 +151,39 @@ def test_upgrade_v1_overridden_row_copies_default_to_override():
              "source": "x", "question": "q"},
         ],
     }
-    v2 = upgrade_decisions_v1_to_v2(v1)
-    row = v2["decisions"][0]
+    v3 = upgrade_decisions_to_v3(v1)
+    row = v3["decisions"][0]
     assert row["ai-default"] == "v2"
     assert row["override"] == "v2"
     assert row["status"] == "overridden"
+    assert row["options"] == ["v1", "v2"]
+    assert "options_considered" not in row
 
 
-def test_upgrade_v2_is_idempotent():
+def test_upgrade_v2_renames_fields_to_v3():
     v2 = {
         "schema_version": 2,
+        "decisions": [
+            {"id": "a", "ai-default": "v1", "options_considered": ["v1", "v2"],
+             "notes": "some rationale", "status": "ai-default",
+             "phase": "design", "skill": "idea-to-pdd",
+             "source": "x", "question": "q"},
+        ],
+    }
+    v3 = upgrade_decisions_to_v3(v2)
+    assert v3["schema_version"] == 3
+    row = v3["decisions"][0]
+    assert row["options"] == ["v1", "v2"]
+    assert "options_considered" not in row
+    assert row["reasoning"] == "some rationale"
+    assert "notes" not in row
+
+
+def test_upgrade_v3_is_idempotent():
+    v3 = {
+        "schema_version": 3,
         "decisions": [_row("a", "v1")],
     }
-    out = upgrade_decisions_v1_to_v2(v2)
-    assert out["schema_version"] == 2
+    out = upgrade_decisions_to_v3(v3)
+    assert out["schema_version"] == 3
     assert out["decisions"][0]["ai-default"] == "v1"

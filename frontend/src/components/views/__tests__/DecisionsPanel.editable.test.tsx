@@ -13,10 +13,11 @@ function dec(over: Partial<Decision> = {}): Decision {
     question: "Who is the target population?",
     ai_default: "FLWs in rural Kenya",
     override: "",
-    options_considered: [],
+    options: [],
     source: "idea-to-pdd",
     status: "ai-default",
-    notes: "",
+    reasoning: "",
+    override_reasoning: "",
     ...over,
   };
 }

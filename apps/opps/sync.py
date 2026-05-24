@@ -673,9 +673,10 @@ def _load_decisions(
 def _parse_decision_rows(raw_rows: list) -> list[Decision]:
     """Convert raw decisions.yaml rows into Decision dataclasses.
 
-    Reads v2 fields directly: ``ai-default`` for the AI proposal,
-    ``override`` for the human edit. Falls back to v1 ``default`` →
-    ``ai_default`` so old rows still parse. Old status values
+    Reads v3 fields first (``options``, ``reasoning``,
+    ``override_reasoning``), falling back to v2 names
+    (``options_considered``, ``notes``) so older data still parses.
+    ``ai-default`` falls back to v1 ``default``. Old status values
     (``applied``, ``open``) map to ``ai-default``.
     """
     out: list[Decision] = []
@@ -685,13 +686,16 @@ def _parse_decision_rows(raw_rows: list) -> list[Decision]:
         rid = str(row.get("id") or "").strip()
         if not rid:
             continue
-        opts = row.get("options_considered") or []
+        opts = row.get("options") or row.get("options_considered") or []
         ai_default = str(
             row.get("ai-default") or row.get("default") or ""
         ).strip()
         override = str(row.get("override") or "").strip()
         raw_status = str(row.get("status") or "ai-default").strip().lower()
         status = raw_status if raw_status == "overridden" else "ai-default"
+        reasoning = str(
+            row.get("reasoning") or row.get("notes") or ""
+        ).strip()
         out.append(
             Decision(
                 id=rid,
@@ -700,10 +704,11 @@ def _parse_decision_rows(raw_rows: list) -> list[Decision]:
                 question=str(row.get("question") or "").strip(),
                 ai_default=ai_default,
                 override=override,
-                options_considered=[str(o) for o in opts] if isinstance(opts, list) else [],
+                options=[str(o) for o in opts] if isinstance(opts, list) else [],
                 source=str(row.get("source") or "").strip(),
                 status=status,
-                notes=str(row.get("notes") or "").strip(),
+                reasoning=reasoning,
+                override_reasoning=str(row.get("override_reasoning") or "").strip(),
             )
         )
     return out

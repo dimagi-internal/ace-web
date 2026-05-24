@@ -228,10 +228,11 @@ def serialize_decision(d: Decision) -> dict:
         "question": d.question,
         "ai_default": d.ai_default,
         "override": d.override,
-        "options_considered": list(d.options_considered),
+        "options": list(d.options),
         "source": d.source,
         "status": d.status,
-        "notes": d.notes,
+        "reasoning": d.reasoning,
+        "override_reasoning": d.override_reasoning,
     }
 
 

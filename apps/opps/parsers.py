@@ -117,7 +117,8 @@ class Decision:
     question: str
     ai_default: str
     override: str = ""
-    options_considered: list[str] = field(default_factory=list)
+    options: list[str] = field(default_factory=list)
     source: str = ""
     status: str = "ai-default"  # ai-default | overridden
-    notes: str = ""
+    reasoning: str = ""
+    override_reasoning: str = ""

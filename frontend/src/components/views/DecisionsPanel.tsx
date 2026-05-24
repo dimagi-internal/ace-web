@@ -28,6 +28,13 @@ interface Props {
  * considered + a status (ai-default | overridden). Rows carry a
  * ``phase`` tag so we can group them per phase here.
  */
+function parseOption(raw: string): { label: string; explanation: string; raw: string } {
+  let idx = raw.indexOf(" — ");
+  if (idx < 0) idx = raw.indexOf(" – ");
+  if (idx > 0) return { label: raw.slice(0, idx), explanation: raw.slice(idx + 3), raw };
+  return { label: raw, explanation: "", raw };
+}
+
 const STATUS_RANK: Record<Decision["status"], number> = {
   overridden: 0,
   "ai-default": 1,
@@ -138,15 +145,28 @@ function DecisionRow({
   const [rowOpen, setRowOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [customMode, setCustomMode] = useState(false);
 
   const pendingEdit = editBuffer?.find((e) => e.row_id === decision.id);
   const effectiveValue = pendingEdit?.new_answer ?? (decision.override || decision.ai_default);
   const isEdited = !!pendingEdit;
 
+  const parsedOptions = useMemo(
+    () => decision.options.map(parseOption),
+    [decision.options],
+  );
+
   const tone =
     decision.status === "overridden"
       ? "border-sky-500/40 bg-sky-500/10 text-sky-400"
       : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+
+  const startEditing = () => {
+    const matchesOption = parsedOptions.some((o) => o.label === effectiveValue);
+    setDraft(effectiveValue);
+    setCustomMode(!matchesOption);
+    setEditing(true);
+  };
 
   return (
     <div
@@ -162,6 +182,7 @@ function DecisionRow({
             if (!next) {
               setEditing(false);
               setDraft("");
+              setCustomMode(false);
             }
             return next;
           })
@@ -209,25 +230,31 @@ function DecisionRow({
               value={<span className="font-medium text-sky-400">{decision.override}</span>}
             />
           )}
-          {decision.options_considered.length > 0 && (
+          {parsedOptions.length > 0 && (
             <DetailRow
-              label="Options considered"
+              label="Options"
               value={
-                <span className="flex flex-wrap gap-1.5">
-                  {decision.options_considered.map((opt) => (
-                    <span
-                      key={opt}
-                      className={cn(
-                        "rounded border px-1.5 py-0.5",
-                        opt === effectiveValue
-                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                          : "border-border bg-muted/30 text-muted-foreground",
+                <div className="flex flex-col gap-1.5">
+                  {parsedOptions.map(({ label, explanation, raw }) => (
+                    <div key={raw}>
+                      <span
+                        className={cn(
+                          "inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium",
+                          label === effectiveValue
+                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                            : "border-border bg-muted/30 text-muted-foreground",
+                        )}
+                      >
+                        {label}
+                      </span>
+                      {explanation && (
+                        <p className="mt-0.5 pl-0.5 text-[10px] leading-relaxed text-muted-foreground/70">
+                          {explanation}
+                        </p>
                       )}
-                    >
-                      {opt}
-                    </span>
+                    </div>
                   ))}
-                </span>
+                </div>
               }
             />
           )}
@@ -243,22 +270,25 @@ function DecisionRow({
               <span className="font-mono text-[10px] text-muted-foreground/80">{decision.skill}</span>
             }
           />
-          {decision.notes && (
+          {decision.reasoning && (
             <DetailRow
-              label="Notes"
-              value={<span className="whitespace-pre-line text-muted-foreground">{decision.notes}</span>}
+              label="Reasoning"
+              value={<span className="whitespace-pre-line text-muted-foreground">{decision.reasoning}</span>}
+            />
+          )}
+          {decision.override_reasoning && (
+            <DetailRow
+              label="Override reasoning"
+              value={<span className="whitespace-pre-line text-muted-foreground">{decision.override_reasoning}</span>}
             />
           )}
           {onEdit && (
-            <div className="col-span-2 mt-2 flex gap-2 border-t border-border/40 pt-3">
+            <div className="col-span-2 mt-2 flex flex-col gap-2 border-t border-border/40 pt-3">
               {!editing && (
-                <>
+                <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setDraft(effectiveValue);
-                      setEditing(true);
-                    }}
+                    onClick={startEditing}
                     className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
                   >
                     Edit
@@ -272,42 +302,106 @@ function DecisionRow({
                       Revert
                     </button>
                   )}
-                </>
+                </div>
               )}
               {editing && (
                 <div className="flex w-full flex-col gap-2">
-                  <textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        setEditing(false);
-                      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                        e.preventDefault();
-                        onEdit(decision.id, draft);
-                        setEditing(false);
-                      }
+                  {parsedOptions.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      {parsedOptions.map(({ label, explanation, raw }) => (
+                        <button
+                          key={raw}
+                          type="button"
+                          onClick={() => {
+                            setDraft(label);
+                            setCustomMode(false);
+                          }}
+                          className={cn(
+                            "rounded border px-2.5 py-1.5 text-left text-xs transition-colors",
+                            draft === label && !customMode
+                              ? "border-emerald-500/40 bg-emerald-500/10"
+                              : "border-border bg-muted/30 hover:bg-accent/40",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "font-medium",
+                              draft === label && !customMode
+                                ? "text-emerald-400"
+                                : "text-foreground",
+                            )}
+                          >
+                            {label}
+                          </span>
+                          {explanation && (
+                            <span className="mt-0.5 block text-[10px] text-muted-foreground/70">
+                              {explanation}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomMode(true);
+                      if (!customMode) setDraft("");
                     }}
-                    autoFocus
-                    rows={3}
-                    aria-label={`Edit answer for: ${decision.question}`}
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
-                  />
+                    className={cn(
+                      "rounded border px-2.5 py-1.5 text-left text-xs transition-colors",
+                      customMode
+                        ? "border-violet-500/40 bg-violet-500/10 text-violet-400 font-medium"
+                        : "border-border bg-muted/30 text-muted-foreground hover:bg-accent/40",
+                    )}
+                  >
+                    Custom answer
+                  </button>
+                  {customMode && (
+                    <input
+                      type="text"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setEditing(false);
+                          setCustomMode(false);
+                        } else if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (draft.trim()) {
+                            onEdit(decision.id, draft.trim());
+                            setEditing(false);
+                            setCustomMode(false);
+                          }
+                        }
+                      }}
+                      autoFocus
+                      placeholder="Enter custom answer…"
+                      className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+                    />
+                  )}
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => {
-                        onEdit(decision.id, draft);
-                        setEditing(false);
+                        if (draft.trim()) {
+                          onEdit(decision.id, draft.trim());
+                          setEditing(false);
+                          setCustomMode(false);
+                        }
                       }}
-                      className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400 hover:bg-emerald-500/20"
+                      disabled={!draft.trim()}
+                      className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-40"
                     >
                       Save
                     </button>
                     <button
                       type="button"
-                      onClick={() => setEditing(false)}
+                      onClick={() => {
+                        setEditing(false);
+                        setCustomMode(false);
+                      }}
                       className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
                     >
                       Cancel

@@ -13,13 +13,14 @@ function dec(id: string, skill: string): Decision {
     question: `q-${id}`,
     ai_default: "v",
     override: "",
-    options_considered: [],
+    options: [],
     // `source` is a free-text description in the wire schema (not a skill
     // slug). Set it to something obviously non-skill so a regression that
     // mistakenly keys the crosswalk off `source` will return no products.
     source: `description for ${id}`,
     status: "ai-default",
-    notes: "",
+    reasoning: "",
+    override_reasoning: "",
   };
 }
 

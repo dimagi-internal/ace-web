@@ -1,8 +1,9 @@
-"""Pin _parse_decision_rows behavior across v1 and v2 schemas.
+"""Pin _parse_decision_rows behavior across v1, v2, and v3 schemas.
 
-The v2 schema uses `ai-default` + optional `override` with status enum
-`ai-default | overridden`. The reader maps both schemas to
-`Decision.ai_default` / `Decision.override` and normalizes old status
+The v3 schema uses `ai-default` + optional `override` with status enum
+`ai-default | overridden`, `options` (was `options_considered`),
+`reasoning` (was `notes`), and `override_reasoning` (new). The reader
+maps all three schemas to `Decision` fields and normalizes old status
 values (`applied`, `open`) to `ai-default`.
 """
 from apps.opps.sync import _parse_decision_rows
@@ -14,9 +15,9 @@ def _base_row(extras: dict | None = None) -> dict:
         "phase": "idea-to-design",
         "skill": "idea-to-pdd",
         "question": "Which language?",
-        "options_considered": ["english", "french"],
+        "options": ["english", "french"],
         "source": "src",
-        "notes": "",
+        "reasoning": "",
     }
     if extras:
         row.update(extras)
@@ -71,3 +72,29 @@ def test_row_missing_id_is_dropped():
 
 def test_non_dict_rows_are_dropped():
     assert _parse_decision_rows(["string", 42, None]) == []
+
+
+def test_v2_options_considered_falls_back():
+    rows = [_base_row({
+        "ai-default": "english",
+        "status": "ai-default",
+        "options_considered": ["english", "french"],
+    })]
+    # Remove v3 field so fallback is exercised
+    del rows[0]["options"]
+    del rows[0]["reasoning"]
+    rows[0]["notes"] = "old note"
+    [d] = _parse_decision_rows(rows)
+    assert d.options == ["english", "french"]
+    assert d.reasoning == "old note"
+
+
+def test_v3_override_reasoning_parsed():
+    rows = [_base_row({
+        "ai-default": "english",
+        "override": "french",
+        "status": "overridden",
+        "override_reasoning": "user rationale",
+    })]
+    [d] = _parse_decision_rows(rows)
+    assert d.override_reasoning == "user rationale"

@@ -286,7 +286,7 @@ def test_v1_input_upgrades_in_memory_on_rewrite():
     out = _rewrite_decisions_yaml(src, fork_ordinal=8)
 
     parsed = yaml.safe_load(out)
-    assert parsed["schema_version"] == 2
+    assert parsed["schema_version"] == 3
     for row in parsed["decisions"]:
         assert "default" not in row
         assert "ai-default" in row

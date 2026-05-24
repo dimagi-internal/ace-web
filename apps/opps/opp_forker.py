@@ -42,7 +42,7 @@ import yaml
 
 from apps.opps.decisions_edit import (
     apply_edits_to_decisions_data,
-    upgrade_decisions_v1_to_v2,
+    upgrade_decisions_to_v3,
 )
 from apps.opps.drive_client import DriveClient, DriveFile
 from apps.sessions.models import Message, Session
@@ -616,9 +616,9 @@ def _rewrite_decisions_yaml(
     except yaml.YAMLError:
         return original
 
-    # Upgrade v1 → v2 in memory so all subsequent filtering / edits / output
-    # use the canonical schema. Idempotent for v2 inputs.
-    data = upgrade_decisions_v1_to_v2(data)
+    # Upgrade to v3 in memory so all subsequent filtering / edits / output
+    # use the canonical schema. Idempotent for v3 inputs.
+    data = upgrade_decisions_to_v3(data)
 
     rows = data.get("decisions")
     if not isinstance(rows, list):

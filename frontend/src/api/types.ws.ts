@@ -295,10 +295,11 @@ export interface Decision {
   question: string;
   ai_default: string;
   override: string;
-  options_considered: string[];
+  options: string[];
   source: string;
   status: "ai-default" | "overridden";
-  notes: string;
+  reasoning: string;
+  override_reasoning: string;
 }
 
 export interface Run {

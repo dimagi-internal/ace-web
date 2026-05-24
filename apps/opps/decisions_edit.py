@@ -2,13 +2,14 @@
 
 Pure helper — no YAML, no Drive, no Django. Called from the forker
 after the trim step. Matches the override contract used by the
-``decisions-sync`` skill in the ACE plugin (schema v2):
+``decisions-sync`` skill in the ACE plugin (schema v3):
 
 * ``override`` is set to the new value (a separate field; ``ai-default``
   stays as the AI's original proposal).
 * ``status`` flips to ``"overridden"``.
 * If the new value matches the existing ``ai-default``, ``override`` is
-  cleared and ``status`` reverts to ``"ai-default"`` (revert path).
+  cleared, ``override_reasoning`` is cleared, and ``status`` reverts to
+  ``"ai-default"`` (revert path).
 """
 from __future__ import annotations
 
@@ -26,8 +27,8 @@ def apply_edits_to_decisions_data(
 
     Args:
         data: Parsed decisions.yaml as a dict (must contain ``decisions``
-            list). Caller is expected to have upgraded v1 input to v2
-            shape (see ``upgrade_decisions_v1_to_v2`` in this module).
+            list). Caller is expected to have upgraded input to v3
+            shape (see ``upgrade_decisions_to_v3`` in this module).
         edits: Iterable of ``{"row_id": ..., "new_answer": ...}``.
 
     Unknown row_ids are silently ignored — the forker has no way to
@@ -57,6 +58,7 @@ def apply_edits_to_decisions_data(
         ai_default = row.get("ai-default")
         if new_answer == ai_default:
             row.pop("override", None)
+            row.pop("override_reasoning", None)
             row["status"] = "ai-default"
         else:
             row["override"] = new_answer
@@ -65,23 +67,29 @@ def apply_edits_to_decisions_data(
     return out
 
 
-def upgrade_decisions_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
-    """In-memory upgrade of a v1 decisions log dict to the v2 shape.
+def upgrade_decisions_to_v3(data: dict[str, Any]) -> dict[str, Any]:
+    """In-memory upgrade of a v1 or v2 decisions log dict to the v3 shape.
 
-    v1 → v2:
-      * row field rename: ``default`` → ``ai-default``
-      * status enum: ``applied`` / ``open`` → ``ai-default``
-      * for status=overridden rows missing ``override:``, copy the v1
-        ``default`` value into ``override`` (lossy: v1 destroyed the
-        original AI value on override, so the migrated row carries the
-        same value in both ``ai-default`` and ``override``)
-      * ``schema_version`` bumped to 2
+    v1 → v3:
+      * ``default`` → ``ai-default``
+      * status ``applied`` / ``open`` → ``ai-default``
+      * overridden rows missing ``override`` get the v1 ``default``
+        copied in (lossy — v1 destroyed the original AI value)
+      * ``options_considered`` → ``options``
+      * ``notes`` → ``reasoning``
+
+    v2 → v3:
+      * ``options_considered`` → ``options``
+      * ``notes`` → ``reasoning``
+
+    All versions:
+      * ``schema_version`` bumped to 3
     """
     if not isinstance(data, dict):
         return data
-    if data.get("schema_version") == 2:
+    if data.get("schema_version") == 3:
         return data
-    if data.get("schema_version") not in (None, 1):
+    if data.get("schema_version") not in (None, 1, 2):
         return data
 
     out = copy.deepcopy(data)
@@ -95,16 +103,22 @@ def upgrade_decisions_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
             upgraded_rows.append(row)
             continue
         new_row = dict(row)
+        # v1 → v2 field renames
         if "default" in new_row and "ai-default" not in new_row:
             new_row["ai-default"] = new_row.pop("default")
-        if new_row.get("status") != "overridden":
+        if new_row.get("status") not in ("ai-default", "overridden"):
             new_row["status"] = "ai-default"
         if new_row.get("status") == "overridden" and "override" not in new_row:
             ai_default = new_row.get("ai-default")
             if isinstance(ai_default, str):
                 new_row["override"] = ai_default
+        # v2 → v3 field renames
+        if "options_considered" in new_row and "options" not in new_row:
+            new_row["options"] = new_row.pop("options_considered")
+        if "notes" in new_row and "reasoning" not in new_row:
+            new_row["reasoning"] = new_row.pop("notes")
         upgraded_rows.append(new_row)
 
     out["decisions"] = upgraded_rows
-    out["schema_version"] = 2
+    out["schema_version"] = 3
     return out
