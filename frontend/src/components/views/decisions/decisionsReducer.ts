@@ -1,6 +1,8 @@
 export interface EditOp {
   row_id: string;
   new_answer: string;
+  editor_email?: string;
+  editor_name?: string;
 }
 
 export interface DecisionsEditState {
@@ -13,9 +15,10 @@ export function initialDecisionsEditState(): DecisionsEditState {
 }
 
 export type DecisionsEditAction =
-  | { type: "APPLY_EDIT"; row_id: string; new_answer: string }
+  | { type: "APPLY_EDIT"; row_id: string; new_answer: string; editor_email?: string; editor_name?: string }
   | { type: "REVERT_EDIT"; row_id: string }
-  | { type: "DISCARD_ALL" };
+  | { type: "DISCARD_ALL" }
+  | { type: "MERGE_REMOTE"; edits: Record<string, { new_answer: string; editor_email: string; editor_name: string }> };
 
 export function decisionsReducer(
   state: DecisionsEditState,
@@ -24,13 +27,17 @@ export function decisionsReducer(
   switch (action.type) {
     case "APPLY_EDIT": {
       const existing = state.buffer.findIndex((e) => e.row_id === action.row_id);
+      const op: EditOp = {
+        row_id: action.row_id,
+        new_answer: action.new_answer,
+        editor_email: action.editor_email,
+        editor_name: action.editor_name,
+      };
       if (existing === -1) {
-        return {
-          buffer: [...state.buffer, { row_id: action.row_id, new_answer: action.new_answer }],
-        };
+        return { buffer: [...state.buffer, op] };
       }
       const next = state.buffer.slice();
-      next[existing] = { row_id: action.row_id, new_answer: action.new_answer };
+      next[existing] = op;
       return { buffer: next };
     }
     case "REVERT_EDIT": {
@@ -41,6 +48,24 @@ export function decisionsReducer(
     case "DISCARD_ALL": {
       if (state.buffer.length === 0) return state;
       return { buffer: [] };
+    }
+    case "MERGE_REMOTE": {
+      const next = state.buffer.slice();
+      for (const [row_id, edit] of Object.entries(action.edits)) {
+        const idx = next.findIndex((e) => e.row_id === row_id);
+        const op: EditOp = {
+          row_id,
+          new_answer: edit.new_answer,
+          editor_email: edit.editor_email,
+          editor_name: edit.editor_name,
+        };
+        if (idx === -1) {
+          next.push(op);
+        } else {
+          next[idx] = op;
+        }
+      }
+      return { buffer: next };
     }
   }
 }

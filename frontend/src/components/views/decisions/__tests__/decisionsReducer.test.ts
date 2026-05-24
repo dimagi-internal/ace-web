@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { decisionsReducer, initialDecisionsEditState, type DecisionsEditState } from "../decisionsReducer";
+import {
+  decisionsReducer,
+  initialDecisionsEditState,
+  type DecisionsEditState,
+} from "../decisionsReducer";
 
 const empty: DecisionsEditState = initialDecisionsEditState();
 
@@ -42,5 +46,49 @@ describe("decisionsReducer", () => {
     state = decisionsReducer(state, { type: "APPLY_EDIT", row_id: "b", new_answer: "w1" });
     state = decisionsReducer(state, { type: "DISCARD_ALL" });
     expect(state.buffer).toEqual([]);
+  });
+});
+
+describe("MERGE_REMOTE", () => {
+  it("seeds buffer from empty", () => {
+    const state = initialDecisionsEditState();
+    const next = decisionsReducer(state, {
+      type: "MERGE_REMOTE",
+      edits: {
+        "d-001": { new_answer: "No", editor_email: "alice@d.com", editor_name: "Alice" },
+      },
+    });
+    expect(next.buffer).toHaveLength(1);
+    expect(next.buffer[0].row_id).toBe("d-001");
+    expect(next.buffer[0].new_answer).toBe("No");
+    expect(next.buffer[0].editor_email).toBe("alice@d.com");
+  });
+
+  it("updates existing row", () => {
+    const state: DecisionsEditState = {
+      buffer: [{ row_id: "d-001", new_answer: "Yes", editor_email: "a@b.com", editor_name: "A" }],
+    };
+    const next = decisionsReducer(state, {
+      type: "MERGE_REMOTE",
+      edits: {
+        "d-001": { new_answer: "No", editor_email: "bob@d.com", editor_name: "Bob" },
+      },
+    });
+    expect(next.buffer).toHaveLength(1);
+    expect(next.buffer[0].new_answer).toBe("No");
+    expect(next.buffer[0].editor_email).toBe("bob@d.com");
+  });
+
+  it("preserves rows not in the remote payload", () => {
+    const state: DecisionsEditState = {
+      buffer: [{ row_id: "d-001", new_answer: "A", editor_email: "a@b.com", editor_name: "A" }],
+    };
+    const next = decisionsReducer(state, {
+      type: "MERGE_REMOTE",
+      edits: {
+        "d-002": { new_answer: "B", editor_email: "b@b.com", editor_name: "B" },
+      },
+    });
+    expect(next.buffer).toHaveLength(2);
   });
 });
