@@ -256,7 +256,12 @@ def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -
             cached, client,
             context=OverlayContext(ace_folder_id=ace_folder_id, slug=slug),
         )
-        return serialize_opp_snapshot(cached)
+        result = serialize_opp_snapshot(cached)
+        # Inject multi-player pending edits from Redis shared buffer
+        from apps.opps.decisions_buffer import get_edits
+        run_id_for_edits = run_id or (result.get("current_run") or {}).get("run_id", "")
+        result["pending_edits"] = get_edits(slug, run_id_for_edits)
+        return result
     bypass_client = snapshot_cache.cold_load_client(client)
     try:
         with TouchedFileTracker() as tracker:
@@ -268,7 +273,12 @@ def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -
         workspace_id=workspace.pk, slug=slug, run_id=run_id,
         snap=snap, file_ids=tracker.file_ids,
     )
-    return serialize_opp_snapshot(snap)
+    result = serialize_opp_snapshot(snap)
+    # Inject multi-player pending edits from Redis shared buffer
+    from apps.opps.decisions_buffer import get_edits
+    run_id_for_edits = run_id or (result.get("current_run") or {}).get("run_id", "")
+    result["pending_edits"] = get_edits(slug, run_id_for_edits)
+    return result
 
 
 def load_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -> dict | None:
