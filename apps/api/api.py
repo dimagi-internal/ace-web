@@ -143,6 +143,7 @@ from apps.opps.api import router as opps_router  # noqa: E402
 from apps.service_accounts.api import router as tokens_router  # noqa: E402
 from apps.sessions.api import router as sessions_router  # noqa: E402
 from apps.sessions.api import share_public_router  # noqa: E402, I001
+from apps.slack.api import router as slack_router  # noqa: E402
 from apps.system.api import router as system_router  # noqa: E402
 from apps.videos.api import router as videos_router  # noqa: E402
 from apps.workspaces.api import invites_router  # noqa: E402, I001
@@ -153,6 +154,7 @@ api.add_router("/w/{workspace_slug}/opps", opps_router)
 api.add_router("/w/{workspace_slug}/sessions", sessions_router)
 api.add_router("/w/{workspace_slug}/activity", activity_router)
 api.add_router("/w/{workspace_slug}/videos", videos_router)
+api.add_router("/w/{workspace_slug}/slack", slack_router)
 
 # Top-level resources
 api.add_router("/opps", opps_public_router)  # public per-run summary share links
