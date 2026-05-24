@@ -212,13 +212,13 @@ def test_index(request: HttpRequest) -> HttpResponse:
         <div class="post-form" style="margin-top:24px">
           <h2>Clean up channel</h2>
           <p style="color:#9ea0a5;font-size:13px;margin-bottom:8px">
-            Delete all bot messages and their thread replies from a channel.</p>
-          <form method="POST" action="cleanup/">
+            Browse bot threads and delete individually or all at once.</p>
+          <form method="GET" action="cleanup/">
             <label>Channel ID</label>
             <input type="text" name="channel_id" placeholder="C0123456789">
-            <br><button type="submit" class="btn btn-danger"
+            <br><button type="submit" class="btn"
                         style="margin-top:8px">
-              Delete all bot messages</button>
+              Browse threads</button>
           </form>
         </div>"""
 
@@ -445,10 +445,11 @@ def test_post(request: HttpRequest, slug: str) -> HttpResponse:
 
 
 @csrf_exempt
-@require_POST
 @_require_auth
 def test_cleanup(request: HttpRequest) -> HttpResponse:
-    """Delete all bot messages (and their thread replies) from a channel."""
+    """GET: list bot threads with per-thread delete buttons.
+    POST with ts=...: delete that thread (parent + replies).
+    POST with ts=all: delete all bot threads."""
     workspace = _get_workspace(request)
     if workspace is None:
         return HttpResponse("No workspace found", status=404)
@@ -457,50 +458,102 @@ def test_cleanup(request: HttpRequest) -> HttpResponse:
     if installation is None:
         return HttpResponse("Slack not installed", status=404)
 
-    channel_id = request.POST.get("channel_id", "").strip()
+    channel_id = (request.GET.get("channel_id", "")
+                  or request.POST.get("channel_id", "")).strip()
     if not channel_id:
-        return HttpResponse("channel_id required", status=400)
+        return HttpResponse("channel_id required — add ?channel_id=C...",
+                            status=400)
 
     from .slack_client import client_for
-
     client = client_for(installation)
 
-    deleted = 0
-    errors = []
-    try:
-        messages = client.get_channel_history(channel=channel_id, limit=50)
-        for msg in messages:
-            if msg.get("bot_id") or msg.get("subtype") == "bot_message":
-                ts = msg["ts"]
-                replies = client.get_thread_replies(
-                    channel=channel_id, ts=ts)
-                for reply_ts in replies:
-                    try:
-                        client.delete_message(
-                            channel=channel_id, ts=reply_ts)
-                        deleted += 1
-                    except Exception as exc:
-                        errors.append(f"reply {reply_ts}: {exc}")
-                try:
-                    client.delete_message(channel=channel_id, ts=ts)
-                    deleted += 1
-                except Exception as exc:
-                    errors.append(f"parent {ts}: {exc}")
-    except Exception as exc:
-        errors.append(f"history: {exc}")
+    # POST: delete a specific thread or all
+    if request.method == "POST":
+        target_ts = request.POST.get("ts", "").strip()
+        if not target_ts:
+            return HttpResponse("ts required", status=400)
 
-    err_html = ""
-    if errors:
-        err_items = "".join(f"<li>{e}</li>" for e in errors)
-        err_html = (f'<div class="result result-err">'
-                    f'<ul style="list-style:none">{err_items}</ul></div>')
+        messages = client.get_channel_history(
+            channel=channel_id, limit=100)
+        bot_messages = [m for m in messages
+                        if m.get("bot_id") or m.get("subtype") == "bot_message"]
+
+        if target_ts == "all":
+            to_delete = bot_messages
+        else:
+            to_delete = [m for m in bot_messages if m["ts"] == target_ts]
+
+        deleted = 0
+        for msg in to_delete:
+            ts = msg["ts"]
+            for reply_ts in client.get_thread_replies(
+                    channel=channel_id, ts=ts):
+                try:
+                    client.delete_message(channel=channel_id, ts=reply_ts)
+                    deleted += 1
+                except Exception:
+                    pass
+            try:
+                client.delete_message(channel=channel_id, ts=ts)
+                deleted += 1
+            except Exception:
+                pass
+
+        html = f"""<!DOCTYPE html><html><head>
+<meta charset="utf-8"><title>Deleted</title>
+<style>{_CSS}</style></head><body>
+<div class="nav"><a href="?channel_id={channel_id}">← back to threads</a></div>
+<div class="result result-ok">Deleted {deleted} messages.</div>
+</body></html>"""
+        return HttpResponse(html)
+
+    # GET: list bot threads
+    messages = client.get_channel_history(channel=channel_id, limit=100)
+    bot_messages = [m for m in messages
+                    if m.get("bot_id") or m.get("subtype") == "bot_message"]
+
+    from datetime import UTC
+    from datetime import datetime as _dt
+
+    rows = []
+    for msg in bot_messages:
+        ts = msg["ts"]
+        text = msg.get("text", "(no text)")[:120]
+        reply_count = int(msg.get("reply_count", 0))
+        posted = _dt.fromtimestamp(float(ts), tz=UTC).strftime(
+            "%Y-%m-%d %H:%M UTC")
+        rows.append(f"""
+        <div class="message" style="display:flex;justify-content:space-between;
+             align-items:flex-start;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;color:#9ea0a5">{posted}
+              · {reply_count} replies · ts={ts}</div>
+            <div style="margin-top:4px">{text}</div>
+          </div>
+          <form method="POST" style="flex-shrink:0">
+            <input type="hidden" name="channel_id" value="{channel_id}">
+            <input type="hidden" name="ts" value="{ts}">
+            <button type="submit" class="btn btn-danger">Delete</button>
+          </form>
+        </div>""")
+
+    delete_all = ""
+    if rows:
+        delete_all = f"""
+        <form method="POST" style="margin-top:16px">
+          <input type="hidden" name="channel_id" value="{channel_id}">
+          <input type="hidden" name="ts" value="all">
+          <button type="submit" class="btn btn-danger">
+            Delete all {len(rows)} threads</button>
+        </form>"""
 
     html = f"""<!DOCTYPE html><html><head>
-<meta charset="utf-8"><title>Cleanup Result</title>
+<meta charset="utf-8"><title>Channel Threads</title>
 <style>{_CSS}</style></head><body>
-<div class="nav"><a href="../">← back</a></div>
-<h1>Cleaned up #{channel_id}</h1>
-<div class="result result-ok">Deleted {deleted} messages.</div>
-{err_html}
+<div class="nav"><a href="../">← back</a>
+  · channel {channel_id} · {len(rows)} bot threads</div>
+<h1>Bot threads in channel</h1>
+{"".join(rows) or '<p style="color:#9ea0a5">No bot messages found.</p>'}
+{delete_all}
 </body></html>"""
     return HttpResponse(html)
