@@ -14,6 +14,7 @@ import { useAffectedDocs } from "@/components/views/decisions/useAffectedDocs";
 import { computeForkPoint } from "@/components/views/decisions/forkPoint";
 import { PendingEditsBar } from "@/components/views/decisions/PendingEditsBar";
 import { ForkWithEditsDialog } from "@/components/views/decisions/ForkWithEditsDialog";
+import { PresenceStrip } from "@/components/views/PresenceStrip";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -85,6 +86,19 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
       }),
     [allDecisions, editState.buffer, snapshot.phases],
   );
+
+  const uniqueEditors = useMemo(() => {
+    const seen = new Map<string, { email: string; name: string }>();
+    for (const edit of editState.buffer) {
+      if (edit.editor_email && !seen.has(edit.editor_email)) {
+        seen.set(edit.editor_email, {
+          email: edit.editor_email,
+          name: edit.editor_name || "",
+        });
+      }
+    }
+    return [...seen.values()];
+  }, [editState.buffer]);
 
   // Warn before a tab close / reload eats pending edits. The browser
   // shows its generic confirmation prompt — the returned string isn't
@@ -173,6 +187,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      <PresenceStrip viewers={uniqueEditors} />
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-[340px] shrink-0 overflow-y-auto border-r border-border bg-background p-4">
           <ul className="flex flex-col gap-2">
