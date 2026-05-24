@@ -23,7 +23,6 @@ from .blocks import (
 )
 from .blocks_decisions import (
     decisions_state_hash,
-    render_decision_message,
 )
 from .models import SlackRunThread
 from .slack_client import SlackChannelGone, SlackRateLimited, client_for
@@ -98,19 +97,17 @@ def dispatch_tick(*, thread_id) -> None:
                 continue
 
             existing = phase_messages.get(pname)
-            phase_votes = (existing or {}).get("votes", {})
             phase_decisions = [d for d in all_decisions if d.get("phase") == pname]
 
-            # Include decision vote state in the phase hash so votes
+            # Include decision state in the phase hash so new decisions
             # trigger a tile re-render.
             h = phase_state_hash(snapshot, pname)
-            dh = decisions_state_hash(phase_decisions, phase_votes)
+            dh = decisions_state_hash(phase_decisions, {})
             combined_hash = f"{h}:{dh}"
 
             blocks = render_phase_tile(snapshot, phase_name=pname,
                                        opp_slug=thread.opp_slug,
-                                       workspace_slug=workspace.slug,
-                                       votes=phase_votes)
+                                       workspace_slug=workspace.slug)
             text = f"Phase {phase['ordinal']}: {phase['display_name']}"
             try:
                 if existing is None:
@@ -132,35 +129,6 @@ def dispatch_tick(*, thread_id) -> None:
                 logger.info("slack rate-limited on %s/%s; deferring (retry %ss)",
                             thread.opp_slug, thread.run_id, e.retry_after)
                 return  # next opp.updated will retry
-
-            # 1b. Per-decision thread replies
-            if phase_decisions and pname in phase_messages:
-                decision_msgs = dict(phase_messages[pname].get("decision_messages", {}))
-                for idx, dec in enumerate(phase_decisions, 1):
-                    did = dec.get("id", "")
-                    if not did or did in decision_msgs:
-                        continue
-                    vote = phase_votes.get(did)
-                    dec_blocks = render_decision_message(
-                        dec, opp_slug=thread.opp_slug,
-                        phase_name=pname, vote=vote,
-                        decision_index=idx,
-                    )
-                    try:
-                        dec_ts = client.post_message(
-                            channel=thread.channel_id,
-                            blocks=dec_blocks,
-                            text=f"Decision #{idx}: {dec.get('question', '')}",
-                            thread_ts=thread.parent_ts,
-                        )
-                        decision_msgs[did] = {"ts": dec_ts}
-                    except SlackChannelGone:
-                        thread.broken_at = datetime.now(UTC)
-                        thread.save(update_fields=["broken_at"])
-                        return
-                    except SlackRateLimited:
-                        break  # pick up remaining decisions on next tick
-                phase_messages[pname]["decision_messages"] = decision_msgs
 
         # 2. Parent card
         new_parent_hash = parent_state_hash(snapshot, elapsed_seconds=elapsed)

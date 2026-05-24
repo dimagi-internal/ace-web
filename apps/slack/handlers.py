@@ -170,33 +170,18 @@ def dispatch_interaction(payload: dict) -> dict:
         if payload["view"].get("callback_id") == "ace_new_modal":
             from .verbs_new import handle_new_submission
             return handle_new_submission(payload)
-        if payload["view"].get("callback_id") == "ace_answer_other":
-            from .verbs_decisions import handle_answer_other_submission
-            return handle_answer_other_submission(payload)
-        if payload["view"].get("callback_id") == "ace_fork_with_answers":
-            from .verbs_decisions import handle_fork_submission
-            return handle_fork_submission(payload)
         return {}
     if p_type == "block_actions":
         action = (payload.get("actions") or [{}])[0]
         action_id = action.get("action_id", "")
         if action_id == "fork_from_phase":
             return _fork_redirect(payload, action)
-        if action_id == "fork_with_answers":
-            from .verbs_decisions import handle_fork_with_answers
-            return handle_fork_with_answers(payload, action)
         if action_id == "stop_watching":
             return _stop_watching(payload, action)
         if action_id == "track_run_from_activity":
             return _track_from_activity(payload, action)
         if action_id == "link_account":
             return {}  # button has its own url; nothing to do server-side
-        if action_id.startswith("answer_decision_other:"):
-            from .verbs_decisions import handle_answer_other_open
-            return handle_answer_other_open(payload, action)
-        if action_id.startswith("answer_decision:"):
-            from .verbs_decisions import handle_answer_decision
-            return handle_answer_decision(payload, action)
         # Unknown actions — silently 200.
         return {}
     return {}
