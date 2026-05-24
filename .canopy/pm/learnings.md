@@ -6,12 +6,14 @@ Items closed or rejected during PM cycles. Read this before every scout run to a
 - **Global keyboard navigation across viewer surfaces** (`j/k`, `/`, `?`, `g o`/`g s`). Closed 2026-05-13-viewer-defaults. Reason: "too speculative — needs a clearer pain point." For solo view-mode workflows, don't propose generic keyboard nav unless the user surfaces a concrete moment-by-moment friction that keyboard nav specifically would close. The mouse-click count alone is not enough signal.
 
 ## Preferences
+- **PhaseView is the workhorse UI for opp interactions, not OppWorkbench.** When proposing new actions / affordances on opps (push buttons, integration hooks, etc.), default to PhaseView placement, not the Workbench header. The Workbench is the framing container; phases are where the user actually works. Surfaced 2026-05-24-slack-discoverability — proposal to put a "Mirror in Slack" chip on the Workbench header was redirected explicitly to PhaseView.
 - **Real lens for ace-web today is solo view-mode use, not third-party adoption.** (Override of the prior 2026-04-27 default.) The sole user prefers the CLI for running and uses ace-web mostly to view what another agent's runs produce. Scout lenses should target view-experience friction (legibility, scan-ability, default landings) until that changes.
 - Lens to default to when user doesn't specify: solo view-mode (per 2026-05-13 scout request)
 - "Right and elegant over speed" — bias toward the thorough option, not MVP/polish split
 - Phase 5 polish work (observability, evals, a11y, security review) is deferred — do not propose unless a concrete pain point surfaces
 - For first-impression / new-user-polish slices, bundle related items into ONE PR rather than splitting per-finding — coherent story, less review overhead (validated 2026-04-28-user-value)
 - Pure UI/copy changes can ship with `tsc -b` + a written manual test plan as the verification ceiling — don't block on "exercise the live flow" when it requires a fresh user + real third-party state to set up
+- For "is X discoverable from the web?" scouts, one cross-grep against the user-visible surface tree (`grep -ri "<feature>" frontend/src/`) is the single most decisive diagnostic — converts vague hunches into hard observations faster than reading any individual file. Validated 2026-05-24-slack-discoverability: confirmed Slack was invisible in one shell command.
 
 ## Pending context refresh
 (none — context.md refreshed 2026-04-28 before the adoption-blockers cycle)

@@ -81,6 +81,14 @@ def events(request: HttpRequest) -> HttpResponse:
     body = json.loads(request.body or b"{}")
     if body.get("type") == "url_verification":
         return JsonResponse({"challenge": body["challenge"]})
+
+    event = body.get("event") or {}
+    if event.get("type") == "app_home_opened":
+        from .home_view import publish_for_user
+        team_id = body.get("team_id", "")
+        slack_user_id = event.get("user", "")
+        if team_id and slack_user_id:
+            publish_for_user(team_id=team_id, slack_user_id=slack_user_id)
     return JsonResponse({"ok": True})
 
 
@@ -99,6 +107,10 @@ from .models import SlackInstallation  # noqa: E402
 _BOT_SCOPES = [
     "commands", "chat:write",
     "users:read", "users:read.email",
+    # channels:read + groups:read power the bot-member-only channel picker
+    # surfaced by the Push-to-Slack action on PhaseView. Existing installs
+    # must reinstall via /api/slack/install to pick these up.
+    "channels:read", "groups:read",
 ]
 
 

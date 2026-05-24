@@ -3016,6 +3016,182 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/slack/status": {
+      "get": {
+        "operationId": "apps_slack_api_get_status",
+        "summary": "Slack install status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackStatusOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "slack"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/slack/channels": {
+      "get": {
+        "operationId": "apps_slack_api_list_channels",
+        "summary": "Bot-member channels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackChannelsOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "slack"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/slack/push-info": {
+      "get": {
+        "operationId": "apps_slack_api_get_push_info",
+        "summary": "Existing Slack mirror threads for an opp/run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "opp",
+            "schema": {
+              "title": "Opp",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "run",
+            "schema": {
+              "title": "Run",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackPushInfoOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "slack"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/slack/push-phase": {
+      "post": {
+        "operationId": "apps_slack_api_push_phase",
+        "summary": "Push a phase to a Slack channel and start mirroring",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackPushPhaseOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "slack"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackPushPhaseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/opps/public/{workspace}/{slug}/runs/{run_id}/summary": {
       "get": {
         "operationId": "apps_opps_api_public_opp_summary",
@@ -5364,7 +5540,7 @@
       },
       "OppForkEditIn": {
         "additionalProperties": false,
-        "description": "A single answer override to apply during fork.\n\nThe forker finds the row by ``row_id`` in the source run's\n``decisions.yaml``, sets its ``default`` to ``new_answer``, and\nmarks ``status: overridden`` \u2014 matching the contract that\n``decisions-sync`` already uses, so downstream phases on re-run\nhonor the human's value verbatim.",
+        "description": "A single answer override to apply during fork.\n\nThe forker finds the row by ``row_id`` in the source run's\n``decisions.yaml``, sets its ``override`` to ``new_answer``, and\nmarks ``status: overridden`` \u2014 matching the schema-v2 contract that\n``decisions-sync`` uses. The original AI value remains in\n``ai-default`` for audit trail; downstream phases on re-run see the\neffective value (``override`` if present else ``ai-default``).",
         "properties": {
           "row_id": {
             "minLength": 1,
@@ -5408,6 +5584,15 @@
             },
             "title": "Edits",
             "type": "array"
+          },
+          "mode": {
+            "default": "keep-all",
+            "enum": [
+              "keep-overrides-only",
+              "keep-all"
+            ],
+            "title": "Mode",
+            "type": "string"
           }
         },
         "required": [
@@ -6725,6 +6910,17 @@
               }
             ],
             "title": "Output Drive Url"
+          },
+          "program_drive_folder_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program Drive Folder Url"
           }
         },
         "required": [
@@ -7293,6 +7489,271 @@
           }
         },
         "title": "BuildTriggerIn",
+        "type": "object"
+      },
+      "SlackStatusOut": {
+        "properties": {
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "team_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Name"
+          },
+          "team_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Url"
+          },
+          "installed_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed By Email"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "test_page_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Page Url"
+          },
+          "install_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Install Url"
+          },
+          "can_manage": {
+            "default": false,
+            "title": "Can Manage",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "installed"
+        ],
+        "title": "SlackStatusOut",
+        "type": "object"
+      },
+      "SlackChannelOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "is_private": {
+            "title": "Is Private",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "is_private"
+        ],
+        "title": "SlackChannelOut",
+        "type": "object"
+      },
+      "SlackChannelsOut": {
+        "properties": {
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/SlackChannelOut"
+            },
+            "title": "Channels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "installed",
+          "channels"
+        ],
+        "title": "SlackChannelsOut",
+        "type": "object"
+      },
+      "SlackPushInfoOut": {
+        "properties": {
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "threads": {
+            "items": {
+              "$ref": "#/components/schemas/SlackThreadOut"
+            },
+            "title": "Threads",
+            "type": "array"
+          }
+        },
+        "required": [
+          "installed",
+          "threads"
+        ],
+        "title": "SlackPushInfoOut",
+        "type": "object"
+      },
+      "SlackThreadOut": {
+        "properties": {
+          "channel_id": {
+            "title": "Channel Id",
+            "type": "string"
+          },
+          "parent_ts": {
+            "title": "Parent Ts",
+            "type": "string"
+          },
+          "permalink": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permalink"
+          },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped At"
+          }
+        },
+        "required": [
+          "channel_id",
+          "parent_ts",
+          "permalink",
+          "stopped_at"
+        ],
+        "title": "SlackThreadOut",
+        "type": "object"
+      },
+      "SlackPushPhaseOut": {
+        "properties": {
+          "channel_id": {
+            "title": "Channel Id",
+            "type": "string"
+          },
+          "parent_ts": {
+            "title": "Parent Ts",
+            "type": "string"
+          },
+          "permalink": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permalink"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel_id",
+          "parent_ts",
+          "permalink",
+          "thread_id"
+        ],
+        "title": "SlackPushPhaseOut",
+        "type": "object"
+      },
+      "SlackPushPhaseIn": {
+        "properties": {
+          "opp_slug": {
+            "title": "Opp Slug",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "channel_id": {
+            "title": "Channel Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "opp_slug",
+          "run_id",
+          "phase",
+          "channel_id"
+        ],
+        "title": "SlackPushPhaseIn",
         "type": "object"
       },
       "WorkspaceOut": {

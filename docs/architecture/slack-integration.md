@@ -3,20 +3,41 @@
 ## Install the Slack app (one-time)
 
 1. Create a Slack app at https://api.slack.com/apps with the following:
-   - Bot scopes: `commands`, `chat:write`, `users:read`, `users:read.email`
+   - Bot scopes: `commands`, `chat:write`, `users:read`, `users:read.email`,
+     `channels:read`, `groups:read`
      (intentionally NO `chat:write.public` — bot must be invited to a
-     channel before `/ace` commands work there)
+     channel before `/ace` commands work there. `channels:read` and
+     `groups:read` power the bot-member-only channel picker surfaced by
+     the **Push to Slack** action on PhaseView.)
    - Slash command `/ace` pointing at
      `https://labs.connect.dimagi.com/ace/api/slack/commands`
    - Interactivity request URL: `https://labs.connect.dimagi.com/ace/api/slack/interactions`
    - Events request URL: `https://labs.connect.dimagi.com/ace/api/slack/events`
-     (only used today for `url_verification`).
+     - Subscribe to bot event `app_home_opened` to enable the **App Home
+       tab** (per-user dashboard showing tracked runs + workspace
+       activity + quick actions).
+   - App Home: enable the **Home Tab**. Disable the Messages tab and the
+     "Allow users to send Slash commands and messages from the messages
+     tab" toggle — we don't subscribe to message events.
 2. Copy `Client ID`, `Client Secret`, `Signing Secret` into AWS Secrets Manager
    under the existing ace-web secret, keyed `SLACK_CLIENT_ID`,
    `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`. Run the labs deploy workflow.
 3. As a Django superuser, visit `https://labs.connect.dimagi.com/ace/api/slack/install`
    and approve the install. This creates the `SlackInstallation` row in the
-   `dimagi-team` workspace.
+   `dimagi-team` workspace. After the install completes, the **Slack** panel
+   on `/w/<slug>/workspace-settings` shows the connection state; reconnect
+   from there after scope changes.
+
+### After scope changes (e.g. when this doc was updated)
+
+When bot scopes change, existing installs keep working but won't have the
+new scope until reinstalled. To pick up `channels:read` + `groups:read`
+for an existing install:
+
+1. Edit the Slack app's bot scopes at api.slack.com.
+2. Visit `/ace/api/slack/install` as a superuser — Slack will re-prompt
+   for approval and update the bot token in place. The Reconnect button
+   on the Workspace Settings → Slack panel kicks off the same flow.
 
 ## Per-user account linking
 
@@ -77,3 +98,22 @@ reuse: the existing `opp.updated` channel-layer group from
 `apps/sessions/opp_broadcast.py` is the progress signal — the
 `SlackOppConsumer` worker just adds itself as a second listener alongside
 the browser's `OppConsumer`.
+
+## Web surfaces
+
+Three web surfaces tie the Slack integration to the rest of ace-web:
+
+- **Workspace Settings → Slack panel** (`/w/<slug>/workspace-settings`):
+  status badge + "Add to Slack" CTA when missing; Reconnect / Open
+  Block Kit preview when installed. Backed by `GET /api/w/<slug>/slack/status`.
+- **PhaseView → Push to Slack button**: in the phase header next to
+  "Fork from here". Opens a channel picker populated from bot-member
+  channels (`GET /api/w/<slug>/slack/channels`), then `POST
+  /api/w/<slug>/slack/push-phase` posts the parent card + phase tile
+  and creates a `SlackRunThread` so subsequent updates flow through the
+  existing mirror loop. When a thread already exists for the (opp, run),
+  the button switches to "Tracked in Slack" with a deep link.
+- **Slack App Home tab**: published per-user on `app_home_opened`.
+  Linked users see tracked runs + workspace activity + quick action
+  buttons; unlinked users see a Link Account CTA. Builder is in
+  `apps/slack/home_view.py`.
