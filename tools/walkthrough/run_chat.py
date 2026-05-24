@@ -1,37 +1,44 @@
-"""Drive the deployed ace-web chat over WebSocket as the e2e bot.
+"""Drive the deployed ace-web chat over WebSocket using a Bearer PAT.
 
 A smoke harness for "can the deployed claude subprocess stay alive long
-enough to finish an ACE skill / phase / full /ace:run?" Authenticates as
-ace@dimagi-ai.com via /auth/e2e-login/, creates a fresh session, posts
-one or more prompts (each driving a chat turn), and streams every chat.*
-event with timestamps until the turn completes (or errors / times out).
+enough to finish an ACE skill / phase / full /ace:run?" Authenticates with
+``Authorization: Bearer $ACE_WEB_PAT_TOKEN``, creates a fresh session in a
+workspace, posts one or more prompts (each driving a chat turn), and streams
+every chat.* event with timestamps until the turn completes (or errors /
+times out).
 
 Usage:
     ACE_WEB_BASE_URL=https://labs.connect.dimagi.com/ace \\
-    ACE_E2E_AUTH_TOKEN=... \\
-    python tools/walkthrough/run_chat_e2e.py "your prompt here" \\
+    ACE_WEB_PAT_TOKEN=$(grep ^ACE_WEB_PAT_TOKEN= \\
+        $CLAUDE_PLUGIN_DATA/.env | cut -d= -f2-) \\
+    python tools/walkthrough/run_chat.py "your prompt here" \\
+        [--workspace dimagi-team] \\
         [--timeout-seconds 2400] [--session-title "Tier A smoke"]
 
-Multi-turn (Phase 1B reuse smoke — drive N turns into one session,
-sharing the cookie jar so the ALB AWSALB stickiness cookie stays
-constant and all turns land on the same ECS task):
+Mint a PAT one-time per machine via ``/ace:ace-web-pat-mint`` if you don't
+have one yet.
 
-    python tools/walkthrough/run_chat_e2e.py \\
+Multi-turn (drive N turns into one session, sharing the cookie jar so the
+ALB AWSALB stickiness cookie stays constant and all turns land on the same
+ECS task):
+
+    python tools/walkthrough/run_chat.py \\
         "Reply with HELLO." "Reply with WORLD." "Reply with AGAIN."
 
-The single httpx.AsyncClient + cookie snapshot pattern is LOAD-BEARING
-for reuse verification: a fresh client per invocation discards the
-AWSALB cookie and ALB hashes the next WebSocket to a different task
-~50% of the time on a 2-task service, which makes Phase 1B's
-long-lived subprocess pool look broken when it isn't.
+The single httpx.AsyncClient + cookie snapshot pattern is LOAD-BEARING for
+reuse verification: a fresh client per invocation discards the AWSALB cookie
+and ALB hashes the next WebSocket to a different task ~50% of the time on a
+2-task service, which makes Phase 1B's long-lived subprocess pool look
+broken when it isn't. The Bearer header authenticates; the AWSALB cookie
+keeps task affinity.
 
-Prints one line per event to stdout (machine-readable, ts-prefixed) and
-a summary at the end. Exit codes:
+Prints one line per event to stdout (machine-readable, ts-prefixed) and a
+summary at the end. Exit codes:
     0 = all turns completed cleanly (chat.stream_complete)
     1 = a turn errored (chat.stream_error)
     2 = a turn timed out
     3 = WebSocket failed before any chat event
-    4 = setup (login / session create) failed
+    4 = setup (PAT / session create) failed
 """
 from __future__ import annotations
 
@@ -47,34 +54,34 @@ from urllib.parse import urlparse
 import httpx
 import websockets
 
-logger = logging.getLogger("run_chat_e2e")
+logger = logging.getLogger("run_chat")
 
 DEFAULT_BASE = "https://labs.connect.dimagi.com/ace"
-DEFAULT_EMAIL = "ace@dimagi-ai.com"
+DEFAULT_WORKSPACE = "dimagi-team"
 DEFAULT_TIMEOUT = 2400  # 40 minutes — Tier C may push 30+
 
 
-async def _e2e_login(client: httpx.AsyncClient, base: str, email: str, token: str) -> None:
+async def _create_session(
+    client: httpx.AsyncClient,
+    base: str,
+    workspace_slug: str,
+    title: str,
+    auth_headers: dict[str, str],
+) -> str:
     resp = await client.post(
-        f"{base}/auth/e2e-login/",
-        json={"email": email, "token": token},
-        headers={"Origin": _origin(base)},
-    )
-    resp.raise_for_status()
-
-
-async def _create_session(client: httpx.AsyncClient, base: str, title: str) -> str:
-    csrf = client.cookies.get("csrftoken_ace", "")
-    resp = await client.post(
-        f"{base}/api/sessions",
+        f"{base}/api/w/{workspace_slug}/sessions",
         json={"title": title},
-        headers={"X-CSRFToken": csrf, "Referer": f"{base}/", "Origin": _origin(base)},
+        headers={**auth_headers, "Origin": _origin(base)},
     )
-    resp.raise_for_status()
+    if resp.status_code != 201:
+        raise RuntimeError(
+            f"create session failed: HTTP {resp.status_code} {resp.text[:500]}"
+        )
     body = resp.json()
-    if body.get("error"):
-        raise RuntimeError(f"create session failed: {body['error']}")
-    return body["data"]["slug"]
+    slug = body.get("slug")
+    if not slug:
+        raise RuntimeError(f"create session: no slug in response {body!r}")
+    return slug
 
 
 def _origin(base: str) -> str:
@@ -96,6 +103,7 @@ async def _drive_chat(
     base: str,
     slug: str,
     cookies: dict[str, str],
+    auth_headers: dict[str, str],
     prompt: str,
     timeout_seconds: float,
 ) -> int:
@@ -107,9 +115,12 @@ async def _drive_chat(
     deadline = started + timeout_seconds
 
     print(f"[{_ts()}] connecting WS: {ws_url}")
+    handshake_headers = {**auth_headers, "Origin": _origin(base)}
+    if cookie_header:
+        handshake_headers["Cookie"] = cookie_header
     async with websockets.connect(
         ws_url,
-        additional_headers={"Cookie": cookie_header, "Origin": _origin(base)},
+        additional_headers=handshake_headers,
         max_size=8 * 1024 * 1024,
         # Keep the connection alive even during long quiet stretches. The
         # websockets library default ping interval is 20s which matches the
@@ -257,25 +268,29 @@ async def main() -> int:
         ),
     )
     parser.add_argument("--base-url", default=os.environ.get("ACE_WEB_BASE_URL", DEFAULT_BASE))
-    parser.add_argument("--email", default=os.environ.get("ACE_E2E_EMAIL", DEFAULT_EMAIL))
     parser.add_argument(
-        "--token", default=os.environ.get("ACE_E2E_AUTH_TOKEN", ""),
-        help="ACE_E2E_AUTH_TOKEN (default: from env)",
+        "--workspace", default=os.environ.get("ACE_WEB_WORKSPACE", DEFAULT_WORKSPACE),
+        help="Workspace slug to create the session under (default: dimagi-team)",
     )
-    parser.add_argument("--session-title", default="e2e smoke")
+    parser.add_argument(
+        "--pat", default=os.environ.get("ACE_WEB_PAT_TOKEN", ""),
+        help="Bearer PAT (default: from $ACE_WEB_PAT_TOKEN). Mint via /ace:ace-web-pat-mint.",
+    )
+    parser.add_argument("--session-title", default="walkthrough smoke")
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT)
     parser.add_argument("--reuse-session-slug", default="",
                         help="Skip session creation and use an existing slug")
     args = parser.parse_args()
 
-    if not args.token:
-        print("ERROR: ACE_E2E_AUTH_TOKEN not set", file=sys.stderr)
+    if not args.pat:
+        print("ERROR: ACE_WEB_PAT_TOKEN not set. Mint one via /ace:ace-web-pat-mint.",
+              file=sys.stderr)
         return 4
 
     base = args.base_url.rstrip("/")
-    print(f"[{_ts()}] base_url={base}")
-    print(f"[{_ts()}] email={args.email} timeout={args.timeout_seconds}s "
-          f"prompts={len(args.prompts)}")
+    auth_headers = {"Authorization": f"Bearer {args.pat}"}
+    print(f"[{_ts()}] base_url={base} workspace={args.workspace}")
+    print(f"[{_ts()}] timeout={args.timeout_seconds}s prompts={len(args.prompts)}")
 
     # ONE httpx client = ONE persistent cookie jar. The ``cookies`` snapshot
     # below carries the ALB AWSALB stickiness cookie set on the first
@@ -284,23 +299,21 @@ async def main() -> int:
     # per turn discards that cookie and re-rolls task affinity each time —
     # which makes the long-lived path look broken for cross-task hops.
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as http:
-        try:
-            await _e2e_login(http, base, args.email, args.token)
-        except Exception as exc:
-            print(f"[{_ts()}] e2e-login failed: {exc}")
-            return 4
-        print(f"[{_ts()}] e2e-login OK as {args.email}")
-
         if args.reuse_session_slug:
             slug = args.reuse_session_slug
+            # Touch the API once to seed the AWSALB cookie before WS upgrade.
+            await http.get(f"{base}/api/health", headers=auth_headers)
             print(f"[{_ts()}] reusing session slug={slug}")
         else:
             try:
-                slug = await _create_session(http, base, args.session_title)
+                slug = await _create_session(
+                    http, base, args.workspace, args.session_title, auth_headers
+                )
             except Exception as exc:
                 print(f"[{_ts()}] session create failed: {exc}")
                 return 4
             print(f"[{_ts()}] session created slug={slug}")
+            print(f"[{_ts()}] view at: {base}/w/{args.workspace}/chat/{slug}")
 
         cookies = {k: v for k, v in http.cookies.items()}
         awsalb = cookies.get("AWSALB", "")
@@ -317,7 +330,7 @@ async def main() -> int:
             print(f"[{_ts()}] ─── turn {i}/{len(args.prompts)} ───")
         try:
             last_rc = await _drive_chat(
-                base, slug, cookies, prompt, float(args.timeout_seconds)
+                base, slug, cookies, auth_headers, prompt, float(args.timeout_seconds)
             )
         except TimeoutError as exc:
             print(f"[{_ts()}] timeout: {exc}")

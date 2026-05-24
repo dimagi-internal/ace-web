@@ -11,13 +11,12 @@ token.
 
 Usage:
     ACE_URL=https://labs.connect.dimagi.com/ace \\
-    ACE_TOKEN=<personal bearer token from /settings or ACE_E2E_AUTH_TOKEN> \\
+    ACE_TOKEN=$ACE_WEB_PAT_TOKEN \\
     python scripts/ace_cli_login.py
 
 Flags:
     --url      server base URL (overrides $ACE_URL)
-    --token    bearer token (overrides $ACE_TOKEN)
-    --email    for e2e-login fallback (default ace-repro@dimagi.com)
+    --token    bearer PAT (overrides $ACE_TOKEN). Mint via /ace:ace-web-pat-mint.
     --dry-run  show the blob that would be uploaded, don't POST
     --scope    "user" (default) writes your personal blob; "global" writes
                the instance-wide fallback (admin only)
@@ -138,7 +137,7 @@ def main() -> int:
         if not args.token:
             print(
                 "error: --token or $ACE_TOKEN required\n"
-                "  mint one at $ACE_URL/settings (or use ACE_E2E_AUTH_TOKEN)",
+                "  mint one via /ace:ace-web-pat-mint or at $ACE_URL/settings",
                 file=sys.stderr,
             )
             return 3

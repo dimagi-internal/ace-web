@@ -5,14 +5,14 @@ import { newSmokeContext } from "./auth";
 /**
  * Post-deploy smoke test for per-user CLI credentials (PR #117).
  *
- * Runs against a LIVE deployment as ace@dimagi-ai.com via
- * /ace/auth/e2e-login/. Read-only — deliberately does NOT upload
- * credentials or mutate server state so the real ACE subscription
- * blob isn't burned or perturbed.
+ * Runs against a LIVE deployment as the PAT-bearing user via Bearer
+ * PAT → /api/auth/pat-to-session. Read-only — deliberately does NOT
+ * upload credentials or mutate server state so the real ACE
+ * subscription blob isn't burned or perturbed.
  *
  * Assertions:
  *   1. /api/health is 200.
- *   2. Authenticating as ace@dimagi-ai.com works via e2e-login.
+ *   2. Authenticating via Bearer PAT works.
  *   3. /api/auth/cli/status returns the two-panel shape
  *      ({authenticated, user: {has_blob, token_prefix}, global: {has_blob}}).
  *   4. /settings renders the "Claude CLI credentials" section with
@@ -27,10 +27,10 @@ test.describe("per-user CLI credentials — smoke", () => {
     expect(resp.status()).toBe(200);
   });
 
-  test("e2e-login as ace@dimagi-ai.com works", async ({ browser }) => {
+  test("bearer PAT auth works", async ({ browser }) => {
     const { context, user } = await newSmokeContext(browser);
     try {
-      expect(user.email).toBe("ace@dimagi-ai.com");
+      expect(user.email).toMatch(/@/);
       expect(typeof user.userId).toBe("number");
     } finally {
       await context.close();

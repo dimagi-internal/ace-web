@@ -315,6 +315,6 @@ echo
 echo "Next:"
 echo "  • Watch the deploy: gh run watch"
 echo "  • Once green, smoke-test:"
-echo "      curl -sH 'Authorization: Bearer <ACE_E2E_AUTH_TOKEN>' \\"
+echo "      curl -sH \"Authorization: Bearer \$ACE_WEB_PAT_TOKEN\" \\"
 echo "           https://labs.connect.dimagi.com/ace/api/mobile/status | jq"
 echo "    Expect ami_version=$AMI_VERSION."

@@ -1,7 +1,7 @@
 """Slack test page — server-rendered Block Kit preview + live post.
 
-Accessible at /api/slack/test/. Requires authentication (e2e-login or
-session). Not linked from the main nav — accessed from workspace
+Accessible at /api/slack/test/. Requires authentication (Bearer PAT or
+session cookie). Not linked from the main nav — accessed from workspace
 settings or by direct URL.
 
 Views:

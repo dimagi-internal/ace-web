@@ -13,10 +13,9 @@ This view:
   - POST mints a PersonalToken bound to request.user, then 302 redirects
     to <cb>?token=<raw>&state=<state>. The local listener captures it.
 
-Replaces the deprecated shared-secret /auth/e2e-login/ flow. PR pair:
-  ace-web PR adds this endpoint (does not remove e2e-login)
-  ACE plugin PR migrates upload-transcript + adds the mint command
-  ace-web PR removes e2e-login after a soak period
+Replaces the deprecated shared-secret /auth/e2e-login/ flow (removed
+in the cleanup that landed this comment update — see CLAUDE.md
+"Automation auth on labs — Bearer PAT").
 """
 from __future__ import annotations
 

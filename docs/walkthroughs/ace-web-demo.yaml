@@ -5,7 +5,7 @@ base_url: "https://labs.connect.dimagi.com"
 auth:
   type: command
   check: "curl -s -o /dev/null -w '%{http_code}' https://labs.connect.dimagi.com/ace/api/health"
-  login: "echo 'Auth via e2e-login endpoint'"
+  login: "echo 'Auth via Bearer PAT (pat-to-session)'"
   inject_url: "/ace/"
 
 personas:

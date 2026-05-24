@@ -4915,38 +4915,6 @@
         ]
       }
     },
-    "/api/auth/e2e-login": {
-      "post": {
-        "operationId": "apps_auth_api_e2e_login",
-        "summary": "Automation login (token-gated)",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/E2ELoginOut"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "auth"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/E2ELoginIn"
-              }
-            }
-          },
-          "required": true
-        }
-      }
-    },
     "/api/auth/cli/status": {
       "get": {
         "operationId": "apps_auth_api_cli_auth_status",
@@ -9776,51 +9744,6 @@
           "name"
         ],
         "title": "WorkspaceRefOut",
-        "type": "object"
-      },
-      "E2ELoginOut": {
-        "additionalProperties": false,
-        "description": "200 response from /auth/e2e-login/.",
-        "properties": {
-          "user_id": {
-            "title": "User Id",
-            "type": "integer"
-          },
-          "email": {
-            "title": "Email",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "email"
-        ],
-        "title": "E2ELoginOut",
-        "type": "object"
-      },
-      "E2ELoginIn": {
-        "additionalProperties": false,
-        "description": "POST /auth/e2e-login/ body.\n\nUsed by automated tools (walkthroughs, smoke tests, CI harnesses)\nto authenticate without going through CommCare Connect OAuth.\n``token`` must match ``settings.ACE_E2E_AUTH_TOKEN``.",
-        "properties": {
-          "email": {
-            "title": "Email",
-            "type": "string"
-          },
-          "token": {
-            "title": "Token",
-            "type": "string"
-          },
-          "display_name": {
-            "default": "",
-            "title": "Display Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "email",
-          "token"
-        ],
-        "title": "E2ELoginIn",
         "type": "object"
       },
       "CliAuthStatusOut": {

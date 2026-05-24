@@ -53,8 +53,10 @@ Verdict per step:
 Prereqs:
 - `uv` (project's package manager)
 - Playwright browsers installed once: `uv run --extra walkthrough playwright install chromium`
-- `LABS_TOKEN` — get it from `deploy/aws/task-definition.json` (look for
-  `ACE_E2E_AUTH_TOKEN`).
+- `LABS_TOKEN` — a Bearer PAT. Mint one via `/ace:ace-web-pat-mint`
+  (gh-style loopback browser flow, one-time per machine), then export
+  the raw token. See `apps/auth/cli_authorize_views.py` for the
+  server side of the mint flow.
 
 ```bash
 export LABS_TOKEN=...

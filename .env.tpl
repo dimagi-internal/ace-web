@@ -25,12 +25,6 @@ ACE_DRIVE_SA_KEY_JSON=op://AI-Agents/ACE - Google Service Account/credential
 # Drive root folder ID for the shared Dimagi Team workspace.
 ACE_DRIVE_ROOT_FOLDER_ID=1HThsA_0Lr5p1OdI5r-aQ446HlNBaySLz
 
-# Token-gated automation login at /auth/e2e-login/ for scripted tools.
-# Not in 1Password — pull from deploy/aws/task-definition.json or AWS
-# Secrets Manager if you need to call /auth/e2e-login/ locally. Leave
-# blank for normal dev (the endpoint only registers when this is set).
-ACE_E2E_AUTH_TOKEN=
-
 # ElevenLabs API key for the video renderer's per-beat voiceover
 # synthesis (`npm run render` from video-production/connect-videos/).
 # Without this the renderer emits a silent track; the audio library

@@ -1821,23 +1821,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/auth/e2e-login": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Automation login (token-gated) */
-        readonly post: operations["apps_auth_api_e2e_login"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/api/auth/cli/status": {
         readonly parameters: {
             readonly query?: never;
@@ -4001,35 +3984,6 @@ export interface components {
             readonly slug: string;
             /** Name */
             readonly name: string;
-        };
-        /**
-         * E2ELoginOut
-         * @description 200 response from /auth/e2e-login/.
-         */
-        readonly E2ELoginOut: {
-            /** User Id */
-            readonly user_id: number;
-            /** Email */
-            readonly email: string;
-        };
-        /**
-         * E2ELoginIn
-         * @description POST /auth/e2e-login/ body.
-         *
-         *     Used by automated tools (walkthroughs, smoke tests, CI harnesses)
-         *     to authenticate without going through CommCare Connect OAuth.
-         *     ``token`` must match ``settings.ACE_E2E_AUTH_TOKEN``.
-         */
-        readonly E2ELoginIn: {
-            /** Email */
-            readonly email: string;
-            /** Token */
-            readonly token: string;
-            /**
-             * Display Name
-             * @default
-             */
-            readonly display_name: string;
         };
         /**
          * CliAuthStatusOut
@@ -6735,30 +6689,6 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    readonly apps_auth_api_e2e_login: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["E2ELoginIn"];
-            };
-        };
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["E2ELoginOut"];
-                };
             };
         };
     };

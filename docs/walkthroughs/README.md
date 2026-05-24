@@ -58,11 +58,11 @@ row hover). This also trashes the Drive folder. Opps accumulate otherwise
 
 ## Prerequisites
 
-- `ACE_E2E_AUTH_TOKEN` exported in the shell (value in
-  `deploy/aws/task-definition.json`). This is the labs-prod automation
-  token — it lets the setup scripts authenticate as `ace@dimagi-ai.com`
-  via `/auth/e2e-login/` without touching OAuth or per-user personal tokens.
-  See the "Automation auth on labs" bullet in the repo's CLAUDE.md.
+- `ACE_WEB_PAT_TOKEN` exported in the shell. Mint via
+  `/ace:ace-web-pat-mint` (one-time gh-style loopback browser flow).
+  The PAT belongs to *you* — chat sessions, opps, and uploads attribute
+  back to the authorizing human, not a shared bot identity. See the
+  "Automation auth on labs" bullet in the repo's CLAUDE.md.
 - Turmeric PDD body at `/tmp/turmeric-smoketest/pdd.txt`. Easiest: ask
   the ACE plugin's Drive MCP for the latest file in the `Program Design
   Docs (PDDs)` folder under the ACE Drive root and redirect to that path.
@@ -94,9 +94,9 @@ python tools/walkthrough/turmeric_pdd_finder.py > /tmp/turmeric-smoketest/pdd.tx
 # 2. Run /ace:run with the new scripted flags (ACE plugin >= 0.5.0).
 #    --idea seeds idea.md from the PDD file, skipping AskUserQuestion.
 #    --ace-web-url uploads the transcript to /api/ingest/upload after
-#    the run via the upload-transcript skill (e2e-login, shared secret).
+#    the run via the upload-transcript skill (Bearer PAT auth).
 SLUG="turmeric-smoketest-$(date +%Y%m%d-%H%M)"
-export ACE_E2E_AUTH_TOKEN="<value from deploy/aws/task-definition.json>"
+# Mint a PAT via /ace:ace-web-pat-mint if you don't have one yet.
 
 claude -p "/ace:run $SLUG --mode auto --dry-run \
            --idea /tmp/turmeric-smoketest/pdd.txt \
@@ -118,8 +118,8 @@ What `/ace:run` now handles natively (replacing the deleted
 2. Seeds `idea.md` from `--idea /path/to/file` — no interactive prompt.
 3. Dispatches the `ace-orchestrator` agent through Phase 1.
 4. On completion, dispatches the `upload-transcript` skill (from the
-   ACE plugin) which does the e2e-login + POST `/api/ingest/upload`
-   dance — shared-secret auth, no personal bearer tokens.
+   ACE plugin) which POSTs to `/api/ingest/upload` with
+   `Authorization: Bearer $ACE_WEB_PAT_TOKEN`.
 
 ace-web's `/opps` list picks up the new Drive folder automatically;
 the `OppWorkspace` DB row materializes lazily on first view (e.g.
@@ -147,14 +147,14 @@ does not delete the opp — clean up manually after reviewing the deck.
 
 ## Troubleshooting
 
-- **`ACE_E2E_AUTH_TOKEN not set`:** copy the value from
-  `deploy/aws/task-definition.json` (or pull it from AWS Secrets Manager
-  when rotated) and `export` it in your shell before invoking the script.
-- **`e2e-login returned 403`:** the token you exported doesn't match the
-  one deployed to labs — check for stale copies, spaces, or newlines.
-- **`e2e-login returned 404`:** either the URL prefix is wrong
-  (`$ACE_WEB_BASE_URL` should include `/ace`) or labs was redeployed
-  with `ACE_E2E_AUTH_TOKEN` empty, which de-registers the route.
+- **`ACE_WEB_PAT_TOKEN not set`:** mint a PAT via
+  `/ace:ace-web-pat-mint` (one-time gh-style loopback browser flow) and
+  `export` it before invoking the script. The token lands in
+  `$CLAUDE_PLUGIN_DATA/.env` automatically.
+- **HTTP 401 from ingest/upload:** the PAT was revoked or never minted.
+  Re-mint via `/ace:ace-web-pat-mint` and retry.
+- **URL prefix wrong:** `$ACE_WEB_BASE_URL` should include `/ace`
+  (e.g. `https://labs.connect.dimagi.com/ace`).
 - **`/ace:run` hangs:** the Claude CLI session may have lost auth. Run
   `claude login` (or the Claude Code auth flow) and retry.
 - **Leftover `turmeric-smoketest-*` opps:** delete from `/opps` via the

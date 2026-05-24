@@ -265,13 +265,6 @@ ACE_MOBILE_AMI_VERSION = env("ACE_MOBILE_AMI_VERSION", default="")
 ACE_ALLOW_TEST_LOGIN = env.bool("ACE_ALLOW_TEST_LOGIN", default=False)
 ACE_USE_FAKE_CLI_BACKEND = env.bool("ACE_USE_FAKE_CLI_BACKEND", default=False)
 
-# --- E2E auth token (labs environments) ---
-# A pre-shared secret that allows automated tools (walkthroughs, CI) to
-# authenticate without going through OAuth. Empty = disabled. The endpoint
-# at /auth/e2e-login/ only registers when this is non-empty. Stored in
-# AWS Secrets Manager alongside other labs secrets.
-ACE_E2E_AUTH_TOKEN = env("ACE_E2E_AUTH_TOKEN", default="")
-
 # --- Slack integration ---
 SLACK_CLIENT_ID = env("SLACK_CLIENT_ID", default="")
 SLACK_CLIENT_SECRET = env("SLACK_CLIENT_SECRET", default="")

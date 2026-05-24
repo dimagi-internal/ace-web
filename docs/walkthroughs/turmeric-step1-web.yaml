@@ -2,11 +2,11 @@ name: "Turmeric Step 1 — Web Smoke Test"
 narrative: "Smoke-test the ace-web tier: opp create, workbench render, Drive artifact round-trip, and opps→chat bridge. Only Phase 1 (idea-to-pdd) is populated — everything downstream is exercised via its pending-state sidebar rendering in Scene 2."
 base_url: "https://labs.connect.dimagi.com/ace"
 
-# Auth via the /auth/e2e-login/ endpoint as ace@dimagi-ai.com — the
-# canonical bot identity for automation (see CLAUDE.md). The login script
-# POSTs to e2e-login with ACE_E2E_AUTH_TOKEN, captures the session cookie,
-# and stashes it in the browse-side cookie jar that the walkthrough skill
-# injects before the first scene. No OAuth round-trip, no personal tokens.
+# Auth via Bearer PAT (ACE_WEB_PAT_TOKEN). The login script trades the
+# PAT for a Django session cookie at POST /api/auth/pat-to-session,
+# stashes the cookie in the browse-side jar that the walkthrough skill
+# injects before the first scene. Mint a PAT one-time per machine via
+# /ace:ace-web-pat-mint.
 auth:
   type: command
   check: "bash tools/walkthrough/walkthrough_auth_check.sh"
