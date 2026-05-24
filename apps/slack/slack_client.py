@@ -77,6 +77,28 @@ class SlackClient:
         except SlackApiError as e:
             self._raise_typed(e)
 
+    def delete_message(self, *, channel: str, ts: str) -> None:
+        try:
+            self._web.chat_delete(channel=channel, ts=ts)
+        except SlackApiError as e:
+            self._raise_typed(e)
+
+    def get_channel_history(self, *, channel: str,
+                            limit: int = 50) -> list[dict]:
+        try:
+            resp = self._web.conversations_history(
+                channel=channel, limit=limit)
+            return resp.get("messages", [])
+        except SlackApiError:
+            return []
+
+    def get_thread_replies(self, *, channel: str, ts: str) -> list[str]:
+        try:
+            resp = self._web.conversations_replies(channel=channel, ts=ts)
+            return [m["ts"] for m in resp.get("messages", []) if m["ts"] != ts]
+        except SlackApiError:
+            return []
+
     def lookup_user_info(self, *, slack_user_id: str) -> dict[str, Any]:
         resp = self._web.users_info(user=slack_user_id)
         return resp["user"]

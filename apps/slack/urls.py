@@ -13,4 +13,5 @@ urlpatterns = [
     path("test/", views_test_page.test_index, name="test_index"),
     path("test/preview/<slug:slug>/", views_test_page.test_preview, name="test_preview"),
     path("test/post/<slug:slug>/", views_test_page.test_post, name="test_post"),
+    path("test/cleanup/", views_test_page.test_cleanup, name="test_cleanup"),
 ]

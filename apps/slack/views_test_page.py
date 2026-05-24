@@ -4,10 +4,11 @@ Accessible at /api/slack/test/. Requires authentication (e2e-login or
 session). Not linked from the main nav — accessed from workspace
 settings or by direct URL.
 
-Three views:
+Views:
   GET  /api/slack/test/                    — list opps, pick one to preview
   GET  /api/slack/test/preview/<slug>/     — render Block Kit for an opp
   POST /api/slack/test/post/<slug>/        — post to a real Slack channel
+  POST /api/slack/test/cleanup/            — delete bot messages from a channel
 """
 from __future__ import annotations
 
@@ -205,6 +206,22 @@ def test_index(request: HttpRequest) -> HttpResponse:
         '<span style="color:#e01e5a">Not installed</span>'
     )
 
+    cleanup_form = ""
+    if installation:
+        cleanup_form = """
+        <div class="post-form" style="margin-top:24px">
+          <h2>Clean up channel</h2>
+          <p style="color:#9ea0a5;font-size:13px;margin-bottom:8px">
+            Delete all bot messages and their thread replies from a channel.</p>
+          <form method="POST" action="cleanup/">
+            <label>Channel ID</label>
+            <input type="text" name="channel_id" placeholder="C0123456789">
+            <br><button type="submit" class="btn btn-danger"
+                        style="margin-top:8px">
+              Delete all bot messages</button>
+          </form>
+        </div>"""
+
     html = f"""<!DOCTYPE html><html><head>
 <meta charset="utf-8"><title>Slack Test</title>
 <style>{_CSS}</style></head><body>
@@ -213,6 +230,7 @@ def test_index(request: HttpRequest) -> HttpResponse:
 <p style="margin-bottom:16px">Slack: {slack_status}</p>
 <h2>Pick an opp to preview</h2>
 <ul class="opp-list">{"".join(opp_items) or "<li>No opps found</li>"}</ul>
+{cleanup_form}
 </body></html>"""
     return HttpResponse(html)
 
@@ -422,5 +440,67 @@ def test_post(request: HttpRequest, slug: str) -> HttpResponse:
 <div class="result result-ok">
   <ul style="list-style:none">{result_items}</ul>
 </div>
+</body></html>"""
+    return HttpResponse(html)
+
+
+@csrf_exempt
+@require_POST
+@_require_auth
+def test_cleanup(request: HttpRequest) -> HttpResponse:
+    """Delete all bot messages (and their thread replies) from a channel."""
+    workspace = _get_workspace(request)
+    if workspace is None:
+        return HttpResponse("No workspace found", status=404)
+
+    installation = _get_installation(workspace)
+    if installation is None:
+        return HttpResponse("Slack not installed", status=404)
+
+    channel_id = request.POST.get("channel_id", "").strip()
+    if not channel_id:
+        return HttpResponse("channel_id required", status=400)
+
+    from .slack_client import client_for
+
+    client = client_for(installation)
+
+    deleted = 0
+    errors = []
+    try:
+        messages = client.get_channel_history(channel=channel_id, limit=50)
+        for msg in messages:
+            if msg.get("bot_id") or msg.get("subtype") == "bot_message":
+                ts = msg["ts"]
+                replies = client.get_thread_replies(
+                    channel=channel_id, ts=ts)
+                for reply_ts in replies:
+                    try:
+                        client.delete_message(
+                            channel=channel_id, ts=reply_ts)
+                        deleted += 1
+                    except Exception as exc:
+                        errors.append(f"reply {reply_ts}: {exc}")
+                try:
+                    client.delete_message(channel=channel_id, ts=ts)
+                    deleted += 1
+                except Exception as exc:
+                    errors.append(f"parent {ts}: {exc}")
+    except Exception as exc:
+        errors.append(f"history: {exc}")
+
+    err_html = ""
+    if errors:
+        err_items = "".join(f"<li>{e}</li>" for e in errors)
+        err_html = (f'<div class="result result-err">'
+                    f'<ul style="list-style:none">{err_items}</ul></div>')
+
+    html = f"""<!DOCTYPE html><html><head>
+<meta charset="utf-8"><title>Cleanup Result</title>
+<style>{_CSS}</style></head><body>
+<div class="nav"><a href="../">← back</a></div>
+<h1>Cleaned up #{channel_id}</h1>
+<div class="result result-ok">Deleted {deleted} messages.</div>
+{err_html}
 </body></html>"""
     return HttpResponse(html)
