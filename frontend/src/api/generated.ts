@@ -915,6 +915,74 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/slack/status": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Slack install status */
+        readonly get: operations["apps_slack_api_get_status"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/slack/channels": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Bot-member channels */
+        readonly get: operations["apps_slack_api_list_channels"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/slack/push-info": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Existing Slack mirror threads for an opp/run */
+        readonly get: operations["apps_slack_api_get_push_info"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/slack/push-phase": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Push a phase to a Slack channel and start mirroring */
+        readonly post: operations["apps_slack_api_push_phase"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/opps/public/{workspace}/{slug}/runs/{run_id}/summary": {
         readonly parameters: {
             readonly query?: never;
@@ -2761,6 +2829,86 @@ export interface components {
              * @enum {string}
              */
             readonly mode: "render" | "build-only";
+        };
+        /** SlackStatusOut */
+        readonly SlackStatusOut: {
+            /** Installed */
+            readonly installed: boolean;
+            /** Team Id */
+            readonly team_id?: string | null;
+            /** Team Name */
+            readonly team_name?: string | null;
+            /** Team Url */
+            readonly team_url?: string | null;
+            /** Installed By Email */
+            readonly installed_by_email?: string | null;
+            /** Installed At */
+            readonly installed_at?: string | null;
+            /** Test Page Url */
+            readonly test_page_url?: string | null;
+            /** Install Url */
+            readonly install_url?: string | null;
+            /**
+             * Can Manage
+             * @default false
+             */
+            readonly can_manage: boolean;
+        };
+        /** SlackChannelOut */
+        readonly SlackChannelOut: {
+            /** Id */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+            /** Is Private */
+            readonly is_private: boolean;
+        };
+        /** SlackChannelsOut */
+        readonly SlackChannelsOut: {
+            /** Installed */
+            readonly installed: boolean;
+            /** Channels */
+            readonly channels: readonly components["schemas"]["SlackChannelOut"][];
+        };
+        /** SlackPushInfoOut */
+        readonly SlackPushInfoOut: {
+            /** Installed */
+            readonly installed: boolean;
+            /** Threads */
+            readonly threads: readonly components["schemas"]["SlackThreadOut"][];
+        };
+        /** SlackThreadOut */
+        readonly SlackThreadOut: {
+            /** Channel Id */
+            readonly channel_id: string;
+            /** Parent Ts */
+            readonly parent_ts: string;
+            /** Permalink */
+            readonly permalink: string | null;
+            /** Stopped At */
+            readonly stopped_at: string | null;
+        };
+        /** SlackPushPhaseOut */
+        readonly SlackPushPhaseOut: {
+            /** Channel Id */
+            readonly channel_id: string;
+            /** Parent Ts */
+            readonly parent_ts: string;
+            /** Permalink */
+            readonly permalink: string | null;
+            /** Thread Id */
+            readonly thread_id: string;
+        };
+        /** SlackPushPhaseIn */
+        readonly SlackPushPhaseIn: {
+            /** Opp Slug */
+            readonly opp_slug: string;
+            /** Run Id */
+            readonly run_id: string;
+            /** Phase */
+            readonly phase: string;
+            /** Channel Id */
+            readonly channel_id: string;
         };
         /** WorkspaceOut */
         readonly WorkspaceOut: {
@@ -5398,6 +5546,101 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly apps_slack_api_get_status: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SlackStatusOut"];
+                };
+            };
+        };
+    };
+    readonly apps_slack_api_list_channels: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SlackChannelsOut"];
+                };
+            };
+        };
+    };
+    readonly apps_slack_api_get_push_info: {
+        readonly parameters: {
+            readonly query: {
+                readonly opp: string;
+                readonly run: string;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SlackPushInfoOut"];
+                };
+            };
+        };
+    };
+    readonly apps_slack_api_push_phase: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SlackPushPhaseIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SlackPushPhaseOut"];
+                };
             };
         };
     };

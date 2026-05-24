@@ -18,6 +18,7 @@ import {
   type WorkspaceRole,
 } from "../api/workspaces";
 import { Button } from "@/components/ui/button";
+import { SlackPanel } from "@/components/SlackPanel";
 import { useNavigate } from "react-router-dom";
 
 const ROLE_OPTIONS: WorkspaceRole[] = ["owner", "editor", "viewer"];
@@ -304,6 +305,8 @@ export default function WorkspaceSettingsPage() {
           )}
         </section>
       )}
+
+      <SlackPanel workspaceSlug={workspaceSlug} />
 
       {isOwner && activity.length > 0 && (
         <section className="mt-8">
