@@ -1,18 +1,27 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { wsUrl } from "../lib/wsUrl";
+
+interface DecisionEditEvent {
+  row_id: string;
+  new_answer: string;
+  editor_email: string;
+  editor_name: string;
+}
 
 interface Options {
   slug: string;
   runId?: string;
   onOppUpdated?: () => void;
+  onDecisionEdited?: (edit: DecisionEditEvent) => void;
+  onDecisionReverted?: (data: { row_id: string; editor_email: string }) => void;
 }
 
-export function useOppSocket({ slug, runId, onOppUpdated }: Options) {
-  // Keep the latest handler in a ref so re-renders don't recreate the
-  // WebSocket connection on every prop change.
-  const handlerRef = useRef(onOppUpdated);
-  handlerRef.current = onOppUpdated;
+export function useOppSocket({ slug, runId, onOppUpdated, onDecisionEdited, onDecisionReverted }: Options) {
+  const handlerRef = useRef({ onOppUpdated, onDecisionEdited, onDecisionReverted });
+  handlerRef.current = { onOppUpdated, onDecisionEdited, onDecisionReverted };
+
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -24,19 +33,21 @@ export function useOppSocket({ slug, runId, onOppUpdated }: Options) {
 
     function open() {
       ws = new WebSocket(url);
+      wsRef.current = ws;
       ws.onmessage = (e) => {
         try {
-          const { event } = JSON.parse(e.data);
-          if (event === "opp.updated") handlerRef.current?.();
+          const msg = JSON.parse(e.data);
+          const event = msg.event;
+          if (event === "opp.updated") handlerRef.current.onOppUpdated?.();
+          else if (event === "decision.edited") handlerRef.current.onDecisionEdited?.(msg.data);
+          else if (event === "decision.reverted") handlerRef.current.onDecisionReverted?.(msg.data);
         } catch {
           // ignore malformed frames
         }
       };
       ws.onclose = () => {
+        wsRef.current = null;
         if (closedByCleanup) return;
-        // Single retry after 2s. Simple — production might want
-        // exponential backoff, but the workbench is a low-traffic,
-        // user-visible surface where a 2s gap is acceptable.
         reconnectTimer = window.setTimeout(open, 2000);
       };
     }
@@ -46,6 +57,17 @@ export function useOppSocket({ slug, runId, onOppUpdated }: Options) {
       closedByCleanup = true;
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       ws?.close();
+      wsRef.current = null;
     };
   }, [slug, runId]);
+
+  const sendDecisionEdit = useCallback((row_id: string, new_answer: string) => {
+    wsRef.current?.send(JSON.stringify({ type: "decision.edit", row_id, new_answer }));
+  }, []);
+
+  const sendDecisionRevert = useCallback((row_id: string) => {
+    wsRef.current?.send(JSON.stringify({ type: "decision.revert", row_id }));
+  }, []);
+
+  return { sendDecisionEdit, sendDecisionRevert };
 }
