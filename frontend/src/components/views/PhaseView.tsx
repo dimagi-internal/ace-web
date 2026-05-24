@@ -6,6 +6,7 @@ import { ForkOppDialog } from "@/components/opps/ForkOppDialog";
 import { Button } from "@/components/ui/button";
 import { DecisionsPanel } from "@/components/views/DecisionsPanel";
 import { PhaseSkillRow } from "@/components/views/PhaseSkillRow";
+import { PushToSlackButton } from "@/components/views/PushToSlackButton";
 import {
   decisionsReducer,
   initialDecisionsEditState,
@@ -220,6 +221,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
                 phase={selectedPhaseInfo}
                 steps={selectedPhaseSteps}
                 oppSlug={oppSlug}
+                workspaceSlug={workspaceSlug}
                 sourceRunId={snapshot.current_run.run_id}
                 sourceLastActorAt={
                   // The active run's last_actor_at lives in runs[] (RunSummary)
@@ -424,6 +426,7 @@ interface PhasePanelHeaderProps {
   phase: PhaseInfo;
   steps: Step[];
   oppSlug: string;
+  workspaceSlug: string;
   sourceRunId: string;
   sourceLastActorAt: string | null;
   /** When true, the "Fork from here" button is hidden — there's a
@@ -437,6 +440,7 @@ function PhasePanelHeader({
   phase,
   steps,
   oppSlug,
+  workspaceSlug,
   sourceRunId,
   sourceLastActorAt,
   hidePerPhaseFork,
@@ -467,24 +471,35 @@ function PhasePanelHeader({
             {phase.display_name}
           </h2>
         </div>
-        {/* Fork CTA: mints a NEW RUN under this opp seeded from the
-            current run's upstream phase artifacts. Per-opp state
-            (opp.yaml, inputs, calibration) stays shared.
-            Hidden when there are pending decision edits — the sticky
-            "Fork & re-run" bar at the page bottom is the right CTA
-            in that case (it carries the edits into the new run). */}
-        {!hidePerPhaseFork && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setForkOpen(true)}
-            className="shrink-0 text-xs"
-            title={`Fork a new run starting at ${phase.display_name}`}
-          >
-            <GitFork className="mr-1.5 h-3.5 w-3.5" />
-            Fork from here
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {workspaceSlug && sourceRunId && (
+            <PushToSlackButton
+              workspaceSlug={workspaceSlug}
+              oppSlug={oppSlug}
+              runId={sourceRunId}
+              phaseName={phase.name}
+              phaseDisplay={phase.display_name}
+            />
+          )}
+          {/* Fork CTA: mints a NEW RUN under this opp seeded from the
+              current run's upstream phase artifacts. Per-opp state
+              (opp.yaml, inputs, calibration) stays shared.
+              Hidden when there are pending decision edits — the sticky
+              "Fork & re-run" bar at the page bottom is the right CTA
+              in that case (it carries the edits into the new run). */}
+          {!hidePerPhaseFork && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setForkOpen(true)}
+              className="shrink-0 text-xs"
+              title={`Fork a new run starting at ${phase.display_name}`}
+            >
+              <GitFork className="mr-1.5 h-3.5 w-3.5" />
+              Fork from here
+            </Button>
+          )}
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
         <span>
