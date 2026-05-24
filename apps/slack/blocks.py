@@ -1,15 +1,9 @@
 """Pure Block Kit renderers. Snapshot in, list[dict] out.
 
-These mirror the shape of frontend/src/components/views/PhaseView.tsx
-PhaseTile + the WorkbenchHeader parent card. State hashes are computed
-from the same fields the renderer reads, so any user-visible diff is
-caught by the hash check.
-
-Snapshot shape: we treat the snapshot as a dict with keys
-{display_name, current_run.{run_id, steps[]}, phases[]}. The real
-OppSnapshot is a Pydantic model; the dispatcher serializes it via
-.model_dump() before calling these renderers (keeps the renderers
-test-friendly without Pydantic imports).
+Snapshot shape: dict with keys {display_name, current_run.{run_id,
+steps[], decisions[]}, phases[]}. The real OppSnapshot is a Pydantic
+model; the dispatcher serializes via .model_dump() before calling
+these renderers.
 """
 from __future__ import annotations
 
@@ -18,24 +12,16 @@ import json
 
 from django.conf import settings
 
-_BAR_WIDTH = 10
-
-
-def render_progress_bar(complete: int, total: int) -> str:
-    pct = 0 if total == 0 else int(round(100 * complete / total))
-    filled = 0 if total == 0 else round(_BAR_WIDTH * complete / total)
-    return ("▓" * filled) + ("░" * (_BAR_WIDTH - filled)) + f" {pct}%"
-
 
 def _phase_stats(snapshot: dict, phase_name: str) -> dict:
     steps = [s for s in snapshot["current_run"]["steps"]
              if s["phase"] == phase_name]
     complete = sum(1 for s in steps if s["status"] == "complete")
     qa_failed = sum(1 for s in steps if s["status"] == "qa-failed")
-    open_decisions = 0  # Decisions live on current_run; populated below.
     decisions = snapshot.get("current_run", {}).get("decisions") or []
-    open_decisions = sum(1 for d in decisions
-                         if d.get("phase") == phase_name and d.get("status") == "open")
+    phase_decisions = [d for d in decisions if d.get("phase") == phase_name]
+    overridden = sum(1 for d in phase_decisions
+                     if d.get("status") == "overridden")
     judged = [s["judge"]["score_pct"] for s in steps
               if s.get("judge") and s["judge"].get("score_pct") is not None]
     mean_score = round(sum(judged) / len(judged)) if judged else None
@@ -46,7 +32,8 @@ def _phase_stats(snapshot: dict, phase_name: str) -> dict:
         "total": len(steps),
         "complete": complete,
         "qa_failed": qa_failed,
-        "open_decisions": open_decisions,
+        "decision_count": len(phase_decisions),
+        "overridden_count": overridden,
         "mean_score": mean_score,
         "current_skill": running["skill_name"] if running else None,
         "terminal": terminal,
@@ -61,71 +48,64 @@ def _phase_info(snapshot: dict, phase_name: str) -> dict:
     raise KeyError(f"phase {phase_name!r} not in snapshot")
 
 
+def _opp_url(workspace_slug: str, opp_slug: str) -> str:
+    return f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}"
+
+
 def render_phase_tile(snapshot: dict, *, phase_name: str,
                       opp_slug: str, workspace_slug: str) -> list[dict]:
-    """Render a phase tile with decision summary and action buttons."""
-    from .blocks_decisions import render_decision_summary
-
     phase = _phase_info(snapshot, phase_name)
     stats = _phase_stats(snapshot, phase_name)
-    bar = render_progress_bar(stats["complete"], stats["total"])
-    votes: dict = {}
 
-    eyebrow = f"Phase {phase['ordinal']} · {phase['agent']}"
-    title = f"*{phase['display_name']}*"
-
-    context_bits = [f"{stats['complete']}/{stats['total']} done"]
+    # Compact progress: "3/5 done · mean 82/100"
+    progress_parts = [f"{stats['complete']}/{stats['total']} done"]
     if stats["mean_score"] is not None:
-        context_bits.append(f"mean {stats['mean_score']}/100")
+        progress_parts.append(f"mean {stats['mean_score']}/100")
     if stats["qa_failed"] > 0:
-        context_bits.append(f":x: {stats['qa_failed']} qa-failed")
-    if stats["open_decisions"] > 0:
-        context_bits.append(f":grey_question: {stats['open_decisions']} open")
+        progress_parts.append(f"{stats['qa_failed']} failed QA")
+    progress = " · ".join(progress_parts)
+
+    # Decision line: "3 decisions (1 overridden)"
+    decision_line = ""
+    if stats["decision_count"] > 0:
+        dc = stats["decision_count"]
+        decision_line = f"{dc} decision{'s' if dc != 1 else ''}"
+        if stats["overridden_count"] > 0:
+            decision_line += f" ({stats['overridden_count']} overridden)"
+
+    # Running skill
+    running_line = ""
+    if stats["current_skill"]:
+        running_line = f"Running: {stats['current_skill']}"
+
+    # Build the body as a single section block
+    title = f"*Phase {phase['ordinal']} — {phase['display_name']}*"
+    body_lines = [title, progress]
+    if decision_line:
+        body_lines.append(decision_line)
+    if running_line:
+        body_lines.append(running_line)
 
     blocks: list[dict] = [
-        {"type": "context",
-         "elements": [{"type": "mrkdwn", "text": eyebrow}]},
         {"type": "section",
-         "text": {"type": "mrkdwn", "text": title}},
-        {"type": "context",
-         "elements": [{"type": "mrkdwn", "text": " · ".join(context_bits)}]},
-        {"type": "section",
-         "text": {"type": "mrkdwn", "text": f"`{bar}`"}},
+         "text": {"type": "mrkdwn", "text": "\n".join(body_lines)}},
     ]
-    if stats["current_skill"]:
-        blocks.append({"type": "context",
-                       "elements": [{"type": "mrkdwn",
-                                     "text": f"Currently: {stats['current_skill']}"}]})
 
-    phase_decisions = [d for d in (snapshot.get("current_run", {}).get("decisions") or [])
-                       if d.get("phase") == phase_name]
-    if phase_decisions:
-        summary = render_decision_summary(phase_decisions, votes)
-        if summary:
-            blocks.append({"type": "context",
-                           "elements": [{"type": "mrkdwn", "text": summary}]})
-
-    action_elements = [{
+    # Action buttons
+    base_url = _opp_url(workspace_slug, opp_slug)
+    action_elements: list[dict] = [{
         "type": "button",
-        "text": {"type": "plain_text", "text": "View phase ↗"},
-        "url": f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}",
+        "text": {"type": "plain_text", "text": "Open phase"},
+        "url": f"{base_url}?view=phase&phase={phase_name}",
         "action_id": f"view_phase:{opp_slug}:{phase_name}",
     }]
-    if phase_decisions:
-        base = settings.ACE_PUBLIC_BASE_URL
-        review_url = f"{base}/w/{workspace_slug}/opps/{opp_slug}?phase={phase_name}"
+    if stats["decision_count"] > 0:
         action_elements.append({
             "type": "button",
-            "text": {"type": "plain_text", "text": "Review decisions ↗"},
-            "url": review_url,
+            "text": {"type": "plain_text", "text": "Review decisions"},
+            "url": f"{base_url}?view=phase&phase={phase_name}",
             "action_id": f"review_decisions:{opp_slug}:{phase_name}",
-        })
-    elif stats["has_any_complete"]:
-        action_elements.append({
-            "type": "button",
-            "text": {"type": "plain_text", "text": "🍴 Fork from here…"},
-            "action_id": "fork_from_phase",
-            "value": f"{opp_slug}:{phase_name}",
+            "style": "primary",
         })
     blocks.append({"type": "actions", "elements": action_elements})
     return blocks
@@ -151,54 +131,46 @@ def render_parent_card(
     thread_id: str | None = None,
     stopped_by_display: str | None = None,
 ) -> list[dict]:
-    """Render the parent-card Block Kit.
-
-    `thread_id` (UUID string of the SlackRunThread row) gets embedded as the
-    `value` of the *Stop watching* button so the action handler knows which
-    row to stop. When omitted, the button is hidden — useful for `/ace status`
-    ephemeral renders that aren't tied to a specific tracked thread.
-
-    `stopped_by_display`, when set, prepends a "⏸ Stopped by …" line and
-    suppresses the Stop button.
-    """
     active = _active_phase(snapshot)
     elapsed_min = elapsed_seconds // 60
     run_id = snapshot["current_run"]["run_id"]
+
     if active:
         active_stats = _phase_stats(snapshot, active["name"])
-        active_line = (f"Phase {active['ordinal']} · *{active['display_name']}*"
-                       + (f" · running `{active_stats['current_skill']}`"
-                          if active_stats["current_skill"] else ""))
+        skill = active_stats["current_skill"]
+        skill_part = f" — running {skill}" if skill else ""
+        active_line = (f"Phase {active['ordinal']}: "
+                       f"*{active['display_name']}*{skill_part}")
     else:
-        active_line = "All phases complete · awaiting cleanup"
+        active_line = "All phases complete"
 
-    status_marker = "⏸ Stopped" if stopped_by_display else "🟡"
-    lines = [
-        f"{status_marker} *{snapshot['display_name']}* — `{run_id}`",
-        f"Triggered by {triggerer_display} · {elapsed_min}m elapsed",
-        active_line,
-    ]
+    lines = [f"*{snapshot['display_name']}*  `{run_id}`"]
     if stopped_by_display:
-        lines.append(f"_Stopped by {stopped_by_display}_")
+        lines.append(f"Stopped by {stopped_by_display}")
+    else:
+        lines.append(f"Started by {triggerer_display} · {elapsed_min}m elapsed")
+    lines.append(active_line)
     text = "\n".join(lines)
 
+    base_url = _opp_url(workspace_slug, opp_slug)
     action_elements: list[dict] = [{
         "type": "button",
-        "text": {"type": "plain_text", "text": "Open in ace-web ↗"},
-        "url": f"{settings.ACE_PUBLIC_BASE_URL}/w/{workspace_slug}/opps/{opp_slug}",
+        "text": {"type": "plain_text", "text": "Open in ace-web"},
+        "url": base_url,
+        "action_id": f"open_opp:{opp_slug}",
     }]
     if thread_id and not stopped_by_display:
         action_elements.append({
             "type": "button",
-            "text": {"type": "plain_text", "text": "⏸ Stop watching"},
+            "text": {"type": "plain_text", "text": "Stop watching"},
             "action_id": "stop_watching",
             "value": str(thread_id),
             "style": "danger",
             "confirm": {
                 "title": {"type": "plain_text", "text": "Stop watching this run?"},
                 "text": {"type": "mrkdwn",
-                         "text": (f"I'll stop posting updates for `{opp_slug}` "
-                                  f"in this thread. The run itself keeps going.")},
+                         "text": (f"Stop posting updates for `{opp_slug}` "
+                                  f"in this thread. The run keeps going.")},
                 "confirm": {"type": "plain_text", "text": "Stop"},
                 "deny": {"type": "plain_text", "text": "Cancel"},
             },
@@ -217,7 +189,8 @@ def phase_state_hash(snapshot: dict, phase_name: str) -> str:
         "complete": stats["complete"],
         "total": stats["total"],
         "qa_failed": stats["qa_failed"],
-        "open_decisions": stats["open_decisions"],
+        "decision_count": stats["decision_count"],
+        "overridden_count": stats["overridden_count"],
         "mean_score": stats["mean_score"],
         "current_skill": stats["current_skill"],
         "terminal": stats["terminal"],
