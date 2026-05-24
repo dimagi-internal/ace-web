@@ -179,7 +179,7 @@ function DecisionRow({
             className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-400"
             aria-label="this row has a pending edit"
           >
-            edited
+            edited{pendingEdit?.editor_name ? ` by ${pendingEdit.editor_name}` : ""}
           </span>
         )}
         <span
