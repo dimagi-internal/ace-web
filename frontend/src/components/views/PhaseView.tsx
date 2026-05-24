@@ -20,6 +20,10 @@ interface Props {
   snapshot: OppSnapshot;
   oppSlug: string;
   workspaceSlug: string;
+  sendDecisionEdit?: (row_id: string, new_answer: string) => void;
+  sendDecisionRevert?: (row_id: string) => void;
+  onRemoteDecisionEdit?: React.MutableRefObject<((edit: { row_id: string; new_answer: string; editor_email: string; editor_name: string }) => void) | null>;
+  onRemoteDecisionRevert?: React.MutableRefObject<((data: { row_id: string }) => void) | null>;
 }
 
 /**
@@ -30,7 +34,7 @@ interface Props {
  * Pure snapshot-driven — no extra API calls. Replaces both the broken
  * React-Flow DAG and the earlier 8-card phase grid.
  */
-export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
+export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, sendDecisionRevert, onRemoteDecisionEdit, onRemoteDecisionRevert }: Props) {
   const phases = useMemo(
     () => [...snapshot.phases].sort((a, b) => a.ordinal - b.ordinal),
     [snapshot.phases],
@@ -104,6 +108,46 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
       setForkDialogOpen(false);
     }
   }, [editState.buffer.length, forkDialogOpen]);
+
+  // Seed the edit buffer from pending_edits persisted in the snapshot.
+  // Runs once on mount so a page reload recovers any shared edits that
+  // were already in the Redis buffer when the snapshot was built.
+  useEffect(() => {
+    const pending = (snapshot as unknown as Record<string, unknown>).pending_edits as
+      | Record<string, { new_answer: string; editor_email: string; editor_name: string }>
+      | undefined;
+    if (pending && Object.keys(pending).length > 0) {
+      dispatchEdit({ type: "MERGE_REMOTE", edits: pending });
+    }
+  }, []); // seed once on mount
+
+  // Register dispatch callbacks on the parent's refs so remote WebSocket
+  // events (decision.edited / decision.reverted) reach the local reducer.
+  useEffect(() => {
+    if (onRemoteDecisionEdit) {
+      onRemoteDecisionEdit.current = (edit) => {
+        dispatchEdit({
+          type: "MERGE_REMOTE",
+          edits: {
+            [edit.row_id]: {
+              new_answer: edit.new_answer,
+              editor_email: edit.editor_email,
+              editor_name: edit.editor_name,
+            },
+          },
+        });
+      };
+    }
+    if (onRemoteDecisionRevert) {
+      onRemoteDecisionRevert.current = (data) => {
+        dispatchEdit({ type: "REVERT_EDIT", row_id: data.row_id });
+      };
+    }
+    return () => {
+      if (onRemoteDecisionEdit) onRemoteDecisionEdit.current = null;
+      if (onRemoteDecisionRevert) onRemoteDecisionRevert.current = null;
+    };
+  }, [onRemoteDecisionEdit, onRemoteDecisionRevert]);
 
   // No auto-select on mount: the user has to pick a phase. Earlier
   // versions auto-landed them on the most-urgent phase (qa-failed →
@@ -179,18 +223,18 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug }: Props) {
                   onEdit={
                     editingDisabled
                       ? undefined
-                      : (row_id, new_answer) =>
-                          dispatchEdit({
-                            type: "APPLY_EDIT",
-                            row_id,
-                            new_answer,
-                          })
+                      : (row_id, new_answer) => {
+                          dispatchEdit({ type: "APPLY_EDIT", row_id, new_answer });
+                          sendDecisionEdit?.(row_id, new_answer);
+                        }
                   }
                   onRevert={
                     editingDisabled
                       ? undefined
-                      : (row_id) =>
-                          dispatchEdit({ type: "REVERT_EDIT", row_id })
+                      : (row_id) => {
+                          dispatchEdit({ type: "REVERT_EDIT", row_id });
+                          sendDecisionRevert?.(row_id);
+                        }
                   }
                 />
                 {selectedPhaseRunning && (

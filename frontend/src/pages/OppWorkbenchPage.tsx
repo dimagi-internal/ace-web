@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 
@@ -115,12 +115,21 @@ export default function OppWorkbenchPage() {
   // Silent refresh: don't flash the loading spinner on incremental updates.
   // Force-bypass the Drive cache so chat-driven Drive writes show up
   // immediately, not after the TTL window.
-  useOppSocket({
+  const decisionEditRef = useRef<((edit: { row_id: string; new_answer: string; editor_email: string; editor_name: string }) => void) | null>(null);
+  const decisionRevertRef = useRef<((data: { row_id: string }) => void) | null>(null);
+
+  const { sendDecisionEdit, sendDecisionRevert } = useOppSocket({
     slug,
     runId,
     onOppUpdated: () => {
       dropOpp(slug);
       load({ silent: true });
+    },
+    onDecisionEdited: (edit) => {
+      decisionEditRef.current?.(edit);
+    },
+    onDecisionReverted: (data) => {
+      decisionRevertRef.current?.(data);
     },
   });
 
@@ -279,7 +288,15 @@ export default function OppWorkbenchPage() {
       )}
       {view === "phase" && (
         <div className="min-h-0 flex-1">
-          <PhaseView snapshot={snapshot} oppSlug={slug} workspaceSlug={workspaceSlug ?? ""} />
+          <PhaseView
+            snapshot={snapshot}
+            oppSlug={slug}
+            workspaceSlug={workspaceSlug ?? ""}
+            sendDecisionEdit={sendDecisionEdit}
+            sendDecisionRevert={sendDecisionRevert}
+            onRemoteDecisionEdit={decisionEditRef}
+            onRemoteDecisionRevert={decisionRevertRef}
+          />
         </div>
       )}
       {forkPhaseQuery && (
