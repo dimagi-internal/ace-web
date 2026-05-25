@@ -214,8 +214,44 @@ def skill_products(request: HttpRequest) -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 
+def _load_blob_json_for_diag(user, source: str | None) -> str | None:
+    """Return the raw credential blob JSON matching ``source``.
+
+    Used by ``run_cli_diag`` to mirror what ``cli_backend._stage_env_for``
+    writes to the staged ``.credentials.json``. We need the full blob
+    (not just the access token from ``get_stored_token``) so the
+    subprocess can refresh its own token if it expires mid-call —
+    matches what a real chat turn sees.
+    """
+    if source == "user":
+        from apps.common.models import UserCredential
+
+        cred = UserCredential.objects.filter(user=user).first()
+        if cred and cred.blob_encrypted:
+            return cred.blob_encrypted
+        return None
+    if source in ("global", "env", None):
+        from apps.common.models import SystemConfig
+
+        row = SystemConfig.objects.filter(key="claude_credentials_blob").first()
+        if row and row.value:
+            return row.value
+    return None
+
+
 def run_cli_diag(user, prompt: str | None = None, timeout_seconds: float = 30.0) -> dict:
-    """Run cli diagnostic — requires staff or automation identity."""
+    """Run cli diagnostic — requires staff or automation identity.
+
+    Mirrors the chat path's credential staging (see
+    ``apps.common.cli_backend.CLIBackend._stage_env_for``): resolve the
+    caller's stored blob, write it to ``.credentials.json`` inside a
+    staged HOME, and symlink every other ``.claude/`` entry so the
+    plugin registry + MCP wiring loads exactly the same way ``claude -p``
+    sees it in a real chat turn. Without this staging the subprocess
+    runs with ``apiKeySource=none`` and the diagnostic always reports
+    "tools are loaded but tool_use=0" — a false signal that masks the
+    real failure mode (credentials missing from the right place).
+    """
     email = (user.email or "").lower()
     if not (user.is_staff or email.endswith("@dimagi-ai.com")):
         raise ProblemError(403, "Staff or automation account only", type_=TYPE_FORBIDDEN)
@@ -224,7 +260,12 @@ def run_cli_diag(user, prompt: str | None = None, timeout_seconds: float = 30.0)
     import os
     import shutil
     import subprocess
+    import tempfile
     import time
+    import uuid
+    from pathlib import Path
+
+    from apps.common import auth_flow
 
     prompt = prompt or "Use the Bash tool to run 'echo CLI-DIAG-OK' and return only the result."
 
@@ -237,17 +278,68 @@ def run_cli_diag(user, prompt: str | None = None, timeout_seconds: float = 30.0)
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
 
-    from apps.common.models import SystemConfig
+    # Resolve credentials the same way chat does: user blob first, then
+    # global SystemConfig fallback. ``auth_flow.get_stored_token`` returns
+    # ``(access_token, source) | None``; we also need the raw blob JSON to
+    # write a usable ``.credentials.json`` (the access token alone isn't
+    # enough — claude CLI's refresh logic reads the refresh token from the
+    # same file when the access token nears expiry).
+    resolved = auth_flow.get_stored_token(user=user)
+    token = resolved[0] if resolved else ""
+    source = resolved[1] if resolved else None
+    blob_json = _load_blob_json_for_diag(user, source)
 
-    global_row = SystemConfig.objects.filter(key="claude_credentials_blob").first()
-    if global_row:
+    # Stage a temp HOME so the subprocess sees a real .credentials.json
+    # rather than relying solely on CLAUDE_CODE_OAUTH_TOKEN env var
+    # (which claude -p does NOT use as a credential source for the
+    # subscription auth flow — it reads .credentials.json from $HOME).
+    staged_root = (
+        Path(tempfile.gettempdir())
+        / "ace-cli-diag"
+        / f"{user.pk}-{uuid.uuid4().hex[:8]}"
+    )
+    claude_dir = staged_root / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    for path in (staged_root, claude_dir):
         try:
-            blob = json.loads(global_row.value)
-            access = (blob.get("claudeAiOauth") or {}).get("accessToken") or ""
-            if access:
-                env["CLAUDE_CODE_OAUTH_TOKEN"] = access
-        except Exception:  # noqa: BLE001
+            path.chmod(0o700)
+        except OSError:
             pass
+
+    original_home = os.environ.get("HOME") or ""
+    if original_home:
+        real_claude_dir = Path(original_home) / ".claude"
+        if real_claude_dir.is_dir():
+            for entry in real_claude_dir.iterdir():
+                if entry.name == ".credentials.json":
+                    continue
+                link = claude_dir / entry.name
+                if link.exists() or link.is_symlink():
+                    continue
+                try:
+                    link.symlink_to(entry)
+                except OSError:
+                    pass
+        real_claude_json = Path(original_home) / ".claude.json"
+        if real_claude_json.exists():
+            link = staged_root / ".claude.json"
+            if not (link.exists() or link.is_symlink()):
+                try:
+                    link.symlink_to(real_claude_json)
+                except OSError:
+                    pass
+
+    if blob_json:
+        creds_path = claude_dir / ".credentials.json"
+        creds_path.write_text(blob_json)
+        try:
+            creds_path.chmod(0o600)
+        except OSError:
+            pass
+
+    env["HOME"] = str(staged_root)
+    if token:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
 
     started = time.monotonic()
     try:
@@ -265,6 +357,8 @@ def run_cli_diag(user, prompt: str | None = None, timeout_seconds: float = 30.0)
         proc.kill()
         stdout_text, stderr_text = proc.communicate()
         rc = -1
+    finally:
+        shutil.rmtree(staged_root, ignore_errors=True)
     elapsed = time.monotonic() - started
 
     raw_events: list[dict] = []
@@ -310,6 +404,8 @@ def run_cli_diag(user, prompt: str | None = None, timeout_seconds: float = 30.0)
         "stream_event_count": len(raw_events),
         "init_summary": init_summary,
         "tool_uses": [{"name": b.get("name"), "input": b.get("input")} for b in tool_uses],
+        "credential_source": source,
+        "credential_blob_staged": blob_json is not None,
     }
 
 
