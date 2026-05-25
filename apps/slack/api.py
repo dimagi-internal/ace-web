@@ -69,6 +69,12 @@ class SlackChannelOut(BaseModel):
 class SlackChannelsOut(BaseModel):
     installed: bool
     channels: list[SlackChannelOut]
+    # When Slack rejects conversations.list (e.g. missing_scope after a
+    # bot scope was added but the install wasn't refreshed), surface
+    # the raw Slack error code + a human-readable hint instead of
+    # silently rendering an empty picker.
+    error: str | None = None
+    hint: str | None = None
 
 
 class SlackThreadOut(BaseModel):
@@ -227,17 +233,39 @@ def list_channels(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
 ) -> HttpResponse:
+    from slack_sdk.errors import SlackApiError
+
     ws = resolve_workspace_for_member(request, workspace_slug)
     installation = _installation_for(ws)
     if installation is None:
-        payload = SlackChannelsOut(installed=False, channels=[]).model_dump(mode="json")
+        payload = SlackChannelsOut(
+            installed=False, channels=[],
+        ).model_dump(mode="json", exclude_none=True)
         return JsonResponse(payload)
     client = client_for(installation)
-    channels = client.list_member_conversations()
+    try:
+        channels = client.list_member_conversations()
+    except SlackApiError as e:
+        err = e.response.get("error", "slack_error")
+        logger.warning(
+            "list_member_conversations failed for ws=%s err=%s data=%s",
+            ws.slug, err, dict(e.response.data) if hasattr(e.response, "data") else {},
+        )
+        hint = (
+            "Slack rejected the channel list with `missing_scope` — the bot "
+            "needs `channels:read` + `groups:read`. Reconnect from "
+            "Workspace Settings → Slack to grant them."
+            if err == "missing_scope"
+            else f"Slack returned `{err}`. Check ace-web logs for details."
+        )
+        payload = SlackChannelsOut(
+            installed=True, channels=[], error=err, hint=hint,
+        ).model_dump(mode="json")
+        return JsonResponse(payload)
     payload = SlackChannelsOut(
         installed=True,
         channels=[SlackChannelOut(**c) for c in channels],
-    ).model_dump(mode="json")
+    ).model_dump(mode="json", exclude_none=True)
     return JsonResponse(payload)
 
 
