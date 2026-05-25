@@ -250,6 +250,17 @@ ACE_MOBILE_INSTANCE_ID = env("ACE_MOBILE_INSTANCE_ID", default="")
 ACE_MOBILE_S3_BUCKET = env("ACE_MOBILE_S3_BUCKET", default="")
 ACE_MOBILE_AMI_VERSION = env("ACE_MOBILE_AMI_VERSION", default="")
 
+# --- Chat subprocess back-channel ---
+# Public-facing base URL of this ace-web deployment, including the
+# /ace path prefix when one is in use. The chat subprocess gets this
+# in its env (alongside a per-session PersonalToken) so the bundled
+# ACE plugin can POST back for upload-transcript and call /api/mobile/
+# for cloud-emulator-driven flows. Empty disables the staging — the
+# plugin's smart-default then silently skips back-channel calls. Set
+# in deploy/aws/task-definition.json for labs; defaults to the local
+# docker-compose port for dev.
+ACE_WEB_BASE_URL = env("ACE_WEB_BASE_URL", default="")
+
 # --- Phase 3 dev-only test hooks ---
 # Both settings default to False and are only True in development.py.
 # They gate hooks that bypass real authentication and the real Claude CLI

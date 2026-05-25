@@ -111,6 +111,85 @@ def test_staged_env_reconstructs_blob_from_env_source(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_staged_env_stages_ace_web_back_channel(settings):
+    """ACE_WEB_BASE_URL set + session owner → subprocess gets URL + fresh PAT.
+
+    The bundled ACE plugin's cloud mobile backend + upload-transcript skill
+    both require ``ACE_WEB_PAT_TOKEN`` + ``ACE_WEB_BASE_URL`` in the
+    subprocess env. We mint a per-session ``PersonalToken`` labeled
+    ``chat-subprocess:<slug>``; the raw token only exists at mint time so
+    each spawn refreshes it.
+    """
+    from apps.auth.models import PersonalToken
+
+    settings.ACE_WEB_BASE_URL = "https://labs.connect.dimagi.com/ace"
+    user = get_user_model().objects.create_user(email="d@dimagi.com")
+    UserCredential.objects.create(
+        user=user, blob_encrypted=json.dumps(
+            {"claudeAiOauth": {"accessToken": REAL}}
+        ), token_prefix=REAL[:15],
+    )
+    session = Session.objects.create(owner=user, slug="bch", title="back-channel")
+
+    backend = CLIBackend()
+    env, staged_home, _ = backend._stage_env_for(session)
+    try:
+        assert env["ACE_WEB_BASE_URL"] == "https://labs.connect.dimagi.com/ace"
+        token = env["ACE_WEB_PAT_TOKEN"]
+        assert token and len(token) >= 32
+
+        # A PersonalToken row exists for that user with the session-keyed label.
+        live = PersonalToken.objects.filter(
+            user=user,
+            label="chat-subprocess:bch",
+            revoked_at__isnull=True,
+        )
+        assert live.count() == 1
+
+        # Re-staging revokes the old token and mints a new one — at most 1 active per session.
+        env2, home2, _ = backend._stage_env_for(session)
+        try:
+            assert env2["ACE_WEB_PAT_TOKEN"] != token
+            assert PersonalToken.objects.filter(
+                user=user, label="chat-subprocess:bch", revoked_at__isnull=True,
+            ).count() == 1
+        finally:
+            backend._teardown_staged_home(home2)
+    finally:
+        backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
+def test_staged_env_omits_back_channel_when_base_url_unset(settings):
+    """Empty ACE_WEB_BASE_URL → no ACE_WEB_PAT_TOKEN minted, env keys absent.
+
+    Local dev without back-channel configured shouldn't pollute the DB with
+    PATs nor pretend the plugin can reach back.
+    """
+    from apps.auth.models import PersonalToken
+
+    settings.ACE_WEB_BASE_URL = ""
+    user = get_user_model().objects.create_user(email="e@dimagi.com")
+    UserCredential.objects.create(
+        user=user, blob_encrypted=json.dumps(
+            {"claudeAiOauth": {"accessToken": REAL}}
+        ), token_prefix=REAL[:15],
+    )
+    session = Session.objects.create(owner=user, slug="nob", title="no-back-channel")
+
+    backend = CLIBackend()
+    env, staged_home, _ = backend._stage_env_for(session)
+    try:
+        assert "ACE_WEB_BASE_URL" not in env
+        assert "ACE_WEB_PAT_TOKEN" not in env
+        assert not PersonalToken.objects.filter(
+            user=user, label="chat-subprocess:nob",
+        ).exists()
+    finally:
+        backend._teardown_staged_home(staged_home)
+
+
+@pytest.mark.django_db
 def test_staged_homes_are_isolated_per_invocation():
     user = get_user_model().objects.create_user(email="c@dimagi.com")
     blob = {"claudeAiOauth": {"accessToken": REAL}}

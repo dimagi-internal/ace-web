@@ -49,6 +49,10 @@
           "value": "https://labs.connect.dimagi.com"
         },
         {
+          "name": "ACE_WEB_BASE_URL",
+          "value": "https://labs.connect.dimagi.com/ace"
+        },
+        {
           "name": "ACE_ALLOWED_EMAIL_DOMAINS",
           "value": "dimagi.com,dimagi-ai.com"
         },
