@@ -52,7 +52,7 @@ source "amazon-ebs" "ace_mobile" {
   }
 
   ami_name        = local.ami_name
-  ami_description = "ACE mobile emulator runner (Android 34 / Pixel 7 AVD, Maestro 1.39.x, CommCare 2.62.0, registered demo user snapshot)."
+  ami_description = "ACE mobile emulator runner (Android 34 / Pixel 7 AVD, Maestro 1.39.x, CommCare 2.63.0 default + 2.62.0 fallback, registered demo user snapshot)."
 
   tags = {
     Name       = local.ami_name

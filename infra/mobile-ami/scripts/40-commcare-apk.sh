@@ -12,7 +12,7 @@
 # https://github.com/dimagi/commcare-android/releases/download/commcare_<VER>/app-commcare-release.apk
 set -euo pipefail
 
-COMMCARE_VERSIONS="${COMMCARE_VERSIONS:-2.62.0}"
+COMMCARE_VERSIONS="${COMMCARE_VERSIONS:-2.63.0,2.62.0}"
 URL_TEMPLATE="${COMMCARE_APK_URL_TEMPLATE:-https://github.com/dimagi/commcare-android/releases/download/commcare_<VER>/app-commcare-release.apk}"
 
 APK_ROOT=/opt/ace/apks

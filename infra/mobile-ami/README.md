@@ -6,7 +6,10 @@ A single `packer build` produces an Ubuntu-24.04 AMI with:
 - An `ACE_Pixel_API_34` AVD pre-patched for emulated camera (so face
   capture lands in `ManualMode` once GMS is disabled at runtime).
 - Maestro CLI under `/opt/maestro`.
-- CommCare 2.62.0 APK at `/opt/ace/apks/commcare.apk` with an md5 sidecar.
+- CommCare 2.63.0 APK at `/opt/ace/apks/2.63.0/commcare.apk` (default) and
+  2.62.0 fallback at `/opt/ace/apks/2.62.0/commcare.apk`, each with an md5
+  sidecar. The first entry in `var.commcare_versions` is the boot default;
+  ace-web's `/api/mobile/ensure-running` can switch to `cc-2.62.0`.
 - A baked-in `registered-test-user` AVD snapshot — the demo phone is
   already registered with ConnectID, App Lock is configured with the
   bake-time PIN, and the home screen is the next thing you see when the
@@ -119,8 +122,9 @@ of the roll.
    `hw.gpu.mode=swiftshader_indirect`.
 4. **`scripts/30-maestro.sh`** — installs Maestro CLI 1.39.0 to
    `/opt/maestro` and symlinks `/usr/local/bin/maestro`.
-5. **`scripts/40-commcare-apk.sh`** — downloads CommCare 2.62.0,
-   records the md5 sidecar, writes `/opt/ace/MANIFEST.txt`.
+5. **`scripts/40-commcare-apk.sh`** — downloads each version listed in
+   `var.commcare_versions` (default 2.63.0 + 2.62.0), records md5
+   sidecars per version, writes `/opt/ace/MANIFEST.txt`.
 6. **`scripts/50-bake-snapshot.sh`** — writes `/opt/ace/states.yaml`
    describing the named states (one per CommCare APK version). No
    emulator boot, no snapshot bake, no register — the runtime

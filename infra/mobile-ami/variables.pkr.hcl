@@ -56,7 +56,7 @@ variable "commcare_versions" {
     version on c5n.metal).
   EOT
   type        = list(string)
-  default     = ["2.62.0"]
+  default     = ["2.63.0", "2.62.0"]
 }
 
 # ---------------------------------------------------------------------------
