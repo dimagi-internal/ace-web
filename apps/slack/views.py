@@ -92,9 +92,11 @@ def events(request: HttpRequest) -> HttpResponse:
     return JsonResponse({"ok": True})
 
 
+from functools import wraps  # noqa: E402
 from urllib.parse import urlencode  # noqa: E402
 
-from django.contrib.auth.decorators import login_required, user_passes_test  # noqa: E402
+from django.contrib.auth.decorators import login_required  # noqa: E402
+from django.core.exceptions import PermissionDenied  # noqa: E402
 from django.http import HttpResponseBadRequest, HttpResponseRedirect  # noqa: E402
 from django.urls import reverse  # noqa: E402
 from slack_sdk import WebClient  # noqa: E402
@@ -114,12 +116,31 @@ _BOT_SCOPES = [
 ]
 
 
-def _is_staff(user) -> bool:
-    return user.is_authenticated and user.is_staff
+def _can_install(user) -> bool:
+    """Same write-permission gate as the Nova MCP + new Slack panel."""
+    from apps.common.auth_views import _can_write_global
+    return user.is_authenticated and _can_write_global(user)
+
+
+def _require_can_install(view_fn):
+    """Decorator: 403 if the authenticated user can't manage Slack.
+
+    Replaces `@user_passes_test(_is_staff)` — that decorator REDIRECTS
+    to login on failure, which produced an infinite redirect loop here
+    (already-authenticated user → login → bounce-back to install →
+    fail → login again …). PermissionDenied → 403 is the right shape.
+    Pairs with `@login_required` above it for the not-authenticated case.
+    """
+    @wraps(view_fn)
+    def wrapper(request, *args, **kwargs):
+        if not _can_install(request.user):
+            raise PermissionDenied
+        return view_fn(request, *args, **kwargs)
+    return wrapper
 
 
 @login_required
-@user_passes_test(_is_staff)
+@_require_can_install
 def install(request: HttpRequest) -> HttpResponse:
     """Kick off the admin OAuth flow."""
     if not settings.SLACK_CLIENT_ID:
@@ -149,7 +170,7 @@ def _exchange_code(code: str, redirect_uri: str) -> dict:
 
 
 @login_required
-@user_passes_test(_is_staff)
+@_require_can_install
 def oauth_callback(request: HttpRequest) -> HttpResponse:
     code = request.GET.get("code")
     if not code:
