@@ -673,10 +673,21 @@ def _load_decisions(
 def _parse_decision_rows(raw_rows: list) -> list[Decision]:
     """Convert raw decisions.yaml rows into Decision dataclasses.
 
-    Reads v2 fields directly: ``ai-default`` for the AI proposal,
-    ``override`` for the human edit. Falls back to v1 ``default`` →
-    ``ai_default`` so old rows still parse. Old status values
-    (``applied``, ``open``) map to ``ai-default``.
+    Reads v3 fields first (``options``, ``reasoning``); falls back to
+    v2 (``options_considered``, ``notes``) so older runs still parse.
+    ``ai-default`` (v2/v3) falls back to ``default`` (v1). Old status
+    values (``applied``, ``open``) map to ``ai-default``.
+
+    Emits a single ``warning`` log line per row that has an ``id`` but
+    is missing ``question`` or ``ai-default`` — these are the rows that
+    render as blank cells in the workbench's Decisions Panel. Catches
+    future schema-drift regressions (e.g. ACE 2026-05-25 wrote rows
+    keyed ``decision:`` / ``rationale:`` instead of ``question:`` /
+    ``ai-default:``); without the log they're invisible to anything but
+    a human staring at the UI. The typed ``decisions_append_rows`` MCP
+    atom is the upstream defense — this log catches anything that
+    bypasses it (legacy writers, manual edits, future schema bumps that
+    skill prompts haven't caught up to).
     """
     out: list[Decision] = []
     for row in raw_rows:
@@ -685,25 +696,44 @@ def _parse_decision_rows(raw_rows: list) -> list[Decision]:
         rid = str(row.get("id") or "").strip()
         if not rid:
             continue
-        opts = row.get("options_considered") or []
+        opts_raw = row.get("options")
+        if opts_raw is None:
+            opts_raw = row.get("options_considered") or []
         ai_default = str(
             row.get("ai-default") or row.get("default") or ""
         ).strip()
         override = str(row.get("override") or "").strip()
         raw_status = str(row.get("status") or "ai-default").strip().lower()
         status = raw_status if raw_status == "overridden" else "ai-default"
+        question = str(row.get("question") or "").strip()
+        reasoning = str(row.get("reasoning") or row.get("notes") or "").strip()
+
+        if not question or not ai_default:
+            log.warning(
+                "decisions.yaml row %r is missing %s — likely written against a "
+                "stale schema (expected v3 fields: question, ai-default, options, "
+                "reasoning). Row keys present: %s",
+                rid,
+                ", ".join(
+                    name
+                    for name, val in (("question", question), ("ai-default", ai_default))
+                    if not val
+                ),
+                sorted(row.keys()),
+            )
+
         out.append(
             Decision(
                 id=rid,
                 phase=str(row.get("phase") or "").strip(),
                 skill=str(row.get("skill") or "").strip(),
-                question=str(row.get("question") or "").strip(),
+                question=question,
                 ai_default=ai_default,
                 override=override,
-                options_considered=[str(o) for o in opts] if isinstance(opts, list) else [],
+                options_considered=[str(o) for o in opts_raw] if isinstance(opts_raw, list) else [],
                 source=str(row.get("source") or "").strip(),
                 status=status,
-                notes=str(row.get("notes") or "").strip(),
+                notes=reasoning,
             )
         )
     return out
