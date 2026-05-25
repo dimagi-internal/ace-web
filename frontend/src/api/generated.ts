@@ -2823,6 +2823,8 @@ export interface components {
             readonly team_name?: string | null;
             /** Team Url */
             readonly team_url?: string | null;
+            /** Bot User Id */
+            readonly bot_user_id?: string | null;
             /** Installed By Email */
             readonly installed_by_email?: string | null;
             /** Installed At */
@@ -2836,6 +2838,16 @@ export interface components {
              * @default false
              */
             readonly can_manage: boolean;
+            /** Live Bot Id */
+            readonly live_bot_id?: string | null;
+            /** Live Team */
+            readonly live_team?: string | null;
+            /** Live Url */
+            readonly live_url?: string | null;
+            /** Live User */
+            readonly live_user?: string | null;
+            /** Granted Scopes */
+            readonly granted_scopes?: string | null;
         };
         /** SlackChannelOut */
         readonly SlackChannelOut: {

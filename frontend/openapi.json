@@ -7498,6 +7498,17 @@
             ],
             "title": "Team Url"
           },
+          "bot_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot User Id"
+          },
           "installed_by_email": {
             "anyOf": [
               {
@@ -7546,6 +7557,61 @@
             "default": false,
             "title": "Can Manage",
             "type": "boolean"
+          },
+          "live_bot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Bot Id"
+          },
+          "live_team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Team"
+          },
+          "live_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live Url"
+          },
+          "live_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live User"
+          },
+          "granted_scopes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granted Scopes"
           }
         },
         "required": [
