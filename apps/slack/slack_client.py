@@ -106,27 +106,29 @@ class SlackClient:
     def list_member_conversations(self, *, limit: int = 200) -> list[dict[str, Any]]:
         """Channels the bot is currently a member of (public + private).
 
-        Requires `channels:read` + `groups:read` bot scopes. Slack's
-        conversations.list returns up to 1000 per page; ace-web caps at
-        `limit` so the UI picker stays responsive. We pull a single
-        page — workspaces with more than 1000 bot-member channels are
-        not the use case.
+        Uses `users.conversations` (not `conversations.list`) because
+        the latter's `is_member` filtering is unreliable for bot tokens
+        — Slack-confirmed quirk where channels the bot is verifiably in
+        (responds to slash commands etc.) don't show as `is_member:
+        True`. `users.conversations` defaults to the calling user when
+        `user` is omitted, which for a bot token means the bot itself
+        — exactly what we want.
+
+        Requires `channels:read` + `groups:read` bot scopes (same as
+        before — the scope requirements are per-conversation-type, not
+        per-method).
 
         Raises SlackApiError on failure so callers can distinguish
         "no member channels" (returns []) from "Slack rejected the
-        call" (e.g. missing_scope after a stale token). The /channels
-        endpoint surfaces the error so users see "reinstall to grant
-        scopes" instead of a silent empty state.
+        call" (e.g. missing_scope after a stale token).
         """
-        resp = self._web.conversations_list(
+        resp = self._web.users_conversations(
             types="public_channel,private_channel",
             exclude_archived=True,
             limit=limit,
         )
         out: list[dict[str, Any]] = []
         for c in resp.get("channels", []):
-            if not c.get("is_member"):
-                continue
             out.append({
                 "id": c["id"],
                 "name": c.get("name") or c["id"],
