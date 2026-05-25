@@ -78,8 +78,11 @@ def _to_payload(obj):
 
 
 def _mobile_problem(e) -> ProblemError:
-
-    return ProblemError(e.http_status, e.message, detail=e.code)
+    extras = None
+    diagnostics = getattr(e, "diagnostics", None)
+    if diagnostics:
+        extras = {"diagnostics": diagnostics}
+    return ProblemError(e.http_status, e.message, detail=e.code, extras=extras)
 
 
 # ---------------------------------------------------------------------------
