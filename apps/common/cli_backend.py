@@ -87,6 +87,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from asgiref.sync import sync_to_async
+from django.conf import settings
 
 if TYPE_CHECKING:
     # Type-only imports — avoids the `apps.common ↔ apps.sessions` import
@@ -1319,7 +1320,57 @@ class CLIBackend:
         env.setdefault("ACE_MOBILE_CLOUD_LIVE_REGISTER", "true")
 
         env[NOVA_BEARER_TOKEN_ENV] = self._resolve_nova_bearer()
+
+        # Stage ace-web back-channel auth so the bundled ACE plugin can POST
+        # back to /api/ingest/upload (upload-transcript) and call /api/mobile/*
+        # (cloud-emulator-driven flows like app-screenshot-capture). Without
+        # these the plugin's smart defaults skip both — observed live in the
+        # bednet-spot-check 20260524-2354 run where Phase 6's
+        # app-screenshot-capture failed pre-flight with
+        # "CLOUD_NOT_CONFIGURED — Set ACE_WEB_BASE_URL and ACE_WEB_PAT_TOKEN".
+        # The token is a per-session PersonalToken minted for the session
+        # owner; we revoke any prior token for the same session before
+        # minting so at most one is active per session at a time.
+        base_url = (getattr(settings, "ACE_WEB_BASE_URL", "") or "").rstrip("/")
+        if base_url and getattr(session, "owner_id", None):
+            env["ACE_WEB_BASE_URL"] = base_url
+            try:
+                env["ACE_WEB_PAT_TOKEN"] = self._mint_chat_subprocess_token(session)
+            except Exception:
+                logger.warning(
+                    "stage_env_for: mint chat-subprocess PAT failed for session=%s; "
+                    "back-channel calls will fail with 401",
+                    session.slug, exc_info=True,
+                )
+
         return env, str(staged_root), source
+
+    def _mint_chat_subprocess_token(self, session: Session) -> str:
+        """Mint a fresh PersonalToken for the chat subprocess.
+
+        Labels the token ``chat-subprocess:<session.slug>`` and revokes any
+        prior same-label token for the same user so at most one is active
+        per session. The raw token is only readable at mint time (the DB
+        stores a hash), so each subprocess spawn produces a fresh raw
+        token — the chat backend doesn't need to persist it beyond the
+        env dict it hands to ``asyncio.create_subprocess_exec``.
+
+        Cleanup: stale tokens accumulate as sessions are deleted out from
+        under the FK. A future management command can sweep
+        ``label LIKE 'chat-subprocess:%' AND user__sessions filter''.
+        """
+        from django.utils import timezone
+
+        from apps.auth.models import PersonalToken
+
+        label = f"chat-subprocess:{session.slug}"
+        PersonalToken.objects.filter(
+            user_id=session.owner_id,
+            label=label,
+            revoked_at__isnull=True,
+        ).update(revoked_at=timezone.now())
+        raw, _token = PersonalToken.create_for_user(user=session.owner, label=label)
+        return raw
 
     def _resolve_nova_bearer(self) -> str:
         """Mint a fresh Nova access token for ``${NOVA_BEARER_TOKEN}`` expansion.
