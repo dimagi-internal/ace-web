@@ -53,11 +53,21 @@ class SlackStatusOut(BaseModel):
     team_id: str | None = None
     team_name: str | None = None
     team_url: str | None = None
+    bot_user_id: str | None = None
     installed_by_email: str | None = None
     installed_at: str | None = None
     test_page_url: str | None = None
     install_url: str | None = None
     can_manage: bool = False
+    # Live identity + scopes from Slack's auth.test (only populated when
+    # ?debug=1 + caller can manage). Helps disambiguate "bot is in a
+    # channel" vs "the bot in that channel isn't the bot ACE talks
+    # through" vs "scope wasn't granted on reinstall".
+    live_bot_id: str | None = None
+    live_team: str | None = None
+    live_url: str | None = None
+    live_user: str | None = None
+    granted_scopes: str | None = None
 
 
 class SlackChannelOut(BaseModel):
@@ -209,16 +219,43 @@ def get_status(
         installation.installed_by_user.email
         if installation.installed_by_user_id else None
     )
+    debug = request.GET.get("debug") == "1" and can_manage
+    live_fields: dict = {}
+    if debug:
+        # Call auth.test to confirm the token's identity + read
+        # X-OAuth-Scopes from the response headers. Doesn't reach into
+        # any private user data — just identity + scope list. Gated on
+        # can_manage so random members can't enumerate.
+        from slack_sdk.errors import SlackApiError
+        try:
+            web = client_for(installation)._web  # noqa: SLF001
+            resp = web.auth_test()
+            live_fields = {
+                "live_bot_id": resp.data.get("bot_id"),
+                "live_team": resp.data.get("team"),
+                "live_url": resp.data.get("url"),
+                "live_user": resp.data.get("user"),
+                "granted_scopes": resp.headers.get("x-oauth-scopes")
+                or resp.headers.get("X-OAuth-Scopes"),
+            }
+        except SlackApiError as e:
+            live_fields = {
+                "granted_scopes": (
+                    f"auth.test FAILED: {e.response.get('error', 'unknown')}"
+                ),
+            }
     payload = SlackStatusOut(
         installed=True,
         team_id=installation.slack_team_id,
         team_name=installation.slack_team_name,
         team_url=team_url,
+        bot_user_id=installation.bot_user_id,
         installed_by_email=installer_email,
         installed_at=installation.installed_at.isoformat(),
         test_page_url=_test_page_url(),
         install_url=_install_url() if can_manage else None,
         can_manage=can_manage,
+        **live_fields,
     ).model_dump(mode="json", exclude_none=True)
     return JsonResponse(payload)
 
