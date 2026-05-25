@@ -111,15 +111,18 @@ class SlackClient:
         `limit` so the UI picker stays responsive. We pull a single
         page — workspaces with more than 1000 bot-member channels are
         not the use case.
+
+        Raises SlackApiError on failure so callers can distinguish
+        "no member channels" (returns []) from "Slack rejected the
+        call" (e.g. missing_scope after a stale token). The /channels
+        endpoint surfaces the error so users see "reinstall to grant
+        scopes" instead of a silent empty state.
         """
-        try:
-            resp = self._web.conversations_list(
-                types="public_channel,private_channel",
-                exclude_archived=True,
-                limit=limit,
-            )
-        except SlackApiError:
-            return []
+        resp = self._web.conversations_list(
+            types="public_channel,private_channel",
+            exclude_archived=True,
+            limit=limit,
+        )
         out: list[dict[str, Any]] = []
         for c in resp.get("channels", []):
             if not c.get("is_member"):

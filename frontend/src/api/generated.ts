@@ -2852,6 +2852,10 @@ export interface components {
             readonly installed: boolean;
             /** Channels */
             readonly channels: readonly components["schemas"]["SlackChannelOut"][];
+            /** Error */
+            readonly error?: string | null;
+            /** Hint */
+            readonly hint?: string | null;
         };
         /** SlackPushInfoOut */
         readonly SlackPushInfoOut: {

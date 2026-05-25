@@ -140,6 +140,59 @@ def test_channels_lists_member_channels(member_client, installed_workspace):
     body = resp.json()
     assert body["installed"] is True
     assert [c["id"] for c in body["channels"]] == ["C1", "C2"]
+    assert "error" not in body  # exclude_none on success path
+
+
+def test_channels_surfaces_missing_scope_error(member_client, installed_workspace):
+    """When Slack rejects conversations.list with missing_scope (typical
+    after a bot-scope bump until the install is refreshed), the endpoint
+    must surface `error` + a reinstall `hint` — NOT silently return
+    `channels: []` which renders identically to 'bot isn't in any
+    channels yet'."""
+    from slack_sdk.errors import SlackApiError
+    from slack_sdk.web import SlackResponse
+
+    client, _ = member_client
+    fake_resp = SlackResponse(
+        client=None, http_verb="POST", api_url="x", req_args={},
+        data={"ok": False, "error": "missing_scope",
+              "needed": "channels:read,groups:read"},
+        headers={}, status_code=200,
+    )
+    with patch(
+        "apps.slack.slack_client.SlackClient.list_member_conversations",
+        side_effect=SlackApiError("missing_scope", fake_resp),
+    ):
+        resp = client.get("/api/w/test-ws/slack/channels")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["installed"] is True
+    assert body["channels"] == []
+    assert body["error"] == "missing_scope"
+    assert "channels:read" in body["hint"]
+    assert "Reconnect" in body["hint"]
+
+
+def test_channels_surfaces_generic_slack_error(member_client, installed_workspace):
+    """Non-missing_scope Slack errors get a generic hint, not silently
+    masked as 'no channels'."""
+    from slack_sdk.errors import SlackApiError
+    from slack_sdk.web import SlackResponse
+
+    client, _ = member_client
+    fake_resp = SlackResponse(
+        client=None, http_verb="POST", api_url="x", req_args={},
+        data={"ok": False, "error": "ratelimited"},
+        headers={}, status_code=429,
+    )
+    with patch(
+        "apps.slack.slack_client.SlackClient.list_member_conversations",
+        side_effect=SlackApiError("ratelimited", fake_resp),
+    ):
+        resp = client.get("/api/w/test-ws/slack/channels")
+    body = resp.json()
+    assert body["error"] == "ratelimited"
+    assert "ratelimited" in body["hint"]
 
 
 # ---------------------------------------------------------------------------

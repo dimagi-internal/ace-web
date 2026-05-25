@@ -46,6 +46,7 @@ export function PushToSlackButton({
   const [pushInfo, setPushInfo] = useState<SlackPushInfo | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [channels, setChannels] = useState<SlackChannel[] | null>(null);
+  const [channelsError, setChannelsError] = useState<string | null>(null);
   const [channelsLoading, setChannelsLoading] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
@@ -65,7 +66,10 @@ export function PushToSlackButton({
     if (channels === null) {
       setChannelsLoading(true);
       listSlackChannels(workspaceSlug)
-        .then((r) => setChannels([...r.channels]))
+        .then((r) => {
+          setChannels([...r.channels]);
+          setChannelsError(r.hint ?? (r.error ? `Slack error: ${r.error}` : null));
+        })
         .catch((e) => {
           toast.error(e instanceof Error ? e.message : "Failed to load channels");
           setChannels([]);
@@ -158,12 +162,22 @@ export function PushToSlackButton({
             <p className="text-sm text-muted-foreground">Loading channels…</p>
           )}
           {channels !== null && channels.length === 0 && !channelsLoading && (
-            <div className="rounded border border-border p-3 text-sm text-muted-foreground">
-              <p>The ACE bot isn't in any channels yet.</p>
-              <p className="mt-2 text-xs">
-                Invite it with <code>/invite @ACE</code> in a Slack channel, then
-                reopen this dialog.
-              </p>
+            <div className={`rounded border p-3 text-sm ${
+              channelsError
+                ? "border-destructive bg-destructive/10 text-destructive"
+                : "border-border text-muted-foreground"
+            }`}>
+              {channelsError ? (
+                <p>{channelsError}</p>
+              ) : (
+                <>
+                  <p>The ACE bot isn't in any channels yet.</p>
+                  <p className="mt-2 text-xs">
+                    Invite it with <code>/invite @ACE</code> in a Slack channel,
+                    then reopen this dialog.
+                  </p>
+                </>
+              )}
             </div>
           )}
           {channels && channels.length > 0 && (
