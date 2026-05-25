@@ -374,7 +374,7 @@ Frontend:
 Deploy & infrastructure:
 - [alb-nginx-django-https](docs/learnings/alb-nginx-django-https.md) — `SECURE_PROXY_SSL_HEADER` + nginx `$real_scheme` map preserve the ALB's `https`; every `proxy_pass` must rewrite `Host` so ALB health checks don't trip `ALLOWED_HOSTS`.
 - [mcp-bootstrap-container-traps](docs/learnings/mcp-bootstrap-container-traps.md) — (1) `op inject` parses `{{ }}` and `op://` literals inside `.env.tpl` comments and aborts; (2) `npx tsx` from a cwd without `node_modules` triggers a registry install that races Claude Code's 30s MCP connection timeout.
-- [long-running-turns-vs-deploys](docs/learnings/long-running-turns-vs-deploys.md) — ECS task replacement kills in-flight `claude -p` subprocesses; Drive state is the durable source of truth.
+- [long-running-turns-vs-deploys](docs/learnings/long-running-turns-vs-deploys.md) — ECS task replacement kills in-flight `claude -p` subprocesses; Drive state is the durable source of truth. **Operational rule:** deploys and chats can run concurrently — but if you fire a deploy while a `/ace:run` (or any long chat turn) is streaming, the WebSocket will drop mid-turn. Don't avoid the deploy; resume the run from Drive once the deploy lands. For `/ace:run`, that's the `<opp>/<run-id>` form (e.g. `/ace:run bednet-spot-check/20260524-2354`) which reads the existing `run_state.yaml` and continues at the first non-`complete` phase.
 - [cloud-emulator-snapshot-persistence](docs/learnings/cloud-emulator-snapshot-persistence.md) — mobile AVD snapshot/restore semantics on the EC2 host; read before touching the rebake or in-VM launcher.
 
 QA / probe:
