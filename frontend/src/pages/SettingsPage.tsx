@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Key, Plus, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -121,8 +122,23 @@ export default function SettingsPage() {
         <h1 className="text-lg font-semibold">Settings</h1>
       </header>
       <main className="flex-1 overflow-y-auto p-6">
+        <section className="max-w-2xl">
+          <h2 className="text-base font-semibold">System overview</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            What ACE is — the phases, skills, agents, and MCP tools bundled in
+            this deployment. Reads live from the ACE plugin shipped with the
+            image.
+          </p>
+          <Link
+            to="/system"
+            className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
+          >
+            Open System Overview →
+          </Link>
+        </section>
+
         {cliStatus && (
-          <section className="max-w-2xl">
+          <section className="mt-10 max-w-2xl">
             <h2 className="text-base font-semibold">Claude Max subscription</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Powers web chat — the server calls Anthropic with your Claude Max
