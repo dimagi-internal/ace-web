@@ -1923,6 +1923,46 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/sessions/sweep": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List sessions across workspaces (sweep)
+         * @description Returns every Session in workspaces where the calling user is Owner or Editor. Used by `/ace:sweep ace-web`. Not paginated — the rows are summary-sized and a single request is the expected shape for the sweep skill.
+         */
+        readonly get: operations["apps_sessions_sweep_api_list_sweep_sessions"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/sessions/sweep/delete": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Bulk-delete sessions (sweep)
+         * @description Delete every Session id in the body that the calling user has Owner or Editor access to. Sessions in workspaces the user can't write to are reported as 'forbidden' in `failed[]` rather than deleted. DELETE-with-body is awkward in some HTTP clients, so the atom is POST /sessions/sweep/delete.
+         */
+        readonly post: operations["apps_sessions_sweep_api_bulk_delete_sweep_sessions"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/health": {
         readonly parameters: {
             readonly query?: never;
@@ -4082,6 +4122,76 @@ export interface components {
             readonly shape: {
                 readonly [key: string]: unknown;
             };
+        };
+        /** SweepListOut */
+        readonly SweepListOut: {
+            /** Sessions */
+            readonly sessions: readonly components["schemas"]["SweepSessionRow"][];
+            /** Total Raw Bytes */
+            readonly total_raw_bytes: number;
+        };
+        /**
+         * SweepSessionRow
+         * @description One row in the sweep listing.
+         *
+         *     Summary-sized — no message bodies, no JSONL, no opp display names.
+         *     Enough for the plugin-side report renderer to group by workspace and
+         *     annotate which sessions came from /ace:upload-transcript.
+         */
+        readonly SweepSessionRow: {
+            /** Id */
+            readonly id: number;
+            /** Slug */
+            readonly slug: string;
+            /**
+             * Title
+             * @default
+             */
+            readonly title: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            readonly source: "web" | "upload";
+            /**
+             * Status
+             * @enum {string}
+             */
+            readonly status: "active" | "archived" | "imported";
+            /**
+             * Opp Slug
+             * @default
+             */
+            readonly opp_slug: string;
+            /**
+             * Opp Run Id
+             * @default
+             */
+            readonly opp_run_id: string;
+            /** Workspace Slug */
+            readonly workspace_slug: string;
+            /** Message Count */
+            readonly message_count: number;
+            /** Upload Count */
+            readonly upload_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /**
+         * SweepDeleteIn
+         * @description Body of POST /sessions/sweep/delete.
+         */
+        readonly SweepDeleteIn: {
+            /** Session Ids */
+            readonly session_ids?: readonly number[];
         };
         /**
          * HealthCheckOut
@@ -6824,6 +6934,52 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["CliAuthExpectedShapeOut"];
+                };
+            };
+        };
+    };
+    readonly apps_sessions_sweep_api_list_sweep_sessions: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SweepListOut"];
+                };
+            };
+        };
+    };
+    readonly apps_sessions_sweep_api_bulk_delete_sweep_sessions: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SweepDeleteIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
                 };
             };
         };
