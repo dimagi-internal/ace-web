@@ -212,6 +212,91 @@ def test_override_reasoning_defaults_to_empty():
     assert d.override_reasoning == ""
 
 
+def test_extract_decision_rows_canonical_key():
+    """Canonical v3 shape: top-level `decisions:` is a list."""
+    from apps.opps.sync import _extract_decision_rows
+
+    data = {"schema_version": 3, "decisions": [{"id": "row-1"}, {"id": "row-2"}]}
+    assert _extract_decision_rows(data) == [{"id": "row-1"}, {"id": "row-2"}]
+
+
+def test_extract_decision_rows_legacy_rows_key_with_warning(caplog):
+    """When a phase subagent falls back from the typed
+    `decisions_append_rows` MCP atom to a direct file write and copies
+    the SKILL.md example's `rows:` parameter name as the YAML top-level
+    key, the parser accepts the shape (with a warning) so the rows still
+    render in the Workbench. Pre-ace#529 regression on
+    bednet-spot-check/20260527-0253 had 24 rows on Drive but ace-web
+    rendered 0.
+    """
+    import logging
+
+    from apps.opps.sync import _extract_decision_rows
+
+    data = {"schema_version": 3, "rows": [{"id": "row-1"}, {"id": "row-2"}]}
+    with caplog.at_level(logging.WARNING, logger="apps.opps.sync"):
+        rows = _extract_decision_rows(data)
+    assert rows == [{"id": "row-1"}, {"id": "row-2"}]
+    assert any(
+        "rows:" in r.message and "decisions:" in r.message and "ace#529" in r.message
+        for r in caplog.records
+    )
+
+
+def test_extract_decision_rows_canonical_wins_when_both_present():
+    """If both `decisions:` and `rows:` are present (defensive), the
+    canonical key wins and no warning fires — `rows:` is only the
+    fallback when the canonical key is genuinely missing."""
+    from apps.opps.sync import _extract_decision_rows
+
+    data = {
+        "decisions": [{"id": "from-decisions"}],
+        "rows": [{"id": "from-rows"}],
+    }
+    assert _extract_decision_rows(data) == [{"id": "from-decisions"}]
+
+
+def test_extract_decision_rows_returns_empty_when_neither_key_set():
+    from apps.opps.sync import _extract_decision_rows
+
+    assert _extract_decision_rows({}) == []
+    assert _extract_decision_rows({"schema_version": 3}) == []
+    # `decisions:` present but not a list → still empty
+    assert _extract_decision_rows({"decisions": "not a list"}) == []
+    # `rows:` present but not a list → don't warn, don't render
+    assert _extract_decision_rows({"rows": "not a list"}) == []
+
+
+def test_legacy_rows_full_loader_integration():
+    """End-to-end: the bednet-shape malformed file parses to populated
+    Decision dataclasses via the same path `_load_decisions` uses."""
+    import yaml as _yaml
+
+    from apps.opps.sync import _extract_decision_rows
+
+    malformed = """schema_version: 3
+opportunity: bednet
+run_id: '20260527-0253'
+rows:
+  - id: archetype-selection
+    phase: 1-design
+    skill: idea-to-pdd
+    question: Q?
+    ai-default: atomic-visit
+    options: [atomic-visit, focus-group]
+    source: src
+    status: ai-default
+    reasoning: r
+"""
+    data = _yaml.safe_load(malformed)
+    raw_rows = _extract_decision_rows(data)
+    rows = _parse_decision_rows(raw_rows)
+    assert len(rows) == 1
+    assert rows[0].id == "archetype-selection"
+    assert rows[0].ai_default == "atomic-visit"
+    assert rows[0].options_considered == ["atomic-visit", "focus-group"]
+
+
 def test_no_warning_for_well_formed_row(caplog):
     row = {
         "id": "row-1",
