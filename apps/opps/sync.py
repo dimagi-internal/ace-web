@@ -664,10 +664,38 @@ def _load_decisions(
         return []
     if not isinstance(data, dict):
         return []
-    raw_rows = data.get("decisions") or []
-    if not isinstance(raw_rows, list):
-        return []
+    raw_rows = _extract_decision_rows(data)
     return _parse_decision_rows(raw_rows)
+
+
+def _extract_decision_rows(data: dict) -> list:
+    """Pull the decision-row list out of a parsed decisions.yaml dict.
+
+    Canonical v3 shape uses ``decisions:`` as the top-level key (matches
+    ACE plugin ``lib/decisions-schema.ts:DecisionsLogSchema``).
+
+    Defensive fallback to ``rows:`` — when the ACE ``decisions_append_rows``
+    MCP atom isn't reachable (e.g. 2026-05-27 plugin.json registration gap
+    pre-ace#529), phase subagents fall back to a direct ``drive_create_file``
+    write and copy the SKILL.md example's ``rows:`` parameter name as the
+    YAML key. We accept that shape so legacy malformed files still render
+    in the Workbench (with a warning), instead of silently returning 0
+    rows. Returns ``[]`` when neither key resolves to a list.
+    """
+    canonical = data.get("decisions")
+    if canonical is None and isinstance(data.get("rows"), list):
+        log.warning(
+            "decisions.yaml uses legacy top-level key `rows:` instead of "
+            "canonical `decisions:` — most likely written by a phase subagent "
+            "that fell back from the typed `decisions_append_rows` MCP atom "
+            "to a direct file write. Rendering the rows for back-compat; "
+            "future writes should go through the atom (see ace#529 for the "
+            "registration fix).",
+        )
+        canonical = data["rows"]
+    if not isinstance(canonical, list):
+        return []
+    return canonical
 
 
 def _parse_decision_rows(raw_rows: list) -> list[Decision]:

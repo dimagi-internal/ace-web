@@ -166,14 +166,16 @@ function DecisionRow({
       ? "border-sky-500/40 bg-sky-500/10 text-sky-400"
       : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
 
-  // Row-level color flip: stronger background tint on overridden rows
-  // (committed or pending) so the user can scan a long list and spot the
-  // humans' choices vs the AI defaults. Pending-edit rows additionally
-  // get a violet left-border to call out "not yet committed".
+  // Row-level color flip: visible sky-tint on overridden rows (committed
+  // or pending) so the user can scan a long list and spot the humans'
+  // choices vs the AI-default majority. Pending-edit rows additionally
+  // get a violet left-border to call out "not yet committed". Tint
+  // opacities tuned against dark mode — sky-500/15 reads as a clear band
+  // without overpowering the row contents.
   const rowTint = isOverridden
     ? isEdited
-      ? "border-l-2 border-violet-500/60 bg-sky-500/[0.06]"
-      : "bg-sky-500/[0.05]"
+      ? "border-l-2 border-violet-500/60 bg-sky-500/15"
+      : "bg-sky-500/15"
     : "";
 
   function openEditMode() {
@@ -436,7 +438,32 @@ function OptionsRow({
       ? draft.selected
       : effectiveValue;
 
-  if (decision.options_considered.length === 0) {
+  // Surface write-in answers as extra pills so the user sees the current
+  // selection somewhere in the pill row, not just in the row header chip.
+  // Sources:
+  //   (a) the saved override has a value that wasn't in the AI's original
+  //       options[] (e.g. a committed write-in from a prior session)
+  //   (b) the draft has new_option text the user is currently typing
+  // Each surfaces as a violet-tinted pill with a "(new)" tag so it's
+  // visually distinct from the AI-proposed options.
+  const writeInPills: string[] = [];
+  if (
+    effectiveValue &&
+    effectiveValue !== decision.ai_default &&
+    !decision.options_considered.includes(effectiveValue)
+  ) {
+    writeInPills.push(effectiveValue);
+  }
+  const draftWriteIn = draft?.new_option.trim() ?? "";
+  if (
+    draftWriteIn &&
+    !decision.options_considered.includes(draftWriteIn) &&
+    !writeInPills.includes(draftWriteIn)
+  ) {
+    writeInPills.push(draftWriteIn);
+  }
+
+  if (decision.options_considered.length === 0 && writeInPills.length === 0) {
     return (
       <span className="text-muted-foreground/70">
         (none listed — use the "New option" field to add one)
@@ -480,6 +507,29 @@ function OptionsRow({
               </span>
             )}
           </button>
+        );
+      })}
+      {writeInPills.map((opt) => {
+        // Write-in pills are display-only (clicking them re-selects the
+        // existing write-in, which is the current state — no-op). The
+        // "(new)" tag tells the human this label wasn't in the AI's
+        // options[] array.
+        const isPicked = opt === highlighted || opt === draftWriteIn;
+        const base = "rounded border px-1.5 py-0.5";
+        const tone = isPicked
+          ? "border-violet-500/50 bg-violet-500/15 text-violet-300"
+          : "border-violet-500/30 bg-violet-500/[0.08] text-violet-400";
+        return (
+          <span
+            key={`writein:${opt}`}
+            className={cn(base, tone)}
+            title="Write-in answer not in the original AI options"
+          >
+            {opt}
+            <span className="ml-1 text-[9px] uppercase tracking-wider text-violet-400/70">
+              new
+            </span>
+          </span>
         );
       })}
     </span>

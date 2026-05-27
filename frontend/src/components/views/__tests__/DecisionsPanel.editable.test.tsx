@@ -276,6 +276,51 @@ describe("DecisionsPanel — edit mode", () => {
     expect(onEdit).not.toHaveBeenCalled();
   });
 
+  it("renders a 'new' write-in pill when override is not in options_considered (committed)", () => {
+    // A row whose `override` is a write-in value that isn't in
+    // `options_considered`. The pill row should surface the write-in as
+    // an extra violet "(new)" pill so the user can see the current
+    // selection somewhere in the pill row — not just in the header chip.
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[
+          dec({
+            override: "FLWs in rural Rwanda",
+            status: "overridden",
+            override_reasoning: "human picked Rwanda",
+          }),
+        ]}
+      />,
+    );
+    expandPanelAndRow();
+    // The write-in label appears as a pill (separate from the row header).
+    const labels = screen.getAllByText("FLWs in rural Rwanda");
+    expect(labels.length).toBeGreaterThanOrEqual(2);
+    // The "(new)" tag is present alongside the write-in pill.
+    expect(screen.getByText("new")).toBeInTheDocument();
+  });
+
+  it("renders a 'new' write-in pill while typing in the New option field (draft preview)", () => {
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec()]}
+        editBuffer={[]}
+        onEdit={vi.fn()}
+        onRevert={vi.fn()}
+      />,
+    );
+    expandPanelAndRow();
+    fireEvent.click(screen.getByRole("button", { name: /add override reason/i }));
+    const newOpt = screen.getByLabelText(/new option for: Who is the target/i);
+    fireEvent.change(newOpt, { target: { value: "FLWs in rural Rwanda" } });
+    // The draft write-in should preview as a pill immediately, so the
+    // user can see what they're about to commit.
+    expect(screen.getByText("FLWs in rural Rwanda")).toBeInTheDocument();
+    expect(screen.getByText("new")).toBeInTheDocument();
+  });
+
   it("overridden row gets a stronger background tint than ai-default rows", () => {
     // Render two decisions, one overridden and one not — confirm the
     // overridden row carries the sky-tinted background class so the
