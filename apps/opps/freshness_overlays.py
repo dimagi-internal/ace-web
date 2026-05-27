@@ -223,25 +223,38 @@ OVERLAYS: list[FreshnessOverlay] = SNAPSHOT_OVERLAYS
 
 
 # ---------------------------------------------------------------------------
-# Out of scope — registered as TODOs for future overlays
+# Resolved without an overlay — per-phase artifact lists
 # ---------------------------------------------------------------------------
 #
 # Per-phase artifact lists (`<opp>/<phase-N>/`) and per-run phase folder
-# listings (`<opp>/runs/<id>/<phase>/`) are also externally-appendable
-# Drive listings (orchestration writes new artifact files as it completes
-# steps). They are NOT covered today because:
+# listings (`<opp>/runs/<id>/<phase>/`) are externally-appendable Drive
+# listings (orchestration writes new artifact files as it completes
+# steps). An earlier draft of this module had them registered as a TODO
+# for a future overlay; PR #575 obsoleted that approach.
 #
-#   - Refreshing them requires re-walking the recursive opp tree + replaying
-#     the manifest attribution machinery + re-reading every verdict file.
-#     That's substantially more than "one Drive list call per overlay".
-#   - In practice the workbench surfaces artifacts as part of the per-run
-#     view, which a user re-selects when they want to see what's new. The
-#     runs_summary overlay is sufficient to make the new run appear in the
-#     dropdown; clicking it forces a cache miss for the new run_id and
-#     fetches fresh.
+# The original problem was that ``_build_steps`` in apps/opps/sync.py
+# derived step status from artifact-file presence in those folders, so
+# stale listings → stale step counts during live runs. PR #575 switched
+# the primary source of truth to ``phases.<phase>.steps.<skill>.status``
+# in the parsed run_state.yaml. The run_state file is a single existing
+# file_id that the plugin patches at every step transition, the Drive
+# Changes API reports edits to existing files reliably (unlike
+# new-child-file additions), and so the OppSnapshot cache invalidates
+# correctly on every step write. Artifact-presence stays as the
+# fallback in ``_build_steps`` for legacy runs that pre-date the
+# decisions-log era.
 #
-# If a real user-visible staleness bug surfaces here, open a follow-up
-# issue rather than expanding this PR's scope.
+# Net effect: per-phase artifact listings can remain cached
+# (Drive-blind-spot tolerated) without affecting live-progress freshness.
+# An overlay here would have paid 10-30 Drive list calls on every cache
+# hit; the run_state approach pays zero.
+#
+# See: docs/learnings/run-state-vs-artifact-presence.md
+#      docs/learnings/drive-changes-api-parent-folder-blind-spot.md
+#
+# If a NEW user-visible staleness bug surfaces here that the run_state
+# approach can't cover, open a follow-up issue rather than expanding
+# this module's scope.
 
 
 def apply_freshness_overlays(
