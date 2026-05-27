@@ -11,7 +11,8 @@ const phases: PhaseInfo[] = [
 
 function dec(id: string, phase: string): Decision {
   return { id, phase, phase_raw: phase, skill: "x", question: "q", ai_default: "v",
-    override: "", options_considered: [], source: "x", status: "ai-default", notes: "" };
+    override: "", options_considered: [], source: "x", status: "ai-default",
+    notes: "", override_reasoning: "" };
 }
 
 describe("computeForkPoint", () => {

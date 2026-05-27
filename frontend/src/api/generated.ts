@@ -2171,12 +2171,23 @@ export interface components {
          *     ``decisions-sync`` uses. The original AI value remains in
          *     ``ai-default`` for audit trail; downstream phases on re-run see the
          *     effective value (``override`` if present else ``ai-default``).
+         *
+         *     ``new_answer`` MAY be a string not already present in the row's
+         *     ``options`` array; the forker appends it before setting ``override``,
+         *     keeping the ACE strict-write invariant (``override ∈ options``)
+         *     intact. ``override_reasoning`` is the human's free-text rationale,
+         *     persisted alongside.
          */
         readonly OppForkEditIn: {
             /** Row Id */
             readonly row_id: string;
             /** New Answer */
             readonly new_answer: string;
+            /**
+             * Override Reasoning
+             * @default
+             */
+            readonly override_reasoning: string;
         };
         /** OppForkIn */
         readonly OppForkIn: {

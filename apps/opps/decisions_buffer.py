@@ -31,10 +31,12 @@ def get_edits(slug: str, run_id: str) -> dict:
 
 
 def set_edit(slug: str, run_id: str, *, row_id: str, new_answer: str,
-             editor_email: str, editor_name: str) -> None:
+             editor_email: str, editor_name: str,
+             override_reasoning: str = "") -> None:
     edits = get_edits(slug, run_id)
     edits[row_id] = {
         "new_answer": new_answer,
+        "override_reasoning": override_reasoning,
         "editor_email": editor_email,
         "editor_name": editor_name,
         "edited_at": datetime.now(UTC).isoformat(),

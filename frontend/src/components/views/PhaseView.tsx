@@ -22,9 +22,22 @@ interface Props {
   snapshot: OppSnapshot;
   oppSlug: string;
   workspaceSlug: string;
-  sendDecisionEdit?: (row_id: string, new_answer: string) => void;
+  sendDecisionEdit?: (
+    row_id: string,
+    new_answer: string,
+    override_reasoning?: string,
+  ) => void;
   sendDecisionRevert?: (row_id: string) => void;
-  onRemoteDecisionEdit?: React.MutableRefObject<((edit: { row_id: string; new_answer: string; editor_email: string; editor_name: string }) => void) | null>;
+  onRemoteDecisionEdit?: React.MutableRefObject<
+    | ((edit: {
+        row_id: string;
+        new_answer: string;
+        override_reasoning?: string;
+        editor_email: string;
+        editor_name: string;
+      }) => void)
+    | null
+  >;
   onRemoteDecisionRevert?: React.MutableRefObject<((data: { row_id: string }) => void) | null>;
 }
 
@@ -129,7 +142,15 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
   // were already in the Redis buffer when the snapshot was built.
   useEffect(() => {
     const pending = (snapshot as unknown as Record<string, unknown>).pending_edits as
-      | Record<string, { new_answer: string; editor_email: string; editor_name: string }>
+      | Record<
+          string,
+          {
+            new_answer: string;
+            override_reasoning?: string;
+            editor_email: string;
+            editor_name: string;
+          }
+        >
       | undefined;
     if (pending && Object.keys(pending).length > 0) {
       dispatchEdit({ type: "MERGE_REMOTE", edits: pending });
@@ -146,6 +167,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
           edits: {
             [edit.row_id]: {
               new_answer: edit.new_answer,
+              override_reasoning: edit.override_reasoning,
               editor_email: edit.editor_email,
               editor_name: edit.editor_name,
             },
@@ -240,9 +262,14 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
                   onEdit={
                     editingDisabled
                       ? undefined
-                      : (row_id, new_answer) => {
-                          dispatchEdit({ type: "APPLY_EDIT", row_id, new_answer });
-                          sendDecisionEdit?.(row_id, new_answer);
+                      : (row_id, new_answer, override_reasoning) => {
+                          dispatchEdit({
+                            type: "APPLY_EDIT",
+                            row_id,
+                            new_answer,
+                            override_reasoning,
+                          });
+                          sendDecisionEdit?.(row_id, new_answer, override_reasoning);
                         }
                   }
                   onRevert={

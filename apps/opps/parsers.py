@@ -121,3 +121,8 @@ class Decision:
     source: str = ""
     status: str = "ai-default"  # ai-default | overridden
     notes: str = ""
+    # Human's rationale when status=overridden. Mirrors the AI's ``notes``
+    # (which carries the AI's ``reasoning``) but for the override side.
+    # Surfaces in the Workbench so the next human can see why the prior
+    # human picked a different option than the AI default.
+    override_reasoning: str = ""

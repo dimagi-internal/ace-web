@@ -144,10 +144,17 @@ class OppForkEditIn(StrictModel):
     ``decisions-sync`` uses. The original AI value remains in
     ``ai-default`` for audit trail; downstream phases on re-run see the
     effective value (``override`` if present else ``ai-default``).
+
+    ``new_answer`` MAY be a string not already present in the row's
+    ``options`` array; the forker appends it before setting ``override``,
+    keeping the ACE strict-write invariant (``override ∈ options``)
+    intact. ``override_reasoning`` is the human's free-text rationale,
+    persisted alongside.
     """
 
     row_id: str = Field(min_length=1)
     new_answer: str
+    override_reasoning: str = ""
 
 
 class OppForkIn(StrictModel):

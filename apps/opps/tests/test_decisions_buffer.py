@@ -55,6 +55,23 @@ def test_clear_edits():
     assert get_edits("opp-1", "run-1") == {}
 
 
+def test_set_persists_override_reasoning():
+    set_edit("opp-1", "run-1", row_id="d-001", new_answer="No",
+             editor_email="alice@dimagi.com", editor_name="Alice",
+             override_reasoning="LLO confirmed in standup")
+    edits = get_edits("opp-1", "run-1")
+    assert edits["d-001"]["override_reasoning"] == "LLO confirmed in standup"
+
+
+def test_set_default_override_reasoning_is_empty_string():
+    """Backwards compat: callers that don't pass override_reasoning get
+    an empty string in the buffer entry, not a missing key."""
+    set_edit("opp-1", "run-1", row_id="d-001", new_answer="No",
+             editor_email="alice@dimagi.com", editor_name="Alice")
+    edits = get_edits("opp-1", "run-1")
+    assert edits["d-001"]["override_reasoning"] == ""
+
+
 def test_different_runs_isolated():
     set_edit("opp-1", "run-1", row_id="d-001", new_answer="A",
              editor_email="a@b.com", editor_name="A")

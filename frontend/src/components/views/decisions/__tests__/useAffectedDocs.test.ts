@@ -20,6 +20,7 @@ function dec(id: string, skill: string): Decision {
     source: `description for ${id}`,
     status: "ai-default",
     notes: "",
+    override_reasoning: "",
   };
 }
 

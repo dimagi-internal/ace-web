@@ -70,7 +70,11 @@ export function ForkWithEditsDialog({
     const body: ForkOppBody = {
       fork_at_phase: forkAtPhase,
       source_run_id: sourceRunId,
-      edits: edits.map((e) => ({ row_id: e.row_id, new_answer: e.new_answer })),
+      edits: edits.map((e) => ({
+        row_id: e.row_id,
+        new_answer: e.new_answer,
+        override_reasoning: e.override_reasoning ?? "",
+      })),
       mode,
     };
     try {

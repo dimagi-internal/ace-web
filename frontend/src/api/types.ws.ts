@@ -298,7 +298,10 @@ export interface Decision {
   options_considered: string[];
   source: string;
   status: "ai-default" | "overridden";
+  /** AI's rationale for the ai-default pick (read from YAML `reasoning`). */
   notes: string;
+  /** Human's rationale when status=overridden (read from YAML `override_reasoning`). */
+  override_reasoning: string;
 }
 
 export interface Run {

@@ -277,7 +277,7 @@ export type ForkMode = "keep-overrides-only" | "keep-all";
 export interface ForkOppBody {
   fork_at_phase: string;
   source_run_id?: string | null;
-  edits?: { row_id: string; new_answer: string }[];
+  edits?: { row_id: string; new_answer: string; override_reasoning?: string }[];
   /**
    * Controls how upstream decisions carry forward:
    *   - "keep-all" (default): every upstream row survives the fork.

@@ -17,7 +17,12 @@ interface Props {
    * three are omitted, the panel renders read-only (legacy behavior).
    */
   editBuffer?: readonly EditOp[];
-  onEdit?: (row_id: string, new_answer: string) => void;
+  /**
+   * Commit an override for a row. `new_answer` may be a new option not in
+   * `decision.options_considered` — the write path appends it to options
+   * before setting override. `override_reasoning` is optional free text.
+   */
+  onEdit?: (row_id: string, new_answer: string, override_reasoning?: string) => void;
   onRevert?: (row_id: string) => void;
 }
 
@@ -72,7 +77,7 @@ function DecisionsPanelInner({
   phaseRows: Decision[];
   overridden: number;
   editBuffer?: readonly EditOp[];
-  onEdit?: (row_id: string, new_answer: string) => void;
+  onEdit?: (row_id: string, new_answer: string, override_reasoning?: string) => void;
   onRevert?: (row_id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -132,37 +137,85 @@ function DecisionRow({
 }: {
   decision: Decision;
   editBuffer?: readonly EditOp[];
-  onEdit?: (row_id: string, new_answer: string) => void;
+  onEdit?: (row_id: string, new_answer: string, override_reasoning?: string) => void;
   onRevert?: (row_id: string) => void;
 }) {
   const [rowOpen, setRowOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
+  // Edit-mode draft. Holds the pending pill selection (or new-option text)
+  // and the override reasoning. `null` = not in edit mode.
+  const [draft, setDraft] = useState<{
+    selected: string;
+    new_option: string;
+    override_reasoning: string;
+  } | null>(null);
 
   const pendingEdit = editBuffer?.find((e) => e.row_id === decision.id);
-  const effectiveValue = pendingEdit?.new_answer ?? (decision.override || decision.ai_default);
+  const committedAnswer = decision.override || decision.ai_default;
+  const effectiveValue = pendingEdit?.new_answer ?? committedAnswer;
+  const effectiveReason =
+    pendingEdit?.override_reasoning ?? decision.override_reasoning ?? "";
   const isEdited = !!pendingEdit;
+  // "Overridden" = effective answer differs from AI default (whether from a
+  // committed override on the run, or a pending edit). Colors the row
+  // background so it reads at a glance against the ai-default majority.
+  const isOverridden = effectiveValue !== decision.ai_default;
+  const canEdit = !!onEdit;
 
   const tone =
     decision.status === "overridden"
       ? "border-sky-500/40 bg-sky-500/10 text-sky-400"
       : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
 
+  // Row-level color flip: stronger background tint on overridden rows
+  // (committed or pending) so the user can scan a long list and spot the
+  // humans' choices vs the AI defaults. Pending-edit rows additionally
+  // get a violet left-border to call out "not yet committed".
+  const rowTint = isOverridden
+    ? isEdited
+      ? "border-l-2 border-violet-500/60 bg-sky-500/[0.06]"
+      : "bg-sky-500/[0.05]"
+    : "";
+
+  function openEditMode() {
+    setDraft({
+      selected: effectiveValue,
+      new_option: "",
+      override_reasoning: effectiveReason,
+    });
+  }
+
+  function closeEditMode() {
+    setDraft(null);
+  }
+
+  function commit() {
+    if (!draft || !onEdit) return;
+    // New-option text takes precedence over pill selection — typing in
+    // the "new option" field is the only way to introduce an answer
+    // that wasn't on the AI's list, and it should win over a stale
+    // pill click made earlier in the same edit session.
+    const answer = draft.new_option.trim() || draft.selected;
+    const reason = draft.override_reasoning.trim();
+    // If the user lands on the AI default with no reason, revert
+    // outright. Otherwise commit the (possibly equal-to-default) value
+    // with the reason attached — the reason itself is a meaningful
+    // signal even when the answer doesn't change.
+    if (answer === decision.ai_default && !reason) {
+      if (isEdited && onRevert) onRevert(decision.id);
+    } else {
+      onEdit(decision.id, answer, reason || undefined);
+    }
+    closeEditMode();
+  }
+
   return (
-    <div
-      className={cn(
-        isEdited && "border-l-2 border-violet-500/60 bg-violet-500/[0.03]",
-      )}
-    >
+    <div className={rowTint}>
       <button
         type="button"
         onClick={() =>
           setRowOpen((v) => {
             const next = !v;
-            if (!next) {
-              setEditing(false);
-              setDraft("");
-            }
+            if (!next) closeEditMode();
             return next;
           })
         }
@@ -209,28 +262,33 @@ function DecisionRow({
               value={<span className="font-medium text-sky-400">{decision.override}</span>}
             />
           )}
-          {decision.options_considered.length > 0 && (
-            <DetailRow
-              label="Options considered"
-              value={
-                <span className="flex flex-wrap gap-1.5">
-                  {decision.options_considered.map((opt) => (
-                    <span
-                      key={opt}
-                      className={cn(
-                        "rounded border px-1.5 py-0.5",
-                        opt === effectiveValue
-                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                          : "border-border bg-muted/30 text-muted-foreground",
-                      )}
-                    >
-                      {opt}
-                    </span>
-                  ))}
-                </span>
-              }
-            />
-          )}
+          <DetailRow
+            label={canEdit && draft ? "Pick option" : "Options"}
+            value={
+              <OptionsRow
+                decision={decision}
+                draft={draft}
+                effectiveValue={effectiveValue}
+                canEdit={canEdit}
+                onPick={(opt) => {
+                  if (!canEdit) return;
+                  if (draft) {
+                    setDraft({ ...draft, selected: opt, new_option: "" });
+                  } else {
+                    // First click on a non-current pill enters edit mode
+                    // with that pill pre-selected. Click on the
+                    // already-effective pill is a no-op (radio semantics).
+                    if (opt === effectiveValue) return;
+                    setDraft({
+                      selected: opt,
+                      new_option: "",
+                      override_reasoning: effectiveReason,
+                    });
+                  }
+                }}
+              />
+            }
+          />
           {decision.source && (
             <DetailRow
               label="Source"
@@ -245,23 +303,26 @@ function DecisionRow({
           />
           {decision.notes && (
             <DetailRow
-              label="Notes"
+              label="AI reasoning"
               value={<span className="whitespace-pre-line text-muted-foreground">{decision.notes}</span>}
             />
           )}
-          {onEdit && (
-            <div className="col-span-2 mt-2 flex gap-2 border-t border-border/40 pt-3">
-              {!editing && (
-                <>
+          {effectiveReason && !draft && (
+            <DetailRow
+              label="Override reason"
+              value={<span className="whitespace-pre-line text-sky-400/90">{effectiveReason}</span>}
+            />
+          )}
+          {canEdit && (
+            <div className="col-span-2 mt-2 flex flex-col gap-2 border-t border-border/40 pt-3">
+              {!draft && (
+                <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setDraft(effectiveValue);
-                      setEditing(true);
-                    }}
+                    onClick={openEditMode}
                     className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
                   >
-                    Edit
+                    {effectiveReason ? "Edit override reason" : "Add override reason"}
                   </button>
                   {isEdited && onRevert && (
                     <button
@@ -272,42 +333,71 @@ function DecisionRow({
                       Revert
                     </button>
                   )}
-                </>
+                </div>
               )}
-              {editing && (
+              {draft && (
                 <div className="flex w-full flex-col gap-2">
-                  <textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        setEditing(false);
-                      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                        e.preventDefault();
-                        onEdit(decision.id, draft);
-                        setEditing(false);
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                      Override reason (optional)
+                    </span>
+                    <textarea
+                      value={draft.override_reasoning}
+                      onChange={(e) =>
+                        setDraft({ ...draft, override_reasoning: e.target.value })
                       }
-                    }}
-                    autoFocus
-                    rows={3}
-                    aria-label={`Edit answer for: ${decision.question}`}
-                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
-                  />
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          closeEditMode();
+                        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          commit();
+                        }
+                      }}
+                      autoFocus
+                      rows={2}
+                      aria-label={`Override reason for: ${decision.question}`}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                      New option (optional — overrides pill choice)
+                    </span>
+                    <input
+                      type="text"
+                      value={draft.new_option}
+                      onChange={(e) => setDraft({ ...draft, new_option: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          closeEditMode();
+                        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          commit();
+                        }
+                      }}
+                      placeholder={
+                        decision.options_considered.length > 0
+                          ? "Type a new answer not in the list above"
+                          : "Type the override answer"
+                      }
+                      aria-label={`New option for: ${decision.question}`}
+                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    />
+                  </label>
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        onEdit(decision.id, draft);
-                        setEditing(false);
-                      }}
+                      onClick={commit}
                       className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400 hover:bg-emerald-500/20"
                     >
                       Save
                     </button>
                     <button
                       type="button"
-                      onClick={() => setEditing(false)}
+                      onClick={closeEditMode}
                       className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
                     >
                       Cancel
@@ -320,6 +410,79 @@ function DecisionRow({
         </div>
       )}
     </div>
+  );
+}
+
+function OptionsRow({
+  decision,
+  draft,
+  effectiveValue,
+  canEdit,
+  onPick,
+}: {
+  decision: Decision;
+  draft: { selected: string; new_option: string } | null;
+  effectiveValue: string;
+  canEdit: boolean;
+  onPick: (opt: string) => void;
+}) {
+  // While editing, the user's pending pill selection wins UNLESS they've
+  // typed text into the new-option field — then no pill highlights,
+  // because the new option will be the committed answer.
+  const highlighted =
+    draft && draft.new_option.trim().length > 0
+      ? null
+      : draft
+      ? draft.selected
+      : effectiveValue;
+
+  if (decision.options_considered.length === 0) {
+    return (
+      <span className="text-muted-foreground/70">
+        (none listed — use the "New option" field to add one)
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap gap-1.5">
+      {decision.options_considered.map((opt) => {
+        const isPicked = opt === highlighted;
+        const isAiDefault = opt === decision.ai_default;
+        const base = "rounded border px-1.5 py-0.5";
+        const tone = isPicked
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+          : "border-border bg-muted/30 text-muted-foreground";
+        if (!canEdit) {
+          return (
+            <span key={opt} className={cn(base, tone)}>
+              {opt}
+            </span>
+          );
+        }
+        return (
+          <button
+            key={opt}
+            type="button"
+            onClick={() => onPick(opt)}
+            aria-pressed={isPicked}
+            title={isAiDefault ? "AI default" : "Pick this option"}
+            className={cn(
+              base,
+              tone,
+              "transition hover:border-emerald-500/40 hover:text-emerald-300",
+              isPicked && "ring-1 ring-emerald-400/50",
+            )}
+          >
+            {opt}
+            {isAiDefault && (
+              <span className="ml-1 text-[9px] uppercase tracking-wider text-muted-foreground/60">
+                ai
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </span>
   );
 }
 

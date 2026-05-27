@@ -2,13 +2,19 @@
 
 Pure helper — no YAML, no Drive, no Django. Called from the forker
 after the trim step. Matches the override contract used by the
-``decisions-sync`` skill in the ACE plugin (schema v2):
+``decisions-sync`` skill in the ACE plugin (schema v3):
 
 * ``override`` is set to the new value (a separate field; ``ai-default``
   stays as the AI's original proposal).
 * ``status`` flips to ``"overridden"``.
-* If the new value matches the existing ``ai-default``, ``override`` is
-  cleared and ``status`` reverts to ``"ai-default"`` (revert path).
+* If the new value matches the existing ``ai-default`` (and no override
+  reasoning is supplied), ``override`` is cleared, ``override_reasoning``
+  is dropped, and ``status`` reverts to ``"ai-default"`` (revert path).
+* If the new value is NOT already a member of ``options``, it's appended
+  before the override is set — this keeps ACE's strict-write invariant
+  (``override ∈ options``, see ace PR #526) intact when the human types
+  a write-in answer the AI didn't enumerate.
+* ``override_reasoning``, when supplied, is written verbatim alongside.
 """
 from __future__ import annotations
 
@@ -28,7 +34,9 @@ def apply_edits_to_decisions_data(
         data: Parsed decisions.yaml as a dict (must contain ``decisions``
             list). Caller is expected to have upgraded v1 input to v2
             shape (see ``upgrade_decisions_v1_to_v2`` in this module).
-        edits: Iterable of ``{"row_id": ..., "new_answer": ...}``.
+        edits: Iterable of edit dicts, shape
+            ``{"row_id": ..., "new_answer": ..., "override_reasoning": ...}``.
+            ``override_reasoning`` is optional and defaults to empty.
 
     Unknown row_ids are silently ignored — the forker has no way to
     synthesize a new decision row out of thin air; the source must
@@ -45,7 +53,7 @@ def apply_edits_to_decisions_data(
     out = copy.deepcopy(data)
     out_rows = out["decisions"]
 
-    edit_by_id = {e["row_id"]: e["new_answer"] for e in edits_list}
+    edit_by_id = {e["row_id"]: e for e in edits_list}
 
     for row in out_rows:
         if not isinstance(row, dict):
@@ -53,14 +61,42 @@ def apply_edits_to_decisions_data(
         row_id = row.get("id")
         if row_id not in edit_by_id:
             continue
-        new_answer = edit_by_id[row_id]
+        edit = edit_by_id[row_id]
+        new_answer = edit.get("new_answer", "")
+        reasoning = (edit.get("override_reasoning") or "").strip()
         ai_default = row.get("ai-default")
-        if new_answer == ai_default:
+
+        if new_answer == ai_default and not reasoning:
+            # Pure revert: drop the override and any prior reasoning.
             row.pop("override", None)
+            row.pop("override_reasoning", None)
             row["status"] = "ai-default"
-        else:
+            continue
+
+        # Strict-write invariant: override ∈ options. If the human typed a
+        # write-in value, append it to the row's options array first.
+        if new_answer != ai_default:
+            opts = row.get("options")
+            if not isinstance(opts, list):
+                # Some legacy rows used the v2 key. Normalize to v3 on write.
+                opts_legacy = row.pop("options_considered", None)
+                opts = list(opts_legacy) if isinstance(opts_legacy, list) else []
+                row["options"] = opts
+            if new_answer not in opts:
+                opts.append(new_answer)
             row["override"] = new_answer
             row["status"] = "overridden"
+        else:
+            # Reaffirming the AI default with a reason — not strictly an
+            # override, but persist the reasoning anyway. Keep status as
+            # ai-default (no override field).
+            row.pop("override", None)
+            row["status"] = "ai-default"
+
+        if reasoning:
+            row["override_reasoning"] = reasoning
+        else:
+            row.pop("override_reasoning", None)
 
     return out
 

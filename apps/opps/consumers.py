@@ -47,6 +47,7 @@ class OppConsumer(AsyncJsonWebsocketConsumer):
     async def _handle_decision_edit(self, content):
         row_id = content.get("row_id", "")
         new_answer = content.get("new_answer", "")
+        override_reasoning = content.get("override_reasoning", "") or ""
         if not row_id or not new_answer:
             return
 
@@ -54,12 +55,15 @@ class OppConsumer(AsyncJsonWebsocketConsumer):
         email = getattr(user, "email", "")
         name = getattr(user, "display_name", "") or email
 
-        await sync_to_async(self._write_edit)(row_id, new_answer, email, name)
+        await sync_to_async(self._write_edit)(
+            row_id, new_answer, email, name, override_reasoning,
+        )
 
         await self.channel_layer.group_send(self.group, {
             "type": "decision.edited",
             "row_id": row_id,
             "new_answer": new_answer,
+            "override_reasoning": override_reasoning,
             "editor_email": email,
             "editor_name": name,
         })
@@ -80,10 +84,11 @@ class OppConsumer(AsyncJsonWebsocketConsumer):
             "editor_email": email,
         })
 
-    def _write_edit(self, row_id, new_answer, email, name):
+    def _write_edit(self, row_id, new_answer, email, name, override_reasoning=""):
         from apps.opps.decisions_buffer import set_edit
         set_edit(self.slug, self.run_id, row_id=row_id,
-                 new_answer=new_answer, editor_email=email, editor_name=name)
+                 new_answer=new_answer, editor_email=email, editor_name=name,
+                 override_reasoning=override_reasoning)
 
     def _write_revert(self, row_id):
         from apps.opps.decisions_buffer import remove_edit
@@ -104,6 +109,7 @@ class OppConsumer(AsyncJsonWebsocketConsumer):
             "data": {
                 "row_id": event["row_id"],
                 "new_answer": event["new_answer"],
+                "override_reasoning": event.get("override_reasoning", ""),
                 "editor_email": event["editor_email"],
                 "editor_name": event["editor_name"],
             },
