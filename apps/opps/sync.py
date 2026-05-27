@@ -55,6 +55,28 @@ log = logging.getLogger(__name__)
 # completeness check.
 _SHARED_SUBSTRATE_FILES = frozenset({"decisions.yaml", "decisions.yml"})
 
+# Map raw run_state.yaml status strings to the canonical StepManifest
+# status set (pending | running | complete | qa-failed | error | skipped).
+# The plugin writes ``done`` for completed steps; older paths sometimes
+# write ``complete``. ``in_progress`` is an alias for ``running`` used by
+# some atom skills. ``no-op`` / ``noop`` are the smoke-opp variants the
+# orchestrator records when a step has nothing to do (e.g. ``llo-invite``
+# on a Preferred-LLO-less PDD). Unknown strings fall back to artifact
+# presence rather than crashing — defensive against plugin schema drift.
+_RUN_STATE_TO_CANONICAL: dict[str, str] = {
+    "done": "complete",
+    "complete": "complete",
+    "running": "running",
+    "in_progress": "running",
+    "in-progress": "running",
+    "failed": "error",
+    "error": "error",
+    "skipped": "skipped",
+    "no-op": "skipped",
+    "noop": "skipped",
+    "pending": "pending",
+}
+
 # --- Output dataclasses ---
 
 
@@ -1507,6 +1529,7 @@ def _load_opp_flat(
         verdicts_by_skill,
         opp_folder.id,
         qa_results_by_skill=qa_results_by_skill,
+        step_status_by_skill=_extract_step_statuses(state_data),
     )
 
     run_detail = RunDetail(
@@ -1623,6 +1646,7 @@ def _load_opp_run(
         verdicts_by_skill,
         run_folder_id,
         qa_results_by_skill=qa_results_by_skill,
+        step_status_by_skill=_extract_step_statuses(state_data),
     )
 
     # Read opp.yaml for display_name; fall back to run_state.yaml then slug.
@@ -1662,15 +1686,98 @@ def _load_opp_run(
     )
 
 
+def _extract_step_statuses(state_data: dict | None) -> dict[str, str]:
+    """Pull per-skill ``status:`` strings out of a parsed run_state.yaml.
+
+    The plugin patches run_state.yaml on every step transition with a
+    declared status (``done``, ``running``, ``skipped``, …). Surfacing
+    that as the primary source of truth for ``_build_steps`` is the
+    only mechanism that scales for live-run monitoring across multiple
+    viewers: the file_id is reliably reported by the Drive Changes API
+    (it's an existing file edit, not a new child file) so the
+    OppSnapshot cache invalidates correctly, and the shared cache then
+    serves the same fresh state to every viewer with no per-viewer
+    Drive cost. See ``docs/learnings/drive-changes-api-parent-folder-blind-spot.md``
+    for why per-phase artifact listings can NOT be trusted for live
+    progress, and ``apps/opps/freshness_overlays.py`` for the design
+    they were the wrong answer to.
+
+    Handles the same three phase shapes ``_derive_phase_progress`` /
+    ``_is_pending_step`` already tolerate:
+
+      Shape A — explicit steps wrapper (current plugin)::
+
+          phases:
+            commcare-setup:
+              status: running
+              steps:
+                pdd-to-learn-app: {status: done, ...}
+
+      Shape B — bare skill→status mapping (older plugin)::
+
+          phases:
+            idea-to-design:
+              idea-to-pdd: done
+
+      Shape C — newer-plugin variant with no ``status:`` field but a
+      ``steps:`` wrapper. Falls out of the same branch as A.
+
+    Unknown / malformed phase entries are skipped silently rather than
+    raised — this is read-side code that runs on every snapshot fetch.
+    """
+    if not isinstance(state_data, dict):
+        return {}
+    phases = state_data.get("phases")
+    if not isinstance(phases, dict):
+        return {}
+    out: dict[str, str] = {}
+    for phase_value in phases.values():
+        if not isinstance(phase_value, dict):
+            continue
+        steps_map = phase_value.get("steps") if "steps" in phase_value else phase_value
+        if not isinstance(steps_map, dict):
+            continue
+        for skill_name, step_value in steps_map.items():
+            if not isinstance(skill_name, str):
+                continue
+            if isinstance(step_value, str):
+                out[skill_name] = step_value
+            elif isinstance(step_value, dict):
+                status = step_value.get("status")
+                if isinstance(status, str):
+                    out[skill_name] = status
+    return out
+
+
 def _build_steps(
     skill_registry,
     artifacts_by_skill: dict[str, list[ArtifactRef]],
     verdicts_by_skill: dict[str, JudgeVerdict],
     folder_id: str,
     qa_results_by_skill: dict[str, QAResult] | None = None,
+    step_status_by_skill: dict[str, str] | None = None,
 ) -> list[StepSnapshot]:
-    """Synthesize StepSnapshot rows from the skill registry + Drive data."""
+    """Synthesize StepSnapshot rows from the skill registry + Drive data.
+
+    Step status precedence (highest → lowest):
+
+      1. ``qa-failed`` — irrecoverable QA verdict. Surfaces the
+         auto-fix loop regardless of what run_state.yaml claims.
+      2. ``step_status_by_skill`` — the declared status in
+         run_state.yaml, normalized via ``_RUN_STATE_TO_CANONICAL``.
+         This is the primary source of truth: the plugin writes it
+         deliberately at each step transition, it carries semantic
+         info artifact-presence can't (``running``, ``skipped`` /
+         ``no-op``), and it's cache-friendly because Drive Changes
+         API reliably reports edits to existing files.
+      3. Artifact presence — fallback for legacy runs that pre-date
+         the decisions-log era, and for tests that don't bother
+         constructing a run_state. Drops a debug log when run_state
+         says ``complete`` but no load-bearing artifacts exist
+         (typically a legitimate no-op step, sometimes a plugin bug).
+    """
     qa_results_by_skill = qa_results_by_skill or {}
+    step_status_by_skill = step_status_by_skill or {}
     steps: list[StepSnapshot] = []
     for skill_meta in skill_registry:
         artifacts = artifacts_by_skill.get(skill_meta.name, [])
@@ -1682,22 +1789,34 @@ def _build_steps(
         # files are carried verbatim by `_RUN_ROOT_FILES_TO_COPY` even
         # when the producing skill hasn't actually run in the new run —
         # so their presence is not evidence the skill ran. Exclude them
-        # from the artifact-presence check so a freshly forked Phase-1
-        # run doesn't show idea-to-pdd as complete just because
+        # from the artifact-presence fallback check so a freshly forked
+        # Phase-1 run doesn't show idea-to-pdd as complete just because
         # decisions.yaml got carried over.
         load_bearing_artifacts = [
             a for a in artifacts
             if getattr(a, "name", None) not in _SHARED_SUBSTRATE_FILES
         ]
+
         if qa_result is not None and qa_result.verdict == "fail":
             # QA failed irrecoverably; eval was skipped.
             # Surface as a distinct status so the UI can show the
             # auto-fix attempts + remaining failures.
             status = "qa-failed"
-        elif load_bearing_artifacts:
-            status = "complete"
         else:
-            status = "pending"
+            declared = step_status_by_skill.get(skill_meta.name)
+            normalized = _RUN_STATE_TO_CANONICAL.get(declared) if declared else None
+            if normalized is not None:
+                status = normalized
+                if status == "complete" and not load_bearing_artifacts:
+                    log.debug(
+                        "step %s/%s declared complete in run_state.yaml but no "
+                        "load-bearing artifacts present (likely a no-op step)",
+                        skill_meta.phase, skill_meta.name,
+                    )
+            elif load_bearing_artifacts:
+                status = "complete"
+            else:
+                status = "pending"
 
         step_manifest = StepManifest(
             skill_name=skill_meta.name,
