@@ -115,7 +115,7 @@ export default function OppWorkbenchPage() {
   // Silent refresh: don't flash the loading spinner on incremental updates.
   // Force-bypass the Drive cache so chat-driven Drive writes show up
   // immediately, not after the TTL window.
-  const decisionEditRef = useRef<((edit: { row_id: string; new_answer: string; editor_email: string; editor_name: string }) => void) | null>(null);
+  const decisionEditRef = useRef<((edit: { row_id: string; new_answer: string; override_reasoning?: string; editor_email: string; editor_name: string }) => void) | null>(null);
   const decisionRevertRef = useRef<((data: { row_id: string }) => void) | null>(null);
 
   const { sendDecisionEdit, sendDecisionRevert } = useOppSocket({

@@ -128,6 +128,68 @@ async def test_decision_edit_persists_to_buffer(django_user_model):
     await comm.disconnect()
 
 
+async def test_decision_edit_carries_override_reasoning(django_user_model):
+    """The override_reasoning field flows from client → consumer →
+    Redis buffer → broadcast back to all clients."""
+    from apps.opps.decisions_buffer import get_edits
+
+    alice = await sync_to_async(django_user_model.objects.create_user)(
+        email="alice@dimagi.com", display_name="Alice"
+    )
+    bob = await sync_to_async(django_user_model.objects.create_user)(
+        email="bob@dimagi.com", display_name="Bob"
+    )
+
+    comm_alice, connected_a, _ = await _connect(alice, _OPP_PATH)
+    assert connected_a is True
+    comm_bob, connected_b, _ = await _connect(bob, _OPP_PATH)
+    assert connected_b is True
+
+    await comm_alice.send_json_to({
+        "type": "decision.edit",
+        "row_id": "row-7",
+        "new_answer": "No",
+        "override_reasoning": "LLO told me in standup",
+    })
+
+    msg_alice = await comm_alice.receive_json_from()
+    msg_bob = await comm_bob.receive_json_from()
+
+    for msg in (msg_alice, msg_bob):
+        assert msg["data"]["override_reasoning"] == "LLO told me in standup"
+
+    edits = await sync_to_async(get_edits)("malaria-pilot", "run-001")
+    assert edits["row-7"]["override_reasoning"] == "LLO told me in standup"
+
+    await comm_alice.disconnect()
+    await comm_bob.disconnect()
+
+
+async def test_decision_edit_without_reasoning_defaults_to_empty(django_user_model):
+    """Existing clients that don't send the field still work — buffer
+    entry carries an empty string, broadcast carries an empty string."""
+    from apps.opps.decisions_buffer import get_edits
+
+    alice = await sync_to_async(django_user_model.objects.create_user)(
+        email="alice@dimagi.com", display_name="Alice"
+    )
+    comm, connected, _ = await _connect(alice, _OPP_PATH)
+    assert connected is True
+
+    await comm.send_json_to({
+        "type": "decision.edit",
+        "row_id": "row-7",
+        "new_answer": "No",
+    })
+    msg = await comm.receive_json_from()
+    assert msg["data"]["override_reasoning"] == ""
+
+    edits = await sync_to_async(get_edits)("malaria-pilot", "run-001")
+    assert edits["row-7"]["override_reasoning"] == ""
+
+    await comm.disconnect()
+
+
 async def test_decision_revert_broadcasts_to_all_clients(django_user_model):
     """decision.revert from one client must be relayed to all connected clients."""
     alice = await sync_to_async(django_user_model.objects.create_user)(

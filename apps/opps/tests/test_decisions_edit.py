@@ -142,6 +142,106 @@ def test_upgrade_v1_overridden_row_copies_default_to_override():
     assert row["status"] == "overridden"
 
 
+def test_edit_with_override_reasoning_persists_the_reason():
+    data = {"decisions": [_row("a", "v1", options=["v1", "v2"])]}
+    edits = [{
+        "row_id": "a",
+        "new_answer": "v2",
+        "override_reasoning": "human knows better",
+    }]
+
+    out = apply_edits_to_decisions_data(data, edits=edits)
+
+    row = out["decisions"][0]
+    assert row["override"] == "v2"
+    assert row["status"] == "overridden"
+    assert row["override_reasoning"] == "human knows better"
+
+
+def test_edit_with_new_answer_not_in_options_appends_it():
+    """ACE PR #526's strict-write invariant requires override ∈ options.
+    When the human types a write-in answer, we append it before setting
+    override so downstream reads / writes don't trip the invariant."""
+    # Start with v3-shape options
+    row = {
+        "id": "a",
+        "phase": "design",
+        "skill": "idea-to-pdd",
+        "source": "x",
+        "question": "q",
+        "ai-default": "v1",
+        "options": ["v1", "v2"],
+        "status": "ai-default",
+    }
+    data = {"decisions": [row]}
+    edits = [{"row_id": "a", "new_answer": "write-in answer"}]
+
+    out = apply_edits_to_decisions_data(data, edits=edits)
+
+    out_row = out["decisions"][0]
+    assert out_row["override"] == "write-in answer"
+    assert out_row["status"] == "overridden"
+    assert out_row["options"] == ["v1", "v2", "write-in answer"]
+
+
+def test_edit_with_new_answer_normalises_v2_options_considered_to_v3_options():
+    """Legacy rows persist `options_considered` (v2). On write we
+    normalize to v3 `options` so the appended write-in keeps the strict
+    invariant; we don't want a row that has BOTH keys."""
+    data = {"decisions": [_row("a", "v1", options=["v1"])]}
+    edits = [{"row_id": "a", "new_answer": "write-in"}]
+
+    out = apply_edits_to_decisions_data(data, edits=edits)
+
+    out_row = out["decisions"][0]
+    assert "options_considered" not in out_row
+    assert out_row["options"] == ["v1", "write-in"]
+
+
+def test_revert_clears_override_reasoning():
+    data = {"decisions": [{
+        "id": "a",
+        "phase": "design",
+        "skill": "idea-to-pdd",
+        "source": "x",
+        "question": "q",
+        "ai-default": "v1",
+        "override": "v2",
+        "options": ["v1", "v2"],
+        "status": "overridden",
+        "override_reasoning": "stale reason",
+    }]}
+    # Reverting (new_answer == ai-default, no new reason) drops both
+    # override and override_reasoning.
+    edits = [{"row_id": "a", "new_answer": "v1"}]
+
+    out = apply_edits_to_decisions_data(data, edits=edits)
+
+    out_row = out["decisions"][0]
+    assert "override" not in out_row
+    assert "override_reasoning" not in out_row
+    assert out_row["status"] == "ai-default"
+
+
+def test_reasoning_on_ai_default_pick_persists_without_setting_override():
+    """A human can land on the AI default but write a reason ('I checked
+    and the AI is right'). We persist the reason; status stays
+    ai-default; override is not set."""
+    data = {"decisions": [_row("a", "v1", options=["v1", "v2"])]}
+    edits = [{
+        "row_id": "a",
+        "new_answer": "v1",
+        "override_reasoning": "endorsed after review",
+    }]
+
+    out = apply_edits_to_decisions_data(data, edits=edits)
+
+    out_row = out["decisions"][0]
+    assert "override" not in out_row
+    assert out_row["status"] == "ai-default"
+    assert out_row["override_reasoning"] == "endorsed after review"
+
+
 def test_upgrade_v2_is_idempotent():
     v2 = {
         "schema_version": 2,

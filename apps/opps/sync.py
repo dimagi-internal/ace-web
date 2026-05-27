@@ -707,6 +707,11 @@ def _parse_decision_rows(raw_rows: list) -> list[Decision]:
         status = raw_status if raw_status == "overridden" else "ai-default"
         question = str(row.get("question") or "").strip()
         reasoning = str(row.get("reasoning") or row.get("notes") or "").strip()
+        # Override-reasoning may be written with either underscore (ACE v3)
+        # or hyphen (defensive — some hand-edited files). Both forms parse.
+        override_reasoning = str(
+            row.get("override_reasoning") or row.get("override-reasoning") or ""
+        ).strip()
 
         if not question or not ai_default:
             log.warning(
@@ -734,6 +739,7 @@ def _parse_decision_rows(raw_rows: list) -> list[Decision]:
                 source=str(row.get("source") or "").strip(),
                 status=status,
                 notes=reasoning,
+                override_reasoning=override_reasoning,
             )
         )
     return out

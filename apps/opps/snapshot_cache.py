@@ -48,7 +48,9 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        and the Opps-list strip would render an empty chip row)
 #   v5 — post #548 (Decision.default → Decision.ai_default + .override;
 #        cached Decision objects from v4 lack the new attrs)
-_KEY_VERSION = "v5"
+#   v6 — Decision grew ``override_reasoning``; entries written before this
+#        bump deserialise without the attr and serialize_decision crashes
+_KEY_VERSION = "v6"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

@@ -1,6 +1,15 @@
 export interface EditOp {
   row_id: string;
+  /**
+   * The override value. MAY be a string not present in the row's current
+   * `options_considered` — in that case the write path (Python
+   * `apply_edits_to_decisions_data`) appends it to `options` before
+   * setting `override`, keeping the ACE strict-write invariant
+   * (`override ∈ options`) intact.
+   */
   new_answer: string;
+  /** Human's rationale for the override (optional, free text). */
+  override_reasoning?: string;
   editor_email?: string;
   editor_name?: string;
 }
@@ -15,10 +24,28 @@ export function initialDecisionsEditState(): DecisionsEditState {
 }
 
 export type DecisionsEditAction =
-  | { type: "APPLY_EDIT"; row_id: string; new_answer: string; editor_email?: string; editor_name?: string }
+  | {
+      type: "APPLY_EDIT";
+      row_id: string;
+      new_answer: string;
+      override_reasoning?: string;
+      editor_email?: string;
+      editor_name?: string;
+    }
   | { type: "REVERT_EDIT"; row_id: string }
   | { type: "DISCARD_ALL" }
-  | { type: "MERGE_REMOTE"; edits: Record<string, { new_answer: string; editor_email: string; editor_name: string }> };
+  | {
+      type: "MERGE_REMOTE";
+      edits: Record<
+        string,
+        {
+          new_answer: string;
+          override_reasoning?: string;
+          editor_email: string;
+          editor_name: string;
+        }
+      >;
+    };
 
 export function decisionsReducer(
   state: DecisionsEditState,
@@ -30,6 +57,7 @@ export function decisionsReducer(
       const op: EditOp = {
         row_id: action.row_id,
         new_answer: action.new_answer,
+        override_reasoning: action.override_reasoning || undefined,
         editor_email: action.editor_email,
         editor_name: action.editor_name,
       };
@@ -56,6 +84,7 @@ export function decisionsReducer(
         const op: EditOp = {
           row_id,
           new_answer: edit.new_answer,
+          override_reasoning: edit.override_reasoning || undefined,
           editor_email: edit.editor_email,
           editor_name: edit.editor_name,
         };

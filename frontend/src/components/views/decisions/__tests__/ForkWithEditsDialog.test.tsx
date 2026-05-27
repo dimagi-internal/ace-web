@@ -71,7 +71,9 @@ describe("ForkWithEditsDialog", () => {
     expect(forkSpy).toHaveBeenCalledWith("dimagi", "test-opp", {
       fork_at_phase: "design",
       source_run_id: "20260101-1000",
-      edits: [{ row_id: "a", new_answer: "v2" }],
+      // override_reasoning is always sent (defaults to ""). The backend
+      // schema accepts an empty string and treats it as "no rationale".
+      edits: [{ row_id: "a", new_answer: "v2", override_reasoning: "" }],
       mode: "keep-overrides-only",
     });
   });

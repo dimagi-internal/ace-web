@@ -152,6 +152,66 @@ def test_warns_when_row_has_id_but_missing_question(caplog):
     )
 
 
+def test_v3_row_reads_override_reasoning():
+    """v3 carries an `override_reasoning` field (human's rationale for
+    the override, mirroring the AI's `reasoning`). Surface it on the
+    Decision dataclass so the Workbench can render it under the row."""
+    row = {
+        "id": "row-1",
+        "phase": "1-design",
+        "skill": "idea-to-pdd",
+        "question": "Which language?",
+        "ai-default": "english",
+        "override": "french",
+        "options": ["english", "french"],
+        "source": "src",
+        "status": "overridden",
+        "reasoning": "english per LLO directory",
+        "override_reasoning": "LLO confirmed french is the working language",
+    }
+    [d] = _parse_decision_rows([row])
+    assert d.override == "french"
+    assert d.override_reasoning == (
+        "LLO confirmed french is the working language"
+    )
+    assert d.notes == "english per LLO directory"
+
+
+def test_override_reasoning_falls_back_to_hyphenated_key():
+    """Defensive: tolerate `override-reasoning` (hyphen) in addition to
+    the canonical `override_reasoning` (underscore). Hand-edited YAML
+    sometimes lands with the hyphen form."""
+    row = {
+        "id": "row-1",
+        "phase": "1-design",
+        "skill": "idea-to-pdd",
+        "question": "Q?",
+        "ai-default": "a",
+        "override": "b",
+        "options": ["a", "b"],
+        "source": "src",
+        "status": "overridden",
+        "override-reasoning": "human picked b",
+    }
+    [d] = _parse_decision_rows([row])
+    assert d.override_reasoning == "human picked b"
+
+
+def test_override_reasoning_defaults_to_empty():
+    row = {
+        "id": "row-1",
+        "phase": "1-design",
+        "skill": "idea-to-pdd",
+        "question": "Q?",
+        "ai-default": "a",
+        "options": ["a"],
+        "source": "src",
+        "status": "ai-default",
+    }
+    [d] = _parse_decision_rows([row])
+    assert d.override_reasoning == ""
+
+
 def test_no_warning_for_well_formed_row(caplog):
     row = {
         "id": "row-1",

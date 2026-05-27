@@ -1306,9 +1306,11 @@ def test_fork_opp_forwards_edits_to_forker(member_client, monkeypatch):
     )
 
     assert response.status_code == 201, response.content
+    # `override_reasoning` defaults to "" when not supplied in the request
+    # body — the Pydantic OppForkEditIn schema fills it in.
     assert captured.get("edits") == [
-        {"row_id": "row-7", "new_answer": "Q4 2026"},
-        {"row_id": "row-12", "new_answer": "alpha-only"},
+        {"row_id": "row-7", "new_answer": "Q4 2026", "override_reasoning": ""},
+        {"row_id": "row-12", "new_answer": "alpha-only", "override_reasoning": ""},
     ]
     # Sanity: other fields still flow through.
     assert captured.get("source_slug") == "opp-1"

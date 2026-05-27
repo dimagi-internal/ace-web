@@ -5,6 +5,7 @@ import { wsUrl } from "../lib/wsUrl";
 interface DecisionEditEvent {
   row_id: string;
   new_answer: string;
+  override_reasoning?: string;
   editor_email: string;
   editor_name: string;
 }
@@ -61,9 +62,19 @@ export function useOppSocket({ slug, runId, onOppUpdated, onDecisionEdited, onDe
     };
   }, [slug, runId]);
 
-  const sendDecisionEdit = useCallback((row_id: string, new_answer: string) => {
-    wsRef.current?.send(JSON.stringify({ type: "decision.edit", row_id, new_answer }));
-  }, []);
+  const sendDecisionEdit = useCallback(
+    (row_id: string, new_answer: string, override_reasoning?: string) => {
+      wsRef.current?.send(
+        JSON.stringify({
+          type: "decision.edit",
+          row_id,
+          new_answer,
+          override_reasoning: override_reasoning ?? "",
+        }),
+      );
+    },
+    [],
+  );
 
   const sendDecisionRevert = useCallback((row_id: string) => {
     wsRef.current?.send(JSON.stringify({ type: "decision.revert", row_id }));
