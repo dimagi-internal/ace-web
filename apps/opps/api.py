@@ -899,7 +899,7 @@ def list_runs(
 
 @router.get(
     "/{slug}/runs/{run_id}",
-    response=OppRunOut,
+    response={200: dict},
     summary="Run detail",
     openapi_extra={"x-mcp-expose": True},
 )
@@ -908,13 +908,20 @@ def get_run(
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
     run_id: Annotated[str, Path()],
-) -> OppRunOut:
+) -> HttpResponse:
+    # Return the full enriched RunSummary dict, mirroring `list_runs`.
+    # `OppRunOut` is a StrictModel (extra="forbid"); the enriched dict
+    # carries ~12 fields it doesn't declare (current_phase, phases_done,
+    # lifecycle_status, *_display, started_at, …), so routing it through
+    # `OppRunOut.model_validate` raised a ValidationError → HTTP 500 on
+    # every run-detail fetch. JsonResponse uses DjangoJSONEncoder, which
+    # serializes the `started_at` datetime — same path `list_runs` uses.
     workspace = resolve_workspace_for_member(request, workspace_slug)
     runs = list_opp_runs_for_workspace(workspace, slug)
     match = next((r for r in runs if r["run_id"] == run_id), None)
     if match is None:
         raise ProblemError(404, "Run not found", type_=TYPE_NOT_FOUND)
-    return OppRunOut.model_validate(match)
+    return JsonResponse(match)
 
 
 # ---------------------------------------------------------------------------

@@ -198,7 +198,10 @@ def _read_connect(state: dict, opp_yaml: dict) -> dict | None:
 
     opp_block = None
     opp_id = opp.get("id") or connect.get("opportunity_id")
-    opp_url = opp.get("url") or connect.get("deep_link")
+    # `connect-opp-setup` writes the live URL as `opportunity.deep_link`,
+    # so check that level first; the `connect.deep_link` fallback covers
+    # the flatter alt-schema some runs use.
+    opp_url = opp.get("url") or opp.get("deep_link") or connect.get("deep_link")
     if opp_id or opp_url:
         opp_block = {
             "name": opp.get("name") or connect.get("opportunity_name") or "Connect opportunity",

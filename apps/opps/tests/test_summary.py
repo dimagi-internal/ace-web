@@ -449,3 +449,32 @@ def test_solicitation_renders_when_url_present():
     )
     assert p["solicitation"]["url"].endswith("/solicitations/abc/")
     assert p["solicitation"]["status"] == "open"
+
+
+def test_read_connect_falls_back_to_opportunity_deep_link():
+    """connect-opp-setup writes the live URL as products.connect.opportunity.deep_link
+    (not .url). _read_connect must surface it as opportunity.url. Regression: the
+    fallback previously read connect.deep_link (wrong nesting level) and the opp
+    link rendered blank on the summary page."""
+    from apps.opps.summary import _read_connect
+
+    state = {
+        "phases": {
+            "connect-setup": {
+                "products": {
+                    "connect": {
+                        "opportunity": {
+                            "id": "bce9150c",
+                            "name": "LEEP Paint Surveillance - India",
+                            "deep_link": "https://connect.dimagi.com/a/ai-demo-space/opportunity/bce9150c/",
+                        },
+                    },
+                },
+            },
+        },
+    }
+    out = _read_connect(state, {})
+    assert out is not None
+    assert out["opportunity"]["url"] == (
+        "https://connect.dimagi.com/a/ai-demo-space/opportunity/bce9150c/"
+    )
