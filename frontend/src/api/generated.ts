@@ -2028,42 +2028,6 @@ export interface components {
             /** Title */
             readonly title?: string | null;
         };
-        /** OppRunOut */
-        readonly OppRunOut: {
-            /** Run Id */
-            readonly run_id: string;
-            /** Label */
-            readonly label: string;
-            /**
-             * Started At
-             * Format: date-time
-             */
-            readonly started_at: string;
-            /** Finished At */
-            readonly finished_at?: string | null;
-            /** Is Active */
-            readonly is_active: boolean;
-            readonly scorecard?: components["schemas"]["ScorecardOut"] | null;
-        };
-        /** ScorecardOut */
-        readonly ScorecardOut: {
-            /** Score */
-            readonly score: number;
-            /**
-             * Verdict
-             * @enum {string}
-             */
-            readonly verdict: "pass" | "warn" | "fail";
-            /** Rationale */
-            readonly rationale: string;
-            /** Trend */
-            readonly trend: readonly number[];
-            /**
-             * Decided At
-             * Format: date-time
-             */
-            readonly decided_at: string;
-        };
         /**
          * ArtifactOut
          * @description One entry in the plugin's artifact-manifest.ts.
@@ -2252,6 +2216,23 @@ export interface components {
             /** Snapshots */
             readonly snapshots: readonly components["schemas"]["OppSnapshotOut"][];
         };
+        /** OppRunOut */
+        readonly OppRunOut: {
+            /** Run Id */
+            readonly run_id: string;
+            /** Label */
+            readonly label: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            readonly started_at: string;
+            /** Finished At */
+            readonly finished_at?: string | null;
+            /** Is Active */
+            readonly is_active: boolean;
+            readonly scorecard?: components["schemas"]["ScorecardOut"] | null;
+        };
         /** OppSnapshotOut */
         readonly OppSnapshotOut: {
             /** Slug */
@@ -2272,6 +2253,25 @@ export interface components {
              * Format: date-time
              */
             readonly updated_at: string;
+        };
+        /** ScorecardOut */
+        readonly ScorecardOut: {
+            /** Score */
+            readonly score: number;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            readonly verdict: "pass" | "warn" | "fail";
+            /** Rationale */
+            readonly rationale: string;
+            /** Trend */
+            readonly trend: readonly number[];
+            /**
+             * Decided At
+             * Format: date-time
+             */
+            readonly decided_at: string;
         };
         /**
          * SeedChatIn
@@ -4429,7 +4429,9 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["OppRunOut"];
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
                 };
             };
         };
