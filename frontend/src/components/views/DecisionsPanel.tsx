@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, HelpCircle } from "lucide-react";
+import { AlertTriangle, ChevronRight, HelpCircle } from "lucide-react";
 
 import type { Decision } from "@/api/types.ws";
 import { cn } from "@/lib/utils";
@@ -237,6 +237,22 @@ function DecisionRow({
             edited{pendingEdit?.editor_name ? ` by ${pendingEdit.editor_name}` : ""}
           </span>
         )}
+        {decision.evidence_basis === "conflicting" ? (
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400"
+            title="The sources disagreed — this default resolved a contested fork"
+          >
+            <AlertTriangle className="h-3 w-3" />
+            conflicting
+          </span>
+        ) : decision.evidence_basis === "inferred" ? (
+          <span
+            className="shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            title="Extrapolated beyond what the source directly states"
+          >
+            inferred
+          </span>
+        ) : null}
         <span
           className={cn(
             "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
@@ -297,6 +313,36 @@ function DecisionRow({
               value={<span className="text-muted-foreground">{decision.source}</span>}
             />
           )}
+          {decision.evidence_basis !== "stated" && (
+            <DetailRow
+              label="Evidence basis"
+              value={
+                <span
+                  className={cn(
+                    "font-medium",
+                    decision.evidence_basis === "conflicting"
+                      ? "text-amber-400"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {decision.evidence_basis}
+                </span>
+              }
+            />
+          )}
+          {decision.evidence_basis === "conflicting" &&
+            decision.conflict_signals.length > 0 && (
+              <DetailRow
+                label="Conflicting source signals"
+                value={
+                  <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
+                    {decision.conflict_signals.map((signal, i) => (
+                      <li key={i}>{signal}</li>
+                    ))}
+                  </ul>
+                }
+              />
+            )}
           <DetailRow
             label="Raised by"
             value={

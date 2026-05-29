@@ -297,6 +297,104 @@ rows:
     assert rows[0].options_considered == ["atomic-visit", "focus-group"]
 
 
+def test_v4_row_reads_evidence_basis_and_conflict_signals():
+    """v4 (ACE PRs #554/#555/#556) adds `evidence_basis` (stated |
+    inferred | conflicting) and `conflict_signals` (string[], required
+    when conflicting). Surface both on the Decision dataclass."""
+    row = {
+        "id": "row-1",
+        "phase": "1-design",
+        "skill": "idea-to-pdd",
+        "question": "How many visit instruments?",
+        "ai-default": "two linked forms",
+        "options": ["one form", "two linked forms"],
+        "source": "src",
+        "status": "ai-default",
+        "evidence_basis": "conflicting",
+        "conflict_signals": [
+            "source says households are visited twice",
+            "source describes only one visit instrument",
+        ],
+    }
+    [d] = _parse_decision_rows([row])
+    assert d.evidence_basis == "conflicting"
+    assert d.conflict_signals == [
+        "source says households are visited twice",
+        "source describes only one visit instrument",
+    ]
+
+
+def test_evidence_basis_defaults_to_stated_for_legacy_v3_rows():
+    """Legacy v3 logs have no `evidence_basis` — default to `stated`
+    (the common case, no chip) so they render unchanged."""
+    row = {
+        "id": "row-1",
+        "phase": "1-design",
+        "skill": "idea-to-pdd",
+        "question": "Q?",
+        "ai-default": "a",
+        "options": ["a"],
+        "source": "src",
+        "status": "ai-default",
+    }
+    [d] = _parse_decision_rows([row])
+    assert d.evidence_basis == "stated"
+    assert d.conflict_signals == []
+
+
+def test_evidence_basis_unknown_value_falls_back_to_stated():
+    """A garbage/unknown evidence_basis normalizes to `stated` rather
+    than leaking an out-of-enum value to the frontend chip logic."""
+    row = {
+        "id": "row-1",
+        "phase": "1-design",
+        "skill": "idea-to-pdd",
+        "question": "Q?",
+        "ai-default": "a",
+        "options": ["a"],
+        "source": "src",
+        "status": "ai-default",
+        "evidence_basis": "WILD-GUESS",
+    }
+    [d] = _parse_decision_rows([row])
+    assert d.evidence_basis == "stated"
+
+
+def test_evidence_basis_is_case_insensitive():
+    row = {
+        "id": "row-1",
+        "phase": "1-design",
+        "skill": "idea-to-pdd",
+        "question": "Q?",
+        "ai-default": "a",
+        "options": ["a"],
+        "source": "src",
+        "status": "ai-default",
+        "evidence_basis": "Inferred",
+    }
+    [d] = _parse_decision_rows([row])
+    assert d.evidence_basis == "inferred"
+
+
+def test_conflict_signals_non_list_coerces_to_empty():
+    """Mirror the options list-guard: a malformed scalar conflict_signals
+    becomes [] rather than blowing up the parse."""
+    row = {
+        "id": "row-1",
+        "phase": "1-design",
+        "skill": "idea-to-pdd",
+        "question": "Q?",
+        "ai-default": "a",
+        "options": ["a"],
+        "source": "src",
+        "status": "ai-default",
+        "evidence_basis": "conflicting",
+        "conflict_signals": "not a list",
+    }
+    [d] = _parse_decision_rows([row])
+    assert d.conflict_signals == []
+
+
 def test_no_warning_for_well_formed_row(caplog):
     row = {
         "id": "row-1",

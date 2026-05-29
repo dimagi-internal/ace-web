@@ -18,6 +18,8 @@ function dec(over: Partial<Decision> = {}): Decision {
     status: "ai-default",
     notes: "",
     override_reasoning: "",
+    evidence_basis: "stated",
+    conflict_signals: [],
     ...over,
   };
 }

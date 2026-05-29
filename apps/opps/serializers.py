@@ -233,6 +233,8 @@ def serialize_decision(d: Decision) -> dict:
         "status": d.status,
         "notes": d.notes,
         "override_reasoning": d.override_reasoning,
+        "evidence_basis": d.evidence_basis,
+        "conflict_signals": list(d.conflict_signals),
     }
 
 
