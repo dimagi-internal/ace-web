@@ -126,3 +126,13 @@ class Decision:
     # Surfaces in the Workbench so the next human can see why the prior
     # human picked a different option than the AI default.
     override_reasoning: str = ""
+    # v4 (ACE PRs #554/#555/#556, May 2026). ``evidence_basis`` records how
+    # the AI grounded its default: ``stated`` (directly in the source),
+    # ``inferred`` (extrapolated beyond it), or ``conflicting`` (resolves
+    # disagreeing source signals). ``conflict_signals`` lists each competing
+    # source reading; populated (≥2 entries) only when
+    # ``evidence_basis == "conflicting"``. Legacy v3 rows have neither — the
+    # reader defaults ``evidence_basis`` to ``stated`` so they render unchanged.
+    # Canonical schema: ACE ``lib/decisions-schema.ts`` (v4 block).
+    evidence_basis: str = "stated"
+    conflict_signals: list[str] = field(default_factory=list)

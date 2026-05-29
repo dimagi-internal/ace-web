@@ -302,6 +302,19 @@ export interface Decision {
   notes: string;
   /** Human's rationale when status=overridden (read from YAML `override_reasoning`). */
   override_reasoning: string;
+  /**
+   * v4 (ACE PRs #554/#555/#556). How the AI grounded its default:
+   * `stated` (directly in the source), `inferred` (extrapolated beyond it),
+   * or `conflicting` (resolves disagreeing source signals). Legacy v3 logs
+   * default to `stated` server-side.
+   */
+  evidence_basis: "stated" | "inferred" | "conflicting";
+  /**
+   * Competing source readings — populated (≥2) only when
+   * `evidence_basis === "conflicting"`. Each entry is one source signal that
+   * disagreed with the others.
+   */
+  conflict_signals: string[];
 }
 
 export interface Run {

@@ -762,6 +762,17 @@ def _parse_decision_rows(raw_rows: list) -> list[Decision]:
         override_reasoning = str(
             row.get("override_reasoning") or row.get("override-reasoning") or ""
         ).strip()
+        # v4 fields. evidence_basis is a closed enum — normalize case and
+        # fall back to "stated" for legacy rows (no field) or any value
+        # outside the enum, so the frontend chip logic never sees garbage.
+        evidence_basis = str(row.get("evidence_basis") or "").strip().lower()
+        if evidence_basis not in ("stated", "inferred", "conflicting"):
+            evidence_basis = "stated"
+        # Mirror the options list-guard: a malformed scalar becomes [].
+        signals_raw = row.get("conflict_signals") or []
+        conflict_signals = (
+            [str(s) for s in signals_raw] if isinstance(signals_raw, list) else []
+        )
 
         if not question or not ai_default:
             log.warning(
@@ -790,6 +801,8 @@ def _parse_decision_rows(raw_rows: list) -> list[Decision]:
                 status=status,
                 notes=reasoning,
                 override_reasoning=override_reasoning,
+                evidence_basis=evidence_basis,
+                conflict_signals=conflict_signals,
             )
         )
     return out

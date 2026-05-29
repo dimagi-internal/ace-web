@@ -39,6 +39,30 @@ def test_rewrite_with_no_edits_matches_legacy_trim():
     assert ids == ["a"]  # 'b' belongs to phase ordinal 2, dropped
 
 
+def test_rewrite_preserves_v4_evidence_basis_and_conflict_signals():
+    """The fork trim copies surviving rows verbatim — the v4 fields
+    (`evidence_basis`, `conflict_signals`) must pass through untouched so
+    a forked run keeps the contested-fork signal."""
+    rows = [
+        {
+            "id": "a",
+            "phase": "design-review",
+            "ai-default": "two linked forms",
+            "options": ["one form", "two linked forms"],
+            "status": "ai-default",
+            "evidence_basis": "conflicting",
+            "conflict_signals": ["visited twice", "one instrument only"],
+        },
+    ]
+    src = _decisions_yaml(rows, schema_version=3)
+
+    out = _rewrite_decisions_yaml(src, fork_ordinal=2)  # keep ordinal < 2
+
+    row = yaml.safe_load(out)["decisions"][0]
+    assert row["evidence_basis"] == "conflicting"
+    assert row["conflict_signals"] == ["visited twice", "one instrument only"]
+
+
 def test_rewrite_with_edits_applies_after_trim():
     rows = [
         {"id": "a", "phase": "design-review", "ai-default": "v1",

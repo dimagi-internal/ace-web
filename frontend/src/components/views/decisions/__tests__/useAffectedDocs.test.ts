@@ -21,6 +21,8 @@ function dec(id: string, skill: string): Decision {
     status: "ai-default",
     notes: "",
     override_reasoning: "",
+    evidence_basis: "stated",
+    conflict_signals: [],
   };
 }
 
