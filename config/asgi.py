@@ -25,7 +25,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
 
 django_asgi_app = get_asgi_application()
 
-from apps.api.mcp_server import make_asgi_app  # noqa: E402
+from apps.api.mcp_server import build_http_app  # noqa: E402
 from apps.common.channels_auth import AceSessionAuthMiddleware  # noqa: E402
 from apps.opps.routing import websocket_urlpatterns as opps_ws_urlpatterns  # noqa: E402
 from apps.sessions.routing import websocket_urlpatterns as sessions_ws_urlpatterns  # noqa: E402
@@ -41,10 +41,14 @@ _channels_app = ProtocolTypeRouter(
     }
 )
 
-# FastMCP ASGI app — mounted at /api/mcp.
-# ``make_asgi_app()`` calls ``FastMCP.from_openapi`` once at startup and
-# returns a Starlette app; the internal path is ``/mcp`` because Starlette's
-# Mount strips the prefix before passing the request through.
+# FastMCP Streamable-HTTP ASGI app — mounted at /api/mcp.
+# ``build_http_app()`` returns ``mcp.http_app(path="/", transport="streamable-http")``:
+# a Starlette app whose lifespan runs the Streamable-HTTP session manager.
+# The MCP endpoint lives at the Mount root (``/api/mcp/``) because the internal
+# path is ``/`` and Starlette's Mount strips the prefix before passing through.
+#
+# Tool calls execute IN-PROCESS through Django via httpx.ASGITransport (see
+# apps/api/mcp_server.py) — there is no network self-loopback.
 #
 # Path-prefix subtlety: ace-web runs behind nginx with FORCE_SCRIPT_NAME=/ace
 # on connect-labs. Django strips the /ace prefix internally via its
@@ -53,14 +57,15 @@ _channels_app = ProtocolTypeRouter(
 # locally. Read the prefix from the env (same source as Django settings)
 # and prepend it to the Mount path so both environments resolve correctly.
 _SCRIPT_NAME = os.environ.get("FORCE_SCRIPT_NAME", "").rstrip("/")
-_mcp_app = make_asgi_app()
+_mcp_app = build_http_app()
 
 
 @contextlib.asynccontextmanager
 async def _composed_lifespan(app):
     """Compose the MCP server lifespan with the Slack worker.
 
-    1. MCP lifespan (existing) — yields when the MCP server is ready.
+    1. MCP lifespan — runs the Streamable-HTTP session manager; required for
+       Streamable-HTTP session management. Yields when the MCP server is ready.
     2. Slack worker — runs in the background until app shutdown.
 
     Set DJANGO_SLACK_DISABLE_WORKER=1 to suppress the worker (e.g. in ASGI
