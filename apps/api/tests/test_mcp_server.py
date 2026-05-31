@@ -232,7 +232,11 @@ def test_build_http_app_has_lifespan():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.django_db
+# transaction=True: the in-process ASGITransport call runs through Django on a
+# separate DB connection, so rows it commits escape the default rollback. Flush
+# semantics clean them up and prevent leaking users into order-dependent tests
+# (apps/auth, apps/workspaces).
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_inprocess_unauthenticated_call_rejected():
     """An in-process call with no forwarded Bearer is rejected by Django (401).
@@ -250,7 +254,7 @@ async def test_inprocess_unauthenticated_call_rejected():
     assert resp.json()["title"] == "Authentication required"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_inprocess_forwarded_bearer_authenticates():
     """A forwarded Bearer token authenticates the in-process call as its user.
