@@ -13,11 +13,6 @@ const WORKSPACE_NAV = [
   { label: "Videos", subPath: "videos" },
 ];
 
-// "System" sounded operational and was the only entry into the
-// "what is ACE?" surface for new users. "Overview" reads as a
-// destination instead of an admin-tools tab.
-const GLOBAL_NAV = [{ label: "Overview", path: "/system" }];
-
 export function TopNav() {
   const { pathname } = useLocation();
   const { current, all } = useWorkspace();
@@ -58,25 +53,10 @@ export function TopNav() {
         })}
       </div>
 
-      {/* Global nav + utility, right-aligned and separated by a divider
-          so global pages aren't visually confused with workspace pages. */}
+      {/* Utility cluster, right-aligned. System Overview lives in the
+          account menu (UserMenu) now — it's a global destination, not a
+          workspace page, so it doesn't belong inline with the nav. */}
       <div className="ml-auto flex items-center gap-4">
-        {GLOBAL_NAV.map((item) => {
-          const isActive = pathname.startsWith(item.path);
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                "text-muted-foreground hover:text-foreground",
-                isActive && "text-foreground font-medium",
-              )}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-        <span aria-hidden className="h-5 w-px bg-border" />
         <WorkspaceSwitcher />
         <UserMenu />
       </div>
