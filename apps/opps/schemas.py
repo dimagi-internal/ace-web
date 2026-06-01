@@ -252,6 +252,12 @@ class SeededRunIn(StrictModel):
 
 
 class SeededRunOut(StrictModel):
-    """Response for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run."""
+    """Response for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run.
+
+    The run executes asynchronously (202); `assistant_message_id` is the turn
+    the headless driver fills in. The `/ace:iterate` client observes the run
+    via Drive `run_state.yaml`, not this message.
+    """
 
     session_slug: str
+    assistant_message_id: int

@@ -1613,18 +1613,23 @@ def seed_chat(
 
 
 def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
-    """Create a CLI session seeded with a first-class seeded-run command.
+    """Create a CLI session whose first USER turn is the seeded-run command,
+    plus an assistant placeholder ready for the turn driver.
 
-    The session's seed message is the literal slash command
+    The user message is the literal slash command
     ``/ace:run <slug> --seed-from <golden_run_id> --only <only>``, which the CLI
-    backend (``claude -p``) executes as an ordinary run. The run is loop-blind;
-    the ``/ace:iterate`` client observes its run_state. The golden run is
-    validated to exist before the session is created.
+    backend (``claude -p``) executes as an ordinary run when the turn is driven.
+    The run is loop-blind; the ``/ace:iterate`` client observes its run_state.
+    The golden run is validated to exist before the session is created.
 
-    Raises FileNotFoundError when the opp or golden run can't be resolved.
-    The monkeypatch target in contract tests is this module-level function.
+    Returns ``{session_slug, assistant_message_id}``. The route spawns the
+    headless turn driver against ``assistant_message_id`` to actually execute
+    the run (no WebSocket client needed). Raises FileNotFoundError when the opp
+    or golden run can't be resolved. The monkeypatch target in contract tests
+    is this module-level function.
     """
     from django.db import transaction
+    from django.utils import timezone
 
     from apps.opps import access
     from apps.opps.drive_client import get_drive_client
@@ -1659,28 +1664,54 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
             opp_run_id=body.golden_run_id,
             workspace=workspace,
         )
+        # The command goes in as a completed USER turn (turn_driver loads the
+        # last user text to feed the backend), with an assistant placeholder
+        # the headless driver fills in. Mirrors drafts.commit_active_draft.
         Message.objects.create(
             session=session,
             turn_index=0,
-            role="system",
+            role="user",
             sender_user=user,
-            content={"type": "system", "source": "opps-seeded-run"},
+            content={"text": command},
             plaintext=command,
             status="complete",
+            completed_at=timezone.now(),
         )
-    return {"session_slug": session.slug}
+        assistant_msg = Message.objects.create(
+            session=session,
+            turn_index=1,
+            role="assistant",
+            content={"text": ""},
+            plaintext="",
+            status="pending",
+        )
+    return {"session_slug": session.slug, "assistant_message_id": assistant_msg.id}
 
 
-@router.post("/{slug}/actions/seeded-run", summary="Launch a first-class seeded run")
-def seeded_run(
+@router.post(
+    "/{slug}/actions/seeded-run",
+    summary="Launch a first-class seeded run (headless)",
+    openapi_extra={"x-mcp-expose": True},
+)
+async def seeded_run(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
     body: SeededRunIn,
 ) -> HttpResponse:
-    workspace = resolve_workspace_for_member(request, workspace_slug)
+    """Seed a CLI session with the first-class run command AND start it
+    headlessly — spawns the turn driver as a background task on this ASGI loop,
+    so no WebSocket client (human opening the workbench) is needed. Exposed as
+    an MCP tool (``x-mcp-expose``) so agentic clients can trigger it too.
+    Returns 202 (accepted; the run executes asynchronously).
+    """
+    from asgiref.sync import sync_to_async
+
+    from apps.sessions.turn_driver import run_turn_headless
+
+    workspace = await sync_to_async(resolve_workspace_for_member)(request, workspace_slug)
     try:
-        result = seed_run_for_opp(workspace, slug, request.user, body)
+        result = await sync_to_async(seed_run_for_opp)(workspace, slug, request.user, body)
     except FileNotFoundError as exc:
         raise ProblemError(
             404, "Opp or golden run not found", type_=TYPE_NOT_FOUND, detail=str(exc),
@@ -1689,8 +1720,11 @@ def seeded_run(
         raise ProblemError(
             404, str(exc), type_=TYPE_NOT_FOUND,
         ) from exc
+    # Drive the assistant turn headlessly (consume-and-discard StreamEvents; the
+    # DB + the agent's run_state.yaml are persisted regardless). See ace-web#585.
+    run_turn_headless(result["assistant_message_id"])
     payload = SeededRunOut.model_validate(result).model_dump(mode="json")
-    return JsonResponse(payload, status=201)
+    return JsonResponse(payload, status=202)
 
 
 # ---------------------------------------------------------------------------

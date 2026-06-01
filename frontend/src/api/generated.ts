@@ -276,7 +276,14 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** Launch a first-class seeded run */
+        /**
+         * Launch a first-class seeded run (headless)
+         * @description Seed a CLI session with the first-class run command AND start it
+         *     headlessly — spawns the turn driver as a background task on this ASGI loop,
+         *     so no WebSocket client (human opening the workbench) is needed. Exposed as
+         *     an MCP tool (``x-mcp-expose``) so agentic clients can trigger it too.
+         *     Returns 202 (accepted; the run executes asynchronously).
+         */
         readonly post: operations["apps_opps_api_seeded_run"];
         readonly delete?: never;
         readonly options?: never;

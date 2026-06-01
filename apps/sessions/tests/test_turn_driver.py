@@ -270,3 +270,26 @@ def test_get_backend_returns_real_when_setting_disabled(settings):
     settings.ANTHROPIC_API_KEY = ""
     backend = turn_driver._get_backend()
     assert isinstance(backend, CLIBackend)
+
+
+async def test_run_turn_headless_drives_to_completion(
+    session, user_and_assistant_messages
+):
+    """run_turn_headless consumes drive_assistant_turn with NO WebSocket
+    consumer; the DB message reaches a terminal state exactly as a WS-driven
+    turn would. This is the path /ace:iterate uses to launch server-side runs
+    headlessly (ace-web#585)."""
+    _user, asst = user_and_assistant_messages
+    events = [StreamEvent.delta(text="done"), StreamEvent.done()]
+    with patch(
+        "apps.sessions.turn_driver._get_backend",
+        return_value=FakeBackend(events),
+    ):
+        task = turn_driver.run_turn_headless(asst.id)
+        await task
+
+    from asgiref.sync import sync_to_async
+
+    refreshed = await sync_to_async(Message.objects.get)(pk=asst.id)
+    assert refreshed.status == "complete"
+    assert refreshed.plaintext == "done"

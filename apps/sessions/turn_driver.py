@@ -275,6 +275,42 @@ def _schedule_auto_title(session: Session) -> None:
     task.add_done_callback(_bg_tasks.discard)
 
 
+def run_turn_headless(assistant_message_id: int) -> asyncio.Task:
+    """Fire-and-forget: drive an assistant turn with NO WebSocket consumer.
+
+    ``drive_assistant_turn`` owns the backend + DB state machine and merely
+    *yields* StreamEvents for a consumer to broadcast. A headless caller can
+    consume-and-discard those events while the message state — and anything the
+    agent writes server-side (e.g. an ACE run's ``run_state.yaml`` on Drive) —
+    is persisted identically. This is what lets ``/ace:iterate`` launch
+    server-side seeded runs without a human opening the workbench to drive the
+    turn over a WebSocket.
+
+    Must be called from within a running event loop (i.e. an async view). The
+    task is pinned in module-level ``_bg_tasks`` so a GC pass cannot cancel it
+    mid-run (Python 3.11+ holds only a weak ref to ``create_task`` results), and
+    self-removes via ``add_done_callback``.
+    """
+
+    async def _runner():
+        stop_event = asyncio.Event()
+        try:
+            async for _event in drive_assistant_turn(
+                assistant_message_id=assistant_message_id, stop_event=stop_event
+            ):
+                pass
+        except Exception:
+            logger.exception(
+                "Headless turn failed for assistant message %s",
+                assistant_message_id,
+            )
+
+    task = asyncio.create_task(_runner())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
+
+
 def _load_message(message_id: int) -> Message | None:
     try:
         # Pre-fetch session.owner so the async backend selector can call

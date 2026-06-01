@@ -1664,18 +1664,26 @@ def test_seeded_run_happy_path(member_client, monkeypatch):
     def _fake(workspace, slug, user, body):
         captured["only"] = body.only
         captured["golden"] = body.golden_run_id
-        return {"session_slug": "sess-seeded"}
+        return {"session_slug": "sess-seeded", "assistant_message_id": 4242}
 
+    driven = {}
     monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
+    monkeypatch.setattr(
+        "apps.sessions.turn_driver.run_turn_headless",
+        lambda mid: driven.update(mid=mid),
+    )
     response = client.post(
         "/api/w/ws1/opps/opp-1/actions/seeded-run",
         data={"golden_run_id": "20260531-2258", "only": "3,4,6"},
         content_type="application/json",
     )
-    assert response.status_code == 201
+    assert response.status_code == 202
     SeededRunOut.model_validate(response.json())
     assert response.json()["session_slug"] == "sess-seeded"
+    assert response.json()["assistant_message_id"] == 4242
     assert captured == {"only": "3,4,6", "golden": "20260531-2258"}
+    # The headless turn driver was started against the assistant placeholder.
+    assert driven == {"mid": 4242}
 
 
 @pytest.mark.django_db
@@ -1685,15 +1693,16 @@ def test_seeded_run_defaults_only_to_3_4_6(member_client, monkeypatch):
 
     def _fake(workspace, slug, user, body):
         captured["only"] = body.only
-        return {"session_slug": "s"}
+        return {"session_slug": "s", "assistant_message_id": 1}
 
     monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
+    monkeypatch.setattr("apps.sessions.turn_driver.run_turn_headless", lambda mid: None)
     response = client.post(
         "/api/w/ws1/opps/opp-1/actions/seeded-run",
         data={"golden_run_id": "20260531-2258"},
         content_type="application/json",
     )
-    assert response.status_code == 201
+    assert response.status_code == 202
     assert captured["only"] == "3,4,6"
 
 
