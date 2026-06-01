@@ -155,6 +155,25 @@ class VersionOut(StrictModel):
     plugin_path: str = ""
 
 
+class RefreshPluginOut(StrictModel):
+    """Result of POST /api/system/refresh-plugin.
+
+    Re-runs ``scripts/refresh-ace-plugin.sh`` on the receiving task so a merged
+    ACE plugin fix reaches server-side runs without an image rebuild. The labs
+    ECS service runs a single task (``--desired-count 1``), so the receiving
+    task IS the runner and polling ``GET /system/version`` for ``version_after``
+    converges deterministically. A future multi-task service would need a
+    service-wide fan-out (force-new-deployment or a shared signal) — tracked as
+    a follow-up, not silently assumed here.
+    """
+
+    ran: bool  # did the refresh script execute (False when disabled/missing)
+    refreshed: bool  # did the local plugin VERSION change as a result
+    version_before: str | None = None
+    version_after: str | None = None
+    detail: str = ""
+
+
 # ── Top-level overview ───────────────────────────────────────────────────────
 
 
