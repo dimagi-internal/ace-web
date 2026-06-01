@@ -975,7 +975,7 @@
     "/api/w/{workspace_slug}/opps/{slug}/actions/seeded-run": {
       "post": {
         "operationId": "apps_opps_api_seeded_run",
-        "summary": "Launch a first-class seeded run",
+        "summary": "Launch a first-class seeded run (headless)",
         "parameters": [
           {
             "in": "path",
@@ -1001,6 +1001,7 @@
             "description": "OK"
           }
         },
+        "description": "Seed a CLI session with the first-class run command AND start it\nheadlessly \u2014 spawns the turn driver as a background task on this ASGI loop,\nso no WebSocket client (human opening the workbench) is needed. Exposed as\nan MCP tool (``x-mcp-expose``) so agentic clients can trigger it too.\nReturns 202 (accepted; the run executes asynchronously).",
         "tags": [
           "opps"
         ],
@@ -1018,7 +1019,8 @@
           {
             "DjangoSessionAuth": []
           }
-        ]
+        ],
+        "x-mcp-expose": true
       }
     },
     "/api/w/{workspace_slug}/opps/{slug}/health": {
