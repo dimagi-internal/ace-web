@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, LogOut, Settings, User } from "lucide-react";
+import { ChevronDown, LayoutDashboard, LogOut, Settings, User } from "lucide-react";
 
 import { getCurrentUser, type CurrentUser } from "@/api/auth";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -20,7 +20,7 @@ import {
  * they realize they're on the wrong one.
  *
  * Renders the account email next to a chevron, with the menu offering
- * Settings → Theme → Sign out.
+ * System Overview → Settings → Theme → Sign out.
  */
 export function UserMenu() {
   const navigate = useNavigate();
@@ -67,6 +67,13 @@ export function UserMenu() {
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={() => navigate("/system")}
+          className="gap-2"
+        >
+          <LayoutDashboard className="h-3.5 w-3.5" />
+          System Overview
+        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => navigate("/settings")}
           className="gap-2"
