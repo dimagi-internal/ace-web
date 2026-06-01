@@ -53,8 +53,21 @@ by `docker-entrypoint.sh` from the `ACE_DRIVE_SA_KEY_JSON` env var. The `.env` f
 plugin MCPs is rendered via `op inject` at container start (see
 `mcp-bootstrap-container-traps.md` for traps).
 
-To pick up a new ACE plugin release: rebuild the image (any push to main triggers
-`build-backend.yml`), then run `deploy-ace-web-labs.yml`.
+**Plugin auto-update on boot:** the image bakes the plugin at build time, but
+`jjackson/ace` bumps several times a day while ace-web only rebuilds on its own
+merges. So `docker-entrypoint.sh` runs `scripts/refresh-ace-plugin.sh` at
+container start: it shallow-clones the latest `main`, and if its `VERSION`
+differs from the baked one, swaps the fresh tree into the plugin cache
+(reusing baked `node_modules` when the lockfile is unchanged, else `npm install`)
+and repoints `/app/vendor/ace`. Net effect — **a plain `deploy-ace-web-labs.yml`
+run picks up the latest plugin on every task** (each task refreshes its own
+ephemeral layer; no shared volume, scales to >1 task), no image rebuild needed.
+Fully fail-safe: any error leaves the baked plugin in place. Kill-switch:
+`ACE_PLUGIN_AUTO_UPDATE=false`. The System Overview tab's "update available"
+banner (`apps/system/version.py`) compares the baked `VERSION` against
+`raw .../ace/main/VERSION` — the same source the refresh clones, so the banner
+clears once a refreshed task is serving. A faster image rebuild is still any
+push to ace-web `main` (triggers `build-backend.yml`) followed by a deploy.
 
 ## Stack
 

@@ -14,6 +14,17 @@ set -e
 PLUGIN_DATA_DIR="${CLAUDE_PLUGIN_DATA:-/home/app/.claude/plugin-data/ace}"
 SA_KEY_PATH="${PLUGIN_DATA_DIR}/gws-sa-key.json"
 
+# Refresh the vendored ACE plugin to the latest jjackson/ace main BEFORE
+# anything reads the plugin tree (op-inject below reads $ACE_PLUGIN_PATH's
+# .env.tpl; the chat backend's `claude -p` loads the cache dir). The plugin
+# bumps several times a day but the image only rebuilds on ace-web's own
+# merges — without this a plain deploy would keep shipping a stale plugin.
+# Fully fail-safe: the script always exits 0 and leaves the baked plugin in
+# place on any error, and `|| true` guards against `set -e` regardless.
+if [ -f /app/scripts/refresh-ace-plugin.sh ]; then
+    bash /app/scripts/refresh-ace-plugin.sh || true
+fi
+
 if [ -n "${ACE_DRIVE_SA_KEY_JSON:-}" ]; then
     mkdir -p "$PLUGIN_DATA_DIR"
     printf '%s' "$ACE_DRIVE_SA_KEY_JSON" > "$SA_KEY_PATH"
