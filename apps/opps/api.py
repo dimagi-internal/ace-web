@@ -34,6 +34,8 @@ from .schemas import (
     ScorecardOut,
     SeedChatIn,
     SeedChatOut,
+    SeededRunIn,
+    SeededRunOut,
     StepSnapshotOut,
 )
 
@@ -1602,6 +1604,92 @@ def seed_chat(
             404, str(exc), type_=TYPE_NOT_FOUND,
         ) from exc
     payload = SeedChatOut.model_validate(result).model_dump(mode="json")
+    return JsonResponse(payload, status=201)
+
+
+# ---------------------------------------------------------------------------
+# Seeded run — POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run
+# ---------------------------------------------------------------------------
+
+
+def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
+    """Create a CLI session seeded with a first-class seeded-run command.
+
+    The session's seed message is the literal slash command
+    ``/ace:run <slug> --seed-from <golden_run_id> --only <only>``, which the CLI
+    backend (``claude -p``) executes as an ordinary run. The run is loop-blind;
+    the ``/ace:iterate`` client observes its run_state. The golden run is
+    validated to exist before the session is created.
+
+    Raises FileNotFoundError when the opp or golden run can't be resolved.
+    The monkeypatch target in contract tests is this module-level function.
+    """
+    from django.db import transaction
+
+    from apps.opps import access
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.sync import load_opp
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+    from apps.sessions.models import Message, Session
+
+    ace_folder_id = access.resolve_ace_root_folder_id(workspace)
+    if ace_folder_id is None:
+        raise FileNotFoundError("ACE root folder not configured")
+
+    try:
+        drive = get_drive_client(workspace=workspace)
+    except ServiceAccountNotFound as exc:
+        raise FileNotFoundError(f"Drive not configured: {exc}") from exc
+
+    # Validate the golden run exists by loading it as the current run; a missing
+    # run raises FileNotFoundError, surfaced as 404 by the route.
+    snap = load_opp(drive, ace_folder_id=ace_folder_id, slug=slug, run_id=body.golden_run_id)
+    access.overlay_workspace_display_name(snap.opp, slug, workspace=workspace)
+
+    command = f"/ace:run {slug} --seed-from {body.golden_run_id} --only {body.only}"
+
+    with transaction.atomic():
+        session = Session.create_with_owner(
+            owner=user,
+            title=f"seeded-run: {slug} (--only {body.only})",
+            backend_kind="cli",
+            status="active",
+            source="web",
+            opp_slug=slug,
+            opp_run_id=body.golden_run_id,
+            workspace=workspace,
+        )
+        Message.objects.create(
+            session=session,
+            turn_index=0,
+            role="system",
+            sender_user=user,
+            content={"type": "system", "source": "opps-seeded-run"},
+            plaintext=command,
+            status="complete",
+        )
+    return {"session_slug": session.slug}
+
+
+@router.post("/{slug}/actions/seeded-run", summary="Launch a first-class seeded run")
+def seeded_run(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    body: SeededRunIn,
+) -> HttpResponse:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    try:
+        result = seed_run_for_opp(workspace, slug, request.user, body)
+    except FileNotFoundError as exc:
+        raise ProblemError(
+            404, "Opp or golden run not found", type_=TYPE_NOT_FOUND, detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise ProblemError(
+            404, str(exc), type_=TYPE_NOT_FOUND,
+        ) from exc
+    payload = SeededRunOut.model_validate(result).model_dump(mode="json")
     return JsonResponse(payload, status=201)
 
 

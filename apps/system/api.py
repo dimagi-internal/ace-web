@@ -15,6 +15,7 @@ from .schemas import (
     AgentDetailOut,
     AgentSummaryOut,
     CliDiagOut,
+    RefreshPluginOut,
     SkillDetailOut,
     SkillSummaryOut,
     SystemOverviewOut,
@@ -188,6 +189,84 @@ def version(request: HttpRequest) -> HttpResponse:
 
     data = get_version_info()
     payload = VersionOut.model_validate(data).model_dump(mode="json")
+    return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# POST /system/refresh-plugin
+# ---------------------------------------------------------------------------
+
+
+def run_plugin_refresh() -> dict:
+    """Re-run ``scripts/refresh-ace-plugin.sh`` on this task; report the delta.
+
+    Lets the ``/ace:iterate`` control pull a just-merged ACE plugin fix into the
+    running task WITHOUT an image rebuild (the script shallow-clones latest main
+    and swaps the plugin cache when VERSION differs; see PR #582). The labs ECS
+    service runs a single task (``--desired-count 1``), so the receiving task is
+    the runner and a subsequent ``GET /system/version`` poll observes
+    ``version_after`` deterministically.
+
+    The script is fail-safe (leaves the baked plugin in place on any error and
+    exits 0) and honors the ``ACE_PLUGIN_AUTO_UPDATE`` kill-switch itself, so
+    this never raises on a refresh miss — it reports ``refreshed=False``.
+
+    The monkeypatch target in contract tests is this module-level function.
+    """
+    import subprocess
+
+    from apps.system.version import check_version
+
+    plugin_path = _plugin_path()
+    before = check_version(plugin_path).get("plugin_version")
+
+    script = settings.BASE_DIR / "scripts" / "refresh-ace-plugin.sh"
+    if not script.is_file():
+        return {
+            "ran": False,
+            "refreshed": False,
+            "version_before": before,
+            "version_after": before,
+            "detail": f"refresh script not found at {script}",
+        }
+
+    try:
+        proc = subprocess.run(
+            ["bash", str(script)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        detail = (proc.stdout or proc.stderr or "").strip()[-500:]
+    except subprocess.TimeoutExpired:
+        return {
+            "ran": True,
+            "refreshed": False,
+            "version_before": before,
+            "version_after": before,
+            "detail": "refresh script timed out after 300s",
+        }
+
+    after = check_version(plugin_path).get("plugin_version")
+    return {
+        "ran": True,
+        "refreshed": after is not None and after != before,
+        "version_before": before,
+        "version_after": after,
+        "detail": detail,
+    }
+
+
+@router.post(
+    "/refresh-plugin",
+    response={200: RefreshPluginOut},
+    summary="Refresh the vendored ACE plugin to latest main (no image rebuild)",
+)
+def refresh_plugin(request: HttpRequest) -> HttpResponse:
+    from django.http import JsonResponse
+
+    data = run_plugin_refresh()
+    payload = RefreshPluginOut.model_validate(data).model_dump(mode="json")
     return JsonResponse(payload)
 
 

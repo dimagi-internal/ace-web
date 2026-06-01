@@ -195,6 +195,73 @@ def test_version_200(auth_client, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# POST /system/refresh-plugin
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_refresh_plugin_200_refreshed(auth_client, monkeypatch):
+    monkeypatch.setattr(
+        "apps.system.api.run_plugin_refresh",
+        lambda: {
+            "ran": True,
+            "refreshed": True,
+            "version_before": "0.13.517",
+            "version_after": "0.13.524",
+            "detail": "swapped plugin cache",
+        },
+    )
+    resp = auth_client.post("/api/system/refresh-plugin")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["refreshed"] is True
+    assert body["version_after"] == "0.13.524"
+
+
+@pytest.mark.django_db
+def test_refresh_plugin_200_noop_when_already_latest(auth_client, monkeypatch):
+    monkeypatch.setattr(
+        "apps.system.api.run_plugin_refresh",
+        lambda: {
+            "ran": True,
+            "refreshed": False,
+            "version_before": "0.13.524",
+            "version_after": "0.13.524",
+            "detail": "version unchanged",
+        },
+    )
+    resp = auth_client.post("/api/system/refresh-plugin")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ran"] is True
+    assert body["refreshed"] is False
+
+
+@pytest.mark.django_db
+def test_refresh_plugin_anon_401(anon_client):
+    resp = anon_client.post("/api/system/refresh-plugin")
+    assert resp.status_code == 401
+
+
+@pytest.mark.django_db
+def test_run_plugin_refresh_missing_script(monkeypatch, tmp_path):
+    """run_plugin_refresh reports ran=False when the script is absent."""
+    from django.test import override_settings
+
+    from apps.system import api as system_api
+
+    monkeypatch.setattr(
+        "apps.system.version.check_version",
+        lambda path: {"plugin_version": "0.13.524"},
+    )
+    with override_settings(BASE_DIR=tmp_path):
+        result = system_api.run_plugin_refresh()
+    assert result["ran"] is False
+    assert result["refreshed"] is False
+    assert "not found" in result["detail"]
+
+
+# ---------------------------------------------------------------------------
 # POST /system/cli-diag (admin/staff only)
 # ---------------------------------------------------------------------------
 

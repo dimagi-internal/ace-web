@@ -229,3 +229,29 @@ class SeedChatOut(StrictModel):
     """Response for POST /w/{workspace_slug}/opps/{slug}/actions/seed-chat."""
 
     session_slug: str
+
+
+# --- Seeded run --------------------------------------------------------
+
+
+class SeededRunIn(StrictModel):
+    """Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run.
+
+    Launches a first-class seeded run:
+    ``/ace:run <slug> --seed-from <golden_run_id> --only <only>``. The
+    server-side run substitutes the phases below ``min(only)`` from the golden
+    run and executes only the listed ordinals; it mints its own fresh run-id at
+    setup and is loop-blind. This is the operation the ``/ace:iterate`` client
+    dispatches and then observes via run_state.
+    """
+
+    golden_run_id: RunId = Field(min_length=1)
+    # Comma-separated phase ordinals, e.g. "3,4,6". The ACE orchestrator
+    # validates the ordinals; we only enforce the shape here.
+    only: str = Field(default="3,4,6", pattern=r"^\d+(,\d+)*$")
+
+
+class SeededRunOut(StrictModel):
+    """Response for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run."""
+
+    session_slug: str

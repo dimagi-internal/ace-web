@@ -15,6 +15,7 @@ from apps.opps.schemas import (
     OppSnapshotOut,
     ScorecardOut,
     SeedChatOut,
+    SeededRunOut,
     StepSnapshotOut,
 )
 from apps.workspaces.models import Workspace, WorkspaceMembership
@@ -1644,6 +1645,116 @@ def test_seed_chat_404_opp_not_found(member_client, monkeypatch):
     response = client.post(
         "/api/w/ws1/opps/no-such/actions/seed-chat",
         data={"step_skill": "idea-to-pdd"},
+        content_type="application/json",
+    )
+    assert response.status_code == 404
+    assert response["Content-Type"].startswith("application/problem+json")
+
+
+# ---------------------------------------------------------------------------
+# POST /w/{ws}/opps/{slug}/actions/seeded-run
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_seeded_run_happy_path(member_client, monkeypatch):
+    client, _, _ = member_client
+    captured = {}
+
+    def _fake(workspace, slug, user, body):
+        captured["only"] = body.only
+        captured["golden"] = body.golden_run_id
+        return {"session_slug": "sess-seeded"}
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258", "only": "3,4,6"},
+        content_type="application/json",
+    )
+    assert response.status_code == 201
+    SeededRunOut.model_validate(response.json())
+    assert response.json()["session_slug"] == "sess-seeded"
+    assert captured == {"only": "3,4,6", "golden": "20260531-2258"}
+
+
+@pytest.mark.django_db
+def test_seeded_run_defaults_only_to_3_4_6(member_client, monkeypatch):
+    client, _, _ = member_client
+    captured = {}
+
+    def _fake(workspace, slug, user, body):
+        captured["only"] = body.only
+        return {"session_slug": "s"}
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 201
+    assert captured["only"] == "3,4,6"
+
+
+@pytest.mark.django_db
+def test_seeded_run_422_bad_only_shape(member_client):
+    client, _, _ = member_client
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258", "only": "three,4"},
+        content_type="application/json",
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.django_db
+def test_seeded_run_422_empty_golden(member_client):
+    client, _, _ = member_client
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": ""},
+        content_type="application/json",
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.django_db
+def test_seeded_run_404_non_member(non_member_client):
+    client, _, _ = non_member_client
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_seeded_run_401_anonymous(db, client):
+    Workspace.objects.create(
+        slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
+        created_by=User.objects.create_user(email="creator-seeded1@example.com"),
+    )
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_seeded_run_404_golden_not_found(member_client, monkeypatch):
+    client, _, _ = member_client
+
+    def _raise(workspace, slug, user, body):
+        raise FileNotFoundError("run 20260101-0000 not found")
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _raise)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260101-0000"},
         content_type="application/json",
     )
     assert response.status_code == 404
