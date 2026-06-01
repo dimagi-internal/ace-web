@@ -267,6 +267,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/actions/seeded-run": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Launch a first-class seeded run */
+        readonly post: operations["apps_opps_api_seeded_run"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/opps/{slug}/health": {
         readonly parameters: {
             readonly query?: never;
@@ -1682,6 +1699,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/system/refresh-plugin": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Refresh the vendored ACE plugin to latest main (no image rebuild) */
+        readonly post: operations["apps_system_api_refresh_plugin"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/system/skill-products": {
         readonly parameters: {
             readonly query?: never;
@@ -2282,6 +2316,26 @@ export interface components {
             readonly step_skill: string;
             /** Run Id */
             readonly run_id?: string | null;
+        };
+        /**
+         * SeededRunIn
+         * @description Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run.
+         *
+         *     Launches a first-class seeded run:
+         *     ``/ace:run <slug> --seed-from <golden_run_id> --only <only>``. The
+         *     server-side run substitutes the phases below ``min(only)`` from the golden
+         *     run and executes only the listed ordinals; it mints its own fresh run-id at
+         *     setup and is loop-blind. This is the operation the ``/ace:iterate`` client
+         *     dispatches and then observes via run_state.
+         */
+        readonly SeededRunIn: {
+            /** Golden Run Id */
+            readonly golden_run_id: string;
+            /**
+             * Only
+             * @default 3,4,6
+             */
+            readonly only: string;
         };
         /**
          * OppHealthOut
@@ -3924,6 +3978,33 @@ export interface components {
             readonly plugin_path: string;
         };
         /**
+         * RefreshPluginOut
+         * @description Result of POST /api/system/refresh-plugin.
+         *
+         *     Re-runs ``scripts/refresh-ace-plugin.sh`` on the receiving task so a merged
+         *     ACE plugin fix reaches server-side runs without an image rebuild. The labs
+         *     ECS service runs a single task (``--desired-count 1``), so the receiving
+         *     task IS the runner and polling ``GET /system/version`` for ``version_after``
+         *     converges deterministically. A future multi-task service would need a
+         *     service-wide fan-out (force-new-deployment or a shared signal) — tracked as
+         *     a follow-up, not silently assumed here.
+         */
+        readonly RefreshPluginOut: {
+            /** Ran */
+            readonly ran: boolean;
+            /** Refreshed */
+            readonly refreshed: boolean;
+            /** Version Before */
+            readonly version_before?: string | null;
+            /** Version After */
+            readonly version_after?: string | null;
+            /**
+             * Detail
+             * @default
+             */
+            readonly detail: string;
+        };
+        /**
          * CliDiagOut
          * @description Response from POST /api/system/cli-diag.
          *
@@ -4669,6 +4750,31 @@ export interface operations {
         readonly requestBody: {
             readonly content: {
                 readonly "application/json": components["schemas"]["SeedChatIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_opps_api_seeded_run: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SeededRunIn"];
             };
         };
         readonly responses: {
@@ -6664,6 +6770,26 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["VersionOut"];
+                };
+            };
+        };
+    };
+    readonly apps_system_api_refresh_plugin: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RefreshPluginOut"];
                 };
             };
         };

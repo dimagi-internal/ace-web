@@ -972,6 +972,55 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/opps/{slug}/actions/seeded-run": {
+      "post": {
+        "operationId": "apps_opps_api_seeded_run",
+        "summary": "Launch a first-class seeded run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeededRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/opps/{slug}/health": {
       "get": {
         "operationId": "apps_opps_api_opp_health",
@@ -4676,6 +4725,33 @@
         ]
       }
     },
+    "/api/system/refresh-plugin": {
+      "post": {
+        "operationId": "apps_system_api_refresh_plugin",
+        "summary": "Refresh the vendored ACE plugin to latest main (no image rebuild)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshPluginOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/system/skill-products": {
       "get": {
         "operationId": "apps_system_api_skill_products",
@@ -5073,6 +5149,74 @@
         },
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/sessions/sweep": {
+      "get": {
+        "operationId": "apps_sessions_sweep_api_list_sweep_sessions",
+        "summary": "List sessions across workspaces (sweep)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SweepListOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "Returns every Session in workspaces where the calling user is Owner or Editor. Used by `/ace:sweep ace-web`. Not paginated \u2014 the rows are summary-sized and a single request is the expected shape for the sweep skill.",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/sessions/sweep/delete": {
+      "post": {
+        "operationId": "apps_sessions_sweep_api_bulk_delete_sweep_sessions",
+        "summary": "Bulk-delete sessions (sweep)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete every Session id in the body that the calling user has Owner or Editor access to. Sessions in workspaces the user can't write to are reported as 'forbidden' in `failed[]` rather than deleted. DELETE-with-body is awkward in some HTTP clients, so the atom is POST /sessions/sweep/delete.",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SweepDeleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
         ]
       }
     },
@@ -5508,7 +5652,7 @@
       },
       "OppForkEditIn": {
         "additionalProperties": false,
-        "description": "A single answer override to apply during fork.\n\nThe forker finds the row by ``row_id`` in the source run's\n``decisions.yaml``, sets its ``override`` to ``new_answer``, and\nmarks ``status: overridden`` \u2014 matching the schema-v2 contract that\n``decisions-sync`` uses. The original AI value remains in\n``ai-default`` for audit trail; downstream phases on re-run see the\neffective value (``override`` if present else ``ai-default``).",
+        "description": "A single answer override to apply during fork.\n\nThe forker finds the row by ``row_id`` in the source run's\n``decisions.yaml``, sets its ``override`` to ``new_answer``, and\nmarks ``status: overridden`` \u2014 matching the schema-v2 contract that\n``decisions-sync`` uses. The original AI value remains in\n``ai-default`` for audit trail; downstream phases on re-run see the\neffective value (``override`` if present else ``ai-default``).\n\n``new_answer`` MAY be a string not already present in the row's\n``options`` array; the forker appends it before setting ``override``,\nkeeping the ACE strict-write invariant (``override \u2208 options``)\nintact. ``override_reasoning`` is the human's free-text rationale,\npersisted alongside.",
         "properties": {
           "row_id": {
             "minLength": 1,
@@ -5517,6 +5661,11 @@
           },
           "new_answer": {
             "title": "New Answer",
+            "type": "string"
+          },
+          "override_reasoning": {
+            "default": "",
+            "title": "Override Reasoning",
             "type": "string"
           }
         },
@@ -5809,6 +5958,28 @@
           "step_skill"
         ],
         "title": "SeedChatIn",
+        "type": "object"
+      },
+      "SeededRunIn": {
+        "additionalProperties": false,
+        "description": "Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run.\n\nLaunches a first-class seeded run:\n``/ace:run <slug> --seed-from <golden_run_id> --only <only>``. The\nserver-side run substitutes the phases below ``min(only)`` from the golden\nrun and executes only the listed ordinals; it mints its own fresh run-id at\nsetup and is loop-blind. This is the operation the ``/ace:iterate`` client\ndispatches and then observes via run_state.",
+        "properties": {
+          "golden_run_id": {
+            "minLength": 1,
+            "title": "Golden Run Id",
+            "type": "string"
+          },
+          "only": {
+            "default": "3,4,6",
+            "pattern": "^\\d+(,\\d+)*$",
+            "title": "Only",
+            "type": "string"
+          }
+        },
+        "required": [
+          "golden_run_id"
+        ],
+        "title": "SeededRunIn",
         "type": "object"
       },
       "OppHealthOut": {
@@ -9629,6 +9800,53 @@
         "title": "VersionOut",
         "type": "object"
       },
+      "RefreshPluginOut": {
+        "additionalProperties": false,
+        "description": "Result of POST /api/system/refresh-plugin.\n\nRe-runs ``scripts/refresh-ace-plugin.sh`` on the receiving task so a merged\nACE plugin fix reaches server-side runs without an image rebuild. The labs\nECS service runs a single task (``--desired-count 1``), so the receiving\ntask IS the runner and polling ``GET /system/version`` for ``version_after``\nconverges deterministically. A future multi-task service would need a\nservice-wide fan-out (force-new-deployment or a shared signal) \u2014 tracked as\na follow-up, not silently assumed here.",
+        "properties": {
+          "ran": {
+            "title": "Ran",
+            "type": "boolean"
+          },
+          "refreshed": {
+            "title": "Refreshed",
+            "type": "boolean"
+          },
+          "version_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Before"
+          },
+          "version_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version After"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ran",
+          "refreshed"
+        ],
+        "title": "RefreshPluginOut",
+        "type": "object"
+      },
       "CliDiagOut": {
         "additionalProperties": true,
         "description": "Response from POST /api/system/cli-diag.\n\nThe shape is intentionally open (``extra=\"allow\"``) because the\ndiagnostic response embeds raw subprocess output, plugin probes, and\nenvironment snapshots whose exact keys evolve with the CLI version.\nConsumers should access known top-level keys (elapsed_seconds,\nreturncode, init_summary) and treat the rest as opaque diagnostic data.",
@@ -9983,6 +10201,127 @@
           "shape"
         ],
         "title": "CliAuthExpectedShapeOut",
+        "type": "object"
+      },
+      "SweepListOut": {
+        "additionalProperties": false,
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SweepSessionRow"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "total_raw_bytes": {
+            "minimum": 0,
+            "title": "Total Raw Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sessions",
+          "total_raw_bytes"
+        ],
+        "title": "SweepListOut",
+        "type": "object"
+      },
+      "SweepSessionRow": {
+        "additionalProperties": false,
+        "description": "One row in the sweep listing.\n\nSummary-sized \u2014 no message bodies, no JSONL, no opp display names.\nEnough for the plugin-side report renderer to group by workspace and\nannotate which sessions came from /ace:upload-transcript.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "web",
+              "upload"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived",
+              "imported"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "opp_slug": {
+            "default": "",
+            "title": "Opp Slug",
+            "type": "string"
+          },
+          "opp_run_id": {
+            "default": "",
+            "title": "Opp Run Id",
+            "type": "string"
+          },
+          "workspace_slug": {
+            "title": "Workspace Slug",
+            "type": "string"
+          },
+          "message_count": {
+            "minimum": 0,
+            "title": "Message Count",
+            "type": "integer"
+          },
+          "upload_count": {
+            "minimum": 0,
+            "title": "Upload Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "source",
+          "status",
+          "workspace_slug",
+          "message_count",
+          "upload_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SweepSessionRow",
+        "type": "object"
+      },
+      "SweepDeleteIn": {
+        "additionalProperties": false,
+        "description": "Body of POST /sessions/sweep/delete.",
+        "properties": {
+          "session_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Session Ids",
+            "type": "array"
+          }
+        },
+        "title": "SweepDeleteIn",
         "type": "object"
       },
       "HealthCheckOut": {
