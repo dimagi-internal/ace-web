@@ -551,6 +551,96 @@ async def _broadcast_stream_event(
         )
 
 
+def _slug_and_turn_for_message(message_id: int):
+    """Return (session_slug, turn_index) for an assistant message, or None."""
+    m = (
+        Message.objects.select_related("session")
+        .filter(pk=message_id)
+        .first()
+    )
+    if m is None:
+        return None
+    return (m.session.slug, m.turn_index)
+
+
+async def drive_and_broadcast(assistant_message_id: int) -> None:
+    """Drive a single assistant turn WITHOUT a WebSocket consumer, broadcasting
+    every event to the session's channel-layer group exactly as
+    ``_run_turn_driver`` does.
+
+    This is the programmatic/headless equivalent of a human opening the
+    workbench and sending a message: the turn runs through the identical
+    ``drive_assistant_turn`` state machine, and because it broadcasts to
+    ``session.<slug>``, a client that opens the session sees it live (and the
+    DB is persisted regardless). Invoked by the ``drive_turn`` management
+    command, which the seeded-run action launches as a detached process so the
+    run is decoupled from the request lifecycle. See ace-web#585.
+    """
+    from channels.layers import get_channel_layer
+
+    channel_layer = get_channel_layer()
+    info = await sync_to_async(_slug_and_turn_for_message)(assistant_message_id)
+    if info is None:
+        logger.warning("drive_and_broadcast: message %s not found", assistant_message_id)
+        return
+    slug, turn_index = info
+    group = _group_name(slug)
+    stop_event = asyncio.Event()
+
+    await channel_layer.group_send(
+        group,
+        {"type": "chat.stream_start",
+         "data": {"message_id": assistant_message_id, "turn_index": turn_index}},
+    )
+    try:
+        async for event in turn_driver.drive_assistant_turn(
+            assistant_message_id=assistant_message_id, stop_event=stop_event
+        ):
+            if event.type is StreamEventType.DELTA:
+                await channel_layer.group_send(
+                    group,
+                    {"type": "chat.delta",
+                     "data": {"message_id": assistant_message_id, "text": event.text}},
+                )
+            elif event.type is StreamEventType.TOOL_USE:
+                tid = await sync_to_async(_most_recent_tool_row_id)(slug, "tool_use")
+                await channel_layer.group_send(
+                    group,
+                    {"type": "chat.tool_use",
+                     "data": {"parent_message_id": assistant_message_id,
+                              "tool_message_id": tid, "block": event.tool_block}},
+                )
+            elif event.type is StreamEventType.TOOL_RESULT:
+                tid = await sync_to_async(_most_recent_tool_row_id)(slug, "tool_result")
+                await channel_layer.group_send(
+                    group,
+                    {"type": "chat.tool_result",
+                     "data": {"parent_message_id": assistant_message_id,
+                              "tool_message_id": tid, "block": event.tool_block}},
+                )
+            elif event.type is StreamEventType.DONE:
+                plaintext = await sync_to_async(_load_plaintext)(assistant_message_id)
+                await channel_layer.group_send(
+                    group,
+                    {"type": "chat.stream_complete",
+                     "data": {"message_id": assistant_message_id,
+                              "plaintext": plaintext}},
+                )
+                return
+            elif event.type is StreamEventType.ERROR:
+                await channel_layer.group_send(
+                    group,
+                    {"type": "chat.stream_error",
+                     "data": {"message_id": assistant_message_id,
+                              "detail": event.error or "unknown"}},
+                )
+                return
+    except Exception:
+        logger.exception(
+            "drive_and_broadcast failed for assistant message %s", assistant_message_id
+        )
+
+
 # ────────────────────── sync DB helpers ──────────────────────
 
 def _participant_role(slug: str, user_id: int) -> str | None:

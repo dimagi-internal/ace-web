@@ -1693,25 +1693,25 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
     summary="Launch a first-class seeded run (headless)",
     openapi_extra={"x-mcp-expose": True},
 )
-async def seeded_run(
+def seeded_run(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
     body: SeededRunIn,
 ) -> HttpResponse:
-    """Seed a CLI session with the first-class run command AND start it
-    headlessly — spawns the turn driver as a background task on this ASGI loop,
-    so no WebSocket client (human opening the workbench) is needed. Exposed as
-    an MCP tool (``x-mcp-expose``) so agentic clients can trigger it too.
-    Returns 202 (accepted; the run executes asynchronously).
+    """Seed a CLI session with the first-class run command AND start it — by
+    launching ``manage.py drive_turn`` as a detached process that drives the
+    turn through the SAME turn-driver + channel-layer broadcast path as a human
+    typing into the workbench chat. The session is therefore a normal, openable,
+    live session; the run is decoupled from this request's event loop (which is
+    why an in-request ``create_task`` didn't work — ace-web#585). Exposed as an
+    MCP tool (``x-mcp-expose``). Returns 202 (the run executes asynchronously).
     """
-    from asgiref.sync import sync_to_async
+    from apps.sessions.turn_driver import start_turn_subprocess
 
-    from apps.sessions.turn_driver import run_turn_headless
-
-    workspace = await sync_to_async(resolve_workspace_for_member)(request, workspace_slug)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
     try:
-        result = await sync_to_async(seed_run_for_opp)(workspace, slug, request.user, body)
+        result = seed_run_for_opp(workspace, slug, request.user, body)
     except FileNotFoundError as exc:
         raise ProblemError(
             404, "Opp or golden run not found", type_=TYPE_NOT_FOUND, detail=str(exc),
@@ -1720,9 +1720,9 @@ async def seeded_run(
         raise ProblemError(
             404, str(exc), type_=TYPE_NOT_FOUND,
         ) from exc
-    # Drive the assistant turn headlessly (consume-and-discard StreamEvents; the
-    # DB + the agent's run_state.yaml are persisted regardless). See ace-web#585.
-    run_turn_headless(result["assistant_message_id"])
+    # Drive the turn out-of-band in a detached process (faithful, openable, and
+    # decoupled from this request's loop). See ace-web#585.
+    start_turn_subprocess(result["assistant_message_id"])
     payload = SeededRunOut.model_validate(result).model_dump(mode="json")
     return JsonResponse(payload, status=202)
 
