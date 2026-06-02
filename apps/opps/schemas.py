@@ -237,17 +237,20 @@ class SeedChatOut(StrictModel):
 class SeededRunIn(StrictModel):
     """Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run.
 
-    Launches a first-class seeded run:
-    ``/ace:run <slug> --seed-from <golden_run_id> --only <only>``. The
-    server-side run substitutes the phases below ``min(only)`` from the golden
-    run and executes only the listed ordinals; it mints its own fresh run-id at
-    setup and is loop-blind. This is the operation the ``/ace:iterate`` client
-    dispatches and then observes via run_state.
+    Launches a first-class seeded run via **fork-then-resume** (ace#672): the
+    action forks ``golden_run_id`` into a fresh run shaped so the phases below
+    ``min(only)`` are ``done``/``verdict: seeded``, the listed ordinals are
+    ``pending``, and every other phase from the fork point onward is
+    ``skipped`` — then drives a plain ``/ace:run <slug>/<new_run_id>`` resume.
+    The run is loop-blind; the ``/ace:iterate`` client observes its run_state.
+    (The old ``--seed-from``/``--only`` flags were dropped — the headless runner
+    ignored them.)
     """
 
     golden_run_id: RunId = Field(min_length=1)
-    # Comma-separated phase ordinals, e.g. "3,4,6". The ACE orchestrator
-    # validates the ordinals; we only enforce the shape here.
+    # Comma-separated phase ordinals to run, e.g. "3,4,6". The lowest is the
+    # fork point; the ACE orchestrator's resume path enforces input deps. We
+    # only enforce the shape here.
     only: str = Field(default="3,4,6", pattern=r"^\d+(,\d+)*$")
 
 
@@ -255,9 +258,11 @@ class SeededRunOut(StrictModel):
     """Response for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run.
 
     The run executes asynchronously (202); `assistant_message_id` is the turn
-    the headless driver fills in. The `/ace:iterate` client observes the run
-    via Drive `run_state.yaml`, not this message.
+    the headless driver fills in. `run_id` is the new forked run the action
+    minted (the `/ace:iterate` client observes `runs/<run_id>/run_state.yaml`
+    directly — no post-launch folder-listing race).
     """
 
     session_slug: str
     assistant_message_id: int
+    run_id: str

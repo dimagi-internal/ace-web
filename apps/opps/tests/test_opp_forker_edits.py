@@ -500,3 +500,72 @@ def test_fork_opp_rejects_invalid_mode(monkeypatch):
             now=dt.datetime(2026, 5, 22, 12, 0, tzinfo=dt.UTC),
         )
     assert exc_info.value.code == "invalid-mode"
+
+
+# ---------------------------------------------------------------------------
+# Seeded-run shape (ace#672): run_phases → phase-level contract shape
+# ---------------------------------------------------------------------------
+
+
+def test_build_run_state_seeded_shape_marks_pending_and_skipped():
+    """With run_phases, _build_run_state_yaml writes the plugin's phase-level
+    contract shape: prefix done/seeded, target ordinals pending, gap+tail
+    phases skipped, plus a seeded_from root key (ace#672)."""
+    from apps.opps.opp_forker import _build_run_state_yaml
+    from apps.opps.skills import all_phases
+
+    phases = all_phases()
+    assert len(phases) >= 4, "stub registry needs >=4 phases for the gap case"
+    # Target ordinals 2 and 4 — leaves phase 1 as prefix, 3 as an interior
+    # GAP (skipped), and 5+ as the TAIL (skipped).
+    targets = [2, 4]
+    fork_ord = min(targets)
+    now = dt.datetime(2026, 6, 1, 9, 0, tzinfo=dt.UTC)
+
+    out = yaml.safe_load(
+        _build_run_state_yaml(
+            opp_slug="opp",
+            run_id="20260601-0900",
+            owner_email="x@example.com",
+            fork_at_phase=phases[fork_ord - 1],
+            fork_ordinal=fork_ord,
+            forked_from_run_id="20260531-2258",
+            now_utc=now,
+            run_phases=targets,
+        )
+    )
+
+    pm = out["phases"]
+    for idx, phase in enumerate(phases, start=1):
+        if idx < fork_ord:
+            assert pm[phase]["status"] == "done"
+            assert pm[phase]["verdict"] == "seeded"
+            assert pm[phase]["completed_at"]
+        elif idx in targets:
+            assert pm[phase] == {"status": "pending"}
+        else:  # gap (3) + tail (5+)
+            assert pm[phase] == {"status": "skipped"}
+    assert out["seeded_from"] == "20260531-2258"
+
+
+def test_build_run_state_legacy_shape_when_no_run_phases():
+    """Without run_phases the plain fork path is byte-for-byte unchanged:
+    the legacy per-skill phases map, and NO seeded_from key."""
+    from apps.opps.opp_forker import _build_phases_map, _build_run_state_yaml
+    from apps.opps.skills import all_phases
+
+    phases = all_phases()
+    now = dt.datetime(2026, 6, 1, 9, 0, tzinfo=dt.UTC)
+    out = yaml.safe_load(
+        _build_run_state_yaml(
+            opp_slug="opp",
+            run_id="r",
+            owner_email="x@example.com",
+            fork_at_phase=phases[1],
+            fork_ordinal=2,
+            forked_from_run_id="src",
+            now_utc=now,
+        )
+    )
+    assert out["phases"] == _build_phases_map(2)
+    assert "seeded_from" not in out
