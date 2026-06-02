@@ -516,71 +516,74 @@ def _resolve_phase_ordinal(phase_name: str) -> int | None:
         return None
 
 
-def _build_phases_map(fork_ordinal: int | None) -> dict[str, dict[str, str]]:
-    """Build the ``phases`` map for a fresh run_state.yaml.
+def _phase_block(phase: str, status: str, iso_now: str) -> dict:
+    """One phase block in the plugin's **canonical run_state shape** (ace#673):
+    a phase-level ``status`` (what the orchestrator's resume path reads off
+    ``phases.<phase>.status``) PLUS a ``steps`` sub-map ``{skill: {status}}``
+    (what ace-web's ``_extract_step_statuses`` renders as Workbench step rows).
 
-    Skills in phases ``< fork_ordinal`` are seeded ``done`` (we just
-    carried their artifacts forward); skills in phases ``>= fork``
-    start ``pending`` for the new run to overwrite.
+    Done phases also carry ``verdict: seeded`` (the forked prefix is a copy of a
+    prior run) and a ``completed_at`` seed timestamp so ``status: done`` doesn't
+    warn for a missing one. The ``steps`` wrapper is always present so a phase
+    block with a bare ``status`` key never leaks ``status`` as a fake skill into
+    ``_extract_step_statuses``. Recurring skills are excluded — they aren't
+    phase steps.
     """
-    from apps.opps.skills import SKILL_REGISTRY, all_phases
+    from apps.opps.skills import skills_in_phase
 
-    phases_map: dict[str, dict[str, str]] = {}
-    phase_order = all_phases()
-    for skill in SKILL_REGISTRY:
-        if skill.is_recurring:
-            # Recurring skills aren't tracked in the per-phase map.
-            continue
-        try:
-            phase_idx = phase_order.index(skill.phase) + 1
-        except ValueError:
-            continue
-        if fork_ordinal is None:
-            status = "pending"
-        elif phase_idx < fork_ordinal:
-            status = "done"
-        else:
-            status = "pending"
-        phases_map.setdefault(skill.phase, {})[skill.name] = status
-    return phases_map
+    block: dict = {"status": status}
+    if status == "done":
+        block["verdict"] = "seeded"
+        block["completed_at"] = iso_now
+    block["steps"] = {
+        s.name: {"status": status}
+        for s in skills_in_phase(phase)
+        if not s.is_recurring
+    }
+    return block
 
 
-def _build_seeded_phases_map(
-    fork_ordinal: int, run_phases: list[int], iso_now: str
-) -> dict[str, dict[str, str]]:
-    """Build the ``phases`` map for a **seeded run** (ace#672) in the plugin's
-    phase-level contract shape ``phases.<phase>.{status, ...}``.
+def _build_phases_map(
+    fork_ordinal: int | None,
+    iso_now: str,
+    run_phases: list[int] | None = None,
+) -> dict[str, dict]:
+    """Build the ``phases`` map for a forked run in the plugin's **canonical
+    phase-level shape** ``phases.<phase>.{status, steps, ...}`` (ace#672/#673).
 
-    Run shape is structural so the orchestrator's resume path drives it with no
-    flag interpretation:
+    Per phase ordinal (position in ``all_phases()``, the convention
+    ``_resolve_phase_ordinal`` relies on):
 
-    * phases ``< fork_ordinal`` (the copied prefix) → ``done`` + ``verdict:
-      seeded`` + ``completed_at`` (a seed timestamp so ``status: done`` doesn't
-      warn for a missing ``completed_at``).
-    * phases whose ordinal is in ``run_phases`` → ``pending`` (run them).
-    * every other phase from ``fork_ordinal`` onward → ``skipped`` (the
-      orchestrator steps over these and ends when no ``pending`` phase remains).
+    * ``< fork_ordinal`` (the copied prefix) → ``done``/``verdict: seeded``.
+    * ``>= fork_ordinal``:
+        - plain fork (``run_phases is None``) → ``pending`` (re-run from the
+          fork point onward, the historical fork-run behavior).
+        - seeded run (``run_phases`` given) → ``pending`` if the ordinal is a
+          target, else ``skipped`` (the orchestrator steps over these and ends
+          when no ``pending`` phase remains — the "only 3,4,6 then stop").
+    * ``fork_ordinal is None`` (unknown fork phase) → all ``pending``.
 
-    Keyed by phase name (``all_phases()``), which is exactly what the plugin's
-    write-back contract + ``classify_phase_writeback`` read. Position in
-    ``all_phases()`` is the phase ordinal — the same convention
-    ``_resolve_phase_ordinal`` / ``_build_phases_map`` already rely on.
+    Emitting the canonical shape — phase-level ``status`` + a ``steps`` wrapper —
+    is the ace#673 fix: it's what lets the plugin's resume read
+    ``phases.<phase>.status`` AND ace-web's ``_extract_step_statuses`` render the
+    seeded step rows. The previous per-skill map (``phases.<phase>.<skill>:
+    status``) had neither a phase-level status (so the plugin's structural resume
+    couldn't classify it) nor a ``steps`` wrapper.
     """
     from apps.opps.skills import all_phases
 
-    targets = set(run_phases)
-    phases_map: dict[str, dict[str, str]] = {}
+    targets = set(run_phases) if run_phases is not None else None
+    phases_map: dict[str, dict] = {}
     for idx, phase in enumerate(all_phases(), start=1):
-        if idx < fork_ordinal:
-            phases_map[phase] = {
-                "status": "done",
-                "verdict": "seeded",
-                "completed_at": iso_now,
-            }
-        elif idx in targets:
-            phases_map[phase] = {"status": "pending"}
+        if fork_ordinal is None:
+            status = "pending"
+        elif idx < fork_ordinal:
+            status = "done"
+        elif targets is None or idx in targets:
+            status = "pending"
         else:
-            phases_map[phase] = {"status": "skipped"}
+            status = "skipped"
+        phases_map[phase] = _phase_block(phase, status, iso_now)
     return phases_map
 
 
@@ -601,19 +604,15 @@ def _build_run_state_yaml(
     Adds a ``forked_from`` block so lineage is visible without diving
     into Drive — the plugin doesn't read this field but humans will.
 
-    When ``run_phases`` is given (seeded-run path, ace#672), the ``phases`` map
-    is built in the plugin's phase-level contract shape and shaped for a
-    structural resume (see ``_build_seeded_phases_map``), and a ``seeded_from``
-    root key is added. Otherwise the legacy per-skill ``_build_phases_map`` is
-    used unchanged (the plain fork-run endpoint).
+    The ``phases`` map is always built in the plugin's canonical phase-level
+    shape (``phases.<phase>.{status, steps, ...}`` — see ``_build_phases_map``).
+    When ``run_phases`` is given (seeded-run path, ace#672) the non-target
+    phases from the fork point onward are ``skipped`` and a ``seeded_from`` root
+    key is added; otherwise (plain fork-run) everything from the fork point
+    onward is ``pending``.
     """
     iso_now = now_utc.isoformat()
-    if run_phases is not None and fork_ordinal is not None:
-        phases_map: dict[str, dict[str, str]] = _build_seeded_phases_map(
-            fork_ordinal, run_phases, iso_now
-        )
-    else:
-        phases_map = _build_phases_map(fork_ordinal)
+    phases_map = _build_phases_map(fork_ordinal, iso_now, run_phases=run_phases)
     data: dict = {
         "opportunity": opp_slug,
         "run_id": run_id,
