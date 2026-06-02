@@ -15,6 +15,7 @@ from apps.opps.schemas import (
     OppSnapshotOut,
     ScorecardOut,
     SeedChatOut,
+    SeededRunIn,
     SeededRunOut,
     StepSnapshotOut,
 )
@@ -1664,7 +1665,11 @@ def test_seeded_run_happy_path(member_client, monkeypatch):
     def _fake(workspace, slug, user, body):
         captured["only"] = body.only
         captured["golden"] = body.golden_run_id
-        return {"session_slug": "sess-seeded", "assistant_message_id": 4242}
+        return {
+            "session_slug": "sess-seeded",
+            "assistant_message_id": 4242,
+            "run_id": "20260601-1200",
+        }
 
     driven = {}
     monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
@@ -1681,6 +1686,7 @@ def test_seeded_run_happy_path(member_client, monkeypatch):
     SeededRunOut.model_validate(response.json())
     assert response.json()["session_slug"] == "sess-seeded"
     assert response.json()["assistant_message_id"] == 4242
+    assert response.json()["run_id"] == "20260601-1200"
     assert captured == {"only": "3,4,6", "golden": "20260531-2258"}
     # The turn driver was launched (detached) against the assistant placeholder.
     assert driven == {"mid": 4242}
@@ -1693,7 +1699,7 @@ def test_seeded_run_defaults_only_to_3_4_6(member_client, monkeypatch):
 
     def _fake(workspace, slug, user, body):
         captured["only"] = body.only
-        return {"session_slug": "s", "assistant_message_id": 1}
+        return {"session_slug": "s", "assistant_message_id": 1, "run_id": "r"}
 
     monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
     monkeypatch.setattr("apps.sessions.turn_driver.start_turn_subprocess", lambda mid: None)
@@ -1768,6 +1774,74 @@ def test_seeded_run_404_golden_not_found(member_client, monkeypatch):
     )
     assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
+
+
+@pytest.mark.django_db
+def test_seed_run_for_opp_forks_then_plain_resume(member_client, monkeypatch):
+    """The real seed_run_for_opp forks the golden with the structural shape
+    (run_phases + no session), then seeds a PLAIN resume command — no
+    --seed-from/--only flags — and returns the new run_id (ace#672)."""
+    from apps.opps import api as opps_api
+    from apps.opps.opp_forker import ForkOppResult
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+    captured: dict = {}
+
+    def _fake_fork(**kwargs):
+        captured.update(kwargs)
+        return ForkOppResult(
+            opp_slug=kwargs["source_slug"],
+            new_run_id="20260601-0900",
+            new_run_folder_id="folder-new",
+            working_session=None,
+        )
+
+    monkeypatch.setattr("apps.opps.access.resolve_ace_root_folder_id", lambda ws: "ace-root")
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client", lambda workspace: object())
+    monkeypatch.setattr("apps.opps.opp_forker.fork_opp", _fake_fork)
+    monkeypatch.setattr(
+        "apps.opps.skills.all_phases",
+        lambda: ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"],
+    )
+
+    body = SeededRunIn(golden_run_id="20260531-2258", only="3,4,6")
+    result = opps_api.seed_run_for_opp(workspace, "opp-1", user, body)
+
+    # Fork was asked for the structural shape: target ordinals pending, no
+    # session, fork at the lowest ordinal's phase (p3).
+    assert captured["run_phases"] == [3, 4, 6]
+    assert captured["create_session"] is False
+    assert captured["fork_at_phase"] == "p3"
+    assert captured["source_run_id"] == "20260531-2258"
+    assert captured["mode"] == "keep-all"
+
+    # Returns the NEW forked run-id.
+    assert result["run_id"] == "20260601-0900"
+
+    # The seeded turn is a PLAIN resume — no flag interpretation.
+    session = Session.objects.get(slug=result["session_slug"])
+    turn0 = session.messages.get(turn_index=0)
+    assert turn0.plaintext == "/ace:run opp-1/20260601-0900"
+    assert "--seed-from" not in turn0.plaintext
+    assert "--only" not in turn0.plaintext
+    # Assistant placeholder is pending for the headless driver.
+    assert session.messages.get(turn_index=1).status == "pending"
+
+
+@pytest.mark.django_db
+def test_seed_run_for_opp_rejects_out_of_range_only(member_client, monkeypatch):
+    """An --only ordinal past the phase count raises ValueError (→ 404 at the route)."""
+    from apps.opps import api as opps_api
+
+    _, workspace, user = member_client
+    monkeypatch.setattr("apps.opps.access.resolve_ace_root_folder_id", lambda ws: "ace-root")
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client", lambda workspace: object())
+    monkeypatch.setattr("apps.opps.skills.all_phases", lambda: ["p1", "p2", "p3"])
+
+    body = SeededRunIn(golden_run_id="20260531-2258", only="9")
+    with pytest.raises(ValueError, match="out of range"):
+        opps_api.seed_run_for_opp(workspace, "opp-1", user, body)
 
 
 # ---------------------------------------------------------------------------

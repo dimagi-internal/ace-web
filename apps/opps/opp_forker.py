@@ -91,7 +91,7 @@ class ForkOppResult:
     opp_slug: str            # unchanged — fork stays within the same opp
     new_run_id: str          # YYYYMMDD-HHMM, the new run folder name
     new_run_folder_id: str   # Drive folder id of the new run
-    working_session: Session
+    working_session: Session | None  # None when create_session=False (seeded-run drives its own)
 
 
 ProgressCb = Callable[[dict], None]
@@ -110,6 +110,8 @@ def fork_opp(
     edits: list[dict[str, str]] | None = None,
     mode: str = DEFAULT_FORK_MODE,
     now: _dt.datetime | None = None,
+    run_phases: list[int] | None = None,
+    create_session: bool = True,
 ) -> ForkOppResult:
     """Fork the source opp's named run (or its latest if ``source_run_id``
     is None) into a new run under the same opp.
@@ -118,6 +120,18 @@ def fork_opp(
     ``keep-overrides-only`` keeps only ``status: overridden`` rows from
     phases strictly before the fork point; ``keep-all`` keeps every
     upstream row regardless of status. See ``FORK_MODES`` at module top.
+
+    ``run_phases`` (seeded-run path, ace#672): when given, the synthesized
+    ``run_state.yaml`` is written in the plugin's **phase-level contract shape**
+    (``phases.<phase>.{status, ...}``) and shaped for a structural resume —
+    phases below the fork point ``done``/``verdict: seeded``, the listed
+    ordinals ``pending``, and every other phase from the fork point onward
+    ``skipped`` — plus a ``seeded_from`` root key. When ``None`` (the plain
+    fork-run endpoint) the legacy per-skill phases map is written unchanged.
+
+    ``create_session=False`` skips the fork's working-session creation (the
+    seeded-run action drives its own headless session); ``working_session`` is
+    ``None`` in that case.
 
     Raises ``ForkOppError`` for caller-friendly validation failures
     (source not found, no runs to fork from, run-id collision, unknown
@@ -218,6 +232,7 @@ def fork_opp(
         fork_ordinal=fork_ordinal,
         forked_from_run_id=source_run.name,
         now_utc=now_utc,
+        run_phases=run_phases,
     )
     drive.upload_file(
         new_run_folder_id, "run_state.yaml", new_state, "text/yaml",
@@ -234,35 +249,37 @@ def fork_opp(
         )
         drive.update_file(decisions_dest_id, trimmed, "text/yaml")
 
-    session = Session.create_with_owner(
-        owner=owner,
-        title=f"{source_slug} — new run {new_run_id} (fork @ {fork_at_phase})",
-        backend_kind="cli",
-        status="active",
-        source="web",
-        opp_slug=source_slug,
-        opp_run_id=new_run_id,
-        workspace=workspace,
-    )
-    Message.objects.create(
-        session=session,
-        turn_index=0,
-        role="system",
-        sender_user=owner,
-        content={
-            "type": "system",
-            "source": "opps-fork",
-            "opp_slug": source_slug,
-            "fork_at_phase": fork_at_phase,
-            "source_run_id": source_run.name,
-            "new_run_id": new_run_id,
-        },
-        plaintext=(
-            f"Forked run `{new_run_id}` from `{source_run.name}` at phase "
-            f"`{fork_at_phase}`. Re-run /ace:run to continue from there."
-        ),
-        status="complete",
-    )
+    session: Session | None = None
+    if create_session:
+        session = Session.create_with_owner(
+            owner=owner,
+            title=f"{source_slug} — new run {new_run_id} (fork @ {fork_at_phase})",
+            backend_kind="cli",
+            status="active",
+            source="web",
+            opp_slug=source_slug,
+            opp_run_id=new_run_id,
+            workspace=workspace,
+        )
+        Message.objects.create(
+            session=session,
+            turn_index=0,
+            role="system",
+            sender_user=owner,
+            content={
+                "type": "system",
+                "source": "opps-fork",
+                "opp_slug": source_slug,
+                "fork_at_phase": fork_at_phase,
+                "source_run_id": source_run.name,
+                "new_run_id": new_run_id,
+            },
+            plaintext=(
+                f"Forked run `{new_run_id}` from `{source_run.name}` at phase "
+                f"`{fork_at_phase}`. Re-run /ace:run to continue from there."
+            ),
+            status="complete",
+        )
 
     _emit(progress_cb, {
         "status": "done",
@@ -528,6 +545,45 @@ def _build_phases_map(fork_ordinal: int | None) -> dict[str, dict[str, str]]:
     return phases_map
 
 
+def _build_seeded_phases_map(
+    fork_ordinal: int, run_phases: list[int], iso_now: str
+) -> dict[str, dict[str, str]]:
+    """Build the ``phases`` map for a **seeded run** (ace#672) in the plugin's
+    phase-level contract shape ``phases.<phase>.{status, ...}``.
+
+    Run shape is structural so the orchestrator's resume path drives it with no
+    flag interpretation:
+
+    * phases ``< fork_ordinal`` (the copied prefix) → ``done`` + ``verdict:
+      seeded`` + ``completed_at`` (a seed timestamp so ``status: done`` doesn't
+      warn for a missing ``completed_at``).
+    * phases whose ordinal is in ``run_phases`` → ``pending`` (run them).
+    * every other phase from ``fork_ordinal`` onward → ``skipped`` (the
+      orchestrator steps over these and ends when no ``pending`` phase remains).
+
+    Keyed by phase name (``all_phases()``), which is exactly what the plugin's
+    write-back contract + ``classify_phase_writeback`` read. Position in
+    ``all_phases()`` is the phase ordinal — the same convention
+    ``_resolve_phase_ordinal`` / ``_build_phases_map`` already rely on.
+    """
+    from apps.opps.skills import all_phases
+
+    targets = set(run_phases)
+    phases_map: dict[str, dict[str, str]] = {}
+    for idx, phase in enumerate(all_phases(), start=1):
+        if idx < fork_ordinal:
+            phases_map[phase] = {
+                "status": "done",
+                "verdict": "seeded",
+                "completed_at": iso_now,
+            }
+        elif idx in targets:
+            phases_map[phase] = {"status": "pending"}
+        else:
+            phases_map[phase] = {"status": "skipped"}
+    return phases_map
+
+
 def _build_run_state_yaml(
     *,
     opp_slug: str,
@@ -537,14 +593,27 @@ def _build_run_state_yaml(
     fork_ordinal: int | None,
     forked_from_run_id: str,
     now_utc: _dt.datetime,
+    run_phases: list[int] | None = None,
 ) -> str:
     """Synthesize a fresh ``run_state.yaml`` per the State Schema in the
     plugin's orchestrator-reference (§ State Schema, defensive init).
 
     Adds a ``forked_from`` block so lineage is visible without diving
     into Drive — the plugin doesn't read this field but humans will.
+
+    When ``run_phases`` is given (seeded-run path, ace#672), the ``phases`` map
+    is built in the plugin's phase-level contract shape and shaped for a
+    structural resume (see ``_build_seeded_phases_map``), and a ``seeded_from``
+    root key is added. Otherwise the legacy per-skill ``_build_phases_map`` is
+    used unchanged (the plain fork-run endpoint).
     """
     iso_now = now_utc.isoformat()
+    if run_phases is not None and fork_ordinal is not None:
+        phases_map: dict[str, dict[str, str]] = _build_seeded_phases_map(
+            fork_ordinal, run_phases, iso_now
+        )
+    else:
+        phases_map = _build_phases_map(fork_ordinal)
     data: dict = {
         "opportunity": opp_slug,
         "run_id": run_id,
@@ -554,13 +623,18 @@ def _build_run_state_yaml(
         "last_actor": owner_email,
         "last_actor_at": iso_now,
         "current_phase": fork_at_phase,
-        "phases": _build_phases_map(fork_ordinal),
+        "phases": phases_map,
         "forked_from": {
             "run_id": forked_from_run_id,
             "phase": fork_at_phase,
             "forked_at": iso_now,
         },
     }
+    if run_phases is not None:
+        # Informational lineage for a seeded run (not read by any skill; the
+        # plugin's resume drives off phases.*.status). Mirrors the plugin's
+        # § Step 4b seeded_from root key.
+        data["seeded_from"] = forked_from_run_id
     return yaml.safe_dump(data, sort_keys=False)
 
 

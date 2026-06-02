@@ -278,10 +278,13 @@ export interface paths {
         readonly put?: never;
         /**
          * Launch a first-class seeded run (headless)
-         * @description Seed a CLI session with the first-class run command AND start it — by
-         *     launching ``manage.py drive_turn`` as a detached process that drives the
+         * @description Fork the golden into a fresh, pre-shaped run and start a plain resume —
+         *     by launching ``manage.py drive_turn`` as a detached process that drives the
          *     turn through the SAME turn-driver + channel-layer broadcast path as a human
-         *     typing into the workbench chat. The session is therefore a normal, openable,
+         *     typing into the workbench chat. Run shape is structural (ace#672): the
+         *     forked run's ``run_state.yaml`` already encodes seed-prefix/target/skipped,
+         *     so the seeded turn is a plain ``/ace:run <slug>/<run_id>`` resume, not a
+         *     ``--seed-from``/``--only`` flag command. The session is a normal, openable,
          *     live session; the run is decoupled from this request's event loop (which is
          *     why an in-request ``create_task`` didn't work — ace-web#585). Exposed as an
          *     MCP tool (``x-mcp-expose``). Returns 202 (the run executes asynchronously).
@@ -2330,12 +2333,14 @@ export interface components {
          * SeededRunIn
          * @description Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run.
          *
-         *     Launches a first-class seeded run:
-         *     ``/ace:run <slug> --seed-from <golden_run_id> --only <only>``. The
-         *     server-side run substitutes the phases below ``min(only)`` from the golden
-         *     run and executes only the listed ordinals; it mints its own fresh run-id at
-         *     setup and is loop-blind. This is the operation the ``/ace:iterate`` client
-         *     dispatches and then observes via run_state.
+         *     Launches a first-class seeded run via **fork-then-resume** (ace#672): the
+         *     action forks ``golden_run_id`` into a fresh run shaped so the phases below
+         *     ``min(only)`` are ``done``/``verdict: seeded``, the listed ordinals are
+         *     ``pending``, and every other phase from the fork point onward is
+         *     ``skipped`` — then drives a plain ``/ace:run <slug>/<new_run_id>`` resume.
+         *     The run is loop-blind; the ``/ace:iterate`` client observes its run_state.
+         *     (The old ``--seed-from``/``--only`` flags were dropped — the headless runner
+         *     ignored them.)
          */
         readonly SeededRunIn: {
             /** Golden Run Id */

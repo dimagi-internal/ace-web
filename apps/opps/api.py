@@ -1613,27 +1613,36 @@ def seed_chat(
 
 
 def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
-    """Create a CLI session whose first USER turn is the seeded-run command,
-    plus an assistant placeholder ready for the turn driver.
+    """Fork the golden run into a fresh, pre-shaped run, then create a CLI
+    session whose first USER turn is a **plain resume** command.
 
-    The user message is the literal slash command
-    ``/ace:run <slug> --seed-from <golden_run_id> --only <only>``, which the CLI
-    backend (``claude -p``) executes as an ordinary run when the turn is driven.
+    Run shape is **structural**, not flag-driven (ace#672). We fork the golden
+    into a new run whose ``run_state.yaml`` already encodes the shape — seed
+    prefix (phases below ``min(only)``) ``done``/``verdict: seeded``, the listed
+    ordinals ``pending``, every other phase from the fork point onward
+    ``skipped`` — and the user turn is the literal ``/ace:run <slug>/<new_run_id>``
+    resume. The CLI backend's resume path runs the ``pending`` phases in order,
+    steps over ``skipped``, and ends when none remain, so "only 3,4,6 then stop"
+    needs no flag interpretation (the headless runner ignored the old
+    ``--seed-from``/``--only`` flags — that's the bug this replaces).
+
     The run is loop-blind; the ``/ace:iterate`` client observes its run_state.
-    The golden run is validated to exist before the session is created.
+    The golden run is validated to exist by the fork (missing → 404).
 
-    Returns ``{session_slug, assistant_message_id}``. The route spawns the
-    headless turn driver against ``assistant_message_id`` to actually execute
-    the run (no WebSocket client needed). Raises FileNotFoundError when the opp
-    or golden run can't be resolved. The monkeypatch target in contract tests
-    is this module-level function.
+    Returns ``{session_slug, assistant_message_id, run_id}`` — ``run_id`` is the
+    new forked run the action minted. The route spawns the headless turn driver
+    against ``assistant_message_id`` to actually execute the run (no WebSocket
+    client needed). Raises FileNotFoundError when the opp or golden run can't be
+    resolved, ValueError for a bad ``only`` allowlist. The monkeypatch target in
+    contract tests is this module-level function.
     """
     from django.db import transaction
     from django.utils import timezone
 
     from apps.opps import access
     from apps.opps.drive_client import get_drive_client
-    from apps.opps.sync import load_opp
+    from apps.opps.opp_forker import ForkOppError, fork_opp
+    from apps.opps.skills import all_phases
     from apps.service_accounts.exceptions import ServiceAccountNotFound
     from apps.sessions.models import Message, Session
 
@@ -1646,22 +1655,49 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
     except ServiceAccountNotFound as exc:
         raise FileNotFoundError(f"Drive not configured: {exc}") from exc
 
-    # Validate the golden run exists by loading it as the current run; a missing
-    # run raises FileNotFoundError, surfaced as 404 by the route.
-    snap = load_opp(drive, ace_folder_id=ace_folder_id, slug=slug, run_id=body.golden_run_id)
-    access.overlay_workspace_display_name(snap.opp, slug, workspace=workspace)
+    # Resolve the target ordinals and the phase to fork at (= the lowest one).
+    run_phases = sorted({int(p) for p in body.only.split(",")})
+    phases = all_phases()
+    min_ordinal = run_phases[0]
+    if min_ordinal < 1 or min_ordinal > len(phases):
+        raise ValueError(
+            f"--only ordinal {min_ordinal} out of range 1..{len(phases)}"
+        )
+    fork_at_phase = phases[min_ordinal - 1]
 
-    command = f"/ace:run {slug} --seed-from {body.golden_run_id} --only {body.only}"
+    # Fork the golden into a fresh run, shaped for a structural resume. No
+    # session here — we drive our own headless seeded-run session below.
+    try:
+        fork = fork_opp(
+            drive=drive,
+            ace_root_folder_id=ace_folder_id,
+            owner=user,
+            source_slug=slug,
+            fork_at_phase=fork_at_phase,
+            source_run_id=body.golden_run_id,
+            workspace=workspace,
+            mode="keep-all",
+            run_phases=run_phases,
+            create_session=False,
+        )
+    except ForkOppError as exc:
+        if exc.code in ("source-not-found", "no-runs", "source-run-not-found"):
+            raise FileNotFoundError(str(exc)) from exc
+        raise ValueError(str(exc)) from exc
+
+    new_run_id = fork.new_run_id
+    # Plain resume — the orchestrator reads the shaped run_state.yaml. No flags.
+    command = f"/ace:run {slug}/{new_run_id}"
 
     with transaction.atomic():
         session = Session.create_with_owner(
             owner=user,
-            title=f"seeded-run: {slug} (--only {body.only})",
+            title=f"seeded-run: {slug}/{new_run_id} (--only {body.only})",
             backend_kind="cli",
             status="active",
             source="web",
             opp_slug=slug,
-            opp_run_id=body.golden_run_id,
+            opp_run_id=new_run_id,
             workspace=workspace,
         )
         # The command goes in as a completed USER turn (turn_driver loads the
@@ -1685,7 +1721,11 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
             plaintext="",
             status="pending",
         )
-    return {"session_slug": session.slug, "assistant_message_id": assistant_msg.id}
+    return {
+        "session_slug": session.slug,
+        "assistant_message_id": assistant_msg.id,
+        "run_id": new_run_id,
+    }
 
 
 @router.post(
@@ -1699,10 +1739,13 @@ def seeded_run(
     slug: Annotated[str, Path()],
     body: SeededRunIn,
 ) -> HttpResponse:
-    """Seed a CLI session with the first-class run command AND start it — by
-    launching ``manage.py drive_turn`` as a detached process that drives the
+    """Fork the golden into a fresh, pre-shaped run and start a plain resume —
+    by launching ``manage.py drive_turn`` as a detached process that drives the
     turn through the SAME turn-driver + channel-layer broadcast path as a human
-    typing into the workbench chat. The session is therefore a normal, openable,
+    typing into the workbench chat. Run shape is structural (ace#672): the
+    forked run's ``run_state.yaml`` already encodes seed-prefix/target/skipped,
+    so the seeded turn is a plain ``/ace:run <slug>/<run_id>`` resume, not a
+    ``--seed-from``/``--only`` flag command. The session is a normal, openable,
     live session; the run is decoupled from this request's event loop (which is
     why an in-request ``create_task`` didn't work — ace-web#585). Exposed as an
     MCP tool (``x-mcp-expose``). Returns 202 (the run executes asynchronously).
