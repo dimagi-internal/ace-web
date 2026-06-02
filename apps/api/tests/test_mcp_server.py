@@ -40,6 +40,7 @@ _EXPECTED_TOOL_NAMES = {
     "apps_opps_api_get_step",
     "apps_opps_api_get_artifact",
     "apps_opps_api_get_scorecard",
+    "apps_opps_api_seeded_run",
     "apps_sessions_api_list_sessions",
     "apps_sessions_api_get_session",
     "apps_videos_api_list_programs",

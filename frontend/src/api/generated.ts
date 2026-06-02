@@ -278,11 +278,13 @@ export interface paths {
         readonly put?: never;
         /**
          * Launch a first-class seeded run (headless)
-         * @description Seed a CLI session with the first-class run command AND start it
-         *     headlessly — spawns the turn driver as a background task on this ASGI loop,
-         *     so no WebSocket client (human opening the workbench) is needed. Exposed as
-         *     an MCP tool (``x-mcp-expose``) so agentic clients can trigger it too.
-         *     Returns 202 (accepted; the run executes asynchronously).
+         * @description Seed a CLI session with the first-class run command AND start it — by
+         *     launching ``manage.py drive_turn`` as a detached process that drives the
+         *     turn through the SAME turn-driver + channel-layer broadcast path as a human
+         *     typing into the workbench chat. The session is therefore a normal, openable,
+         *     live session; the run is decoupled from this request's event loop (which is
+         *     why an in-request ``create_task`` didn't work — ace-web#585). Exposed as an
+         *     MCP tool (``x-mcp-expose``). Returns 202 (the run executes asynchronously).
          */
         readonly post: operations["apps_opps_api_seeded_run"];
         readonly delete?: never;

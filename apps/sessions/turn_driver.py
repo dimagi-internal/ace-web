@@ -275,40 +275,35 @@ def _schedule_auto_title(session: Session) -> None:
     task.add_done_callback(_bg_tasks.discard)
 
 
-def run_turn_headless(assistant_message_id: int) -> asyncio.Task:
-    """Fire-and-forget: drive an assistant turn with NO WebSocket consumer.
+def start_turn_subprocess(assistant_message_id: int) -> None:
+    """Launch ``manage.py drive_turn <id>`` as a detached OS process to drive an
+    assistant turn out-of-band.
 
-    ``drive_assistant_turn`` owns the backend + DB state machine and merely
-    *yields* StreamEvents for a consumer to broadcast. A headless caller can
-    consume-and-discard those events while the message state — and anything the
-    agent writes server-side (e.g. an ACE run's ``run_state.yaml`` on Drive) —
-    is persisted identically. This is what lets ``/ace:iterate`` launch
-    server-side seeded runs without a human opening the workbench to drive the
-    turn over a WebSocket.
-
-    Must be called from within a running event loop (i.e. an async view). The
-    task is pinned in module-level ``_bg_tasks`` so a GC pass cannot cancel it
-    mid-run (Python 3.11+ holds only a weak ref to ``create_task`` results), and
-    self-removes via ``add_done_callback``.
+    This is how a programmatically-created run (the seeded-run action) is
+    executed: a separate process runs the SAME turn-driver + channel-layer
+    broadcast path as a human typing into the workbench chat
+    (``consumers.drive_and_broadcast``), so the session is a normal, openable,
+    live session — and the run is fully decoupled from the web request's event
+    loop. A fire-and-forget ``asyncio.create_task`` spawned inside a Django
+    async request does NOT reliably run to completion (request-scoped loop);
+    a detached process does, and ``claude -p`` spawns cleanly as its own child.
+    See ace-web#585.
     """
+    import subprocess
+    import sys
 
-    async def _runner():
-        stop_event = asyncio.Event()
-        try:
-            async for _event in drive_assistant_turn(
-                assistant_message_id=assistant_message_id, stop_event=stop_event
-            ):
-                pass
-        except Exception:
-            logger.exception(
-                "Headless turn failed for assistant message %s",
-                assistant_message_id,
-            )
+    from django.conf import settings
 
-    task = asyncio.create_task(_runner())
-    _bg_tasks.add(task)
-    task.add_done_callback(_bg_tasks.discard)
-    return task
+    subprocess.Popen(
+        [
+            sys.executable,
+            str(settings.BASE_DIR / "manage.py"),
+            "drive_turn",
+            str(assistant_message_id),
+        ],
+        cwd=str(settings.BASE_DIR),
+        start_new_session=True,
+    )
 
 
 def _load_message(message_id: int) -> Message | None:

@@ -1669,7 +1669,7 @@ def test_seeded_run_happy_path(member_client, monkeypatch):
     driven = {}
     monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
     monkeypatch.setattr(
-        "apps.sessions.turn_driver.run_turn_headless",
+        "apps.sessions.turn_driver.start_turn_subprocess",
         lambda mid: driven.update(mid=mid),
     )
     response = client.post(
@@ -1682,7 +1682,7 @@ def test_seeded_run_happy_path(member_client, monkeypatch):
     assert response.json()["session_slug"] == "sess-seeded"
     assert response.json()["assistant_message_id"] == 4242
     assert captured == {"only": "3,4,6", "golden": "20260531-2258"}
-    # The headless turn driver was started against the assistant placeholder.
+    # The turn driver was launched (detached) against the assistant placeholder.
     assert driven == {"mid": 4242}
 
 
@@ -1696,7 +1696,7 @@ def test_seeded_run_defaults_only_to_3_4_6(member_client, monkeypatch):
         return {"session_slug": "s", "assistant_message_id": 1}
 
     monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
-    monkeypatch.setattr("apps.sessions.turn_driver.run_turn_headless", lambda mid: None)
+    monkeypatch.setattr("apps.sessions.turn_driver.start_turn_subprocess", lambda mid: None)
     response = client.post(
         "/api/w/ws1/opps/opp-1/actions/seeded-run",
         data={"golden_run_id": "20260531-2258"},

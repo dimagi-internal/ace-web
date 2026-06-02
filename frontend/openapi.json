@@ -1001,7 +1001,7 @@
             "description": "OK"
           }
         },
-        "description": "Seed a CLI session with the first-class run command AND start it\nheadlessly \u2014 spawns the turn driver as a background task on this ASGI loop,\nso no WebSocket client (human opening the workbench) is needed. Exposed as\nan MCP tool (``x-mcp-expose``) so agentic clients can trigger it too.\nReturns 202 (accepted; the run executes asynchronously).",
+        "description": "Seed a CLI session with the first-class run command AND start it \u2014 by\nlaunching ``manage.py drive_turn`` as a detached process that drives the\nturn through the SAME turn-driver + channel-layer broadcast path as a human\ntyping into the workbench chat. The session is therefore a normal, openable,\nlive session; the run is decoupled from this request's event loop (which is\nwhy an in-request ``create_task`` didn't work \u2014 ace-web#585). Exposed as an\nMCP tool (``x-mcp-expose``). Returns 202 (the run executes asynchronously).",
         "tags": [
           "opps"
         ],

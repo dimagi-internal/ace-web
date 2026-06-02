@@ -272,24 +272,40 @@ def test_get_backend_returns_real_when_setting_disabled(settings):
     assert isinstance(backend, CLIBackend)
 
 
-async def test_run_turn_headless_drives_to_completion(
+class _StubChannelLayer:
+    """Records group_send calls so a test can assert broadcasts without redis."""
+
+    def __init__(self):
+        self.sent = []
+
+    async def group_send(self, group, message):
+        self.sent.append((group, message))
+
+
+async def test_drive_and_broadcast_drives_to_completion_and_broadcasts(
     session, user_and_assistant_messages
 ):
-    """run_turn_headless consumes drive_assistant_turn with NO WebSocket
-    consumer; the DB message reaches a terminal state exactly as a WS-driven
-    turn would. This is the path /ace:iterate uses to launch server-side runs
-    headlessly (ace-web#585)."""
+    """consumers.drive_and_broadcast drives the SAME turn-driver state machine
+    as a WS turn (DB → complete) AND broadcasts stream_start + stream_complete
+    to the session group — so a programmatically-launched run is a normal,
+    openable, live session. This is the path the seeded-run action uses via the
+    drive_turn management command (ace-web#585)."""
+    from apps.sessions.consumers import drive_and_broadcast
+
     _user, asst = user_and_assistant_messages
     events = [StreamEvent.delta(text="done"), StreamEvent.done()]
+    stub = _StubChannelLayer()
     with patch(
-        "apps.sessions.turn_driver._get_backend",
-        return_value=FakeBackend(events),
-    ):
-        task = turn_driver.run_turn_headless(asst.id)
-        await task
+        "apps.sessions.turn_driver._get_backend", return_value=FakeBackend(events)
+    ), patch("channels.layers.get_channel_layer", return_value=stub):
+        await drive_and_broadcast(asst.id)
 
     from asgiref.sync import sync_to_async
 
     refreshed = await sync_to_async(Message.objects.get)(pk=asst.id)
     assert refreshed.status == "complete"
     assert refreshed.plaintext == "done"
+    kinds = [m["type"] for _g, m in stub.sent]
+    assert "chat.stream_start" in kinds
+    assert "chat.stream_complete" in kinds
+    assert all(g == f"session.{session.slug}" for g, _m in stub.sent)
