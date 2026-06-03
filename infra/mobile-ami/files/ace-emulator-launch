@@ -47,6 +47,13 @@ RUNDIR=/run/ace-mobile
 READY_MARKER="$RUNDIR/ready"
 LOG_FILE=/var/log/ace-mobile/emulator.log
 
+# Elapsed-seconds since launch start, for per-phase cold-boot timing. The
+# milestone logs below carry [t=+Ns] so a slow boot can be decomposed
+# (emulator boot vs adb vs CommCare install vs registration) from runner.log
+# rather than read as one opaque ensure_running number.
+LAUNCH_T0=$(date +%s)
+el() { echo "+$(( $(date +%s) - LAUNCH_T0 ))s"; }
+
 # Idle marker. Touched aggressively here so the in-VM watchdog
 # doesn't shoot us during the longer cold-boot path.
 mark_active() { touch "$RUNDIR/last-activity" 2>/dev/null || true; }
@@ -78,7 +85,7 @@ echo "[ace-emulator-launch] commcare_version=$COMMCARE_VERSION apk=$APK_PATH"
 
 # ── Cold-boot the emulator ───────────────────────────────────────────
 mark_active
-echo "[ace-emulator-launch] booting emulator (cold, -wipe-data)..."
+echo "[ace-emulator-launch] [t=$(el)] booting emulator (cold, -wipe-data)..."
 mkdir -p "$(dirname "$LOG_FILE")"
 nohup "$EMU" -avd "$AVD_NAME" \
   -no-window -no-audio -no-metrics \
@@ -126,7 +133,7 @@ if [[ "$boot_complete" != "1" ]]; then
   echo "[ace-emulator-launch] ERROR: boot timed out" >&2
   exit 1
 fi
-echo "[ace-emulator-launch] boot complete"
+echo "[ace-emulator-launch] [t=$(el)] boot complete"
 
 # ── Install CommCare ─────────────────────────────────────────────────
 #
@@ -138,7 +145,7 @@ echo "[ace-emulator-launch] boot complete"
 # defeats the cold-boot wall-clock budget.
 
 mark_active
-echo "[ace-emulator-launch] installing CommCare $COMMCARE_VERSION..."
+echo "[ace-emulator-launch] [t=$(el)] installing CommCare $COMMCARE_VERSION..."
 "$ADB" install -r "$APK_PATH"
 
 echo "[ace-emulator-launch] granting CAMERA to org.commcare.dalvik..."
@@ -164,7 +171,7 @@ sleep 3  # extra cushion — broken-pipe race is timing-sensitive
 mark_active
 trap - ERR  # CommCare staged; from here on, errors don't kill the emulator
 
-echo "[ace-emulator-launch] AVD ready (CommCare installed, unregistered); signaling ready"
+echo "[ace-emulator-launch] [t=$(el)] AVD ready (CommCare installed, unregistered); signaling ready"
 touch "$READY_MARKER"
 
 # Kill the keepalive — from here ace-web's SSM commands bump the marker

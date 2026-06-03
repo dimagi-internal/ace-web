@@ -165,6 +165,9 @@ def test_ensure_running_when_already_running_only_probes(controller_factory, mon
     assert state.diagnostics is not None
     assert state.diagnostics.adb_visible_count == 1
     assert state.diagnostics.runner_service_state == "active"
+    # Already-running path times the emulator probe + diagnostics.
+    assert state.timings is not None
+    assert "emulator_wait_s" in state.timings
 
 
 def test_ensure_running_starts_stopped_instance(controller_factory, monkeypatch):
@@ -190,6 +193,11 @@ def test_ensure_running_starts_stopped_instance(controller_factory, monkeypatch)
     assert state.state == "running"
     assert state.diagnostics is not None
     assert state.diagnostics.adb_visible_count == 1
+    # Cold start records per-phase timings so callers can see EC2-provisioning
+    # vs in-VM emulator-boot time instead of one opaque number.
+    assert state.timings is not None
+    assert "ec2_start_s" in state.timings
+    assert "emulator_wait_s" in state.timings
 
 
 def test_ensure_running_auto_recovers_stale_marker(
