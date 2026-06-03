@@ -1713,6 +1713,47 @@ def test_seeded_run_defaults_only_to_3_4_6(member_client, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_seeded_run_skip_evals_defaults_true(member_client, monkeypatch):
+    """Seeded runs are the test harness; evals don't gate, so they default off."""
+    client, _, _ = member_client
+    captured = {}
+
+    def _fake(workspace, slug, user, body):
+        captured["skip_evals"] = body.skip_evals
+        return {"session_slug": "s", "assistant_message_id": 1, "run_id": "r"}
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
+    monkeypatch.setattr("apps.sessions.turn_driver.start_turn_subprocess", lambda mid: None)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 202
+    assert captured["skip_evals"] is True
+
+
+@pytest.mark.django_db
+def test_seeded_run_skip_evals_can_be_disabled(member_client, monkeypatch):
+    client, _, _ = member_client
+    captured = {}
+
+    def _fake(workspace, slug, user, body):
+        captured["skip_evals"] = body.skip_evals
+        return {"session_slug": "s", "assistant_message_id": 1, "run_id": "r"}
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
+    monkeypatch.setattr("apps.sessions.turn_driver.start_turn_subprocess", lambda mid: None)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258", "skip_evals": False},
+        content_type="application/json",
+    )
+    assert response.status_code == 202
+    assert captured["skip_evals"] is False
+
+
+@pytest.mark.django_db
 def test_seeded_run_422_bad_only_shape(member_client):
     client, _, _ = member_client
     response = client.post(

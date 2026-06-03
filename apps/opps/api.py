@@ -1686,8 +1686,13 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
         raise ValueError(str(exc)) from exc
 
     new_run_id = fork.new_run_id
-    # Plain resume — the orchestrator reads the shaped run_state.yaml. No flags.
+    # Plain resume — the orchestrator reads the shaped run_state.yaml. Only flag
+    # is --no-evals (default on for seeded/test runs): the per-step evals don't
+    # gate the run, so skipping them saves ~7 min/run of LLM grading nobody
+    # reads mid-test. Pass skip_evals=false to force inline grading.
     command = f"/ace:run {slug}/{new_run_id}"
+    if body.skip_evals:
+        command += " --no-evals"
 
     with transaction.atomic():
         session = Session.create_with_owner(
