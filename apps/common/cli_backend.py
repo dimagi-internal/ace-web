@@ -339,6 +339,7 @@ class CLIBackend:
         session: Session,
         new_user_message: str,
         force_fresh_session: bool = False,
+        raw_sink: list[str] | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Stream one assistant turn.
 
@@ -372,9 +373,11 @@ class CLIBackend:
         # with ours — which for the long-lived path means evicting the
         # SessionProcess before the consumer's cancel handler returns.
         if force_fresh_session:
+            # One-shot path is the auto-titler — a throwaway session we don't
+            # analyze, so no raw_sink capture there.
             agen = self._stream_one_shot(session, new_user_message)
         else:
-            agen = self._stream_long_lived(session, new_user_message)
+            agen = self._stream_long_lived(session, new_user_message, raw_sink=raw_sink)
         try:
             async for event in agen:
                 yield event
@@ -455,7 +458,7 @@ class CLIBackend:
     # ─────────────────────────── long-lived path ───────────────────────────
 
     async def _stream_long_lived(
-        self, session: Session, new_user_message: str
+        self, session: Session, new_user_message: str, raw_sink: list[str] | None = None
     ) -> AsyncIterator[StreamEvent]:
         """Drive one turn through the per-Session long-lived subprocess.
 
@@ -501,7 +504,7 @@ class CLIBackend:
 
                 try:
                     async for event in self._send_and_drain_persistent(
-                        sp, new_user_message
+                        sp, new_user_message, raw_sink=raw_sink
                     ):
                         had_any_event = True
                         if (
@@ -567,7 +570,7 @@ class CLIBackend:
                             session, new_user_message
                         )
                         async for event in self._send_and_drain_persistent(
-                            sp, history_prompt
+                            sp, history_prompt, raw_sink=raw_sink
                         ):
                             had_any_event = True
                             if (
@@ -800,7 +803,7 @@ class CLIBackend:
         )
 
     async def _send_and_drain_persistent(
-        self, sp: SessionProcess, message_text: str
+        self, sp: SessionProcess, message_text: str, raw_sink: list[str] | None = None
     ) -> AsyncIterator[StreamEvent]:
         """Write one user-message envelope to the live stdin, drain one turn.
 
@@ -851,7 +854,7 @@ class CLIBackend:
             ) from exc
 
         had_events = False
-        async for event in self._drain_persistent(proc):
+        async for event in self._drain_persistent(proc, raw_sink=raw_sink):
             had_events = True
             yield event
 
@@ -870,12 +873,18 @@ class CLIBackend:
         # is only correct for the very first --resume attempt).
         sp.spawned_with_resume = False
 
-    async def _drain_persistent(self, proc) -> AsyncIterator[StreamEvent]:
+    async def _drain_persistent(
+        self, proc, raw_sink: list[str] | None = None
+    ) -> AsyncIterator[StreamEvent]:
         """Read stdout line by line until DONE, WITHOUT closing stdin.
 
         Mirror of ``_drain`` minus the stdin-close-on-DONE behaviour. The
         subprocess stays open for subsequent turns; only ``_terminate_proc``
         (via ``proc.terminate()``) closes stdin.
+
+        When ``raw_sink`` is provided, every raw stdout line is appended to it
+        verbatim — the turn driver uses this to capture the JSONL transcript
+        of a web-source session and compute its cost breakdown at turn end.
         """
         while True:
             line = await proc.stdout.readline()
@@ -885,6 +894,8 @@ class CLIBackend:
                 # picked up by the outer error path which evicts.
                 return
             text = line.decode("utf-8", errors="replace")
+            if raw_sink is not None:
+                raw_sink.append(text)
             for event in parse_stream_json_lines([text]):
                 yield event
                 if event.type is StreamEventType.DONE:
