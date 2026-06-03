@@ -28,6 +28,9 @@ from apps.ingest.pricing import compute_cost
 
 SCHEMA_VERSION = 1
 
+# A [start, end] wall-clock interval; either endpoint may be missing.
+_Interval = tuple[datetime | None, datetime | None]
+
 
 @dataclass
 class _OpenSegment:
@@ -114,7 +117,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     # Wall time is rolled up as the UNION of these intervals, not the sum of
     # their spans — summing double-counts wall-clock windows covered by both a
     # skill segment and the orchestration span that brackets it.
-    intervals_by_skill: dict[tuple[str, str], list[tuple[datetime | None, datetime | None]]] = defaultdict(list)
+    intervals_by_skill: dict[tuple[str, str], list[_Interval]] = defaultdict(list)
 
     # Build ancestry index: every event uuid → its parent_uuid.
     # Used by _resolve_segment_for_sidechain to walk the parentUuid chain.
@@ -286,7 +289,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
 
     # All skill-segment intervals per phase, for the union-based phase wall and
     # the residual orchestration wall (phase wall minus the skill-covered union).
-    phase_skill_intervals: dict[str, list[tuple[datetime | None, datetime | None]]] = defaultdict(list)
+    phase_skill_intervals: dict[str, list[_Interval]] = defaultdict(list)
     for (phase_name, _skill_name), ivs in intervals_by_skill.items():
         phase_skill_intervals[phase_name].extend(ivs)
 
@@ -295,7 +298,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     # toward the phase wall, keeping phase wall == sum of its skill rows.
     orch_phases = {p for p, tk in phase_orch_tokens.items() if any(tk.values())}
 
-    def _phase_intervals(name: str) -> list[tuple]:
+    def _phase_intervals(name: str) -> list[_Interval]:
         ivs = list(phase_skill_intervals.get(name, []))
         if name in orch_phases:
             ivs.append((phase_orch_first_ts.get(name), phase_orch_last_ts.get(name)))
