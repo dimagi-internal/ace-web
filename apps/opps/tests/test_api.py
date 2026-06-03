@@ -1846,7 +1846,7 @@ def test_seed_run_for_opp_forks_then_plain_resume(member_client, monkeypatch):
         lambda: ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"],
     )
 
-    body = SeededRunIn(golden_run_id="20260531-2258", only="3,4,6")
+    body = SeededRunIn(golden_run_id="20260531-2258", only="3,4,6", skip_evals=False)
     result = opps_api.seed_run_for_opp(workspace, "opp-1", user, body)
 
     # Fork was asked for the structural shape: target ordinals pending, no
@@ -1868,6 +1868,37 @@ def test_seed_run_for_opp_forks_then_plain_resume(member_client, monkeypatch):
     assert "--only" not in turn0.plaintext
     # Assistant placeholder is pending for the headless driver.
     assert session.messages.get(turn_index=1).status == "pending"
+
+
+@pytest.mark.django_db
+def test_seed_run_for_opp_default_skips_evals(member_client, monkeypatch):
+    """With the default skip_evals=True, the seeded resume appends --no-evals
+    (seeded runs are the test harness; evals don't gate)."""
+    from apps.opps import api as opps_api
+    from apps.opps.opp_forker import ForkOppResult
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+
+    monkeypatch.setattr("apps.opps.access.resolve_ace_root_folder_id", lambda ws: "ace-root")
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client", lambda workspace: object())
+    monkeypatch.setattr(
+        "apps.opps.opp_forker.fork_opp",
+        lambda **kw: ForkOppResult(
+            opp_slug=kw["source_slug"], new_run_id="20260601-0900",
+            new_run_folder_id="folder-new", working_session=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "apps.opps.skills.all_phases",
+        lambda: ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"],
+    )
+
+    body = SeededRunIn(golden_run_id="20260531-2258", only="3,4,6")  # skip_evals defaults True
+    result = opps_api.seed_run_for_opp(workspace, "opp-1", user, body)
+
+    session = Session.objects.get(slug=result["session_slug"])
+    assert session.messages.get(turn_index=0).plaintext == "/ace:run opp-1/20260601-0900 --no-evals"
 
 
 @pytest.mark.django_db
