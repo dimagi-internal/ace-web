@@ -252,6 +252,12 @@ class SeededRunIn(StrictModel):
     # fork point; the ACE orchestrator's resume path enforces input deps. We
     # only enforce the shape here.
     only: str = Field(default="3,4,6", pattern=r"^\d+(,\d+)*$")
+    # Seeded runs are the test/iteration harness, where the per-step LLM evals
+    # (~7 min in Phase 3) are pure overhead: a `verdict: fail` doesn't gate or
+    # halt the run — evals only produce a quality score + a pause summary, and
+    # `--no-evals` cleanly yields `verdict: partial-evals-skipped`. So default
+    # to skipping them; set false to force inline grading.
+    skip_evals: bool = True
 
 
 class SeededRunOut(StrictModel):
