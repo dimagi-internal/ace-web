@@ -401,14 +401,26 @@ Repo / merge process:
 
 - **Local dev**: `docker compose up`. App at `http://localhost:8000`, Postgres at
   `localhost:5434`. Backend hot-reload + working Vite dev server.
-- **Tests**: `pytest -v` from repo root (in-memory SQLite; fast hashers).
-  Frontend: `bun run test` from `frontend/`.
+- **Local Python env (one-time per worktree, REQUIRED before tests/lint).** The
+  `.venv` is gitignored, so a fresh checkout/worktree has none — bare `pytest` /
+  `ruff` then silently resolve to a global interpreter that's missing project
+  deps (`orjson`, `django-environ`, `email-validator`, …) and fail with
+  confusing `ModuleNotFoundError`s. Provision it exactly as CI does, then always
+  invoke the venv binaries:
+  ```bash
+  uv venv --python=3.11 .venv
+  uv pip install --python .venv/bin/python -e ".[dev]"
+  ```
+- **Tests**: `.venv/bin/pytest -v` from repo root (in-memory SQLite; fast
+  hashers; ~20s for the full unit suite — no Postgres needed). Frontend:
+  `bun run test` from `frontend/`. **Run this before arming auto-merge —
+  `pytest + ruff` is NOT a required check, so a red suite can still auto-merge.**
 - **Post-deploy probe**: `LABS_TOKEN=... uv run --extra walkthrough python
   scripts/qa/labs_probe.py` — walks every UI surface on labs + cross-checks the
   OpenAPI schema for orphan endpoints. ~90s for ~40 steps. Writes
   `qa-results/<UTC-iso>/report.{json,md}` + per-step PNGs. See
   `docs/qa/e2e-probe.md`.
-- **Lint**: `ruff check .` — `line-length=100`, `target=py311`, rules `E,F,W,I,UP,B`.
+- **Lint**: `.venv/bin/ruff check .` — `line-length=100`, `target=py311`, rules `E,F,W,I,UP,B`.
 - **Typecheck**: `basedpyright` (CI-gated). Frontend: `bunx tsc -b` (stricter
   than `tsc --noEmit`; Docker build uses this).
 - **Deploy**: GitHub Actions workflow `.github/workflows/deploy-ace-web-labs.yml`.
