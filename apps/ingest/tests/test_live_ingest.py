@@ -39,7 +39,10 @@ def test_stores_breakdown_and_raw_transcript():
 
     assert breakdown["totals"]["output_tokens"] == 5
     session.refresh_from_db()
-    assert session.cost_breakdown["totals"]["output_tokens"] == 5
+    # Equality (not subscripting) so the model's JSONField attribute isn't
+    # indexed directly — django-stubs types it as JSONField, which trips
+    # basedpyright's reportIndexIssue. Persisted breakdown == computed one.
+    assert session.cost_breakdown == breakdown
 
     upload = IngestUpload.objects.get(session=session)
     assert upload.raw_jsonl_gz  # powers the /structure endpoint
