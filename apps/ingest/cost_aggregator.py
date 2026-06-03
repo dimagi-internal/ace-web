@@ -114,7 +114,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     # Wall time is rolled up as the UNION of these intervals, not the sum of
     # their spans — summing double-counts wall-clock windows covered by both a
     # skill segment and the orchestration span that brackets it.
-    intervals_by_skill: dict[tuple[str, str], list[tuple]] = defaultdict(list)
+    intervals_by_skill: dict[tuple[str, str], list[tuple[datetime | None, datetime | None]]] = defaultdict(list)
 
     # Build ancestry index: every event uuid → its parent_uuid.
     # Used by _resolve_segment_for_sidechain to walk the parentUuid chain.
@@ -286,7 +286,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
 
     # All skill-segment intervals per phase, for the union-based phase wall and
     # the residual orchestration wall (phase wall minus the skill-covered union).
-    phase_skill_intervals: dict[str, list[tuple]] = defaultdict(list)
+    phase_skill_intervals: dict[str, list[tuple[datetime | None, datetime | None]]] = defaultdict(list)
     for (phase_name, _skill_name), ivs in intervals_by_skill.items():
         phase_skill_intervals[phase_name].extend(ivs)
 
