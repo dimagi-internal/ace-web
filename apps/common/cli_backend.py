@@ -83,6 +83,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -109,6 +110,30 @@ from .nova_auth_flow import get_fresh_token as get_fresh_nova_token
 NOVA_BEARER_TOKEN_ENV = "NOVA_BEARER_TOKEN"
 
 logger = logging.getLogger(__name__)
+
+
+def _stamp_receipt_time(line: str) -> str:
+    """Add a receipt-time ``timestamp`` to a stream-json line if it lacks one.
+
+    The CLI's stdout envelopes carry no per-event ``timestamp`` (unlike the
+    on-disk transcript), so a cost breakdown computed from captured stdout has
+    a correct total + cost but ZERO per-phase / per-skill wall. Stamping each
+    line as we read it — receipt time ≈ event time, since we drain stdout as
+    the subprocess emits — gives the aggregator the timeline it needs. The
+    enriched line is also a more faithful, replayable transcript.
+
+    Best-effort: a non-JSON or non-object line (or one that already has a
+    timestamp) is returned unchanged.
+    """
+    try:
+        obj = json.loads(line)
+    except (json.JSONDecodeError, ValueError):
+        return line
+    if not isinstance(obj, dict) or "timestamp" in obj:
+        return line
+    obj["timestamp"] = datetime.now(UTC).isoformat()
+    return json.dumps(obj) + "\n"
+
 
 # How many lines of stderr we keep in memory per subprocess. The kernel's
 # stderr pipe buffer is ~64 KB; a long-running run can emit far more than
@@ -895,7 +920,9 @@ class CLIBackend:
                 return
             text = line.decode("utf-8", errors="replace")
             if raw_sink is not None:
-                raw_sink.append(text)
+                # Enrich with a receipt-time timestamp so the cost aggregator
+                # can derive per-phase wall (stdout envelopes carry none).
+                raw_sink.append(_stamp_receipt_time(text))
             for event in parse_stream_json_lines([text]):
                 yield event
                 if event.type is StreamEventType.DONE:
