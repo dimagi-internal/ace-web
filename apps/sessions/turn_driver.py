@@ -102,6 +102,24 @@ async def _iter_until_stop(
                     await t
 
 
+def _persist_session_cost(session, raw_sink: list[str]) -> None:
+    """Compute + persist the session's cost breakdown from captured raw JSONL.
+
+    Best-effort: a failure here must never surface to the user mid-turn, so we
+    swallow + log. No-op when nothing was captured (e.g. the API backend).
+    """
+    if not raw_sink:
+        return
+    try:
+        from apps.ingest.live_ingest import store_session_transcript
+
+        store_session_transcript(session, "".join(raw_sink))
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "failed to persist cost breakdown for session %s", session.slug
+        )
+
+
 async def drive_assistant_turn(
     *, assistant_message_id: int, stop_event: asyncio.Event
 ) -> AsyncIterator[StreamEvent]:
@@ -140,11 +158,16 @@ async def drive_assistant_turn(
     await sync_to_async(_mark_streaming)(message)
 
     accumulated: list[str] = []
+    # Raw JSONL lines streamed from the subprocess, captured so we can compute
+    # this (web-source) session's cost breakdown at turn end — the live
+    # equivalent of the upload path. Empty for backends that don't fill it
+    # (e.g. ApiBackend), in which case the persist step is a no-op.
+    raw_sink: list[str] = []
     last_db_write = asyncio.get_running_loop().time()
 
     try:
         agen = backend.stream_completion(
-            session=message.session, new_user_message=user_text
+            session=message.session, new_user_message=user_text, raw_sink=raw_sink
         )
         try:
             async for event in _iter_until_stop(agen, stop_event):
@@ -192,6 +215,9 @@ async def drive_assistant_turn(
                     await _broadcast_opp_updated_if_needed(
                         message.session, turn_start_index
                     )
+                    await sync_to_async(_persist_session_cost)(
+                        message.session, raw_sink
+                    )
                     yield event
                     return
                 if event.type is StreamEventType.ERROR:
@@ -216,6 +242,7 @@ async def drive_assistant_turn(
         await sync_to_async(_mark_complete)(message, "".join(accumulated))
         _schedule_auto_title(message.session)
         await _broadcast_opp_updated_if_needed(message.session, turn_start_index)
+        await sync_to_async(_persist_session_cost)(message.session, raw_sink)
 
     except CLIBackendError as exc:
         logger.exception("CLIBackend failed during assistant turn")

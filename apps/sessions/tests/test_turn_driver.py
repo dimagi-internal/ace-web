@@ -309,3 +309,42 @@ async def test_drive_and_broadcast_drives_to_completion_and_broadcasts(
     assert "chat.stream_start" in kinds
     assert "chat.stream_complete" in kinds
     assert all(g == f"session.{session.slug}" for g, _m in stub.sent)
+
+
+class RawSinkBackend:
+    """Backend that fills raw_sink with JSONL (like the real CLIBackend), so the
+    turn driver computes a cost breakdown for the web-source session."""
+
+    async def stream_completion(self, *, session, new_user_message, raw_sink=None, **kwargs):
+        if raw_sink is not None:
+            raw_sink.append('{"type":"system","subtype":"init","session_id":"x"}\n')
+            raw_sink.append(
+                '{"type":"assistant","timestamp":"2026-01-01T00:00:00.000Z",'
+                '"message":{"role":"assistant","model":"claude-sonnet-4-6",'
+                '"content":[{"type":"text","text":"hi"}],'
+                '"usage":{"input_tokens":3,"output_tokens":9,'
+                '"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n'
+            )
+        yield StreamEvent.delta(text="hi")
+        yield StreamEvent.done()
+
+
+async def test_persists_cost_breakdown_from_captured_transcript(
+    session, user_and_assistant_messages
+):
+    """End-to-end: a turn through a backend that streams JSONL ends with the
+    session's cost_breakdown populated (web-source analyzer parity)."""
+    _user, asst = user_and_assistant_messages
+    stop_event = asyncio.Event()
+    with patch(
+        "apps.sessions.turn_driver._get_backend", return_value=RawSinkBackend()
+    ):
+        await _drain(
+            turn_driver.drive_assistant_turn(
+                assistant_message_id=asst.id, stop_event=stop_event
+            )
+        )
+
+    from asgiref.sync import sync_to_async
+    refreshed = await sync_to_async(Session.objects.get)(pk=session.pk)
+    assert refreshed.cost_breakdown.get("totals", {}).get("output_tokens") == 9
