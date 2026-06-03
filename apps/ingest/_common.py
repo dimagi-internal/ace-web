@@ -34,6 +34,35 @@ def wall_time_seconds(start: datetime | None, end: datetime | None) -> int:
     return max(0, int(round(delta)))
 
 
+def union_seconds(intervals: list[tuple[datetime | None, datetime | None]]) -> int:
+    """Wall-clock seconds covered by the UNION of [start, end] intervals.
+
+    Overlapping intervals are merged so wall-clock time shared by two segments
+    is counted once. This is the correct way to roll up per-phase / per-skill
+    wall time: summing raw segment spans double-counts any window covered by
+    both a skill segment and the orchestration span that brackets it.
+
+    Intervals with a missing endpoint, or where end precedes start, are dropped.
+    """
+    clean = [
+        (s, e) for (s, e) in intervals
+        if s is not None and e is not None and e >= s
+    ]
+    if not clean:
+        return 0
+    clean.sort(key=lambda iv: iv[0])
+    total = 0.0
+    cur_start, cur_end = clean[0]
+    for s, e in clean[1:]:
+        if s > cur_end:
+            total += (cur_end - cur_start).total_seconds()
+            cur_start, cur_end = s, e
+        elif e > cur_end:
+            cur_end = e
+    total += (cur_end - cur_start).total_seconds()
+    return max(0, int(round(total)))
+
+
 def registry_lookup(phase_index: dict[str, dict], name: str) -> dict | None:
     """Look up a skill or agent in the phase index, with namespace fallback.
 
