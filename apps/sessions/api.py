@@ -238,6 +238,104 @@ def interrupted_runs(
     return JsonResponse({"items": interrupted_runs_in_workspace(workspace)})
 
 
+def resume_session_run(session) -> dict | None:
+    """Re-launch an interrupted ACE opp run on its EXISTING session + run_id by
+    appending a fresh ``/ace:run <slug>/<run_id>`` resume turn (the orchestrator
+    picks up from run_state.yaml where it died). Returns
+    {assistant_message_id, command, slug} or None if the session isn't a
+    resumable ACE opp run (ad-hoc chats have no run_state to resume from).
+
+    The caller spawns the driver for assistant_message_id. Monkeypatch target
+    in contract tests."""
+    from django.db import models, transaction
+    from django.utils import timezone
+
+    from apps.sessions.models import Message
+
+    if not session.opp_run_id or not session.opp_slug:
+        return None  # ACE opp runs only
+    command = f"/ace:run {session.opp_slug}/{session.opp_run_id} --no-evals"
+    with transaction.atomic():
+        # Retire the dead turn so the interrupted-detector stops flagging it.
+        Message.objects.filter(
+            session=session, role="assistant", status__in=("streaming", "pending"),
+        ).update(
+            status="error",
+            error_detail="superseded by auto-resume",
+            completed_at=timezone.now(),
+        )
+        next_idx = (
+            Message.objects.filter(session=session).aggregate(m=models.Max("turn_index"))["m"] or 0
+        ) + 1
+        Message.objects.create(
+            session=session, turn_index=next_idx, role="user", sender_user=session.owner,
+            content={"text": command}, plaintext=command, status="complete",
+            completed_at=timezone.now(),
+        )
+        assistant_msg = Message.objects.create(
+            session=session, turn_index=next_idx + 1, role="assistant",
+            content={"text": ""}, plaintext="", status="pending",
+        )
+        # Stamp the beacon fresh NOW (before the driver's first heartbeat ~30s
+        # out) so a concurrent detector / second post-deploy hook can't see the
+        # just-created pending turn as interrupted and double-resume it.
+        from apps.sessions.models import Session as _S
+        _S.objects.filter(pk=session.pk).update(driver_heartbeat_at=timezone.now())
+    return {"assistant_message_id": assistant_msg.id, "command": command, "slug": session.slug}
+
+
+@router.post(
+    "/resume-interrupted",
+    summary="Resume all interrupted ACE opp runs (post-deploy self-heal)",
+)
+def resume_interrupted(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+) -> HttpResponse:
+    """Bulk-resume every interrupted ACE opp run in the workspace. Intended for
+    the post-deploy hook: after a rollout drains the tasks driving live runs,
+    this relaunches them from run_state.yaml. Single serial call → no
+    double-spawn race."""
+    from django.http import JsonResponse
+
+    from apps.sessions.models import Session
+    from apps.sessions.turn_driver import start_turn_subprocess
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    resumed = []
+    # ACE opp runs only (have an opp_run_id → resumable from run_state.yaml).
+    candidates = Session.interrupted().filter(workspace=workspace).exclude(opp_run_id="")
+    for s in candidates:
+        res = resume_session_run(s)
+        if res is not None:
+            start_turn_subprocess(res["assistant_message_id"])
+            resumed.append({"slug": s.slug, "opp_run_id": s.opp_run_id})
+    return JsonResponse({"resumed": resumed, "count": len(resumed)})
+
+
+@router.post("/{slug}/resume", summary="Resume one interrupted run")
+def resume_run(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+) -> HttpResponse:
+    from django.http import JsonResponse
+
+    from apps.sessions.turn_driver import start_turn_subprocess
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    session = _load_session_in_workspace(slug, workspace)
+    if session is None:
+        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
+    res = resume_session_run(session)
+    if res is None:
+        raise ProblemError(
+            422, "Not a resumable ACE opp run (no opp_run_id)", type_=TYPE_VALIDATION,
+        )
+    start_turn_subprocess(res["assistant_message_id"])
+    return JsonResponse(res, status=202)
+
+
 # ---------------------------------------------------------------------------
 # 2.2.3 — POST / — create session
 # ---------------------------------------------------------------------------
