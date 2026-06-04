@@ -756,11 +756,7 @@ class CLIBackend:
                 sp = SessionProcess(slug=session.slug, session_pk=session.pk)
                 self._sessions[session.slug] = sp
                 if len(self._sessions) > self._max_session_pool_size:
-                    lru_slug = min(
-                        (s for s in self._sessions if s != session.slug),
-                        key=lambda s: self._sessions[s].last_active,
-                        default=None,
-                    )
+                    lru_slug = self._lru_evict_candidate(session.slug)
                     if lru_slug is not None:
                         lru_to_evict = self._sessions.pop(lru_slug)
 
@@ -1077,6 +1073,48 @@ class CLIBackend:
             self._idle_reaper(), name="cli-backend-idle-reaper"
         )
 
+    def _lru_evict_candidate(self, exclude_slug: str) -> str | None:
+        """Oldest-``last_active`` slug eligible for LRU eviction to admit a new
+        session — excluding the incoming session AND any session with a turn in
+        progress (lock held). Same rationale as ``_evictable_slugs``: an active
+        long turn has a stale ``last_active`` (never refreshed mid-stream) but
+        must never be evicted, or its staged HOME is rmtree'd under the live
+        claude -p and the run dies cancelled. If every other session is
+        mid-turn, returns None — let the pool briefly exceed the cap rather than
+        kill a live run. Caller holds ``_sessions_dict_lock``."""
+        return min(
+            (
+                s
+                for s in self._sessions
+                if s != exclude_slug and not self._sessions[s].lock.locked()
+            ),
+            key=lambda s: self._sessions[s].last_active,
+            default=None,
+        )
+
+    def _evictable_slugs(self, now: float) -> list[str]:
+        """Slugs eligible for idle eviction: idle past the timeout AND not
+        currently mid-turn.
+
+        The lock guard is load-bearing. A turn holds ``sp.lock`` for its full
+        duration (see ``stream_completion``), but ``last_active`` is only
+        refreshed at admission and end-of-turn — never mid-stream. A long ACE
+        run is ONE multi-hour turn, so 30 min in its ``last_active`` is stale
+        and, without this guard, the reaper pops it from the pool and evicts
+        it — terminating claude -p and rmtree-ing the staged HOME out from
+        under the live subprocess. That is the "runs cancelled ~30-60 min in"
+        production kill (claude -p limps on its cached access token until the
+        next refresh, then dies against the deleted HOME). ``lock.locked()``
+        means a turn is in progress → never evict. Idle pooled sessions (warm
+        proc, free lock) are still reaped. Caller holds ``_sessions_dict_lock``.
+        """
+        return [
+            slug
+            for slug, sp in self._sessions.items()
+            if now - sp.last_active > self._idle_timeout_seconds
+            and not sp.lock.locked()
+        ]
+
     async def _idle_reaper(self) -> None:
         """Sweep ``_sessions`` for SessionProcesses idle longer than the
         timeout and evict them. Runs forever (cancelled at worker
@@ -1091,11 +1129,7 @@ class CLIBackend:
             try:
                 now = time.monotonic()
                 async with self._sessions_dict_lock:
-                    stale = [
-                        slug
-                        for slug, sp in self._sessions.items()
-                        if now - sp.last_active > self._idle_timeout_seconds
-                    ]
+                    stale = self._evictable_slugs(now)
                 for slug in stale:
                     try:
                         logger.info(
