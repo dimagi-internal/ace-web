@@ -9,9 +9,12 @@ These models are designed to be:
 """
 import gzip
 import secrets
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import IntegrityError, models, transaction
+from django.db.models import Q
+from django.utils import timezone
 
 
 def generate_slug() -> str:
@@ -74,6 +77,12 @@ class Session(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     cost_breakdown = models.JSONField(default=dict, blank=True)
+    # Liveness beacon: the turn driver stamps this when a turn starts and the
+    # subprocess heartbeat refreshes it every HEARTBEAT_INTERVAL_SECONDS while
+    # alive. A non-terminal turn (assistant message streaming/pending) whose
+    # heartbeat has gone stale = the driving subprocess died without finishing
+    # (e.g. an ECS task replaced mid-run by a deploy). See `interrupted()`.
+    driver_heartbeat_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "sessions"
@@ -126,6 +135,31 @@ class Session(models.Model):
                 session=session, user=owner, role="owner",
             )
         return session
+
+    # Default staleness window: 3x the 30s subprocess heartbeat. A driver that
+    # hasn't beaten in this long is gone, not merely quiet.
+    DRIVER_STALE_SECONDS = 90
+
+    @classmethod
+    def interrupted(cls, grace_seconds: int | None = None):
+        """Sessions whose run died mid-flight: a non-terminal assistant turn
+        (status streaming/pending) with no live driver (heartbeat null or
+        older than `grace_seconds`). Deterministic — survives the task that
+        was driving the run being replaced, since it reads only the DB.
+
+        This is the resume candidate set: each is a run that should still be
+        running but isn't. A cleanly-finished run has status='complete'
+        (excluded); a still-live run has a fresh heartbeat (excluded)."""
+        grace = cls.DRIVER_STALE_SECONDS if grace_seconds is None else grace_seconds
+        cutoff = timezone.now() - timedelta(seconds=grace)
+        return (
+            cls.objects.filter(
+                messages__role="assistant",
+                messages__status__in=("streaming", "pending"),
+            )
+            .filter(Q(driver_heartbeat_at__isnull=True) | Q(driver_heartbeat_at__lt=cutoff))
+            .distinct()
+        )
 
 
 class SessionParticipant(models.Model):
