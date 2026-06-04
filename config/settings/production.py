@@ -37,13 +37,27 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")  # noqa: F405
 
 # Standard DATABASE_URL — AWS RDS will provide it.
 DATABASES = {"default": env.db("DATABASE_URL")}  # noqa: F405
+_db = DATABASES["default"]
+_db_options = _db.setdefault("OPTIONS", {})
 # Fail fast instead of hanging when the shared RDS is saturated, so a
 # connection attempt surfaces as the auth middleware's retryable 503 quickly
-# rather than tying up a worker. (The deeper fix — a bounded server-side
-# connection pool so ace-web can't contribute to slot exhaustion — is tracked
-# separately; it needs a staging load-test and isn't shipped blind here, since
-# local tests run on sqlite and can't exercise it.)
-DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = 10
+# rather than tying up a worker.
+_db_options["connect_timeout"] = 10
+# Bounded server-side connection pool (Django 5.1+ native, psycopg_pool) so
+# ace-web can't contribute to exhausting the shared RDS's connection slots
+# (the run 20260603-2126 incident: "remaining connection slots are reserved
+# for roles with privileges of the rds_reserved role"). max_size is the hard
+# per-process ceiling — excess concurrency waits up to `timeout` for a free
+# connection instead of opening a new one. min_size is kept low because each
+# headless run subprocess (drive_turn) opens its own pool. DB_USE_POOL=false is
+# an env kill-switch (no code redeploy) if it ever misbehaves under load.
+if env.bool("DB_USE_POOL", default=True):  # noqa: F405
+    _db["CONN_MAX_AGE"] = 0  # Django requires CONN_MAX_AGE=0 alongside a pool
+    _db_options["pool"] = {
+        "min_size": env.int("DB_POOL_MIN_SIZE", default=1),  # noqa: F405
+        "max_size": env.int("DB_POOL_MAX_SIZE", default=8),  # noqa: F405
+        "timeout": env.int("DB_POOL_TIMEOUT", default=10),  # noqa: F405
+    }
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = True
