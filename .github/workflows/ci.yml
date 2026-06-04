@@ -45,6 +45,16 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
 
+      - name: Verify uv.lock is in sync with pyproject
+        # The committed uv.lock drives the Docker image build (the Dockerfile
+        # installs deps via `uv export --frozen` from the lock), while the venv
+        # below installs from pyproject. So a dependency added to pyproject
+        # without re-locking passes every local + CI test yet is ABSENT from
+        # the deployed image — exactly what happened when psycopg[pool] was
+        # added but not locked (failed deploy + long CloudWatch root-cause
+        # hunt). `uv lock --check` fails the build until `uv lock` is re-run.
+        run: uv lock --check
+
       - name: Create venv and install deps
         run: |
           uv venv --python=3.11 .venv
