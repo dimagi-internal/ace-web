@@ -201,6 +201,44 @@ def list_sessions(
 
 
 # ---------------------------------------------------------------------------
+# Interrupted runs — resume candidates (deterministic deploy-kill detection)
+# Registered BEFORE /{slug} so the literal path isn't matched as a slug.
+# ---------------------------------------------------------------------------
+
+
+def interrupted_runs_in_workspace(workspace) -> list[dict]:
+    """Runs killed mid-flight (e.g. ECS task replaced by a deploy): a
+    non-terminal assistant turn with a stale/absent driver heartbeat. The
+    monkeypatch target in contract tests is this module-level function."""
+    from apps.sessions.models import Session
+
+    out = []
+    for s in Session.interrupted().filter(workspace=workspace).order_by("-updated_at"):
+        out.append({
+            "slug": s.slug,
+            "opp_slug": s.opp_slug or None,
+            "opp_run_id": s.opp_run_id or None,
+            "title": s.title,
+            "driver_heartbeat_at": (
+                s.driver_heartbeat_at.isoformat() if s.driver_heartbeat_at else None
+            ),
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+        })
+    return out
+
+
+@router.get("/interrupted", summary="Runs interrupted mid-flight (resume candidates)")
+def interrupted_runs(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+) -> HttpResponse:
+    from django.http import JsonResponse
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    return JsonResponse({"items": interrupted_runs_in_workspace(workspace)})
+
+
+# ---------------------------------------------------------------------------
 # 2.2.3 — POST / — create session
 # ---------------------------------------------------------------------------
 

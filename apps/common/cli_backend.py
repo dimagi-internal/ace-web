@@ -1715,8 +1715,29 @@ async def _heartbeat(proc, session_slug: str) -> None:
                 elapsed,
                 stderr_lines,
             )
+            # Persist the liveness beacon to the DB (not just the log) so an
+            # interrupted run is detectable after the task driving it is gone
+            # — e.g. a deploy replaced the ECS task mid-run. See
+            # Session.interrupted(). Best-effort: a transient DB blip must not
+            # kill the heartbeat loop.
+            if session_slug:
+                try:
+                    await _stamp_driver_heartbeat(session_slug)
+                except Exception:
+                    logger.debug(
+                        "heartbeat DB stamp failed for %s", session_slug, exc_info=True
+                    )
     except asyncio.CancelledError:
         return
+
+
+@sync_to_async
+def _stamp_driver_heartbeat(slug: str) -> None:
+    from django.utils import timezone
+
+    from apps.sessions.models import Session
+
+    Session.objects.filter(slug=slug).update(driver_heartbeat_at=timezone.now())
 
 
 def _proc_stderr_tail(proc, *, char_limit: int = 2000) -> str:

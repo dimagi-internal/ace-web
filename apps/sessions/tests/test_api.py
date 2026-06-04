@@ -593,3 +593,48 @@ def test_list_share_tokens_anon_401(anon_client):
     client, workspace = anon_client
     resp = client.get(f"/api/w/{workspace.slug}/sessions/s/share")
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /interrupted — resume-candidate detection (deploy-kill self-heal)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_interrupted_runs_endpoint_returns_items(member_client, monkeypatch):
+    client, workspace, _ = member_client
+    monkeypatch.setattr(
+        "apps.sessions.api.interrupted_runs_in_workspace",
+        lambda ws: [{
+            "slug": "sess-killed", "opp_slug": "bednet-spot-check",
+            "opp_run_id": "20260604-1551", "title": "seeded-run",
+            "driver_heartbeat_at": None, "updated_at": None,
+        }],
+    )
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/interrupted")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["slug"] == "sess-killed"
+    assert items[0]["opp_run_id"] == "20260604-1551"
+
+
+@pytest.mark.django_db
+def test_interrupted_runs_route_not_shadowed_by_slug(member_client, monkeypatch):
+    """`/interrupted` must hit the detector, not the /{slug} detail handler."""
+    client, workspace, _ = member_client
+    called = {}
+    monkeypatch.setattr(
+        "apps.sessions.api.interrupted_runs_in_workspace",
+        lambda ws: called.setdefault("hit", True) or [],
+    )
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/interrupted")
+    assert resp.status_code == 200
+    assert called.get("hit") is True
+
+
+@pytest.mark.django_db
+def test_interrupted_runs_non_member_404(non_member_client):
+    client, workspace, _ = non_member_client
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/interrupted")
+    assert resp.status_code == 404

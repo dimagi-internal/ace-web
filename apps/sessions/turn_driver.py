@@ -361,6 +361,10 @@ def _mark_streaming(message: Message) -> None:
     Message.objects.filter(pk=message.pk).update(
         status="streaming", started_at=timezone.now()
     )
+    # Stamp the driver liveness beacon at turn start so a just-started run
+    # isn't seen as stale before the subprocess heartbeat's first tick. The
+    # heartbeat loop refreshes it every HEARTBEAT_INTERVAL_SECONDS thereafter.
+    Session.objects.filter(pk=message.session_id).update(driver_heartbeat_at=timezone.now())
 
 
 def _update_plaintext(message: Message, text: str) -> None:
