@@ -897,3 +897,72 @@ def test_session_process_initial_state():
     assert sp.cli_session_id is None
     assert sp.spawned_with_resume is False
     assert sp.is_alive() is False
+
+
+async def test_evictable_slugs_skips_session_with_turn_in_progress():
+    """The idle reaper must never select a session whose lock is held (a turn
+    is in progress) — even when last_active is stale. Long ACE runs are one
+    multi-hour turn that never refreshes last_active mid-stream; evicting one
+    rmtree's the staged HOME under the live claude -p and kills the run
+    (bednet-spot-check runs cancelled ~30-60min in). Regression guard.
+    """
+    import time as _time
+
+    from apps.common.cli_backend import SessionProcess
+
+    backend = CLIBackend(session_idle_timeout_seconds=1.0)
+    stale = _time.monotonic() - 100.0  # well past the 1s timeout
+
+    sp_idle = SessionProcess("idle-slug", 1)
+    sp_idle.last_active = stale
+    sp_busy = SessionProcess("busy-slug", 2)
+    sp_busy.last_active = stale
+    backend._sessions["idle-slug"] = sp_idle
+    backend._sessions["busy-slug"] = sp_busy
+
+    await sp_busy.lock.acquire()  # simulate an in-flight turn holding the lock
+    try:
+        slugs = backend._evictable_slugs(_time.monotonic())
+    finally:
+        sp_busy.lock.release()
+
+    assert "idle-slug" in slugs, "genuinely-idle session should still be reaped"
+    assert "busy-slug" not in slugs, "reaper selected a session with a turn in progress"
+
+    # With the lock released, the (still-stale) session becomes evictable.
+    assert "busy-slug" in backend._evictable_slugs(_time.monotonic())
+
+
+async def test_lru_evict_candidate_skips_session_with_turn_in_progress():
+    """At pool cap, LRU eviction must not pick a session with a turn in
+    progress (lock held) even if it has the oldest last_active — same kill
+    class as the idle reaper. If every other session is mid-turn, returns None
+    (pool briefly exceeds cap instead of killing a live run).
+    """
+    import time as _time
+
+    from apps.common.cli_backend import SessionProcess
+
+    backend = CLIBackend()
+    sp_old_busy = SessionProcess("old-busy", 1)
+    sp_old_busy.last_active = _time.monotonic() - 200.0  # oldest → normal LRU pick
+    sp_newer_idle = SessionProcess("newer-idle", 2)
+    sp_newer_idle.last_active = _time.monotonic() - 10.0
+    backend._sessions["old-busy"] = sp_old_busy
+    backend._sessions["newer-idle"] = sp_newer_idle
+
+    await sp_old_busy.lock.acquire()  # the oldest session is mid-turn
+    try:
+        # Admitting "incoming": must skip the locked oldest, pick the idle one.
+        assert backend._lru_evict_candidate("incoming") == "newer-idle"
+        # If the only other candidate is also locked → None (don't evict).
+        await sp_newer_idle.lock.acquire()
+        try:
+            assert backend._lru_evict_candidate("incoming") is None
+        finally:
+            sp_newer_idle.lock.release()
+    finally:
+        sp_old_busy.lock.release()
+
+    # Nothing locked → normal LRU picks the oldest.
+    assert backend._lru_evict_candidate("incoming") == "old-busy"
