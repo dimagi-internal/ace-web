@@ -37,6 +37,13 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")  # noqa: F405
 
 # Standard DATABASE_URL — AWS RDS will provide it.
 DATABASES = {"default": env.db("DATABASE_URL")}  # noqa: F405
+# Fail fast instead of hanging when the shared RDS is saturated, so a
+# connection attempt surfaces as the auth middleware's retryable 503 quickly
+# rather than tying up a worker. (The deeper fix — a bounded server-side
+# connection pool so ace-web can't contribute to slot exhaustion — is tracked
+# separately; it needs a staging load-test and isn't shipped blind here, since
+# local tests run on sqlite and can't exercise it.)
+DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = 10
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = True

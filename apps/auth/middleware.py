@@ -20,13 +20,40 @@ methods, matching the same opt-out the Ninja auth class performs.
 """
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 
+from django.db import OperationalError
 from django.http import HttpRequest, HttpResponse
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+
+def _db_unavailable_response() -> HttpResponse:
+    """Retryable 503 (RFC 7807) for a transient DB-connection failure.
+
+    A saturated shared RDS ("FATAL: remaining connection slots are reserved
+    …") was surfacing as an unhandled 500 from the PersonalToken lookup below
+    — hard-failing every authenticated request, including the whole ACE run
+    driving through /api/mobile/*. OperationalError is transient, so map it to
+    a 503 + Retry-After that the ace-mobile MCP's retry envelope (and any
+    sane caller) can recover from instead of dying. See the run 20260603-2126
+    incident.
+    """
+    resp = HttpResponse(
+        json.dumps({
+            "type": "https://ace-web.dimagi.com/problems/unavailable",
+            "title": "Database temporarily unavailable",
+            "status": 503,
+            "detail": "db_unavailable",
+        }),
+        status=503,
+        content_type="application/problem+json",
+    )
+    resp["Retry-After"] = "5"
+    return resp
 
 
 class BearerTokenAuthMiddleware:
@@ -34,8 +61,26 @@ class BearerTokenAuthMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        self._authenticate(request)
+        # The auth lookup is the FIRST DB hit on a Bearer-authed request, so a
+        # DB-connection failure here is what 500s the automation path. Catch it
+        # at the source and degrade to a retryable 503 (Django would otherwise
+        # convert the middleware-raised exception to a 500 we can't intercept
+        # downstream).
+        try:
+            self._authenticate(request)
+        except OperationalError:
+            logger.warning("DB unavailable during bearer auth; 503", exc_info=True)
+            return _db_unavailable_response()
         return self.get_response(request)
+
+    def process_exception(self, request: HttpRequest, exception: Exception) -> HttpResponse | None:
+        """Catch DB-connection failures raised by VIEWS too (the __call__ catch
+        only covers this middleware's own lookup). Returns 503 for transient DB
+        outages; lets every other exception fall through to Django's handler."""
+        if isinstance(exception, OperationalError):
+            logger.warning("DB unavailable during request; 503", exc_info=True)
+            return _db_unavailable_response()
+        return None
 
     @staticmethod
     def _authenticate(request: HttpRequest) -> None:
