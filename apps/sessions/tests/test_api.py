@@ -638,3 +638,78 @@ def test_interrupted_runs_non_member_404(non_member_client):
     client, workspace, _ = non_member_client
     resp = client.get(f"/api/w/{workspace.slug}/sessions/interrupted")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST resume / resume-interrupted — auto-resume (deploy-kill self-heal #3)
+# ---------------------------------------------------------------------------
+
+
+def _make_interrupted(workspace, user, opp_run_id="20260604-1551"):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.sessions.models import Message, Session
+    s = Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="bednet-spot-check", opp_run_id=opp_run_id,
+        driver_heartbeat_at=timezone.now() - timedelta(seconds=300),
+    )
+    Message.objects.create(
+        session=s, turn_index=1, role="assistant", status="streaming", content={}
+    )
+    return s
+
+
+@pytest.mark.django_db
+def test_resume_interrupted_relaunches_ace_runs(member_client, monkeypatch):
+    client, workspace, user = member_client
+    _make_interrupted(workspace, user)
+    spawned = []
+    monkeypatch.setattr(
+        "apps.sessions.turn_driver.start_turn_subprocess", lambda mid: spawned.append(mid)
+    )
+    resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    assert body["resumed"][0]["opp_run_id"] == "20260604-1551"
+    assert len(spawned) == 1  # driver actually re-spawned
+
+
+@pytest.mark.django_db
+def test_resume_interrupted_skips_non_opp_sessions(member_client, monkeypatch):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.sessions.models import Message, Session
+    client, workspace, user = member_client
+    s = Session.create_with_owner(  # interrupted but NOT an opp run
+        owner=user, workspace=workspace, source="web",
+        driver_heartbeat_at=timezone.now() - timedelta(seconds=300),
+    )
+    Message.objects.create(
+        session=s, turn_index=1, role="assistant", status="streaming", content={}
+    )
+    monkeypatch.setattr("apps.sessions.turn_driver.start_turn_subprocess", lambda mid: None)
+    resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+    assert resp.json()["count"] == 0
+
+
+@pytest.mark.django_db
+def test_resume_run_422_for_non_opp_session(member_client, monkeypatch):
+    from apps.sessions.models import Session
+    client, workspace, user = member_client
+    s = Session.create_with_owner(owner=user, workspace=workspace, source="web")
+    monkeypatch.setattr("apps.sessions.turn_driver.start_turn_subprocess", lambda mid: None)
+    resp = client.post(f"/api/w/{workspace.slug}/sessions/{s.slug}/resume")
+    assert resp.status_code == 422
+
+
+@pytest.mark.django_db
+def test_resume_interrupted_non_member_404(non_member_client):
+    client, workspace, _ = non_member_client
+    resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+    assert resp.status_code == 404

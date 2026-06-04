@@ -251,6 +251,43 @@ jobs:
             --services ${{ env.ECS_SERVICE }}
           echo "Rollout complete — new tasks running and healthy."
 
+      - name: Auto-resume runs killed by this deploy (self-heal)
+        # The hard cutover above drains the tasks driving live ACE opp runs,
+        # leaving their assistant turns stuck mid-stream. Now that the new
+        # tasks are healthy, POST to the live service to relaunch every
+        # interrupted run from run_state.yaml (detected via the stale
+        # driver_heartbeat beacon). Must hit the LIVE service over HTTP, not a
+        # one-off ECS task: the resume spawns a detached `drive_turn` child of
+        # the serving container, which a run-task container would kill on exit.
+        #
+        # Guarded so a deploy never fails on this: if the PAT/URL aren't
+        # configured yet it logs a warning and moves on. To arm it, set:
+        #   secret ACE_WEB_DEPLOY_PAT  — a PAT (mint via /ace:ace-web-pat-mint)
+        #                                whose owner is a member of the target
+        #                                workspace
+        #   var    ACE_WEB_RESUME_URL  — full URL of the bulk endpoint, e.g.
+        #     https://<host>/ace/api/w/<workspace-slug>/sessions/resume-interrupted
+        env:
+          DEPLOY_PAT: ${{ secrets.ACE_WEB_DEPLOY_PAT }}
+          RESUME_URL: ${{ vars.ACE_WEB_RESUME_URL }}
+        run: |
+          if [ -z "$DEPLOY_PAT" ] || [ -z "$RESUME_URL" ]; then
+            echo "::warning::ACE_WEB_DEPLOY_PAT secret / ACE_WEB_RESUME_URL var not set — skipping auto-resume. Runs interrupted by this deploy must be resumed manually (POST .../sessions/resume-interrupted)."
+            exit 0
+          fi
+          echo "Resuming interrupted ACE opp runs via $RESUME_URL ..."
+          HTTP=$(curl -sS -o /tmp/resume.json -w '%{http_code}' \
+            -X POST "$RESUME_URL" \
+            -H "Authorization: Bearer $DEPLOY_PAT" \
+            -H "Content-Type: application/json" \
+            --max-time 60 || echo "000")
+          echo "Response (HTTP $HTTP):"; cat /tmp/resume.json 2>/dev/null || true; echo
+          if [ "$HTTP" = "200" ]; then
+            echo "Auto-resume OK."
+          else
+            echo "::warning::Auto-resume returned HTTP $HTTP (deploy still succeeded — new code is live). Check service logs / resume manually."
+          fi
+
       - name: Deployment summary
         run: |
           echo "## Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
