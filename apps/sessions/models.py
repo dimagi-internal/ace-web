@@ -140,6 +140,54 @@ class Session(models.Model):
     # hasn't beaten in this long is gone, not merely quiet.
     DRIVER_STALE_SECONDS = 90
 
+    # How far back the post-deploy resume scope reaches. A deploy drains its
+    # tasks within minutes; anything killed longer ago than this is not "this
+    # deploy" — it's an ancient corpse or an old user-stop, which must NOT be
+    # revived on every subsequent deploy.
+    RESUME_MAX_AGE_SECONDS = 1800  # 30 min
+
+    @classmethod
+    def resumable_after_deploy(
+        cls, max_age_seconds: int | None = None, grace_seconds: int | None = None
+    ):
+        """The post-deploy hook's resume scope — runs killed mid-flight
+        RECENTLY, covering BOTH kill modes an ECS deploy produces:
+
+          (A) hard kill (SIGKILL / task vanishes) → the assistant turn is left
+              non-terminal (streaming/pending) with a recent-but-stale beat;
+          (B) graceful cancel (SIGTERM — the COMMON drain path, 30s grace) →
+              the driver's signal handler marks the turn
+              ``error: 'cancelled (partial: N chars)'`` before exiting.
+
+        ``interrupted()`` only sees (A); (B) was discovered by live validation
+        (ECS sends SIGTERM first, so most deploy-kills are gracefully cancelled,
+        not left streaming). Both are resumable from run_state.yaml; a genuine
+        logic error (``CLIBackendError: ...``) is not (its detail doesn't start
+        with ``cancelled``).
+
+        Age-bounded by ``max_age_seconds`` so undateable null-heartbeat corpses
+        and day-old user-stops aren't revived on every deploy. The single
+        ``/{slug}/resume`` endpoint bypasses this gate (explicit operator
+        intent); only the bulk post-deploy sweep uses it."""
+        grace = cls.DRIVER_STALE_SECONDS if grace_seconds is None else grace_seconds
+        max_age = cls.RESUME_MAX_AGE_SECONDS if max_age_seconds is None else max_age_seconds
+        now = timezone.now()
+        stale = now - timedelta(seconds=grace)
+        floor = now - timedelta(seconds=max_age)
+        hard_kill = Q(
+            messages__role="assistant",
+            messages__status__in=("streaming", "pending"),
+            driver_heartbeat_at__lt=stale,
+            driver_heartbeat_at__gte=floor,
+        )
+        graceful_cancel = Q(
+            messages__role="assistant",
+            messages__status="error",
+            messages__error_detail__startswith="cancelled",
+            messages__completed_at__gte=floor,
+        )
+        return cls.objects.filter(hard_kill | graceful_cancel).distinct()
+
     @classmethod
     def interrupted(cls, grace_seconds: int | None = None):
         """Sessions whose run died mid-flight: a non-terminal assistant turn

@@ -713,3 +713,32 @@ def test_resume_interrupted_non_member_404(non_member_client):
     client, workspace, _ = non_member_client
     resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
     assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_resume_interrupted_relaunches_graceful_cancel(member_client, monkeypatch):
+    # The common deploy path: SIGTERM → turn marked error:'cancelled (...)'.
+    # The bulk sweep must resume it (resumable_after_deploy, not interrupted).
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.sessions.models import Message, Session
+    client, workspace, user = member_client
+    s = Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="bednet-spot-check", opp_run_id="20260604-2058",
+    )
+    Message.objects.create(
+        session=s, turn_index=1, role="assistant", status="error",
+        error_detail="cancelled (partial: 900 chars)",
+        completed_at=timezone.now() - timedelta(seconds=60), content={},
+    )
+    spawned = []
+    monkeypatch.setattr(
+        "apps.sessions.turn_driver.start_turn_subprocess", lambda mid: spawned.append(mid)
+    )
+    resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 1
+    assert len(spawned) == 1
