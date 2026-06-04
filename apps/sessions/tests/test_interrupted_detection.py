@@ -109,3 +109,85 @@ def test_resume_skips_non_opp_session():
         session=s, turn_index=1, role="assistant", status="streaming", content={}
     )
     assert resume_session_run(s) is None
+
+
+# ---------------------------------------------------------------------------
+# resumable_after_deploy — the post-deploy hook's resume scope. Wider than
+# interrupted() (also catches graceful SIGTERM cancels marked
+# error:'cancelled (partial:...)') but age-bounded so ancient corpses and old
+# user-stops aren't revived. See the live-validation finding: ECS task-drain
+# SIGTERMs the driver, which marks the turn cancelled, NOT streaming.
+# ---------------------------------------------------------------------------
+
+
+def _cancelled(
+    *, detail="cancelled (partial: 1200 chars)", completed_age_s=60, heartbeat_age_s=120
+):
+    """A session whose assistant turn was marked error with `detail`, completed
+    `completed_age_s` ago (the kill moment)."""
+    user = User.objects.create_user(email=f"c{Session.objects.count()}@x.com")
+    hb = None if heartbeat_age_s is None else timezone.now() - timedelta(seconds=heartbeat_age_s)
+    s = Session.create_with_owner(owner=user, source="web", driver_heartbeat_at=hb)
+    Message.objects.create(session=s, turn_index=0, role="user", status="complete", content={})
+    Message.objects.create(
+        session=s, turn_index=1, role="assistant", status="error",
+        error_detail=detail, completed_at=timezone.now() - timedelta(seconds=completed_age_s),
+        content={},
+    )
+    return s
+
+
+def test_resumable_includes_recent_graceful_cancel():
+    # The common deploy path: SIGTERM → driver marks turn cancelled.
+    s = _cancelled(completed_age_s=60)
+    assert s.slug in _slugs(Session.resumable_after_deploy())
+
+
+def test_resumable_excludes_old_cancelled_turn():
+    # An ancient cancel (or a user-stop days ago) must NOT be revived.
+    s = _cancelled(completed_age_s=3 * 24 * 3600)
+    assert s.slug not in _slugs(Session.resumable_after_deploy())
+
+
+def test_resumable_excludes_genuine_error_turn():
+    # A real logic error is terminal — not a deploy casualty.
+    s = _cancelled(detail="CLIBackendError: boom", completed_age_s=60)
+    assert s.slug not in _slugs(Session.resumable_after_deploy())
+
+
+def test_resumable_includes_recent_hard_kill():
+    # SIGKILL/vanish leaves the turn streaming with a recent-but-stale beat.
+    s = _run("streaming", heartbeat_age_s=180)
+    assert s.slug in _slugs(Session.resumable_after_deploy())
+
+
+def test_resumable_excludes_ancient_null_heartbeat_corpse():
+    # Pre-heartbeat corpse (null beat, undateable) — don't revive on every deploy.
+    s = _run("streaming", heartbeat_age_s=None)
+    assert s.slug not in _slugs(Session.resumable_after_deploy())
+
+
+def test_resumable_excludes_live_run():
+    s = _run("streaming", heartbeat_age_s=10)  # fresh beat — still alive
+    assert s.slug not in _slugs(Session.resumable_after_deploy())
+
+
+def test_resumable_excludes_stale_hard_kill_beyond_max_age():
+    # Streaming but last beat is hours ago → older than the deploy window.
+    s = _run("streaming", heartbeat_age_s=3 * 3600)
+    assert s.slug not in _slugs(Session.resumable_after_deploy())
+
+
+def test_resume_neutralizes_cancelled_turn_no_double_resume():
+    # After resuming a graceful-cancel run, its old cancelled turn must stop
+    # matching the resume scope — else the next deploy sweep re-resumes it.
+    from apps.sessions.api import resume_session_run
+
+    s = _cancelled(completed_age_s=60)
+    s.opp_slug = "bednet-spot-check"
+    s.opp_run_id = "20260604-2058"
+    s.save()
+    assert s.slug in _slugs(Session.resumable_after_deploy())
+    res = resume_session_run(s)
+    assert res is not None
+    assert s.slug not in _slugs(Session.resumable_after_deploy())

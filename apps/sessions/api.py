@@ -256,9 +256,16 @@ def resume_session_run(session) -> dict | None:
         return None  # ACE opp runs only
     command = f"/ace:run {session.opp_slug}/{session.opp_run_id} --no-evals"
     with transaction.atomic():
-        # Retire the dead turn so the interrupted-detector stops flagging it.
+        # Retire the dead turn so the resume scope stops flagging it — BOTH kill
+        # modes: a hard-killed turn left streaming/pending, AND a gracefully
+        # cancelled turn already marked error:'cancelled (partial:...)'. Rewriting
+        # the detail off the 'cancelled' prefix is what stops resumable_after_deploy
+        # re-matching it on the next sweep (no double-resume).
         Message.objects.filter(
-            session=session, role="assistant", status__in=("streaming", "pending"),
+            models.Q(status__in=("streaming", "pending"))
+            | models.Q(status="error", error_detail__startswith="cancelled"),
+            session=session,
+            role="assistant",
         ).update(
             status="error",
             error_detail="superseded by auto-resume",
@@ -304,7 +311,12 @@ def resume_interrupted(
     workspace = resolve_workspace_for_member(request, workspace_slug)
     resumed = []
     # ACE opp runs only (have an opp_run_id → resumable from run_state.yaml).
-    candidates = Session.interrupted().filter(workspace=workspace).exclude(opp_run_id="")
+    # resumable_after_deploy (NOT interrupted) so the sweep catches the common
+    # graceful-SIGTERM kill mode (turn marked error:'cancelled (partial:...)'),
+    # not just hard kills — and is age-bounded so ancient corpses aren't revived.
+    candidates = (
+        Session.resumable_after_deploy().filter(workspace=workspace).exclude(opp_run_id="")
+    )
     for s in candidates:
         res = resume_session_run(s)
         if res is not None:
