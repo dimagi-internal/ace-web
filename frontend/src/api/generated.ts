@@ -369,6 +369,63 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/sessions/interrupted": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Runs interrupted mid-flight (resume candidates) */
+        readonly get: operations["apps_sessions_api_interrupted_runs"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/sessions/resume-interrupted": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Resume all interrupted ACE opp runs (post-deploy self-heal)
+         * @description Bulk-resume every interrupted ACE opp run in the workspace. Intended for
+         *     the post-deploy hook: after a rollout drains the tasks driving live runs,
+         *     this relaunches them from run_state.yaml. Single serial call → no
+         *     double-spawn race.
+         */
+        readonly post: operations["apps_sessions_api_resume_interrupted"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/resume": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Resume one interrupted run */
+        readonly post: operations["apps_sessions_api_resume_run"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/sessions/{slug}": {
         readonly parameters: {
             readonly query?: never;
@@ -2350,6 +2407,11 @@ export interface components {
              * @default 3,4,6
              */
             readonly only: string;
+            /**
+             * Skip Evals
+             * @default true
+             */
+            readonly skip_evals: boolean;
         };
         /**
          * OppHealthOut
@@ -4912,6 +4974,67 @@ export interface operations {
                 readonly "application/json": components["schemas"]["SessionCreateIn"];
             };
         };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_interrupted_runs: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_resume_interrupted: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_resume_run: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
         readonly responses: {
             /** @description OK */
             readonly 200: {
