@@ -269,6 +269,14 @@ async def drive_assistant_turn(
         yield StreamEvent.for_error(message=detail)
 
     except asyncio.CancelledError:
+        # DIAGNOSTIC (temporary): capture WHERE the cancellation was caught so
+        # we can tell an internal asyncio cancel (e.g. a backend task) from an
+        # asyncio.run shutdown. Pairs with drive_turn's signal/exit logging.
+        import traceback as _tb
+        logger.warning(
+            "drive_assistant_turn CANCELLED msg=%s accumulated=%d chars — stack:\n%s",
+            message.pk, len("".join(accumulated)), "".join(_tb.format_stack()),
+        )
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.shield(
                 sync_to_async(_mark_error)(
