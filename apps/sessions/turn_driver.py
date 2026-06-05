@@ -164,6 +164,15 @@ async def drive_assistant_turn(
     # (e.g. ApiBackend), in which case the persist step is a no-op.
     raw_sink: list[str] = []
     last_db_write = asyncio.get_running_loop().time()
+    # True once a terminal status (complete/error) has been persisted for this
+    # turn. Guards the CancelledError handler from OVERWRITING a finished turn:
+    # on the headless path the consumer returns the instant it gets DONE,
+    # leaving this generator suspended at the post-DONE `yield`. asyncio.run's
+    # shutdown then cancels the suspended task — and without this flag the
+    # cancel handler re-marks an already-`complete` turn as `cancelled`. That
+    # spurious mislabel (no signal, no real error, variable timing) was the
+    # "runs cancelled mid-flight" symptom after the idle-reaper fix.
+    terminal_persisted = False
 
     try:
         agen = backend.stream_completion(
@@ -211,6 +220,7 @@ async def drive_assistant_turn(
                     await sync_to_async(_mark_complete)(
                         message, "".join(accumulated)
                     )
+                    terminal_persisted = True
                     _schedule_auto_title(message.session)
                     await _broadcast_opp_updated_if_needed(
                         message.session, turn_start_index
@@ -224,6 +234,7 @@ async def drive_assistant_turn(
                     await sync_to_async(_mark_error)(
                         message, event.error or "unknown"
                     )
+                    terminal_persisted = True
                     yield event
                     return
 
@@ -236,10 +247,12 @@ async def drive_assistant_turn(
             await sync_to_async(_mark_error)(
                 message, f"cancelled (partial: {len(partial)} chars)"
             )
+            terminal_persisted = True
             yield StreamEvent.for_error(message="cancelled")
             return
 
         await sync_to_async(_mark_complete)(message, "".join(accumulated))
+        terminal_persisted = True
         _schedule_auto_title(message.session)
         await _broadcast_opp_updated_if_needed(message.session, turn_start_index)
         await sync_to_async(_persist_session_cost)(message.session, raw_sink)
@@ -269,21 +282,21 @@ async def drive_assistant_turn(
         yield StreamEvent.for_error(message=detail)
 
     except asyncio.CancelledError:
-        # DIAGNOSTIC (temporary): capture WHERE the cancellation was caught so
-        # we can tell an internal asyncio cancel (e.g. a backend task) from an
-        # asyncio.run shutdown. Pairs with drive_turn's signal/exit logging.
-        import traceback as _tb
-        logger.warning(
-            "drive_assistant_turn CANCELLED msg=%s accumulated=%d chars — stack:\n%s",
-            message.pk, len("".join(accumulated)), "".join(_tb.format_stack()),
-        )
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.shield(
-                sync_to_async(_mark_error)(
-                    message,
-                    f"cancelled (partial: {len(''.join(accumulated))} chars)",
+        # A finished turn (DONE/ERROR already persisted) gets cancelled here
+        # during asyncio.run shutdown on the headless path: the consumer
+        # returns the instant it receives DONE, leaving this generator
+        # suspended at the post-DONE `yield`, and `_cancel_all_tasks` then
+        # cancels it. Do NOT overwrite the real terminal status with
+        # "cancelled" in that case — only mark cancelled for a genuine
+        # mid-flight cancellation (nothing terminal persisted yet).
+        if not terminal_persisted:
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.shield(
+                    sync_to_async(_mark_error)(
+                        message,
+                        f"cancelled (partial: {len(''.join(accumulated))} chars)",
+                    )
                 )
-            )
         raise
 
 
