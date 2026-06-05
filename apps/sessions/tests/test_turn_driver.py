@@ -348,3 +348,45 @@ async def test_persists_cost_breakdown_from_captured_transcript(
     from asgiref.sync import sync_to_async
     refreshed = await sync_to_async(Session.objects.get)(pk=session.pk)
     assert refreshed.cost_breakdown.get("totals", {}).get("output_tokens") == 9
+
+
+async def test_post_done_cancel_does_not_overwrite_complete(
+    session, user_and_assistant_messages
+):
+    """The headless path's failure mode: the consumer returns the instant it
+    gets DONE, leaving drive_assistant_turn suspended at the post-DONE yield.
+    asyncio.run's shutdown then cancels that suspended generator. The
+    CancelledError handler must NOT overwrite the already-persisted 'complete'
+    status with 'cancelled' — that spurious mislabel was the "runs cancelled
+    mid-flight ~Nmin in" symptom (no signal, no real error, variable timing).
+    """
+    import contextlib
+
+    from asgiref.sync import sync_to_async
+
+    _user, asst = user_and_assistant_messages
+    events = [StreamEvent.delta(text="done-text"), StreamEvent.done()]
+    stop_event = asyncio.Event()
+
+    with patch(
+        "apps.sessions.turn_driver._get_backend", return_value=FakeBackend(events)
+    ):
+        agen = turn_driver.drive_assistant_turn(
+            assistant_message_id=asst.id, stop_event=stop_event
+        )
+        # Pull until DONE, then break — leaving the generator suspended at the
+        # post-DONE yield (it has already marked the message 'complete').
+        async for event in agen:
+            if event.type is StreamEventType.DONE:
+                break
+        mid = await sync_to_async(Message.objects.get)(pk=asst.id)
+        assert mid.status == "complete"  # terminal status persisted
+
+        # Simulate asyncio.run shutdown cancelling the suspended generator.
+        with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+            await agen.athrow(asyncio.CancelledError())
+
+    refreshed = await sync_to_async(Message.objects.get)(pk=asst.id)
+    assert refreshed.status == "complete", (
+        "shutdown cancel overwrote a finished turn's status with 'cancelled'"
+    )
