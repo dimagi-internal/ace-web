@@ -251,6 +251,14 @@ class SeededRunIn(StrictModel):
     # Comma-separated phase ordinals to run, e.g. "3,4,6". The lowest is the
     # fork point; the ACE orchestrator's resume path enforces input deps. We
     # only enforce the shape here.
+    #
+    # "3,4,6" is the STANDARD spot-check shape — do not drop Phase 4. Phase 3
+    # builds FRESH apps (new cc_app_id); Phase 6's device walk needs a LIVE
+    # opportunity wired to those fresh app IDs, which only Phase 4
+    # (connect-setup) mints. A "3,6" shape skips Phase 4, so Phase 6 has no
+    # live opp for the fresh apps — it can only fall back to cached screenshots
+    # and reports `incomplete` (and wastes ~20 min attempting a doomed AVD walk
+    # first). 3,4,6 is the minimal shape that exercises Phase 6 live.
     only: str = Field(default="3,4,6", pattern=r"^\d+(,\d+)*$")
     # Seeded runs are the test/iteration harness, where the per-step LLM evals
     # (~7 min in Phase 3) are pure overhead: a `verdict: fail` doesn't gate or
