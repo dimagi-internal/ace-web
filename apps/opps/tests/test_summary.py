@@ -449,3 +449,73 @@ def test_solicitation_renders_when_url_present():
     )
     assert p["solicitation"]["url"].endswith("/solicitations/abc/")
     assert p["solicitation"]["status"] == "open"
+
+
+# ─── Defensive fallbacks for legacy / drifted products shapes (ace#705) ──
+
+
+def test_connect_renders_from_flat_products_shape():
+    """A run that wrote the opportunity/program flat at products.* instead of
+    nested under products.connect (the malaria-rdt/20260604-1604 drift) still
+    renders the Connect section, and the flat products.domain still builds the
+    HQ app URL."""
+    flat_connect = {
+        "domain": "connect-ace-prod",
+        "organization_slug": "ai-demo-space",
+        "program": {
+            "id": "cc8ff997-46ac-4c79-a7dd-9563b3babbba",
+            "name": "Turmeric Market Survey — Program",
+            "url": "https://connect.dimagi.com/a/ai-demo-space/program/cc8ff997-46ac-4c79-a7dd-9563b3babbba/",
+        },
+        "opportunity": {
+            "id": "8c46d744-eee4-48ff-9efb-9a8ab1520dc3",
+            "name": "Turmeric Market Survey — turmeric (run X)",
+            "url": "https://connect.dimagi.com/a/ai-demo-space/opportunity/8c46d744-eee4-48ff-9efb-9a8ab1520dc3/",
+            "start_date": "2026-06-14",
+            "end_date": "2099-08-09",
+        },
+    }
+    # apps with hq_app_id but NO hq_url and NO per-app domain — must build the
+    # HQ url from the flat products.domain via the _connect_domain fallback.
+    apps_no_hq_url = {
+        "apps": {
+            "learn": {"name": "Learn app", "hq_app_id": "d29dbb77012e400f9a700a731319ea55"},
+        },
+    }
+    drive = FakeDriveClient.from_tree(
+        _full_tree(state_yaml=_state_yaml(**{"connect-setup": flat_connect, "commcare-setup": apps_no_hq_url}))
+    )
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835")
+
+    assert p["connect"]["opportunity"] is not None
+    assert "/opportunity/8c46d744" in p["connect"]["opportunity"]["url"]
+    assert p["connect"]["program"]["url"].endswith("cc8ff997-46ac-4c79-a7dd-9563b3babbba/")
+    learn = next(a for a in p["apps"] if a["kind"] == "Learn")
+    assert learn["hq_url"] == (
+        "https://www.commcarehq.org/a/connect-ace-prod/apps/view/d29dbb77012e400f9a700a731319ea55/"
+    )
+
+
+def test_training_renders_from_training_materials_fallback():
+    """A run that wrote the deck + onboarding email under
+    products.training_materials instead of products.training (ace#705) still
+    renders the training section."""
+    materials = {
+        "training_materials": {
+            "deck": {"file_id": "fake-deck", "title": "Training deck",
+                      "web_view_link": "https://docs.google.com/presentation/d/fake-deck/edit"},
+            "onboarding_email": {"file_id": "fake-onb", "title": "Onboarding email",
+                                  "web_view_link": "https://docs.google.com/document/d/fake-onb/edit"},
+        },
+    }
+    drive = FakeDriveClient.from_tree(
+        _full_tree(state_yaml=_state_yaml(**{"qa-and-training": materials}))
+    )
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835")
+
+    assert p["training"] is not None
+    assert p["training"]["deck"]["url"] == "https://docs.google.com/presentation/d/fake-deck/edit"
+    titles = [d["title"] for d in p["training"]["docs"]]
+    assert "Onboarding email" in titles

@@ -171,7 +171,7 @@ def _read_apps(state: dict) -> list[dict]:
             nova_url = f"https://nova.dimagi.com/apps/{app['nova_app_id']}"
         hq_url = app.get("hq_url")
         if not hq_url and app.get("hq_app_id"):
-            domain = app.get("domain") or _connect_domain(state)
+            domain = app.get("domain") or apps_block.get("domain") or _connect_domain(state)
             if domain:
                 hq_url = f"https://www.commcarehq.org/a/{domain}/apps/view/{app['hq_app_id']}/"
         out.append({
@@ -184,17 +184,37 @@ def _read_apps(state: dict) -> list[dict]:
 
 
 def _connect_domain(state: dict) -> str | None:
-    """Extract the HQ domain from connect-setup products."""
+    """Extract the HQ domain from connect-setup products.
+
+    Defensive: also looks at the products root, since some runs wrote the
+    connect block flat (`products.domain`) instead of nested under
+    `products.connect` (jjackson/ace#705).
+    """
     connect = _phase_products(state, "connect-setup", "connect")
-    return connect.get("domain") or connect.get("organization_slug")
+    root = _phase_products(state, "connect-setup")
+    return (
+        connect.get("domain")
+        or connect.get("organization_slug")
+        or root.get("domain")
+        or root.get("organization_slug")
+    )
 
 
 def _read_connect(state: dict, opp_yaml: dict) -> dict | None:
     connect = _phase_products(state, "connect-setup", "connect")
+    # Defensive fallback: some runs wrote the opportunity/program flat at
+    # products.* instead of nested under products.connect (jjackson/ace#705).
+    # Accept both so the summary renders rather than showing a blank section.
+    root = _phase_products(state, "connect-setup")
     # Old schema: connect.program.{id, url}; new schema: connect.program_id
-    program = (opp_yaml.get("connect") or {}).get("program") or connect.get("program") or {}
+    program = (
+        (opp_yaml.get("connect") or {}).get("program")
+        or connect.get("program")
+        or root.get("program")
+        or {}
+    )
     # Old schema: connect.opportunity.{id, name, url}; new schema: connect.opportunity_id
-    opp = connect.get("opportunity") or {}
+    opp = connect.get("opportunity") or root.get("opportunity") or {}
 
     opp_block = None
     opp_id = opp.get("id") or connect.get("opportunity_id")
@@ -223,11 +243,14 @@ def _read_connect(state: dict, opp_yaml: dict) -> dict | None:
 
 def _read_training(state: dict) -> dict | None:
     training = _phase_products(state, "qa-and-training", "training")
-    if not training:
+    # Defensive fallback: some runs wrote the deck / onboarding email under
+    # products.training_materials instead of products.training (jjackson/ace#705).
+    materials = _phase_products(state, "qa-and-training", "training_materials")
+    if not training and not materials:
         return None
 
     deck_block = None
-    deck = training.get("deck") or {}
+    deck = training.get("deck") or materials.get("deck") or {}
     if deck.get("file_id") or deck.get("web_view_link"):
         deck_block = {
             "title": deck.get("title") or "Training deck",
@@ -238,7 +261,7 @@ def _read_training(state: dict) -> dict | None:
     docs: list[dict] = []
     # Preserve a stable display order matching agent-doc convention.
     for key in ("llo_guide", "flw_guide", "quick_reference", "faq", "onboarding_email"):
-        doc = docs_block.get(key) or {}
+        doc = docs_block.get(key) or materials.get(key) or {}
         if doc.get("web_view_link") or doc.get("file_id"):
             docs.append({
                 "title": doc.get("title") or key.replace("_", " ").title(),
