@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { execSync } from "node:child_process";
-import { loadProgramSpec } from "../src/lib/spec.node";
+import { loadProgramSpec, resolveActiveByBeat } from "../src/lib/spec.node";
 import { loadDefaults, resolveBeats, type ResolvedTimeline, type ResolvedBeat } from "../src/lib/beats.node";
 import { resolveRun, specPath, outputPath } from "../src/lib/runs.node";
 import { synthesize, synthesizePerBeat, readAlignment, wordStartSeconds, type PerBeatNarration } from "../src/lib/voiceover";
@@ -130,6 +130,7 @@ async function main() {
   }
 
   let timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
+  const activeByBeat = resolveActiveByBeat(spec);
 
   if (!spec.narration.script.trim()) {
     console.error(
@@ -160,10 +161,10 @@ async function main() {
         "ELEVENLABS_API_KEY not set in environment, but spec.voice.provider=elevenlabs. " +
           "Set ELEVENLABS_API_KEY to render with voice, or pass --no-voice to render silent on purpose."
       );
-    } else if (spec.narration.by_beat) {
+    } else if (Object.keys(activeByBeat).length > 0) {
       console.log("Synthesizing per-beat voiceover…");
       perBeat = await synthesizePerBeat({
-        byBeat: spec.narration.by_beat,
+        byBeat: activeByBeat,
         voiceId: spec.voice.voice_id,
         model: spec.voice.model,
         cacheDir: path.join(root, "assets/audio"),
@@ -196,13 +197,13 @@ async function main() {
   const narrationDurationSec =
     spec.narration.duration_seconds ?? Math.max(1, totalSeconds - outroSeconds - narrationStartSec);
   const narrationStartFrame = Math.round(narrationStartSec * timeline.fps);
-  // Captions: prefer per-beat text when provided (narration.by_beat) for
+  // Captions: prefer per-beat text when provided (via resolveActiveByBeat) for
   // tight visual-caption sync. Otherwise fall back to the older
   // sentence-proportional estimator over the full narration window.
   const captions = cli.noCaptions
     ? []
-    : spec.narration.by_beat
-      ? captionsFromBeats(timeline.beats, spec.narration.by_beat)
+    : Object.keys(activeByBeat).length > 0
+      ? captionsFromBeats(timeline.beats, activeByBeat)
       : estimateCaptionTimeline({
           script: spec.narration.script,
           durationSeconds: narrationDurationSec,
