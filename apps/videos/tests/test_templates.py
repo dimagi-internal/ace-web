@@ -78,6 +78,14 @@ def test_load_template_60s_campaign_overview_drops_doc_header(settings, tmp_path
             )
 
 
+def test_load_template_partnership_pitch_strips_doc_header():
+    bundle = templates.load_template("partnership-pitch")
+    assert bundle is not None
+    assert bundle.skeleton_yaml.splitlines()[0].startswith("provenance:")
+    for angle in ("day-in-the-life", "the-scale-gap", "trust-travels"):
+        assert angle in bundle.skeleton_yaml
+
+
 def test_load_template_includes_provenance_placeholders():
     """The skeleton must include the two new provenance placeholders
     (template_id, generated_at) that the skill is expected to fill."""

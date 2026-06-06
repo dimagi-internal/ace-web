@@ -23,6 +23,9 @@ const ProductBeatSchema = z.object({
   caption: z.string().min(1),
   start_seconds: z.number().nonnegative().default(0),
   duration_seconds: z.number().positive().optional(),
+  // When true the renderer plays the asset as a real video clip
+  // (no Ken Burns still-zoom). Used for micro-demo walkthrough clips.
+  is_demo_clip: z.boolean().default(false),
 });
 
 const StatSchema = z.object({
@@ -41,6 +44,19 @@ const StatSchema = z.object({
  */
 const ManifestEntrySchema = z.string().min(1);
 
+const NarrationVariantSchema = z.object({
+  angle_id: z.string().min(1),
+  description: z.string().min(1).optional(),
+  by_beat: z.record(z.string(), z.string()),
+});
+
+const ProspectSchema = z.object({
+  name: z.string().min(1),
+  logo_asset: z.string().min(1).optional(),
+  region: z.string().min(1).optional(),
+  sector: z.string().min(1).optional(),
+});
+
 export const ProgramSpecSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]+$/),
   name: z.string().min(1),
@@ -48,6 +64,9 @@ export const ProgramSpecSchema = z.object({
   status: z.string().min(1),
   tagline: z.string().min(1),
   program_url: z.string().url(),
+  // Optional prospect identity for partnership-pitch videos. Absent =
+  // unbranded "how Connect works" explainer (Dimagi chrome only).
+  prospect: ProspectSchema.optional(),
   beat_overrides: z.record(z.string(), BeatOverrideSchema).optional(),
   manifest: z.record(z.string(), ManifestEntrySchema).optional(),
   scene: z.object({
@@ -76,7 +95,18 @@ export const ProgramSpecSchema = z.object({
     // the script blob. Keys are beat ids (hook, cycle, scene, …); any
     // missing beat falls back to empty caption.
     by_beat: z.record(z.string(), z.string()).optional(),
-  }),
+    // Multi-angle narration: each variant is one narrative angle's
+    // per-beat text. active_angle selects which variant renders.
+    // Legacy specs with only by_beat continue to work unchanged.
+    variants: z.array(NarrationVariantSchema).optional(),
+    active_angle: z.string().min(1).optional(),
+  }).refine(
+    (n) => !n.active_angle || (n.variants?.some((v) => v.angle_id === n.active_angle) ?? false),
+    { message: "narration.active_angle must match a variants[].angle_id", path: ["active_angle"] },
+  ).refine(
+    (n) => !(n.variants && n.variants.length > 0) || !!n.active_angle,
+    { message: "narration.active_angle is required when variants are present", path: ["active_angle"] },
+  ),
   voice: z.object({
     provider: z.enum(["elevenlabs", "none"]),
     voice_id: z.string().min(1),
@@ -85,6 +115,27 @@ export const ProgramSpecSchema = z.object({
 });
 
 export type ProgramSpec = z.infer<typeof ProgramSpecSchema>;
+
+/**
+ * The per-beat narration that should actually render. Prefers the
+ * active variant (multi-angle specs); falls back to the legacy single
+ * by_beat for older specs; empty object if neither is present.
+ *
+ * The `variants[0]` branch below is a defensive fallback: for
+ * schema-validated specs it is unreachable because a non-empty
+ * `variants` array requires `active_angle` to be set (enforced by the
+ * second `.refine()` on the narration schema).
+ */
+export function resolveActiveByBeat(spec: ProgramSpec): Record<string, string> {
+  const n = spec.narration;
+  if (n.variants && n.variants.length > 0) {
+    const active = n.active_angle
+      ? n.variants.find((v) => v.angle_id === n.active_angle)
+      : n.variants[0];
+    if (active) return active.by_beat;
+  }
+  return n.by_beat ?? {};
+}
 
 export class ProgramSpecError extends Error {
   constructor(message: string, public readonly issues: z.ZodIssue[] = []) {
