@@ -41,6 +41,12 @@ const StatSchema = z.object({
  */
 const ManifestEntrySchema = z.string().min(1);
 
+const NarrationVariantSchema = z.object({
+  angle_id: z.string().min(1),
+  description: z.string().min(1).optional(),
+  by_beat: z.record(z.string(), z.string()),
+});
+
 export const ProgramSpecSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]+$/),
   name: z.string().min(1),
@@ -76,7 +82,15 @@ export const ProgramSpecSchema = z.object({
     // the script blob. Keys are beat ids (hook, cycle, scene, …); any
     // missing beat falls back to empty caption.
     by_beat: z.record(z.string(), z.string()).optional(),
-  }),
+    // Multi-angle narration: each variant is one narrative angle's
+    // per-beat text. active_angle selects which variant renders.
+    // Legacy specs with only by_beat continue to work unchanged.
+    variants: z.array(NarrationVariantSchema).optional(),
+    active_angle: z.string().min(1).optional(),
+  }).refine(
+    (n) => !n.active_angle || (n.variants?.some((v) => v.angle_id === n.active_angle) ?? false),
+    { message: "narration.active_angle must match a variants[].angle_id", path: ["active_angle"] },
+  ),
   voice: z.object({
     provider: z.enum(["elevenlabs", "none"]),
     voice_id: z.string().min(1),
@@ -85,6 +99,22 @@ export const ProgramSpecSchema = z.object({
 });
 
 export type ProgramSpec = z.infer<typeof ProgramSpecSchema>;
+
+/**
+ * The per-beat narration that should actually render. Prefers the
+ * active variant (multi-angle specs); falls back to the legacy single
+ * by_beat for older specs; empty object if neither is present.
+ */
+export function resolveActiveByBeat(spec: ProgramSpec): Record<string, string> {
+  const n = spec.narration;
+  if (n.variants && n.variants.length > 0) {
+    const active = n.active_angle
+      ? n.variants.find((v) => v.angle_id === n.active_angle)
+      : n.variants[0];
+    if (active) return active.by_beat;
+  }
+  return n.by_beat ?? {};
+}
 
 export class ProgramSpecError extends Error {
   constructor(message: string, public readonly issues: z.ZodIssue[] = []) {
