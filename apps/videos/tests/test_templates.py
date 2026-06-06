@@ -86,6 +86,23 @@ def test_load_template_partnership_pitch_strips_doc_header():
         assert angle in bundle.skeleton_yaml
 
 
+def test_load_template_connect_explainer_strips_doc_header():
+    """The connect-explainer template (explainer mode — no problem/impact
+    stat beats) loads, and its skeleton starts at the first real field
+    (provenance:), not at the leading `#` doc-comment block."""
+    bundle = templates.load_template("connect-explainer")
+    assert bundle is not None
+    assert bundle.skeleton_yaml.splitlines()[0].startswith("provenance:")
+    # No surviving doc comment carries a {{placeholder}} (the dangerous
+    # ones that get substituted alongside real placeholders).
+    for line in bundle.skeleton_yaml.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#") and "{{" in stripped:
+            raise AssertionError(
+                f"Surviving doc comment contains a {{placeholder}}: {line!r}"
+            )
+
+
 def test_load_template_includes_provenance_placeholders():
     """The skeleton must include the two new provenance placeholders
     (template_id, generated_at) that the skill is expected to fill."""

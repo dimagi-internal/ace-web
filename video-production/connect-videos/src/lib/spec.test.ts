@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadProgramSpec, ProgramSpecError, resolveActiveByBeat } from "./spec.node";
+import { loadProgramSpec, resolveActiveByBeat } from "./spec.node";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,14 +10,19 @@ describe("loadProgramSpec", () => {
   it("parses a valid spec into a typed object", () => {
     const spec = loadProgramSpec(fixture("valid.yaml"));
     expect(spec.slug).toBe("demo");
-    expect(spec.problem.big).toBe("50%");
+    expect(spec.problem?.big).toBe("50%");
     expect(spec.product.beats).toHaveLength(1);
     expect(spec.impact).toHaveLength(2);
   });
 
-  it("throws ProgramSpecError with field path on missing impact", () => {
-    expect(() => loadProgramSpec(fixture("missing-impact.yaml")))
-      .toThrowError(/impact/);
+  it("accepts a spec that omits impact (explainer mode — impact is optional)", () => {
+    // Explainer-mode videos drop the impact stat-card beat entirely, so
+    // a spec without `impact` is now valid. The body_impact_stats beat
+    // is filtered out of the timeline upstream (filterDefaultsForSpec).
+    const spec = loadProgramSpec(fixture("missing-impact.yaml"));
+    expect(spec.impact).toBeUndefined();
+    // Sibling fields still parse normally.
+    expect(spec.problem?.big).toBe("50%");
   });
 
   it("rejects a product.beats array with more than 4 entries (inline yaml)", () => {

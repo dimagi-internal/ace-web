@@ -1,6 +1,6 @@
 import { Composition, AbsoluteFill, Sequence, registerRoot } from "remotion";
 import { parseProgramSpec, applyManifestRefs, type ProgramSpec } from "./lib/spec";
-import { parseDefaults, resolveBeats, type ResolvedBeat } from "./lib/beats";
+import { parseDefaults, resolveBeats, filterDefaultsForSpec, type ResolvedBeat } from "./lib/beats";
 import { Intro } from "./compositions/Intro";
 import { ProgramBody } from "./compositions/ProgramBody";
 import { Outro } from "./compositions/Outro";
@@ -122,7 +122,11 @@ const ProgramVideo: React.FC<VideoProps> = ({
   // Merge: per-prop overrides (from render-CLI's audio-alignment pass)
   // win over spec.beat_overrides win over defaults.
   const mergedOverrides = { ...(spec.beat_overrides ?? {}), ...(beatOverrides ?? {}) };
-  const timeline = resolveBeats(defaults, mergedOverrides);
+  // Explainer mode: drop the problem/impact stat beats from the global
+  // timeline when this spec omits the matching field, recomputing
+  // total_seconds so resolveBeats' sum invariant still holds.
+  const effectiveDefaults = filterDefaultsForSpec(defaults, spec);
+  const timeline = resolveBeats(effectiveDefaults, mergedOverrides);
   const byId = Object.fromEntries(timeline.beats.map((b) => [b.id, b])) as Record<
     string,
     ResolvedBeat
@@ -178,7 +182,10 @@ const ProgramVideo: React.FC<VideoProps> = ({
 export const RemotionRoot: React.FC = () => {
   const defaultSlug = "mbw";
   const spec = applyManifestRefs(parseProgramSpec(PROGRAMS_REGISTRY[defaultSlug]));
-  const timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
+  const timeline = resolveBeats(
+    filterDefaultsForSpec(defaults, spec),
+    spec.beat_overrides ?? {},
+  );
   return (
     <Composition
       id="ProgramVideo"
