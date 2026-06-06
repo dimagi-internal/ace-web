@@ -23,6 +23,9 @@ const ProductBeatSchema = z.object({
   caption: z.string().min(1),
   start_seconds: z.number().nonnegative().default(0),
   duration_seconds: z.number().positive().optional(),
+  // When true the renderer plays the asset as a real video clip
+  // (no Ken Burns still-zoom). Used for micro-demo walkthrough clips.
+  is_demo_clip: z.boolean().default(false),
 });
 
 const StatSchema = z.object({
@@ -47,6 +50,13 @@ const NarrationVariantSchema = z.object({
   by_beat: z.record(z.string(), z.string()),
 });
 
+const ProspectSchema = z.object({
+  name: z.string().min(1),
+  logo_asset: z.string().min(1).optional(),
+  region: z.string().min(1).optional(),
+  sector: z.string().min(1).optional(),
+});
+
 export const ProgramSpecSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]+$/),
   name: z.string().min(1),
@@ -54,6 +64,9 @@ export const ProgramSpecSchema = z.object({
   status: z.string().min(1),
   tagline: z.string().min(1),
   program_url: z.string().url(),
+  // Optional prospect identity for partnership-pitch videos. Absent =
+  // unbranded "how Connect works" explainer (Dimagi chrome only).
+  prospect: ProspectSchema.optional(),
   beat_overrides: z.record(z.string(), BeatOverrideSchema).optional(),
   manifest: z.record(z.string(), ManifestEntrySchema).optional(),
   scene: z.object({

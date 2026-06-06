@@ -11,7 +11,7 @@ const sampleSpec: ProgramSpec = {
   program_url: "https://labs.connect.dimagi.com/",
   scene: { clips: ["a.jpg"], lower_third: "Nigeria · 2026" },
   problem: { big: "29%", caption: "EBF rate", source: "NDHS 2018" },
-  product: { beats: [{ asset: "x.mp4", caption: "y", start_seconds: 0 }] },
+  product: { beats: [{ asset: "x.mp4", caption: "y", start_seconds: 0, is_demo_clip: false }] },
   impact: [
     { big: "$320K", caption: "grant" },
     { big: "2,000", caption: "pairs" },

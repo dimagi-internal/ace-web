@@ -143,3 +143,47 @@ narration:
       .toThrowError(/active_angle/);
   });
 });
+
+describe("prospect + is_demo_clip", () => {
+  const base = `
+slug: noora-nigeria
+name: Noora Health
+country_focus: Nigeria
+status: s
+tagline: t
+program_url: https://example.org
+scene: { clips: [a], lower_third: "x" }
+problem: { big: "1", caption: c, source: s }
+impact:
+  - { big: "1", caption: x }
+  - { big: "2", caption: y }
+narration: { generator: manual, prompt_version: v3, script: x, by_beat: { hook: h } }
+voice: { provider: elevenlabs, voice_id: v, model: eleven_turbo_v2 }
+`;
+
+  it("accepts a prospect block", () => {
+    const spec = loadProgramSpec(base + `
+prospect: { name: "Noora Health", logo_asset: "@prospect_logo", region: "Nigeria", sector: "MNCH" }
+product: { beats: [{ asset: a, caption: b }] }
+`, { fromString: true });
+    expect(spec.prospect?.name).toBe("Noora Health");
+  });
+
+  it("treats prospect as optional (legacy specs)", () => {
+    const spec = loadProgramSpec(base + `
+product: { beats: [{ asset: a, caption: b }] }
+`, { fromString: true });
+    expect(spec.prospect).toBeUndefined();
+  });
+
+  it("accepts is_demo_clip on a product beat and defaults it false", () => {
+    const spec = loadProgramSpec(base + `
+product:
+  beats:
+    - { asset: clip.mp4, caption: "real demo", is_demo_clip: true }
+    - { asset: shot.png, caption: "screenshot" }
+`, { fromString: true });
+    expect(spec.product.beats[0].is_demo_clip).toBe(true);
+    expect(spec.product.beats[1].is_demo_clip).toBe(false);
+  });
+});
