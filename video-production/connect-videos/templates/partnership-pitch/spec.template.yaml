@@ -1,0 +1,98 @@
+# Partnership-pitch — spec skeleton.
+#
+# The loader strips this comment block before returning the skeleton.
+# Placeholders the generator must fill:
+#   {{prospect_slug}} {{workspace_slug}} {{prospect_name}} {{country_focus}}
+#   {{status}} {{tagline}} {{prospect_url}} {{template_id}} {{generated_at}}
+#   {{prospect_region}} {{prospect_sector}} {{prospect_logo_ref}}
+#   {{scene_lower_third}} {{problem_big}} {{problem_caption}} {{problem_source}}
+#   {{impact_1_big}} {{impact_1_caption}} {{impact_2_big}} {{impact_2_caption}}
+#   {{active_angle}}  — the picked narrative angle id
+#   Per-angle, per-beat narration (one set per angle, each within budget):
+#     {{narration_<angle>_hook}} ... _cycle _handoff _scene _problem _product _impact
+#
+# manifest / scene.clips / product.beats are populated by the skill from
+# sourced micro-demo clips + research stat cards, not by placeholder.
+
+provenance:
+  generator: partnership-video
+  template: "{{template_id}}"
+  generated_from: "{{prospect_url}}"
+  generated_at: "{{generated_at}}"
+
+slug: "{{prospect_slug}}"
+workspace: "{{workspace_slug}}"
+name: "{{prospect_name}}"
+country_focus: "{{country_focus}}"
+status: "{{status}}"
+tagline: "{{tagline}}"
+program_url: "{{prospect_url}}"
+
+prospect:
+  name: "{{prospect_name}}"
+  logo_asset: "{{prospect_logo_ref}}"
+  region: "{{prospect_region}}"
+  sector: "{{prospect_sector}}"
+
+manifest: {}
+
+scene:
+  clips: []
+  lower_third: "{{scene_lower_third}}"
+
+problem:
+  big: "{{problem_big}}"
+  caption: "{{problem_caption}}"
+  source: "{{problem_source}}"
+
+product:
+  beats: []
+
+impact:
+- big: "{{impact_1_big}}"
+  caption: "{{impact_1_caption}}"
+- big: "{{impact_2_big}}"
+  caption: "{{impact_2_caption}}"
+
+narration:
+  generator: manual
+  prompt_version: v1-partnership-angles
+  start_seconds: 0
+  script: ""
+  active_angle: "{{active_angle}}"
+  variants:
+  - angle_id: day-in-the-life
+    by_beat:
+      hook: "{{narration_day_in_the_life_hook}}"
+      cycle: "{{narration_day_in_the_life_cycle}}"
+      handoff: "{{narration_day_in_the_life_handoff}}"
+      scene: "{{narration_day_in_the_life_scene}}"
+      problem: "{{narration_day_in_the_life_problem}}"
+      product: "{{narration_day_in_the_life_product}}"
+      impact: "{{narration_day_in_the_life_impact}}"
+      cta: ""
+  - angle_id: the-scale-gap
+    by_beat:
+      hook: "{{narration_the_scale_gap_hook}}"
+      cycle: "{{narration_the_scale_gap_cycle}}"
+      handoff: "{{narration_the_scale_gap_handoff}}"
+      scene: "{{narration_the_scale_gap_scene}}"
+      problem: "{{narration_the_scale_gap_problem}}"
+      product: "{{narration_the_scale_gap_product}}"
+      impact: "{{narration_the_scale_gap_impact}}"
+      cta: ""
+  - angle_id: trust-travels
+    by_beat:
+      hook: "{{narration_trust_travels_hook}}"
+      cycle: "{{narration_trust_travels_cycle}}"
+      handoff: "{{narration_trust_travels_handoff}}"
+      scene: "{{narration_trust_travels_scene}}"
+      problem: "{{narration_trust_travels_problem}}"
+      product: "{{narration_trust_travels_product}}"
+      impact: "{{narration_trust_travels_impact}}"
+      cta: ""
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

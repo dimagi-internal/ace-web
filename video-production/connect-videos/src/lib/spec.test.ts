@@ -144,6 +144,16 @@ narration:
   });
 });
 
+describe("partnership-valid fixture", () => {
+  it("loads the partnership-valid fixture with 3 variants + a demo clip", () => {
+    const spec = loadProgramSpec(fixture("partnership-valid.yaml"));
+    expect(spec.narration.variants).toHaveLength(3);
+    expect(spec.narration.active_angle).toBe("the-scale-gap");
+    expect(spec.prospect?.name).toBeTruthy();
+    expect(spec.product.beats.some((b) => b.is_demo_clip)).toBe(true);
+  });
+});
+
 describe("prospect + is_demo_clip", () => {
   const base = `
 slug: noora-nigeria
