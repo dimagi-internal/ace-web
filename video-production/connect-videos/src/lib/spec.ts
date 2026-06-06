@@ -90,6 +90,9 @@ export const ProgramSpecSchema = z.object({
   }).refine(
     (n) => !n.active_angle || (n.variants?.some((v) => v.angle_id === n.active_angle) ?? false),
     { message: "narration.active_angle must match a variants[].angle_id", path: ["active_angle"] },
+  ).refine(
+    (n) => !(n.variants && n.variants.length > 0) || !!n.active_angle,
+    { message: "narration.active_angle is required when variants are present", path: ["active_angle"] },
   ),
   voice: z.object({
     provider: z.enum(["elevenlabs", "none"]),
@@ -104,6 +107,11 @@ export type ProgramSpec = z.infer<typeof ProgramSpecSchema>;
  * The per-beat narration that should actually render. Prefers the
  * active variant (multi-angle specs); falls back to the legacy single
  * by_beat for older specs; empty object if neither is present.
+ *
+ * The `variants[0]` branch below is a defensive fallback: for
+ * schema-validated specs it is unreachable because a non-empty
+ * `variants` array requires `active_angle` to be set (enforced by the
+ * second `.refine()` on the narration schema).
  */
 export function resolveActiveByBeat(spec: ProgramSpec): Record<string, string> {
   const n = spec.narration;

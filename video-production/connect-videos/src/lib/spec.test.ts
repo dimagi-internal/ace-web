@@ -82,6 +82,7 @@ narration:
     const spec = loadProgramSpec(yaml, { fromString: true });
     expect(spec.narration.variants).toHaveLength(2);
     expect(spec.narration.active_angle).toBe("the-scale-gap");
+    expect(spec.narration.variants![1].by_beat).toEqual({ hook: "h2", cycle: "c2" });
   });
 
   it("resolveActiveByBeat returns the active variant's by_beat", () => {
@@ -120,6 +121,20 @@ narration:
   prompt_version: v3-partnership
   script: ""
   active_angle: nonexistent
+  variants:
+    - angle_id: day-in-the-life
+      by_beat: { hook: "h1" }
+`;
+    expect(() => loadProgramSpec(yaml, { fromString: true }))
+      .toThrowError(/active_angle/);
+  });
+
+  it("rejects variants present without active_angle", () => {
+    const yaml = base + `
+narration:
+  generator: manual
+  prompt_version: v3-partnership
+  script: ""
   variants:
     - angle_id: day-in-the-life
       by_beat: { hook: "h1" }
