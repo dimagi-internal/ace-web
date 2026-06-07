@@ -11,7 +11,6 @@ import defaultsYaml from "../programs/_defaults.yaml";
 // — the render CLI passes the spec via props at render time, so this
 // registry only matters for in-browser preview.
 import mbwYaml from "../programs/mbw/runs/run-001/spec.yaml";
-import chcYaml from "../programs/chc/runs/run-001/spec.yaml";
 
 interface VideoProps {
   programSlug: string;
@@ -51,7 +50,6 @@ interface VideoProps {
 // (Node side) so this registry only matters for in-browser Studio preview.
 const PROGRAMS_REGISTRY: Record<string, string> = {
   mbw: mbwYaml,
-  chc: chcYaml,
 };
 
 const defaults = parseDefaults(defaultsYaml);
@@ -85,7 +83,15 @@ function resolveGlobalTemplate(spec: ProgramSpec): {
   const base = defaultsGlobal
     ? {
         tagline: defaultsGlobal.tagline,
-        cycleSteps: defaultsGlobal.cycle_steps as readonly [string, string, string, string],
+        // cycle_steps is z.array(z.string()).length(4) — runtime-guaranteed 4
+        // but inferred as string[]; narrow via readonly string[] (same idiom as
+        // the spec-override branch below) so tsc accepts the tuple cast.
+        cycleSteps: defaultsGlobal.cycle_steps as readonly string[] as readonly [
+          string,
+          string,
+          string,
+          string,
+        ],
       }
     : GLOBAL_TEMPLATE_FALLBACK;
   const tagline = specGlobal?.tagline ?? base.tagline;

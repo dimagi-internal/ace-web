@@ -27,9 +27,11 @@ describe("cacheKey", () => {
 
 describe("synthesize", () => {
   it("writes audio to cache and returns its path", async () => {
+    // ElevenLabs /with-timestamps returns JSON { audio_base64, alignment };
+    // voiceover.ts decodes audio_base64. (Older mock returned arrayBuffer().)
     const fakeFetch = vi.fn().mockResolvedValue({
       ok: true,
-      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+      json: async () => ({ audio_base64: Buffer.from([1, 2, 3, 4]).toString("base64") }),
     });
     const out = await synthesize({
       script: "hello",
@@ -45,9 +47,18 @@ describe("synthesize", () => {
   });
 
   it("returns the cached path on second call without re-fetching", async () => {
+    // Cache validity requires a sidecar with alignment.characters, so the
+    // second call only hits cache when the first wrote real alignment.
     const fakeFetch = vi.fn().mockResolvedValue({
       ok: true,
-      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+      json: async () => ({
+        audio_base64: Buffer.from([1, 2, 3, 4]).toString("base64"),
+        alignment: {
+          characters: ["h", "i"],
+          character_start_times_seconds: [0, 0.1],
+          character_end_times_seconds: [0.1, 0.2],
+        },
+      }),
     });
     const args = {
       script: "hello",
@@ -66,10 +77,12 @@ describe("synthesize", () => {
     const cacheDir = mkdtempSync(path.join(tmpdir(), "voiceover-sidecar-"));
     try {
       const fakeFetch: typeof fetch = async () =>
-        new Response(new Uint8Array([0xff, 0xfb, 0x10, 0xc0]), {
-          status: 200,
-          headers: { "content-type": "audio/mpeg" },
-        });
+        new Response(
+          JSON.stringify({
+            audio_base64: Buffer.from([0xff, 0xfb, 0x10, 0xc0]).toString("base64"),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
       const out = await synthesize({
         script: "Hello world",
         voiceId: "voiceA",
@@ -100,10 +113,19 @@ describe("synthesize", () => {
       let fetchCalls = 0;
       const fakeFetch: typeof fetch = async () => {
         fetchCalls++;
-        return new Response(new Uint8Array([0xff, 0xfb]), {
-          status: 200,
-          headers: { "content-type": "audio/mpeg" },
-        });
+        return new Response(
+          JSON.stringify({
+            audio_base64: Buffer.from([0xff, 0xfb]).toString("base64"),
+            // alignment.characters is required for the cache to be considered
+            // valid — without it the second call re-synths (cache miss).
+            alignment: {
+              characters: ["T"],
+              character_start_times_seconds: [0],
+              character_end_times_seconds: [0.1],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
       };
       await synthesize({
         script: "Twice", voiceId: "v", model: "m",
