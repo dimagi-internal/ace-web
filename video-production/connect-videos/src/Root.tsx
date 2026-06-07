@@ -195,6 +195,20 @@ export const RemotionRoot: React.FC = () => {
       width={1920}
       height={1080}
       defaultProps={{ programSlug: defaultSlug, captions: [] }}
+      // Duration must reflect the spec actually being rendered, not the
+      // bundled mbw default. Explainer-mode specs drop the problem/impact
+      // beats (filterDefaultsForSpec), so their timeline is ~18s shorter
+      // than mbw's; without recomputing here the composition keeps mbw's
+      // length and an explainer render gets a black tail past its content.
+      calculateMetadata={({ props }) => {
+        const p = props as unknown as VideoProps;
+        const yamlText = p.specYaml ?? PROGRAMS_REGISTRY[p.programSlug];
+        if (!yamlText) return { durationInFrames: timeline.totalFrames, fps: timeline.fps };
+        const s = applyManifestRefs(parseProgramSpec(yamlText));
+        const merged = { ...(s.beat_overrides ?? {}), ...(p.beatOverrides ?? {}) };
+        const tl = resolveBeats(filterDefaultsForSpec(defaults, s), merged);
+        return { durationInFrames: tl.totalFrames, fps: tl.fps };
+      }}
     />
   );
 };
