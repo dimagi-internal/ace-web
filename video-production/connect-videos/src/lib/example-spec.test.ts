@@ -43,11 +43,13 @@ describe("connect-explainer example.spec.yaml", () => {
 
   it("filtered timeline is 42s (1260 frames) — the duration the renderer must use", () => {
     // Regression guard: the explainer render must size the composition to
-    // the FILTERED timeline. The unfiltered defaults are 60s (1800 frames);
-    // dropping problem (10s) + impact (8s) leaves 42s. render.ts and the
-    // Composition.calculateMetadata both apply filterDefaultsForSpec — if
-    // either reverts to the unfiltered defaults the explainer render grows
-    // an ~18s black tail (and post-scene captions drift later).
+    // the FILTERED timeline. The unfiltered global defaults are 67s (2010
+    // frames) since the connectify-program change added the 7s ai_build
+    // beat; dropping ai_build (7s, no ai_build block) + problem (10s) +
+    // impact (8s) leaves 42s. render.ts and the Composition.calculateMetadata
+    // both apply filterDefaultsForSpec — if either reverts to the unfiltered
+    // defaults the explainer render grows a black tail (and post-scene
+    // captions drift later).
     const spec = loadProgramSpec(exampleSpecPath);
     const defaults = parseDefaults(readFileSync(defaultsPath, "utf8"));
     const unfiltered = resolveBeats(defaults, spec.beat_overrides ?? {});
@@ -55,7 +57,7 @@ describe("connect-explainer example.spec.yaml", () => {
       filterDefaultsForSpec(defaults, spec),
       spec.beat_overrides ?? {},
     );
-    expect(unfiltered.totalFrames).toBe(60 * unfiltered.fps);
+    expect(unfiltered.totalFrames).toBe(67 * unfiltered.fps);
     expect(filtered.totalFrames).toBe(42 * filtered.fps);
     expect(filtered.totalFrames).toBeLessThan(unfiltered.totalFrames);
   });

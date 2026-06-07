@@ -65,6 +65,25 @@ const ProspectSchema = z.object({
   sector: z.string().min(1).optional(),
 });
 
+/**
+ * The "how the program is built" beat (connectify-program AI cut). Renders
+ * a motion-graphic card — no library clip needed — showing the program
+ * being assembled into its Connect components. Present + `active_cut: "ai"`
+ * renders the body_ai_build beat; drop the block (or flip to the standard
+ * cut) and the beat disappears (beats.ts::filterDefaultsForSpec). The
+ * per-beat narration is authored in narration.by_beat.ai_build.
+ */
+const AiBuildSchema = z.object({
+  // Card headline, e.g. "AI builds your program — in days, not months".
+  headline: z.string().min(1),
+  // The Connect components the program is decomposed into, shown
+  // assembling on the card, e.g. ["Learn app", "Deliver app",
+  // "Verification rules", "Payment logic"]. 2–6 keeps the card legible.
+  components: z.array(z.string().min(1)).min(2).max(6),
+  // Optional one-line sub-headline under the components.
+  subhead: z.string().min(1).optional(),
+});
+
 export const ProgramSpecSchema = z.object({
   slug: z.string().regex(/^[a-z0-9-]+$/),
   name: z.string().min(1),
@@ -75,6 +94,17 @@ export const ProgramSpecSchema = z.object({
   // Optional prospect identity for partnership-pitch videos. Absent =
   // unbranded "how Connect works" explainer (Dimagi chrome only).
   prospect: ProspectSchema.optional(),
+  // Which cut of the video to render. "ai" includes the body_ai_build beat
+  // (the "AI builds your program" card); anything else (incl. absent) drops
+  // it. Optional + absent-means-standard keeps every spec authored before
+  // this field — and every other template — rendering exactly as before
+  // (filterDefaultsForSpec only includes the beat on an explicit "ai").
+  // One connectify-program spec carries the ai_build content and flips
+  // this field to switch cuts.
+  active_cut: z.enum(["ai", "standard"]).optional(),
+  // Optional AI-build beat content (connectify-program). Only renders in
+  // the AI cut (active_cut: "ai"); see beats.ts::filterDefaultsForSpec.
+  ai_build: AiBuildSchema.optional(),
   beat_overrides: z.record(z.string(), BeatOverrideSchema).optional(),
   manifest: z.record(z.string(), ManifestEntrySchema).optional(),
   scene: z.object({

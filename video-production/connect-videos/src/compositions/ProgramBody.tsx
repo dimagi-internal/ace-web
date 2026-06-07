@@ -3,6 +3,7 @@ import { theme } from "../theme";
 import { Lower3rd } from "../components/Lower3rd";
 import { KenBurns } from "../components/KenBurns";
 import { StatCard } from "../components/StatCard";
+import { AiBuildCard } from "../components/AiBuildCard";
 import { AppScreen } from "../components/AppScreen";
 import {
   asResolvedClip,
@@ -13,7 +14,7 @@ import type { ResolvedBeat } from "../lib/beats";
 
 interface Props {
   spec: ProgramSpec;
-  bodyBeats: ResolvedBeat[]; // scene, problem, product, impact (order from defaults)
+  bodyBeats: ResolvedBeat[]; // ai_build, scene, problem, product, impact (order from defaults)
 }
 
 const isVideo = (s: string) => /\.(mp4|webm|mov)$/i.test(s);
@@ -120,6 +121,18 @@ export const ProgramBody: React.FC<Props> = ({ spec, bodyBeats }) => {
   const bodyStart = bodyBeats[0].startFrame;
   const renderBeat = (b: ResolvedBeat) => {
     switch (b.kind) {
+      case "body_ai_build":
+        // The connectify-program AI cut. The beat is filtered out upstream
+        // for the standard cut / specs without ai_build, but guard so the
+        // optional type is satisfied and a stray beat renders nothing.
+        if (!spec.ai_build) return null;
+        return (
+          <AiBuildCard
+            headline={spec.ai_build.headline}
+            components={spec.ai_build.components}
+            subhead={spec.ai_build.subhead}
+          />
+        );
       case "body_scene":
         return <Scene spec={spec} durationFrames={b.durationFrames} />;
       case "body_problem_stat":

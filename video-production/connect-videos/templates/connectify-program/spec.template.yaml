@@ -1,0 +1,141 @@
+# connectify-program — spec skeleton.
+#
+# Author-time docs only; the template loader (apps/videos/templates.py)
+# strips this leading comment block before returning skeleton_yaml so
+# placeholder *references* inside doc text don't get substituted into the
+# generated spec.
+#
+# This is the GENERIC, unbranded "how you Connectify a program" explainer.
+# It carries NO prospect block (partnership-pitch adds that) and OMITS the
+# problem stat-card beat. It DOES carry the impact beat — repurposed as
+# "why scale through Connect" benefit cards — and an ai_build beat that
+# only renders in the AI cut.
+#
+# TWO CUTS FROM ONE SPEC:
+#   active_cut: ai        → includes the body_ai_build beat ("AI builds
+#                           your program"). ~57s, 8 beats.
+#   active_cut: standard  → drops body_ai_build. ~50s, 7 beats.
+# Both read the same ai_build / narration / impact content; only the cut
+# field changes (see beats.ts::filterDefaultsForSpec).
+#
+# Placeholders the generator must fill:
+#
+#   Identity:
+#     {{program_slug}}     slug — lowercase + hyphens (e.g. "connectify-program")
+#     {{workspace_slug}}   which ace-web workspace owns this video
+#     {{program_name}}     generic display name (e.g. "CommCare Connect")
+#     {{country_focus}}    primary region label (e.g. "Global")
+#     {{status}}           short status line (e.g. "Live")
+#     {{program_tagline}}  one-line tagline
+#     {{program_url}}      canonical URL (e.g. https://connect.dimagi.com/)
+#     {{template_id}}      echoed back — fill with the template id you fetched
+#     {{generated_at}}     ISO-8601 UTC timestamp at fill time
+#
+#   AI-build card (AI cut):
+#     {{ai_build_headline}}    ~12w. "AI turns your program into a Connect program — in days, not months."
+#     {{ai_build_component_1..4}}  the Connect components the program maps onto
+#     {{ai_build_subhead}}     one line under the chips.
+#
+#   Per-section content:
+#     {{scene_lower_third}}  e.g. "Your program, in the field"
+#     {{why_big_1..3}} / {{why_caption_1..3}}  three benefit cards (no invented numbers)
+#
+#   Per-beat narration (each ±2 words from target):
+#     {{narration_hook}}     ~14w. You've built a program that works; scaling it is the hard part.
+#     {{narration_cycle}}    ~14w. Name all four steps — Learn, Deliver, Verify, Pay.
+#     {{narration_handoff}}  ~8w.  "here's how your program comes onto Connect."
+#     {{narration_ai_build}} ~24w. AI builds the apps, rules, and payment logic — in days.
+#     {{narration_scene}}    ~18w. What the field footage shows; work becoming visible.
+#     {{narration_product}}  ~30w. Walk the 4 app clips incl. AI coach + AI review.
+#     {{narration_why}}      ~18w. Why scale through Connect — with or instead of your own teams.
+#     {{narration_cta}}      Leave empty — outro plays under the brand CTA card.
+
+provenance:
+  generator: connectify-program
+  template: "{{template_id}}"
+  generated_from: "{{program_url}}"
+  generated_at: "{{generated_at}}"
+
+slug: "{{program_slug}}"
+workspace: "{{workspace_slug}}"
+name: "{{program_name}}"
+country_focus: "{{country_focus}}"
+status: "{{status}}"
+tagline: "{{program_tagline}}"
+program_url: "{{program_url}}"
+
+# Which cut to render. "ai" includes the body_ai_build beat; "standard"
+# drops it. Same spec, one field.
+active_cut: ai
+
+# Library-backed asset manifest. Each @alias maps to a library:video/...
+# ref that resolves server-side via the workspace media library.
+manifest:
+  field-walking-towards-house: library:video/field-broll/field-walking-towards-house.mp4
+  field-group-around-woman: library:video/field-broll/field-group-around-woman.mp4
+  mobile-learn: library:video/mobile-screencast/mobile-learn.mp4
+  mobile-mapping: library:video/mobile-screencast/mobile-mapping.mp4
+  web-microplan: library:video/web-screencast/web-microplan.mp4
+  mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
+
+# AI-build card (AI cut only). Pure motion graphic — no clip.
+ai_build:
+  headline: "{{ai_build_headline}}"
+  components:
+    - "{{ai_build_component_1}}"
+    - "{{ai_build_component_2}}"
+    - "{{ai_build_component_3}}"
+    - "{{ai_build_component_4}}"
+  subhead: "{{ai_build_subhead}}"
+
+scene:
+  clips:
+    - "@field-walking-towards-house"
+    - "@field-group-around-woman"
+  lower_third: "{{scene_lower_third}}"
+
+# NO problem block — this explainer omits the problem stat-card beat.
+
+product:
+  beats:
+    - asset: "@mobile-learn"
+      caption: "Learn — with an AI coach"
+      is_demo_clip: true
+    - asset: "@mobile-mapping"
+      caption: "Verify — GPS at the point of care"
+      is_demo_clip: true
+    - asset: "@web-microplan"
+      caption: "Verify — AI-assisted review"
+      is_demo_clip: true
+    - asset: "@mobile-pay"
+      caption: "Pay — automatic, on verified work"
+      is_demo_clip: true
+
+# "Why scale through Connect" benefit cards (rendered by the impact beat).
+impact:
+  - big: "{{why_big_1}}"
+    caption: "{{why_caption_1}}"
+  - big: "{{why_big_2}}"
+    caption: "{{why_caption_2}}"
+  - big: "{{why_big_3}}"
+    caption: "{{why_caption_3}}"
+
+narration:
+  generator: manual
+  prompt_version: v1-connectify-program
+  start_seconds: 0
+  by_beat:
+    hook: "{{narration_hook}}"
+    cycle: "{{narration_cycle}}"
+    handoff: "{{narration_handoff}}"
+    ai_build: "{{narration_ai_build}}"
+    scene: "{{narration_scene}}"
+    product: "{{narration_product}}"
+    impact: "{{narration_why}}"
+    cta: ""
+  script: ""
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2
