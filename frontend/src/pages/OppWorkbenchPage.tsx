@@ -204,7 +204,7 @@ export default function OppWorkbenchPage() {
         </a>
       </div>
       {view === "workbench" && (
-        <div className="flex min-h-0 flex-1">
+        <div className="min-h-0 flex-1">
           <WorkbenchLayout
             left={{
               title: "Lifecycle",

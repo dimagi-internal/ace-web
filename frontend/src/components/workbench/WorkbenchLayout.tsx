@@ -40,7 +40,7 @@ export function WorkbenchLayout({
   className,
 }: WorkbenchLayoutProps) {
   return (
-    <div className={`flex h-full flex-col bg-background text-foreground ${className ?? ""}`}>
+    <div className={`flex h-full w-full flex-col bg-background text-foreground ${className ?? ""}`}>
       {header}
       {toolbar}
       {/* `relative` anchors any overlay-mode rail to this row. */}
