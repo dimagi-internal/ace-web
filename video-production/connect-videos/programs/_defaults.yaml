@@ -17,11 +17,17 @@ global_template:
   cta: "Request a demo"
 
 fps: 30
-total_seconds: 60
+total_seconds: 67
 beats:
   - { id: hook,     kind: intro_hook,         seconds: 4 }
   - { id: cycle,    kind: intro_cycle,        seconds: 8 }
   - { id: handoff,  kind: intro_handoff,      seconds: 3 }
+  # Optional "how the program is built" beat. Only renders when a spec
+  # carries an `ai_build:` block AND `active_cut: ai` (the connectify-program
+  # AI cut). filterDefaultsForSpec drops it for every other spec — including
+  # the full mbw timeline and the connect-explainer cut — so their rendered
+  # output is byte-for-byte unchanged. See beats.ts::filterDefaultsForSpec.
+  - { id: ai_build, kind: body_ai_build,      seconds: 7 }
   - { id: scene,    kind: body_scene,         seconds: 7 }
   - { id: problem,  kind: body_problem_stat,  seconds: 10 }
   - { id: product,  kind: body_product_beats, seconds: 12 }

@@ -1,0 +1,29 @@
+# Template metadata. The generator service reads this to surface the
+# template in the picker and to know which prompt + skeleton to use.
+id: connectify-program
+name: How to Connectify a program (generic)
+description: |
+  Generic, unbranded explainer of how an organization brings its existing
+  program onto CommCare Connect — the "Connectify a program" journey, plus
+  the business case for scaling through Connect. Carries TWO cuts from one
+  spec: an AI cut (active_cut: ai) that includes a dedicated "AI builds
+  your program" beat, and a standard cut (active_cut: standard) that drops
+  it. Eight beats in the AI cut (~57s): hook, cycle, handoff, ai_build,
+  scene, product (4 app clips), why (benefit cards), end card. This is the
+  unbranded backbone that partnership-pitch skins with prospect branding.
+expected_duration_seconds: 57
+intended_audience: |
+  A prospect organization that already runs a real frontline program and
+  is weighing how to scale it — in addition to, or instead of, scaling
+  their own delivery directly. Also a teammate or conference-booth loop
+  that needs "this is what it looks like to put a program on Connect" in
+  one breath. Not tailored to one org and citing no program's outcomes.
+when_to_use: |
+  - You want the evergreen "how you bring a program onto Connect" story,
+    with the business case for scaling through Connect, and no
+    program-specific stats or partner branding to keep current.
+  - You want to show the AI/ACE build story (AI cut) OR a non-AI version
+    (standard cut) from the same spec — flip active_cut.
+  - For a product-mechanism-only explainer (what Connect IS, the L/D/V/P
+    loop, no build/why beats), use connect-explainer. For a branded
+    prospect pitch, use partnership-pitch.

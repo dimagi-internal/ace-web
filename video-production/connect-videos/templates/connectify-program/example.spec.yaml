@@ -1,0 +1,114 @@
+# connectify-program — fully-filled demo spec (AI cut).
+#
+# Ready to POST to /videos/programs to render immediately. No
+# {{placeholder}} tokens. This is the AI-CENTRIC cut: active_cut is "ai"
+# and an `ai_build` block is present, so the renderer includes the
+# body_ai_build beat ("AI builds your program"). Flip active_cut to
+# "standard" (one field) to render the non-AI cut from this same spec —
+# the ai_build beat drops out and nothing else changes.
+#
+# No problem block (explainer mode drops the problem stat beat); the
+# impact block is repurposed as three "why scale through Connect"
+# benefit cards (no invented numbers — the generic cut carries none).
+#
+# Beats (AI cut, ~57s): hook, cycle, handoff, ai_build, scene, product,
+# impact (why), cta. Standard cut (~50s) is the same minus ai_build.
+
+provenance:
+  generator: connectify-program
+  template: connectify-program
+  generated_from: https://connect.dimagi.com/
+  generated_at: "2026-06-07T00:00:00Z"
+
+slug: connectify-program
+workspace: dimagi-team
+name: CommCare Connect
+country_focus: Global
+status: Live
+tagline: "Bring your program to the last mile — paid for what's verified, not what's planned."
+program_url: https://connect.dimagi.com/
+
+# AI cut: include the body_ai_build beat. Set to "standard" to drop it.
+active_cut: ai
+
+# Stable workspace media-library refs (`@alias` clip references resolve
+# against these). The render-prep staging step rewrites each library:<path>
+# to gdrive:<id>.<ext> server-side (apps/videos service._stage_spec) before
+# the renderer runs, so this template example stays workspace-portable.
+manifest:
+  field-walking-towards-house: library:video/field-broll/field-walking-towards-house.mp4
+  field-group-around-woman: library:video/field-broll/field-group-around-woman.mp4
+  mobile-learn: library:video/mobile-screencast/mobile-learn.mp4
+  mobile-mapping: library:video/mobile-screencast/mobile-mapping.mp4
+  web-microplan: library:video/web-screencast/web-microplan.mp4
+  mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
+
+# The "AI builds your program" card (AI cut only). Pure motion graphic —
+# no clip. The four components are what your existing program is mapped
+# onto when it comes to Connect.
+ai_build:
+  headline: "AI turns your program into a Connect program — in days, not months"
+  components:
+    - "Learn app"
+    - "Deliver app"
+    - "Verification rules"
+    - "Payment logic"
+  subhead: "Your protocol, mapped onto Connect's rails."
+
+scene:
+  clips:
+    - "@field-walking-towards-house"
+    - "@field-group-around-woman"
+  lower_third: "Your program, in the field"
+
+product:
+  beats:
+    - asset: "@mobile-learn"
+      caption: "Learn — with an AI coach"
+      is_demo_clip: true
+    - asset: "@mobile-mapping"
+      caption: "Verify — GPS at the point of care"
+      is_demo_clip: true
+    - asset: "@web-microplan"
+      caption: "Verify — AI-assisted review"
+      is_demo_clip: true
+    - asset: "@mobile-pay"
+      caption: "Pay — automatic, on verified work"
+      is_demo_clip: true
+
+# The "why scale through Connect" beat — three benefit cards (no invented
+# numbers in the generic cut; a branded skin fills these with real stats).
+impact:
+  - big: "Built for scale"
+    caption: "Connect's delivery rails — not yours to build or maintain"
+  - big: "Verified delivery"
+    caption: "GPS, photo, and an AI review layer on every visit"
+  - big: "Pay for results"
+    caption: "Funds flow only on verified work — proof your funders trust"
+
+narration:
+  generator: manual
+  prompt_version: v1-connectify-program
+  start_seconds: 0
+  by_beat:
+    hook: "You've built a program that works. Scaling it to the last mile is the hard part."
+    cycle: "CommCare Connect runs your program as one connected loop — Learn, Deliver, Verify, Pay."
+    handoff: "Here's how your program comes onto Connect."
+    ai_build: "You don't build any of this. AI assembles it from your existing protocol — ready in days."
+    scene: "Your frontline workers go where families are — and for the first time, every visit is visible, end to end."
+    product: "They train with an AI coach, deliver guided visits, and every one is verified — GPS, photo, an AI review. Then payment follows the proof, automatically."
+    impact: "Scale through Connect — alongside your own teams or beyond them — without building the infrastructure yourself."
+    cta: ""
+  script: |
+    You've built a program that works. Scaling it to the last mile is the hard part.
+    CommCare Connect runs your program as one connected loop — Learn, Deliver, Verify, Pay.
+    Here's how your program comes onto Connect.
+    You don't build any of this. AI assembles it from your existing protocol — ready in days.
+    Your frontline workers go where families are — and for the first time, every visit is visible, end to end.
+    They train with an AI coach, deliver guided visits, and every one is verified — GPS, photo, an AI review. Then payment follows the proof, automatically.
+    Scale through Connect — alongside your own teams or beyond them — without building the infrastructure yourself.
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

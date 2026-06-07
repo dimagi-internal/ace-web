@@ -116,3 +116,74 @@ describe("filterDefaultsForSpec (explainer mode — optional stat beats)", () =>
     }
   });
 });
+
+describe("filterDefaultsForSpec (connectify-program AI cut — body_ai_build)", () => {
+  // The global timeline with the optional ai_build beat present (mirrors
+  // programs/_defaults.yaml after the connectify-program change). Total
+  // 67s = the 60s base + the 7s ai_build beat between handoff and scene.
+  const defaultsWithAiBuild = {
+    fps: 30,
+    total_seconds: 67,
+    beats: [
+      { id: "hook", kind: "intro_hook" as const, seconds: 4 },
+      { id: "cycle", kind: "intro_cycle" as const, seconds: 8 },
+      { id: "handoff", kind: "intro_handoff" as const, seconds: 3 },
+      { id: "ai_build", kind: "body_ai_build" as const, seconds: 7 },
+      { id: "scene", kind: "body_scene" as const, seconds: 7 },
+      { id: "problem", kind: "body_problem_stat" as const, seconds: 10 },
+      { id: "product", kind: "body_product_beats" as const, seconds: 12 },
+      { id: "impact", kind: "body_impact_stats" as const, seconds: 8 },
+      { id: "cta", kind: "outro_cta" as const, seconds: 8 },
+    ],
+  };
+  const kinds = (d: { beats: { kind: string }[] }) => d.beats.map((b) => b.kind);
+  const aiBuild = { headline: "h", components: ["a", "b"] };
+  const impact = [{ big: "1", caption: "x" }, { big: "2", caption: "y" }];
+
+  it("keeps body_ai_build only when ai_build block present AND active_cut is 'ai'", () => {
+    const out = filterDefaultsForSpec(defaultsWithAiBuild, {
+      ai_build: aiBuild,
+      active_cut: "ai",
+      impact,
+    });
+    expect(kinds(out)).toContain("body_ai_build");
+    // problem dropped (absent), impact kept, ai_build kept.
+    expect(kinds(out)).not.toContain("body_problem_stat");
+    // 67 - 10 (problem) = 57s — the AI cut duration.
+    expect(out.total_seconds).toBe(57);
+  });
+
+  it("drops body_ai_build in the standard cut (ai_build present, active_cut 'standard')", () => {
+    const out = filterDefaultsForSpec(defaultsWithAiBuild, {
+      ai_build: aiBuild,
+      active_cut: "standard",
+      impact,
+    });
+    expect(kinds(out)).not.toContain("body_ai_build");
+    // 67 - 7 (ai_build) - 10 (problem) = 50s — the standard cut.
+    expect(out.total_seconds).toBe(50);
+  });
+
+  it("drops body_ai_build when active_cut is missing (defaults to non-AI)", () => {
+    const out = filterDefaultsForSpec(defaultsWithAiBuild, { ai_build: aiBuild, impact });
+    expect(kinds(out)).not.toContain("body_ai_build");
+  });
+
+  it("drops body_ai_build when the ai_build block is absent even if active_cut is 'ai'", () => {
+    const out = filterDefaultsForSpec(defaultsWithAiBuild, { active_cut: "ai", impact });
+    expect(kinds(out)).not.toContain("body_ai_build");
+  });
+
+  it("leaves other templates (no ai_build) byte-for-byte: full mbw-like spec drops only ai_build", () => {
+    // A full spec with problem + impact but no ai_build (every pre-existing
+    // template) must keep its original 8 beats and 60s — the ai_build beat
+    // is the only thing removed from the 9-beat global timeline.
+    const out = filterDefaultsForSpec(defaultsWithAiBuild, {
+      problem: { big: "1", caption: "c" },
+      impact,
+    });
+    expect(kinds(out)).not.toContain("body_ai_build");
+    expect(out.beats).toHaveLength(8);
+    expect(out.total_seconds).toBe(60);
+  });
+});
