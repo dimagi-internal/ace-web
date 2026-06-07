@@ -9,8 +9,8 @@ jobs:
   basedpyright:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.0.0
       - run: uv python install 3.11
       - run: uv sync --extra dev
       - run: uv run basedpyright apps/ config/
