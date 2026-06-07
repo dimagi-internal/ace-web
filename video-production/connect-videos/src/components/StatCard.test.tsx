@@ -3,6 +3,10 @@ vi.mock("remotion", () => ({
   spring: () => 1,
   useCurrentFrame: () => 0,
   useVideoConfig: () => ({ fps: 30, width: 1920, height: 1080, durationInFrames: 60 }),
+  // StatCard animates opacity/scale via interpolate(); return the end of the
+  // output range so the card renders in its fully-animated-in state.
+  interpolate: (_frame: number, _input: readonly number[], output: readonly number[]) =>
+    output[output.length - 1],
 }));
 
 import { describe, it, expect } from "vitest";
