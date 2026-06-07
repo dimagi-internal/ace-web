@@ -13,12 +13,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: astral-sh/setup-uv@v3
-      - uses: oven-sh/setup-bun@v1
+      - uses: astral-sh/setup-uv@v8.0.0
+      - uses: oven-sh/setup-bun@v2
       - name: Set up Python
         run: uv python install 3.11
       - name: Install backend deps
