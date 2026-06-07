@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { loadProgramSpec, resolveActiveByBeat } from "./spec.node";
+import { applyManifestRefs } from "./spec";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -200,5 +201,80 @@ product:
 `, { fromString: true });
     expect(spec.product.beats[0].is_demo_clip).toBe(true);
     expect(spec.product.beats[1].is_demo_clip).toBe(false);
+  });
+});
+
+describe("applyManifestRefs", () => {
+  // Build a parsed spec whose single scene clip references @c1, with the
+  // manifest entry under test. The product beat uses a plain (non-@) asset
+  // so only the clip exercises manifest resolution.
+  const specWithManifestRef = (ref: string) =>
+    loadProgramSpec(
+      `
+slug: demo
+name: x
+country_focus: x
+status: x
+tagline: x
+program_url: https://x
+manifest:
+  c1: ${JSON.stringify(ref)}
+scene: { clips: ["@c1"], lower_third: x }
+product: { beats: [{ asset: plain.png, caption: b }] }
+narration: { generator: manual, prompt_version: v1, script: x }
+voice: { provider: elevenlabs, voice_id: a, model: eleven_turbo_v2 }
+`,
+      { fromString: true },
+    );
+
+  const clipAsset = (spec: ReturnType<typeof specWithManifestRef>): string =>
+    (applyManifestRefs(spec).scene.clips[0] as unknown as { asset: string }).asset;
+
+  it("rewrites a gdrive: ref to the program public asset path", () => {
+    expect(clipAsset(specWithManifestRef("gdrive:ABC123.mp4"))).toBe(
+      "assets/programs/demo/c1.mp4",
+    );
+  });
+
+  it("strips the file: prefix to a plain local path", () => {
+    expect(clipAsset(specWithManifestRef("file:/tmp/clip.mp4"))).toBe("/tmp/clip.mp4");
+  });
+
+  it("passes a plain path through unchanged (legacy form)", () => {
+    expect(clipAsset(specWithManifestRef("some/local/clip.mp4"))).toBe(
+      "some/local/clip.mp4",
+    );
+  });
+
+  it("throws loud on an unresolved library: ref (must be staged to gdrive: first)", () => {
+    // library: refs are rewritten server-side by render-prep staging
+    // (apps/videos service._stage_spec) before the renderer runs. One
+    // reaching applyManifestRefs means the spec was not staged — fail loud
+    // rather than emit a broken literal asset path.
+    expect(() =>
+      clipAsset(specWithManifestRef("library:video/field-broll/walk.mp4")),
+    ).toThrowError(/library:/);
+    expect(() =>
+      clipAsset(specWithManifestRef("library:video/field-broll/walk.mp4")),
+    ).toThrowError(/staged|staging|_stage_spec/i);
+  });
+
+  it("throws when a @alias has no manifest entry", () => {
+    const spec = loadProgramSpec(
+      `
+slug: demo
+name: x
+country_focus: x
+status: x
+tagline: x
+program_url: https://x
+scene: { clips: ["@missing"], lower_third: x }
+product: { beats: [{ asset: plain.png, caption: b }] }
+narration: { generator: manual, prompt_version: v1, script: x }
+voice: { provider: elevenlabs, voice_id: a, model: eleven_turbo_v2 }
+`,
+      { fromString: true },
+    );
+    expect(() => applyManifestRefs(spec)).toThrowError(/has no entry in spec\.manifest/);
   });
 });
