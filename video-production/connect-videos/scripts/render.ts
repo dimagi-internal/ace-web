@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { execSync } from "node:child_process";
 import { loadProgramSpec, resolveActiveByBeat } from "../src/lib/spec.node";
-import { loadDefaults, resolveBeats, type ResolvedTimeline, type ResolvedBeat } from "../src/lib/beats.node";
+import { loadDefaults, resolveBeats, filterDefaultsForSpec, type ResolvedTimeline, type ResolvedBeat } from "../src/lib/beats.node";
 import { resolveRun, specPath, outputPath } from "../src/lib/runs.node";
 import { synthesize, synthesizePerBeat, readAlignment, wordStartSeconds, type PerBeatNarration } from "../src/lib/voiceover";
 import { estimateCaptionTimeline, captionsFromBeats } from "../src/lib/captions";
@@ -129,7 +129,13 @@ async function main() {
     process.exit(1);
   }
 
-  let timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
+  // Explainer mode: drop the problem/impact stat beats from the timeline
+  // when this spec omits them, exactly as Root.tsx does for the visuals.
+  // The dropped beats sit mid-timeline (problem after scene, impact before
+  // outro), so without filtering here the post-scene captions + per-beat
+  // voiceover would key off the UNFILTERED offsets and land later than the
+  // visuals they narrate (and past the real end of an explainer cut).
+  let timeline = resolveBeats(filterDefaultsForSpec(defaults, spec), spec.beat_overrides ?? {});
   const activeByBeat = resolveActiveByBeat(spec);
 
   if (!spec.narration.script.trim()) {
