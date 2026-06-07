@@ -40,6 +40,14 @@ const StatSchema = z.object({
  *                              ~/.cache/connect-videos/<fileId>.<ext>
  *   file:<path>             — plain local path, no resolution needed
  *   <plain path>            — same as file:, legacy form
+ *   library:<media>/…       — stable workspace media-library ref. Resolved
+ *                              to gdrive:<id>.<ext> server-side by the
+ *                              render-prep staging step (apps/videos
+ *                              service._stage_spec) BEFORE the renderer runs,
+ *                              so the bundle never sees a library: ref.
+ *                              applyManifestRefs throws if one reaches it —
+ *                              a spec rendered without staging fails loud
+ *                              instead of emitting a broken asset path.
  * The rest of the spec references entries with `@<alias>`.
  */
 const ManifestEntrySchema = z.string().min(1);
@@ -196,6 +204,21 @@ export function applyManifestRefs(spec: ProgramSpec): ProgramSpec {
       return `${programPublicRel}/${alias}.${ext}`;
     }
     if (ref.startsWith("file:")) return ref.slice("file:".length);
+    if (ref.startsWith("library:")) {
+      // library: refs are stable workspace media-library pointers. They are
+      // rewritten to gdrive:<id>.<ext> server-side by the render-prep staging
+      // step (apps/videos service._stage_spec) BEFORE the renderer runs, so a
+      // library: ref reaching this pure rewrite means the spec was NOT staged.
+      // Fail loud rather than silently passing it through as a broken literal
+      // path (the prior behaviour, which masked unstaged renders).
+      throw new Error(
+        `Manifest entry for "@${alias}" is an unresolved library: ref ("${ref}"). ` +
+          `library: refs must be rewritten to gdrive:<id>.<ext> by the render-prep ` +
+          `staging step (apps/videos service._stage_spec) before the renderer sees ` +
+          `the spec. Render via the videos build flow (which stages the spec) rather ` +
+          `than feeding a raw library: spec to applyManifestRefs.`
+      );
+    }
     return ref; // plain path
   };
 

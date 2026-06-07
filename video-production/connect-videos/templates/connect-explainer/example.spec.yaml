@@ -20,17 +20,18 @@ status: Live
 tagline: "Pay for verified service delivery, not planned activity."
 program_url: https://connect.dimagi.com/
 
-# Each @alias resolves at render via gdrive:<fileId> (the render pipeline's
-# applyManifestRefs handles gdrive:/file:; library: refs are resolved only by
-# the editor's set-clip-asset endpoint, not by render). Drive IDs are the
-# workspace media-library clips' real file ids.
+# Stable workspace media-library refs (`@alias` clip references resolve
+# against these). The render-prep staging step rewrites each library:<path>
+# to the equivalent gdrive:<id>.<ext> server-side (apps/videos
+# service._stage_spec) before the renderer runs, so this template example
+# stays workspace-portable — no Drive file ids baked in.
 manifest:
-  field-walking-towards-house: gdrive:1a4xcq0Sliq08YgF00h-PTk9Q9ZYKwm61.mp4
-  field-group-around-woman: gdrive:1kGOBwQHuPHTz7xip9vwuiqvTLzE3xgOE.mp4
-  mobile-learn: gdrive:1xOyziIDxxaJTwWfloAqSp2VF_UsPnn4o.mp4
-  mobile-mapping: gdrive:1EtjcMM_V_N1kfE7a93g3MNnin_8-dHwB.mp4
-  web-microplan: gdrive:17sTuAOPgJUvWLrbGlSYhOE2LAxL5pSXP.mp4
-  mobile-pay: gdrive:1TTlLphBvDkluftRmSntFMQyftpdSMyqb.mp4
+  field-walking-towards-house: library:video/field-broll/field-walking-towards-house.mp4
+  field-group-around-woman: library:video/field-broll/field-group-around-woman.mp4
+  mobile-learn: library:video/mobile-screencast/mobile-learn.mp4
+  mobile-mapping: library:video/mobile-screencast/mobile-mapping.mp4
+  web-microplan: library:video/web-screencast/web-microplan.mp4
+  mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
 
 scene:
   clips:
