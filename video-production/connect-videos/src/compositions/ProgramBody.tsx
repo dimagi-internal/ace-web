@@ -98,10 +98,16 @@ const ImpactStats: React.FC<{ spec: ProgramSpec; durationFrames: number }> = ({
   spec,
   durationFrames,
 }) => {
-  const slot = Math.floor(durationFrames / spec.impact.length);
+  // Explainer-mode specs omit `impact`; the body_impact_stats beat is
+  // filtered out of the timeline upstream (Root.tsx::filterDefaultsForSpec)
+  // so this normally isn't reached when impact is absent — guard anyway
+  // so the optional type is satisfied and a stray beat renders nothing.
+  const impact = spec.impact;
+  if (!impact || impact.length === 0) return null;
+  const slot = Math.floor(durationFrames / impact.length);
   return (
     <AbsoluteFill>
-      {spec.impact.map((s, i) => (
+      {impact.map((s, i) => (
         <Sequence key={i} from={i * slot} durationInFrames={slot}>
           <StatCard big={s.big} caption={s.caption} source={s.source} />
         </Sequence>
@@ -117,6 +123,9 @@ export const ProgramBody: React.FC<Props> = ({ spec, bodyBeats }) => {
       case "body_scene":
         return <Scene spec={spec} durationFrames={b.durationFrames} />;
       case "body_problem_stat":
+        // Explainer-mode specs omit `problem`; the beat is filtered out
+        // upstream, but guard so the optional type is satisfied.
+        if (!spec.problem) return null;
         return (
           <StatCard
             big={spec.problem.big}

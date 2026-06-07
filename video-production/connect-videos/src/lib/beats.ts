@@ -73,6 +73,36 @@ export function parseDefaults(yamlText: string): Defaults {
   return DefaultsSchema.parse(parse(yamlText));
 }
 
+/**
+ * Explainer mode: the 8-beat timeline in programs/_defaults.yaml is
+ * global, but the two stat-card beats (body_problem_stat,
+ * body_impact_stats) only have anything to render when the spec carries
+ * the matching field (spec.problem / spec.impact). Those fields are now
+ * optional (see spec.ts); when a spec omits one, the corresponding beat
+ * must not render.
+ *
+ * This pure helper returns a defaults object whose `beats` array has the
+ * orphaned stat beats removed AND whose `total_seconds` is recomputed to
+ * the surviving beats' sum — so the downstream `resolveBeats` sum
+ * invariant (its >30s deviation warning) still holds. Backward
+ * compatible: a spec WITH both fields gets the unmodified 8-beat
+ * timeline.
+ */
+export function filterDefaultsForSpec<
+  T extends Pick<Defaults, "total_seconds" | "beats">
+>(defaults: T, spec: { problem?: unknown; impact?: unknown }): T {
+  const hasProblem = spec.problem != null;
+  const hasImpact = spec.impact != null;
+  if (hasProblem && hasImpact) return defaults; // full timeline, unchanged
+  const beats = defaults.beats.filter((b) => {
+    if (b.kind === "body_problem_stat" && !hasProblem) return false;
+    if (b.kind === "body_impact_stats" && !hasImpact) return false;
+    return true;
+  });
+  const total_seconds = beats.reduce((acc, b) => acc + b.seconds, 0);
+  return { ...defaults, beats, total_seconds };
+}
+
 export function resolveBeats(
   defaults: Pick<Defaults, "fps" | "total_seconds" | "beats">,
   overrides: BeatOverrides

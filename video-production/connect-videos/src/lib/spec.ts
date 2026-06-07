@@ -73,11 +73,16 @@ export const ProgramSpecSchema = z.object({
     clips: z.array(ClipRefSchema).min(1).max(6),
     lower_third: z.string().min(1),
   }),
-  problem: StatSchema,
+  // Optional in "explainer mode": a generic "how Connect works" video
+  // omits the problem + impact stat-card beats entirely. When absent,
+  // Root.tsx::filterDefaultsForSpec drops the matching beat from the
+  // timeline so nothing tries to render a missing field. Specs that
+  // include them still validate unchanged (backward compatible).
+  problem: StatSchema.optional(),
   product: z.object({
     beats: z.array(ProductBeatSchema).min(1).max(4),
   }),
-  impact: z.array(StatSchema).min(2).max(3),
+  impact: z.array(StatSchema).min(2).max(3).optional(),
   narration: z.object({
     generator: z.enum(["manual", "anthropic"]),
     prompt_version: z.string().min(1),
