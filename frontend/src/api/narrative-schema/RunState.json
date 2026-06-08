@@ -1,0 +1,198 @@
+{
+  "properties": {
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "narrative_slug": {
+      "title": "Narrative Slug",
+      "type": "string"
+    },
+    "phase": {
+      "default": "phase0",
+      "enum": [
+        "phase0",
+        "spec",
+        "render",
+        "judged",
+        "converged",
+        "uploaded",
+        "promoted"
+      ],
+      "title": "Phase",
+      "type": "string"
+    },
+    "iteration": {
+      "default": 0,
+      "title": "Iteration",
+      "type": "integer"
+    },
+    "why_brief": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Why Brief"
+    },
+    "verdicts": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "title": "Verdicts",
+      "type": "object"
+    },
+    "findings": {
+      "default": [],
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "pending_review": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pending Review"
+    },
+    "last_actor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Actor"
+    },
+    "last_actor_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Actor At"
+    },
+    "scenes_run": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scenes Run"
+    },
+    "scene_filter": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scene Filter"
+    },
+    "auto_iterate_next_action": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Auto Iterate Next Action"
+    },
+    "auto_iterate_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Auto Iterate Reason"
+    },
+    "iteration_decks": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "title": "Iteration Decks",
+      "type": "object"
+    },
+    "iteration_clips": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "title": "Iteration Clips",
+      "type": "object"
+    },
+    "narrative_review_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Narrative Review Url"
+    },
+    "narrative_review_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Narrative Review Id"
+    }
+  },
+  "required": [
+    "run_id",
+    "narrative_slug"
+  ],
+  "title": "RunState",
+  "type": "object"
+}

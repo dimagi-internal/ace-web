@@ -1,0 +1,222 @@
+{
+  "$defs": {
+    "Decision": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "recommended": {
+          "title": "Recommended",
+          "type": "string"
+        },
+        "class": {
+          "title": "Class",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "prompt",
+        "options",
+        "recommended",
+        "class"
+      ],
+      "title": "Decision",
+      "type": "object"
+    },
+    "Feature": {
+      "description": "A single buildable, verifiable capability within a scene (DDD v3).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "verify": {
+          "title": "Verify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "verify"
+      ],
+      "title": "Feature",
+      "type": "object"
+    },
+    "NarrationItem": {
+      "description": "One scene's narration entry in a ReviewRequest (DDD v3).\n\nCarries the scene's 1-based number (``scene``), its slug (``id``), the\nstory-beat ``title``, the on-screen ``persona`` key, the editable story\nbeat (``text`` = concept_claim), and the concrete buildable features\ndeclared by the spec's ``Scene.features[]``.  ``title``/``persona`` let\nthe review surface render the cohesive multi-persona narrative instead of\na generic \"Scene N\" label.",
+      "properties": {
+        "scene": {
+          "title": "Scene",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "persona": {
+          "default": "",
+          "title": "Persona",
+          "type": "string"
+        },
+        "provenance": {
+          "default": "",
+          "title": "Provenance",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "features": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Feature"
+          },
+          "title": "Features",
+          "type": "array"
+        },
+        "status": {
+          "default": "new",
+          "enum": [
+            "built",
+            "new"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene",
+        "id",
+        "text"
+      ],
+      "title": "NarrationItem",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "narrative_slug": {
+      "default": "",
+      "title": "Narrative Slug",
+      "type": "string"
+    },
+    "gate": {
+      "title": "Gate",
+      "type": "string"
+    },
+    "video": {
+      "additionalProperties": true,
+      "title": "Video",
+      "type": "object"
+    },
+    "decisions": {
+      "items": {
+        "$ref": "#/$defs/Decision"
+      },
+      "title": "Decisions",
+      "type": "array"
+    },
+    "narration": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/NarrationItem"
+          },
+          {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        ]
+      },
+      "title": "Narration",
+      "type": "array"
+    },
+    "narrative": {
+      "default": "",
+      "title": "Narrative",
+      "type": "string"
+    },
+    "personas": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Personas",
+      "type": "object"
+    },
+    "why_brief": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Why Brief",
+      "type": "object"
+    },
+    "autonomous_audit": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Autonomous Audit",
+      "type": "array"
+    },
+    "actionability": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Actionability"
+    },
+    "build_order": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Build Order",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "gate",
+    "video",
+    "decisions",
+    "narration"
+  ],
+  "title": "ReviewRequest",
+  "type": "object"
+}

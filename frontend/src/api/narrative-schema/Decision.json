@@ -1,0 +1,36 @@
+{
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "prompt": {
+      "title": "Prompt",
+      "type": "string"
+    },
+    "options": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Options",
+      "type": "array"
+    },
+    "recommended": {
+      "title": "Recommended",
+      "type": "string"
+    },
+    "class": {
+      "title": "Class",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "prompt",
+    "options",
+    "recommended",
+    "class"
+  ],
+  "title": "Decision",
+  "type": "object"
+}
