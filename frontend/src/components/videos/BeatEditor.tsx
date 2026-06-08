@@ -15,10 +15,14 @@ interface Props {
   // Called from the TopBar's post-save Re-render CTA. Optional — when
   // omitted, the CTA hides.
   onRerender?: () => void;
+  // When provided, replaces the default submitEditBatch + getVideoRun save
+  // flow. Called with the fully-applied spec; caller owns the write.
+  // On success, the buffer is cleared and the "Saved" state is shown.
+  onSave?: (effectiveSpec: ProgramSpec) => Promise<void>;
 }
 
 export function BeatEditor({
-  workspaceSlug, programSlug, runId, spec, onSpecRefetched, onRerender,
+  workspaceSlug, programSlug, runId, spec, onSpecRefetched, onRerender, onSave,
 }: Props) {
   return (
     <BeatEditorProvider
@@ -26,6 +30,7 @@ export function BeatEditor({
       programSlug={programSlug}
       runId={runId}
       spec={spec}
+      onSave={onSave}
     >
       {/* The bulky editor lives in the workbench center pane: the save/
           re-render TopBar, the rendered video, the beat list, and the

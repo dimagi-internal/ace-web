@@ -10,6 +10,7 @@ interface ContextValue {
   programSlug: string;
   runId: string;
   workspaceSlug: string;
+  onSave?: (effectiveSpec: ProgramSpec) => Promise<void>;
 }
 
 const Ctx = createContext<ContextValue | null>(null);
@@ -20,15 +21,16 @@ interface Props {
   runId: string;
   spec: ProgramSpec;
   children: ReactNode;
+  onSave?: (effectiveSpec: ProgramSpec) => Promise<void>;
 }
 
-export function BeatEditorProvider({ workspaceSlug, programSlug, runId, spec, children }: Props) {
+export function BeatEditorProvider({ workspaceSlug, programSlug, runId, spec, children, onSave }: Props) {
   const [state, dispatch] = useReducer(editorReducer, spec, initialEditorState);
   const effectiveSpec = useMemo(
     () => applyOps(state.spec, state.buffer),
     [state.spec, state.buffer],
   );
-  const value: ContextValue = { state, effectiveSpec, dispatch, programSlug, runId, workspaceSlug };
+  const value: ContextValue = { state, effectiveSpec, dispatch, programSlug, runId, workspaceSlug, onSave };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

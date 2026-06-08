@@ -56,4 +56,38 @@ describe("BeatEditor integration", () => {
     // Saved label appears
     await waitFor(() => expect(screen.getByText(/Saved at/i)).toBeInTheDocument());
   });
+
+  it("onSave override: calls onSave with effectiveSpec, does NOT call submitEditBatch", async () => {
+    const submit = vi.spyOn(api, "submitEditBatch");
+    const onSave = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <BeatEditor
+        workspaceSlug="ws1" programSlug="demo" runId="run-001" spec={spec}
+        onSave={onSave}
+      />,
+    );
+
+    // Make an edit so the buffer is dirty
+    fireEvent.click(screen.getByText(/Initial/));
+    const ta = await screen.findByRole("textbox");
+    fireEvent.change(ta, { target: { value: "Override save" } });
+    fireEvent.click(screen.getByRole("button", { name: /Done/i }));
+
+    expect(screen.getByText(/1 edit pending/i)).toBeInTheDocument();
+
+    // Click Save
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    // onSave called once with the effective spec (which has the edit applied)
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const savedSpec: ProgramSpec = onSave.mock.calls[0][0];
+    expect(savedSpec.narration?.by_beat?.hook).toBe("Override save");
+
+    // submitEditBatch must NOT have been called
+    expect(submit).not.toHaveBeenCalled();
+
+    // Saved confirmation appears
+    await waitFor(() => expect(screen.getByText(/Saved at/i)).toBeInTheDocument());
+  });
 });
