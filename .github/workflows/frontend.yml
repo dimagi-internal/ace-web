@@ -1,0 +1,55 @@
+name: Frontend
+
+# Gates the React/Vite frontend, which was otherwise unchecked: the "CI",
+# "Type check", and "Contract tests" workflows only cover the Python backend,
+# and the frontend image build runs post-merge (build-frontend.yml on main).
+# So a tsc error, a failing vitest, or a broken `vite build` could ship
+# unguarded. This runs tsc + vitest + build on frontend changes.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  check:
+    name: tsc + vitest + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc -b
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Build
+        run: npx vite build
