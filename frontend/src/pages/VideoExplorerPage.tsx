@@ -362,11 +362,10 @@ export default function VideoExplorerPage() {
           Loading…
         </div>
       ) : run.spec && workspaceSlug && programSlug && resolvedRunId ? (
-        // The page is locked at h-[calc(100vh-3rem)] so the inner editor
-        // must own its own vertical scroll — otherwise BeatList overflow
-        // gets clipped at the page bottom. The iframe path used flex-1
-        // for the same reason; React tree needs an overflow-y-auto wrapper.
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        // The page is locked at h-[calc(100vh-3rem)]; the editor is now a
+        // WorkbenchLayout that owns its own per-pane scroll, so this wrapper
+        // just provides the sized (flex-1, min-h-0) box for h-full to fill.
+        <div className="min-h-0 flex-1">
           <BeatEditor
             key={`${workspaceSlug}-${programSlug}-${resolvedRunId}`}
             workspaceSlug={workspaceSlug}
