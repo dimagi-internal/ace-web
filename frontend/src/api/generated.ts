@@ -651,6 +651,30 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/videos/templates/{template_id}/example-spec": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get the example spec.yaml for a template as a parsed object
+         * @description Return the template's example.spec.yaml as a parsed dict.
+         *
+         *     The BeatEditor mounts on this endpoint's response directly — it
+         *     needs a parsed spec object, not raw YAML text.  Returns 404 when
+         *     no example.spec.yaml exists for this template.
+         */
+        readonly get: operations["apps_videos_api_get_template_example_spec"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/videos/library/video": {
         readonly parameters: {
             readonly query?: never;
@@ -2688,6 +2712,10 @@ export interface components {
             readonly prompt_md?: string | null;
             /** Example Yaml */
             readonly example_yaml?: string | null;
+            /** Example Spec */
+            readonly example_spec?: {
+                readonly [key: string]: unknown;
+            } | null;
         };
         /** TemplateExampleOut */
         readonly TemplateExampleOut: {
@@ -2695,6 +2723,15 @@ export interface components {
             readonly template_id: string;
             /** Example Yaml */
             readonly example_yaml: string;
+        };
+        /** TemplateExampleSpecOut */
+        readonly TemplateExampleSpecOut: {
+            /** Template Id */
+            readonly template_id: string;
+            /** Spec */
+            readonly spec: {
+                readonly [key: string]: unknown;
+            };
         };
         /** MediaLibraryVideoItemOut */
         readonly MediaLibraryVideoItemOut: {
@@ -5474,6 +5511,29 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["TemplateExampleOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_get_template_example_spec: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly template_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["TemplateExampleSpecOut"];
                 };
             };
         };
