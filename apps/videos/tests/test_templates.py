@@ -435,3 +435,58 @@ def test_load_example_returns_none_when_missing(fake_drive_ws):
     ex = templates.load_example(ws, "connect-explainer")
     # May be None (no file) or a string (if it does exist); just ensure no exception.
     assert ex is None or isinstance(ex, str)
+
+
+# ---------------------------------------------------------------------------
+# T7: load_example_spec + save_template(example_spec=...)
+# ---------------------------------------------------------------------------
+
+
+def test_load_example_spec_parsed(fake_drive_ws):
+    """load_example_spec returns the example as a parsed dict."""
+    templates.list_templates(fake_drive_ws.workspace)  # seed
+    spec = templates.load_example_spec(fake_drive_ws.workspace, "connectify-program")
+    assert isinstance(spec, dict) and spec["slug"] == "connectify-program"
+
+
+def test_load_example_spec_returns_none_when_missing(fake_drive_ws):
+    """load_example_spec returns None when no example.spec.yaml is seeded."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    # connect-explainer has no example.spec.yaml in the repo tree.
+    result = templates.load_example_spec(ws, "connect-explainer")
+    assert result is None or isinstance(result, dict)
+
+
+def test_save_template_example_spec_roundtrips(fake_drive_ws):
+    """save_template(example_spec=...) serializes to YAML, stores, and load_example_spec reflects it."""
+    templates.list_templates(fake_drive_ws.workspace)
+    spec = templates.load_example_spec(fake_drive_ws.workspace, "connectify-program")
+    assert spec is not None
+    spec = dict(spec)
+    spec["tagline"] = "Edited tagline"
+    templates.save_template(fake_drive_ws.workspace, "connectify-program", example_spec=spec)
+    reloaded = templates.load_example_spec(fake_drive_ws.workspace, "connectify-program")
+    assert reloaded["tagline"] == "Edited tagline"
+
+
+def test_save_template_example_spec_rejects_invalid(fake_drive_ws):
+    """save_template(example_spec=...) with a structurally invalid spec raises ValueError."""
+    templates.list_templates(fake_drive_ws.workspace)
+    with pytest.raises(ValueError):
+        # Missing workspace field → validate_spec_structure raises ValueError.
+        templates.save_template(fake_drive_ws.workspace, "connectify-program", example_spec={"slug": "x"})
+
+
+def test_save_template_example_spec_and_yaml_conflict_raises(fake_drive_ws):
+    """Providing both example_yaml and example_spec raises ValueError (ambiguity guard)."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    valid_ex = "slug: connectify-program\nworkspace: test-ws\nname: x\n"
+    with pytest.raises(ValueError, match="example_yaml.*example_spec|example_spec.*example_yaml"):
+        templates.save_template(
+            ws,
+            "connectify-program",
+            example_yaml=valid_ex,
+            example_spec={"slug": "connectify-program", "workspace": "test-ws", "name": "x"},
+        )

@@ -145,6 +145,26 @@ def load_example(workspace, template_id: str) -> str | None:
     return drive.read_template_file(layout, client, template_id, "example.spec.yaml")
 
 
+def load_example_spec(workspace, template_id: str) -> dict | None:
+    """Return example.spec.yaml parsed to a dict, or None if absent.
+
+    Reads from Drive via ``load_example``; returns None if the file is
+    absent, unreadable, or does not parse to a YAML mapping.  Does NOT
+    cache (mirrors load_example's rationale — examples are rarely
+    accessed and small).
+    """
+    raw = load_example(workspace, template_id)
+    if raw is None:
+        return None
+    try:
+        doc = _yaml().load(raw)
+    except Exception:
+        return None
+    if not isinstance(doc, dict):
+        return None
+    return doc
+
+
 def save_template(
     workspace,
     template_id: str,
@@ -153,6 +173,7 @@ def save_template(
     skeleton_yaml: str | None = None,
     prompt_md: str | None = None,
     example_yaml: str | None = None,
+    example_spec: dict | None = None,
 ) -> TemplateBundle:
     """Persist one or more template fields to Drive and return the refreshed bundle.
 
@@ -160,6 +181,11 @@ def save_template(
       - ``skeleton_yaml`` / ``example_yaml``: must parse as a YAML mapping.
         ``example_yaml`` additionally passes program-spec structural validation
         (slug + workspace present) so saved examples can always be rendered.
+      - ``example_spec``: a pre-parsed dict (e.g. the BeatEditor's
+        ``effectiveSpec``).  Serialized to YAML via ``_yaml().dump`` and run
+        through the same ``validate_spec_structure`` + write path as
+        ``example_yaml``.  Providing BOTH ``example_yaml`` and ``example_spec``
+        raises ``ValueError`` to avoid silent ambiguity — callers must pick one.
       - ``meta``: a dict of override key/values merged into the existing
         meta.yaml (round-tripped via the YAML library).
 
@@ -171,6 +197,12 @@ def save_template(
     """
     if not is_valid_template_id(template_id):
         raise ValueError(f"Invalid template id: {template_id!r}")
+
+    if example_yaml is not None and example_spec is not None:
+        raise ValueError(
+            "Provide either example_yaml or example_spec, not both — "
+            "passing both is ambiguous."
+        )
 
     from apps.videos import cache as vcache, drive, service  # lazy — avoid circulars
 
@@ -206,6 +238,20 @@ def save_template(
         from apps.videos.service import validate_spec_structure
         validate_spec_structure(example_yaml)
         drive.write_template_file(layout, client, template_id, "example.spec.yaml", example_yaml)
+
+    if example_spec is not None:
+        # Serialize the dict to YAML text, then run through the same
+        # validate_spec_structure + write path as example_yaml.  Using
+        # ruamel.yaml for a safe, round-trip-friendly serialization that
+        # matches how the rest of the module dumps YAML (e.g. meta update above).
+        import io as _io
+        _y = _yaml()
+        _buf = _io.StringIO()
+        _y.dump(example_spec, _buf)
+        serialized = _buf.getvalue()
+        from apps.videos.service import validate_spec_structure
+        validate_spec_structure(serialized)
+        drive.write_template_file(layout, client, template_id, "example.spec.yaml", serialized)
 
     if meta is not None:
         existing = _yaml().load(existing_meta_raw) or {}

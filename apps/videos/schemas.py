@@ -262,11 +262,17 @@ class TemplatePatchIn(StrictModel):
     skeleton_yaml: str | None = None
     prompt_md: str | None = None
     example_yaml: str | None = None
+    example_spec: dict | None = None
 
 
 class TemplateExampleOut(StrictModel):
     template_id: str
     example_yaml: str
+
+
+class TemplateExampleSpecOut(StrictModel):
+    template_id: str
+    spec: dict
 
 
 class CreateProgramIn(StrictModel):
