@@ -219,6 +219,37 @@ def test_template_folder_id_create_false_returns_none(fake_drive_ws):
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def fake_drive_ws_db(db, monkeypatch):
+    """FakeDriveClient + real DB Workspace wired to apps.videos.drive.
+    Used by management-command tests that require Workspace.objects.get."""
+    from django.contrib.auth import get_user_model
+    from apps.workspaces.models import Workspace
+
+    User = get_user_model()
+    client = FakeDriveClient.from_tree({"workspace-root": {}})
+    workspace_root_id = client.folder_id("workspace-root")
+    monkeypatch.setattr(drive, "client_for_workspace", lambda ws: client)
+
+    creator = User.objects.create_user(email="ws-creator@example.com")
+    ws = Workspace.objects.create(
+        slug="test-ws",
+        display_name="Test WS",
+        drive_root_folder_id=workspace_root_id,
+        created_by=creator,
+    )
+    return ws
+
+
+@pytest.mark.django_db
+def test_seed_templates_command(fake_drive_ws_db):
+    from django.core.management import call_command
+    from apps.videos import drive as _drive, service
+    call_command("videos_seed_templates", "--workspace", fake_drive_ws_db.slug)
+    layout, client = service.layout_for(fake_drive_ws_db)
+    assert _drive.list_template_ids(layout, client)
+
+
 def test_seed_templates_uploads_repo_tree(fake_drive_ws):
     """seed_templates copies all repo templates to Drive and returns count >= 3."""
     from apps.videos import service
