@@ -117,6 +117,47 @@ def _strip_leading_doc_comments(skeleton: str) -> str:
     return "".join(lines[i:])
 
 
+_FILE_MAP: dict[str, str] = {
+    "template.yaml": "meta.yaml",
+    "spec.template.yaml": "skeleton.yaml",
+    "generate.prompt.md": "prompt.md",
+    "example.spec.yaml": "example.spec.yaml",
+}
+
+
+def seed_templates(workspace) -> int:
+    """Upload the repo template tree to this workspace's Drive _templates/,
+    renaming files per _FILE_MAP. Idempotent: skip template ids already
+    present in Drive. Returns the number of templates seeded.
+    """
+    from apps.videos import drive, service  # lazy to avoid circular imports
+
+    layout, client = service.layout_for(workspace)
+    existing_ids = set(drive.list_template_ids(layout, client))
+
+    root = _templates_dir()
+    if not root.exists():
+        return 0
+
+    seeded = 0
+    for entry in sorted(root.iterdir()):
+        if not entry.is_dir() or not is_valid_template_id(entry.name):
+            continue
+        if entry.name in existing_ids:
+            continue
+        # Upload each file in the _FILE_MAP that is present on disk.
+        for repo_name, drive_name in _FILE_MAP.items():
+            src = entry / repo_name
+            if not src.exists():
+                continue
+            drive.write_template_file(
+                layout, client, entry.name, drive_name, src.read_text(encoding="utf-8")
+            )
+        seeded += 1
+
+    return seeded
+
+
 def _load_meta(template_id: str, meta_path: Path) -> TemplateMeta:
     raw = _yaml().load(meta_path.read_text(encoding="utf-8")) or {}
     return TemplateMeta(

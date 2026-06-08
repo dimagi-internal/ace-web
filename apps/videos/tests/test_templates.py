@@ -199,3 +199,31 @@ def test_template_folder_id_create_false_returns_none(fake_drive_ws):
 
     layout, client = service.layout_for(fake_drive_ws.workspace)
     assert drive._template_folder_id(layout, client, "absent") is None
+
+
+# ---------------------------------------------------------------------------
+# seed_templates (T2)
+# ---------------------------------------------------------------------------
+
+
+def test_seed_templates_uploads_repo_tree(fake_drive_ws):
+    """seed_templates copies all repo templates to Drive and returns count >= 3."""
+    from apps.videos import service
+
+    n = templates.seed_templates(fake_drive_ws.workspace)
+    assert n >= 3
+
+    layout, client = service.layout_for(fake_drive_ws.workspace)
+    ids = drive.list_template_ids(layout, client)
+    assert {"connect-explainer", "connectify-program", "partnership-pitch"} <= set(ids)
+
+    # The Drive filename is "skeleton.yaml" (mapped from spec.template.yaml).
+    skeleton = drive.read_template_file(layout, client, "connectify-program", "skeleton.yaml")
+    assert skeleton is not None
+    assert "active_cut" in skeleton
+
+
+def test_seed_templates_is_idempotent(fake_drive_ws):
+    """seed_templates skips templates already present in Drive; second call returns 0."""
+    templates.seed_templates(fake_drive_ws.workspace)
+    assert templates.seed_templates(fake_drive_ws.workspace) == 0
