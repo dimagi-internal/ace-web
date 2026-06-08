@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, PointerEvent as ReactPointerEvent } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export type RailSide = "left" | "right";
@@ -18,6 +18,59 @@ export interface WorkbenchRailProps {
   collapsedWidth?: number;
   /** "push" (default) reflows the center; "overlay" floats over it. */
   mode?: RailMode;
+  /** Enable drag-to-resize (push mode, expanded only). Requires onResize. */
+  resizable?: boolean;
+  /** Called with the new width (px) while the resize handle is dragged. */
+  onResize?: (width: number) => void;
+  /** Resize clamp in px. Defaults 220 / 640. */
+  minWidth?: number;
+  maxWidth?: number;
+}
+
+/** Draggable vertical handle on the rail's inner edge. */
+function ResizeHandle({
+  side,
+  width,
+  onResize,
+  min,
+  max,
+}: {
+  side: RailSide;
+  width: number;
+  onResize: (w: number) => void;
+  min: number;
+  max: number;
+}) {
+  const onPointerDown = (e: ReactPointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = width;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      // Left rail grows as you drag right; right rail grows as you drag left.
+      const delta = side === "left" ? dx : -dx;
+      onResize(Math.max(min, Math.min(max, startW + delta)));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.userSelect = "";
+    };
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      title="Drag to resize"
+      onPointerDown={onPointerDown}
+      className={`absolute top-0 bottom-0 z-10 w-1.5 cursor-col-resize hover:bg-primary/30 ${
+        side === "left" ? "right-0" : "left-0"
+      }`}
+    />
+  );
 }
 
 // Chevron that points "outward" to expand and "inward" to collapse,
@@ -38,6 +91,10 @@ export function WorkbenchRail({
   expandedWidth = 400,
   collapsedWidth = 32,
   mode = "push",
+  resizable = false,
+  onResize,
+  minWidth = 220,
+  maxWidth = 640,
 }: WorkbenchRailProps) {
   const borderClass = side === "left" ? "border-r" : "border-l";
   const Collapse = railChevron(side, "collapse");
@@ -118,9 +175,12 @@ export function WorkbenchRail({
     );
   }
 
+  const canResize = resizable && !!onResize;
   return (
     <aside
-      className={`flex shrink-0 flex-col ${borderClass} border-border bg-card transition-[width] duration-150`}
+      className={`relative flex shrink-0 flex-col ${borderClass} border-border bg-card ${
+        canResize ? "" : "transition-[width] duration-150"
+      }`}
       style={{ width: expandedWidth }}
     >
       <div className="flex items-center justify-between border-b border-border px-2 py-1">
@@ -139,6 +199,15 @@ export function WorkbenchRail({
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      {canResize ? (
+        <ResizeHandle
+          side={side}
+          width={expandedWidth}
+          onResize={onResize!}
+          min={minWidth}
+          max={maxWidth}
+        />
+      ) : null}
     </aside>
   );
 }
