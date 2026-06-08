@@ -862,22 +862,24 @@ def _seed_template(root: Path) -> None:
 
 
 @pytest.mark.django_db
-def test_list_templates(member_client, videos_root):
+def test_list_templates(member_client):
     client, _ = member_client
-    _seed_template(videos_root)
+    # Drive has no templates yet; list_templates auto-seeds from the repo tree.
     resp = client.get("/api/w/ws1/videos/templates")
     assert resp.status_code == 200, resp.content
     body = resp.json()
-    assert len(body) == 1
-    assert body[0]["id"] == "60s-campaign-overview"
+    assert len(body) >= 1
+    ids = {t["id"] for t in body}
+    assert "60s-campaign-overview" in ids
 
 
 @pytest.mark.django_db
-def test_get_template_bundle(member_client, videos_root):
+def test_get_template_bundle(member_client):
     client, _ = member_client
-    _seed_template(videos_root)
+    # Trigger lazy auto-seed by listing first, then fetch the specific bundle.
+    client.get("/api/w/ws1/videos/templates")
     resp = client.get("/api/w/ws1/videos/templates/60s-campaign-overview")
     assert resp.status_code == 200, resp.content
     body = resp.json()
     assert body["meta"]["id"] == "60s-campaign-overview"
-    assert "Skill prompt" in body["prompt_md"]
+    assert body["prompt_md"].strip()

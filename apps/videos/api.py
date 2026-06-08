@@ -169,8 +169,8 @@ def list_video_templates(
     request: HttpRequest,
     workspace_slug: Annotated[str, PathParam()],
 ) -> list[TemplateMetaOut]:
-    resolve_workspace_for_member(request, workspace_slug)
-    return [TemplateMetaOut.model_validate(t.__dict__) for t in templates.list_templates()]
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    return [TemplateMetaOut.model_validate(t.__dict__) for t in templates.list_templates(workspace)]
 
 
 @router.get(
@@ -184,8 +184,8 @@ def get_video_template(
     workspace_slug: Annotated[str, PathParam()],
     template_id: Annotated[str, PathParam()],
 ) -> TemplateBundleOut:
-    resolve_workspace_for_member(request, workspace_slug)
-    bundle = templates.load_template(template_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    bundle = templates.load_template(workspace, template_id)
     if bundle is None:
         raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
     return TemplateBundleOut(
