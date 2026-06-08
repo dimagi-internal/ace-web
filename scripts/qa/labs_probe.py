@@ -198,6 +198,7 @@ CORE_SURFACES = [
     ("12-videos-list",        f"/w/{WORKSPACE}/videos"),
     ("13-media-library",      f"/w/{WORKSPACE}/videos/library"),
     ("14-media-library-audio", f"/w/{WORKSPACE}/videos/library?type=audio"),
+    ("15-video-templates",    f"/w/{WORKSPACE}/videos/templates"),
 ]
 
 
@@ -334,7 +335,26 @@ def main() -> int:
             mark = "✓" if r.verdict == "ok" else "✗"
             print(f"  {mark} {r.verdict:7s} {short:10s} {r.preview[:70]}")
 
-        # 5. Step deep-link (most-active opp, first phase, first skill)
+        # 5. Video template editor (gallery + one editor deep-link if a template exists)
+        print("\n=== Video templates ===")
+        tmpl_resp = ctx.request.get(f"{BASE}/api/w/{WORKSPACE}/videos/templates")
+        if tmpl_resp.status == 200:
+            tmpl_items = tmpl_resp.json() if isinstance(tmpl_resp.json(), list) else []
+            if tmpl_items:
+                tid = tmpl_items[0].get("id", "")
+                if tid:
+                    r = visit(ctx, "video-template-editor", f"/w/{WORKSPACE}/videos/templates/{tid}")
+                    results.append(r)
+                    mark = "✓" if r.verdict == "ok" else "✗"
+                    print(f"  {mark} {r.verdict:7s} template={tid:30s} {r.preview[:50]}")
+                else:
+                    print("  — template found but missing id field; skipping editor drill")
+            else:
+                print("  — no templates seeded yet; skipping editor drill")
+        else:
+            print(f"  — templates API returned {tmpl_resp.status}; skipping editor drill")
+
+        # 6. Step deep-link (most-active opp, first phase, first skill)
         if opps:
             slug = opps[0]
             snap_resp = ctx.request.get(f"{BASE}/api/w/{WORKSPACE}/opps/{slug}")
@@ -353,7 +373,7 @@ def main() -> int:
                         mark = "✓" if r.verdict == "ok" else "✗"
                         print(f"  {mark} {r.verdict:7s} {r.preview[:80]}")
 
-        # 6. Opp-vs-opp compare (if >= 2 opps with runs)
+        # 7. Opp-vs-opp compare (if >= 2 opps with runs)
         if len(opps) >= 2:
             slug_a, slug_b = opps[0], opps[1]
             path = f"/w/{WORKSPACE}/opps/compare/{slug_a}/{slug_b}"
@@ -363,7 +383,7 @@ def main() -> int:
             mark = "✓" if r.verdict == "ok" else "✗"
             print(f"  {mark} {r.verdict:7s} {r.preview[:80]}")
 
-        # 7. Public per-run summary (no auth — used for stakeholder share links)
+        # 8. Public per-run summary (no auth — used for stakeholder share links)
         if opps:
             slug = opps[0]
             runs_resp = ctx.request.get(f"{BASE}/api/w/{WORKSPACE}/opps/{slug}/runs")
@@ -385,7 +405,7 @@ def main() -> int:
                     print(f"  {mark} {r.verdict:7s} {r.preview[:80]}")
                     pub_browser.close()
 
-        # 8. API coverage cross-check: walk the OpenAPI schema, probe every
+        # 9. API coverage cross-check: walk the OpenAPI schema, probe every
         # GET endpoint that doesn't need path params we don't know how to
         # supply. The goal isn't to validate response shape (that's
         # schemathesis's job in CI) — it's to detect endpoints that 5xx
