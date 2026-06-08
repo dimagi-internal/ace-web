@@ -27,12 +27,16 @@ export function BeatEditor({
       runId={runId}
       spec={spec}
     >
-      <div className="flex flex-col gap-4">
+      {/* The bulky editor lives in the workbench center pane: the save/
+          re-render TopBar, the rendered video, the beat list, and the
+          on-demand EditDrawer overlay. Program/run navigation is the
+          page's left rail (VideoNavRail), not here. */}
+      <div className="flex flex-col gap-4 p-4">
         <BeatEditorTopBar onSpecRefetched={onSpecRefetched} onRerender={onRerender} />
         <FinalVideoPlayer />
         <BeatList />
-        <EditDrawer />
       </div>
+      <EditDrawer />
     </BeatEditorProvider>
   );
 }

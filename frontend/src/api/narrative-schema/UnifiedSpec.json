@@ -1,0 +1,943 @@
+{
+  "$defs": {
+    "ClickAction": {
+      "additionalProperties": false,
+      "description": "Click a visible text label or CSS selector.\n\n``target`` supports the recorder's prefix syntax: ``css:#sel``,\n``testid:foo``, ``aria:Foo``, ``role:button``, ``text:Foo`` (force the\nvisible-text path). Bare strings use a heuristic \u2014 CSS-shaped \u2192 selector\nengine; English \u2192 visible-text ranking.",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "click",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "title": "ClickAction",
+      "type": "object"
+    },
+    "ClickMenuAction": {
+      "additionalProperties": false,
+      "description": "Click an item inside the currently-open dropdown / popover.\n\nSame target syntax as :class:`ClickAction`. Distinct verb because menus\nusually have shorter post-click settle than a top-level button.",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "click_menu",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "title": "ClickMenuAction",
+      "type": "object"
+    },
+    "DrawAction": {
+      "additionalProperties": false,
+      "description": "Draw a polygon on a map or canvas by clicking a sequence of points.\n\nThe recorder has no way to express map drawing through the other verbs \u2014\n``click`` resolves a DOM element's centre, but a Mapbox-GL-Draw polygon (or any\ncanvas drawing tool) needs clicks at *coordinates on the canvas*, not on a\nlabelled element. ``draw`` fills that gap.\n\n``target`` is the map/canvas element (e.g. ``css:#review-map``). ``points`` is a\nlist of ``[fx, fy]`` fractional positions (0-1) within that element's bounding\nbox \u2014 fractions, not pixels, so the polygon is independent of viewport size. The\nsynthetic cursor glides to each vertex and clicks (real Playwright pointer events\nthe drawing tool receives), then double-clicks the last vertex to close the\npolygon (Mapbox finishes a polygon on double-click).\n\nSet ``tool`` to the draw-tool button (e.g. ``css:.mapbox-gl-draw_polygon``) and\n``draw`` activates it first with a coordinate mouse-click \u2014 which works on the\nsmall map-control buttons that a normal ``click`` can't (Playwright's\nactionability checks time out on them). Omit ``tool`` if the tool is already\nactive.",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "draw",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Points",
+          "type": "array"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool"
+        }
+      },
+      "required": [
+        "kind",
+        "target",
+        "points"
+      ],
+      "title": "DrawAction",
+      "type": "object"
+    },
+    "Feature": {
+      "description": "A single buildable, verifiable capability within a scene (DDD v3).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "verify": {
+          "title": "Verify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "verify"
+      ],
+      "title": "Feature",
+      "type": "object"
+    },
+    "FillAction": {
+      "additionalProperties": false,
+      "description": "Focus a field (``target``) and type ``value`` character-by-character.\n\nTyping fires real ``input`` events \u2014 reactive form widgets that gate\nbuttons on debounced input (e.g. the bulk-create line counter) WILL\nreact to ``fill`` but won't react to a raw ``.value = ...`` setter.",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "fill",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target",
+        "value"
+      ],
+      "title": "FillAction",
+      "type": "object"
+    },
+    "GotoAction": {
+      "additionalProperties": false,
+      "description": "Navigate to a URL. ``target`` is the URL (absolute or path-relative).",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "goto",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "title": "GotoAction",
+      "type": "object"
+    },
+    "HoldAction": {
+      "additionalProperties": false,
+      "description": "Dwell in place for ``seconds``.\n\nThe single-purpose pause: framing time after a layout, reading time\nafter a render, slack so the SSE stream finishes flushing.",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "hold",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seconds": {
+          "title": "Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "seconds"
+      ],
+      "title": "HoldAction",
+      "type": "object"
+    },
+    "HoverAction": {
+      "additionalProperties": false,
+      "description": "Glide the cursor onto ``target`` and rest. No click.\n\n``seconds`` overrides the default dwell \u2014 useful when the demo is\nshowing a tooltip or hover-revealed control that needs time to appear.",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "hover",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seconds"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "title": "HoverAction",
+      "type": "object"
+    },
+    "Persona": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "color": {
+          "title": "Color",
+          "type": "string"
+        },
+        "intro": {
+          "title": "Intro",
+          "type": "string"
+        },
+        "org": {
+          "default": "",
+          "title": "Org",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "color",
+        "intro"
+      ],
+      "title": "Persona",
+      "type": "object"
+    },
+    "PressAction": {
+      "additionalProperties": false,
+      "description": "Press a keyboard key. Defaults to Enter \u2014 the most common case.",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "press",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "default": "Enter",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "PressAction",
+      "type": "object"
+    },
+    "Scene": {
+      "properties": {
+        "persona": {
+          "title": "Persona",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "show": {
+          "title": "Show",
+          "type": "string"
+        },
+        "concept_claim": {
+          "title": "Concept Claim",
+          "type": "string"
+        },
+        "provenance": {
+          "title": "Provenance",
+          "type": "string"
+        },
+        "design_intent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Design Intent"
+        },
+        "impressive_because": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Impressive Because"
+        },
+        "features": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Feature"
+          },
+          "title": "Features",
+          "type": "array"
+        },
+        "actions": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "click": "#/$defs/ClickAction",
+                "click_menu": "#/$defs/ClickMenuAction",
+                "draw": "#/$defs/DrawAction",
+                "fill": "#/$defs/FillAction",
+                "goto": "#/$defs/GotoAction",
+                "hold": "#/$defs/HoldAction",
+                "hover": "#/$defs/HoverAction",
+                "press": "#/$defs/PressAction",
+                "scroll": "#/$defs/ScrollAction",
+                "scroll_to": "#/$defs/ScrollToAction",
+                "select": "#/$defs/SelectAction",
+                "type": "#/$defs/TypeAction",
+                "wait_for": "#/$defs/WaitForAction"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/GotoAction"
+              },
+              {
+                "$ref": "#/$defs/ClickAction"
+              },
+              {
+                "$ref": "#/$defs/ClickMenuAction"
+              },
+              {
+                "$ref": "#/$defs/FillAction"
+              },
+              {
+                "$ref": "#/$defs/SelectAction"
+              },
+              {
+                "$ref": "#/$defs/TypeAction"
+              },
+              {
+                "$ref": "#/$defs/PressAction"
+              },
+              {
+                "$ref": "#/$defs/HoverAction"
+              },
+              {
+                "$ref": "#/$defs/ScrollToAction"
+              },
+              {
+                "$ref": "#/$defs/ScrollAction"
+              },
+              {
+                "$ref": "#/$defs/WaitForAction"
+              },
+              {
+                "$ref": "#/$defs/HoldAction"
+              },
+              {
+                "$ref": "#/$defs/DrawAction"
+              }
+            ]
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "viewport": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Viewport"
+        },
+        "full_page": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Full Page"
+        },
+        "narrative": {
+          "default": "",
+          "title": "Narrative",
+          "type": "string"
+        }
+      },
+      "required": [
+        "persona",
+        "title",
+        "show",
+        "concept_claim",
+        "provenance"
+      ],
+      "title": "Scene",
+      "type": "object"
+    },
+    "ScrollAction": {
+      "additionalProperties": false,
+      "description": "Scroll the page. ``value`` is ``\"top\"``, ``\"bottom\"``, or a pixel offset.",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "scroll",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "default": "bottom",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ScrollAction",
+      "type": "object"
+    },
+    "ScrollToAction": {
+      "additionalProperties": false,
+      "description": "Smooth-scroll the element matching ``target`` into view.",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "scroll_to",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "title": "ScrollToAction",
+      "type": "object"
+    },
+    "SelectAction": {
+      "additionalProperties": false,
+      "description": "Pick an option from a native ``<select>``.\n\n``value`` is interpreted as the option's ``value`` attribute first, then\na digit-only string as the 0-based ``index``, then the visible text\nlabel. The recorder glides the cursor onto the select so the viewer\nsees which control is being driven (the dropdown won't visually open \u2014\nnative-control limitation).",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "select",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "target",
+        "value"
+      ],
+      "title": "SelectAction",
+      "type": "object"
+    },
+    "TypeAction": {
+      "additionalProperties": false,
+      "description": "Type ``value`` into whatever element currently has focus.\n\nNo ``target`` \u2014 that's what :class:`FillAction` is for. Use ``type``\nonly after an explicit focus (or right after ``fill`` to extend the\ntext).",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "type",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "TypeAction",
+      "type": "object"
+    },
+    "WaitForAction": {
+      "additionalProperties": false,
+      "description": "Wait for ``target`` (text or selector) to appear.\n\nAll-digits target is treated as a millisecond pause. Plain-text targets\nskip the selector engine (which would otherwise sit through its full\ntimeout before falling back) \u2014 see the recorder's\n``_lib/targets.wait_for_target``.\n\n``seconds`` is a per-action timeout override. The recorder's default\n``wait_for`` timeout is ``RecorderConfig.wait_for_timeout_ms`` (12s);\nwhen an author knows a particular condition might take longer (an SSE\nbulk-create stream that runs 30-90s) the spec can say\n``seconds: 120`` to wait up to two minutes \u2014 and the recorder exits\nthe moment the target appears, instead of holding blindly. The\nalternative \u2014 padding with a fixed ``hold`` after a normal-timeout\n``wait_for`` \u2014 guarantees 100+ seconds of dead-air on a clip if the\ncondition resolves early. ``None`` preserves the default.",
+      "properties": {
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "must_succeed": {
+          "default": false,
+          "title": "Must Succeed",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "wait_for",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seconds"
+        }
+      },
+      "required": [
+        "kind",
+        "target"
+      ],
+      "title": "WaitForAction",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "narrative": {
+      "title": "Narrative",
+      "type": "string"
+    },
+    "base_url": {
+      "title": "Base Url",
+      "type": "string"
+    },
+    "auth": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Auth"
+    },
+    "why_brief": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Why Brief"
+    },
+    "personas": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Persona"
+      },
+      "title": "Personas",
+      "type": "object"
+    },
+    "scenes": {
+      "items": {
+        "$ref": "#/$defs/Scene"
+      },
+      "title": "Scenes",
+      "type": "array"
+    },
+    "narrative_locked": {
+      "default": false,
+      "title": "Narrative Locked",
+      "type": "boolean"
+    },
+    "narrative_locked_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Narrative Locked At"
+    },
+    "narrative_synced_version": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Narrative Synced Version"
+    },
+    "narrative_synced_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Narrative Synced Hash"
+    },
+    "narrative_synced_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Narrative Synced At"
+    },
+    "tagline": {
+      "default": "",
+      "title": "Tagline",
+      "type": "string"
+    },
+    "capabilities": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "why_summary": {
+      "default": "",
+      "title": "Why Summary",
+      "type": "string"
+    },
+    "getting_started": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Getting Started",
+      "type": "array"
+    },
+    "build_order": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Build Order",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name",
+    "narrative",
+    "base_url",
+    "personas",
+    "scenes"
+  ],
+  "title": "UnifiedSpec",
+  "type": "object"
+}

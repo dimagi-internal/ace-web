@@ -22,6 +22,8 @@ import {
   type VideoProgramDetail,
 } from "@/api/videos";
 import { BeatEditor } from "@/components/videos/BeatEditor";
+import { VideoNavRail } from "@/components/videos/VideoNavRail";
+import { WorkbenchLayout, usePaneCollapsed, usePaneWidth } from "@/components/workbench";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +56,11 @@ export default function VideoExplorerPage() {
   const [renderErrorLog, setRenderErrorLog] = useState<string | null>(null);
   const wasBusyRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  // Left-rail navigator collapse + drag-resize state (persisted per browser).
+  const { collapsed: navCollapsed, toggle: toggleNavCollapsed } =
+    usePaneCollapsed("ace.video.navCollapsed");
+  const { width: navWidth, setWidth: setNavWidth } = usePaneWidth("ace.video.navWidth", 300);
 
   // Resolve which run to view: explicit runId in URL, else the program's latest.
   const resolvedRunId = useMemo(() => {
@@ -362,19 +369,42 @@ export default function VideoExplorerPage() {
           Loading…
         </div>
       ) : run.spec && workspaceSlug && programSlug && resolvedRunId ? (
-        // The page is locked at h-[calc(100vh-3rem)] so the inner editor
-        // must own its own vertical scroll — otherwise BeatList overflow
-        // gets clipped at the page bottom. The iframe path used flex-1
-        // for the same reason; React tree needs an overflow-y-auto wrapper.
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          <BeatEditor
-            key={`${workspaceSlug}-${programSlug}-${resolvedRunId}`}
-            workspaceSlug={workspaceSlug}
-            programSlug={programSlug}
-            runId={resolvedRunId}
-            spec={run.spec}
-            onSpecRefetched={(s) => setRun((rd) => (rd ? { ...rd, spec: s } : rd))}
-            onRerender={handleRender}
+        // Workbench shell (same kit as the opp run-view): the left rail is
+        // the program → runs → beats navigator (drag-resizable); the bulky
+        // beat editor lives in the center pane and owns its own scroll.
+        <div className="min-h-0 flex-1">
+          <WorkbenchLayout
+            left={{
+              title: "Navigator",
+              collapsed: navCollapsed,
+              onToggle: toggleNavCollapsed,
+              expandedWidth: navWidth,
+              resizable: true,
+              onResize: setNavWidth,
+              minWidth: 220,
+              maxWidth: 520,
+              content: (
+                <VideoNavRail
+                  workspaceSlug={workspaceSlug}
+                  programSlug={programSlug}
+                  programName={program?.name ?? programSlug}
+                  runs={program?.runs ?? []}
+                  currentRunId={resolvedRunId}
+                  beats={run.spec.beats ?? []}
+                />
+              ),
+            }}
+            center={
+              <BeatEditor
+                key={`${workspaceSlug}-${programSlug}-${resolvedRunId}`}
+                workspaceSlug={workspaceSlug}
+                programSlug={programSlug}
+                runId={resolvedRunId}
+                spec={run.spec}
+                onSpecRefetched={(s) => setRun((rd) => (rd ? { ...rd, spec: s } : rd))}
+                onRerender={handleRender}
+              />
+            }
           />
         </div>
       ) : (
