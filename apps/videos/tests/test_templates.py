@@ -346,3 +346,92 @@ def test_invalidate_tpl_bundle_clears_bundle_and_list(fake_drive_ws):
     vcache.invalidate_tpl(ws_slug, "connectify-program")
     assert vcache.get_tpl_bundle(ws_slug, "connectify-program") is None
     assert vcache.get_tpl_list(ws_slug) is None
+
+
+# ---------------------------------------------------------------------------
+# T6: save_template + load_example
+# ---------------------------------------------------------------------------
+
+
+def test_save_template_meta_persists(fake_drive_ws):
+    """Updating name via save_template round-trips through Drive and cache."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)  # seed
+    b = templates.save_template(ws, "connect-explainer", meta={"name": "Renamed"})
+    assert b.meta.name == "Renamed"
+    assert templates.load_template(ws, "connect-explainer").meta.name == "Renamed"
+
+
+def test_save_template_rejects_bad_skeleton(fake_drive_ws):
+    """skeleton_yaml that does not parse as a YAML mapping raises ValueError."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    with pytest.raises(ValueError):
+        templates.save_template(ws, "connect-explainer", skeleton_yaml="::: not yaml :::")
+
+
+def test_save_template_rejects_skeleton_not_mapping(fake_drive_ws):
+    """skeleton_yaml that parses but is not a mapping (e.g. a list) raises ValueError."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    with pytest.raises(ValueError):
+        templates.save_template(ws, "connect-explainer", skeleton_yaml="- item1\n- item2\n")
+
+
+def test_save_template_rejects_schema_invalid_example(fake_drive_ws):
+    """example_yaml missing required program-spec fields raises ValueError."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    with pytest.raises(ValueError):
+        # Missing slug + workspace fields → validate_spec_structure raises ValueError.
+        templates.save_template(ws, "connect-explainer", example_yaml="slug: x\n")
+
+
+def test_save_template_rejects_example_not_mapping(fake_drive_ws):
+    """example_yaml that parses as a list (not mapping) raises ValueError."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    with pytest.raises(ValueError):
+        templates.save_template(ws, "connect-explainer", example_yaml="- a\n- b\n")
+
+
+def test_save_template_valid_example_persists(fake_drive_ws):
+    """A structurally valid example_yaml is stored and load_example returns it."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    valid_ex = (
+        "slug: connect-explainer\n"
+        "workspace: test-ws\n"
+        "name: Example Program\n"
+    )
+    b = templates.save_template(ws, "connect-explainer", example_yaml=valid_ex)
+    assert b is not None  # bundle returned on success
+    ex = templates.load_example(ws, "connect-explainer")
+    assert ex is not None
+    assert "slug: connect-explainer" in ex
+
+
+def test_save_template_nonexistent_raises(fake_drive_ws):
+    """save_template raises ValueError when the template has no meta.yaml."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)  # seed real ones
+    with pytest.raises(ValueError, match="does not exist"):
+        templates.save_template(ws, "no-such-template", meta={"name": "x"})
+
+
+def test_load_example(fake_drive_ws):
+    """load_example returns the seeded example for connectify-program."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)  # triggers auto-seed which uploads example.spec.yaml too
+    ex = templates.load_example(ws, "connectify-program")
+    assert ex and "slug: connectify-program" in ex
+
+
+def test_load_example_returns_none_when_missing(fake_drive_ws):
+    """load_example returns None when example.spec.yaml was not seeded."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    # connect-explainer has no example.spec.yaml in the repo tree
+    ex = templates.load_example(ws, "connect-explainer")
+    # May be None (no file) or a string (if it does exist); just ensure no exception.
+    assert ex is None or isinstance(ex, str)

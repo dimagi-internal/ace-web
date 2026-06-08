@@ -61,7 +61,9 @@ from .schemas import (
     RunDetailOut,
     RunSummaryOut,
     TemplateBundleOut,
+    TemplateExampleOut,
     TemplateMetaOut,
+    TemplatePatchIn,
 )
 
 log = logging.getLogger(__name__)
@@ -193,6 +195,59 @@ def get_video_template(
         skeleton_yaml=bundle.skeleton_yaml,
         prompt_md=bundle.prompt_md,
     )
+
+
+@router.patch(
+    "/templates/{template_id}",
+    response=TemplateBundleOut,
+    summary="Update one or more fields of a template (meta, skeleton, prompt, example)",
+)
+def patch_video_template(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    template_id: Annotated[str, PathParam()],
+    body: TemplatePatchIn,
+) -> TemplateBundleOut:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    if not templates.is_valid_template_id(template_id):
+        raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
+    # 404 guard: check the template exists before attempting writes.
+    if templates.load_template(workspace, template_id) is None:
+        raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
+    try:
+        bundle = templates.save_template(
+            workspace,
+            template_id,
+            meta=body.meta.model_dump(exclude_none=True) if body.meta else None,
+            skeleton_yaml=body.skeleton_yaml,
+            prompt_md=body.prompt_md,
+            example_yaml=body.example_yaml,
+        )
+    except ValueError as e:
+        raise ProblemError(400, "Invalid template edit", type_=TYPE_VALIDATION, detail=str(e))
+    return TemplateBundleOut(
+        meta=TemplateMetaOut.model_validate(bundle.meta.__dict__),
+        skeleton_yaml=bundle.skeleton_yaml,
+        prompt_md=bundle.prompt_md,
+    )
+
+
+@router.get(
+    "/templates/{template_id}/example",
+    response=TemplateExampleOut,
+    summary="Get the example spec.yaml for a template",
+    openapi_extra={"x-mcp-expose": True},
+)
+def get_template_example(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    template_id: Annotated[str, PathParam()],
+) -> TemplateExampleOut:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    ex = templates.load_example(workspace, template_id)
+    if ex is None:
+        raise ProblemError(404, "Example not found", type_=TYPE_NOT_FOUND)
+    return TemplateExampleOut(template_id=template_id, example_yaml=ex)
 
 
 # ---------------------------------------------------------------------------

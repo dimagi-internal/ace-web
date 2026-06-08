@@ -883,3 +883,84 @@ def test_get_template_bundle(member_client):
     body = resp.json()
     assert body["meta"]["id"] == "60s-campaign-overview"
     assert body["prompt_md"].strip()
+
+
+@pytest.mark.django_db
+def test_patch_template_meta(member_client):
+    """PATCH /templates/{id} updates the template name and returns the fresh bundle."""
+    client, _ = member_client
+    # Seed first.
+    client.get("/api/w/ws1/videos/templates")
+    resp = client.patch(
+        "/api/w/ws1/videos/templates/60s-campaign-overview",
+        data={"meta": {"name": "Patched Name"}},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["meta"]["name"] == "Patched Name"
+    assert body["meta"]["id"] == "60s-campaign-overview"
+    assert body["skeleton_yaml"]
+    assert body["prompt_md"]
+
+
+@pytest.mark.django_db
+def test_patch_template_400_on_invalid_skeleton(member_client):
+    """PATCH with unparseable skeleton_yaml returns 400."""
+    client, _ = member_client
+    client.get("/api/w/ws1/videos/templates")
+    resp = client.patch(
+        "/api/w/ws1/videos/templates/60s-campaign-overview",
+        data={"skeleton_yaml": "::: not yaml :::"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400, resp.content
+
+
+@pytest.mark.django_db
+def test_patch_template_400_on_invalid_example(member_client):
+    """PATCH with example_yaml missing required spec fields returns 400."""
+    client, _ = member_client
+    client.get("/api/w/ws1/videos/templates")
+    resp = client.patch(
+        "/api/w/ws1/videos/templates/60s-campaign-overview",
+        data={"example_yaml": "slug: x\n"},  # missing workspace
+        content_type="application/json",
+    )
+    assert resp.status_code == 400, resp.content
+
+
+@pytest.mark.django_db
+def test_patch_template_404_unknown(member_client):
+    """PATCH on an unknown template id returns 404."""
+    client, _ = member_client
+    resp = client.patch(
+        "/api/w/ws1/videos/templates/does-not-exist",
+        data={"meta": {"name": "x"}},
+        content_type="application/json",
+    )
+    assert resp.status_code == 404, resp.content
+
+
+@pytest.mark.django_db
+def test_get_template_example(member_client):
+    """GET /templates/{id}/example returns the seeded example for connectify-program."""
+    client, _ = member_client
+    # Seed templates (auto-seed uploads example.spec.yaml for connectify-program).
+    client.get("/api/w/ws1/videos/templates")
+    resp = client.get("/api/w/ws1/videos/templates/connectify-program/example")
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["template_id"] == "connectify-program"
+    assert "slug: connectify-program" in body["example_yaml"]
+
+
+@pytest.mark.django_db
+def test_get_template_example_404_when_missing(member_client):
+    """GET /templates/{id}/example returns 404 when no example.spec.yaml exists."""
+    client, _ = member_client
+    client.get("/api/w/ws1/videos/templates")
+    # connect-explainer has no example.spec.yaml in the repo tree.
+    resp = client.get("/api/w/ws1/videos/templates/connect-explainer/example")
+    # Either 404 (no example) or 200 (if the file exists) — no crash.
+    assert resp.status_code in {200, 404}

@@ -130,6 +130,101 @@ def load_template(workspace, template_id: str) -> TemplateBundle | None:
     return bundle
 
 
+def load_example(workspace, template_id: str) -> str | None:
+    """Return the raw text of example.spec.yaml for this template, or None.
+
+    Reads from Drive; does NOT cache (examples are rarely accessed and
+    small — no benefit to polluting the cache namespace).
+    """
+    if not is_valid_template_id(template_id):
+        return None
+
+    from apps.videos import drive, service  # lazy — avoid circulars
+
+    layout, client = service.layout_for(workspace)
+    return drive.read_template_file(layout, client, template_id, "example.spec.yaml")
+
+
+def save_template(
+    workspace,
+    template_id: str,
+    *,
+    meta: dict | None = None,
+    skeleton_yaml: str | None = None,
+    prompt_md: str | None = None,
+    example_yaml: str | None = None,
+) -> TemplateBundle:
+    """Persist one or more template fields to Drive and return the refreshed bundle.
+
+    For each non-None argument:
+      - ``skeleton_yaml`` / ``example_yaml``: must parse as a YAML mapping.
+        ``example_yaml`` additionally passes program-spec structural validation
+        (slug + workspace present) so saved examples can always be rendered.
+      - ``meta``: a dict of override key/values merged into the existing
+        meta.yaml (round-tripped via the YAML library).
+
+    Raises ``ValueError`` if any validation fails or if the template has no
+    existing meta.yaml in Drive (i.e. the template does not exist).
+
+    After writing, invalidates the relevant cache entries and returns the
+    freshly re-read bundle.
+    """
+    if not is_valid_template_id(template_id):
+        raise ValueError(f"Invalid template id: {template_id!r}")
+
+    from apps.videos import cache as vcache, drive, service  # lazy — avoid circulars
+
+    layout, client = service.layout_for(workspace)
+
+    # Guard: template must exist.
+    existing_meta_raw = drive.read_template_file(layout, client, template_id, "meta.yaml")
+    if existing_meta_raw is None:
+        raise ValueError(f"Template {template_id!r} does not exist in Drive")
+
+    if skeleton_yaml is not None:
+        try:
+            doc = _yaml().load(skeleton_yaml)
+        except Exception as e:
+            raise ValueError(f"skeleton_yaml is not valid YAML: {e}") from e
+        if not isinstance(doc, dict):
+            raise ValueError("skeleton_yaml must parse to a YAML mapping at the top level")
+        drive.write_template_file(layout, client, template_id, "skeleton.yaml", skeleton_yaml)
+
+    if prompt_md is not None:
+        drive.write_template_file(layout, client, template_id, "prompt.md", prompt_md)
+
+    if example_yaml is not None:
+        try:
+            doc = _yaml().load(example_yaml)
+        except Exception as e:
+            raise ValueError(f"example_yaml is not valid YAML: {e}") from e
+        if not isinstance(doc, dict):
+            raise ValueError("example_yaml must parse to a YAML mapping at the top level")
+        # Structural program-spec validation — ensures the example can be
+        # rendered without further edits. Delegates to the same
+        # validate_spec_structure helper that create_program_from_spec uses.
+        from apps.videos.service import validate_spec_structure
+        validate_spec_structure(example_yaml)
+        drive.write_template_file(layout, client, template_id, "example.spec.yaml", example_yaml)
+
+    if meta is not None:
+        existing = _yaml().load(existing_meta_raw) or {}
+        existing.update(meta)
+        import io as _io
+        y = _yaml()
+        buf = _io.StringIO()
+        y.dump(existing, buf)
+        updated_meta_raw = buf.getvalue()
+        drive.write_template_file(layout, client, template_id, "meta.yaml", updated_meta_raw)
+
+    vcache.invalidate_tpl(workspace.slug, template_id)
+
+    bundle = load_template(workspace, template_id)
+    if bundle is None:  # pragma: no cover — shouldn't happen; we just wrote the files
+        raise ValueError(f"Failed to re-read template {template_id!r} after save")
+    return bundle
+
+
 def _strip_leading_doc_comments(skeleton: str) -> str:
     """Drop the skeleton's authoring-time doc header before returning it.
 
