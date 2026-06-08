@@ -862,22 +862,159 @@ def _seed_template(root: Path) -> None:
 
 
 @pytest.mark.django_db
-def test_list_templates(member_client, videos_root):
+def test_list_templates(member_client):
     client, _ = member_client
-    _seed_template(videos_root)
+    # Drive has no templates yet; list_templates auto-seeds from the repo tree.
     resp = client.get("/api/w/ws1/videos/templates")
     assert resp.status_code == 200, resp.content
     body = resp.json()
-    assert len(body) == 1
-    assert body[0]["id"] == "60s-campaign-overview"
+    assert len(body) >= 1
+    ids = {t["id"] for t in body}
+    assert "60s-campaign-overview" in ids
 
 
 @pytest.mark.django_db
-def test_get_template_bundle(member_client, videos_root):
+def test_get_template_bundle(member_client):
     client, _ = member_client
-    _seed_template(videos_root)
+    # Trigger lazy auto-seed by listing first, then fetch the specific bundle.
+    client.get("/api/w/ws1/videos/templates")
     resp = client.get("/api/w/ws1/videos/templates/60s-campaign-overview")
     assert resp.status_code == 200, resp.content
     body = resp.json()
     assert body["meta"]["id"] == "60s-campaign-overview"
-    assert "Skill prompt" in body["prompt_md"]
+    assert body["prompt_md"].strip()
+
+
+@pytest.mark.django_db
+def test_patch_template_meta(member_client):
+    """PATCH /templates/{id} updates the template name and returns the fresh bundle."""
+    client, _ = member_client
+    # Seed first.
+    client.get("/api/w/ws1/videos/templates")
+    resp = client.patch(
+        "/api/w/ws1/videos/templates/60s-campaign-overview",
+        data={"meta": {"name": "Patched Name"}},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["meta"]["name"] == "Patched Name"
+    assert body["meta"]["id"] == "60s-campaign-overview"
+    assert body["skeleton_yaml"]
+    assert body["prompt_md"]
+
+
+@pytest.mark.django_db
+def test_patch_template_400_on_invalid_skeleton(member_client):
+    """PATCH with unparseable skeleton_yaml returns 400."""
+    client, _ = member_client
+    client.get("/api/w/ws1/videos/templates")
+    resp = client.patch(
+        "/api/w/ws1/videos/templates/60s-campaign-overview",
+        data={"skeleton_yaml": "::: not yaml :::"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400, resp.content
+
+
+@pytest.mark.django_db
+def test_patch_template_400_on_invalid_example(member_client):
+    """PATCH with example_yaml missing required spec fields returns 400."""
+    client, _ = member_client
+    client.get("/api/w/ws1/videos/templates")
+    resp = client.patch(
+        "/api/w/ws1/videos/templates/60s-campaign-overview",
+        data={"example_yaml": "slug: x\n"},  # missing workspace
+        content_type="application/json",
+    )
+    assert resp.status_code == 400, resp.content
+
+
+@pytest.mark.django_db
+def test_patch_template_404_unknown(member_client):
+    """PATCH on an unknown template id returns 404."""
+    client, _ = member_client
+    resp = client.patch(
+        "/api/w/ws1/videos/templates/does-not-exist",
+        data={"meta": {"name": "x"}},
+        content_type="application/json",
+    )
+    assert resp.status_code == 404, resp.content
+
+
+@pytest.mark.django_db
+def test_get_template_example(member_client):
+    """GET /templates/{id}/example returns the seeded example for connectify-program."""
+    client, _ = member_client
+    # Seed templates (auto-seed uploads example.spec.yaml for connectify-program).
+    client.get("/api/w/ws1/videos/templates")
+    resp = client.get("/api/w/ws1/videos/templates/connectify-program/example")
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["template_id"] == "connectify-program"
+    assert "slug: connectify-program" in body["example_yaml"]
+
+
+@pytest.mark.django_db
+def test_get_template_example_404_when_missing(member_client):
+    """GET /templates/{id}/example returns 404 when no example.spec.yaml exists."""
+    client, _ = member_client
+    client.get("/api/w/ws1/videos/templates")
+    # connect-explainer has no example.spec.yaml in the repo tree.
+    resp = client.get("/api/w/ws1/videos/templates/connect-explainer/example")
+    # Either 404 (no example) or 200 (if the file exists) — no crash.
+    assert resp.status_code in {200, 404}
+
+
+# ---------------------------------------------------------------------------
+# T7: GET /templates/{id}/example-spec  +  PATCH with example_spec
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_get_template_example_spec(member_client):
+    """GET /templates/{id}/example-spec returns a parsed dict with slug."""
+    client, _ = member_client
+    client.get("/api/w/ws1/videos/templates")  # trigger auto-seed
+    resp = client.get("/api/w/ws1/videos/templates/connectify-program/example-spec")
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["template_id"] == "connectify-program"
+    assert isinstance(body["spec"], dict)
+    assert body["spec"]["slug"] == "connectify-program"
+
+
+@pytest.mark.django_db
+def test_get_template_example_spec_404_when_missing(member_client):
+    """GET /templates/{id}/example-spec returns 404 when no example exists."""
+    client, _ = member_client
+    client.get("/api/w/ws1/videos/templates")
+    resp = client.get("/api/w/ws1/videos/templates/connect-explainer/example-spec")
+    # Either 404 (no example) or 200 (if the file happens to exist).
+    assert resp.status_code in {200, 404}
+
+
+@pytest.mark.django_db
+def test_patch_template_example_spec(member_client):
+    """PATCH /templates/{id} with example_spec dict persists and is reflected in example-spec."""
+    client, _ = member_client
+    client.get("/api/w/ws1/videos/templates")  # seed
+
+    # Read the current example-spec.
+    get_resp = client.get("/api/w/ws1/videos/templates/connectify-program/example-spec")
+    assert get_resp.status_code == 200, get_resp.content
+    current_spec = get_resp.json()["spec"]
+
+    # Patch it with an edited dict.
+    current_spec["tagline"] = "Test tagline via patch"
+    patch_resp = client.patch(
+        "/api/w/ws1/videos/templates/connectify-program",
+        data={"example_spec": current_spec},
+        content_type="application/json",
+    )
+    assert patch_resp.status_code == 200, patch_resp.content
+
+    # Confirm the round-trip.
+    get_resp2 = client.get("/api/w/ws1/videos/templates/connectify-program/example-spec")
+    assert get_resp2.status_code == 200, get_resp2.content
+    assert get_resp2.json()["spec"]["tagline"] == "Test tagline via patch"

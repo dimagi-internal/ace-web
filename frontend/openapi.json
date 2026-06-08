@@ -1288,6 +1288,106 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/sessions/interrupted": {
+      "get": {
+        "operationId": "apps_sessions_api_interrupted_runs",
+        "summary": "Runs interrupted mid-flight (resume candidates)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/sessions/resume-interrupted": {
+      "post": {
+        "operationId": "apps_sessions_api_resume_interrupted",
+        "summary": "Resume all interrupted ACE opp runs (post-deploy self-heal)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Bulk-resume every interrupted ACE opp run in the workspace. Intended for\nthe post-deploy hook: after a rollout drains the tasks driving live runs,\nthis relaunches them from run_state.yaml. Single serial call \u2192 no\ndouble-spawn race.",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/sessions/{slug}/resume": {
+      "post": {
+        "operationId": "apps_sessions_api_resume_run",
+        "summary": "Resume one interrupted run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/sessions/{slug}": {
       "get": {
         "operationId": "apps_sessions_api_get_session",
@@ -1954,6 +2054,107 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TemplateBundleOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      },
+      "patch": {
+        "operationId": "apps_videos_api_patch_video_template",
+        "summary": "Update one or more fields of a template (meta, skeleton, prompt, example)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateBundleOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplatePatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/templates/{template_id}/example": {
+      "get": {
+        "operationId": "apps_videos_api_get_template_example",
+        "summary": "Get the example spec.yaml for a template",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateExampleOut"
                 }
               }
             }
@@ -5976,6 +6177,11 @@
             "pattern": "^\\d+(,\\d+)*$",
             "title": "Only",
             "type": "string"
+          },
+          "skip_evals": {
+            "default": true,
+            "title": "Skip Evals",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6503,6 +6709,137 @@
           "prompt_md"
         ],
         "title": "TemplateBundleOut",
+        "type": "object"
+      },
+      "TemplateMetaPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "expected_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Duration Seconds"
+          },
+          "intended_audience": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intended Audience"
+          },
+          "when_to_use": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When To Use"
+          }
+        },
+        "title": "TemplateMetaPatch",
+        "type": "object"
+      },
+      "TemplatePatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateMetaPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skeleton_yaml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skeleton Yaml"
+          },
+          "prompt_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Md"
+          },
+          "example_yaml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Example Yaml"
+          }
+        },
+        "title": "TemplatePatchIn",
+        "type": "object"
+      },
+      "TemplateExampleOut": {
+        "additionalProperties": false,
+        "properties": {
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "example_yaml": {
+            "title": "Example Yaml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "example_yaml"
+        ],
+        "title": "TemplateExampleOut",
         "type": "object"
       },
       "MediaLibraryVideoItemOut": {

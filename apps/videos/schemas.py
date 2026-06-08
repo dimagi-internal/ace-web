@@ -249,6 +249,32 @@ class TemplateBundleOut(StrictModel):
     prompt_md: str
 
 
+class TemplateMetaPatch(StrictModel):
+    name: str | None = None
+    description: str | None = None
+    expected_duration_seconds: int | None = None
+    intended_audience: str | None = None
+    when_to_use: str | None = None
+
+
+class TemplatePatchIn(StrictModel):
+    meta: TemplateMetaPatch | None = None
+    skeleton_yaml: str | None = None
+    prompt_md: str | None = None
+    example_yaml: str | None = None
+    example_spec: dict | None = None
+
+
+class TemplateExampleOut(StrictModel):
+    template_id: str
+    example_yaml: str
+
+
+class TemplateExampleSpecOut(StrictModel):
+    template_id: str
+    spec: dict
+
+
 class CreateProgramIn(StrictModel):
     """POST /programs body. The agent generates the full spec.yaml
     (string) by following the template's prompt and posts it here. The

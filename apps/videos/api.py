@@ -61,7 +61,10 @@ from .schemas import (
     RunDetailOut,
     RunSummaryOut,
     TemplateBundleOut,
+    TemplateExampleOut,
+    TemplateExampleSpecOut,
     TemplateMetaOut,
+    TemplatePatchIn,
 )
 
 log = logging.getLogger(__name__)
@@ -169,8 +172,8 @@ def list_video_templates(
     request: HttpRequest,
     workspace_slug: Annotated[str, PathParam()],
 ) -> list[TemplateMetaOut]:
-    resolve_workspace_for_member(request, workspace_slug)
-    return [TemplateMetaOut.model_validate(t.__dict__) for t in templates.list_templates()]
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    return [TemplateMetaOut.model_validate(t.__dict__) for t in templates.list_templates(workspace)]
 
 
 @router.get(
@@ -184,8 +187,8 @@ def get_video_template(
     workspace_slug: Annotated[str, PathParam()],
     template_id: Annotated[str, PathParam()],
 ) -> TemplateBundleOut:
-    resolve_workspace_for_member(request, workspace_slug)
-    bundle = templates.load_template(template_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    bundle = templates.load_template(workspace, template_id)
     if bundle is None:
         raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
     return TemplateBundleOut(
@@ -193,6 +196,84 @@ def get_video_template(
         skeleton_yaml=bundle.skeleton_yaml,
         prompt_md=bundle.prompt_md,
     )
+
+
+@router.patch(
+    "/templates/{template_id}",
+    response=TemplateBundleOut,
+    summary="Update one or more fields of a template (meta, skeleton, prompt, example)",
+)
+def patch_video_template(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    template_id: Annotated[str, PathParam()],
+    body: TemplatePatchIn,
+) -> TemplateBundleOut:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    if not templates.is_valid_template_id(template_id):
+        raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
+    # 404 guard: check the template exists before attempting writes.
+    if templates.load_template(workspace, template_id) is None:
+        raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
+    try:
+        bundle = templates.save_template(
+            workspace,
+            template_id,
+            meta=body.meta.model_dump(exclude_none=True) if body.meta else None,
+            skeleton_yaml=body.skeleton_yaml,
+            prompt_md=body.prompt_md,
+            example_yaml=body.example_yaml,
+            example_spec=body.example_spec,
+        )
+    except ValueError as e:
+        raise ProblemError(400, "Invalid template edit", type_=TYPE_VALIDATION, detail=str(e))
+    return TemplateBundleOut(
+        meta=TemplateMetaOut.model_validate(bundle.meta.__dict__),
+        skeleton_yaml=bundle.skeleton_yaml,
+        prompt_md=bundle.prompt_md,
+    )
+
+
+@router.get(
+    "/templates/{template_id}/example",
+    response=TemplateExampleOut,
+    summary="Get the example spec.yaml for a template",
+    openapi_extra={"x-mcp-expose": True},
+)
+def get_template_example(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    template_id: Annotated[str, PathParam()],
+) -> TemplateExampleOut:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    ex = templates.load_example(workspace, template_id)
+    if ex is None:
+        raise ProblemError(404, "Example not found", type_=TYPE_NOT_FOUND)
+    return TemplateExampleOut(template_id=template_id, example_yaml=ex)
+
+
+@router.get(
+    "/templates/{template_id}/example-spec",
+    response=TemplateExampleSpecOut,
+    summary="Get the example spec.yaml for a template as a parsed object",
+    openapi_extra={"x-mcp-expose": True},
+)
+def get_template_example_spec(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    template_id: Annotated[str, PathParam()],
+) -> TemplateExampleSpecOut:
+    """Return the template's example.spec.yaml as a parsed dict.
+
+    The BeatEditor mounts on this endpoint's response directly — it
+    needs a parsed spec object, not raw YAML text.  Returns 404 when
+    no example.spec.yaml exists for this template.
+    """
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    spec = templates.load_example_spec(workspace, template_id)
+    if spec is None:
+        raise ProblemError(404, "Example spec not found", type_=TYPE_NOT_FOUND)
+    return TemplateExampleSpecOut(template_id=template_id, spec=spec)
 
 
 # ---------------------------------------------------------------------------

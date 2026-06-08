@@ -50,7 +50,7 @@ interface Props {
 }
 
 export function BeatEditorTopBar({ onSpecRefetched, onRerender }: Props) {
-  const { state, effectiveSpec, dispatch, workspaceSlug, programSlug, runId } = useBeatEditor();
+  const { state, effectiveSpec, dispatch, workspaceSlug, programSlug, runId, onSave: onSaveOverride } = useBeatEditor();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [showPending, setShowPending] = useState(false);
 
@@ -66,14 +66,20 @@ export function BeatEditorTopBar({ onSpecRefetched, onRerender }: Props) {
     if (!dirty || status === "saving") return;
     dispatch({ type: "SAVE_START" });
     try {
-      await submitEditBatch(workspaceSlug, programSlug, runId, state.buffer);
-      // Refetch the canonical spec so effectiveSpec re-derives from server truth.
-      const fresh = await getVideoRun(workspaceSlug, programSlug, runId);
-      if (fresh.spec) {
-        dispatch({ type: "REPLACE_SPEC", spec: fresh.spec });
-        onSpecRefetched?.(fresh.spec);
-      } else {
+      if (onSaveOverride) {
+        // Custom save target (e.g. a template editor) — caller owns the write.
+        await onSaveOverride(effectiveSpec);
         dispatch({ type: "CLEAR_BUFFER" });
+      } else {
+        await submitEditBatch(workspaceSlug, programSlug, runId, state.buffer);
+        // Refetch the canonical spec so effectiveSpec re-derives from server truth.
+        const fresh = await getVideoRun(workspaceSlug, programSlug, runId);
+        if (fresh.spec) {
+          dispatch({ type: "REPLACE_SPEC", spec: fresh.spec });
+          onSpecRefetched?.(fresh.spec);
+        } else {
+          dispatch({ type: "CLEAR_BUFFER" });
+        }
       }
       dispatch({ type: "SAVE_OK", at: Date.now() });
     } catch (e: unknown) {

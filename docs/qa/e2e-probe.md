@@ -22,13 +22,14 @@ human or LLM can dive into specifics on demand. The probe is the
 
 ## What it probes
 
-- **Core surfaces** — home, welcome, workspace home, opps/sessions/workspace-settings/settings/system/auth-cli/videos.
+- **Core surfaces** — home, welcome, workspace home, opps/sessions/workspace-settings/settings/system/auth-cli/videos/video-templates.
 - **Each opp** — workbench page, plus every view-mode tab (`phase`,
   `workbench`, `heatmap`, `diff`).
 - **Runs** — picks the most-active opp and drills into 3 specific runs.
 - **Step deep-link** — opens `/w/<ws>/opps/<slug>/runs/<runId>/steps/<skill>` for one real step.
 - **Opp compare** — opens `/w/<ws>/opps/compare/<a>/<b>` between the first two opps.
 - **Public summary page** (no auth) — opens the stakeholder-facing per-run summary at `/opps/<ws>/<slug>/runs/<runId>/summary` in a fresh browser context (no cookies) so genuinely-public access is tested.
+- **Video template editor** — opens `videos/templates` gallery, then (if any template is seeded) drills into the first template's editor at `videos/templates/:id`.
 - **Sessions** — opens 3 recent sessions' structure tab (the non-chat view).
 - **API coverage** — walks `/api/openapi.json` and probes every unparametric GET endpoint. Catches dead endpoints (5xx) and "frontend calls a path that was deleted in backend cleanup" regressions.
 

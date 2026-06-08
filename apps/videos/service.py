@@ -406,6 +406,29 @@ def list_programs_for_workspace(workspace: Workspace) -> list[ProgramRecord]:
 # ---------------------------------------------------------------------------
 
 
+def validate_spec_structure(spec_yaml: str) -> dict:
+    """Parse spec_yaml and verify it is a YAML mapping with slug + workspace.
+
+    Returns the parsed dict on success.  Raises ``ValueError`` with a
+    human-readable message on any structural failure.  Used by both
+    ``create_program_from_spec`` (which then adds slug/workspace match
+    checks) and ``apps.videos.templates.save_template`` (which validates
+    an example spec before persisting it to Drive so saved examples always
+    render without further edits).
+    """
+    try:
+        doc = _yaml().load(spec_yaml)
+    except Exception as e:
+        raise ValueError(f"spec_yaml is not valid YAML: {e}") from e
+    if not isinstance(doc, dict):
+        raise ValueError("spec_yaml must parse to a YAML mapping at the top level")
+    if not doc.get("slug"):
+        raise ValueError("spec_yaml must contain a non-empty 'slug' field")
+    if not doc.get("workspace"):
+        raise ValueError("spec_yaml must contain a non-empty 'workspace' field")
+    return doc
+
+
 def create_program_from_spec(workspace: Workspace, slug: str, spec_yaml: str) -> str:
     """Create programs/<slug>/runs/run-001/spec.yaml in Drive.
 
@@ -418,12 +441,7 @@ def create_program_from_spec(workspace: Workspace, slug: str, spec_yaml: str) ->
     if not is_valid_slug(slug):
         raise ValueError(f"Invalid program slug: {slug!r}")
 
-    try:
-        doc = _yaml().load(spec_yaml)
-    except Exception as e:
-        raise ValueError(f"spec_yaml is not valid YAML: {e}") from e
-    if not isinstance(doc, dict):
-        raise ValueError("spec_yaml must parse to a YAML mapping at the top level")
+    doc = validate_spec_structure(spec_yaml)
     if doc.get("slug") != slug:
         raise ValueError(
             f"spec_yaml.slug ({doc.get('slug')!r}) must match the URL slug ({slug!r})"

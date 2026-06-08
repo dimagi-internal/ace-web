@@ -36,6 +36,12 @@ export default function VideosListPage() {
         <h1 className="text-2xl font-semibold">Videos</h1>
         <div className="ml-auto flex items-center gap-3">
           <Link
+            to={`/w/${workspaceSlug}/videos/templates`}
+            className="text-sm text-muted-foreground underline hover:text-foreground"
+          >
+            Templates →
+          </Link>
+          <Link
             to={`/w/${workspaceSlug}/videos/library`}
             className="text-sm text-muted-foreground underline hover:text-foreground"
           >

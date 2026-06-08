@@ -234,6 +234,34 @@ export interface TemplateBundle {
   prompt_md: string;
 }
 
+export interface TemplateMetaPatch {
+  name?: string | null;
+  description?: string | null;
+  expected_duration_seconds?: number | null;
+  intended_audience?: string | null;
+  when_to_use?: string | null;
+}
+
+export interface TemplatePatchIn {
+  meta?: TemplateMetaPatch | null;
+  skeleton_yaml?: string | null;
+  prompt_md?: string | null;
+  example_yaml?: string | null;
+  /** Parsed spec object — serialized to YAML server-side. Takes precedence over example_yaml. */
+  example_spec?: ProgramSpec | null;
+}
+
+export interface TemplateExampleOut {
+  template_id: string;
+  example_yaml: string;
+}
+
+export interface TemplateExampleSpecOut {
+  template_id: string;
+  /** Parsed example spec — same shape as RunDetail.spec. */
+  spec: ProgramSpec;
+}
+
 export interface CreateProgramResult {
   program_slug: string;
   run_id: string;
@@ -247,6 +275,21 @@ export function listVideoTemplates(ws: string): Promise<TemplateMeta[]> {
 
 export function getVideoTemplate(ws: string, id: string): Promise<TemplateBundle> {
   return v2Fetch(`${base(ws)}/templates/${id}`);
+}
+
+export function getTemplateExample(ws: string, id: string): Promise<TemplateExampleOut> {
+  return v2Fetch(`${base(ws)}/templates/${id}/example`);
+}
+
+export function getTemplateExampleSpec(ws: string, id: string): Promise<TemplateExampleSpecOut> {
+  return v2Fetch(`${base(ws)}/templates/${id}/example-spec`);
+}
+
+export function patchTemplate(ws: string, id: string, body: TemplatePatchIn): Promise<TemplateBundle> {
+  return v2Fetch(`${base(ws)}/templates/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
 }
 
 export function createVideoProgram(
