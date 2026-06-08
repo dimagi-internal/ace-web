@@ -289,3 +289,56 @@ voice: { provider: elevenlabs, voice_id: a, model: eleven_turbo_v2 }
     expect(() => applyManifestRefs(spec)).toThrowError(/has no entry in spec\.manifest/);
   });
 });
+
+describe("applyManifestRefs — prospect logo resolution", () => {
+  const withProspect = (prospectYaml: string) =>
+    loadProgramSpec(
+      `
+slug: demo
+name: x
+country_focus: x
+status: x
+tagline: x
+program_url: https://x
+${prospectYaml}
+manifest: { prospect_logo: "file:assets/logos/acme.png" }
+scene: { clips: ["a.mp4"], lower_third: x }
+product: { beats: [{ asset: plain.png, caption: b }] }
+narration: { generator: manual, prompt_version: v1, script: x }
+voice: { provider: elevenlabs, voice_id: a, model: eleven_turbo_v2 }
+`,
+      { fromString: true },
+    );
+
+  it("resolves prospect.logo_asset @alias to its manifest path", () => {
+    const spec = withProspect(`prospect: { name: "Acme", logo_asset: "@prospect_logo" }`);
+    const applied = applyManifestRefs(spec);
+    expect(applied.prospect?.logo_asset).toBe("assets/logos/acme.png");
+  });
+
+  it("leaves prospect.logo_asset undefined for a name-only prospect (greenfield, no logo)", () => {
+    const spec = withProspect(`prospect: { name: "Acme" }`);
+    const applied = applyManifestRefs(spec);
+    expect(applied.prospect?.name).toBe("Acme");
+    expect(applied.prospect?.logo_asset).toBeUndefined();
+  });
+
+  it("leaves prospect undefined when absent (generic explainer)", () => {
+    const spec = loadProgramSpec(
+      `
+slug: demo
+name: x
+country_focus: x
+status: x
+tagline: x
+program_url: https://x
+scene: { clips: ["a.mp4"], lower_third: x }
+product: { beats: [{ asset: plain.png, caption: b }] }
+narration: { generator: manual, prompt_version: v1, script: x }
+voice: { provider: elevenlabs, voice_id: a, model: eleven_turbo_v2 }
+`,
+      { fromString: true },
+    );
+    expect(applyManifestRefs(spec).prospect).toBeUndefined();
+  });
+});

@@ -26,9 +26,13 @@ interface Props {
     verify?: number;
     pay?: number;
   };
+  // Optional prospect name for a branded partnership cut. When present,
+  // the hook adds a "A partnership proposal for <name>" line so the open
+  // frames the whole video as made-for-them. Absent = generic explainer.
+  prospectName?: string;
 }
 
-const Hook: React.FC<{ tagline: string }> = ({ tagline }) => {
+const Hook: React.FC<{ tagline: string; prospectName?: string }> = ({ tagline, prospectName }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const enter = spring({ frame, fps, config: { damping: 14 } });
@@ -41,12 +45,18 @@ const Hook: React.FC<{ tagline: string }> = ({ tagline }) => {
         fontFamily: theme.fonts.display,
         color: theme.colors.foreground,
         padding: 96,
-        gap: 56,
+        gap: 40,
         textAlign: "center",
         opacity: enter,
       }}
     >
       <Logo height={96} variant="dark" />
+      {prospectName && (
+        <div style={{ fontSize: 38, fontWeight: 500, color: theme.colors.muted }}>
+          A partnership proposal for{" "}
+          <span style={{ color: theme.colors.accent, fontWeight: 700 }}>{prospectName}</span>
+        </div>
+      )}
       <div
         style={{
           fontSize: 80,
@@ -219,10 +229,11 @@ export const Intro: React.FC<Props> = ({
   beatFrames,
   cycleNarration,
   cycleStepStartSeconds,
+  prospectName,
 }) => (
   <>
     <Sequence durationInFrames={beatFrames.hook}>
-      <Hook tagline={brand.tagline} />
+      <Hook tagline={brand.tagline} prospectName={prospectName} />
     </Sequence>
     <Sequence from={beatFrames.hook} durationInFrames={beatFrames.cycle}>
       <Cycle
