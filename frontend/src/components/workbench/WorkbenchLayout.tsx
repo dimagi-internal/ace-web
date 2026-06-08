@@ -9,6 +9,10 @@ export interface WorkbenchRailConfig {
   expandedWidth?: number;
   collapsedWidth?: number;
   mode?: RailMode;
+  resizable?: boolean;
+  onResize?: (width: number) => void;
+  minWidth?: number;
+  maxWidth?: number;
 }
 
 export interface WorkbenchLayoutProps {
@@ -54,6 +58,10 @@ export function WorkbenchLayout({
             expandedWidth={left.expandedWidth}
             collapsedWidth={left.collapsedWidth}
             mode={left.mode}
+            resizable={left.resizable}
+            onResize={left.onResize}
+            minWidth={left.minWidth}
+            maxWidth={left.maxWidth}
           >
             {left.content}
           </WorkbenchRail>
@@ -68,6 +76,10 @@ export function WorkbenchLayout({
             expandedWidth={right.expandedWidth}
             collapsedWidth={right.collapsedWidth}
             mode={right.mode}
+            resizable={right.resizable}
+            onResize={right.onResize}
+            minWidth={right.minWidth}
+            maxWidth={right.maxWidth}
           >
             {right.content}
           </WorkbenchRail>

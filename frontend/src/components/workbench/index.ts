@@ -3,3 +3,4 @@ export type { WorkbenchLayoutProps, WorkbenchRailConfig } from "./WorkbenchLayou
 export { WorkbenchRail } from "./WorkbenchRail";
 export type { WorkbenchRailProps, RailSide, RailMode } from "./WorkbenchRail";
 export { usePaneCollapsed } from "./usePaneCollapsed";
+export { usePaneWidth } from "./usePaneWidth";

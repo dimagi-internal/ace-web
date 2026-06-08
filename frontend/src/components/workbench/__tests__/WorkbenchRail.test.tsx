@@ -57,3 +57,23 @@ describe("WorkbenchRail overlay mode", () => {
     expect(screen.getByRole("complementary")).toHaveAttribute("aria-hidden", "false");
   });
 });
+
+describe("WorkbenchRail resize", () => {
+  it("renders a drag handle when resizable + onResize (expanded push)", () => {
+    render(
+      <WorkbenchRail side="left" title="Nav" collapsed={false} onToggle={() => {}} resizable onResize={() => {}}>
+        <div>body</div>
+      </WorkbenchRail>,
+    );
+    expect(screen.getByRole("separator")).toBeInTheDocument();
+  });
+
+  it("omits the handle when not resizable", () => {
+    render(
+      <WorkbenchRail side="left" title="Nav" collapsed={false} onToggle={() => {}}>
+        <div>body</div>
+      </WorkbenchRail>,
+    );
+    expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+  });
+});

@@ -3,7 +3,6 @@ import { BeatEditorTopBar } from "./BeatEditorTopBar";
 import { FinalVideoPlayer } from "./FinalVideoPlayer";
 import { BeatList } from "./BeatList";
 import { EditDrawer } from "./drawer/EditDrawer";
-import { WorkbenchLayout, usePaneCollapsed } from "../workbench";
 import type { ProgramSpec } from "./types";
 
 interface Props {
@@ -21,7 +20,6 @@ interface Props {
 export function BeatEditor({
   workspaceSlug, programSlug, runId, spec, onSpecRefetched, onRerender,
 }: Props) {
-  const beats = usePaneCollapsed("ace.video.beatsCollapsed");
   return (
     <BeatEditorProvider
       workspaceSlug={workspaceSlug}
@@ -29,31 +27,15 @@ export function BeatEditor({
       runId={runId}
       spec={spec}
     >
-      {/* Same three-pane workbench shell the opp run-view uses: the beat
-          outline is the left navigator, the rendered video is the center
-          canvas, and EditDrawer overlays on the right when a beat widget is
-          opened. */}
-      <WorkbenchLayout
-        header={
-          <BeatEditorTopBar onSpecRefetched={onSpecRefetched} onRerender={onRerender} />
-        }
-        left={{
-          title: "Beats",
-          collapsed: beats.collapsed,
-          onToggle: beats.toggle,
-          expandedWidth: 480,
-          content: (
-            <div className="p-3">
-              <BeatList />
-            </div>
-          ),
-        }}
-        center={
-          <div className="p-4">
-            <FinalVideoPlayer />
-          </div>
-        }
-      />
+      {/* The bulky editor lives in the workbench center pane: the save/
+          re-render TopBar, the rendered video, the beat list, and the
+          on-demand EditDrawer overlay. Program/run navigation is the
+          page's left rail (VideoNavRail), not here. */}
+      <div className="flex flex-col gap-4 p-4">
+        <BeatEditorTopBar onSpecRefetched={onSpecRefetched} onRerender={onRerender} />
+        <FinalVideoPlayer />
+        <BeatList />
+      </div>
       <EditDrawer />
     </BeatEditorProvider>
   );

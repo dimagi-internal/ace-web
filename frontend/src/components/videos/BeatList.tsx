@@ -60,18 +60,20 @@ export function BeatList() {
         const endSec = cursor + b.seconds;
         cursor += b.seconds;
         return (
-          <BeatCard
-            key={b.id}
-            beatId={b.id}
-            kind={b.kind}
-            startSec={startSec}
-            endSec={endSec}
-            collapsed={collapsedIds.has(b.id)}
-            onToggleCollapsed={() => toggleOne(b.id)}
-          >
-            <NarrationWidget beatId={b.id} />
-            {renderKindBody(b.id, b.kind, effectiveSpec)}
-          </BeatCard>
+          // Anchor so the left-nav beat sub-items can scroll to a beat.
+          <div key={b.id} id={`beat-${b.id}`} className="scroll-mt-2">
+            <BeatCard
+              beatId={b.id}
+              kind={b.kind}
+              startSec={startSec}
+              endSec={endSec}
+              collapsed={collapsedIds.has(b.id)}
+              onToggleCollapsed={() => toggleOne(b.id)}
+            >
+              <NarrationWidget beatId={b.id} />
+              {renderKindBody(b.id, b.kind, effectiveSpec)}
+            </BeatCard>
+          </div>
         );
       })}
     </div>
