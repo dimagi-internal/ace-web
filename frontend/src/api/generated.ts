@@ -369,6 +369,63 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/sessions/interrupted": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Runs interrupted mid-flight (resume candidates) */
+        readonly get: operations["apps_sessions_api_interrupted_runs"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/sessions/resume-interrupted": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Resume all interrupted ACE opp runs (post-deploy self-heal)
+         * @description Bulk-resume every interrupted ACE opp run in the workspace. Intended for
+         *     the post-deploy hook: after a rollout drains the tasks driving live runs,
+         *     this relaunches them from run_state.yaml. Single serial call → no
+         *     double-spawn race.
+         */
+        readonly post: operations["apps_sessions_api_resume_interrupted"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/resume": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Resume one interrupted run */
+        readonly post: operations["apps_sessions_api_resume_run"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/sessions/{slug}": {
         readonly parameters: {
             readonly query?: never;
@@ -568,6 +625,24 @@ export interface paths {
         };
         /** Get the full template bundle (meta + skeleton + skill prompt) */
         readonly get: operations["apps_videos_api_get_video_template"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /** Update one or more fields of a template (meta, skeleton, prompt, example) */
+        readonly patch: operations["apps_videos_api_patch_video_template"];
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/templates/{template_id}/example": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get the example spec.yaml for a template */
+        readonly get: operations["apps_videos_api_get_template_example"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -2350,6 +2425,11 @@ export interface components {
              * @default 3,4,6
              */
             readonly only: string;
+            /**
+             * Skip Evals
+             * @default true
+             */
+            readonly skip_evals: boolean;
         };
         /**
          * OppHealthOut
@@ -2585,6 +2665,36 @@ export interface components {
             readonly skeleton_yaml: string;
             /** Prompt Md */
             readonly prompt_md: string;
+        };
+        /** TemplateMetaPatch */
+        readonly TemplateMetaPatch: {
+            /** Name */
+            readonly name?: string | null;
+            /** Description */
+            readonly description?: string | null;
+            /** Expected Duration Seconds */
+            readonly expected_duration_seconds?: number | null;
+            /** Intended Audience */
+            readonly intended_audience?: string | null;
+            /** When To Use */
+            readonly when_to_use?: string | null;
+        };
+        /** TemplatePatchIn */
+        readonly TemplatePatchIn: {
+            readonly meta?: components["schemas"]["TemplateMetaPatch"] | null;
+            /** Skeleton Yaml */
+            readonly skeleton_yaml?: string | null;
+            /** Prompt Md */
+            readonly prompt_md?: string | null;
+            /** Example Yaml */
+            readonly example_yaml?: string | null;
+        };
+        /** TemplateExampleOut */
+        readonly TemplateExampleOut: {
+            /** Template Id */
+            readonly template_id: string;
+            /** Example Yaml */
+            readonly example_yaml: string;
         };
         /** MediaLibraryVideoItemOut */
         readonly MediaLibraryVideoItemOut: {
@@ -4922,6 +5032,67 @@ export interface operations {
             };
         };
     };
+    readonly apps_sessions_api_interrupted_runs: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_resume_interrupted: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_resume_run: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     readonly apps_sessions_api_get_session: {
         readonly parameters: {
             readonly query?: never;
@@ -5253,6 +5424,56 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["TemplateBundleOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_patch_video_template: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly template_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["TemplatePatchIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["TemplateBundleOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_get_template_example: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly template_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["TemplateExampleOut"];
                 };
             };
         };
