@@ -158,6 +158,17 @@ describe("partnership-valid fixture", () => {
     expect(spec.prospect?.name).toBeTruthy();
     expect(spec.product.beats.some((b) => b.is_demo_clip)).toBe(true);
   });
+
+  it("carries the AI cut: active_cut + shared ai_build block + per-angle ai_build narration", () => {
+    const spec = loadProgramSpec(fixture("partnership-valid.yaml"));
+    expect(spec.active_cut).toBe("ai");
+    expect(spec.ai_build?.components).toHaveLength(4);
+    // Every angle carries its own ai_build narration line (the card is
+    // shared, the framing differs per angle).
+    for (const v of spec.narration.variants!) {
+      expect((v.by_beat.ai_build ?? "").length).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("prospect + is_demo_clip", () => {

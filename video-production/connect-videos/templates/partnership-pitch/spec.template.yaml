@@ -8,11 +8,21 @@
 #   {{scene_lower_third}} {{problem_big}} {{problem_caption}} {{problem_source}}
 #   {{impact_1_big}} {{impact_1_caption}} {{impact_2_big}} {{impact_2_caption}}
 #   {{active_angle}}  — the picked narrative angle id
+#   {{active_cut}}    — "ai" (include the ai_build beat) or "standard" (drop it)
+#   ai_build card (shared across angles): {{ai_build_headline}}
+#     {{ai_build_component_1..4}} {{ai_build_subhead}}
 #   Per-angle, per-beat narration (one set per angle, each within budget):
-#     {{narration_<angle>_hook}} ... _cycle _handoff _scene _problem _product _impact
+#     {{narration_<angle>_hook}} ... _cycle _handoff _ai_build _scene _problem
+#     _product _impact
 #
 # manifest / scene.clips / product.beats are populated by the skill from
 # sourced micro-demo clips + research stat cards, not by placeholder.
+#
+# The ai_build beat (the "AI builds your program" card) renders only when
+# active_cut is "ai" — the AI-centric cut that doubles as proof the whole
+# package was AI-generated. Set active_cut to "standard" to drop it. The
+# card content is shared across all three angles; only the ai_build
+# narration line differs per angle.
 
 provenance:
   generator: partnership-video
@@ -28,11 +38,28 @@ status: "{{status}}"
 tagline: "{{tagline}}"
 program_url: "{{prospect_url}}"
 
+# Which cut to render. "ai" includes the ai_build beat below; "standard"
+# drops it. The AI cut is the default pitch — it doubles as proof the
+# package was AI-generated.
+active_cut: "{{active_cut}}"
+
 prospect:
   name: "{{prospect_name}}"
   logo_asset: "{{prospect_logo_ref}}"
   region: "{{prospect_region}}"
   sector: "{{prospect_sector}}"
+
+# The "AI builds your program" card (AI cut only). Shared across angles —
+# the prospect's program decomposed into its Connect components. The
+# per-angle framing lives in each variant's ai_build narration line.
+ai_build:
+  headline: "{{ai_build_headline}}"
+  components:
+    - "{{ai_build_component_1}}"
+    - "{{ai_build_component_2}}"
+    - "{{ai_build_component_3}}"
+    - "{{ai_build_component_4}}"
+  subhead: "{{ai_build_subhead}}"
 
 manifest: {}
 
@@ -66,6 +93,7 @@ narration:
       hook: "{{narration_day_in_the_life_hook}}"
       cycle: "{{narration_day_in_the_life_cycle}}"
       handoff: "{{narration_day_in_the_life_handoff}}"
+      ai_build: "{{narration_day_in_the_life_ai_build}}"
       scene: "{{narration_day_in_the_life_scene}}"
       problem: "{{narration_day_in_the_life_problem}}"
       product: "{{narration_day_in_the_life_product}}"
@@ -76,6 +104,7 @@ narration:
       hook: "{{narration_the_scale_gap_hook}}"
       cycle: "{{narration_the_scale_gap_cycle}}"
       handoff: "{{narration_the_scale_gap_handoff}}"
+      ai_build: "{{narration_the_scale_gap_ai_build}}"
       scene: "{{narration_the_scale_gap_scene}}"
       problem: "{{narration_the_scale_gap_problem}}"
       product: "{{narration_the_scale_gap_product}}"
@@ -86,6 +115,7 @@ narration:
       hook: "{{narration_trust_travels_hook}}"
       cycle: "{{narration_trust_travels_cycle}}"
       handoff: "{{narration_trust_travels_handoff}}"
+      ai_build: "{{narration_trust_travels_ai_build}}"
       scene: "{{narration_trust_travels_scene}}"
       problem: "{{narration_trust_travels_problem}}"
       product: "{{narration_trust_travels_product}}"
