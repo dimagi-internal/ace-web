@@ -1,0 +1,142 @@
+{
+  "$defs": {
+    "Evidence": {
+      "properties": {
+        "kind": {
+          "enum": [
+            "documented",
+            "implemented",
+            "assumed"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Gap": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "RESEARCH",
+            "CAPABILITY",
+            "DECISION"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "claim_ref": {
+          "title": "Claim Ref",
+          "type": "string"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "proposed_action": {
+          "title": "Proposed Action",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "claim_ref",
+        "detail",
+        "proposed_action"
+      ],
+      "title": "Gap",
+      "type": "object"
+    },
+    "SpineItem": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "claim": {
+          "title": "Claim",
+          "type": "string"
+        },
+        "rationale": {
+          "title": "Rationale",
+          "type": "string"
+        },
+        "evidence": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "status": {
+          "default": "gap",
+          "enum": [
+            "grounded",
+            "gap"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "claim",
+        "rationale"
+      ],
+      "title": "SpineItem",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "narrative_slug": {
+      "title": "Narrative Slug",
+      "type": "string"
+    },
+    "problem": {
+      "title": "Problem",
+      "type": "string"
+    },
+    "spine": {
+      "items": {
+        "$ref": "#/$defs/SpineItem"
+      },
+      "title": "Spine",
+      "type": "array"
+    },
+    "gaps": {
+      "items": {
+        "$ref": "#/$defs/Gap"
+      },
+      "title": "Gaps",
+      "type": "array"
+    }
+  },
+  "required": [
+    "narrative_slug",
+    "problem",
+    "spine",
+    "gaps"
+  ],
+  "title": "WhyBrief",
+  "type": "object"
+}
