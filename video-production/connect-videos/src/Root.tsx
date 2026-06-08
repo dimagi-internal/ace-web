@@ -5,6 +5,7 @@ import { Intro } from "./compositions/Intro";
 import { ProgramBody } from "./compositions/ProgramBody";
 import { Outro } from "./compositions/Outro";
 import { CaptionBar } from "./components/CaptionBar";
+import { ProspectBranding } from "./components/ProspectBranding";
 import defaultsYaml from "../programs/_defaults.yaml";
 // Programs now live as ``programs/<slug>/runs/run-NNN/spec.yaml`` (mirrors
 // ace-web's opp/run model). Studio preview pins to run-001 of each program
@@ -161,6 +162,7 @@ const ProgramVideo: React.FC<VideoProps> = ({
           // proportional estimate parsed from the narration text.
           cycleNarration={spec.narration?.by_beat?.cycle}
           cycleStepStartSeconds={cycleStepStartSeconds}
+          prospectName={spec.prospect?.name}
         />
       </Sequence>
       <Sequence
@@ -176,6 +178,14 @@ const ProgramVideo: React.FC<VideoProps> = ({
       <Sequence from={outroBeat.startFrame} durationInFrames={outroBeat.durationFrames}>
         <Outro programUrl={spec.program_url} />
       </Sequence>
+      {spec.prospect && (
+        <Sequence durationInFrames={timeline.totalFrames}>
+          <ProspectBranding
+            name={spec.prospect.name}
+            logoSrc={spec.prospect.logo_asset}
+          />
+        </Sequence>
+      )}
       {captions.map((c, i) => (
         <Sequence key={i} from={c.startFrame} durationInFrames={c.endFrame - c.startFrame}>
           <CaptionBar text={c.text} />

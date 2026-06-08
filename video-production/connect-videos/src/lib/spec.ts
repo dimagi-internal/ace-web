@@ -276,6 +276,19 @@ export function applyManifestRefs(spec: ProgramSpec): ProgramSpec {
     })),
   };
 
+  // Resolve the prospect logo the same way as clip assets so the
+  // ProspectBranding overlay can render it. logo_asset is optional —
+  // a prospect with a name but no logo (e.g. a greenfield pitch where
+  // we haven't sourced the logo) resolves to name-only branding.
+  const resolvedProspect = spec.prospect
+    ? {
+        ...spec.prospect,
+        logo_asset: spec.prospect.logo_asset
+          ? rewriteAssetPath(spec.prospect.logo_asset)
+          : undefined,
+      }
+    : undefined;
+
   return {
     ...spec,
     // Cast: at runtime scene.clips is now ResolvedClipRef[] but the
@@ -283,6 +296,7 @@ export function applyManifestRefs(spec: ProgramSpec): ProgramSpec {
     // applied-spec type below.
     scene: resolvedScene as unknown as ProgramSpec["scene"],
     product: resolvedProduct as unknown as ProgramSpec["product"],
+    prospect: resolvedProspect,
   };
 }
 

@@ -43,8 +43,10 @@ export const AiBuildCard: React.FC<Props> = ({ headline, components, subhead }) 
         justifyContent: "center",
         paddingLeft: theme.spacing.xl,
         paddingRight: theme.spacing.xl,
-        paddingTop: theme.spacing.lg,
-        gap: 40,
+        // Clear the top-left ProspectBranding badge (≈110px tall) on
+        // branded cuts so a multi-line headline never tucks under it.
+        paddingTop: 124,
+        gap: 36,
         background: theme.gradients.primary,
         fontFamily: theme.fonts.sans,
         color: "#FFFFFF",
@@ -54,7 +56,7 @@ export const AiBuildCard: React.FC<Props> = ({ headline, components, subhead }) 
       <div
         style={{
           transform: `translateY(${headlineY}px)`,
-          fontSize: 58,
+          fontSize: 52,
           fontWeight: 800,
           lineHeight: 1.12,
           maxWidth: 1640,
