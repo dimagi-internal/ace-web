@@ -38,6 +38,7 @@ VIDEOS_FOLDER = "videos"
 RUNS_FOLDER = "runs"
 SPEC_FILENAME = "spec.yaml"
 YAML_MIME = "application/x-yaml"
+TEMPLATES_FOLDER = "_templates"
 
 # Legacy layout — kept readable through Phase B; removed in Phase C.
 EXISTING_CONTENT = "existing_content"
@@ -218,6 +219,98 @@ def write_spec(
         client.update_file(existing.id, content, YAML_MIME)
         return existing.id
     return client.upload_file(rid, SPEC_FILENAME, content, YAML_MIME)
+
+
+# ---------------------------------------------------------------------------
+# Templates (_templates/<id>/) — Drive-backed per-workspace templates
+# ---------------------------------------------------------------------------
+
+
+def templates_folder_id(
+    layout: DriveLayout, client: DriveClient, *, create: bool = False
+) -> str | None:
+    """Return the Drive folder id for `videos/_templates/`, or None if missing.
+
+    Pass create=True to create the folder on first use.
+    """
+    existing = _find_child(client, layout.videos_folder_id, TEMPLATES_FOLDER)
+    if existing is not None and existing.mime_type == "application/vnd.google-apps.folder":
+        return existing.id
+    if not create:
+        return None
+    return client.create_folder(layout.videos_folder_id, TEMPLATES_FOLDER)
+
+
+def _template_folder_id(
+    layout: DriveLayout, client: DriveClient, template_id: str, *, create: bool = False
+) -> str | None:
+    """Return the Drive folder id for `videos/_templates/<template_id>/`.
+
+    Pass create=True to materialise the _templates parent and the per-template
+    sub-folder if either is missing.
+    """
+    tmpl_root = templates_folder_id(layout, client, create=create)
+    if tmpl_root is None:
+        return None
+    existing = _find_child(client, tmpl_root, template_id)
+    if existing is not None and existing.mime_type == "application/vnd.google-apps.folder":
+        return existing.id
+    if not create:
+        return None
+    return client.create_folder(tmpl_root, template_id)
+
+
+def list_template_ids(layout: DriveLayout, client: DriveClient) -> list[str]:
+    """Sorted list of template folder names under `videos/_templates/`.
+
+    Returns an empty list when _templates/ does not exist yet.
+    """
+    tmpl_root = templates_folder_id(layout, client)
+    if tmpl_root is None:
+        return []
+    out: list[str] = []
+    for f in client.list_folder(tmpl_root):
+        if f.mime_type == "application/vnd.google-apps.folder":
+            out.append(f.name)
+    out.sort()
+    return out
+
+
+def read_template_file(
+    layout: DriveLayout, client: DriveClient, template_id: str, name: str
+) -> str | None:
+    """Return the text content of `videos/_templates/<template_id>/<name>`.
+
+    Returns None if the template folder or the file does not exist.
+    """
+    folder = _template_folder_id(layout, client, template_id)
+    if folder is None:
+        return None
+    meta = _find_child(client, folder, name)
+    if meta is None:
+        return None
+    return client.get_content(meta.id, "text/plain").content
+
+
+def write_template_file(
+    layout: DriveLayout, client: DriveClient, template_id: str, name: str, content: str,
+) -> str:
+    """Create-or-replace `videos/_templates/<template_id>/<name>`.
+
+    Materialises the _templates/ and per-template sub-folders if needed.
+    Returns the Drive file id.
+
+    Markdown files (.md) use ``text/markdown`` mime; everything else uses
+    the YAML mime constant.
+    """
+    folder = _template_folder_id(layout, client, template_id, create=True)
+    assert folder is not None
+    mime = "text/markdown" if name.endswith(".md") else YAML_MIME
+    existing = _find_child(client, folder, name)
+    if existing is not None:
+        client.update_file(existing.id, content, mime)
+        return existing.id
+    return client.upload_file(folder, name, content, mime)
 
 
 # ---------------------------------------------------------------------------

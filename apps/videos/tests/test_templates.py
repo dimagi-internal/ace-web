@@ -4,12 +4,20 @@ Focus: the load_template path strips the skeleton's author-time doc
 comment block before returning, so substituting placeholders into the
 output doesn't leave garbled comments referencing the placeholders
 themselves.
+
+Also covers the Drive-backed template helpers added in T1
+(templates_folder_id, list_template_ids, read_template_file,
+write_template_file) using the same FakeDriveClient the service tests use.
 """
 from __future__ import annotations
 
 import textwrap
+from types import SimpleNamespace
 
-from apps.videos import templates
+import pytest
+
+from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
+from apps.videos import drive, templates
 
 
 def test_strip_leading_doc_comments_drops_header_until_first_blank():
@@ -113,3 +121,81 @@ def test_load_template_includes_provenance_placeholders():
     # And the agent prompt must document them.
     assert "template_id" in bundle.prompt_md
     assert "generated_at" in bundle.prompt_md
+
+
+# ---------------------------------------------------------------------------
+# Drive-backed template helpers (T1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_drive_ws(monkeypatch):
+    """FakeDriveClient + workspace stub wired to apps.videos.drive."""
+    client = FakeDriveClient.from_tree({"workspace-root": {}})
+    workspace_root_id = client.folder_id("workspace-root")
+    monkeypatch.setattr(drive, "client_for_workspace", lambda ws: client)
+    workspace = SimpleNamespace(
+        slug="test-ws", drive_root_folder_id=workspace_root_id,
+    )
+    return SimpleNamespace(client=client, workspace=workspace)
+
+
+def test_templates_folder_and_files_roundtrip(fake_drive_ws):
+    """Full round-trip: create _templates folder, write a file into a
+    template sub-folder, read it back, and confirm list_template_ids."""
+    from apps.videos import service
+
+    layout, client = service.layout_for(fake_drive_ws.workspace)
+
+    # Before create=True the folder is absent.
+    assert drive.templates_folder_id(layout, client) is None
+
+    # After create=True it exists.
+    tid = drive.templates_folder_id(layout, client, create=True)
+    assert tid is not None
+
+    # write_template_file materialises the per-template sub-folder and
+    # stores the file; it returns a non-None file id.
+    fid = drive.write_template_file(layout, client, "demo", "meta.yaml", "name: Demo\n")
+    assert fid is not None
+
+    # read_template_file returns the same content.
+    assert drive.read_template_file(layout, client, "demo", "meta.yaml") == "name: Demo\n"
+
+    # list_template_ids sees the new template.
+    assert "demo" in drive.list_template_ids(layout, client)
+
+    # Markdown files use text/markdown mime — write a .md file and verify
+    # the round-trip still works (mime is stored in the node).
+    fid_md = drive.write_template_file(layout, client, "demo", "prompt.md", "# Prompt\n")
+    assert fid_md is not None
+    assert drive.read_template_file(layout, client, "demo", "prompt.md") == "# Prompt\n"
+
+    # create-or-replace: writing again returns the SAME file id.
+    fid2 = drive.write_template_file(layout, client, "demo", "meta.yaml", "name: Updated\n")
+    assert fid2 == fid
+    assert drive.read_template_file(layout, client, "demo", "meta.yaml") == "name: Updated\n"
+
+
+def test_list_template_ids_empty_when_no_templates_folder(fake_drive_ws):
+    """list_template_ids returns [] when _templates/ doesn't exist yet."""
+    from apps.videos import service
+
+    layout, client = service.layout_for(fake_drive_ws.workspace)
+    assert drive.list_template_ids(layout, client) == []
+
+
+def test_read_template_file_returns_none_when_missing(fake_drive_ws):
+    """read_template_file returns None for an absent file."""
+    from apps.videos import service
+
+    layout, client = service.layout_for(fake_drive_ws.workspace)
+    assert drive.read_template_file(layout, client, "ghost", "meta.yaml") is None
+
+
+def test_template_folder_id_create_false_returns_none(fake_drive_ws):
+    """_template_folder_id with create=False returns None when folder absent."""
+    from apps.videos import service
+
+    layout, client = service.layout_for(fake_drive_ws.workspace)
+    assert drive._template_folder_id(layout, client, "absent") is None
