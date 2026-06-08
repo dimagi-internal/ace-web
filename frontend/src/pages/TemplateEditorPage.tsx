@@ -4,13 +4,16 @@ import { AlertTriangle, ChevronLeft } from "lucide-react";
 
 import {
   getTemplateExample,
+  getTemplateExampleSpec,
   getVideoTemplate,
   listVideoTemplates,
   patchTemplate,
   type TemplateMeta,
 } from "@/api/videos";
+import type { ProgramSpec } from "@/components/videos/types";
 import { WorkbenchLayout, usePaneCollapsed } from "@/components/workbench";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BeatEditor } from "@/components/videos/BeatEditor";
 import { TemplateMetaPanel } from "@/components/videos/template/TemplateMetaPanel";
 import { TemplatePromptPanel } from "@/components/videos/template/TemplatePromptPanel";
 import { TemplateSkeletonPanel } from "@/components/videos/template/TemplateSkeletonPanel";
@@ -72,6 +75,11 @@ export default function TemplateEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveStatus>({ status: "idle" });
 
+  // Parsed example spec for the BeatEditor. Loaded alongside the bundle.
+  const [exampleSpec, setExampleSpec] = useState<ProgramSpec | null>(null);
+  // Toggle: show the BeatEditor (primary) vs raw YAML textarea (advanced).
+  const [showRawYaml, setShowRawYaml] = useState(false);
+
   // Left-rail template list
   const [templates, setTemplates] = useState<TemplateMeta[] | null>(null);
   const { collapsed: railCollapsed, toggle: toggleRailCollapsed } =
@@ -94,7 +102,7 @@ export default function TemplateEditorPage() {
     };
   }, [workspaceSlug]);
 
-  // Load the template bundle + example in one effect.
+  // Load the template bundle + example (YAML + parsed spec) in one effect.
   useEffect(() => {
     if (!workspaceSlug || !templateId) return;
     let cancelled = false;
@@ -104,8 +112,11 @@ export default function TemplateEditorPage() {
     Promise.all([
       getVideoTemplate(workspaceSlug, templateId),
       getTemplateExample(workspaceSlug, templateId),
+      // Parsed spec for the BeatEditor — a separate endpoint.
+      // Falls back gracefully if it 404s (e.g. no example.spec.yaml yet).
+      getTemplateExampleSpec(workspaceSlug, templateId).catch(() => null),
     ])
-      .then(([bundle, exampleOut]) => {
+      .then(([bundle, exampleOut, exampleSpecOut]) => {
         if (cancelled) return;
         dispatch({
           type: "init",
@@ -116,6 +127,7 @@ export default function TemplateEditorPage() {
             exampleYaml: exampleOut.example_yaml,
           },
         });
+        setExampleSpec(exampleSpecOut?.spec ?? null);
         setLoading(false);
       })
       .catch((e: unknown) => {
@@ -152,6 +164,14 @@ export default function TemplateEditorPage() {
     } catch (e: unknown) {
       setSaveState({ status: "error", message: e instanceof Error ? e.message : String(e) });
     }
+  }
+
+  // Called by the BeatEditor's onSave when the user saves changes to the example spec.
+  async function handleExampleSpecSave(effectiveSpec: ProgramSpec): Promise<void> {
+    if (!workspaceSlug || !templateId) return;
+    await patchTemplate(workspaceSlug, templateId, { example_spec: effectiveSpec });
+    // Optimistically update the local spec so BeatEditor reflects the saved state.
+    setExampleSpec(effectiveSpec);
   }
 
   // ── rail content ──────────────────────────────────────────────────────────
@@ -285,10 +305,32 @@ export default function TemplateEditorPage() {
 
           {/* ── Demo / example ───────────────────────────────────────────── */}
           <section>
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Demo / example
-            </h2>
-            <TemplateExamplePanel exampleYaml={state.exampleYaml} dispatch={dispatch} />
+            <div className="mb-4 flex items-center gap-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Demo / example
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowRawYaml((v) => !v)}
+                className="ml-auto rounded border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+              >
+                {showRawYaml ? "Visual editor" : "Raw YAML"}
+              </button>
+            </div>
+            {showRawYaml ? (
+              <TemplateExamplePanel exampleYaml={state.exampleYaml} dispatch={dispatch} />
+            ) : exampleSpec != null ? (
+              <BeatEditor
+                workspaceSlug={workspaceSlug ?? ""}
+                programSlug={templateId ?? ""}
+                runId="example"
+                spec={exampleSpec}
+                onSave={handleExampleSpecSave}
+              />
+            ) : (
+              /* No parsed spec available yet — fall back to the YAML textarea. */
+              <TemplateExamplePanel exampleYaml={state.exampleYaml} dispatch={dispatch} />
+            )}
           </section>
         </div>
       ) : null}
