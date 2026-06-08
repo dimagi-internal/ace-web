@@ -8,6 +8,8 @@ import { ChatRedirectPage } from "./pages/ChatRedirectPage";
 import InviteAcceptPage from "./pages/InviteAcceptPage";
 import MediaLibraryPage from "./pages/MediaLibraryPage";
 import { NoWorkspaceRedirect } from "./pages/NoWorkspaceRedirect";
+import TemplateEditorPage from "./pages/TemplateEditorPage";
+import TemplatesPage from "./pages/TemplatesPage";
 import OppComparePage from "./pages/OppComparePage";
 import OppListPage from "./pages/OppListPage";
 import OppSummaryPage from "./pages/OppSummaryPage";
@@ -60,6 +62,8 @@ export const router = createBrowserRouter(
             { path: "sessions", element: <SessionsPage /> },
             { path: "videos", element: <VideosListPage /> },
             { path: "videos/library", element: <MediaLibraryPage /> },
+            { path: "videos/templates", element: <TemplatesPage /> },
+            { path: "videos/templates/:templateId", element: <TemplateEditorPage /> },
             { path: "videos/:programSlug", element: <VideoExplorerPage /> },
             {
               path: "videos/:programSlug/runs/:runId",
