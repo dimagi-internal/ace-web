@@ -5,11 +5,22 @@ status: Active in 3 states
 tagline: Pay for verified service delivery, not planned activity.
 program_url: https://noorahealth.org/programs/nigeria
 
+active_cut: ai
+
 prospect:
   name: Noora Health
   logo_asset: "@prospect_logo"
   region: West Africa
   sector: MNCH
+
+ai_build:
+  headline: "AI turns Noora's protocol into a Connect program — in days, not months"
+  components:
+    - "Learn app"
+    - "Deliver app"
+    - "Verification rules"
+    - "Payment logic"
+  subhead: "The Care Companion Program, mapped onto Connect's rails."
 
 manifest:
   prospect_logo: file:assets/logos/noora-health.png
@@ -56,6 +67,7 @@ narration:
         hook: "Pay for verified care, not for showing up."
         cycle: "FLWs learn, deliver, get verified, and earn. Every step on one platform."
         handoff: "This is how Noora's postnatal workers operate today."
+        ai_build: "Her whole workflow was built by AI from Noora's existing protocol — ready in days."
         scene: "Amaka visits a newborn in Kano, recording weight and feeding observations."
         problem: "Two million Nigerian newborns go home without a structured follow-up visit. Most die before day seven."
         product: "She opens the Connect app, logs the visit, and the system checks her inputs against protocol before confirming."
@@ -66,6 +78,7 @@ narration:
         hook: "Pay for verified service delivery, not planned activity."
         cycle: "Learn the protocol. Deliver the visit. Verify the evidence. Pay the worker."
         handoff: "Noora Health trains 800 FLWs today. Connect verifies every one."
+        ai_build: "AI assembles the Learn and Deliver apps from Noora's protocol — a new country, stood up in days."
         scene: "A frontline worker completes a postnatal check in rural Kano state, Nigeria."
         problem: "Nigeria has 2.4 million unverified postnatal gaps each year. No system catches the missed visits."
         product: "Connect logs each visit in real time, runs protocol checks, and routes supervisor review before payment releases."
@@ -76,6 +89,7 @@ narration:
         hook: "Connect turns community trust into auditable proof."
         cycle: "FLWs train, deliver, pass verification, and get paid — every visit on record."
         handoff: "Noora Health earns trust in Nigeria. Connect proves it to funders."
+        ai_build: "AI builds the program from Noora's protocol; funders see verified delivery from day one."
         scene: "A Noora FLW completes a home visit — the same protocol, now recorded and verified."
         problem: "Donors fund programs, not visits. Without verified records, 2.4 million postnatal gaps go uncounted."
         product: "The Connect app records each visit, checks protocol adherence, and gives supervisors a live dashboard before any payment."

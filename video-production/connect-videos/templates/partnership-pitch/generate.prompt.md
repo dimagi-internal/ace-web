@@ -113,6 +113,35 @@ If the research is thin or the choice is ambiguous, prefer
 `the-scale-gap` as the default — the coverage-gap framing is the
 most universally legible for a prospect audience.
 
+## Setting `active_cut` and the `ai_build` card
+
+`active_cut` selects whether the **ai_build** beat renders — a card that
+says Connect's AI design tooling turns the prospect's existing protocol
+into its Connect components. It doubles as proof the whole package was
+AI-generated (a stated goal of the pitch).
+
+- Default `active_cut` to `"ai"` — include the beat.
+- Set `"standard"` only when the prospect is known to be AI-skeptical or
+  the operator asks for a non-AI cut. The beat then drops; nothing else
+  changes.
+
+Fill the **shared** `ai_build` card (same across all three angles — it
+describes the program's structure, which doesn't change with the angle):
+
+- `ai_build_headline` (~12w): e.g. "AI turns <Prospect>'s protocol into a
+  Connect program — in days, not months." Use the prospect's name.
+- `ai_build_component_1..4`: the Connect components the program maps onto.
+  Default: "Learn app", "Deliver app", "Verification rules", "Payment
+  logic". Keep each ≤ ~3 words.
+- `ai_build_subhead` (~8w): one line, e.g. "<Their program>, mapped onto
+  Connect's rails."
+
+Then write a **per-angle** `ai_build` narration line (the card is shared;
+the framing differs by angle) — see the word-budget table. Ground it: the
+AI builds from *their existing protocol*; do not claim AI invented their
+program. For a greenfield-geography pitch, lean on "stood up in days" /
+"a new country, fast" rather than implying an existing deployment.
+
 ## Picking clips from the media library
 
 When `available_video_clips` is injected, scan for items whose tags
@@ -160,6 +189,7 @@ Count words before returning.
 | hook    | 10     |  8  | 12  | Paraphrase Connect's tagline. |
 | cycle   | 20     | 18  | 22  | Walk Learn → Deliver → Verify → Pay. |
 | handoff | 8      |  6  | 10  | Bridge to this specific prospect program. |
+| ai_build| 16     | 14  | 18  | AI builds it from their protocol; fast. (AI cut only.) |
 | scene   | 20     | 18  | 22  | Describe what field footage shows. |
 | problem | 25     | 23  | 27  | Frame the headline stat in human terms. |
 | product | 30     | 28  | 32  | Walk the app / demo clip. |
