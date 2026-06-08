@@ -1,20 +1,28 @@
 """Video-spec templates: discovery + skeleton loading.
 
-A template is a directory under
-``video-production/connect-videos/templates/<template-id>/`` containing:
+Templates are stored in Drive under each workspace's
+``videos/_templates/<template-id>/`` folder, with these files:
 
-  template.yaml        — metadata (id, name, description, duration)
-  spec.template.yaml   — YAML skeleton with {{placeholders}}
-  generate.prompt.md   — LLM instructions for filling the placeholders
+  meta.yaml       — metadata (id, name, description, duration, …)
+  skeleton.yaml   — YAML skeleton with {{placeholders}}
+  prompt.md       — LLM instructions for filling the placeholders
+  example.spec.yaml (optional)
 
-The structured-editor follow-up plan may grow this to support
-multi-stage generation flows. For now the shape is intentionally flat.
+The repo tree under ``video-production/connect-videos/templates/<id>/``
+is the seed source (T2: ``seed_templates``). The Drive copy is the
+runtime source of truth (T3: ``list_templates`` / ``load_template``).
+
+Lazy auto-seed: if a workspace has no templates in Drive yet,
+``list_templates`` calls ``seed_templates`` automatically and then
+re-lists from Drive.
 """
 from __future__ import annotations
 
+import dataclasses
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from django.conf import settings
 from ruamel.yaml import YAML
@@ -55,40 +63,71 @@ def is_valid_template_id(template_id: str) -> bool:
     return bool(_TEMPLATE_ID_RE.match(template_id))
 
 
-def list_templates() -> list[TemplateMeta]:
-    """All template metas discoverable under ACE_VIDEOS_ROOT/templates."""
-    root = _templates_dir()
-    if not root.exists():
-        return []
-    out: list[TemplateMeta] = []
-    for entry in sorted(root.iterdir()):
-        if not entry.is_dir() or not is_valid_template_id(entry.name):
+def list_templates(workspace) -> list[TemplateMeta]:
+    """All template metas for this workspace, read from Drive with caching.
+
+    Lazy auto-seed: if Drive has no templates yet, uploads the repo tree
+    via seed_templates and then re-lists. Returns sorted by id.
+    """
+    from apps.videos import cache as vcache, drive, service  # lazy — avoid circulars
+
+    ws_slug = workspace.slug
+    cached = vcache.get_tpl_list(ws_slug)
+    if cached is not None:
+        return [_meta_from_dict(d) for d in cached]
+
+    layout, client = service.layout_for(workspace)
+    ids = drive.list_template_ids(layout, client)
+
+    # Lazy auto-seed: seed from repo tree if Drive has nothing yet.
+    if not ids:
+        seed_templates(workspace)
+        ids = drive.list_template_ids(layout, client)
+
+    metas: list[TemplateMeta] = []
+    for tid in sorted(ids):
+        raw = drive.read_template_file(layout, client, tid, "meta.yaml")
+        if raw is None:
             continue
-        meta_path = entry / "template.yaml"
-        if not meta_path.exists():
-            continue
-        out.append(_load_meta(entry.name, meta_path))
-    return out
+        metas.append(_parse_meta(tid, raw))
+
+    vcache.set_tpl_list(ws_slug, [dataclasses.asdict(m) for m in metas])
+    return metas
 
 
-def load_template(template_id: str) -> TemplateBundle | None:
-    """Load skeleton + prompt for a specific template."""
+def load_template(workspace, template_id: str) -> TemplateBundle | None:
+    """Load skeleton + prompt for a specific template from Drive, with caching.
+
+    Returns None if the template is not found in Drive.
+    """
     if not is_valid_template_id(template_id):
         return None
-    root = _templates_dir() / template_id
-    if not root.is_dir():
+
+    from apps.videos import cache as vcache, drive, service  # lazy — avoid circulars
+
+    ws_slug = workspace.slug
+    cached = vcache.get_tpl_bundle(ws_slug, template_id)
+    if cached is not None:
+        return _bundle_from_dict(cached)
+
+    layout, client = service.layout_for(workspace)
+    meta_raw = drive.read_template_file(layout, client, template_id, "meta.yaml")
+    if meta_raw is None:
         return None
-    meta_path = root / "template.yaml"
-    spec_path = root / "spec.template.yaml"
-    prompt_path = root / "generate.prompt.md"
-    if not meta_path.exists() or not spec_path.exists() or not prompt_path.exists():
+    skeleton_raw = drive.read_template_file(layout, client, template_id, "skeleton.yaml")
+    if skeleton_raw is None:
         return None
-    raw_skeleton = spec_path.read_text(encoding="utf-8")
-    return TemplateBundle(
-        meta=_load_meta(template_id, meta_path),
-        skeleton_yaml=_strip_leading_doc_comments(raw_skeleton),
-        prompt_md=prompt_path.read_text(encoding="utf-8"),
+    prompt_raw = drive.read_template_file(layout, client, template_id, "prompt.md")
+    if prompt_raw is None:
+        return None
+
+    bundle = TemplateBundle(
+        meta=_parse_meta(template_id, meta_raw),
+        skeleton_yaml=_strip_leading_doc_comments(skeleton_raw),
+        prompt_md=prompt_raw,
     )
+    vcache.set_tpl_bundle(ws_slug, template_id, _bundle_to_dict(bundle))
+    return bundle
 
 
 def _strip_leading_doc_comments(skeleton: str) -> str:
@@ -159,7 +198,13 @@ def seed_templates(workspace) -> int:
 
 
 def _load_meta(template_id: str, meta_path: Path) -> TemplateMeta:
-    raw = _yaml().load(meta_path.read_text(encoding="utf-8")) or {}
+    """Load TemplateMeta from a filesystem Path (used by seed_templates)."""
+    return _parse_meta(template_id, meta_path.read_text(encoding="utf-8"))
+
+
+def _parse_meta(template_id: str, yaml_text: str) -> TemplateMeta:
+    """Parse TemplateMeta from raw YAML text (used by Drive-backed loaders)."""
+    raw: dict[str, Any] = _yaml().load(yaml_text) or {}
     return TemplateMeta(
         id=str(raw.get("id") or template_id),
         name=str(raw.get("name") or template_id),
@@ -167,4 +212,29 @@ def _load_meta(template_id: str, meta_path: Path) -> TemplateMeta:
         expected_duration_seconds=int(raw.get("expected_duration_seconds") or 60),
         intended_audience=str(raw.get("intended_audience") or "").strip(),
         when_to_use=str(raw.get("when_to_use") or "").strip(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cache serialisation helpers
+# ---------------------------------------------------------------------------
+
+
+def _meta_from_dict(d: dict) -> TemplateMeta:
+    return TemplateMeta(**d)
+
+
+def _bundle_to_dict(bundle: TemplateBundle) -> dict:
+    return {
+        "meta": dataclasses.asdict(bundle.meta),
+        "skeleton_yaml": bundle.skeleton_yaml,
+        "prompt_md": bundle.prompt_md,
+    }
+
+
+def _bundle_from_dict(d: dict) -> TemplateBundle:
+    return TemplateBundle(
+        meta=TemplateMeta(**d["meta"]),
+        skeleton_yaml=d["skeleton_yaml"],
+        prompt_md=d["prompt_md"],
     )

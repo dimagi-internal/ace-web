@@ -15,9 +15,18 @@ import textwrap
 from types import SimpleNamespace
 
 import pytest
+from django.core.cache import cache as django_cache
 
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
 from apps.videos import drive, templates
+
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Each test starts with a clean cache to prevent cross-test leakage."""
+    django_cache.clear()
+    yield
+    django_cache.clear()
 
 
 def test_strip_leading_doc_comments_drops_header_until_first_blank():
@@ -66,12 +75,13 @@ def test_strip_leading_doc_comments_handles_only_comments():
     assert templates._strip_leading_doc_comments(src) == ""
 
 
-def test_load_template_60s_campaign_overview_drops_doc_header(settings, tmp_path):
+def test_load_template_60s_campaign_overview_drops_doc_header(fake_drive_ws):
     """Integration: the real 60s-campaign-overview template fetched
     via load_template starts at provenance:, not at the `#`-block
     documenting placeholders."""
-    # Use the real templates dir from this repo.
-    bundle = templates.load_template("60s-campaign-overview")
+    # Seed from the real templates dir into the fake Drive workspace.
+    templates.list_templates(fake_drive_ws.workspace)  # triggers lazy auto-seed
+    bundle = templates.load_template(fake_drive_ws.workspace, "60s-campaign-overview")
     assert bundle is not None
     first_line = bundle.skeleton_yaml.splitlines()[0]
     assert first_line.startswith("provenance:")
@@ -86,19 +96,21 @@ def test_load_template_60s_campaign_overview_drops_doc_header(settings, tmp_path
             )
 
 
-def test_load_template_partnership_pitch_strips_doc_header():
-    bundle = templates.load_template("partnership-pitch")
+def test_load_template_partnership_pitch_strips_doc_header(fake_drive_ws):
+    templates.list_templates(fake_drive_ws.workspace)
+    bundle = templates.load_template(fake_drive_ws.workspace, "partnership-pitch")
     assert bundle is not None
     assert bundle.skeleton_yaml.splitlines()[0].startswith("provenance:")
     for angle in ("day-in-the-life", "the-scale-gap", "trust-travels"):
         assert angle in bundle.skeleton_yaml
 
 
-def test_load_template_connect_explainer_strips_doc_header():
+def test_load_template_connect_explainer_strips_doc_header(fake_drive_ws):
     """The connect-explainer template (explainer mode — no problem/impact
     stat beats) loads, and its skeleton starts at the first real field
     (provenance:), not at the leading `#` doc-comment block."""
-    bundle = templates.load_template("connect-explainer")
+    templates.list_templates(fake_drive_ws.workspace)
+    bundle = templates.load_template(fake_drive_ws.workspace, "connect-explainer")
     assert bundle is not None
     assert bundle.skeleton_yaml.splitlines()[0].startswith("provenance:")
     # No surviving doc comment carries a {{placeholder}} (the dangerous
@@ -111,10 +123,11 @@ def test_load_template_connect_explainer_strips_doc_header():
             )
 
 
-def test_load_template_includes_provenance_placeholders():
+def test_load_template_includes_provenance_placeholders(fake_drive_ws):
     """The skeleton must include the two new provenance placeholders
     (template_id, generated_at) that the skill is expected to fill."""
-    bundle = templates.load_template("60s-campaign-overview")
+    templates.list_templates(fake_drive_ws.workspace)
+    bundle = templates.load_template(fake_drive_ws.workspace, "60s-campaign-overview")
     assert bundle is not None
     assert "{{template_id}}" in bundle.skeleton_yaml
     assert "{{generated_at}}" in bundle.skeleton_yaml
@@ -227,3 +240,78 @@ def test_seed_templates_is_idempotent(fake_drive_ws):
     """seed_templates skips templates already present in Drive; second call returns 0."""
     templates.seed_templates(fake_drive_ws.workspace)
     assert templates.seed_templates(fake_drive_ws.workspace) == 0
+
+
+# ---------------------------------------------------------------------------
+# T3: Drive-backed read-through + cache + lazy auto-seed
+# ---------------------------------------------------------------------------
+
+
+def test_list_templates_lazy_autoseeds_from_drive(fake_drive_ws):
+    """list_templates auto-seeds from the repo tree when Drive has no templates."""
+    metas = templates.list_templates(fake_drive_ws.workspace)   # no explicit seed
+    ids = {m.id for m in metas}
+    assert {"connect-explainer", "connectify-program", "partnership-pitch"} <= ids
+
+
+def test_load_template_from_drive(fake_drive_ws):
+    """load_template reads from Drive after seeding."""
+    templates.list_templates(fake_drive_ws.workspace)  # seed
+    b = templates.load_template(fake_drive_ws.workspace, "connectify-program")
+    assert b is not None
+    assert "active_cut" in b.skeleton_yaml
+    assert b.prompt_md.strip()
+    assert b.meta.name
+
+
+def test_load_template_missing_returns_none(fake_drive_ws):
+    """load_template returns None for a template not present in Drive."""
+    templates.list_templates(fake_drive_ws.workspace)
+    assert templates.load_template(fake_drive_ws.workspace, "does-not-exist") is None
+
+
+def test_list_templates_cached_on_second_call(fake_drive_ws):
+    """Second call to list_templates returns from cache (no new Drive list call)."""
+    from unittest import mock
+    metas1 = templates.list_templates(fake_drive_ws.workspace)
+    assert len(metas1) >= 3
+    # Patch drive.list_template_ids — should not be called on second call.
+    with mock.patch.object(drive, "list_template_ids") as spy:
+        metas2 = templates.list_templates(fake_drive_ws.workspace)
+    assert len(metas2) == len(metas1)
+    assert spy.call_count == 0
+
+
+def test_load_template_cached_on_second_call(fake_drive_ws):
+    """Second call to load_template returns from cache."""
+    from unittest import mock
+    templates.list_templates(fake_drive_ws.workspace)
+    b1 = templates.load_template(fake_drive_ws.workspace, "connectify-program")
+    assert b1 is not None
+    with mock.patch.object(drive, "read_template_file") as spy:
+        b2 = templates.load_template(fake_drive_ws.workspace, "connectify-program")
+    assert b2 is not None
+    assert b2.meta.id == b1.meta.id
+    assert spy.call_count == 0
+
+
+def test_invalidate_tpl_list_clears_list_cache(fake_drive_ws):
+    """invalidate_tpl(slug) with no tid drops the list cache entry."""
+    from apps.videos import cache as vcache
+    templates.list_templates(fake_drive_ws.workspace)
+    assert vcache.get_tpl_list(fake_drive_ws.workspace.slug) is not None
+    vcache.invalidate_tpl(fake_drive_ws.workspace.slug)
+    assert vcache.get_tpl_list(fake_drive_ws.workspace.slug) is None
+
+
+def test_invalidate_tpl_bundle_clears_bundle_and_list(fake_drive_ws):
+    """invalidate_tpl(slug, tid) drops the specific bundle AND the list."""
+    from apps.videos import cache as vcache
+    templates.list_templates(fake_drive_ws.workspace)
+    templates.load_template(fake_drive_ws.workspace, "connectify-program")
+    ws_slug = fake_drive_ws.workspace.slug
+    assert vcache.get_tpl_bundle(ws_slug, "connectify-program") is not None
+    assert vcache.get_tpl_list(ws_slug) is not None
+    vcache.invalidate_tpl(ws_slug, "connectify-program")
+    assert vcache.get_tpl_bundle(ws_slug, "connectify-program") is None
+    assert vcache.get_tpl_list(ws_slug) is None
