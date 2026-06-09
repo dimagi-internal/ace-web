@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
 import type { TemplateEditorAction } from "./templateEditorReducer";
 
 interface Props {
@@ -83,7 +84,7 @@ export function TemplateExamplePanel({ exampleYaml, dispatch }: Props) {
             Demo spec
           </span>
         </div>
-        <textarea
+        <AutoResizeTextarea
           id="template-example"
           value={exampleYaml}
           onChange={(e) => dispatch({ type: "set-example", value: e.target.value })}
@@ -91,7 +92,7 @@ export function TemplateExamplePanel({ exampleYaml, dispatch }: Props) {
           spellCheck={false}
           aria-describedby={yamlError ? "example-yaml-error" : undefined}
           className={[
-            "w-full resize-y rounded border bg-background p-2 font-mono text-sm leading-relaxed",
+            "w-full rounded border bg-background p-2 font-mono text-sm leading-relaxed",
             yamlError ? "border-amber-500 focus:outline-amber-500" : "",
           ]
             .filter(Boolean)

@@ -1,3 +1,4 @@
+import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
 import type { TemplateEditorAction } from "./templateEditorReducer";
 
 interface Props {
@@ -23,13 +24,13 @@ export function TemplatePromptPanel({ promptMd, dispatch }: Props) {
             Markdown
           </span>
         </div>
-        <textarea
+        <AutoResizeTextarea
           id="template-prompt"
           value={promptMd}
           onChange={(e) => dispatch({ type: "set-prompt", value: e.target.value })}
           rows={18}
           spellCheck={false}
-          className="w-full resize-y rounded border bg-background p-2 font-mono text-sm leading-relaxed"
+          className="w-full rounded border bg-background p-2 font-mono text-sm leading-relaxed"
           placeholder={"# Template prompt\n\nDescribe what the AI should produce..."}
         />
       </section>

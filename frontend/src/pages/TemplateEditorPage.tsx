@@ -18,6 +18,7 @@ import { TemplateMetaPanel } from "@/components/videos/template/TemplateMetaPane
 import { TemplatePromptPanel } from "@/components/videos/template/TemplatePromptPanel";
 import { TemplateSkeletonPanel } from "@/components/videos/template/TemplateSkeletonPanel";
 import { TemplateExamplePanel } from "@/components/videos/template/TemplateExamplePanel";
+import { TemplateNavRail } from "@/components/videos/template/TemplateNavRail";
 import {
   buildPatch,
   isDirty,
@@ -177,32 +178,13 @@ export default function TemplateEditorPage() {
   // ── rail content ──────────────────────────────────────────────────────────
 
   const railContent = (
-    <nav aria-label="Templates">
-      {templates === null ? (
-        <div className="space-y-1 p-2">
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-        </div>
-      ) : templates.length === 0 ? (
-        <p className="p-3 text-xs text-muted-foreground">No templates found.</p>
-      ) : (
-        <ul className="py-1">
-          {templates.map((t) => (
-            <li key={t.id}>
-              <Link
-                to={`/w/${workspaceSlug}/videos/templates/${t.id}`}
-                className={`block w-full px-3 py-2 text-left text-sm transition hover:bg-muted/60 ${
-                  t.id === templateId ? "bg-muted font-medium" : ""
-                }`}
-              >
-                {t.name}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </nav>
+    <TemplateNavRail
+      workspaceSlug={workspaceSlug ?? ""}
+      templates={templates}
+      currentTemplateId={templateId ?? ""}
+      hasExample={exampleSpec != null}
+      beats={exampleSpec?.beats ?? []}
+    />
   );
 
   // ── save button label ─────────────────────────────────────────────────────
@@ -274,7 +256,7 @@ export default function TemplateEditorPage() {
       ) : !error ? (
         <div className="flex flex-col gap-10">
           {/* ── Metadata ─────────────────────────────────────────────────── */}
-          <section>
+          <section id="tpl-section-metadata" className="scroll-mt-4">
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Metadata
             </h2>
@@ -284,7 +266,7 @@ export default function TemplateEditorPage() {
           <hr className="border-border" />
 
           {/* ── Generate prompt ──────────────────────────────────────────── */}
-          <section>
+          <section id="tpl-section-prompt" className="scroll-mt-4">
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Generate prompt
             </h2>
@@ -294,7 +276,7 @@ export default function TemplateEditorPage() {
           <hr className="border-border" />
 
           {/* ── Skeleton ─────────────────────────────────────────────────── */}
-          <section>
+          <section id="tpl-section-skeleton" className="scroll-mt-4">
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Skeleton
             </h2>
@@ -304,7 +286,7 @@ export default function TemplateEditorPage() {
           <hr className="border-border" />
 
           {/* ── Demo / example ───────────────────────────────────────────── */}
-          <section>
+          <section id="tpl-section-demo" className="scroll-mt-4">
             <div className="mb-4 flex items-center gap-3">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Demo / example
@@ -341,7 +323,7 @@ export default function TemplateEditorPage() {
     <div className="flex h-[calc(100vh-3rem)] flex-col">
       <WorkbenchLayout
         left={{
-          title: "Templates",
+          title: "Navigator",
           collapsed: railCollapsed,
           onToggle: toggleRailCollapsed,
           expandedWidth: 240,
