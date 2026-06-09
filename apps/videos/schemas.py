@@ -233,6 +233,7 @@ class TemplateMetaOut(StrictModel):
     id: str
     name: str
     description: str
+    intent: str = ""
     expected_duration_seconds: int
     intended_audience: str
     when_to_use: str
@@ -252,6 +253,7 @@ class TemplateBundleOut(StrictModel):
 class TemplateMetaPatch(StrictModel):
     name: str | None = None
     description: str | None = None
+    intent: str | None = None
     expected_duration_seconds: int | None = None
     intended_audience: str | None = None
     when_to_use: str | None = None

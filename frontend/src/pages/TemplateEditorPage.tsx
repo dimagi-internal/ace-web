@@ -41,6 +41,7 @@ const EMPTY_META: TemplateMeta = {
   id: "",
   name: "",
   description: "",
+  intent: "",
   expected_duration_seconds: 0,
   intended_audience: "",
   when_to_use: "",
@@ -270,8 +271,16 @@ export default function TemplateEditorPage() {
           {/* ── Generate prompt ──────────────────────────────────────────── */}
           <section id="tpl-section-prompt" className="scroll-mt-4">
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Generate prompt
+              Generate prompt{" "}
+              <span className="normal-case font-normal text-muted-foreground/70">
+                (advanced — optional override)
+              </span>
             </h2>
+            <p className="mb-3 text-xs text-muted-foreground">
+              The general generator works from Intent + Skeleton + the example spec and does not
+              require a prompt. This field is an optional per-template override appended after the
+              universal generator body.
+            </p>
             <TemplatePromptPanel promptMd={state.promptMd} dispatch={dispatch} />
           </section>
 

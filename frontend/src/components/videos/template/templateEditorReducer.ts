@@ -70,6 +70,7 @@ export function isDirty(state: TemplateEditorState): boolean {
   const metaKeys: Array<keyof Omit<TemplateMeta, "id">> = [
     "name",
     "description",
+    "intent",
     "expected_duration_seconds",
     "intended_audience",
     "when_to_use",
@@ -93,6 +94,7 @@ export function buildPatch(state: TemplateEditorState): TemplatePatchIn {
   const metaKeys: Array<keyof Omit<TemplateMeta, "id">> = [
     "name",
     "description",
+    "intent",
     "expected_duration_seconds",
     "intended_audience",
     "when_to_use",

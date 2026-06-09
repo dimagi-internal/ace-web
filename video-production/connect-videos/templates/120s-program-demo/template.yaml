@@ -9,6 +9,12 @@ description: |
   Network Manager and Program Manager audit layers (probation /
   relearn / deactivation / Audit-of-Audits dashboard). Closes with a
   longitudinal-outcome / drone-shot return to the field.
+intent: >-
+  Demo a single Connect program end-to-end for stakeholders who already know what Connect is
+  — walking the full Learn/Deliver/Verify/Pay cycle with real screen recordings, then
+  foregrounding the most underseen layer: GPS review, bulk image audit, probation/relearn/
+  deactivation lifecycle, and the Audit-of-Audits dashboard. Opens and closes on the same
+  drone shot so the viewer travels through the product and returns to where they started.
 expected_duration_seconds: 150
 intended_audience: |
   Funders and partner orgs who have already seen the 60s overview
