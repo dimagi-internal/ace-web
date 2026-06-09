@@ -516,3 +516,31 @@ def test_save_template_example_spec_and_yaml_conflict_raises(fake_drive_ws):
             example_yaml=valid_ex,
             example_spec={"slug": "connectify-program", "workspace": "test-ws", "name": "x"},
         )
+
+
+def test_reflow_prose_folds_softwraps_keeps_structure():
+    """Prose meta fields lose authoring soft-wraps but keep paragraph + list breaks."""
+    from apps.videos.templates import _reflow_prose
+    para = "Generic explainer of how an org brings its\nexisting program onto Connect — the\njourney."
+    assert "\n" not in _reflow_prose(para)
+    assert _reflow_prose(para).startswith("Generic explainer")
+    # blank-line paragraph break preserved
+    two_para = "First paragraph wrapped\nover two lines.\n\nSecond paragraph also\nwrapped."
+    assert _reflow_prose(two_para) == "First paragraph wrapped over two lines.\n\nSecond paragraph also wrapped."
+    # list items stay on their own lines; their continuations fold in
+    lst = "- You want the evergreen story,\n  with the business case.\n- Another bullet\n  continues here."
+    out = _reflow_prose(lst)
+    assert out == "- You want the evergreen story, with the business case.\n- Another bullet continues here."
+    # idempotent
+    assert _reflow_prose(out) == out
+
+
+def test_load_template_meta_description_is_reflowed(fake_drive_ws):
+    """The bundle's description has no mid-paragraph hard newlines (was ragged)."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    b = templates.load_template(ws, "connectify-program")
+    # connectify's seeded description was a wrapped block scalar; after reflow the
+    # first paragraph is a single flowing line.
+    first_para = b.meta.description.split("\n\n")[0]
+    assert "\n" not in first_para

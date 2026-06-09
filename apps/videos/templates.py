@@ -359,16 +359,54 @@ def _load_meta(template_id: str, meta_path: Path) -> TemplateMeta:
     return _parse_meta(template_id, meta_path.read_text(encoding="utf-8"))
 
 
+_LIST_ITEM_RE = re.compile(r"^([-*]|\d+\.)\s")
+
+
+def _reflow_prose(text: str) -> str:
+    """Fold authoring soft-wraps (single newlines mid-paragraph) into spaces so
+    prose meta fields render as flowing text that fills the editor's width.
+
+    The seed YAML wrote description / intended_audience / when_to_use as literal
+    block scalars (``|``) wrapped at ~75 chars, baking hard newlines into the
+    string — so a wide textarea shows them ragged. This restores the intended
+    flow while preserving the two breaks that ARE meaningful: blank-line
+    paragraph separators and list items (``- `` / ``* `` / ``1. ``). Idempotent
+    (already-flowed text has no soft-wraps to fold).
+    """
+    if not text:
+        return text
+    out: list[str] = []
+    buf: list[str] = []
+
+    def flush() -> None:
+        if buf:
+            out.append(" ".join(buf))
+            buf.clear()
+
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            flush()
+            out.append("")  # preserve paragraph break
+        elif _LIST_ITEM_RE.match(line):
+            flush()
+            buf.append(line)  # start a new list item
+        else:
+            buf.append(line)  # continuation of the current paragraph / item
+    flush()
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
 def _parse_meta(template_id: str, yaml_text: str) -> TemplateMeta:
     """Parse TemplateMeta from raw YAML text (used by Drive-backed loaders)."""
     raw: dict[str, Any] = _yaml().load(yaml_text) or {}
     return TemplateMeta(
         id=str(raw.get("id") or template_id),
         name=str(raw.get("name") or template_id),
-        description=str(raw.get("description") or "").strip(),
+        description=_reflow_prose(str(raw.get("description") or "").strip()),
         expected_duration_seconds=int(raw.get("expected_duration_seconds") or 60),
-        intended_audience=str(raw.get("intended_audience") or "").strip(),
-        when_to_use=str(raw.get("when_to_use") or "").strip(),
+        intended_audience=_reflow_prose(str(raw.get("intended_audience") or "").strip()),
+        when_to_use=_reflow_prose(str(raw.get("when_to_use") or "").strip()),
     )
 
 
