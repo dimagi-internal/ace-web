@@ -13,6 +13,7 @@ const baseMeta: TemplateMeta = {
   id: "tpl-001",
   name: "Base Name",
   description: "Base description",
+  intent: "Explain the mechanism in one breath.",
   expected_duration_seconds: 60,
   intended_audience: "CHW supervisors",
   when_to_use: "Onboarding",
@@ -71,6 +72,16 @@ describe("set-meta-field", () => {
     });
     expect(isDirty(s)).toBe(true);
     expect(buildPatch(s)).toEqual({ meta: { description: "Updated desc" } });
+  });
+
+  it("intent change: buildPatch contains only meta.intent", () => {
+    const s = templateEditorReducer(freshState(), {
+      type: "set-meta-field",
+      field: "intent",
+      value: "Updated intent.",
+    });
+    expect(isDirty(s)).toBe(true);
+    expect(buildPatch(s)).toEqual({ meta: { intent: "Updated intent." } });
   });
 
   it("name change: buildPatch contains only meta.name", () => {

@@ -9,6 +9,7 @@ const meta: TemplateMeta = {
   id: "tpl-001",
   name: "Base Name",
   description: "Base description",
+  intent: "Explain the mechanism in one breath.",
   expected_duration_seconds: 60,
   intended_audience: "CHW supervisors",
   when_to_use: "Onboarding",
@@ -19,13 +20,24 @@ function renderPanel(dispatch: Dispatch<TemplateEditorAction> = vi.fn()) {
 }
 
 describe("TemplateMetaPanel", () => {
-  it("renders all five fields prefilled from meta", () => {
+  it("renders all six fields prefilled from meta", () => {
     renderPanel();
     expect(screen.getByLabelText(/name/i)).toHaveValue("Base Name");
+    expect(screen.getByLabelText(/intent/i)).toHaveValue("Explain the mechanism in one breath.");
     expect(screen.getByLabelText(/description/i)).toHaveValue("Base description");
     expect(screen.getByLabelText(/expected duration/i)).toHaveValue(60);
     expect(screen.getByLabelText(/intended audience/i)).toHaveValue("CHW supervisors");
     expect(screen.getByLabelText(/when to use/i)).toHaveValue("Onboarding");
+  });
+
+  it("changing intent dispatches set-meta-field with field=intent", () => {
+    const { dispatch } = renderPanel();
+    fireEvent.change(screen.getByLabelText(/intent/i), { target: { value: "New intent." } });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "set-meta-field",
+      field: "intent",
+      value: "New intent.",
+    });
   });
 
   it("changing name dispatches set-meta-field with field=name", () => {

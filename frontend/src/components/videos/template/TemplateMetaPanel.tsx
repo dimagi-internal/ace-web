@@ -32,6 +32,23 @@ export function TemplateMetaPanel({ meta, dispatch }: Props) {
       </section>
 
       <section className="flex flex-col gap-1.5">
+        <label htmlFor="template-intent" className="text-xs font-medium uppercase tracking-wide">
+          Intent
+        </label>
+        <AutoResizeTextarea
+          id="template-intent"
+          value={meta.intent}
+          onChange={(e) => setField("intent", e.target.value)}
+          rows={3}
+          className="w-full rounded border bg-background p-2 text-sm leading-relaxed"
+          placeholder="What this video must accomplish + its narrative thesis. 1–3 sentences."
+        />
+        <p className="text-[11px] text-muted-foreground">
+          What this video must accomplish + its narrative thesis. Drives AI generation.
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-1.5">
         <label htmlFor="template-description" className="text-xs font-medium uppercase tracking-wide">
           Description
         </label>

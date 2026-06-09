@@ -544,3 +544,57 @@ def test_load_template_meta_description_is_reflowed(fake_drive_ws):
     # first paragraph is a single flowing line.
     first_para = b.meta.description.split("\n\n")[0]
     assert "\n" not in first_para
+
+
+# ---------------------------------------------------------------------------
+# T8: intent field
+# ---------------------------------------------------------------------------
+
+
+def test_load_template_intent_is_present_for_seeded_templates(fake_drive_ws):
+    """All seeded templates expose a non-empty intent string on their meta."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)  # triggers auto-seed
+    for tid in ("connect-explainer", "connectify-program", "partnership-pitch",
+                "60s-campaign-overview", "120s-program-demo"):
+        b = templates.load_template(ws, tid)
+        assert b is not None, f"{tid}: load_template returned None"
+        assert b.meta.intent, f"{tid}: meta.intent is empty — seed template.yaml is missing intent:"
+
+
+def test_load_template_intent_default_empty_when_absent(fake_drive_ws):
+    """A template.yaml without an intent: key parses to an empty string (backward compat)."""
+    from apps.videos import drive, service
+    ws = fake_drive_ws.workspace
+    # Write a minimal meta.yaml with no intent field into a fresh template.
+    layout, client = service.layout_for(ws)
+    drive.write_template_file(
+        layout, client, "no-intent-tpl",
+        "meta.yaml",
+        "id: no-intent-tpl\nname: No Intent\n",
+    )
+    drive.write_template_file(
+        layout, client, "no-intent-tpl",
+        "skeleton.yaml",
+        "slug: x\nworkspace: y\n",
+    )
+    drive.write_template_file(
+        layout, client, "no-intent-tpl",
+        "prompt.md",
+        "# Prompt\n",
+    )
+    b = templates.load_template(ws, "no-intent-tpl")
+    assert b is not None
+    assert b.meta.intent == ""
+
+
+def test_save_template_meta_intent_patch_persists(fake_drive_ws):
+    """PATCH with {"intent": "X"} persists through save_template and round-trips."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)  # seed
+    new_intent = "Explain the mechanism in one breath — no stats, no branding."
+    b = templates.save_template(ws, "connect-explainer", meta={"intent": new_intent})
+    assert b.meta.intent == new_intent
+    # Re-load from Drive (cache invalidated by save_template) confirms persistence.
+    reloaded = templates.load_template(ws, "connect-explainer")
+    assert reloaded.meta.intent == new_intent

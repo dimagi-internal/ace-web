@@ -10,6 +10,11 @@ description: |
   name, and NO stat-card beats (problem + impact are omitted). Six
   rendered beats: opening hook, four-step cycle animation, handoff,
   field b-roll, a four-clip app walkthrough, end card. Renders ~42s.
+intent: >-
+  Explain how CommCare Connect works in one breath — the Learn → Deliver → Verify → Pay loop,
+  naming Connect's AI features (AI training coach, AI-assisted verification review) as the
+  differentiator. Generic, no prospect branding, no program stats; the mechanism end-to-end
+  using real library footage and real app screencasts.
 expected_duration_seconds: 42
 intended_audience: |
   Anyone meeting Connect for the first time — a top-of-funnel

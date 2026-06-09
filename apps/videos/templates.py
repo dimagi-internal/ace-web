@@ -42,6 +42,7 @@ class TemplateMeta:
     id: str
     name: str
     description: str
+    intent: str
     expected_duration_seconds: int
     intended_audience: str
     when_to_use: str
@@ -404,6 +405,7 @@ def _parse_meta(template_id: str, yaml_text: str) -> TemplateMeta:
         id=str(raw.get("id") or template_id),
         name=str(raw.get("name") or template_id),
         description=_reflow_prose(str(raw.get("description") or "").strip()),
+        intent=_reflow_prose(str(raw.get("intent") or "").strip()),
         expected_duration_seconds=int(raw.get("expected_duration_seconds") or 60),
         intended_audience=_reflow_prose(str(raw.get("intended_audience") or "").strip()),
         when_to_use=_reflow_prose(str(raw.get("when_to_use") or "").strip()),

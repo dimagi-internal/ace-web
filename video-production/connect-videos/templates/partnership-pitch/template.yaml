@@ -9,6 +9,12 @@ description: |
   branding, and a real micro-demo proof clip. Drop the prospect block
   and the same template produces the unbranded "how Connect works"
   explainer.
+intent: >-
+  Pitch a specific prospect org on Connect as a credible upgrade path for their existing
+  program — mirroring their reality in the handoff beat, showing the mechanism once via a
+  real micro-demo clip, and closing on two research-grounded impact numbers they can cite.
+  Three selectable narrative angles let the generator pick the framing that best maps to the
+  prospect's current program; every factual claim must trace to provided research inputs.
 expected_duration_seconds: 90
 intended_audience: |
   A prospect org's decision-makers in active partnership discussions —
