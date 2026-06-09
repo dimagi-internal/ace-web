@@ -254,7 +254,9 @@ export default function TemplateEditorPage() {
           <Skeleton className="h-64 w-full" />
         </div>
       ) : !error ? (
-        <div className="flex flex-col gap-10">
+        // Key by templateId so switching templates remounts the panels and
+        // their AutoResizeTextareas re-fit the new content on open.
+        <div key={templateId} className="flex flex-col gap-10">
           {/* ── Metadata ─────────────────────────────────────────────────── */}
           <section id="tpl-section-metadata" className="scroll-mt-4">
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
