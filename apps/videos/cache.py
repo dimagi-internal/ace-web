@@ -119,12 +119,17 @@ def invalidate_all_for_workspace(ws_slug: str) -> None:
 # videos:tpl-bundle:<ws-slug>:<tid>  → JSON-serialised dict (TemplateBundle fields)
 
 
+# Bump this when the parsed TemplateMeta/Bundle shape changes so stale cached
+# payloads from an older deploy aren't served. v2: prose meta fields reflowed.
+_TPL_KEY_VERSION = "v2"
+
+
 def _tpl_list_key(ws_slug: str) -> str:
-    return f"videos:tpl-list:{ws_slug}"
+    return f"videos:tpl-list:{_TPL_KEY_VERSION}:{ws_slug}"
 
 
 def _tpl_bundle_key(ws_slug: str, tid: str) -> str:
-    return f"videos:tpl-bundle:{ws_slug}:{tid}"
+    return f"videos:tpl-bundle:{_TPL_KEY_VERSION}:{ws_slug}:{tid}"
 
 
 def get_tpl_list(ws_slug: str):
@@ -151,7 +156,7 @@ def invalidate_tpl(ws_slug: str, tid: str | None = None) -> None:
     else:
         delete_pattern = getattr(_cache, "delete_pattern", None)
         if callable(delete_pattern):
-            delete_pattern(f"videos:tpl-bundle:{ws_slug}:*")
+            delete_pattern(f"videos:tpl-bundle:{_TPL_KEY_VERSION}:{ws_slug}:*")
 
 
 # Media library — no cache layer. The library reader now hits Postgres
