@@ -458,6 +458,32 @@ def test_load_example_spec_returns_none_when_missing(fake_drive_ws):
     assert result is None or isinstance(result, dict)
 
 
+def test_load_example_spec_injects_resolved_beats(fake_drive_ws):
+    """The BeatEditor renders from a top-level `beats` array; load_example_spec
+    injects the resolved _defaults.yaml timeline (like read_parsed_spec does for
+    runs) so the editor isn't blank."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    spec = templates.load_example_spec(ws, "connectify-program")
+    assert isinstance(spec.get("beats"), list) and len(spec["beats"]) > 0
+    # each beat carries id + kind (what BeatList keys on)
+    assert all("id" in b and "kind" in b for b in spec["beats"])
+
+
+def test_save_example_spec_strips_derived_beats(fake_drive_ws):
+    """The editor's effectiveSpec round-trips the injected `beats` back on save;
+    it must NOT be persisted to example.spec.yaml (it's derived, not source)."""
+    ws = fake_drive_ws.workspace
+    templates.list_templates(ws)
+    spec = templates.load_example_spec(ws, "connectify-program")
+    assert "beats" in spec  # injected on read
+    spec["tagline"] = "edited via beateditor"
+    templates.save_template(ws, "connectify-program", example_spec=spec)
+    raw = templates.load_example(ws, "connectify-program")  # the persisted YAML text
+    assert "\nbeats:" not in raw and not raw.startswith("beats:")
+    assert "edited via beateditor" in raw
+
+
 def test_save_template_example_spec_roundtrips(fake_drive_ws):
     """save_template(example_spec=...) serializes to YAML, stores, and load_example_spec reflects it."""
     templates.list_templates(fake_drive_ws.workspace)

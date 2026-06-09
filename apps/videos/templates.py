@@ -162,7 +162,16 @@ def load_example_spec(workspace, template_id: str) -> dict | None:
         return None
     if not isinstance(doc, dict):
         return None
-    return doc
+    # The React BeatEditor renders from a top-level `beats` array (the
+    # resolved timeline from programs/_defaults.yaml), exactly like a
+    # program run's spec — see service.read_parsed_spec. The example.spec.yaml
+    # on disk carries only beat_overrides (or nothing), so inject the
+    # resolved beats + scrub ruamel round-trip types to plain Python so the
+    # editor renders its beats (and the JSON serializes cleanly).
+    from apps.videos import service
+    if "beats" not in doc:
+        doc["beats"] = service._resolved_beats(doc.get("beat_overrides") or {})
+    return service._scrub_ruamel(doc)
 
 
 def save_template(
@@ -244,6 +253,13 @@ def save_template(
         # validate_spec_structure + write path as example_yaml.  Using
         # ruamel.yaml for a safe, round-trip-friendly serialization that
         # matches how the rest of the module dumps YAML (e.g. meta update above).
+        # Strip the derived `beats` array before writing: load_example_spec
+        # injects it for the BeatEditor (the resolved _defaults.yaml timeline),
+        # so the editor's effectiveSpec round-trips it back here. It is NOT a
+        # source field — example.spec.yaml carries only beat_overrides — so
+        # drop it to keep the persisted YAML clean (mirrors how a run's
+        # spec.yaml never persists the injected beats).
+        example_spec = {k: v for k, v in example_spec.items() if k != "beats"}
         import io as _io
         _y = _yaml()
         _buf = _io.StringIO()
