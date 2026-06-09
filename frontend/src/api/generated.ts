@@ -2670,6 +2670,11 @@ export interface components {
             readonly name: string;
             /** Description */
             readonly description: string;
+            /**
+             * Intent
+             * @default
+             */
+            readonly intent: string;
             /** Expected Duration Seconds */
             readonly expected_duration_seconds: number;
             /** Intended Audience */
@@ -2696,6 +2701,8 @@ export interface components {
             readonly name?: string | null;
             /** Description */
             readonly description?: string | null;
+            /** Intent */
+            readonly intent?: string | null;
             /** Expected Duration Seconds */
             readonly expected_duration_seconds?: number | null;
             /** Intended Audience */
