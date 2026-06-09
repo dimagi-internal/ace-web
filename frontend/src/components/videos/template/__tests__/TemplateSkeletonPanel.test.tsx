@@ -63,6 +63,22 @@ describe("TemplateSkeletonPanel", () => {
     expect(alert.textContent).toMatch(/duplicate/i);
   });
 
+  it("does NOT flag repeated keys across sibling list items (valid YAML)", () => {
+    // product.beats — each "- asset:" begins a new list element, not a dup key.
+    const listYaml =
+      "product:\n  beats:\n    - asset: a\n      caption: x\n    - asset: b\n      caption: y";
+    renderPanel(listYaml);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("still flags a genuine duplicate key WITHIN one list item", () => {
+    const dupInItem = "beats:\n  - asset: a\n    asset: b";
+    renderPanel(dupInItem);
+    const alert = screen.getByRole("alert");
+    expect(alert).toBeInTheDocument();
+    expect(alert.textContent).toMatch(/duplicate/i);
+  });
+
   it("shows no error for empty textarea", () => {
     renderPanel("");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();

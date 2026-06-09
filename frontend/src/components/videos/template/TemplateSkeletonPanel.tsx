@@ -64,6 +64,20 @@ function lintYaml(text: string): string | null {
       }
     }
     lastIndent = indent;
+    // A list item ("- ...") starts a NEW mapping element, so its first key is
+    // not a duplicate of the previous sibling's first key (e.g. repeated
+    // "- asset:" under product.beats is valid). Reset tracking at this indent
+    // and deeper, then track the inline key (the part after "- ") at the
+    // dash-adjusted column so genuine in-item key duplicates are still caught.
+    const listMatch = /^ *-\s+(.*)$/.exec(line);
+    if (listMatch) {
+      for (const k of [...seenKeys.keys()]) {
+        if (k >= indent) seenKeys.delete(k);
+      }
+      const inlineKey = /^([^#\s][^:]*):/.exec(listMatch[1]);
+      if (inlineKey) seenKeys.set(indent + 2, inlineKey[1].trim());
+      continue;
+    }
     const keyMatch = /^[ ]*([^#\s][^:]*):/.exec(line);
     if (keyMatch) {
       const key = keyMatch[1].trim();
