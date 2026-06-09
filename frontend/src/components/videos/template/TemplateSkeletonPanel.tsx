@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
 import type { TemplateEditorAction } from "./templateEditorReducer";
 
 interface Props {
@@ -111,7 +112,7 @@ export function TemplateSkeletonPanel({ skeletonYaml, dispatch }: Props) {
             Advanced — raw skeleton
           </span>
         </div>
-        <textarea
+        <AutoResizeTextarea
           id="template-skeleton"
           value={skeletonYaml}
           onChange={(e) => dispatch({ type: "set-skeleton", value: e.target.value })}
@@ -119,7 +120,7 @@ export function TemplateSkeletonPanel({ skeletonYaml, dispatch }: Props) {
           spellCheck={false}
           aria-describedby={yamlError ? "skeleton-yaml-error" : undefined}
           className={[
-            "w-full resize-y rounded border bg-background p-2 font-mono text-sm leading-relaxed",
+            "w-full rounded border bg-background p-2 font-mono text-sm leading-relaxed",
             yamlError ? "border-amber-500 focus:outline-amber-500" : "",
           ]
             .filter(Boolean)

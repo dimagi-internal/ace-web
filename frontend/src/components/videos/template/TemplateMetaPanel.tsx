@@ -1,4 +1,5 @@
 import type { TemplateMeta } from "@/api/videos";
+import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
 import type { TemplateEditorAction } from "./templateEditorReducer";
 
 interface Props {
@@ -34,12 +35,12 @@ export function TemplateMetaPanel({ meta, dispatch }: Props) {
         <label htmlFor="template-description" className="text-xs font-medium uppercase tracking-wide">
           Description
         </label>
-        <textarea
+        <AutoResizeTextarea
           id="template-description"
           value={meta.description}
           onChange={(e) => setField("description", e.target.value)}
           rows={3}
-          className="w-full resize-none rounded border bg-background p-2 text-sm leading-relaxed"
+          className="w-full rounded border bg-background p-2 text-sm leading-relaxed"
           placeholder="Brief summary of what this template produces."
         />
       </section>
@@ -67,12 +68,12 @@ export function TemplateMetaPanel({ meta, dispatch }: Props) {
         <label htmlFor="template-audience" className="text-xs font-medium uppercase tracking-wide">
           Intended audience
         </label>
-        <textarea
+        <AutoResizeTextarea
           id="template-audience"
           value={meta.intended_audience}
           onChange={(e) => setField("intended_audience", e.target.value)}
           rows={2}
-          className="w-full resize-none rounded border bg-background p-2 text-sm leading-relaxed"
+          className="w-full rounded border bg-background p-2 text-sm leading-relaxed"
           placeholder="e.g. CHW supervisors in community health programs"
         />
       </section>
@@ -81,12 +82,12 @@ export function TemplateMetaPanel({ meta, dispatch }: Props) {
         <label htmlFor="template-when-to-use" className="text-xs font-medium uppercase tracking-wide">
           When to use
         </label>
-        <textarea
+        <AutoResizeTextarea
           id="template-when-to-use"
           value={meta.when_to_use}
           onChange={(e) => setField("when_to_use", e.target.value)}
           rows={3}
-          className="w-full resize-none rounded border bg-background p-2 text-sm leading-relaxed"
+          className="w-full rounded border bg-background p-2 text-sm leading-relaxed"
           placeholder="e.g. Onboarding new CHWs before their first field visit."
         />
       </section>
