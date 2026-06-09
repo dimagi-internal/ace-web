@@ -24,13 +24,20 @@ describe("AutoResizeTextarea", () => {
     expect(typeof event.target).toBe("object");
   });
 
-  it("sets a min-height style after mount (auto-fit)", () => {
+  it("sets an explicit height once content is present (auto-fit on open)", () => {
     render(<AutoResizeTextarea value="some content" onChange={vi.fn()} />);
     const el = screen.getByRole("textbox") as HTMLTextAreaElement;
-    // jsdom doesn't compute real scrollHeight, but useLayoutEffect still runs
-    // and sets minHeight to `${el.scrollHeight}px` (scrollHeight=0 in jsdom → "0px").
-    // The important assertion is that the property was touched (not the empty string default).
-    expect(el.style.minHeight).toBeTruthy();
+    // jsdom doesn't compute real scrollHeight, but the fit-once layout effect
+    // runs for a non-empty value and pins `height` to `${scrollHeight}px`
+    // (scrollHeight=0 in jsdom → "0px"). The assertion is that height was set.
+    expect(el.style.height).toBeTruthy();
+  });
+
+  it("does NOT fit while the value is still empty (waits for content to load)", () => {
+    render(<AutoResizeTextarea value="" onChange={vi.fn()} />);
+    const el = screen.getByRole("textbox") as HTMLTextAreaElement;
+    // Empty value on first paint (content not loaded yet) → no fit, height untouched.
+    expect(el.style.height).toBe("");
   });
 
   it("does NOT have resize-none on the element", () => {
