@@ -854,7 +854,7 @@ def _seed_template(root: Path) -> None:
     t.mkdir(parents=True)
     (t / "template.yaml").write_text(
         "id: 60s-campaign-overview\nname: 60s\ndescription: test\n"
-        "expected_duration_seconds: 60\nintended_audience: x\nwhen_to_use: y\n",
+        "intended_audience: x\nwhen_to_use: y\n",
         encoding="utf-8",
     )
     (t / "spec.template.yaml").write_text("slug: \"{{slug}}\"\nworkspace: \"{{ws}}\"\n", encoding="utf-8")

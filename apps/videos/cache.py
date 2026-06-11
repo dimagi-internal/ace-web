@@ -122,7 +122,8 @@ def invalidate_all_for_workspace(ws_slug: str) -> None:
 # Bump this when the parsed TemplateMeta/Bundle shape changes so stale cached
 # payloads from an older deploy aren't served. v2: prose meta fields reflowed.
 # v3: intent field added to TemplateMeta.
-_TPL_KEY_VERSION = "v3"
+# v4: dropped expected_duration_seconds from TemplateMeta.
+_TPL_KEY_VERSION = "v4"
 
 
 def _tpl_list_key(ws_slug: str) -> str:

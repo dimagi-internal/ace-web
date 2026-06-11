@@ -224,7 +224,6 @@ export interface TemplateMeta {
   name: string;
   description: string;
   intent: string;
-  expected_duration_seconds: number;
   intended_audience: string;
   when_to_use: string;
 }
@@ -239,7 +238,6 @@ export interface TemplateMetaPatch {
   name?: string | null;
   description?: string | null;
   intent?: string | null;
-  expected_duration_seconds?: number | null;
   intended_audience?: string | null;
   when_to_use?: string | null;
 }

@@ -17,7 +17,6 @@ intent: >-
   Connect — with no prospect branding and no program-specific stats. The AI cut also
   names how Connect's AI tooling builds the program's components; flip active_cut for the
   non-AI version from the same spec.
-expected_duration_seconds: 57
 intended_audience: |
   A prospect organization that already runs a real frontline program and
   is weighing how to scale it — in addition to, or instead of, scaling

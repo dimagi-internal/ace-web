@@ -14,7 +14,6 @@ const baseMeta: TemplateMeta = {
   name: "Base Name",
   description: "Base description",
   intent: "Explain the mechanism in one breath.",
-  expected_duration_seconds: 60,
   intended_audience: "CHW supervisors",
   when_to_use: "Onboarding",
 };
@@ -91,15 +90,6 @@ describe("set-meta-field", () => {
       value: "New Name",
     });
     expect(buildPatch(s)).toEqual({ meta: { name: "New Name" } });
-  });
-
-  it("numeric field change (expected_duration_seconds): patch carries number value", () => {
-    const s = templateEditorReducer(freshState(), {
-      type: "set-meta-field",
-      field: "expected_duration_seconds",
-      value: 90,
-    });
-    expect(buildPatch(s)).toEqual({ meta: { expected_duration_seconds: 90 } });
   });
 
   it("editing a meta field back to its baseline value: not dirty for that field", () => {

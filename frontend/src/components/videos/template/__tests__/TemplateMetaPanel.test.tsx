@@ -10,7 +10,6 @@ const meta: TemplateMeta = {
   name: "Base Name",
   description: "Base description",
   intent: "Explain the mechanism in one breath.",
-  expected_duration_seconds: 60,
   intended_audience: "CHW supervisors",
   when_to_use: "Onboarding",
 };
@@ -20,12 +19,11 @@ function renderPanel(dispatch: Dispatch<TemplateEditorAction> = vi.fn()) {
 }
 
 describe("TemplateMetaPanel", () => {
-  it("renders all six fields prefilled from meta", () => {
+  it("renders all five fields prefilled from meta", () => {
     renderPanel();
     expect(screen.getByLabelText(/name/i)).toHaveValue("Base Name");
     expect(screen.getByLabelText(/intent/i)).toHaveValue("Explain the mechanism in one breath.");
     expect(screen.getByLabelText(/description/i)).toHaveValue("Base description");
-    expect(screen.getByLabelText(/expected duration/i)).toHaveValue(60);
     expect(screen.getByLabelText(/intended audience/i)).toHaveValue("CHW supervisors");
     expect(screen.getByLabelText(/when to use/i)).toHaveValue("Onboarding");
   });
@@ -57,16 +55,6 @@ describe("TemplateMetaPanel", () => {
       type: "set-meta-field",
       field: "description",
       value: "Updated desc",
-    });
-  });
-
-  it("changing expected_duration_seconds dispatches a number value", () => {
-    const { dispatch } = renderPanel();
-    fireEvent.change(screen.getByLabelText(/expected duration/i), { target: { value: "120" } });
-    expect(dispatch).toHaveBeenCalledWith({
-      type: "set-meta-field",
-      field: "expected_duration_seconds",
-      value: 120,
     });
   });
 

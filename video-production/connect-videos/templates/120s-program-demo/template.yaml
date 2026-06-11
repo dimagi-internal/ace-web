@@ -15,7 +15,6 @@ intent: >-
   foregrounding the most underseen layer: GPS review, bulk image audit, probation/relearn/
   deactivation lifecycle, and the Audit-of-Audits dashboard. Opens and closes on the same
   drone shot so the viewer travels through the product and returns to where they started.
-expected_duration_seconds: 150
 intended_audience: |
   Funders and partner orgs who have already seen the 60s overview
   and are scoping a real engagement. Connect program managers

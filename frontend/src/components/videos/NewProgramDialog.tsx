@@ -135,7 +135,7 @@ export function NewProgramDialog({ workspaceSlug, onCreated, onClose }: Props) {
                       {t.description}
                     </div>
                     <div className="mt-1 text-[10px] text-muted-foreground">
-                      {t.expected_duration_seconds}s · {t.intended_audience.split("\n")[0]}
+                      {t.intended_audience.split("\n")[0]}
                     </div>
                   </button>
                 ))}

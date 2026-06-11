@@ -15,7 +15,6 @@ intent: >-
   real micro-demo clip, and closing on two research-grounded impact numbers they can cite.
   Three selectable narrative angles let the generator pick the framing that best maps to the
   prospect's current program; every factual claim must trace to provided research inputs.
-expected_duration_seconds: 90
 intended_audience: |
   A prospect org's decision-makers in active partnership discussions —
   e.g. an NGO expanding to a new country. Quiet documentary pacing.
