@@ -67,10 +67,10 @@ describe("TemplateEditorPage", () => {
     expect(headings.some((h) => /metadata/i.test(h.textContent ?? ""))).toBe(true);
   });
 
-  it("renders the Generate prompt section heading", async () => {
+  it("does NOT render a Generate prompt section (removed — generator uses Intent)", async () => {
     renderPage();
     await screen.findByText("FLW Onboarding");
-    expect(screen.getByText(/generate prompt/i)).toBeInTheDocument();
+    expect(screen.queryByText(/generate prompt/i)).not.toBeInTheDocument();
   });
 
   it("renders the Skeleton section heading", async () => {
@@ -91,13 +91,6 @@ describe("TemplateEditorPage", () => {
     renderPage();
     const nameInput = await screen.findByLabelText(/^name$/i);
     expect(nameInput).toHaveValue("FLW Onboarding");
-  });
-
-  it("populates the prompt textarea with prompt_md", async () => {
-    renderPage();
-    await screen.findByText("FLW Onboarding");
-    const promptTextarea = screen.getByLabelText(/^prompt$/i);
-    expect(promptTextarea).toHaveValue(MOCK_BUNDLE.prompt_md);
   });
 
   it("populates the skeleton textarea with skeleton_yaml", async () => {

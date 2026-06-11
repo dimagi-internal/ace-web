@@ -25,7 +25,6 @@ interface Props {
 
 const SECTIONS = [
   { label: "Metadata",        id: "tpl-section-metadata"  },
-  { label: "Generate prompt", id: "tpl-section-prompt"    },
   { label: "Skeleton",        id: "tpl-section-skeleton"  },
   { label: "Demo / example",  id: "tpl-section-demo"      },
 ] as const;

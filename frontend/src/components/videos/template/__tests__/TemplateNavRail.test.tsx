@@ -50,12 +50,13 @@ describe("TemplateNavRail", () => {
     expect(btns.some((b) => /font-medium/.test(b.className))).toBe(true);
   });
 
-  it("renders the 4 section labels for the current template", () => {
+  it("renders the 3 section labels for the current template", () => {
     renderRail();
     expect(screen.getByText("Metadata")).toBeInTheDocument();
-    expect(screen.getByText("Generate prompt")).toBeInTheDocument();
     expect(screen.getByText("Skeleton")).toBeInTheDocument();
     expect(screen.getByText("Demo / example")).toBeInTheDocument();
+    // Generate prompt was removed — the generator works from Intent + Skeleton + example.
+    expect(screen.queryByText("Generate prompt")).not.toBeInTheDocument();
   });
 
   it("renders beat labels under Demo when hasExample and beats are provided", () => {
@@ -95,16 +96,16 @@ describe("TemplateNavRail", () => {
     mockGetElementById.mockRestore();
   });
 
-  it("clicking Generate prompt calls scrollIntoView with tpl-section-prompt", () => {
+  it("clicking Skeleton calls scrollIntoView with tpl-section-skeleton", () => {
     const mockScrollIntoView = vi.fn();
     const mockGetElementById = vi.spyOn(document, "getElementById").mockReturnValue({
       scrollIntoView: mockScrollIntoView,
     } as unknown as HTMLElement);
 
     renderRail();
-    fireEvent.click(screen.getByText("Generate prompt"));
+    fireEvent.click(screen.getByText("Skeleton"));
 
-    expect(mockGetElementById).toHaveBeenCalledWith("tpl-section-prompt");
+    expect(mockGetElementById).toHaveBeenCalledWith("tpl-section-skeleton");
     expect(mockScrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
 
     mockGetElementById.mockRestore();
