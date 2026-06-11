@@ -15,7 +15,6 @@ import { WorkbenchLayout, usePaneCollapsed } from "@/components/workbench";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BeatEditor } from "@/components/videos/BeatEditor";
 import { TemplateMetaPanel } from "@/components/videos/template/TemplateMetaPanel";
-import { TemplatePromptPanel } from "@/components/videos/template/TemplatePromptPanel";
 import { TemplateSkeletonPanel } from "@/components/videos/template/TemplateSkeletonPanel";
 import { TemplateExamplePanel } from "@/components/videos/template/TemplateExamplePanel";
 import { TemplateNavRail } from "@/components/videos/template/TemplateNavRail";
@@ -264,24 +263,6 @@ export default function TemplateEditorPage() {
               Metadata
             </h2>
             <TemplateMetaPanel meta={state.meta} dispatch={dispatch} />
-          </section>
-
-          <hr className="border-border" />
-
-          {/* ── Generate prompt ──────────────────────────────────────────── */}
-          <section id="tpl-section-prompt" className="scroll-mt-4">
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Generate prompt{" "}
-              <span className="normal-case font-normal text-muted-foreground/70">
-                (advanced — optional override)
-              </span>
-            </h2>
-            <p className="mb-3 text-xs text-muted-foreground">
-              The general generator works from Intent + Skeleton + the example spec and does not
-              require a prompt. This field is an optional per-template override appended after the
-              universal generator body.
-            </p>
-            <TemplatePromptPanel promptMd={state.promptMd} dispatch={dispatch} />
           </section>
 
           <hr className="border-border" />
