@@ -63,25 +63,6 @@ export function TemplateMetaPanel({ meta, dispatch }: Props) {
       </section>
 
       <section className="flex flex-col gap-1.5">
-        <label htmlFor="template-duration" className="text-xs font-medium uppercase tracking-wide">
-          Expected duration (seconds)
-        </label>
-        <input
-          id="template-duration"
-          type="number"
-          min={0}
-          step={1}
-          value={meta.expected_duration_seconds}
-          onChange={(e) => setField("expected_duration_seconds", Number(e.target.value))}
-          className="w-full rounded border bg-background p-2 text-sm"
-          placeholder="120"
-        />
-        <p className="text-[11px] text-muted-foreground">
-          Approximate runtime of the rendered video in seconds.
-        </p>
-      </section>
-
-      <section className="flex flex-col gap-1.5">
         <label htmlFor="template-audience" className="text-xs font-medium uppercase tracking-wide">
           Intended audience
         </label>

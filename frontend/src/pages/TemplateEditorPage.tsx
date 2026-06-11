@@ -41,7 +41,6 @@ const EMPTY_META: TemplateMeta = {
   name: "",
   description: "",
   intent: "",
-  expected_duration_seconds: 0,
   intended_audience: "",
   when_to_use: "",
 };

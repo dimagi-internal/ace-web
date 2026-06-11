@@ -2675,8 +2675,6 @@ export interface components {
              * @default
              */
             readonly intent: string;
-            /** Expected Duration Seconds */
-            readonly expected_duration_seconds: number;
             /** Intended Audience */
             readonly intended_audience: string;
             /** When To Use */
@@ -2703,8 +2701,6 @@ export interface components {
             readonly description?: string | null;
             /** Intent */
             readonly intent?: string | null;
-            /** Expected Duration Seconds */
-            readonly expected_duration_seconds?: number | null;
             /** Intended Audience */
             readonly intended_audience?: string | null;
             /** When To Use */

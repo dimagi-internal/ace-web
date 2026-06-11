@@ -12,7 +12,6 @@ const MOCK_BUNDLE: api.TemplateBundle = {
     name: "FLW Onboarding",
     description: "Standard onboarding for frontline workers",
     intent: "Get new frontline workers up to speed on the program and app.",
-    expected_duration_seconds: 57,
     intended_audience: "New frontline workers",
     when_to_use: "When onboarding new hires",
   },

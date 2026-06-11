@@ -109,9 +109,6 @@ export default function TemplatesPage() {
             >
               <header className="mb-2 flex items-start justify-between gap-2">
                 <h2 className="text-base font-medium">{t.name}</h2>
-                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                  ~{t.expected_duration_seconds}s
-                </span>
               </header>
 
               {t.description && (

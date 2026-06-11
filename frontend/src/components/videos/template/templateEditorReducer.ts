@@ -71,7 +71,6 @@ export function isDirty(state: TemplateEditorState): boolean {
     "name",
     "description",
     "intent",
-    "expected_duration_seconds",
     "intended_audience",
     "when_to_use",
   ];
@@ -95,7 +94,6 @@ export function buildPatch(state: TemplateEditorState): TemplatePatchIn {
     "name",
     "description",
     "intent",
-    "expected_duration_seconds",
     "intended_audience",
     "when_to_use",
   ];
