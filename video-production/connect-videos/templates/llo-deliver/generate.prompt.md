@@ -74,24 +74,25 @@ number. Never attribute a program-specific outcome to the LLO.
 - `cycle` (~14w): name all four steps — Learn, Deliver, Verify, Pay — as
   the loop your teams run.
 - `handoff` (~8w): "here's what delivering on Connect looks like."
-- `deal` → `narration.by_beat.ai_build` (~24w): Dimagi contracts your org
-  to deliver and pays per verified service; you recruit and train workers,
-  Connect verifies and pays; start with a trial run.
+- `deal` → `narration.by_beat.ai_build` (~20w): Dimagi contracts your org
+  and pays per verified service; you recruit and train workers, Connect
+  verifies and pays. (The trial run lives on a chip — don't also say it here.)
 - `scene` (~18w): field footage — workers reaching people, every visit
   verified the moment it happens.
 - `traction` → `narration.by_beat.problem` (~18w): proof it's real — over
   a million verified services, across many countries; not a pilot.
-- `product` (~30w): walk the four clips — train with an AI coach, deliver
+- `product` (~28w): walk the four clips — train with an AI coach, deliver
   guided visits, audited fairly (honest work protected), paid per verified
   visit.
-- `impact` (~18w): you're in good company (200+ LLOs), paid per verified
-  visit, with tools that help you reach more.
+- `impact` (~14w): you're in good company (200+ LLOs), paid per verified
+  visit, on time.
 - `cta`: leave empty — the outro plays under the brand CTA card.
 
 ## The deal card (ai_build beat)
 
-- `deal_headline`: one line, e.g. "Dimagi contracts you to deliver — paid
-  per verified service."
+- `deal_headline`: **one line, ≤7 words, benefit-first** — e.g. "Get paid
+  for every verified service." Don't lead with an org name and don't let it
+  wrap to two lines (it crowds the chips below).
 - `deal_term_1..4`: the terms as chips, ≤ ~4 words each. Default:
   "Pay-per-service contract", "No infrastructure to build", "Paid on
   verification", "Start with a trial run".
@@ -104,17 +105,18 @@ number. Never attribute a program-specific outcome to the LLO.
   counts, e.g. "verified services across 13 countries"); `traction_source`
   (citation, e.g. "CommCare Connect, 2026").
 
-## Traction cards (impact beat — 3 cards, REAL numbers)
+## Traction cards (impact beat — TWO cards, REAL numbers)
 
-Keep each `big` ≤ ~17 characters so it stays on one row at the StatCard
-auto-fit size. Default trio:
+Keep it to **two** cards so the stat beats don't blur together with the
+hero traction stat above (four full-screen numbers in a row is stat
+fatigue). Keep each `big` ≤ ~17 characters so it stays on one row at the
+StatCard auto-fit size. Default pair:
 
 - `impact_big_1` / `impact_caption_1`: good company — "200+" / "local
   organizations delivering on Connect".
-- `impact_big_2` / `impact_caption_2`: pay — "$1.30" / "average paid per
-  verified visit".
-- `impact_big_3` / `impact_caption_3`: reach — "94%" / "coverage reached
-  with microplanning".
+- `impact_big_2` / `impact_caption_2` / `impact_source_2`: pay — "$1.30" /
+  "average paid per verified visit" / "CHC Nigeria pilot" (cite it — the
+  per-visit rate is program-specific, not a platform-wide average).
 
 ## Library clips
 

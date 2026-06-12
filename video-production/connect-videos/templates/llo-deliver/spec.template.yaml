@@ -33,8 +33,9 @@
 #     {{generated_at}}     ISO-8601 UTC timestamp at fill time
 #
 #   The deal card (ai_build beat):
-#     {{deal_headline}}        ~10w. The marketplace offer, e.g. "Dimagi
-#                              contracts you to deliver — paid per verified service."
+#     {{deal_headline}}        ≤7w, ONE line, benefit-first — e.g. "Get paid
+#                              for every verified service." (Don't lead with an
+#                              org name or wrap to two lines.)
 #     {{deal_term_1..4}}       the terms as chips (≤ ~4 words each): contract,
 #                              no-infra, paid-on-verification, trial-run.
 #     {{deal_subhead}}         one line under the chips.
@@ -44,8 +45,9 @@
 #     {{traction_caption}} what it counts (e.g. "verified services across 13 countries")
 #     {{traction_source}}  citation (e.g. "CommCare Connect, 2026")
 #
-#   Traction cards (impact beat — 3 cards, REAL numbers):
-#     {{impact_big_1..3}} / {{impact_caption_1..3}}  good-company / pay-per-visit / coverage
+#   Traction cards (impact beat — TWO cards, REAL numbers):
+#     {{impact_big_1}} / {{impact_caption_1}}              good company (e.g. 200+ LLOs)
+#     {{impact_big_2}} / {{impact_caption_2}} / {{impact_source_2}}  what you earn (cite if program-specific)
 #
 #   Per-section content:
 #     {{scene_lower_third}}  e.g. "Your teams, in the field"
@@ -54,11 +56,11 @@
 #     {{narration_hook}}     ~14w. You know your community; Connect makes local delivery paid + verified.
 #     {{narration_cycle}}    ~14w. Name all four steps — Learn, Deliver, Verify, Pay.
 #     {{narration_handoff}}  ~8w.  "here's what delivering on Connect looks like."
-#     {{narration_deal}}     ~24w. The pay-per-service contract; you recruit/train, Connect verifies+pays; start with a trial run.
+#     {{narration_deal}}     ~20w. The pay-per-service contract; you recruit/train, Connect verifies + pays. (Trial-run lives on the chip, not here.)
 #     {{narration_scene}}    ~18w. Field footage — workers reaching people, every visit verified as it happens.
 #     {{narration_traction}} ~18w. Proof it's real — over a million verified services, many countries.
-#     {{narration_product}}  ~30w. Walk the 4 clips — train w/ AI coach, deliver, audited fairly, paid per visit.
-#     {{narration_impact}}   ~18w. You're in good company, paid per verified visit, tools to reach more.
+#     {{narration_product}}  ~28w. Walk the 4 clips — train w/ AI coach, deliver, audited fairly, paid per visit.
+#     {{narration_impact}}   ~14w. You're in good company, paid per verified visit, on time.
 #     {{narration_cta}}      Leave empty — outro plays under the brand CTA card.
 
 provenance:
@@ -127,14 +129,16 @@ product:
       caption: "Pay — per verified visit, on time"
       is_demo_clip: true
 
-# Traction stat cards (REAL numbers — an LLO needs proof).
+# Traction stat cards (REAL numbers — an LLO needs proof). Keep it to TWO
+# cards so the stat beats don't blur together with the hero traction stat
+# above — good company + what you earn. Cite the source where a figure is
+# program-specific (e.g. the per-visit rate).
 impact:
   - big: "{{impact_big_1}}"
     caption: "{{impact_caption_1}}"
   - big: "{{impact_big_2}}"
     caption: "{{impact_caption_2}}"
-  - big: "{{impact_big_3}}"
-    caption: "{{impact_caption_3}}"
+    source: "{{impact_source_2}}"
 
 narration:
   generator: manual
