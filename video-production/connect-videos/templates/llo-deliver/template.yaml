@@ -1,0 +1,43 @@
+# Template metadata. The generator service reads this to surface the
+# template in the picker and to know which prompt + skeleton to use.
+id: llo-deliver
+name: Deliver on Connect — the LLO offer (generic)
+description: |
+  Generic, unbranded explainer aimed at a LOCAL DELIVERY ORGANIZATION
+  (LLO): a local org weighing whether to DELIVER programs on CommCare
+  Connect. This is the other side of the marketplace from program-designer
+  — instead of "bring your program onto Connect," it answers "what does it
+  look like to deliver on Connect, and why would I want to?" The spine is
+  Neal's LLO-facing overview: the pay-per-service marketplace deal, real
+  platform traction, automatic-but-fair auditing, and a trial-run on-ramp.
+  Nine beats (~67s): hook, cycle, handoff, the deal (ai_build card), field
+  scene, a hero traction stat, the product loop (train / deliver / audit /
+  pay), three traction stat cards, and the delivery-partner CTA. Unlike
+  program-designer's generic cut, this one DOES carry real platform numbers
+  (an LLO needs proof it's real and paying) — keep them grounded in cited
+  Connect facts, never invented.
+intent: >-
+  Show a local delivery organization what it looks like to deliver programs on CommCare
+  Connect and why they'd want to — the pay-per-service contract, proof the platform is real
+  and paying, automatic-but-fair auditing that protects honest delivery, and a small
+  trial-run on-ramp. Unbranded; carries real Connect platform stats (not program-specific
+  invented ones).
+intended_audience: |
+  A local delivery organization (LLO) — a locally led org that recruits
+  and manages frontline workers and could deliver high-impact programs
+  under contract. They care about: how the deal works (do I get paid, for
+  what, and when), proof the platform is real and already paying partners,
+  how I'm managed and audited (and that honest work is protected), and how
+  to start small. Also a teammate or booth loop that needs the "deliver on
+  Connect" pitch in one breath.
+when_to_use: |
+  - You want the evergreen "deliver on Connect" recruitment story for a
+    local delivery org — the marketplace deal, traction, fair auditing,
+    and a trial-run on-ramp — with no prospect branding.
+  - You want real Connect platform numbers on screen (1.5M services, 200+
+    LLOs, pay-per-verified-visit), grounded in cited facts.
+  - For the OTHER side of the marketplace — a program-owning org deciding
+    whether to bring its program onto Connect — use program-designer. For
+    a product-mechanism-only explainer (the L/D/V/P loop, no deal/traction
+    beats), use connect-explainer. For a branded prospect pitch, use
+    partnership-pitch.

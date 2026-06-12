@@ -122,7 +122,7 @@ export const ProgramBody: React.FC<Props> = ({ spec, bodyBeats }) => {
   const renderBeat = (b: ResolvedBeat) => {
     switch (b.kind) {
       case "body_ai_build":
-        // The connectify-program AI cut. The beat is filtered out upstream
+        // The program-designer AI cut. The beat is filtered out upstream
         // for the standard cut / specs without ai_build, but guard so the
         // optional type is satisfied and a stray beat renders nothing.
         if (!spec.ai_build) return null;

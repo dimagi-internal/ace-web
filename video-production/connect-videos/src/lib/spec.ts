@@ -66,7 +66,7 @@ const ProspectSchema = z.object({
 });
 
 /**
- * The "how the program is built" beat (connectify-program AI cut). Renders
+ * The "how the program is built" beat (program-designer AI cut). Renders
  * a motion-graphic card — no library clip needed — showing the program
  * being assembled into its Connect components. Present + `active_cut: "ai"`
  * renders the body_ai_build beat; drop the block (or flip to the standard
@@ -99,10 +99,10 @@ export const ProgramSpecSchema = z.object({
   // it. Optional + absent-means-standard keeps every spec authored before
   // this field — and every other template — rendering exactly as before
   // (filterDefaultsForSpec only includes the beat on an explicit "ai").
-  // One connectify-program spec carries the ai_build content and flips
+  // One program-designer spec carries the ai_build content and flips
   // this field to switch cuts.
   active_cut: z.enum(["ai", "standard"]).optional(),
-  // Optional AI-build beat content (connectify-program). Only renders in
+  // Optional AI-build beat content (program-designer). Only renders in
   // the AI cut (active_cut: "ai"); see beats.ts::filterDefaultsForSpec.
   ai_build: AiBuildSchema.optional(),
   beat_overrides: z.record(z.string(), BeatOverrideSchema).optional(),

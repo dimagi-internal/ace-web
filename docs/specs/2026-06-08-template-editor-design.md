@@ -10,7 +10,7 @@
 ## 1. North star
 
 A comprehensive, browser-based editor for the **video-spec templates** we author
-(`connect-explainer`, `connectify-program`, `partnership-pitch`, `60s-campaign-overview`, …),
+(`connect-explainer`, `program-designer`, `partnership-pitch`, `60s-campaign-overview`, …),
 editable **live on the deployed labs app** — so we can "go through what we built
 together," tune the templates, and improve them in the same loop we use for videos.
 
@@ -148,7 +148,7 @@ template's example is just a spec).
 - **pytest:** Drive-backed `templates.py` read-through (seed → list → bundle →
   patch → re-read), validation rejects (bad YAML, schema-invalid example), cache
   invalidation, per-workspace isolation (a patch in one workspace doesn't leak).
-- **vitest:** the existing `example-spec.test.ts` / `connectify-program-spec.test.ts`
+- **vitest:** the existing `example-spec.test.ts` / `program-designer-spec.test.ts`
   stay (repo fixtures, renderer contract) — **unchanged**. New frontend tests for
   the template editor panels + batched save reducer (mirror the BeatEditor tests).
 - **Slug validation** before any Drive path build (existing `is_valid_template_id`).
