@@ -67,8 +67,8 @@ export function EditDrawer() {
     title = `Voiceover — ${sectionLabel(target.beatId).name}`;
     body = <NarrationPanel beatId={target.beatId} onCommit={close} onCancel={close} />;
   } else if (target.kind === "global-template") {
-    title = `Global template — ${sectionLabel(target.beatId).name}`;
-    body = <GlobalTemplatePanel onCommit={close} onCancel={close} />;
+    title = `On screen — ${sectionLabel(target.beatId).name}`;
+    body = <GlobalTemplatePanel beatId={target.beatId} onCommit={close} onCancel={close} />;
   } else if (target.kind === "program-name") {
     title = "Rename program";
     body = <ProgramNamePanel onCommit={close} onCancel={close} />;
