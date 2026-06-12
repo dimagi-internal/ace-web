@@ -9,7 +9,7 @@ interface Props {
 }
 
 /**
- * The "how the program is built" card — the connectify-program AI cut's
+ * The "how the program is built" card — the program-designer AI cut's
  * body_ai_build beat. A pure motion graphic (no library clip): the
  * headline holds, then the program's Connect components assemble in as
  * staggered chips, then the optional sub-headline arrives.

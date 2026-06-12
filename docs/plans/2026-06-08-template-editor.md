@@ -123,11 +123,11 @@ def write_template_file(layout, client, template_id: str, name: str, content: st
 ```python
 def test_seed_templates_uploads_repo_tree(fake_workspace):
     n = templates.seed_templates(fake_workspace)
-    assert n >= 3  # connect-explainer, connectify-program, partnership-pitch
+    assert n >= 3  # connect-explainer, program-designer, partnership-pitch
     layout, client = service.layout_for(fake_workspace)
-    assert "connectify-program" in drive.list_template_ids(layout, client)
+    assert "program-designer" in drive.list_template_ids(layout, client)
     assert "active_cut" in (drive.read_template_file(layout, client,
-        "connectify-program", "skeleton.yaml") or "")
+        "program-designer", "skeleton.yaml") or "")
 ```
 
 - [ ] **Step 2: Run → FAIL.**
@@ -173,8 +173,8 @@ def test_list_and_load_template_from_drive_autoseeds(fake_workspace):
     # No explicit seed call — lazy auto-seed on first list.
     metas = templates.list_templates(fake_workspace)
     ids = {m.id for m in metas}
-    assert {"connect-explainer", "connectify-program", "partnership-pitch"} <= ids
-    bundle = templates.load_template(fake_workspace, "connectify-program")
+    assert {"connect-explainer", "program-designer", "partnership-pitch"} <= ids
+    bundle = templates.load_template(fake_workspace, "program-designer")
     assert bundle is not None
     assert "active_cut" in bundle.skeleton_yaml
     assert bundle.prompt_md.strip()

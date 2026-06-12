@@ -1,4 +1,4 @@
-# connectify-program — spec skeleton.
+# program-designer — spec skeleton.
 #
 # Author-time docs only; the template loader (apps/videos/templates.py)
 # strips this leading comment block before returning skeleton_yaml so
@@ -21,7 +21,7 @@
 # Placeholders the generator must fill:
 #
 #   Identity:
-#     {{program_slug}}     slug — lowercase + hyphens (e.g. "connectify-program")
+#     {{program_slug}}     slug — lowercase + hyphens (e.g. "program-designer")
 #     {{workspace_slug}}   which ace-web workspace owns this video
 #     {{program_name}}     generic display name (e.g. "CommCare Connect")
 #     {{country_focus}}    primary region label (e.g. "Global")
@@ -51,7 +51,7 @@
 #     {{narration_cta}}      Leave empty — outro plays under the brand CTA card.
 
 provenance:
-  generator: connectify-program
+  generator: program-designer
   template: "{{template_id}}"
   generated_from: "{{program_url}}"
   generated_at: "{{generated_at}}"
@@ -122,7 +122,7 @@ impact:
 
 narration:
   generator: manual
-  prompt_version: v1-connectify-program
+  prompt_version: v1-program-designer
   start_seconds: 0
   by_beat:
     hook: "{{narration_hook}}"

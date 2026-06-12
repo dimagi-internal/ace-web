@@ -944,15 +944,15 @@ def test_patch_template_404_unknown(member_client):
 
 @pytest.mark.django_db
 def test_get_template_example(member_client):
-    """GET /templates/{id}/example returns the seeded example for connectify-program."""
+    """GET /templates/{id}/example returns the seeded example for program-designer."""
     client, _ = member_client
-    # Seed templates (auto-seed uploads example.spec.yaml for connectify-program).
+    # Seed templates (auto-seed uploads example.spec.yaml for program-designer).
     client.get("/api/w/ws1/videos/templates")
-    resp = client.get("/api/w/ws1/videos/templates/connectify-program/example")
+    resp = client.get("/api/w/ws1/videos/templates/program-designer/example")
     assert resp.status_code == 200, resp.content
     body = resp.json()
-    assert body["template_id"] == "connectify-program"
-    assert "slug: connectify-program" in body["example_yaml"]
+    assert body["template_id"] == "program-designer"
+    assert "slug: program-designer" in body["example_yaml"]
 
 
 @pytest.mark.django_db
@@ -976,12 +976,12 @@ def test_get_template_example_spec(member_client):
     """GET /templates/{id}/example-spec returns a parsed dict with slug."""
     client, _ = member_client
     client.get("/api/w/ws1/videos/templates")  # trigger auto-seed
-    resp = client.get("/api/w/ws1/videos/templates/connectify-program/example-spec")
+    resp = client.get("/api/w/ws1/videos/templates/program-designer/example-spec")
     assert resp.status_code == 200, resp.content
     body = resp.json()
-    assert body["template_id"] == "connectify-program"
+    assert body["template_id"] == "program-designer"
     assert isinstance(body["spec"], dict)
-    assert body["spec"]["slug"] == "connectify-program"
+    assert body["spec"]["slug"] == "program-designer"
 
 
 @pytest.mark.django_db
@@ -1001,20 +1001,20 @@ def test_patch_template_example_spec(member_client):
     client.get("/api/w/ws1/videos/templates")  # seed
 
     # Read the current example-spec.
-    get_resp = client.get("/api/w/ws1/videos/templates/connectify-program/example-spec")
+    get_resp = client.get("/api/w/ws1/videos/templates/program-designer/example-spec")
     assert get_resp.status_code == 200, get_resp.content
     current_spec = get_resp.json()["spec"]
 
     # Patch it with an edited dict.
     current_spec["tagline"] = "Test tagline via patch"
     patch_resp = client.patch(
-        "/api/w/ws1/videos/templates/connectify-program",
+        "/api/w/ws1/videos/templates/program-designer",
         data={"example_spec": current_spec},
         content_type="application/json",
     )
     assert patch_resp.status_code == 200, patch_resp.content
 
     # Confirm the round-trip.
-    get_resp2 = client.get("/api/w/ws1/videos/templates/connectify-program/example-spec")
+    get_resp2 = client.get("/api/w/ws1/videos/templates/program-designer/example-spec")
     assert get_resp2.status_code == 200, get_resp2.content
     assert get_resp2.json()["spec"]["tagline"] == "Test tagline via patch"

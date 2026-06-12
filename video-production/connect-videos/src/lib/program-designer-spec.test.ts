@@ -11,15 +11,15 @@ const repoRoot = path.resolve(here, "..", "..");
 const exampleSpecPath = path.join(
   repoRoot,
   "templates",
-  "connectify-program",
+  "program-designer",
   "example.spec.yaml",
 );
 const defaultsPath = path.join(repoRoot, "programs", "_defaults.yaml");
 
-describe("connectify-program example.spec.yaml", () => {
+describe("program-designer example.spec.yaml", () => {
   it("validates against loadProgramSpec (AI cut — ai_build + why benefit cards, no problem)", () => {
     const spec = loadProgramSpec(exampleSpecPath);
-    expect(spec.slug).toBe("connectify-program");
+    expect(spec.slug).toBe("program-designer");
     expect(spec.name).toBe("CommCare Connect");
     expect(spec.active_cut).toBe("ai");
     expect(spec.ai_build).toBeDefined();

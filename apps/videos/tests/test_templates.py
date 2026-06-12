@@ -259,10 +259,10 @@ def test_seed_templates_uploads_repo_tree(fake_drive_ws):
 
     layout, client = service.layout_for(fake_drive_ws.workspace)
     ids = drive.list_template_ids(layout, client)
-    assert {"connect-explainer", "connectify-program", "partnership-pitch"} <= set(ids)
+    assert {"connect-explainer", "program-designer", "partnership-pitch", "llo-deliver"} <= set(ids)
 
     # The Drive filename is "skeleton.yaml" (mapped from spec.template.yaml).
-    skeleton = drive.read_template_file(layout, client, "connectify-program", "skeleton.yaml")
+    skeleton = drive.read_template_file(layout, client, "program-designer", "skeleton.yaml")
     assert skeleton is not None
     assert "active_cut" in skeleton
 
@@ -282,13 +282,13 @@ def test_list_templates_lazy_autoseeds_from_drive(fake_drive_ws):
     """list_templates auto-seeds from the repo tree when Drive has no templates."""
     metas = templates.list_templates(fake_drive_ws.workspace)   # no explicit seed
     ids = {m.id for m in metas}
-    assert {"connect-explainer", "connectify-program", "partnership-pitch"} <= ids
+    assert {"connect-explainer", "program-designer", "partnership-pitch", "llo-deliver"} <= ids
 
 
 def test_load_template_from_drive(fake_drive_ws):
     """load_template reads from Drive after seeding."""
     templates.list_templates(fake_drive_ws.workspace)  # seed
-    b = templates.load_template(fake_drive_ws.workspace, "connectify-program")
+    b = templates.load_template(fake_drive_ws.workspace, "program-designer")
     assert b is not None
     assert "active_cut" in b.skeleton_yaml
     assert b.prompt_md.strip()
@@ -317,10 +317,10 @@ def test_load_template_cached_on_second_call(fake_drive_ws):
     """Second call to load_template returns from cache."""
     from unittest import mock
     templates.list_templates(fake_drive_ws.workspace)
-    b1 = templates.load_template(fake_drive_ws.workspace, "connectify-program")
+    b1 = templates.load_template(fake_drive_ws.workspace, "program-designer")
     assert b1 is not None
     with mock.patch.object(drive, "read_template_file") as spy:
-        b2 = templates.load_template(fake_drive_ws.workspace, "connectify-program")
+        b2 = templates.load_template(fake_drive_ws.workspace, "program-designer")
     assert b2 is not None
     assert b2.meta.id == b1.meta.id
     assert spy.call_count == 0
@@ -339,12 +339,12 @@ def test_invalidate_tpl_bundle_clears_bundle_and_list(fake_drive_ws):
     """invalidate_tpl(slug, tid) drops the specific bundle AND the list."""
     from apps.videos import cache as vcache
     templates.list_templates(fake_drive_ws.workspace)
-    templates.load_template(fake_drive_ws.workspace, "connectify-program")
+    templates.load_template(fake_drive_ws.workspace, "program-designer")
     ws_slug = fake_drive_ws.workspace.slug
-    assert vcache.get_tpl_bundle(ws_slug, "connectify-program") is not None
+    assert vcache.get_tpl_bundle(ws_slug, "program-designer") is not None
     assert vcache.get_tpl_list(ws_slug) is not None
-    vcache.invalidate_tpl(ws_slug, "connectify-program")
-    assert vcache.get_tpl_bundle(ws_slug, "connectify-program") is None
+    vcache.invalidate_tpl(ws_slug, "program-designer")
+    assert vcache.get_tpl_bundle(ws_slug, "program-designer") is None
     assert vcache.get_tpl_list(ws_slug) is None
 
 
@@ -420,11 +420,11 @@ def test_save_template_nonexistent_raises(fake_drive_ws):
 
 
 def test_load_example(fake_drive_ws):
-    """load_example returns the seeded example for connectify-program."""
+    """load_example returns the seeded example for program-designer."""
     ws = fake_drive_ws.workspace
     templates.list_templates(ws)  # triggers auto-seed which uploads example.spec.yaml too
-    ex = templates.load_example(ws, "connectify-program")
-    assert ex and "slug: connectify-program" in ex
+    ex = templates.load_example(ws, "program-designer")
+    assert ex and "slug: program-designer" in ex
 
 
 def test_load_example_returns_none_when_missing(fake_drive_ws):
@@ -445,8 +445,8 @@ def test_load_example_returns_none_when_missing(fake_drive_ws):
 def test_load_example_spec_parsed(fake_drive_ws):
     """load_example_spec returns the example as a parsed dict."""
     templates.list_templates(fake_drive_ws.workspace)  # seed
-    spec = templates.load_example_spec(fake_drive_ws.workspace, "connectify-program")
-    assert isinstance(spec, dict) and spec["slug"] == "connectify-program"
+    spec = templates.load_example_spec(fake_drive_ws.workspace, "program-designer")
+    assert isinstance(spec, dict) and spec["slug"] == "program-designer"
 
 
 def test_load_example_spec_returns_none_when_missing(fake_drive_ws):
@@ -464,7 +464,7 @@ def test_load_example_spec_injects_resolved_beats(fake_drive_ws):
     runs) so the editor isn't blank."""
     ws = fake_drive_ws.workspace
     templates.list_templates(ws)
-    spec = templates.load_example_spec(ws, "connectify-program")
+    spec = templates.load_example_spec(ws, "program-designer")
     assert isinstance(spec.get("beats"), list) and len(spec["beats"]) > 0
     # each beat carries id + kind (what BeatList keys on)
     assert all("id" in b and "kind" in b for b in spec["beats"])
@@ -475,11 +475,11 @@ def test_save_example_spec_strips_derived_beats(fake_drive_ws):
     it must NOT be persisted to example.spec.yaml (it's derived, not source)."""
     ws = fake_drive_ws.workspace
     templates.list_templates(ws)
-    spec = templates.load_example_spec(ws, "connectify-program")
+    spec = templates.load_example_spec(ws, "program-designer")
     assert "beats" in spec  # injected on read
     spec["tagline"] = "edited via beateditor"
-    templates.save_template(ws, "connectify-program", example_spec=spec)
-    raw = templates.load_example(ws, "connectify-program")  # the persisted YAML text
+    templates.save_template(ws, "program-designer", example_spec=spec)
+    raw = templates.load_example(ws, "program-designer")  # the persisted YAML text
     assert "\nbeats:" not in raw and not raw.startswith("beats:")
     assert "edited via beateditor" in raw
 
@@ -487,12 +487,12 @@ def test_save_example_spec_strips_derived_beats(fake_drive_ws):
 def test_save_template_example_spec_roundtrips(fake_drive_ws):
     """save_template(example_spec=...) serializes to YAML, stores, and load_example_spec reflects it."""
     templates.list_templates(fake_drive_ws.workspace)
-    spec = templates.load_example_spec(fake_drive_ws.workspace, "connectify-program")
+    spec = templates.load_example_spec(fake_drive_ws.workspace, "program-designer")
     assert spec is not None
     spec = dict(spec)
     spec["tagline"] = "Edited tagline"
-    templates.save_template(fake_drive_ws.workspace, "connectify-program", example_spec=spec)
-    reloaded = templates.load_example_spec(fake_drive_ws.workspace, "connectify-program")
+    templates.save_template(fake_drive_ws.workspace, "program-designer", example_spec=spec)
+    reloaded = templates.load_example_spec(fake_drive_ws.workspace, "program-designer")
     assert reloaded["tagline"] == "Edited tagline"
 
 
@@ -501,20 +501,20 @@ def test_save_template_example_spec_rejects_invalid(fake_drive_ws):
     templates.list_templates(fake_drive_ws.workspace)
     with pytest.raises(ValueError):
         # Missing workspace field → validate_spec_structure raises ValueError.
-        templates.save_template(fake_drive_ws.workspace, "connectify-program", example_spec={"slug": "x"})
+        templates.save_template(fake_drive_ws.workspace, "program-designer", example_spec={"slug": "x"})
 
 
 def test_save_template_example_spec_and_yaml_conflict_raises(fake_drive_ws):
     """Providing both example_yaml and example_spec raises ValueError (ambiguity guard)."""
     ws = fake_drive_ws.workspace
     templates.list_templates(ws)
-    valid_ex = "slug: connectify-program\nworkspace: test-ws\nname: x\n"
+    valid_ex = "slug: program-designer\nworkspace: test-ws\nname: x\n"
     with pytest.raises(ValueError, match="example_yaml.*example_spec|example_spec.*example_yaml"):
         templates.save_template(
             ws,
-            "connectify-program",
+            "program-designer",
             example_yaml=valid_ex,
-            example_spec={"slug": "connectify-program", "workspace": "test-ws", "name": "x"},
+            example_spec={"slug": "program-designer", "workspace": "test-ws", "name": "x"},
         )
 
 
@@ -539,8 +539,8 @@ def test_load_template_meta_description_is_reflowed(fake_drive_ws):
     """The bundle's description has no mid-paragraph hard newlines (was ragged)."""
     ws = fake_drive_ws.workspace
     templates.list_templates(ws)
-    b = templates.load_template(ws, "connectify-program")
-    # connectify's seeded description was a wrapped block scalar; after reflow the
+    b = templates.load_template(ws, "program-designer")
+    # program-designer's seeded description was a wrapped block scalar; after reflow the
     # first paragraph is a single flowing line.
     first_para = b.meta.description.split("\n\n")[0]
     assert "\n" not in first_para
@@ -555,7 +555,7 @@ def test_load_template_intent_is_present_for_seeded_templates(fake_drive_ws):
     """All seeded templates expose a non-empty intent string on their meta."""
     ws = fake_drive_ws.workspace
     templates.list_templates(ws)  # triggers auto-seed
-    for tid in ("connect-explainer", "connectify-program", "partnership-pitch",
+    for tid in ("connect-explainer", "program-designer", "partnership-pitch", "llo-deliver",
                 "60s-campaign-overview", "120s-program-demo"):
         b = templates.load_template(ws, tid)
         assert b is not None, f"{tid}: load_template returned None"

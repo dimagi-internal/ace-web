@@ -1,0 +1,158 @@
+# llo-deliver — spec skeleton.
+#
+# Author-time docs only; the template loader (apps/videos/templates.py)
+# strips this leading comment block before returning skeleton_yaml so
+# placeholder *references* inside doc text don't get substituted into the
+# generated spec.
+#
+# This is the LLO-FACING "deliver on Connect" explainer — the other side
+# of the marketplace from program-designer. It carries the full beat set
+# including the problem (hero traction stat) and impact (traction cards)
+# beats, plus the ai_build beat repurposed as "the deal" card.
+#
+# Unlike program-designer's generic cut, this template DOES put real
+# Connect platform numbers on screen — an LLO needs proof the platform is
+# real and paying. Keep every number grounded in cited Connect facts;
+# never invent one.
+#
+# CUTS:
+#   active_cut: ai        → includes the deal card (body_ai_build). ~67s.
+#   active_cut: standard  → drops the deal card. ~60s.
+#
+# Placeholders the generator must fill:
+#
+#   Identity:
+#     {{program_slug}}     slug — lowercase + hyphens (e.g. "llo-deliver")
+#     {{workspace_slug}}   which ace-web workspace owns this video
+#     {{program_name}}     generic display name (e.g. "CommCare Connect")
+#     {{country_focus}}    primary region label (e.g. "Global")
+#     {{status}}           short status line (e.g. "Live")
+#     {{program_tagline}}  one-line tagline (LLO POV — paid for verified work)
+#     {{program_url}}      canonical URL (e.g. https://connect.dimagi.com/)
+#     {{template_id}}      echoed back — fill with the template id you fetched
+#     {{generated_at}}     ISO-8601 UTC timestamp at fill time
+#
+#   The deal card (ai_build beat):
+#     {{deal_headline}}        ~10w. The marketplace offer, e.g. "Dimagi
+#                              contracts you to deliver — paid per verified service."
+#     {{deal_term_1..4}}       the terms as chips (≤ ~4 words each): contract,
+#                              no-infra, paid-on-verification, trial-run.
+#     {{deal_subhead}}         one line under the chips.
+#
+#   Hero traction stat (problem beat):
+#     {{traction_big}}     a real Connect platform figure (e.g. "1.5M")
+#     {{traction_caption}} what it counts (e.g. "verified services across 13 countries")
+#     {{traction_source}}  citation (e.g. "CommCare Connect, 2026")
+#
+#   Traction cards (impact beat — 3 cards, REAL numbers):
+#     {{impact_big_1..3}} / {{impact_caption_1..3}}  good-company / pay-per-visit / coverage
+#
+#   Per-section content:
+#     {{scene_lower_third}}  e.g. "Your teams, in the field"
+#
+#   Per-beat narration (each ±2 words from target):
+#     {{narration_hook}}     ~14w. You know your community; Connect makes local delivery paid + verified.
+#     {{narration_cycle}}    ~14w. Name all four steps — Learn, Deliver, Verify, Pay.
+#     {{narration_handoff}}  ~8w.  "here's what delivering on Connect looks like."
+#     {{narration_deal}}     ~24w. The pay-per-service contract; you recruit/train, Connect verifies+pays; start with a trial run.
+#     {{narration_scene}}    ~18w. Field footage — workers reaching people, every visit verified as it happens.
+#     {{narration_traction}} ~18w. Proof it's real — over a million verified services, many countries.
+#     {{narration_product}}  ~30w. Walk the 4 clips — train w/ AI coach, deliver, audited fairly, paid per visit.
+#     {{narration_impact}}   ~18w. You're in good company, paid per verified visit, tools to reach more.
+#     {{narration_cta}}      Leave empty — outro plays under the brand CTA card.
+
+provenance:
+  generator: llo-deliver
+  template: "{{template_id}}"
+  generated_from: "{{program_url}}"
+  generated_at: "{{generated_at}}"
+
+slug: "{{program_slug}}"
+workspace: "{{workspace_slug}}"
+name: "{{program_name}}"
+country_focus: "{{country_focus}}"
+status: "{{status}}"
+tagline: "{{program_tagline}}"
+program_url: "{{program_url}}"
+
+# Which cut to render. "ai" includes the deal card (body_ai_build beat);
+# "standard" drops it. Same spec, one field.
+active_cut: ai
+
+# Library-backed asset manifest. Each @alias maps to a library:video/...
+# ref that resolves server-side via the workspace media library.
+manifest:
+  field-walking-towards-house: library:video/field-broll/field-walking-towards-house.mp4
+  field-group-around-woman: library:video/field-broll/field-group-around-woman.mp4
+  mobile-learn: library:video/mobile-screencast/mobile-learn.mp4
+  mobile-mapping: library:video/mobile-screencast/mobile-mapping.mp4
+  web-superset-graphs: library:video/web-screencast/web-superset-graphs.mp4
+  mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
+
+# "The deal" card (ai_build beat). Pure motion graphic — no clip. The
+# chips are the terms of the offer to a local delivery org.
+ai_build:
+  headline: "{{deal_headline}}"
+  components:
+    - "{{deal_term_1}}"
+    - "{{deal_term_2}}"
+    - "{{deal_term_3}}"
+    - "{{deal_term_4}}"
+  subhead: "{{deal_subhead}}"
+
+scene:
+  clips:
+    - "@field-walking-towards-house"
+    - "@field-group-around-woman"
+  lower_third: "{{scene_lower_third}}"
+
+# Hero traction stat — proof the platform is real and paying.
+problem:
+  big: "{{traction_big}}"
+  caption: "{{traction_caption}}"
+  source: "{{traction_source}}"
+
+product:
+  beats:
+    - asset: "@mobile-learn"
+      caption: "Learn — train your workers with an AI coach"
+      is_demo_clip: true
+    - asset: "@mobile-mapping"
+      caption: "Deliver — guided visits, GPS-verified"
+      is_demo_clip: true
+    - asset: "@web-superset-graphs"
+      caption: "Audited — honest delivery, protected"
+      is_demo_clip: true
+    - asset: "@mobile-pay"
+      caption: "Pay — per verified visit, on time"
+      is_demo_clip: true
+
+# Traction stat cards (REAL numbers — an LLO needs proof).
+impact:
+  - big: "{{impact_big_1}}"
+    caption: "{{impact_caption_1}}"
+  - big: "{{impact_big_2}}"
+    caption: "{{impact_caption_2}}"
+  - big: "{{impact_big_3}}"
+    caption: "{{impact_caption_3}}"
+
+narration:
+  generator: manual
+  prompt_version: v1-llo-deliver
+  start_seconds: 0
+  by_beat:
+    hook: "{{narration_hook}}"
+    cycle: "{{narration_cycle}}"
+    handoff: "{{narration_handoff}}"
+    ai_build: "{{narration_deal}}"
+    scene: "{{narration_scene}}"
+    problem: "{{narration_traction}}"
+    product: "{{narration_product}}"
+    impact: "{{narration_impact}}"
+    cta: ""
+  script: ""
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

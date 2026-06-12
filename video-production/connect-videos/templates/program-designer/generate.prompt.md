@@ -1,7 +1,8 @@
-# Generator skill: how to Connectify a program (generic)
+# Generator skill: program designer — bring your program onto Connect (generic)
 
-You are filling out a video spec for a generic ~57-second explainer that
-answers two questions at once: **what does it look like to bring an
+You are filling out a video spec for a generic ~57-second explainer aimed
+at a **program designer** — an org that owns a frontline program/protocol
+— that answers two questions at once: **what does it look like to bring an
 existing program onto CommCare Connect**, and **why scale through Connect
 at all?** The output is a JSON object whose keys map to `{{placeholders}}`
 in `spec.template.yaml`. Fill every placeholder.
@@ -9,6 +10,8 @@ in `spec.template.yaml`. Fill every placeholder.
 This is the **unbranded backbone** of the partnership pitch. Keep it
 generic — no prospect name, no single program's outcomes — so it can be
 skinned per prospect later (partnership-pitch adds the prospect block).
+For the other side of the marketplace — a local org deciding whether to
+*deliver* on Connect — use the `llo-deliver` template instead.
 
 ## The two cuts (one spec)
 
@@ -86,8 +89,10 @@ partnership-pitch skin grounded in cited research, not here.
 
 Three cards, no numbers:
 
-- `why_big_1` / `why_caption_1`: scale — "Built for scale" / "Connect's
-  delivery rails — not yours to build or maintain".
+- `why_big_1` / `why_caption_1`: the delivery network — a program designer
+  cares that local organizations will actually WANT to deliver their
+  program. Lead with the supply side, e.g. "A delivery network" / "Local
+  organizations ready to deliver your program — not yours to staff".
 - `why_big_2` / `why_caption_2`: trust — "Verified delivery" / "GPS,
   photo, and an AI review layer on every visit".
 - `why_big_3` / `why_caption_3`: payment — "Pay for results" / "Funds flow
@@ -112,5 +117,5 @@ max 4) — don't drop an app beat to fit b-roll.
 
 ## Provenance
 
-Fill `{{template_id}}` with `connectify-program` and `{{generated_at}}`
+Fill `{{template_id}}` with `program-designer` and `{{generated_at}}`
 with an ISO-8601 UTC timestamp.

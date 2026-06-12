@@ -117,9 +117,9 @@ describe("filterDefaultsForSpec (explainer mode — optional stat beats)", () =>
   });
 });
 
-describe("filterDefaultsForSpec (connectify-program AI cut — body_ai_build)", () => {
+describe("filterDefaultsForSpec (program-designer AI cut — body_ai_build)", () => {
   // The global timeline with the optional ai_build beat present (mirrors
-  // programs/_defaults.yaml after the connectify-program change). Total
+  // programs/_defaults.yaml after the program-designer change). Total
   // 67s = the 60s base + the 7s ai_build beat between handoff and scene.
   const defaultsWithAiBuild = {
     fps: 30,

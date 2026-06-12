@@ -5,7 +5,7 @@ export const BeatKind = z.enum([
   "intro_hook",
   "intro_cycle",
   "intro_handoff",
-  // Optional "how the program is built" beat — the connectify-program AI
+  // Optional "how the program is built" beat — the program-designer AI
   // cut. Like the stat beats below, it only renders when the spec opts in
   // (spec.ai_build present AND spec.active_cut === "ai"); filterDefaultsForSpec
   // drops it otherwise.
@@ -90,7 +90,7 @@ export function parseDefaults(yamlText: string): Defaults {
  * All three fields are optional (see spec.ts); when a spec omits one (or,
  * for the AI-build beat, isn't in the AI cut), the corresponding beat must
  * not render. This is the single mechanism behind both "explainer mode"
- * (drop the stat cards) and the connectify-program AI/standard cut toggle
+ * (drop the stat cards) and the program-designer AI/standard cut toggle
  * (one spec carries the ai_build content; flipping active_cut renders or
  * drops just that beat — no duplicated spec).
  *
