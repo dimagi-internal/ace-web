@@ -38,10 +38,15 @@ voice:
   voice_id: "21m00Tcm4TlvDq8ikWAM"
   model: eleven_turbo_v2
 
-# Music bed mixed under the full 60s.
+# Music bed mixed under the FULL cut. render.ts loops the track
+# (-stream_loop) so it covers the whole audio-aligned video length — a cut
+# longer than the 60s source (e.g. the ~76s llo-deliver cut) no longer
+# plays dry at the tail — and fades out over the last 1.5s.
 # Track: "Water — Afro Pop Music" by Kontraa via Pixabay (Pixabay Content
 # License: free for commercial use, no attribution required). Vocals-free.
 # Per-program override: copy this block into a program YAML to swap.
+# duration_seconds is retained for reference (source track length); the
+# rendered bed length now follows the cut, not this value.
 music_bed:
   asset: assets/shared/connect-music-bed-pixabay.mp3
   start_seconds: 0

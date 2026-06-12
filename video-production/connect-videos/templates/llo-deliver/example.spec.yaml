@@ -49,7 +49,7 @@ manifest:
 # "The deal" card (rendered via the ai_build beat). The chips are the
 # terms of the marketplace offer to a local delivery org.
 ai_build:
-  headline: "Dimagi contracts you to deliver — paid per verified service"
+  headline: "Get paid for every verified service"
   components:
     - "Pay-per-service contract"
     - "No infrastructure to build"
@@ -78,7 +78,7 @@ product:
       caption: "Deliver — guided visits, GPS-verified"
       is_demo_clip: true
     - asset: "@web-superset-graphs"
-      caption: "Audited — honest delivery, protected"
+      caption: "Audited fairly — honest work protected"
       is_demo_clip: true
     - asset: "@mobile-pay"
       caption: "Pay — per verified visit, on time"
@@ -91,8 +91,7 @@ impact:
     caption: "local organizations delivering on Connect"
   - big: "$1.30"
     caption: "average paid per verified visit"
-  - big: "94%"
-    caption: "coverage reached with microplanning"
+    source: "CHC Nigeria pilot"
 
 narration:
   generator: manual
@@ -102,21 +101,21 @@ narration:
     hook: "You know your community. Connect turns local delivery into paid, verified work — at real scale."
     cycle: "Your teams run one connected loop on Connect — Learn, Deliver, Verify, and get Paid."
     handoff: "Here's what delivering on Connect looks like."
-    ai_build: "Dimagi contracts your organization to deliver and pays per verified service. You recruit and train workers; Connect handles verification and payment — start with a trial run."
+    ai_build: "Dimagi contracts your organization and pays per verified service. You recruit and train workers; Connect handles verification and payment."
     scene: "Your frontline workers go where people are — every visit GPS-stamped, photographed, and verified the moment it happens."
     problem: "This isn't a pilot — over one and a half million services already delivered and verified across thirteen countries."
-    product: "Your workers train on their phones with an AI coach, deliver guided visits, and every one is verified and audited fairly. Honest delivery is protected, and you're paid per verified visit."
-    impact: "Two hundred local organizations already deliver on Connect — paid per verified visit, with tools that help you reach more."
+    product: "They train with an AI coach, deliver guided visits, and every one is verified and audited — fairly. Honest work is protected; you're paid per verified visit."
+    impact: "Two hundred local organizations already deliver on Connect — paid per verified visit, on time."
     cta: ""
   script: |
     You know your community. Connect turns local delivery into paid, verified work — at real scale.
     Your teams run one connected loop on Connect — Learn, Deliver, Verify, and get Paid.
     Here's what delivering on Connect looks like.
-    Dimagi contracts your organization to deliver and pays per verified service. You recruit and train workers; Connect handles verification and payment — start with a trial run.
+    Dimagi contracts your organization and pays per verified service. You recruit and train workers; Connect handles verification and payment.
     Your frontline workers go where people are — every visit GPS-stamped, photographed, and verified the moment it happens.
     This isn't a pilot — over one and a half million services already delivered and verified across thirteen countries.
-    Your workers train on their phones with an AI coach, deliver guided visits, and every one is verified and audited fairly. Honest delivery is protected, and you're paid per verified visit.
-    Two hundred local organizations already deliver on Connect — paid per verified visit, with tools that help you reach more.
+    They train with an AI coach, deliver guided visits, and every one is verified and audited — fairly. Honest work is protected; you're paid per verified visit.
+    Two hundred local organizations already deliver on Connect — paid per verified visit, on time.
 
 voice:
   provider: elevenlabs

@@ -347,11 +347,19 @@ async function main() {
           `music_bed asset not found at ${musicAbs}; skipping music bed.`
         );
       } else {
-        inputs.push(`-i ${JSON.stringify(musicAbs)}`);
+        // Loop the bed (-stream_loop -1) so it covers the FULL audio-aligned
+        // video length, not just one pass of the source track. Before this,
+        // a bed shorter than the cut (e.g. the 60s default track under a 76s
+        // cut) left the tail playing dry. `mb.duration_seconds` is now only a
+        // cap on how much of one source pass to use as the loop unit — the
+        // output is always trimmed to `totalSeconds`. A short afade-out keeps
+        // the loop seam / ending from hard-cutting.
+        inputs.push(`-stream_loop -1 -i ${JSON.stringify(musicAbs)}`);
         const mIdx = inputs.length - 1;
-        const dur = mb.duration_seconds ?? totalSeconds;
+        const dur = totalSeconds;
+        const fadeStart = Math.max(0, dur - 1.5);
         filterParts.push(
-          `[${mIdx}:a]atrim=start=${mb.start_seconds}:duration=${dur},asetpts=PTS-STARTPTS,volume=${mb.volume_db}dB[bg]`
+          `[${mIdx}:a]atrim=start=${mb.start_seconds}:duration=${dur},asetpts=PTS-STARTPTS,volume=${mb.volume_db}dB,afade=t=out:st=${fadeStart}:d=1.5[bg]`
         );
         mixLabels.push("[bg]");
       }
