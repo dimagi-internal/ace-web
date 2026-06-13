@@ -1,4 +1,4 @@
-"""Tests for the CommCare Connect OAuth views."""
+"""Tests for the Connect OAuth views."""
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -25,7 +25,7 @@ def _oauth_config(settings):
 def test_login_page_public(client):
     resp = client.get("/auth/login/")
     assert resp.status_code == 200
-    assert b"Sign in with CommCare Connect" in resp.content
+    assert b"Sign in with Connect" in resp.content
 
 
 def test_initiate_redirects_to_connect_with_pkce(client):

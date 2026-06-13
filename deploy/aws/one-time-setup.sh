@@ -203,7 +203,7 @@ echo
 echo "✓ One-time setup complete."
 echo
 echo "Next steps:"
-echo "  1. Register the OAuth client ID in CommCare Connect admin:"
+echo "  1. Register the OAuth client ID in Connect admin:"
 echo "     https://connect.dimagi.com/admin/oauth2_provider/application/"
 echo "     Callback URL: https://labs.connect.dimagi.com/ace/auth/callback/"
 echo "     Grant type: Authorization code"
@@ -213,4 +213,4 @@ echo "     the real values from the Connect admin (if you entered placeholders).
 echo "  3. Trigger the deploy workflow: Actions > Deploy to Labs (AWS) > Run"
 echo "     with run_migrations=true for the first deploy."
 echo "  4. Visit https://labs.connect.dimagi.com/ace/ and sign in with a"
-echo "     @dimagi.com CommCare Connect account."
+echo "     @dimagi.com Connect account."

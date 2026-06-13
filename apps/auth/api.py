@@ -1,7 +1,7 @@
 """Django Ninja v2 router for the auth JSON surface.
 
 Only JSON-returning endpoints are ported here. Browser-redirect endpoints
-(CommCare Connect OAuth initiate/callback, Nova OAuth initiate/callback,
+(Connect OAuth initiate/callback, Nova OAuth initiate/callback,
 and the HTML login page) stay as plain Django views.
 """
 from __future__ import annotations

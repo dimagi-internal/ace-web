@@ -1,7 +1,7 @@
 """Pydantic v2 schemas for the auth surface JSON endpoints.
 
 Only the JSON-returning auth endpoints get schemas here.  Browser-redirect
-endpoints (CommCare Connect OAuth initiate/callback, Nova OAuth
+endpoints (Connect OAuth initiate/callback, Nova OAuth
 initiate/callback) stay as plain Django views and have no Pydantic schemas.
 
 **Endpoints covered:**

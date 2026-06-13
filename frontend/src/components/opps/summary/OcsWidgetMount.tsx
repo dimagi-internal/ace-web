@@ -35,7 +35,7 @@ const SCRIPT_ATTR = "data-ocs-widget";
  * upgrades to an empty shadow root. Loading from unpkg keeps the
  * chunks co-located with the entry the way Stencil expects.
  *
- * Same package CommCare Connect uses; Connect bundles via Webpack
+ * Same package Connect uses; Connect bundles via Webpack
  * which handles the lazy chunks differently.
  */
 export function OcsWidgetMount({ chatbotId, embedKey, version = "0.5.3" }: Props) {
