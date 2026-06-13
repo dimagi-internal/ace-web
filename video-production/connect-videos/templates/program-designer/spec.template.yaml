@@ -9,8 +9,8 @@
 # explainer for a PROGRAM DESIGNER. It carries NO prospect block
 # (partnership-pitch adds that) and OMITS the problem stat-card beat. It
 # DOES carry the impact beat — three "why scale through Connect" cards that
-# carry REAL cited platform facts (build-once-replicate is the strongest) —
-# and an ai_build beat that only renders in the AI cut.
+# carry REAL cited platform facts from connect.dimagi.com (rapid deployment
+# + economics of scale) — and an ai_build beat that only renders in the AI cut.
 #
 # TWO CUTS FROM ONE SPEC:
 #   active_cut: ai        → includes the body_ai_build beat ("AI builds
@@ -32,26 +32,27 @@
 #     {{template_id}}      echoed back — fill with the template id you fetched
 #     {{generated_at}}     ISO-8601 UTC timestamp at fill time
 #
-#   AI-build card (AI cut):
-#     {{ai_build_headline}}    ~12w. "AI turns your program into a Connect program — in days, not months."
-#     {{ai_build_component_1..4}}  the Connect components the program maps onto
+#   AI-build card (AI cut) — "rapid deployment" card:
+#     {{ai_build_headline}}    short. "Deployed in as few as 10 days."
+#     {{ai_build_component_1..4}}  the infrastructure Connect provides:
+#         "Training", "Delivery app", "Verification", "Payments".
 #     {{ai_build_subhead}}     one line under the chips.
 #
 #   Per-section content:
 #     {{scene_lower_third}}  e.g. "Your program, in the field"
-#     {{why_big_1..3}} / {{why_caption_1..3}}  three cards of REAL cited platform
-#         facts (lead with build-once-replicate): e.g. "9 countries" / "one
-#         program, replicated", "5 Ministries" / "of Health signed on",
-#         "200+ LLOs" / "a delivery network at near-zero cost".
+#     {{why_big_1..3}} / {{why_caption_1..3}}  three cards of REAL cited
+#         connect.dimagi.com facts: "10 days" / "to first deployment", "22%" /
+#         "cost reduction per visit as you scale", "1.5M+" / "verified
+#         services across 13 countries".
 #
 #   Per-beat narration (each ±2 words from target):
-#     {{narration_hook}}     ~14w. You've built a program that works; scaling it country by country is the hard part.
-#     {{narration_cycle}}    ~14w. Name all four steps — Learn, Deliver, Verify, Pay.
+#     {{narration_hook}}     ~14w. For decades programs paid for planned activity and hoped it added up; Connect pays for verified delivery.
+#     {{narration_cycle}}    ~14w. Pick the program, geography, and amount — then Learn, Deliver, Verify, Pay.
 #     {{narration_handoff}}  ~8w.  "here's how your program comes onto Connect."
-#     {{narration_ai_build}} ~24w. AI turns the protocol into the apps/rules/payments — build once, then replicate across countries.
-#     {{narration_scene}}    ~18w. What the field footage shows; work becoming visible.
-#     {{narration_product}}  ~30w. Walk the 4 app clips incl. AI coach + AI review; land the 94%-vs-seasoned-implementers microplanning edge.
-#     {{narration_why}}      ~18w. Build once, replicate across countries at near-zero cost — how Connect reached 9 countries and 5 Health Ministries.
+#     {{narration_ai_build}} ~24w. Connect provides the app, training, verification, and payments — deployed in as few as 10 days, then scaled against demand.
+#     {{narration_scene}}    ~18w. Workers deliver in their own communities; you see exactly what was delivered, where, and at what cost.
+#     {{narration_product}}  ~30w. Walk the 4 app clips — AI coach, deliver, verify the moment it happens (biometric, GPS, photo), pay per verified service.
+#     {{narration_why}}      ~18w. Deployed in as few as 10 days, then scaled against demand — costs falling 22% per visit as programs grow.
 #     {{narration_cta}}      Leave empty — outro plays under the brand CTA card.
 
 provenance:

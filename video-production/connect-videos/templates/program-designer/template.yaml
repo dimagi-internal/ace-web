@@ -36,7 +36,7 @@ when_to_use: |
   - You want to show the AI/ACE build story (AI cut) OR a non-AI version
     (standard cut) from the same spec — flip active_cut.
   - For the DELIVERY side — a local org deciding whether to deliver on
-    Connect (the marketplace deal, traction, auditing, trial-run on-ramp),
-    use llo-deliver. For a product-mechanism-only explainer (what Connect
+    Connect (the marketplace deal, traction, and airtight, fair
+    verification), use llo-deliver. For a product-mechanism-only explainer (what Connect
     IS, the L/D/V/P loop, no build/why beats), use connect-explainer. For
     a branded prospect pitch, use partnership-pitch.

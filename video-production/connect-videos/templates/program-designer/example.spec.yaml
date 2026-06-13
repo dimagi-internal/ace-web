@@ -9,7 +9,7 @@
 #
 # No problem block (explainer mode drops the problem stat beat); the
 # impact block is three "why scale through Connect" cards carrying real,
-# cited platform facts (build-once-replicate leads — the strongest point).
+# cited connect.dimagi.com facts (rapid deployment + economics of scale).
 #
 # Beats (AI cut, ~57s): hook, cycle, handoff, ai_build, scene, product,
 # impact (why), cta. Standard cut (~50s) is the same minus ai_build.
@@ -43,17 +43,17 @@ manifest:
   web-microplan: library:video/web-screencast/web-microplan.mp4
   mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
 
-# The "AI builds your program" card (AI cut only). Pure motion graphic —
-# no clip. The four components are what your existing program is mapped
-# onto when it comes to Connect.
+# The "rapid deployment" card (AI cut only). Pure motion graphic — no
+# clip. The chips are the infrastructure Connect provides so a program can
+# deploy in as few as 10 days.
 ai_build:
-  headline: "AI turns your program into a Connect program — in days, not months"
+  headline: "Deployed in as few as 10 days"
   components:
-    - "Learn app"
-    - "Deliver app"
-    - "Verification rules"
-    - "Payment logic"
-  subhead: "Your protocol, mapped onto Connect's rails."
+    - "Training"
+    - "Delivery app"
+    - "Verification"
+    - "Payments"
+  subhead: "Connect provides the infrastructure; you bring the program."
 
 scene:
   clips:
@@ -67,48 +67,47 @@ product:
       caption: "Learn — with an AI coach"
       is_demo_clip: true
     - asset: "@mobile-mapping"
-      caption: "Verify — GPS at the point of care"
+      caption: "Deliver — in their own communities"
       is_demo_clip: true
     - asset: "@web-microplan"
-      caption: "Verify — AI-assisted review"
+      caption: "Verify — the moment it happens"
       is_demo_clip: true
     - asset: "@mobile-pay"
-      caption: "Pay — automatic, on verified work"
+      caption: "Pay — for every verified service"
       is_demo_clip: true
 
-# The "why scale through Connect" beat — three benefit cards carrying
-# REAL, cited platform facts (these are about Connect, not the viewer's
-# program, so they're fair to state). The build-once-replicate story is
-# the most compelling point for a program designer.
+# The "why scale through Connect" beat — three cards of REAL, cited
+# platform facts drawn from connect.dimagi.com: the speed of deployment,
+# the economics of scale, and the proof of scale already reached.
 impact:
-  - big: "9 countries"
-    caption: "one program, replicated — minimal rebuild"
-  - big: "5 Ministries"
-    caption: "of Health signed on to Connect"
-  - big: "200+ LLOs"
-    caption: "a delivery network at near-zero cost"
+  - big: "10 days"
+    caption: "to first deployment"
+  - big: "22%"
+    caption: "cost reduction per visit as you scale"
+  - big: "1.5M+"
+    caption: "verified services across 13 countries"
 
 narration:
   generator: manual
   prompt_version: v1-program-designer
   start_seconds: 0
   by_beat:
-    hook: "You've built a program that works. Scaling it country by country is the hard part."
-    cycle: "Connect runs your program as one connected loop — Learn, Deliver, Verify, Pay."
+    hook: "For decades, programs paid for planned activity and hoped it added up. Connect pays for verified delivery."
+    cycle: "Pick the program, geography, and amount — then it runs as one loop: Learn, Deliver, Verify, Pay."
     handoff: "Here's how your program comes onto Connect."
-    ai_build: "AI turns your protocol into a Connect program — the apps, the rules, the payments. Build it once, then replicate it across countries."
-    scene: "Your frontline workers go where families are — and for the first time, every visit is visible, end to end."
-    product: "They train with an AI coach, deliver guided visits, and every one is verified — GPS, photo, an AI review. Connect's microplanning even reached ninety-four percent of people, beating seasoned implementers."
-    impact: "Build once, replicate across countries — adding each delivery partner at near-zero cost. It's how Connect reached nine countries and five Health Ministries."
+    ai_build: "Connect provides the app, training, verification, and payments — your program deployed in as few as ten days, then scaled against demand."
+    scene: "Frontline workers deliver in their own communities — and you see exactly what was delivered, where, and at what cost."
+    product: "Workers train with an AI coach, deliver guided visits, and every service is verified — biometric, GPS, photo. Then payment follows the proof."
+    impact: "Deployed in as few as ten days, then scaled against demand — with costs falling twenty-two percent per visit as programs grow."
     cta: ""
   script: |
-    You've built a program that works. Scaling it country by country is the hard part.
-    Connect runs your program as one connected loop — Learn, Deliver, Verify, Pay.
+    For decades, programs paid for planned activity and hoped it added up. Connect pays for verified delivery.
+    Pick the program, geography, and amount — then it runs as one loop: Learn, Deliver, Verify, Pay.
     Here's how your program comes onto Connect.
-    AI turns your protocol into a Connect program — the apps, the rules, the payments. Build it once, then replicate it across countries.
-    Your frontline workers go where families are — and for the first time, every visit is visible, end to end.
-    They train with an AI coach, deliver guided visits, and every one is verified — GPS, photo, an AI review. Connect's microplanning even reached ninety-four percent of people, beating seasoned implementers.
-    Build once, replicate across countries — adding each delivery partner at near-zero cost. It's how Connect reached nine countries and five Health Ministries.
+    Connect provides the app, training, verification, and payments — your program deployed in as few as ten days, then scaled against demand.
+    Frontline workers deliver in their own communities — and you see exactly what was delivered, where, and at what cost.
+    Workers train with an AI coach, deliver guided visits, and every service is verified — biometric, GPS, photo. Then payment follows the proof.
+    Deployed in as few as ten days, then scaled against demand — with costs falling twenty-two percent per visit as programs grow.
 
 voice:
   provider: elevenlabs
