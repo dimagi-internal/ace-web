@@ -37,19 +37,25 @@ the standard cut.
 
 Lead with the things a delivery org actually weighs:
 
+0. **The frame: it's a marketplace.** Open on the Airbnb analogy —
+   Connect is a marketplace for frontline delivery: it contracts, vets,
+   and verifies LLOs without micromanaging them. This single image
+   explains the whole model in one breath; put it in the hook.
 1. **The deal.** Do I get paid, for what, and when? The deal card names
    it: a pay-per-service contract, no infrastructure to build, paid on
    verification, and a small trial run to start. This is the single most
    important beat.
-2. **Proof it's real.** An LLO won't join a pilot promise. The hero
-   traction stat (problem beat) and the traction cards (impact beat) put
-   real Connect numbers on screen.
-3. **How I'm managed — and that it's fair.** The product loop includes an
-   *audited* beat: delivery is verified and audited automatically, and
-   honest work is protected (fraud detection flags bad actors, not honest
-   ones). Frame auditing as protection, not surveillance.
-4. **How to start small.** The trial-run chip + narration make the
-   on-ramp explicit.
+2. **Proof it's real.** An LLO won't join a pilot promise. Lead with the
+   strongest, most surprising facts: 1.5M verified services, 13 countries,
+   10× a year, and FIVE Health Ministries signed on (governments trust
+   it).
+3. **That auditing is fair — the killer proof.** The most persuasive
+   moment in the source material: *Connect paid workers to fake data, with
+   cash prizes for the best fakes — and the model caught every one,
+   flagging only 2.5% of honest workers.* Land this on the audit beat,
+   verbatim-vivid. Frame it as protection for honest LLOs (disputes
+   settled by data), not surveillance — that's what converts a skeptic.
+4. **How to start small.** The trial-run chip makes the on-ramp explicit.
 
 ## GROUNDING RULE
 
@@ -69,8 +75,8 @@ number. Never attribute a program-specific outcome to the LLO.
 
 ## Narration targets (per beat)
 
-- `hook` (~14w): you know your community; Connect turns local delivery into
-  paid, verified work at real scale.
+- `hook` (~14w): Connect is a marketplace for frontline delivery — think
+  Airbnb; you deliver and you're paid for every verified visit.
 - `cycle` (~14w): name all four steps — Learn, Deliver, Verify, Pay — as
   the loop your teams run.
 - `handoff` (~8w): "here's what delivering on Connect looks like."
@@ -79,13 +85,14 @@ number. Never attribute a program-specific outcome to the LLO.
   verifies and pays. (The trial run lives on a chip — don't also say it here.)
 - `scene` (~18w): field footage — workers reaching people, every visit
   verified the moment it happens.
-- `traction` → `narration.by_beat.problem` (~18w): proof it's real — over
-  a million verified services, across many countries; not a pilot.
-- `product` (~28w): walk the four clips — train with an AI coach, deliver
-  guided visits, audited fairly (honest work protected), paid per verified
-  visit.
-- `impact` (~14w): you're in good company (200+ LLOs), paid per verified
-  visit, on time.
+- `traction` → `narration.by_beat.problem` (~18w): not a pilot — 1.5M
+  verified services, 13 countries, 10× a year, five Health Ministries
+  signed on.
+- `product` (~30w): train with an AI coach, deliver guided visits — then
+  the fraud-test proof: "we paid workers to fake data and caught them all;
+  honest work is protected, you're paid on the proof."
+- `impact` (~14w): Connect's microplanning reached 94% of people vs 84%
+  without it — more reach, more verified visits, more pay.
 - `cta`: leave empty — the outro plays under the brand CTA card.
 
 ## The deal card (ai_build beat)
@@ -110,10 +117,11 @@ number. Never attribute a program-specific outcome to the LLO.
 Keep it to **two** cards so the stat beats don't blur together with the
 hero traction stat above (four full-screen numbers in a row is stat
 fatigue). Keep each `big` ≤ ~17 characters so it stays on one row at the
-StatCard auto-fit size. Default pair:
+StatCard auto-fit size. Default pair (lead with the outperformance — it's
+the strongest "Connect makes your teams better" number):
 
-- `impact_big_1` / `impact_caption_1`: good company — "200+" / "local
-  organizations delivering on Connect".
+- `impact_big_1` / `impact_caption_1`: outperformance — "94%" / "reached —
+  vs 84% without Connect" (microplanning beats seasoned implementers).
 - `impact_big_2` / `impact_caption_2` / `impact_source_2`: pay — "$1.30" /
   "average paid per verified visit" / "CHC Nigeria pilot" (cite it — the
   per-visit rate is program-specific, not a platform-wide average).

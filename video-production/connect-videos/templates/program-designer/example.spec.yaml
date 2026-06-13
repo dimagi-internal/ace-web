@@ -76,37 +76,39 @@ product:
       caption: "Pay — automatic, on verified work"
       is_demo_clip: true
 
-# The "why scale through Connect" beat — three benefit cards (no invented
-# numbers in the generic cut; a branded skin fills these with real stats).
+# The "why scale through Connect" beat — three benefit cards carrying
+# REAL, cited platform facts (these are about Connect, not the viewer's
+# program, so they're fair to state). The build-once-replicate story is
+# the most compelling point for a program designer.
 impact:
-  - big: "A delivery network"
-    caption: "Local organizations ready to deliver your program — not yours to staff"
-  - big: "Verified delivery"
-    caption: "GPS, photo, and an AI review layer on every visit"
-  - big: "Pay for results"
-    caption: "Funds flow only on verified work — proof your funders trust"
+  - big: "9 countries"
+    caption: "one program, replicated — minimal rebuild"
+  - big: "5 Ministries"
+    caption: "of Health signed on to Connect"
+  - big: "200+ LLOs"
+    caption: "a delivery network at near-zero cost"
 
 narration:
   generator: manual
   prompt_version: v1-program-designer
   start_seconds: 0
   by_beat:
-    hook: "You've built a program that works. Scaling it to the last mile is the hard part."
+    hook: "You've built a program that works. Scaling it country by country is the hard part."
     cycle: "CommCare Connect runs your program as one connected loop — Learn, Deliver, Verify, Pay."
     handoff: "Here's how your program comes onto Connect."
-    ai_build: "You don't build any of this. AI assembles it from your existing protocol — ready in days."
+    ai_build: "AI turns your protocol into a Connect program — the apps, the rules, the payments. Build it once, then replicate it across countries."
     scene: "Your frontline workers go where families are — and for the first time, every visit is visible, end to end."
-    product: "They train with an AI coach, deliver guided visits, and every one is verified — GPS, photo, an AI review. Then payment follows the proof, automatically."
-    impact: "Scale through a network of local organizations ready to deliver — alongside your own teams or beyond them — no infrastructure to build."
+    product: "They train with an AI coach, deliver guided visits, and every one is verified — GPS, photo, an AI review. Connect's microplanning even reached ninety-four percent of people, beating seasoned implementers."
+    impact: "Build once, replicate across countries — adding each delivery partner at near-zero cost. It's how Connect reached nine countries and five Health Ministries."
     cta: ""
   script: |
-    You've built a program that works. Scaling it to the last mile is the hard part.
+    You've built a program that works. Scaling it country by country is the hard part.
     CommCare Connect runs your program as one connected loop — Learn, Deliver, Verify, Pay.
     Here's how your program comes onto Connect.
-    You don't build any of this. AI assembles it from your existing protocol — ready in days.
+    AI turns your protocol into a Connect program — the apps, the rules, the payments. Build it once, then replicate it across countries.
     Your frontline workers go where families are — and for the first time, every visit is visible, end to end.
-    They train with an AI coach, deliver guided visits, and every one is verified — GPS, photo, an AI review. Then payment follows the proof, automatically.
-    Scale through a network of local organizations ready to deliver — alongside your own teams or beyond them — no infrastructure to build.
+    They train with an AI coach, deliver guided visits, and every one is verified — GPS, photo, an AI review. Connect's microplanning even reached ninety-four percent of people, beating seasoned implementers.
+    Build once, replicate across countries — adding each delivery partner at near-zero cost. It's how Connect reached nine countries and five Health Ministries.
 
 voice:
   provider: elevenlabs
