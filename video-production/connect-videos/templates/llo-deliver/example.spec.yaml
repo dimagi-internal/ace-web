@@ -24,7 +24,7 @@ provenance:
 
 slug: llo-deliver
 workspace: dimagi-team
-name: CommCare Connect
+name: Connect
 country_focus: Global
 status: Live
 tagline: "Deliver high-impact work in your community — paid for every verified visit."
@@ -67,7 +67,7 @@ scene:
 problem:
   big: "1.5M"
   caption: "verified services · 13 countries · 10× a year"
-  source: "CommCare Connect, 2026"
+  source: "Connect, 2026"
 
 product:
   beats:

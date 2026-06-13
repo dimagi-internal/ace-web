@@ -1,7 +1,7 @@
 # Generator skill: how Connect works (generic explainer)
 
 You are filling out a video spec for a generic ~42-second explainer
-that answers one question: **how does CommCare Connect work?** The
+that answers one question: **how does Connect work?** The
 output is a JSON object whose keys map to `{{placeholders}}` in
 `spec.template.yaml`. Fill every placeholder.
 
@@ -26,7 +26,7 @@ differentiator.
 A great explainer:
 
 1. **Is generic.** No prospect branding, no single program's stats or
-   outcomes. Use a generic name (e.g. "CommCare Connect"). Keep
+   outcomes. Use a generic name (e.g. "Connect"). Keep
    Dimagi-branded chrome (tagline, the Learn/Deliver/Verify/Pay cycle,
    voice register).
 2. **Shows the mechanism with real footage.** The scene beat uses field

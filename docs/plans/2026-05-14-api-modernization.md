@@ -8,7 +8,7 @@
 
 **Tech Stack:** Django 5 (kept), Django Ninja 1.x, Pydantic v2, Scalar (docs UI), `openapi-typescript` + `openapi-fetch` + TanStack Query (frontend), Schemathesis (contract tests in CI), FastMCP (MCP exposure). Orthogonal modernization: `uv` for dep management, `basedpyright` for stricter type checking, `Pydantic AI` for any LLM-touching code, Logfire for observability.
 
-**Out of scope:** No changes to Django Channels (`SessionConsumer`, `OppConsumer`), Redis pub/sub, presence hash, CommCare Connect OAuth flow, Nova OAuth flow, custom User model, Workspace tenancy model, opp Workbench cache strategy, or any business logic. This is a transport-layer modernization; behavior is identical end-to-end.
+**Out of scope:** No changes to Django Channels (`SessionConsumer`, `OppConsumer`), Redis pub/sub, presence hash, Connect OAuth flow, Nova OAuth flow, custom User model, Workspace tenancy model, opp Workbench cache strategy, or any business logic. This is a transport-layer modernization; behavior is identical end-to-end.
 
 ---
 

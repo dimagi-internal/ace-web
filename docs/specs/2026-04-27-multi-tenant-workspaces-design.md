@@ -3,7 +3,7 @@
 **Date:** 2026-04-27
 **Status:** Draft — awaiting review.
 **Scope:** Turn ace-web from a Dimagi-team-only single-tenant deployment
-into a true multi-tenant product. Anyone with a CommCare Connect account
+into a true multi-tenant product. Anyone with a Connect account
 can sign in, create an ACE Workspace pointing at a Google Drive folder
 they share with the platform's service account, invite teammates, and
 "say go" without ever touching the CLI plugin.
@@ -58,7 +58,7 @@ teammates → run ACE" becomes a real product flow.
 - **Cross-workspace search or aggregation.** A user with membership in
   multiple workspaces switches between them via a workspace picker. No
   unified "all my opps everywhere" view.
-- **SSO / IdP integration beyond CommCare Connect.** Auth still goes
+- **SSO / IdP integration beyond Connect.** Auth still goes
   through the existing Connect OAuth path. We're only changing the
   post-callback gate.
 - **Automated SA folder-share verification on Google's side.** We can
@@ -181,7 +181,7 @@ return 404 (not 403 — don't leak existence).
   unchanged; the bot user is added to the seeded "Dimagi Team"
   workspace as Editor in the migration step
 
-The CommCare Connect OAuth scope and PKCE flow stay exactly as they are
+The Connect OAuth scope and PKCE flow stay exactly as they are
 today. The only change is the post-callback gate.
 
 ### 4.5 CLI integration: implicit-by-folder

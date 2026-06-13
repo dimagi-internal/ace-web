@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-The ACE opportunity Workbench currently authenticates against Google Drive via a hand-rolled per-user OAuth flow ported from `../connect-search/`. Each Dimagi user grants Drive readonly + Sheets readonly scopes through a separate Google consent screen after signing into ace-web via CommCare Connect. Tokens are encrypted with a Fernet key and cached on the `User` row; a refresh loop runs on every Workbench request.
+The ACE opportunity Workbench currently authenticates against Google Drive via a hand-rolled per-user OAuth flow ported from `../connect-search/`. Each Dimagi user grants Drive readonly + Sheets readonly scopes through a separate Google consent screen after signing into ace-web via Connect. Tokens are encrypted with a Fernet key and cached on the `User` row; a refresh loop runs on every Workbench request.
 
 This spec replaces that whole flow with a single Google service account credential. The SA has already been granted read/write access to the shared ACE Shared Drive (the same drive the `ace` CLI uses), so every ace-web user sees the same Drive view regardless of which Google account they personally have. The SA key JSON is delivered to the process as a single environment variable, sourced from AWS Secrets Manager in production and a local `.env` file in development.
 
@@ -15,7 +15,7 @@ This spec replaces that whole flow with a single Google service account credenti
 - **The opps Workbench has never been smoke-tested against real Drive in production** (per `CLAUDE.md`). The user-OAuth flow is merged but the code path is cold. Replacing it now costs nothing in rollback risk.
 - **`ace` (the sibling CLI plugin) already uses this SA** to read and write the same Shared Drive. Running two auth stories against the same data is a maintenance tax and a source of subtle permission drift.
 - **The per-user flow adds substantial surface area** — a second OAuth callback, Fernet encryption, per-request token refresh, a frontend reconnect guard, a dedicated DRF permission, two User columns — for no user-facing benefit over "the Workbench shows the team's ACE folders."
-- **One auth story is simpler to reason about.** CommCare Connect remains the identity boundary (`@dimagi.com` filter enforced in `apps/auth/oauth_views.py`); Drive is just "what the app reads" and needs no per-user consent.
+- **One auth story is simpler to reason about.** Connect remains the identity boundary (`@dimagi.com` filter enforced in `apps/auth/oauth_views.py`); Drive is just "what the app reads" and needs no per-user consent.
 
 ## 3. Non-goals
 
@@ -87,7 +87,7 @@ def _require_drive(request):
 
 All seven opps view functions (`opp_list`, `workbench`, `step_detail`, `artifact_body`, `opp_compare`, `discuss`, `step_chats`) keep their exact shape — they still call `_require_drive(request)` and get back a client. Only the failure modes shrink.
 
-The `RequireDriveToken` DRF permission (`apps/opps/middleware.py`) is deleted entirely. Authentication via CommCare Connect is the only gate; if you're logged in and you're `@dimagi.com`, you see the Workbench. The `@dimagi.com` filter remains enforced in `apps/auth/oauth_views.py`, unchanged.
+The `RequireDriveToken` DRF permission (`apps/opps/middleware.py`) is deleted entirely. Authentication via Connect is the only gate; if you're logged in and you're `@dimagi.com`, you see the Workbench. The `@dimagi.com` filter remains enforced in `apps/auth/oauth_views.py`, unchanged.
 
 ### 4.3 Data model
 

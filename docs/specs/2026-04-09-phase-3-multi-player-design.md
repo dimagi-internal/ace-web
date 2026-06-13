@@ -254,7 +254,7 @@ The cookie name is read from `settings.SESSION_COOKIE_NAME` to stay in sync with
 
 The consumer's `connect()` checks `scope['user'].is_authenticated`; if not, `await self.accept()` then `await self.close(code=4001)`. Then it checks a `SessionParticipant` row for the `(session, user)` pair; if missing or role=`viewer` for actions that require editor permission, the handshake succeeds but the permission-restricted actions return `session.error code=forbidden`.
 
-The existing HTTP-side `CommCare Connect OAuth` flow (`apps/auth/oauth_views.py`) is unchanged — it sets the standard Django session cookie on the HTTP response, which the browser then sends on the WebSocket handshake.
+The existing HTTP-side `Connect OAuth` flow (`apps/auth/oauth_views.py`) is unchanged — it sets the standard Django session cookie on the HTTP response, which the browser then sends on the WebSocket handshake.
 
 ## 9. Frontend changes
 

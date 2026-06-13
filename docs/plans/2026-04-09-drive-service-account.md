@@ -973,7 +973,7 @@ SecretString and delivered to ECS as env var `ACE_DRIVE_SA_KEY_JSON`.
 Replace the "Two OAuth flows" paragraph (lines 142-145):
 
 ```markdown
-**Two OAuth flows:** identity via a hand-rolled CommCare Connect OAuth
+**Two OAuth flows:** identity via a hand-rolled Connect OAuth
 flow with PKCE (`apps/auth/oauth_views.py`, pattern from connect-labs);
 Drive access via a separate Google OAuth grant per-user (pattern from
 `../connect-search/`). See `docs/learnings/drive-oauth-two-flow.md`.
@@ -982,7 +982,7 @@ Drive access via a separate Google OAuth grant per-user (pattern from
 with:
 
 ```markdown
-**Identity + Drive access:** identity via a hand-rolled CommCare Connect
+**Identity + Drive access:** identity via a hand-rolled Connect
 OAuth flow with PKCE (`apps/auth/oauth_views.py`, pattern from
 connect-labs). Drive access is via a single shared Google service
 account (the same one the `ace` CLI uses), delivered through

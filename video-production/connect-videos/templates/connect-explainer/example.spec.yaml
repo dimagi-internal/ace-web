@@ -14,7 +14,7 @@ provenance:
 
 slug: connect-explainer
 workspace: dimagi-team
-name: CommCare Connect
+name: Connect
 country_focus: Global
 status: Live
 tagline: "Pay for verified service delivery, not planned activity."
@@ -60,14 +60,14 @@ narration:
   start_seconds: 0
   by_beat:
     hook: "Reaching the last mile has always been the hard part."
-    cycle: "CommCare Connect makes it one connected loop — Learn, Deliver, Verify, Pay."
+    cycle: "Connect makes it one connected loop — Learn, Deliver, Verify, Pay."
     handoff: "Here's how that works in the field."
     scene: "Frontline workers go where families are — and for the first time the work is visible, end to end."
     product: "They train on their phone with an AI coach giving personalized feedback. They deliver guided visits. Every delivery is verified — GPS, photo, and an AI review layer flagging anomalies. Then they're paid automatically for quality work."
     cta: ""
   script: |
     Reaching the last mile has always been the hard part.
-    CommCare Connect makes it one connected loop — Learn, Deliver, Verify, Pay.
+    Connect makes it one connected loop — Learn, Deliver, Verify, Pay.
     Here's how that works in the field.
     Frontline workers go where families are — and for the first time the work is visible, end to end.
     They train on their phone with an AI coach giving personalized feedback.

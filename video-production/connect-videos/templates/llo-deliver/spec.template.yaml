@@ -24,7 +24,7 @@
 #   Identity:
 #     {{program_slug}}     slug — lowercase + hyphens (e.g. "llo-deliver")
 #     {{workspace_slug}}   which ace-web workspace owns this video
-#     {{program_name}}     generic display name (e.g. "CommCare Connect")
+#     {{program_name}}     generic display name (e.g. "Connect")
 #     {{country_focus}}    primary region label (e.g. "Global")
 #     {{status}}           short status line (e.g. "Live")
 #     {{program_tagline}}  one-line tagline (LLO POV — paid for verified work)
@@ -43,7 +43,7 @@
 #   Hero traction stat (problem beat):
 #     {{traction_big}}     a real Connect platform figure (e.g. "1.5M")
 #     {{traction_caption}} what it counts (e.g. "verified services · 13 countries · 10× a year")
-#     {{traction_source}}  citation (e.g. "CommCare Connect, 2026")
+#     {{traction_source}}  citation (e.g. "Connect, 2026")
 #
 #   Traction cards (impact beat — TWO cards, REAL numbers):
 #     {{impact_big_1}} / {{impact_caption_1}}              outperformance (e.g. "94%" / "reached — vs 84% without Connect")

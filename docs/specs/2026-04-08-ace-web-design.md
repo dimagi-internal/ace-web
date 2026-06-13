@@ -125,7 +125,7 @@ The CLIBackend is unchanged across this transition. The `stream_completion()` as
 
 ### 5.4 Authentication and authorization
 
-- **Edge auth:** Auth is handled at the ALB layer or via django-allauth with CommCare Connect OAuth — final decision in the AWS migration plan.
+- **Edge auth:** Auth is handled at the ALB layer or via django-allauth with Connect OAuth — final decision in the AWS migration plan.
 - **Per-session authorization:** `SessionParticipant` rows. `owner` and `editor` can edit drafts and send messages; `viewer` can read only. Created automatically for the session creator on `POST /api/sessions`.
 - **Share tokens:** The `/share/<token>` route is public within the application. The view checks `ShareToken.revoked_at IS NULL` and returns the read-only view. **ALB routing details deferred to Phase 4 implementation.**
 

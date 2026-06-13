@@ -10,7 +10,7 @@ Two independent breakages in the `ALB → nginx → Django` path that share root
 
 1. **ALB health checks 400'd with `DisallowedHost`.** The ALB sends `Host: <target-private-ip>` on health checks (e.g. `Host: 10.0.1.133`). nginx was passing the Host header through unchanged. Django's `ALLOWED_HOSTS` (correctly) rejected it with `django.core.exceptions.DisallowedHost`, so every task stayed unhealthy and the first deploy attempt failed.
 
-2. **OAuth initiate generated `http://` callback URLs instead of `https://`.** Django's `request.scheme` returned `http` because (a) `connectlabs.py` did not set `SECURE_PROXY_SSL_HEADER`, and (b) the nginx sidecar was overwriting `X-Forwarded-Proto` with `$scheme` (the internal ALB → nginx hop scheme, which is plain `http`), clobbering the `https` value the ALB correctly set. The result: `request.build_absolute_uri(...)` produced `http://labs.connect.dimagi.com/ace/auth/callback/`, which did not match the `https://...` redirect URI registered with CommCare Connect, and OAuth initiate bounced.
+2. **OAuth initiate generated `http://` callback URLs instead of `https://`.** Django's `request.scheme` returned `http` because (a) `connectlabs.py` did not set `SECURE_PROXY_SSL_HEADER`, and (b) the nginx sidecar was overwriting `X-Forwarded-Proto` with `$scheme` (the internal ALB → nginx hop scheme, which is plain `http`), clobbering the `https` value the ALB correctly set. The result: `request.build_absolute_uri(...)` produced `http://labs.connect.dimagi.com/ace/auth/callback/`, which did not match the `https://...` redirect URI registered with Connect, and OAuth initiate bounced.
 
 ## Root Cause
 

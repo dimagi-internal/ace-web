@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Migrate ace-web off standalone GCP Cloud Run and onto AWS ECS Fargate as a tenant service behind the `labs.connect.dimagi.com` ALB, mirroring scout's deployment pattern. Reuse the shared connect-labs AWS infrastructure (RDS, ElastiCache, ALB, VPC) so incremental cost is ~$5-15/month instead of the ~$100-150/month that standalone GCP required. Drop Filestore entirely — the CLIBackend hybrid resume path already handles cold-start CLI session state from Django history. Swap IAP auth for connect-labs' hand-rolled CommCare Connect OAuth flow with a `@dimagi.com` email filter.
+**Goal:** Migrate ace-web off standalone GCP Cloud Run and onto AWS ECS Fargate as a tenant service behind the `labs.connect.dimagi.com` ALB, mirroring scout's deployment pattern. Reuse the shared connect-labs AWS infrastructure (RDS, ElastiCache, ALB, VPC) so incremental cost is ~$5-15/month instead of the ~$100-150/month that standalone GCP required. Drop Filestore entirely — the CLIBackend hybrid resume path already handles cold-start CLI session state from Django history. Swap IAP auth for connect-labs' hand-rolled Connect OAuth flow with a `@dimagi.com` email filter.
 
 **Architecture:** The Phase 2 backend code (`apps/common/`, `apps/sessions/`, `apps/auth/models.py`, frontend) is 100% reusable — transport-agnostic. This plan swaps the outer shell: auth mechanism, deploy pipeline, URL path prefix, Docker runtime layout. Two containers per ECS task (Django + uvicorn backend on port 8000, nginx frontend serving the Vite bundle on port 3000 and reverse-proxying `/ace/api/*` to backend). Single ECS service in the existing `labs-jj-cluster`, one instance minimum. Shared RDS Postgres (new database `ace_web`), shared ElastiCache Redis (idle until Phase 3 adds channels-redis). ALB listener rule `/ace/*` routes to a new target group.
 
@@ -140,7 +140,7 @@ Create `apps/auth/oauth.py`:
 
 ```python
 """
-CommCare Connect OAuth Helper Functions.
+Connect OAuth Helper Functions.
 
 Session-based OAuth implementation adapted from connect-labs. Tokens live
 in request.session — no database writes for the OAuth state itself (the
@@ -231,7 +231,7 @@ Create `apps/auth/oauth_views.py`:
 
 ```python
 """
-CommCare Connect OAuth Views for ace-web.
+Connect OAuth Views for ace-web.
 
 Session-based OAuth flow adapted from connect-labs. Enforces a @dimagi.com
 email filter at the callback — no Dimagi email means no login.
@@ -266,7 +266,7 @@ DEFAULT_NEXT = "/"
 
 
 def login_page(request: HttpRequest) -> HttpResponse:
-    """Public landing page that shows the 'sign in with CommCare Connect' button."""
+    """Public landing page that shows the 'sign in with Connect' button."""
     next_url = request.GET.get("next", DEFAULT_NEXT)
     if request.user.is_authenticated:
         return redirect(next_url if url_has_allowed_host_and_scheme(
@@ -485,7 +485,7 @@ The OAuth flow needs an HTML template at `apps/auth/templates/auth/login.html`. 
   </head>
   <body>
     <h1>ace-web</h1>
-    <p>Sign in with your Dimagi CommCare Connect account to continue.</p>
+    <p>Sign in with your Dimagi Connect account to continue.</p>
     {% if messages %}
       <ul class="messages">
         {% for m in messages %}<li>{{ m }}</li>{% endfor %}
@@ -493,7 +493,7 @@ The OAuth flow needs an HTML template at `apps/auth/templates/auth/login.html`. 
     {% endif %}
     <p>
       <a class="btn" href="{% url 'auth:initiate' %}{% if next %}?next={{ next|urlencode }}{% endif %}">
-        Sign in with CommCare Connect
+        Sign in with Connect
       </a>
     </p>
   </body>
@@ -507,7 +507,7 @@ Django will find this template because the `apps.auth` app is in `INSTALLED_APPS
 Modify `config/settings/base.py`. Add these settings anywhere after the `# --- Core ---` block:
 
 ```python
-# --- CommCare Connect OAuth (labs / AWS deployment) ---
+# --- Connect OAuth (labs / AWS deployment) ---
 CONNECT_PRODUCTION_URL = env("CONNECT_PRODUCTION_URL", default="https://connect.dimagi.com")
 CONNECT_OAUTH_CLIENT_ID = env("CONNECT_OAUTH_CLIENT_ID", default="")
 CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
@@ -584,7 +584,7 @@ urlpatterns = [
 Create `apps/auth/tests/test_oauth_views.py`:
 
 ```python
-"""Tests for the CommCare Connect OAuth views."""
+"""Tests for the Connect OAuth views."""
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
@@ -612,7 +612,7 @@ def _oauth_config(settings):
 def test_login_page_public(client):
     resp = client.get("/auth/login/")
     assert resp.status_code == 200
-    assert b"Sign in with CommCare Connect" in resp.content
+    assert b"Sign in with Connect" in resp.content
 
 
 def test_initiate_redirects_to_connect_with_pkce(client):
@@ -765,7 +765,7 @@ Expected: 99 passed (91 prior + 8 new OAuth tests).
 
 ```bash
 git add apps/auth/ config/settings/ config/urls.py pyproject.toml
-git commit -m "feat(auth): add CommCare Connect OAuth for labs AWS deployment"
+git commit -m "feat(auth): add Connect OAuth for labs AWS deployment"
 ```
 
 Body: note the port from connect-labs, @dimagi.com enforcement at callback, tenant-unique session cookie, path-prefix ready via FORCE_SCRIPT_NAME in connectlabs.py.
@@ -1642,7 +1642,7 @@ echo ""
 echo "✓ One-time setup complete."
 echo ""
 echo "Next steps:"
-echo "  1. Register the OAuth client ID in CommCare Connect admin:"
+echo "  1. Register the OAuth client ID in Connect admin:"
 echo "     https://connect.dimagi.com/admin/oauth2_provider/application/"
 echo "     Callback URL: https://labs.connect.dimagi.com/ace/auth/callback/"
 echo "  2. Update the ace-web/connect-oauth-client-id and -secret secrets with"
@@ -1650,7 +1650,7 @@ echo "     the real values from the Connect admin."
 echo "  3. Trigger the deploy workflow: Actions > Deploy to Labs (AWS) > Run"
 echo "     with run_migrations=true for the first deploy."
 echo "  4. After the first deploy completes, visit https://labs.connect.dimagi.com/ace/"
-echo "     and sign in with a @dimagi.com CommCare Connect account."
+echo "     and sign in with a @dimagi.com Connect account."
 ```
 
 Make it executable:
@@ -1685,7 +1685,7 @@ ALB on AWS ECS Fargate, reusing the shared connect-labs infrastructure
   in Phase 2)
 - **Secrets:** AWS Secrets Manager under the `ace-web/` prefix
 - **Logs:** CloudWatch Logs group `/ecs/labs-jj-ace-web`, 30-day retention
-- **Auth:** CommCare Connect OAuth with PKCE, `@dimagi.com` email filter
+- **Auth:** Connect OAuth with PKCE, `@dimagi.com` email filter
 - **Deploy:** GitHub Actions `.github/workflows/deploy-labs.yml` (manual
   `workflow_dispatch` trigger)
 
@@ -1704,7 +1704,7 @@ Run `deploy/aws/one-time-setup.sh` from an AWS-authenticated shell. It creates:
 You will be prompted for:
 - Django secret key (generate with `python -c 'import secrets; print(secrets.token_urlsafe(50))'`)
 - DATABASE_URL (the shared RDS endpoint + new database name)
-- CommCare Connect OAuth client ID and secret (register at
+- Connect OAuth client ID and secret (register at
   https://connect.dimagi.com/admin/oauth2_provider/application/ with callback
   `https://labs.connect.dimagi.com/ace/auth/callback/`)
 - VPC ID, subnets, security group, ALB listener ARN
@@ -1787,7 +1787,7 @@ storage are ace-web-specific).
   nginx container. Verify nginx is proxying correctly (`docker compose --profile
   prod-parity up` locally) and the Django `/api/health` endpoint is IAP-free
   (it should be — the health check view has no auth requirement).
-- **OAuth callback loop:** verify the CommCare Connect OAuth application's
+- **OAuth callback loop:** verify the Connect OAuth application's
   callback URL is exactly `https://labs.connect.dimagi.com/ace/auth/callback/`
   and the `CONNECT_OAUTH_CLIENT_ID`/`CONNECT_OAUTH_CLIENT_SECRET` secrets
   in AWS Secrets Manager match.
@@ -1801,13 +1801,13 @@ storage are ace-web-specific).
 Read the current `CLAUDE.md`. Make these edits:
 
 1. **Stack section:** confirm it already says AWS ECS Fargate (from PR #9's cleanup). Adjust if it still has any GCP residue.
-2. **Key architectural decisions:** update the auth bullet to say "CommCare Connect OAuth with PKCE, `@dimagi.com` email filter at the callback" (not "TBD, see AWS migration plan").
+2. **Key architectural decisions:** update the auth bullet to say "Connect OAuth with PKCE, `@dimagi.com` email filter at the callback" (not "TBD, see AWS migration plan").
 3. **Workflow section:** replace the deploy line with "Deploy: GitHub Actions workflow `deploy-labs.yml` (manual trigger, OIDC to AWS)".
 4. **Learnings section:** add a new Conversation-engine or Deploy sub-entry for the AWS migration:
 
    ```markdown
    Deploy:
-   - [aws-migration](docs/plans/2026-04-08-aws-migration.md) — completed migration from GCP Cloud Run to AWS ECS Fargate as a connect-labs tenant. Auth swapped from IAP to CommCare Connect OAuth. Filestore dropped in favor of the hybrid-resume Django-replay path.
+   - [aws-migration](docs/plans/2026-04-08-aws-migration.md) — completed migration from GCP Cloud Run to AWS ECS Fargate as a connect-labs tenant. Auth swapped from IAP to Connect OAuth. Filestore dropped in favor of the hybrid-resume Django-replay path.
    ```
 
 5. **Current status table:** add a row "2.5 | AWS migration | Done" — or amend Phase 2's row to note "Done; subsequently migrated from GCP to AWS".
@@ -1849,10 +1849,10 @@ Before declaring the AWS migration complete, verify:
 - [ ] The one-time-setup.sh script has been read top-to-bottom and every `aws` command is understood
 - [ ] No stray GCP references remain: `grep -r -i "cloudrun\|gcp\|cloud_sql\|filestore\|memorystore\|cloud_build\|artifact_registry" apps/ config/ docs/ deploy/ .github/ Dockerfile* docker-compose.yml pyproject.toml 2>/dev/null | grep -v "aws-migration\|gcp-migration\|\.md:" || echo OK`
 - [ ] `deploy/aws/task-definition.json` has the correct IAM role ARNs and secret ARNs (or `:latest` placeholder suffixes)
-- [ ] CommCare Connect OAuth client has been registered and the callback URL matches `https://labs.connect.dimagi.com/ace/auth/callback/`
+- [ ] Connect OAuth client has been registered and the callback URL matches `https://labs.connect.dimagi.com/ace/auth/callback/`
 - [ ] `AWS_ROLE_ARN`, `LABS_SUBNET`, `LABS_SECURITY_GROUP` GitHub Actions secrets exist in the repo settings (should be reusable from scout's setup)
 - [ ] A successful deploy via the GitHub Actions workflow produces a running task visible in the ECS console, with healthy targets in the target group
-- [ ] Visiting `https://labs.connect.dimagi.com/ace/` redirects to `/ace/auth/login/`, clicking "Sign in with CommCare Connect" completes the OAuth flow, and the user lands at `/ace/` as the React shell
+- [ ] Visiting `https://labs.connect.dimagi.com/ace/` redirects to `/ace/auth/login/`, clicking "Sign in with Connect" completes the OAuth flow, and the user lands at `/ace/` as the React shell
 
 If any of these fail, fix before declaring the migration done.
 
@@ -1861,7 +1861,7 @@ If any of these fail, fix before declaring the migration done.
 ## What ships at the end of this plan
 
 - ace-web running in ECS Fargate behind `labs.connect.dimagi.com/ace/`
-- Auth via CommCare Connect OAuth with PKCE, restricted to `@dimagi.com` emails
+- Auth via Connect OAuth with PKCE, restricted to `@dimagi.com` emails
 - Phase 2's chat experience (streaming SSE, tool rendering, recent sessions, inline titles, CLI auth page — all reused from Phase 2's code) working end-to-end on the new deployment
 - GitHub Actions deploy workflow with manual trigger, OIDC auth, parallel builds, migrations, rolling deploy
 - Secrets in AWS Secrets Manager

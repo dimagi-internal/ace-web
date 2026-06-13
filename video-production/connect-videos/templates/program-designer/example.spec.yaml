@@ -22,7 +22,7 @@ provenance:
 
 slug: program-designer
 workspace: dimagi-team
-name: CommCare Connect
+name: Connect
 country_focus: Global
 status: Live
 tagline: "Bring your program to the last mile — paid for what's verified, not what's planned."
@@ -94,7 +94,7 @@ narration:
   start_seconds: 0
   by_beat:
     hook: "You've built a program that works. Scaling it country by country is the hard part."
-    cycle: "CommCare Connect runs your program as one connected loop — Learn, Deliver, Verify, Pay."
+    cycle: "Connect runs your program as one connected loop — Learn, Deliver, Verify, Pay."
     handoff: "Here's how your program comes onto Connect."
     ai_build: "AI turns your protocol into a Connect program — the apps, the rules, the payments. Build it once, then replicate it across countries."
     scene: "Your frontline workers go where families are — and for the first time, every visit is visible, end to end."
@@ -103,7 +103,7 @@ narration:
     cta: ""
   script: |
     You've built a program that works. Scaling it country by country is the hard part.
-    CommCare Connect runs your program as one connected loop — Learn, Deliver, Verify, Pay.
+    Connect runs your program as one connected loop — Learn, Deliver, Verify, Pay.
     Here's how your program comes onto Connect.
     AI turns your protocol into a Connect program — the apps, the rules, the payments. Build it once, then replicate it across countries.
     Your frontline workers go where families are — and for the first time, every visit is visible, end to end.

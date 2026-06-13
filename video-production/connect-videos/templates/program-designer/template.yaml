@@ -5,7 +5,7 @@ name: Program designer — bring your program onto Connect (generic)
 description: |
   Generic, unbranded explainer aimed at a PROGRAM DESIGNER: an org that
   owns a frontline program/protocol and is weighing bringing it onto
-  CommCare Connect — how the program comes onto Connect, plus the business
+  Connect — how the program comes onto Connect, plus the business
   case for scaling through Connect's network of local delivery
   organizations (LLOs). Carries TWO cuts from one spec: an AI cut
   (active_cut: ai) that includes a dedicated "AI builds your program" beat,
@@ -17,7 +17,7 @@ description: |
   DELIVER on Connect — use llo-deliver.
 intent: >-
   Show an org that owns a real frontline program what it looks like to bring that program
-  onto CommCare Connect — how it comes onto Connect plus the business case for scaling
+  onto Connect — how it comes onto Connect plus the business case for scaling
   through Connect's LLO network — with no prospect branding and no program-specific stats.
   The AI cut also names how Connect's AI tooling builds the program's components; flip
   active_cut for the non-AI version from the same spec.
