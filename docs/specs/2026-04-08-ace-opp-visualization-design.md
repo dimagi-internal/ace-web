@@ -54,7 +54,7 @@ commit to.
 
 ## 3. Users
 
-Internal Dimagi team members authenticated via django-allauth + CommCare Connect
+Internal Dimagi team members authenticated via django-allauth + Connect
 OAuth (the ace-web identity flow that replaces the prior IAP model). Scope is
 `@dimagi.com` emails. No external users in scope. Anonymous share links are
 explicitly out of scope for v1 — the team already shares Drive folders directly
@@ -129,7 +129,7 @@ Three panes, locked in via visual mockup review (`.superpowers/brainstorm/`).
 
 Two separate OAuth flows, on top of each other:
 
-### 5.1 Identity: django-allauth + CommCare Connect OAuth
+### 5.1 Identity: django-allauth + Connect OAuth
 Existing / in-flight ace-web auth. Establishes who the user is and gates all of
 ace-web behind `@dimagi.com` membership. No change from the Phase 2 plan.
 
@@ -502,7 +502,7 @@ nothing with the WebSocket / channels-redis work. It depends on:
 
 - Phase 2's `Session` model and chat UI (already landed or landing) for the
   "Discuss in chat" integration
-- ace-web's allauth + CommCare Connect OAuth identity flow being in place (in
+- ace-web's allauth + Connect OAuth identity flow being in place (in
   flight per the AWS pivot)
 - A Google OAuth client registered with the correct dev + prod callback URIs
 

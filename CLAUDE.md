@@ -101,7 +101,7 @@ ace-web/
 ├── apps/
 │   ├── activity/        # Workspace Timeline aggregator
 │   ├── api/             # API root (Ninja registry, MCP bridge, OpenAPI/Scalar/Redoc)
-│   ├── auth/            # Custom User model + CommCare Connect OAuth + Nova OAuth
+│   ├── auth/            # Custom User model + Connect OAuth + Nova OAuth
 │   ├── common/          # CLI backend, channels auth, Nova auth flow, problem+json
 │   ├── ingest/          # JSONL upload + cost/timing + structure aggregators + pricing
 │   ├── mobile/          # Cloud emulator controller + jobs
@@ -136,7 +136,7 @@ they read through to Google Drive.
 
 ## Key architectural decisions
 
-- **Auth**: CommCare Connect OAuth with PKCE, hand-rolled session-based flow ported
+- **Auth**: Connect OAuth with PKCE, hand-rolled session-based flow ported
   from connect-labs (NOT django-allauth). Implementation in
   `apps/auth/oauth_views.py` + `apps/auth/oauth.py`. Tenant-unique session cookies
   (`sessionid_ace`, `csrftoken_ace`) and path-scoped (`/ace/`) to avoid collisions
@@ -347,7 +347,7 @@ and the artifact manifest from `ACE_PLUGIN_PATH` at first access. Adding or
 renaming a skill in the plugin is a one-file edit there; ace-web picks it up on
 next process start.
 
-**Identity + Drive access:** identity via the hand-rolled CommCare Connect OAuth
+**Identity + Drive access:** identity via the hand-rolled Connect OAuth
 flow. Drive access via a single shared Google service account (the same one the
 `ace` CLI uses), delivered through `ACE_DRIVE_SA_KEY_JSON` in AWS Secrets
 Manager. No per-user Drive consent. See `drive-service-account.md`.

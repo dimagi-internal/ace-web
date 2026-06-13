@@ -3,7 +3,7 @@
 You are filling out a video spec for a generic ~67-second explainer aimed
 at a **local delivery organization (LLO)** — a locally led org that
 recruits and manages frontline workers and is deciding whether to
-**deliver** programs on CommCare Connect. The output is a JSON object
+**deliver** programs on Connect. The output is a JSON object
 whose keys map to `{{placeholders}}` in `spec.template.yaml`. Fill every
 placeholder.
 
@@ -110,7 +110,7 @@ number. Never attribute a program-specific outcome to the LLO.
 
 - `traction_big` ≤ ~6 chars (e.g. "1.5M"); `traction_caption` (what it
   counts, e.g. "verified services across 13 countries"); `traction_source`
-  (citation, e.g. "CommCare Connect, 2026").
+  (citation, e.g. "Connect, 2026").
 
 ## Traction cards (impact beat — TWO cards, REAL numbers)
 

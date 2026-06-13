@@ -20,7 +20,7 @@ describe("program-designer example.spec.yaml", () => {
   it("validates against loadProgramSpec (AI cut — ai_build + why benefit cards, no problem)", () => {
     const spec = loadProgramSpec(exampleSpecPath);
     expect(spec.slug).toBe("program-designer");
-    expect(spec.name).toBe("CommCare Connect");
+    expect(spec.name).toBe("Connect");
     expect(spec.active_cut).toBe("ai");
     expect(spec.ai_build).toBeDefined();
     expect(spec.ai_build?.components).toHaveLength(4);

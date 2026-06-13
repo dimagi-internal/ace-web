@@ -20,7 +20,7 @@ describe("connect-explainer example.spec.yaml", () => {
   it("validates against loadProgramSpec (explainer mode — no problem, no impact)", () => {
     const spec = loadProgramSpec(exampleSpecPath);
     expect(spec.slug).toBe("connect-explainer");
-    expect(spec.name).toBe("CommCare Connect");
+    expect(spec.name).toBe("Connect");
     expect(spec.problem).toBeUndefined();
     expect(spec.impact).toBeUndefined();
     expect(spec.product.beats).toHaveLength(4);

@@ -3,7 +3,7 @@
 You are filling out a video spec for a generic ~57-second explainer aimed
 at a **program designer** — an org that owns a frontline program/protocol
 — that answers two questions at once: **what does it look like to bring an
-existing program onto CommCare Connect**, and **why scale through Connect
+existing program onto Connect**, and **why scale through Connect
 at all?** The output is a JSON object whose keys map to `{{placeholders}}`
 in `spec.template.yaml`. Fill every placeholder.
 

@@ -21,7 +21,7 @@ ALB on AWS ECS Fargate, reusing the shared connect-labs infrastructure
   storage. Sourced via the `REDIS_URL` secret (see below)
 - **Secrets:** AWS Secrets Manager under the `ace-web/` prefix
 - **Logs:** CloudWatch Logs group `/ecs/labs-jj-ace-web`, 30-day retention
-- **Auth:** CommCare Connect OAuth with PKCE, `@dimagi.com` email filter
+- **Auth:** Connect OAuth with PKCE, `@dimagi.com` email filter
 - **Deploy:** GitHub Actions `.github/workflows/deploy-ace-web-labs.yml` (manual
   `workflow_dispatch` trigger)
 
@@ -354,7 +354,7 @@ the nginx container on port 3000. Verify nginx is proxying correctly
 (reproduce locally with `docker compose --profile prod-parity up`) and
 that the Django `/api/health` endpoint is still reachable without auth.
 
-**OAuth callback loop** — verify the CommCare Connect OAuth application's
+**OAuth callback loop** — verify the Connect OAuth application's
 callback URL is exactly `https://labs.connect.dimagi.com/ace/auth/callback/`
 and the `CONNECT_OAUTH_CLIENT_ID` / `CONNECT_OAUTH_CLIENT_SECRET` secrets
 in AWS Secrets Manager match what's in the Connect admin.
