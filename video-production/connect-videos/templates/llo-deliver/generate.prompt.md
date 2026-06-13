@@ -11,8 +11,8 @@ This is the **other side of the marketplace** from `program-designer`.
 That template answers "bring *your program* onto Connect"; this one
 answers, from the delivery org's seat, **"what does it look like to
 deliver on Connect, and why would I want to?"** The source of truth for
-the messaging is Connect's LLO-facing overview (the marketplace deal,
-real platform traction, fair auditing, and a trial-run on-ramp).
+the messaging is **connect.dimagi.com** — the two-sided marketplace, the
+org-side deal, real platform traction, and airtight, fair verification.
 
 Keep it generic — no prospect name, no single LLO's outcomes. For a
 branded prospect pitch use `partnership-pitch`; for a product-mechanism
@@ -35,64 +35,62 @@ the standard cut.
 
 ## What an LLO cares about (and what makes a great cut)
 
-Lead with the things a delivery org actually weighs:
+Lead with the things a delivery org actually weighs — in connect.dimagi.com's
+own language:
 
-0. **The frame: it's a marketplace.** Open on the Airbnb analogy —
-   Connect is a marketplace for frontline delivery: it contracts, vets,
-   and verifies LLOs without micromanaging them. This single image
-   explains the whole model in one breath; put it in the hook.
-1. **The deal.** Do I get paid, for what, and when? The deal card names
-   it: a pay-per-service contract, no infrastructure to build, paid on
-   verification, and a small trial run to start. This is the single most
-   important beat.
-2. **Proof it's real.** An LLO won't join a pilot promise. Lead with the
-   strongest, most surprising facts: 1.5M verified services, 13 countries,
-   10× a year, and FIVE Health Ministries signed on (governments trust
-   it).
-3. **That auditing is fair — the killer proof.** The most persuasive
-   moment in the source material: *Connect paid workers to fake data, with
-   cash prizes for the best fakes — and the model caught every one,
-   flagging only 2.5% of honest workers.* Land this on the audit beat,
-   verbatim-vivid. Frame it as protection for honest LLOs (disputes
-   settled by data), not surveillance — that's what converts a skeptic.
-4. **How to start small.** The trial-run chip makes the on-ramp explicit.
+0. **The frame: a two-sided marketplace.** Open on the website's line —
+   *"Connect is a two-sided verified service delivery marketplace"* — pairing
+   funders who want verified delivery with local organizations embedded in
+   their communities. Put it in the hook; no analogies.
+1. **The deal.** *"You bring the relationships and delivery capacity;
+   Connect brings funding and technology."* Performance-based contracts,
+   scaled against actual demand. This is the single most important beat.
+2. **Proof it's real.** 1.5M+ verified services, 13 countries, 100+
+   frontline organizations already delivering.
+3. **Verification is airtight — and fair.** *"Verify every visit the moment
+   it happens. No manual reviews, no delays, no fraud."* Biometric, GPS,
+   photo. The on-brand integrity proof: *"97.5% of real workers scored
+   cleaner than paid fakers in adversarial testing."* Frame it as protection
+   for honest organizations.
+4. **What you earn.** *"Pay only for verified delivery"* — and *"no
+   intervention pays as much."*
 
 ## GROUNDING RULE
 
-This template DOES carry real platform numbers — but only **cited Connect
-facts**, never invented ones. Safe, grounded figures to draw from:
+Carry only **real, cited facts from connect.dimagi.com**, never invented
+ones — and prefer the website's exact wording. Safe figures + lines:
 
-- 1.5M+ verified services delivered; 13 countries; 10× year-on-year.
-- 200+ local delivery organizations (LLOs); 250k+ verified visits/month.
-- Signed MoUs with Ministries of Health (DRC, Sierra Leone, Liberia,
-  Uganda, Kenya).
-- ~$1.30 average paid per verified visit (CHC Nigeria pilot).
-- 94% population coverage with microplanning (vs 84% without).
-- 0.91 AUC fraud-detection model (adversarial test).
+- 1.5M+ verified services; 13 countries; 100+ Frontline Organizations;
+  10,000+ Frontline Workers trained; $2M+ paid to frontline workers.
+- ~$1.70 per Child Health Campaign visit; "pay only for verified delivery,
+  as low as $1.50 / service".
+- 22% cost reduction per visit as programs scale; 85% of workers moved from
+  training to delivery; <60s average verification.
+- "97.5% of real workers scored cleaner than paid fakers in adversarial
+  testing."
+- Verification = biometric ID, GPS location, photo capture, data audits.
 
-If you don't have a real figure for a slot, use a value prop, not a made-up
-number. Never attribute a program-specific outcome to the LLO.
+Never attribute a program-specific outcome to the LLO.
 
 ## Narration targets (per beat)
 
-- `hook` (~14w): Connect is a marketplace for frontline delivery — think
-  Airbnb; you deliver and you're paid for every verified visit.
-- `cycle` (~14w): name all four steps — Learn, Deliver, Verify, Pay — as
-  the loop your teams run.
+- `hook` (~14w): Connect is a two-sided marketplace for verified service
+  delivery; you deliver and you're paid for every verified service.
+- `cycle` (~14w): Learn, Deliver, Verify, Pay — one loop; paid for work
+  delivered, not work promised.
 - `handoff` (~8w): "here's what delivering on Connect looks like."
-- `deal` → `narration.by_beat.ai_build` (~20w): Dimagi contracts your org
-  and pays per verified service; you recruit and train workers, Connect
-  verifies and pays. (The trial run lives on a chip — don't also say it here.)
-- `scene` (~18w): field footage — workers reaching people, every visit
+- `deal` → `narration.by_beat.ai_build` (~20w): you bring the relationships
+  and delivery capacity, Connect brings funding and technology;
+  performance-based contracts, scaled against demand.
+- `scene` (~18w): workers deliver in their own communities — every service
   verified the moment it happens.
 - `traction` → `narration.by_beat.problem` (~18w): not a pilot — 1.5M
-  verified services, 13 countries, 10× a year, five Health Ministries
-  signed on.
-- `product` (~30w): train with an AI coach, deliver guided visits — then
-  the fraud-test proof: "we paid workers to fake data and caught them all;
-  honest work is protected, you're paid on the proof."
-- `impact` (~14w): Connect's microplanning reached 94% of people vs 84%
-  without it — more reach, more verified visits, more pay.
+  verified services, 13 countries, 100+ frontline organizations delivering.
+- `product` (~30w): train with an AI coach, deliver guided visits — every
+  service verified the moment it happens: biometric, GPS, photo; no manual
+  reviews, no delays, no fraud.
+- `impact` (~14w): pay only for verified delivery — no intervention pays as
+  much; $2M+ paid to frontline workers.
 - `cta`: leave empty — the outro plays under the brand CTA card.
 
 ## The deal card (ai_build beat)
@@ -100,31 +98,30 @@ number. Never attribute a program-specific outcome to the LLO.
 - `deal_headline`: **one line, ≤7 words, benefit-first** — e.g. "Get paid
   for every verified service." Don't lead with an org name and don't let it
   wrap to two lines (it crowds the chips below).
-- `deal_term_1..4`: the terms as chips, ≤ ~4 words each. Default:
-  "Pay-per-service contract", "No infrastructure to build", "Paid on
-  verification", "Start with a trial run".
-- `deal_subhead`: one line, e.g. "Connect handles matching, verification,
-  and payment — you focus on delivery."
+- `deal_term_1..4`: the terms as chips, ≤ ~4 words each. Default (website
+  framing): "Performance-based contracts", "Funding + technology, provided",
+  "Paid on verification", "Scale against demand".
+- `deal_subhead`: one line, e.g. "You bring the relationships; Connect
+  brings funding and technology."
 
 ## Hero traction stat (problem beat)
 
-- `traction_big` ≤ ~6 chars (e.g. "1.5M"); `traction_caption` (what it
-  counts, e.g. "verified services across 13 countries"); `traction_source`
-  (citation, e.g. "Connect, 2026").
+- `traction_big` ≤ ~6 chars (e.g. "1.5M+"); `traction_caption` (what it
+  counts, e.g. "verified services · 13 countries · 100+ organizations");
+  `traction_source` (citation, e.g. "connect.dimagi.com").
 
 ## Traction cards (impact beat — TWO cards, REAL numbers)
 
 Keep it to **two** cards so the stat beats don't blur together with the
 hero traction stat above (four full-screen numbers in a row is stat
 fatigue). Keep each `big` ≤ ~17 characters so it stays on one row at the
-StatCard auto-fit size. Default pair (lead with the outperformance — it's
-the strongest "Connect makes your teams better" number):
+StatCard auto-fit size. Default pair — what an LLO most wants to know
+(what you earn + the scale of payments already flowing):
 
-- `impact_big_1` / `impact_caption_1`: outperformance — "94%" / "reached —
-  vs 84% without Connect" (microplanning beats seasoned implementers).
-- `impact_big_2` / `impact_caption_2` / `impact_source_2`: pay — "$1.30" /
-  "average paid per verified visit" / "CHC Nigeria pilot" (cite it — the
-  per-visit rate is program-specific, not a platform-wide average).
+- `impact_big_1` / `impact_caption_1`: pay — "$1.70" / "paid per verified
+  visit".
+- `impact_big_2` / `impact_caption_2`: scale of payments — "$2M+" / "paid
+  to frontline workers".
 
 ## Library clips
 
@@ -136,8 +133,9 @@ This template references the standard workspace media-library clips via
   GPS), `@web-superset-graphs` (audit dashboard), `@mobile-pay` (pay)
 
 There are only four product slots (`product.beats` max 4) — the audit
-dashboard clip is deliberately one of them, because "managed and audited
-fairly" is a core LLO concern. Don't drop it for b-roll.
+dashboard clip is deliberately one of them; its caption carries the
+website's integrity proof ("97.5% of real workers scored cleaner than paid
+fakers"). Don't drop it for b-roll.
 
 ## Provenance
 

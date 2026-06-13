@@ -29,93 +29,81 @@ example to `ai` unless told otherwise.
 
 ## What this video is for (and what makes it good)
 
-The viewer owns a real frontline program today and is deciding how to
-scale it — possibly through Connect, in addition to or instead of scaling
-their own delivery. The story is **how the program comes onto Connect +
-the business case for scaling through it** (build once, replicate across
-countries), with the Learn/Deliver/Verify/Pay loop shown as the program
+The viewer owns a real frontline program today and is deciding how to bring
+it onto Connect. Tell the story in **connect.dimagi.com's own language**:
+pay for verified delivery (not planned activity), deploy in as few as 10
+days, then scale against demand. Show the Learn/Deliver/Verify/Pay loop
 *running*, not as an abstract product tour.
 
 A great cut:
 
-1. **Opens on the org's reality, not the product.** The hook is "you've
-   built something that works; scaling it is the wall" — their POV.
-2. **Shows the build, then the run.** The ai_build beat (AI cut) names the
-   Connect components the program maps onto (training app, delivery app,
-   verification rules, payment logic). Then scene + product show it
-   running in the field and on the phone.
-3. **Makes the business case explicit.** The `impact` beat is repurposed
-   as three "why scale through Connect" benefit cards — built-for-scale,
-   verified-delivery, pay-for-results. The why-narration says scaling
-   through Connect is an option *alongside or instead of* their own teams.
-4. **Names the AI features in product.** AI coach during Learn, AI-assisted
-   review during Verify — the differentiators.
+1. **Opens on the shift, not the product.** The website's framing: "For
+   decades, funders paid for planned activity and hoped it added up. Connect
+   pays for work delivered, not work promised."
+2. **Shows rapid setup, then the run.** The ai_build beat (AI cut) names the
+   infrastructure Connect provides (training, delivery app, verification,
+   payments) and the headline number — deployed in as few as 10 days. Then
+   scene + product show it running.
+3. **Makes the business case explicit.** The `impact` beat is three cards of
+   cited facts: speed (10 days to first deployment), the economics of scale
+   (22% cost reduction per visit), and proof of scale (1.5M+ verified
+   services across 13 countries).
+4. **Names the AI + verification.** AI coach during Learn; biometric, GPS,
+   and photo verification "the moment it happens".
 
 ## GROUNDING RULE
 
-Never invent numbers, and never attribute a program-specific OUTCOME to
-the viewer's program. But DO put real, cited **platform** facts on screen
-— they're about Connect, not the viewer's program, and they're the most
-compelling material a program designer can hear. Safe, grounded facts:
+Never invent numbers, and never attribute a program-specific OUTCOME to the
+viewer's program. DO put real, cited **platform** facts from
+connect.dimagi.com on screen — prefer the website's exact wording:
 
-- Build once → replicate: one program (CHC) reached **9 countries** with
-  minimal additional development; 32 LLOs, 620k verified visits in a single
-  quarter.
-- **5 Health Ministries** signed on (DRC, Sierra Leone, Liberia, Uganda,
-  Kenya) — governments trust it.
-- 1.5M verified services, 13 countries, **10× year-on-year**, 200+ LLOs.
-- Near-zero marginal cost to add each delivery partner (the marketplace
-  model — think Airbnb for frontline delivery).
-- **94%** population coverage with microplanning vs **84%** for seasoned
-  implementers without it.
-
-The single most compelling point for a program designer is **build once,
-replicate across countries** — lead the business case with it.
+- "Rapid deployment in as few as 10 days"; "Scale up against actual demand".
+- "22% cost reduction per visit as programs scale".
+- 1.5M+ verified services; 13 countries; 100+ Frontline Organizations;
+  10,000+ Frontline Workers trained; $2M+ paid to frontline workers.
+- "Pay for verified service delivery, not planned activity"; "Connect pays
+  for work delivered, not work promised".
+- "funders track exactly what was delivered, where, and at what cost".
+- Verification: biometric ID, GPS, photo, data audits — "the moment it happens".
 
 ## Narration targets (per beat)
 
-- `hook` (~14w): you've built a working program; scaling to the last mile
-  reliably is the hard part.
-- `cycle` (~14w): name all four steps — Learn, Deliver, Verify, Pay — as
-  the loop the program runs on.
+- `hook` (~14w): for decades programs paid for planned activity and hoped it
+  added up; Connect pays for verified delivery.
+- `cycle` (~14w): pick the program, geography, and amount — then it runs as
+  one loop: Learn, Deliver, Verify, Pay.
 - `handoff` (~8w): "here's how your program comes onto Connect."
-- `ai_build` (~24w): AI turns the protocol into the program's apps, rules,
-  and payments — then the payoff line: build it once, replicate it across
-  countries. (AI cut only; harmless in standard.)
-- `scene` (~18w): the field footage — workers reaching families, the work
-  becoming visible end to end.
-- `product` (~30w): walk the four app clips — AI coach in Learn, guided
-  delivery, GPS + photo + AI review for Verify, automatic Pay — and land
-  the 94%-vs-seasoned-implementers microplanning edge.
-- `why` (~18w): build once, replicate across countries at near-zero cost
-  per partner — it's how Connect reached 9 countries and 5 Health
-  Ministries.
+- `ai_build` (~24w): Connect provides the app, training, verification, and
+  payments — your program deployed in as few as 10 days, then scaled against
+  demand. (AI cut only; harmless in standard.)
+- `scene` (~18w): frontline workers deliver in their own communities — and
+  you see exactly what was delivered, where, and at what cost.
+- `product` (~30w): walk the four app clips — AI coach in Learn, deliver,
+  verify the moment it happens (biometric, GPS, photo), pay for every
+  verified service.
+- `why` (~18w): deployed in as few as 10 days, then scaled against demand —
+  costs falling 22% per visit as programs grow.
 - `cta`: leave empty — the outro plays under the brand CTA card.
 
 ## AI-build card
 
-- `ai_build_headline`: one punchy line, e.g. "AI turns your program into a
-  Connect program — in days, not months."
-- `ai_build_component_1..4`: the Connect components the program maps onto.
-  Default: "Learn app", "Deliver app", "Verification rules", "Payment
-  logic". 2–4 chips; keep each ≤ ~3 words so they fit on one row.
-- `ai_build_subhead`: one line, e.g. "Your protocol, mapped onto Connect's
-  rails."
+- `ai_build_headline`: one punchy line, e.g. "Deployed in as few as 10 days".
+- `ai_build_component_1..4`: the infrastructure Connect provides. Default:
+  "Training", "Delivery app", "Verification", "Payments". 2–4 chips; keep
+  each ≤ ~3 words so they fit on one row.
+- `ai_build_subhead`: one line, e.g. "Connect provides the infrastructure;
+  you bring the program."
 
 ## Why-scale benefit cards (impact beat)
 
-Three cards carrying real, cited platform facts (most compelling first):
+Three cards carrying real, cited facts from connect.dimagi.com (most
+compelling first):
 
-- `why_big_1` / `why_caption_1`: replicate — "9 countries" / "one program,
-  replicated — minimal rebuild". The build-once-replicate story is the
-  strongest point; lead with it.
-- `why_big_2` / `why_caption_2`: trust — "5 Ministries" / "of Health signed
-  on to Connect" (governments trust it).
-- `why_big_3` / `why_caption_3`: the network — "200+ LLOs" / "a delivery
-  network at near-zero cost".
-
-(Older copy used numberless value props — "Verified delivery", "Pay for
-results". Real cited facts land harder; keep them current, refresh ~yearly.)
+- `why_big_1` / `why_caption_1`: speed — "10 days" / "to first deployment".
+- `why_big_2` / `why_caption_2`: economics of scale — "22%" / "cost
+  reduction per visit as you scale".
+- `why_big_3` / `why_caption_3`: proof of scale — "1.5M+" / "verified
+  services across 13 countries".
 Keep each `big` ≤ ~17 characters so it stays on one row at the StatCard
 auto-fit size.
 

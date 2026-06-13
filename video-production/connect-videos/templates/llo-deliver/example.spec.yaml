@@ -51,11 +51,11 @@ manifest:
 ai_build:
   headline: "Get paid for every verified service"
   components:
-    - "Pay-per-service contract"
-    - "No infrastructure to build"
+    - "Performance-based contracts"
+    - "Funding + technology, provided"
     - "Paid on verification"
-    - "Start with a trial run"
-  subhead: "Connect handles matching, verification, and payment — you focus on delivery."
+    - "Scale against demand"
+  subhead: "You bring the relationships; Connect brings funding and technology."
 
 scene:
   clips:
@@ -65,58 +65,56 @@ scene:
 
 # Hero traction stat — proof the platform is real and already paying.
 problem:
-  big: "1.5M"
-  caption: "verified services · 13 countries · 10× a year"
-  source: "Connect, 2026"
+  big: "1.5M+"
+  caption: "verified services · 13 countries · 100+ organizations"
+  source: "connect.dimagi.com"
 
 product:
   beats:
     - asset: "@mobile-learn"
-      caption: "Learn — train your workers with an AI coach"
+      caption: "Learn — with an AI coach"
       is_demo_clip: true
     - asset: "@mobile-mapping"
-      caption: "Deliver — guided visits, GPS-verified"
+      caption: "Deliver — in their own communities"
       is_demo_clip: true
     - asset: "@web-superset-graphs"
-      caption: "We paid workers to fake data — caught them all"
+      caption: "97.5% of real workers scored cleaner than paid fakers"
       is_demo_clip: true
     - asset: "@mobile-pay"
-      caption: "Pay — per verified visit, on time"
+      caption: "Pay — for every verified service"
       is_demo_clip: true
 
-# Traction stat cards — Connect's tools make your teams beat seasoned
-# implementers (more reach = more verified visits = more pay), and what
-# you actually earn per visit.
+# Traction stat cards — what an LLO most wants to know: what you're paid
+# per service, and the scale of payments already flowing to the network.
 impact:
-  - big: "94%"
-    caption: "reached — vs 84% without Connect"
-  - big: "$1.30"
-    caption: "average paid per verified visit"
-    source: "CHC Nigeria pilot"
+  - big: "$1.70"
+    caption: "paid per verified visit"
+  - big: "$2M+"
+    caption: "paid to frontline workers"
 
 narration:
   generator: manual
   prompt_version: v1-llo-deliver
   start_seconds: 0
   by_beat:
-    hook: "Connect is a marketplace for frontline delivery — think Airbnb. You deliver; you're paid for every verified visit."
-    cycle: "Your teams run one loop — Learn, Deliver, Verify, Pay. Oversight is remote, never over your shoulder."
+    hook: "Connect is a two-sided marketplace for verified service delivery. You deliver; you're paid for every verified service."
+    cycle: "One connected loop — Learn, Deliver, Verify, Pay. You're paid for work delivered, not work promised."
     handoff: "Here's what delivering on Connect looks like."
-    ai_build: "Dimagi contracts you pay-per-service. You recruit and train; Connect matches, verifies, and pays — disputes settled by data, not arguments."
-    scene: "Your workers go where people are — every visit GPS-stamped, photographed, and verified the moment it happens."
-    problem: "Not a pilot: one and a half million verified services across thirteen countries, growing tenfold a year — with five Health Ministries signed on."
-    product: "They train with an AI coach and deliver guided visits, each one verified. We paid workers to fake data — and caught them all. Honest work is protected; you're paid on the proof."
-    impact: "Connect's microplanning reached ninety-four percent of people — versus eighty-four without it. More reach, more verified visits, more pay."
+    ai_build: "You bring the relationships and delivery capacity; Connect brings funding and technology. Performance-based contracts, scaled against real demand."
+    scene: "Your workers deliver in their own communities — every service verified the moment it happens."
+    problem: "Not a pilot: one and a half million verified services across thirteen countries, with a hundred-plus frontline organizations already delivering."
+    product: "Workers train with an AI coach and deliver guided visits — every service verified the moment it happens: biometric, GPS, photo. No manual reviews, no delays, no fraud."
+    impact: "Pay only for verified delivery — no intervention pays as much, with over two million dollars paid to frontline workers."
     cta: ""
   script: |
-    Connect is a marketplace for frontline delivery — think Airbnb. You deliver; you're paid for every verified visit.
-    Your teams run one loop — Learn, Deliver, Verify, Pay. Oversight is remote, never over your shoulder.
+    Connect is a two-sided marketplace for verified service delivery. You deliver; you're paid for every verified service.
+    One connected loop — Learn, Deliver, Verify, Pay. You're paid for work delivered, not work promised.
     Here's what delivering on Connect looks like.
-    Dimagi contracts you pay-per-service. You recruit and train; Connect matches, verifies, and pays — disputes settled by data, not arguments.
-    Your workers go where people are — every visit GPS-stamped, photographed, and verified the moment it happens.
-    Not a pilot: one and a half million verified services across thirteen countries, growing tenfold a year — with five Health Ministries signed on.
-    They train with an AI coach and deliver guided visits, each one verified. We paid workers to fake data — and caught them all. Honest work is protected; you're paid on the proof.
-    Connect's microplanning reached ninety-four percent of people — versus eighty-four without it. More reach, more verified visits, more pay.
+    You bring the relationships and delivery capacity; Connect brings funding and technology. Performance-based contracts, scaled against real demand.
+    Your workers deliver in their own communities — every service verified the moment it happens.
+    Not a pilot: one and a half million verified services across thirteen countries, with a hundred-plus frontline organizations already delivering.
+    Workers train with an AI coach and deliver guided visits — every service verified the moment it happens: biometric, GPS, photo. No manual reviews, no delays, no fraud.
+    Pay only for verified delivery — no intervention pays as much, with over two million dollars paid to frontline workers.
 
 voice:
   provider: elevenlabs

@@ -36,31 +36,34 @@
 #     {{deal_headline}}        ≤7w, ONE line, benefit-first — e.g. "Get paid
 #                              for every verified service." (Don't lead with an
 #                              org name or wrap to two lines.)
-#     {{deal_term_1..4}}       the terms as chips (≤ ~4 words each): contract,
-#                              no-infra, paid-on-verification, trial-run.
-#     {{deal_subhead}}         one line under the chips.
+#     {{deal_term_1..4}}       the terms as chips (≤ ~4 words each), website
+#                              framing: performance-based contracts, funding +
+#                              technology provided, paid-on-verification,
+#                              scale-against-demand.
+#     {{deal_subhead}}         one line under the chips (e.g. "You bring the
+#                              relationships; Connect brings funding and technology").
 #
 #   Hero traction stat (problem beat):
-#     {{traction_big}}     a real Connect platform figure (e.g. "1.5M")
-#     {{traction_caption}} what it counts (e.g. "verified services · 13 countries · 10× a year")
-#     {{traction_source}}  citation (e.g. "Connect, 2026")
+#     {{traction_big}}     a real connect.dimagi.com figure (e.g. "1.5M+")
+#     {{traction_caption}} what it counts (e.g. "verified services · 13 countries · 100+ organizations")
+#     {{traction_source}}  citation (e.g. "connect.dimagi.com")
 #
 #   Traction cards (impact beat — TWO cards, REAL numbers):
-#     {{impact_big_1}} / {{impact_caption_1}}              outperformance (e.g. "94%" / "reached — vs 84% without Connect")
-#     {{impact_big_2}} / {{impact_caption_2}} / {{impact_source_2}}  what you earn (e.g. "$1.30", cite if program-specific)
+#     {{impact_big_1}} / {{impact_caption_1}}              what you earn (e.g. "$1.70" / "paid per verified visit")
+#     {{impact_big_2}} / {{impact_caption_2}}              scale of payments (e.g. "$2M+" / "paid to frontline workers")
 #
 #   Per-section content:
 #     {{scene_lower_third}}  e.g. "Your teams, in the field"
 #
 #   Per-beat narration (each ±2 words from target):
-#     {{narration_hook}}     ~14w. Connect is a marketplace for frontline delivery — think Airbnb; you deliver and you're paid per verified visit.
-#     {{narration_cycle}}    ~14w. Name all four steps — Learn, Deliver, Verify, Pay; oversight is remote, not over your shoulder.
+#     {{narration_hook}}     ~14w. Connect is a two-sided marketplace for verified service delivery; you deliver and you're paid for every verified service.
+#     {{narration_cycle}}    ~14w. Learn, Deliver, Verify, Pay — one loop; paid for work delivered, not work promised.
 #     {{narration_handoff}}  ~8w.  "here's what delivering on Connect looks like."
-#     {{narration_deal}}     ~20w. The pay-per-service contract; you recruit/train, Connect verifies + pays; disputes settled by data. (Trial-run lives on the chip, not here.)
-#     {{narration_scene}}    ~18w. Field footage — workers reaching people, every visit verified as it happens.
-#     {{narration_traction}} ~18w. Not a pilot — 1.5M verified services, 13 countries, 10× a year, five Health Ministries signed on.
-#     {{narration_product}}  ~30w. Walk the 4 clips — train w/ AI coach, deliver; THEN the fraud-test proof: we paid workers to fake data and caught them all; you're paid on the proof.
-#     {{narration_impact}}   ~14w. Connect's microplanning reached 94% vs 84% without it — more reach, more verified visits, more pay.
+#     {{narration_deal}}     ~20w. You bring the relationships and delivery capacity, Connect brings funding and technology; performance-based contracts, scaled against demand.
+#     {{narration_scene}}    ~18w. Workers deliver in their own communities — every service verified the moment it happens.
+#     {{narration_traction}} ~18w. Not a pilot — 1.5M verified services, 13 countries, 100+ frontline organizations delivering.
+#     {{narration_product}}  ~30w. Train w/ AI coach, deliver; every service verified the moment it happens — biometric, GPS, photo; no manual reviews, no delays, no fraud.
+#     {{narration_impact}}   ~14w. Pay only for verified delivery — no intervention pays as much; $2M+ paid to frontline workers.
 #     {{narration_cta}}      Leave empty — outro plays under the brand CTA card.
 
 provenance:
@@ -131,8 +134,8 @@ product:
 
 # Traction stat cards (REAL numbers — an LLO needs proof). Keep it to TWO
 # cards so the stat beats don't blur together with the hero traction stat
-# above — outperformance (94% vs 84%) + what you earn. Cite the source
-# where a figure is program-specific (e.g. the per-visit rate).
+# above — what you earn + the scale of payments already flowing to the
+# network ($1.70 per verified visit; $2M+ paid to frontline workers).
 impact:
   - big: "{{impact_big_1}}"
     caption: "{{impact_caption_1}}"
