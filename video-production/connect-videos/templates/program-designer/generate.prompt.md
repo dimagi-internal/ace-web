@@ -52,10 +52,24 @@ A great cut:
 
 ## GROUNDING RULE
 
-Never invent stats or organizational claims. The generic cut carries NO
-numbers — the benefit cards are value props (e.g. "Built for scale"), not
-figures. If you want real outcome numbers, that belongs in a branded
-partnership-pitch skin grounded in cited research, not here.
+Never invent numbers, and never attribute a program-specific OUTCOME to
+the viewer's program. But DO put real, cited **platform** facts on screen
+— they're about Connect, not the viewer's program, and they're the most
+compelling material a program designer can hear. Safe, grounded facts:
+
+- Build once → replicate: one program (CHC) reached **9 countries** with
+  minimal additional development; 32 LLOs, 620k verified visits in a single
+  quarter.
+- **5 Health Ministries** signed on (DRC, Sierra Leone, Liberia, Uganda,
+  Kenya) — governments trust it.
+- 1.5M verified services, 13 countries, **10× year-on-year**, 200+ LLOs.
+- Near-zero marginal cost to add each delivery partner (the marketplace
+  model — think Airbnb for frontline delivery).
+- **94%** population coverage with microplanning vs **84%** for seasoned
+  implementers without it.
+
+The single most compelling point for a program designer is **build once,
+replicate across countries** — lead the business case with it.
 
 ## Narration targets (per beat)
 
@@ -64,15 +78,17 @@ partnership-pitch skin grounded in cited research, not here.
 - `cycle` (~14w): name all four steps — Learn, Deliver, Verify, Pay — as
   the loop the program runs on.
 - `handoff` (~8w): "here's how your program comes onto Connect."
-- `ai_build` (~24w): Connect's AI design tools turn the program into the
-  training app, delivery app, verification rules, and payment logic — in
-  days, not months. (AI cut only; harmless in standard.)
+- `ai_build` (~24w): AI turns the protocol into the program's apps, rules,
+  and payments — then the payoff line: build it once, replicate it across
+  countries. (AI cut only; harmless in standard.)
 - `scene` (~18w): the field footage — workers reaching families, the work
   becoming visible end to end.
 - `product` (~30w): walk the four app clips — AI coach in Learn, guided
-  delivery, GPS + photo + AI review for Verify, automatic Pay.
-- `why` (~18w): why scale through Connect — alongside or instead of their
-  own teams — without building the infrastructure themselves.
+  delivery, GPS + photo + AI review for Verify, automatic Pay — and land
+  the 94%-vs-seasoned-implementers microplanning edge.
+- `why` (~18w): build once, replicate across countries at near-zero cost
+  per partner — it's how Connect reached 9 countries and 5 Health
+  Ministries.
 - `cta`: leave empty — the outro plays under the brand CTA card.
 
 ## AI-build card
@@ -87,16 +103,18 @@ partnership-pitch skin grounded in cited research, not here.
 
 ## Why-scale benefit cards (impact beat)
 
-Three cards, no numbers:
+Three cards carrying real, cited platform facts (most compelling first):
 
-- `why_big_1` / `why_caption_1`: the delivery network — a program designer
-  cares that local organizations will actually WANT to deliver their
-  program. Lead with the supply side, e.g. "A delivery network" / "Local
-  organizations ready to deliver your program — not yours to staff".
-- `why_big_2` / `why_caption_2`: trust — "Verified delivery" / "GPS,
-  photo, and an AI review layer on every visit".
-- `why_big_3` / `why_caption_3`: payment — "Pay for results" / "Funds flow
-  only on verified work — proof your funders trust".
+- `why_big_1` / `why_caption_1`: replicate — "9 countries" / "one program,
+  replicated — minimal rebuild". The build-once-replicate story is the
+  strongest point; lead with it.
+- `why_big_2` / `why_caption_2`: trust — "5 Ministries" / "of Health signed
+  on to Connect" (governments trust it).
+- `why_big_3` / `why_caption_3`: the network — "200+ LLOs" / "a delivery
+  network at near-zero cost".
+
+(Older copy used numberless value props — "Verified delivery", "Pay for
+results". Real cited facts land harder; keep them current, refresh ~yearly.)
 Keep each `big` ≤ ~17 characters so it stays on one row at the StatCard
 auto-fit size.
 
