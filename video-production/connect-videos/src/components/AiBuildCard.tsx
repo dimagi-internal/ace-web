@@ -28,6 +28,19 @@ export const AiBuildCard: React.FC<Props> = ({ headline, components, subhead }) 
   return (
     <div
       style={{
+        // Background fills the WHOLE frame (incl. behind the caption pill)
+        // so the narration caption never sits on a mismatched dark strip
+        // below the card. Content is confined separately, below.
+        position: "absolute",
+        inset: 0,
+        background: theme.gradients.primary,
+        fontFamily: theme.fonts.sans,
+        color: "#FFFFFF",
+        textAlign: "center",
+      }}
+    >
+    <div
+      style={{
         position: "absolute",
         // Confine all content to the band above the caption zone and
         // center within it, so neither a tall (multi-line) headline nor
@@ -45,12 +58,11 @@ export const AiBuildCard: React.FC<Props> = ({ headline, components, subhead }) 
         paddingRight: theme.spacing.xl,
         // Clear the top-left ProspectBranding badge (≈110px tall) on
         // branded cuts so a multi-line headline never tucks under it.
-        paddingTop: 124,
-        gap: 36,
-        background: theme.gradients.primary,
-        fontFamily: theme.fonts.sans,
-        color: "#FFFFFF",
-        textAlign: "center",
+        paddingTop: 108,
+        // Tighter stack so a dense card (2-line headline + 4 chips +
+        // subhead) clears a 3-line caption pill below without the subhead
+        // tucking under it.
+        gap: 28,
       }}
     >
       <div
@@ -114,7 +126,7 @@ export const AiBuildCard: React.FC<Props> = ({ headline, components, subhead }) 
               [0, 1],
               { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
             ),
-            fontSize: 34,
+            fontSize: 32,
             fontWeight: 400,
             maxWidth: 1400,
             color: "rgba(255,255,255,0.92)",
@@ -123,6 +135,7 @@ export const AiBuildCard: React.FC<Props> = ({ headline, components, subhead }) 
           {subhead}
         </div>
       )}
+    </div>
     </div>
   );
 };
