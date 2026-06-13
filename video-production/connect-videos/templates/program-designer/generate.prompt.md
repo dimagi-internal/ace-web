@@ -29,10 +29,11 @@ example to `ai` unless told otherwise.
 
 ## What this video is for (and what makes it good)
 
-The viewer runs a real frontline program today and is deciding how to
+The viewer owns a real frontline program today and is deciding how to
 scale it — possibly through Connect, in addition to or instead of scaling
-their own delivery. The story is the **Connectify journey + the business
-case**, with the Learn/Deliver/Verify/Pay loop shown as the program
+their own delivery. The story is **how the program comes onto Connect +
+the business case for scaling through it** (build once, replicate across
+countries), with the Learn/Deliver/Verify/Pay loop shown as the program
 *running*, not as an abstract product tour.
 
 A great cut:

@@ -5,11 +5,12 @@
 # placeholder *references* inside doc text don't get substituted into the
 # generated spec.
 #
-# This is the GENERIC, unbranded "how you Connectify a program" explainer.
-# It carries NO prospect block (partnership-pitch adds that) and OMITS the
-# problem stat-card beat. It DOES carry the impact beat — repurposed as
-# "why scale through Connect" benefit cards — and an ai_build beat that
-# only renders in the AI cut.
+# This is the GENERIC, unbranded "bring your program onto Connect"
+# explainer for a PROGRAM DESIGNER. It carries NO prospect block
+# (partnership-pitch adds that) and OMITS the problem stat-card beat. It
+# DOES carry the impact beat — three "why scale through Connect" cards that
+# carry REAL cited platform facts (build-once-replicate is the strongest) —
+# and an ai_build beat that only renders in the AI cut.
 #
 # TWO CUTS FROM ONE SPEC:
 #   active_cut: ai        → includes the body_ai_build beat ("AI builds
@@ -38,16 +39,19 @@
 #
 #   Per-section content:
 #     {{scene_lower_third}}  e.g. "Your program, in the field"
-#     {{why_big_1..3}} / {{why_caption_1..3}}  three benefit cards (no invented numbers)
+#     {{why_big_1..3}} / {{why_caption_1..3}}  three cards of REAL cited platform
+#         facts (lead with build-once-replicate): e.g. "9 countries" / "one
+#         program, replicated", "5 Ministries" / "of Health signed on",
+#         "200+ LLOs" / "a delivery network at near-zero cost".
 #
 #   Per-beat narration (each ±2 words from target):
-#     {{narration_hook}}     ~14w. You've built a program that works; scaling it is the hard part.
+#     {{narration_hook}}     ~14w. You've built a program that works; scaling it country by country is the hard part.
 #     {{narration_cycle}}    ~14w. Name all four steps — Learn, Deliver, Verify, Pay.
 #     {{narration_handoff}}  ~8w.  "here's how your program comes onto Connect."
-#     {{narration_ai_build}} ~24w. AI builds the apps, rules, and payment logic — in days.
+#     {{narration_ai_build}} ~24w. AI turns the protocol into the apps/rules/payments — build once, then replicate across countries.
 #     {{narration_scene}}    ~18w. What the field footage shows; work becoming visible.
-#     {{narration_product}}  ~30w. Walk the 4 app clips incl. AI coach + AI review.
-#     {{narration_why}}      ~18w. Why scale through Connect — with or instead of your own teams.
+#     {{narration_product}}  ~30w. Walk the 4 app clips incl. AI coach + AI review; land the 94%-vs-seasoned-implementers microplanning edge.
+#     {{narration_why}}      ~18w. Build once, replicate across countries at near-zero cost — how Connect reached 9 countries and 5 Health Ministries.
 #     {{narration_cta}}      Leave empty — outro plays under the brand CTA card.
 
 provenance:
