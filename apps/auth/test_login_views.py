@@ -8,7 +8,7 @@ to hit.
 This view creates or fetches a User by email and logs them in via
 django.contrib.auth.login, setting the standard Django session cookie.
 Playwright tests drive this endpoint at the start of each test to get
-an authenticated session without going through CommCare Connect OAuth.
+an authenticated session without going through Connect OAuth.
 
 SECURITY:
 - Defaults in base.py are False.

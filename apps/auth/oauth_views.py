@@ -1,5 +1,5 @@
 """
-CommCare Connect OAuth Views.
+Connect OAuth Views.
 
 Session-based OAuth implementation for the ACE web / labs AWS environment.
 Stores tokens in session instead of database.
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 def login_page(request: HttpRequest) -> HttpResponse:
     """
-    Display the login page with a 'Sign in with CommCare Connect' button.
+    Display the login page with a 'Sign in with Connect' button.
 
     If already authenticated, redirect to the `next` query param (default /).
     """
@@ -280,7 +280,7 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
     default_next = f"{_prefix}/" if _prefix else "/"
     next_url = request.session.pop("oauth_next", default_next)
 
-    logger.info(f"Successfully authenticated user {email} via CommCare Connect OAuth")
+    logger.info(f"Successfully authenticated user {email} via Connect OAuth")
 
     if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
         next_url = "/"

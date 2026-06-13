@@ -26,13 +26,13 @@
 <body>
   <div class="container">
     <h1>ace-web</h1>
-    <p>Sign in with your CommCare Connect account to continue.</p>
+    <p>Sign in with your Connect account to continue.</p>
     {% if messages %}
     <ul class="messages">
       {% for message in messages %}<li>{{ message }}</li>{% endfor %}
     </ul>
     {% endif %}
-    <a class="btn" href="{% url 'auth:initiate' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Sign in with CommCare Connect</a>
+    <a class="btn" href="{% url 'auth:initiate' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Sign in with Connect</a>
 
     {% if show_test_login %}
     <div class="dev-panel">
