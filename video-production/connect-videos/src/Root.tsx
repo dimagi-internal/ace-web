@@ -1,6 +1,6 @@
 import { Composition, AbsoluteFill, Sequence, registerRoot } from "remotion";
 import { parseProgramSpec, applyManifestRefs, type ProgramSpec } from "./lib/spec";
-import { parseDefaults, resolveBeats, filterDefaultsForSpec, type ResolvedBeat } from "./lib/beats";
+import { parseDefaults, resolveBeats, effectiveBeatsForSpec, type ResolvedBeat } from "./lib/beats";
 import { Intro } from "./compositions/Intro";
 import { ProgramBody } from "./compositions/ProgramBody";
 import { Outro } from "./compositions/Outro";
@@ -132,7 +132,7 @@ const ProgramVideo: React.FC<VideoProps> = ({
   // Explainer mode: drop the problem/impact stat beats from the global
   // timeline when this spec omits the matching field, recomputing
   // total_seconds so resolveBeats' sum invariant still holds.
-  const effectiveDefaults = filterDefaultsForSpec(defaults, spec);
+  const effectiveDefaults = effectiveBeatsForSpec(defaults, spec);
   const timeline = resolveBeats(effectiveDefaults, mergedOverrides);
   const byId = Object.fromEntries(timeline.beats.map((b) => [b.id, b])) as Record<
     string,
@@ -199,7 +199,7 @@ export const RemotionRoot: React.FC = () => {
   const defaultSlug = "mbw";
   const spec = applyManifestRefs(parseProgramSpec(PROGRAMS_REGISTRY[defaultSlug]));
   const timeline = resolveBeats(
-    filterDefaultsForSpec(defaults, spec),
+    effectiveBeatsForSpec(defaults, spec),
     spec.beat_overrides ?? {},
   );
   return (
@@ -222,7 +222,7 @@ export const RemotionRoot: React.FC = () => {
         if (!yamlText) return { durationInFrames: timeline.totalFrames, fps: timeline.fps };
         const s = applyManifestRefs(parseProgramSpec(yamlText));
         const merged = { ...(s.beat_overrides ?? {}), ...(p.beatOverrides ?? {}) };
-        const tl = resolveBeats(filterDefaultsForSpec(defaults, s), merged);
+        const tl = resolveBeats(effectiveBeatsForSpec(defaults, s), merged);
         return { durationInFrames: tl.totalFrames, fps: tl.fps };
       }}
     />

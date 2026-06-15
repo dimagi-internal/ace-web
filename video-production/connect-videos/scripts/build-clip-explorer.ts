@@ -30,7 +30,7 @@ import {
 } from "node:fs";
 import { execSync } from "node:child_process";
 import { loadProgramSpec } from "../src/lib/spec.node";
-import { loadDefaults, resolveBeats, type ResolvedBeat } from "../src/lib/beats.node";
+import { loadDefaults, resolveBeats, effectiveBeatsForSpec, type ResolvedBeat } from "../src/lib/beats.node";
 import { defaultCacheDir } from "../src/lib/asset-resolver.node";
 import { resolveRun, specPath, outputPath, explorerDir as runExplorerDir } from "../src/lib/runs.node";
 
@@ -148,7 +148,7 @@ function main() {
   const runId = resolveRun(cli.program, cli.run, root);
   const defaults = loadDefaults(path.join(root, "programs/_defaults.yaml"));
   const spec = loadProgramSpec(specPath(cli.program, runId, root));
-  const timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
+  const timeline = resolveBeats(effectiveBeatsForSpec(defaults, spec), spec.beat_overrides ?? {});
   const cacheDir = defaultCacheDir();
 
   const outDir = runExplorerDir(cli.program, runId, root);

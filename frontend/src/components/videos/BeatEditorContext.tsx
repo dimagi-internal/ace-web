@@ -11,6 +11,12 @@ interface ContextValue {
   runId: string;
   workspaceSlug: string;
   onSave?: (effectiveSpec: ProgramSpec) => Promise<void>;
+  // True in the TEMPLATE editor (where save = whole-spec, client-applied via
+  // onSave). Enables structural edits (add/remove beat) + the ai_build-card,
+  // caption, and lower-third widgets — whose ops apply client-side only and
+  // are NOT understood by the workbench /edit-batch backend. Off in the
+  // per-run workbench editor, which keeps its content-only edit set.
+  fullEdit: boolean;
 }
 
 const Ctx = createContext<ContextValue | null>(null);
@@ -30,7 +36,10 @@ export function BeatEditorProvider({ workspaceSlug, programSlug, runId, spec, ch
     () => applyOps(state.spec, state.buffer),
     [state.spec, state.buffer],
   );
-  const value: ContextValue = { state, effectiveSpec, dispatch, programSlug, runId, workspaceSlug, onSave };
+  const value: ContextValue = {
+    state, effectiveSpec, dispatch, programSlug, runId, workspaceSlug, onSave,
+    fullEdit: onSave != null,
+  };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

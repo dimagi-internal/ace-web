@@ -77,3 +77,66 @@ describe("applyOps", () => {
     expect(out.problem?.big).toBe("31%");
   });
 });
+
+describe("applyOps — structural + content ops (template editor)", () => {
+  // A spec carrying its own beats timeline + the optional blocks.
+  const withBeats: ProgramSpec = {
+    ...baseSpec,
+    ai_build: { headline: "H", components: ["a", "b"], subhead: "s" },
+    active_cut: "ai",
+    scene: { clips: ["@alpha"], lower_third: "old lt" },
+    beats: [
+      { id: "hook", kind: "intro_hook", seconds: 4 },
+      { id: "ai_build", kind: "body_ai_build", seconds: 7 },
+      { id: "scene", kind: "body_scene", seconds: 7 },
+      { id: "product", kind: "body_product_beats", seconds: 12 },
+      { id: "cta", kind: "outro_cta", seconds: 8 },
+    ],
+  };
+
+  it("set-ai-build merges fields", () => {
+    const out = applyOps(withBeats, [
+      { op: "set-ai-build", headline: "New", components: ["x", "y", "z"] },
+    ]);
+    expect(out.ai_build?.headline).toBe("New");
+    expect(out.ai_build?.components).toEqual(["x", "y", "z"]);
+    expect(out.ai_build?.subhead).toBe("s"); // untouched
+  });
+
+  it("set-caption sets a product-beat caption (promotes string slot)", () => {
+    const out = applyOps(withBeats, [{ op: "set-caption", index: 0, caption: "Learn" }]);
+    const slot = out.product!.beats[0];
+    expect(typeof slot === "object" && slot.caption).toBe("Learn");
+  });
+
+  it("set-lower-third updates scene.lower_third; empty clears", () => {
+    expect(applyOps(withBeats, [{ op: "set-lower-third", text: "new" }]).scene?.lower_third).toBe("new");
+    expect(applyOps(withBeats, [{ op: "set-lower-third", text: "" }]).scene?.lower_third).toBeUndefined();
+  });
+
+  it("remove-beat drops the block + the beat entry", () => {
+    const out = applyOps(withBeats, [{ op: "remove-beat", beatId: "ai_build" }]);
+    expect(out.ai_build).toBeUndefined();
+    expect(out.beats?.map((b) => b.id)).toEqual(["hook", "scene", "product", "cta"]);
+  });
+
+  it("add-beat inserts the block + beat at the canonical position", () => {
+    // Start without problem; add it — it should land between scene and product.
+    const out = applyOps(withBeats, [{ op: "add-beat", beatId: "problem" }]);
+    expect(out.problem).toBeTruthy();
+    expect(out.beats?.map((b) => b.id)).toEqual([
+      "hook", "ai_build", "scene", "problem", "product", "cta",
+    ]);
+  });
+
+  it("add then remove of the same beat coalesce to a single buffer slot", () => {
+    // (coalescing is handled by opCoalesceKey, exercised via the reducer; here
+    // we just confirm applyOps composes them in order: net = removed.)
+    const out = applyOps(withBeats, [
+      { op: "remove-beat", beatId: "ai_build" },
+      { op: "add-beat", beatId: "ai_build" },
+    ]);
+    expect(out.ai_build).toBeTruthy(); // re-added with defaults
+    expect(out.beats?.some((b) => b.id === "ai_build")).toBe(true);
+  });
+});

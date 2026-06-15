@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { resolveBeats, filterDefaultsForSpec } from "./beats";
+import { resolveBeats, filterDefaultsForSpec, effectiveBeatsForSpec } from "./beats";
 
 const defaults = {
   fps: 30,
@@ -185,5 +185,46 @@ describe("filterDefaultsForSpec (program-designer AI cut — body_ai_build)", ()
     expect(kinds(out)).not.toContain("body_ai_build");
     expect(out.beats).toHaveLength(8);
     expect(out.total_seconds).toBe(60);
+  });
+});
+
+describe("effectiveBeatsForSpec — structure belongs to the spec", () => {
+  const base = {
+    fps: 30,
+    total_seconds: 60,
+    beats: [
+      { id: "hook", kind: "intro_hook" as const, seconds: 4 },
+      { id: "cycle", kind: "intro_cycle" as const, seconds: 8 },
+      { id: "problem", kind: "body_problem_stat" as const, seconds: 10 },
+    ],
+  };
+
+  it("uses the spec's own beats verbatim when present (no optional-beat filtering)", () => {
+    // Spec defines a custom 2-beat timeline and carries NO problem block —
+    // under the legacy path the problem beat would be filtered out, but an
+    // explicit beats list is authoritative and used as-is.
+    const out = effectiveBeatsForSpec(base, {
+      beats: [
+        { id: "hook", kind: "intro_hook", seconds: 5 },
+        { id: "cta", kind: "outro_cta", seconds: 6 },
+      ],
+    });
+    expect(out.beats.map((b) => b.id)).toEqual(["hook", "cta"]);
+    expect(out.beats[0].seconds).toBe(5);
+    expect(out.total_seconds).toBe(11);
+    expect(out.fps).toBe(30);
+  });
+
+  it("falls back to filterDefaultsForSpec when the spec has no beats", () => {
+    // No explicit beats + no problem block → legacy path drops body_problem_stat.
+    const out = effectiveBeatsForSpec(base, {});
+    expect(out.beats.map((b) => b.id)).toEqual(["hook", "cycle"]);
+    expect(out.total_seconds).toBe(12);
+  });
+
+  it("treats an empty beats array as absent (fallback)", () => {
+    const out = effectiveBeatsForSpec(base, { beats: [], problem: { big: "1", caption: "c" } });
+    // problem present → kept by the fallback filter
+    expect(out.beats.map((b) => b.id)).toEqual(["hook", "cycle", "problem"]);
   });
 });
