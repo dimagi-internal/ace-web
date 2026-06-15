@@ -324,12 +324,18 @@ def _scrub_ruamel(node: Any) -> Any:
     return node
 
 
-def _resolved_beats(overrides: dict) -> list[dict]:
+def _resolved_beats(overrides: dict, spec: dict | None = None) -> list[dict]:
     """Read `programs/_defaults.yaml` and apply per-run beat_overrides.
 
     Returns a list of {id, kind, seconds} dicts in declaration order.
     Empty list if defaults can't be read (the editor falls back to a no-
     beats view rather than 500).
+
+    When ``spec`` is given, the three OPTIONAL beats are dropped if the spec
+    lacks their content block — mirroring beats.ts::filterDefaultsForSpec so
+    the editor shows exactly the beats that render (not the full global
+    timeline). This is the default starter timeline a spec inherits ONLY
+    when it doesn't carry its own ``beats:`` (structure-belongs-to-the-spec).
     """
     from django.conf import settings
 
@@ -340,6 +346,18 @@ def _resolved_beats(overrides: dict) -> list[dict]:
         doc = _yaml().load(defaults_path.read_text())
     except Exception:
         return []
+
+    def _keep(kind: str) -> bool:
+        if spec is None:
+            return True
+        if kind == "body_problem_stat":
+            return spec.get("problem") is not None
+        if kind == "body_impact_stats":
+            return spec.get("impact") is not None
+        if kind == "body_ai_build":
+            return spec.get("ai_build") is not None and spec.get("active_cut") == "ai"
+        return True
+
     out: list[dict] = []
     for b in (doc.get("beats") or []):
         if not isinstance(b, dict):
@@ -347,10 +365,13 @@ def _resolved_beats(overrides: dict) -> list[dict]:
         beat_id = b.get("id")
         if not beat_id:
             continue
+        kind = b.get("kind", "")
+        if not _keep(kind):
+            continue
         override = overrides.get(beat_id) if isinstance(overrides, dict) else None
         out.append({
             "id": beat_id,
-            "kind": b.get("kind", ""),
+            "kind": kind,
             "seconds": float((override or {}).get("seconds", b.get("seconds", 0))),
         })
     return out

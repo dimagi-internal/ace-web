@@ -458,30 +458,39 @@ def test_load_example_spec_returns_none_when_missing(fake_drive_ws):
     assert result is None or isinstance(result, dict)
 
 
-def test_load_example_spec_injects_resolved_beats(fake_drive_ws):
-    """The BeatEditor renders from a top-level `beats` array; load_example_spec
-    injects the resolved _defaults.yaml timeline (like read_parsed_spec does for
-    runs) so the editor isn't blank."""
+def test_load_example_spec_injects_filtered_default_beats(fake_drive_ws):
+    """When example.spec.yaml carries no `beats:`, load_example_spec injects the
+    DEFAULT starter timeline FILTERED to the spec's content (mirrors
+    beats.ts::filterDefaultsForSpec) so the editor shows exactly what renders.
+    program-designer has ai_build + impact but NO problem block, so the
+    body_problem_stat beat must be absent."""
     ws = fake_drive_ws.workspace
     templates.list_templates(ws)
     spec = templates.load_example_spec(ws, "program-designer")
     assert isinstance(spec.get("beats"), list) and len(spec["beats"]) > 0
-    # each beat carries id + kind (what BeatList keys on)
     assert all("id" in b and "kind" in b for b in spec["beats"])
+    kinds = [b["kind"] for b in spec["beats"]]
+    assert "body_problem_stat" not in kinds  # no problem block → dropped
+    assert "body_ai_build" in kinds          # ai_build + active_cut ai → kept
+    assert "body_impact_stats" in kinds      # impact block → kept
 
 
-def test_save_example_spec_strips_derived_beats(fake_drive_ws):
-    """The editor's effectiveSpec round-trips the injected `beats` back on save;
-    it must NOT be persisted to example.spec.yaml (it's derived, not source)."""
+def test_save_example_spec_persists_beats(fake_drive_ws):
+    """Structure belongs to the template: the editor's add/remove/reorder beat
+    edits must round-trip to disk. So `beats` is now PERSISTED (no longer
+    stripped as a derived field)."""
     ws = fake_drive_ws.workspace
     templates.list_templates(ws)
     spec = templates.load_example_spec(ws, "program-designer")
-    assert "beats" in spec  # injected on read
+    assert "beats" in spec  # injected on first read (filtered default timeline)
     spec["tagline"] = "edited via beateditor"
     templates.save_template(ws, "program-designer", example_spec=spec)
     raw = templates.load_example(ws, "program-designer")  # the persisted YAML text
-    assert "\nbeats:" not in raw and not raw.startswith("beats:")
+    assert "beats:" in raw          # now persisted
     assert "edited via beateditor" in raw
+    # And on reload the template carries its OWN beats (not re-injected).
+    reloaded = templates.load_example_spec(ws, "program-designer")
+    assert isinstance(reloaded.get("beats"), list) and len(reloaded["beats"]) > 0
 
 
 def test_save_template_example_spec_roundtrips(fake_drive_ws):
