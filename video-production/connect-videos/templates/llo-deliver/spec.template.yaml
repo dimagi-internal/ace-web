@@ -7,13 +7,15 @@
 #
 # This is the LLO-FACING "deliver on Connect" explainer — the other side
 # of the marketplace from program-designer. It carries the full beat set
-# including the problem (hero traction stat) and impact (traction cards)
-# beats, plus the ai_build beat repurposed as "the deal" card.
+# including the problem (a light scale-context stat) and impact (mechanism
+# cards) beats, plus the ai_build beat as a "how the work is split" card.
 #
-# Unlike program-designer's generic cut, this template DOES put real
-# Connect platform numbers on screen — an LLO needs proof the platform is
-# real and paying. Keep every number grounded in cited Connect facts;
-# never invent one.
+# TONE: this is an EXPLAINER, not a pitch. The audience already knows and
+# likes Connect (they've had a real intro call). Walk them calmly through
+# HOW it works — the loop, the split of work, how verification and payment
+# happen. Avoid persuasion ("no intervention pays as much"), proof-point
+# stat barrages, and marketplace pitch language. One light scale fact for
+# context is fine; lead with mechanism, not selling.
 #
 # CUTS:
 #   active_cut: ai        → includes the deal card (body_ai_build). ~67s.
@@ -32,38 +34,36 @@
 #     {{template_id}}      echoed back — fill with the template id you fetched
 #     {{generated_at}}     ISO-8601 UTC timestamp at fill time
 #
-#   The deal card (ai_build beat):
-#     {{deal_headline}}        ≤7w, ONE line, benefit-first — e.g. "Get paid
-#                              for every verified service." (Don't lead with an
-#                              org name or wrap to two lines.)
-#     {{deal_term_1..4}}       the terms as chips (≤ ~4 words each), website
-#                              framing: performance-based contracts, funding +
-#                              technology provided, paid-on-verification,
-#                              scale-against-demand.
-#     {{deal_subhead}}         one line under the chips (e.g. "You bring the
-#                              relationships; Connect brings funding and technology").
+#   "How the work is split" card (ai_build beat):
+#     {{deal_headline}}        short, plain — e.g. "How the work is split".
+#     {{deal_term_1..4}}       who does what, as chips (≤ ~5 words each):
+#                              "You: workers + relationships", "Connect: the app
+#                              & training", "Connect: verification", "Connect:
+#                              payments".
+#     {{deal_subhead}}         one line (e.g. "You focus on delivery; Connect
+#                              runs the rest").
 #
-#   Hero traction stat (problem beat):
+#   Scale-context stat (problem beat) — one calm fact, not a hard sell:
 #     {{traction_big}}     a real connect.dimagi.com figure (e.g. "1.5M+")
-#     {{traction_caption}} what it counts (e.g. "verified services · 13 countries · 100+ organizations")
+#     {{traction_caption}} what it counts (e.g. "verified services, across 13 countries")
 #     {{traction_source}}  citation (e.g. "connect.dimagi.com")
 #
-#   Traction cards (impact beat — TWO cards, REAL numbers):
-#     {{impact_big_1}} / {{impact_caption_1}}              what you earn (e.g. "$1.70" / "paid per verified visit")
-#     {{impact_big_2}} / {{impact_caption_2}}              scale of payments (e.g. "$2M+" / "paid to frontline workers")
+#   Mechanism cards (impact beat — TWO cards, how it works, not a sell):
+#     {{impact_big_1}} / {{impact_caption_1}}              verification (e.g. "Verified" / "biometric, GPS, photo — as it happens")
+#     {{impact_big_2}} / {{impact_caption_2}}              payment (e.g. "Paid on proof" / "straight to the worker's phone")
 #
 #   Per-section content:
 #     {{scene_lower_third}}  e.g. "Your teams, in the field"
 #
-#   Per-beat narration (each ±2 words from target):
-#     {{narration_hook}}     ~14w. Connect is a two-sided marketplace for verified service delivery; you deliver and you're paid for every verified service.
-#     {{narration_cycle}}    ~14w. Learn, Deliver, Verify, Pay — one loop; paid for work delivered, not work promised.
-#     {{narration_handoff}}  ~8w.  "here's what delivering on Connect looks like."
-#     {{narration_deal}}     ~20w. You bring the relationships and delivery capacity, Connect brings funding and technology; performance-based contracts, scaled against demand.
-#     {{narration_scene}}    ~18w. Workers deliver in their own communities — every service verified the moment it happens.
-#     {{narration_traction}} ~18w. Not a pilot — 1.5M verified services, 13 countries, 100+ frontline organizations delivering.
-#     {{narration_product}}  ~30w. Train w/ AI coach, deliver; every service verified the moment it happens — biometric, GPS, photo; no manual reviews, no delays, no fraud.
-#     {{narration_impact}}   ~14w. Pay only for verified delivery — no intervention pays as much; $2M+ paid to frontline workers.
+#   Per-beat narration (calm explainer; each ±2 words from target):
+#     {{narration_hook}}     ~12w. Here's what it looks like to deliver a program on Connect.
+#     {{narration_cycle}}    ~12w. Your teams run one loop: Learn, Deliver, Verify, and Pay.
+#     {{narration_handoff}}  ~8w.  "here's how it works, step by step."
+#     {{narration_deal}}     ~20w. You bring the frontline workers and local relationships; Connect provides the app, the verification, and the payments.
+#     {{narration_scene}}    ~16w. Workers deliver in their own communities, and each visit is recorded as it happens.
+#     {{narration_traction}} ~16w. Connect already runs this way — over a million verified services, across thirteen countries.
+#     {{narration_product}}  ~28w. Workers learn on their phones with an AI coach, deliver guided visits, and each service is verified — biometric, GPS, and photo, the moment it happens.
+#     {{narration_impact}}   ~12w. Once a service is verified, the worker is paid — directly, to their phone.
 #     {{narration_cta}}      Leave empty — outro plays under the brand CTA card.
 
 provenance:
@@ -132,10 +132,9 @@ product:
       caption: "Pay — per verified visit, on time"
       is_demo_clip: true
 
-# Traction stat cards (REAL numbers — an LLO needs proof). Keep it to TWO
-# cards so the stat beats don't blur together with the hero traction stat
-# above — what you earn + the scale of payments already flowing to the
-# network ($1.70 per verified visit; $2M+ paid to frontline workers).
+# Two mechanism cards explaining how verification + payment work (not a
+# sell). Keep them plain — e.g. "Verified" / "biometric, GPS, photo — as it
+# happens" and "Paid on proof" / "straight to the worker's phone".
 impact:
   - big: "{{impact_big_1}}"
     caption: "{{impact_caption_1}}"

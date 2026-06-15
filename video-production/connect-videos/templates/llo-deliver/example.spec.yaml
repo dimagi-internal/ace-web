@@ -46,16 +46,16 @@ manifest:
   web-superset-graphs: library:video/web-screencast/web-superset-graphs.mp4
   mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
 
-# "The deal" card (rendered via the ai_build beat). The chips are the
-# terms of the marketplace offer to a local delivery org.
+# "How the work is split" card (rendered via the ai_build beat). The chips
+# explain who does what — an explainer device, not a pitch.
 ai_build:
-  headline: "Get paid for every verified service"
+  headline: "How the work is split"
   components:
-    - "Performance-based contracts"
-    - "Funding + technology, provided"
-    - "Paid on verification"
-    - "Scale against demand"
-  subhead: "You bring the relationships; Connect brings funding and technology."
+    - "You: workers + relationships"
+    - "Connect: the app & training"
+    - "Connect: verification"
+    - "Connect: payments"
+  subhead: "You focus on delivery; Connect runs the rest."
 
 scene:
   clips:
@@ -63,10 +63,11 @@ scene:
     - "@field-group-around-woman"
   lower_third: "Your teams, in the field"
 
-# Hero traction stat — proof the platform is real and already paying.
+# A light scale fact for context (not a hard sell) — Connect already runs
+# this way at scale.
 problem:
   big: "1.5M+"
-  caption: "verified services · 13 countries · 100+ organizations"
+  caption: "verified services, across 13 countries"
   source: "connect.dimagi.com"
 
 product:
@@ -78,43 +79,43 @@ product:
       caption: "Deliver — in their own communities"
       is_demo_clip: true
     - asset: "@web-superset-graphs"
-      caption: "97.5% of real workers scored cleaner than paid fakers"
+      caption: "Verify — and automatic data checks"
       is_demo_clip: true
     - asset: "@mobile-pay"
-      caption: "Pay — for every verified service"
+      caption: "Pay — straight to the worker's phone"
       is_demo_clip: true
 
-# Traction stat cards — what an LLO most wants to know: what you're paid
-# per service, and the scale of payments already flowing to the network.
+# Two cards that explain how verification and payment work (mechanism, not
+# a sell).
 impact:
-  - big: "$1.70"
-    caption: "paid per verified visit"
-  - big: "$2M+"
-    caption: "paid to frontline workers"
+  - big: "Verified"
+    caption: "biometric, GPS, photo — as it happens"
+  - big: "Paid on proof"
+    caption: "straight to the worker's phone"
 
 narration:
   generator: manual
   prompt_version: v1-llo-deliver
   start_seconds: 0
   by_beat:
-    hook: "Connect is a two-sided marketplace for verified service delivery. You deliver; you're paid for every verified service."
-    cycle: "One connected loop — Learn, Deliver, Verify, Pay. You're paid for work delivered, not work promised."
-    handoff: "Here's what delivering on Connect looks like."
-    ai_build: "You bring the relationships and delivery capacity; Connect brings funding and technology. Performance-based contracts, scaled against real demand."
-    scene: "Your workers deliver in their own communities — every service verified the moment it happens."
-    problem: "Not a pilot: one and a half million verified services across thirteen countries, with a hundred-plus frontline organizations already delivering."
-    product: "Workers train with an AI coach and deliver guided visits — every service verified the moment it happens: biometric, GPS, photo. No manual reviews, no delays, no fraud."
-    impact: "Pay only for verified delivery — no intervention pays as much, with over two million dollars paid to frontline workers."
+    hook: "Here's what it looks like to deliver a program on Connect."
+    cycle: "Your teams run one loop: Learn, Deliver, Verify, and Pay."
+    handoff: "Here's how it works, step by step."
+    ai_build: "You bring the frontline workers and the local relationships; Connect provides the app, the verification, and the payments."
+    scene: "Your workers deliver in their own communities, and each visit is recorded as it happens."
+    problem: "Connect already runs this way — over a million verified services, across thirteen countries."
+    product: "Workers learn on their phones with an AI coach, deliver guided visits, and each service is verified — biometric, GPS, and photo, the moment it happens."
+    impact: "Once a service is verified, the worker is paid — directly, to their phone."
     cta: ""
   script: |
-    Connect is a two-sided marketplace for verified service delivery. You deliver; you're paid for every verified service.
-    One connected loop — Learn, Deliver, Verify, Pay. You're paid for work delivered, not work promised.
-    Here's what delivering on Connect looks like.
-    You bring the relationships and delivery capacity; Connect brings funding and technology. Performance-based contracts, scaled against real demand.
-    Your workers deliver in their own communities — every service verified the moment it happens.
-    Not a pilot: one and a half million verified services across thirteen countries, with a hundred-plus frontline organizations already delivering.
-    Workers train with an AI coach and deliver guided visits — every service verified the moment it happens: biometric, GPS, photo. No manual reviews, no delays, no fraud.
-    Pay only for verified delivery — no intervention pays as much, with over two million dollars paid to frontline workers.
+    Here's what it looks like to deliver a program on Connect.
+    Your teams run one loop: Learn, Deliver, Verify, and Pay.
+    Here's how it works, step by step.
+    You bring the frontline workers and the local relationships; Connect provides the app, the verification, and the payments.
+    Your workers deliver in their own communities, and each visit is recorded as it happens.
+    Connect already runs this way — over a million verified services, across thirteen countries.
+    Workers learn on their phones with an AI coach, deliver guided visits, and each service is verified — biometric, GPS, and photo, the moment it happens.
+    Once a service is verified, the worker is paid — directly, to their phone.
 
 voice:
   provider: elevenlabs
