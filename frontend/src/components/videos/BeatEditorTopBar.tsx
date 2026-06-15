@@ -2,8 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { useBeatEditor } from "./BeatEditorContext";
 import { sectionLabel } from "./sectionLabels";
-import { submitEditBatch, getVideoRun } from "@/api/videos";
+import { submitEditBatch, getVideoRun, type EditBatchOp } from "@/api/videos";
 import type { PendingChange, ProgramSpec } from "./types";
+
+// The template-editor-only ops apply client-side via onSave and are never
+// sent to the workbench /edit-batch backend (which doesn't understand them).
+function isEditBatchOp(op: PendingChange): op is EditBatchOp {
+  switch (op.op) {
+    case "set-ai-build":
+    case "set-caption":
+    case "set-lower-third":
+    case "add-beat":
+    case "remove-beat":
+      return false;
+    default:
+      return true;
+  }
+}
 
 // Map an op to a human label + the beat-card it lives in (for scroll-to).
 function describeOp(op: PendingChange, spec: ProgramSpec): { beatId: string; label: string } {
@@ -28,6 +43,12 @@ function describeOp(op: PendingChange, spec: ProgramSpec): { beatId: string; lab
     // the rename drawer opens from.
     return { beatId: "handoff", label: `Rename program → "${op.name}"` };
   }
+  // Template-editor-only ops (client-applied; see isEditBatchOp).
+  if (op.op === "set-ai-build") return { beatId: "ai_build", label: "Card — content" };
+  if (op.op === "set-caption") return { beatId: "product", label: `Product — caption ${op.index + 1}` };
+  if (op.op === "set-lower-third") return { beatId: "scene", label: `${sectionLabel("scene").name} — lower third` };
+  if (op.op === "add-beat") return { beatId: op.beatId, label: `Add beat — ${sectionLabel(op.beatId).name}` };
+  if (op.op === "remove-beat") return { beatId: op.beatId, label: `Remove beat — ${sectionLabel(op.beatId).name}` };
   // set-clip-trim / set-clip-asset
   const beatId = op.kind === "scene-clip" ? "scene" : "product";
   const totalSlots = op.kind === "scene-clip"
@@ -71,7 +92,7 @@ export function BeatEditorTopBar({ onSpecRefetched, onRerender }: Props) {
         await onSaveOverride(effectiveSpec);
         dispatch({ type: "CLEAR_BUFFER" });
       } else {
-        await submitEditBatch(workspaceSlug, programSlug, runId, state.buffer);
+        await submitEditBatch(workspaceSlug, programSlug, runId, state.buffer.filter(isEditBatchOp));
         // Refetch the canonical spec so effectiveSpec re-derives from server truth.
         const fresh = await getVideoRun(workspaceSlug, programSlug, runId);
         if (fresh.spec) {

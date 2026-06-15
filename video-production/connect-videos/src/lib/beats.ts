@@ -126,6 +126,39 @@ export function filterDefaultsForSpec<
   return { ...defaults, beats, total_seconds };
 }
 
+/**
+ * Resolve the beat timeline for a spec, with structure-belongs-to-the-spec
+ * semantics:
+ *
+ *   - If the spec carries its OWN `beats:` list, that's authoritative and
+ *     used verbatim (no optional-beat filtering — the author listed exactly
+ *     the beats they want). This is how a template owns its structure; the
+ *     global `programs/_defaults.yaml` `beats:` is then just the default a
+ *     spec inherits when it doesn't define its own.
+ *   - Otherwise fall back to the legacy global timeline + optional-beat
+ *     filtering (filterDefaultsForSpec). Every existing program spec lacks
+ *     `beats:`, so this path is byte-for-byte unchanged for them.
+ *
+ * Returns the {fps, total_seconds, beats} shape resolveBeats consumes.
+ */
+export function effectiveBeatsForSpec(
+  defaults: Pick<Defaults, "fps" | "total_seconds" | "beats">,
+  spec: {
+    beats?: { id: string; kind: BeatKind; seconds: number }[];
+    problem?: unknown;
+    impact?: unknown;
+    ai_build?: unknown;
+    active_cut?: unknown;
+  },
+): Pick<Defaults, "fps" | "total_seconds" | "beats"> {
+  if (Array.isArray(spec.beats) && spec.beats.length > 0) {
+    const beats = spec.beats;
+    const total_seconds = beats.reduce((acc, b) => acc + b.seconds, 0);
+    return { fps: defaults.fps, total_seconds, beats };
+  }
+  return filterDefaultsForSpec(defaults, spec);
+}
+
 export function resolveBeats(
   defaults: Pick<Defaults, "fps" | "total_seconds" | "beats">,
   overrides: BeatOverrides

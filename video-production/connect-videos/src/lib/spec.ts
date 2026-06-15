@@ -1,5 +1,6 @@
 import { parse } from "yaml";
 import { z } from "zod";
+import { BeatKind } from "./beats";
 
 const BeatOverrideSchema = z.object({ seconds: z.number().positive() }).partial();
 
@@ -105,6 +106,14 @@ export const ProgramSpecSchema = z.object({
   // Optional AI-build beat content (program-designer). Only renders in
   // the AI cut (active_cut: "ai"); see beats.ts::filterDefaultsForSpec.
   ai_build: AiBuildSchema.optional(),
+  // The spec's OWN beat timeline (structure-belongs-to-the-template). When
+  // present it's authoritative (used verbatim by effectiveBeatsForSpec, no
+  // optional-beat filtering); when absent the spec inherits the global
+  // programs/_defaults.yaml timeline. Optional for back-compat — every
+  // pre-existing program spec omits it.
+  beats: z
+    .array(z.object({ id: z.string(), kind: BeatKind, seconds: z.number().positive() }))
+    .optional(),
   beat_overrides: z.record(z.string(), BeatOverrideSchema).optional(),
   manifest: z.record(z.string(), ManifestEntrySchema).optional(),
   scene: z.object({
