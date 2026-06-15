@@ -72,9 +72,13 @@ export function EditDrawer() {
   } else if (target.kind === "program-name") {
     title = "Rename program";
     body = <ProgramNamePanel onCommit={close} onCancel={close} />;
-  } else {
+  } else if (target.kind === "stat") {
     title = statTitle(target.path);
     body = <StatPanel path={target.path} onCommit={close} onCancel={close} />;
+  } else {
+    // ai-build / caption / lower-third panels land in a later stage of the
+    // template beat editor; nothing dispatches these drawer targets yet.
+    return null;
   }
 
   const Shell = SHELL_MODE === "drawer" ? DrawerShell : ModalShell;
