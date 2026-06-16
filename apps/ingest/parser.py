@@ -178,6 +178,23 @@ def _extract_cost_events(lines: list[str]) -> list[CostEvent]:
     return events
 
 
+def _strip_nul(value: Any) -> Any:
+    """Recursively remove NUL bytes (U+0000) from every string leaf.
+
+    Postgres ``jsonb`` rejects the U+0000 code point and ``text`` columns reject
+    raw NULs, so a transcript carrying one (common in tool output) would 500 the
+    whole upload at ``Message.objects.bulk_create``. Strip it at parse time so
+    every consumer (ingest, on-demand structure) gets storable data.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, list):
+        return [_strip_nul(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _strip_nul(v) for k, v in value.items()}
+    return value
+
+
 def parse_session_file(path: Path) -> tuple[ParsedSession, list[CostEvent]]:
     """Parse a .jsonl session file. Returns (ParsedSession, cost events)."""
     return parse_session_bytes(path.read_bytes())
@@ -305,6 +322,12 @@ def parse_session_bytes(raw: bytes) -> tuple[ParsedSession, list[CostEvent]]:
             content={"text": "".join(current_assistant_text)},
             plaintext="".join(current_assistant_text),
         ))
+
+    # Postgres jsonb/text reject NUL bytes — sanitize every turn before any
+    # consumer persists them (see _strip_nul).
+    for turn in session.turns:
+        turn.content = _strip_nul(turn.content)
+        turn.plaintext = turn.plaintext.replace("\x00", "")
 
     cost_events = _extract_cost_events(lines)
     return session, cost_events
