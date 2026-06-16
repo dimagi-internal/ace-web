@@ -139,4 +139,17 @@ describe("applyOps — structural + content ops (template editor)", () => {
     expect(out.ai_build).toBeTruthy(); // re-added with defaults
     expect(out.beats?.some((b) => b.id === "ai_build")).toBe(true);
   });
+
+  it("set-beat-order reorders spec.beats to the given id order", () => {
+    const out = applyOps(withBeats, [
+      { op: "set-beat-order", order: ["cta", "hook", "scene", "ai_build", "product"] },
+    ]);
+    expect(out.beats?.map((b) => b.id)).toEqual(["cta", "hook", "scene", "ai_build", "product"]);
+  });
+
+  it("set-beat-order appends any beats missing from the order list (no silent drop)", () => {
+    const out = applyOps(withBeats, [{ op: "set-beat-order", order: ["scene", "hook"] }]);
+    // scene + hook first (named), then the rest in original order.
+    expect(out.beats?.map((b) => b.id)).toEqual(["scene", "hook", "ai_build", "product", "cta"]);
+  });
 });

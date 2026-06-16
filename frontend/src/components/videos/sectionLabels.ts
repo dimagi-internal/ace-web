@@ -11,6 +11,7 @@ export const SECTION_LABELS: Record<string, SectionLabel> = {
   hook:    { name: "Opening tagline",       subtitle: "Headline that frames the video." },
   cycle:   { name: "How Connect works",     subtitle: "Learn → Deliver → Verify → Pay cycle." },
   handoff: { name: "Program handoff",       subtitle: "Names this specific program." },
+  ai_build: { name: "Card",                 subtitle: "A motion-graphic card — headline, chips, and a subhead." },
   scene:   { name: "Field footage",         subtitle: "Real footage from the program location." },
   problem: { name: "Headline stat",         subtitle: "One big number that frames the problem." },
   product: { name: "Connect app walkthrough", subtitle: "Short phone-frame clips." },
