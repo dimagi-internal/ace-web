@@ -103,7 +103,7 @@ function expectationFor(kind: ResolvedBeat["kind"]): string {
 function main() {
   const cli = parseArgs();
   const root = process.cwd();
-  const defaults = loadDefaults(path.join(root, "programs/_defaults.yaml"));
+  const defaults = loadDefaults(path.join(root, "programs/global_style.yaml"));
   const spec = loadProgramSpec(path.join(root, `programs/${cli.program}.yaml`));
   const timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
 

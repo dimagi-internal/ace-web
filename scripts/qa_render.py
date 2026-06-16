@@ -49,7 +49,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 
-# Lifted from programs/_defaults.yaml so the probe doesn't have to spin
+# Lifted from programs/global_style.yaml so the probe doesn't have to spin
 # up Django to read the spec. If a program's spec.yaml overrides
 # `beats` (rare — it's a global-template structure) the override would
 # shift these — we accept that drift for now since the probe's purpose

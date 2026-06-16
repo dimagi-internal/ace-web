@@ -14,7 +14,7 @@ const exampleSpecPath = path.join(
   "connect-explainer",
   "example.spec.yaml",
 );
-const defaultsPath = path.join(repoRoot, "programs", "_defaults.yaml");
+const defaultsPath = path.join(repoRoot, "programs", "global_style.yaml");
 
 describe("connect-explainer example.spec.yaml", () => {
   it("validates against loadProgramSpec (explainer mode — no problem, no impact)", () => {

@@ -165,7 +165,7 @@ class ClipEditIn(StrictModel):
     source: str | None = None      # explicit "" clears; absence is no-op
     # set-global-template: per-program override of the global brand template.
     # Writes under spec.brand (creates the section if missing). Renderer
-    # already prefers spec.brand over programs/_defaults.yaml > brand.
+    # already prefers spec.brand over programs/global_style.yaml > brand.
     # Either field is optional — absent means "no change to that field".
     tagline: str | None = None
     cycle_steps: list[str] | None = None  # exactly 4 entries when set
