@@ -1,10 +1,23 @@
-# Global template — text shared across every program's video.
-# Mirrors the messaging on labs.connect.dimagi.com so every video stays
-# in sync with the marketing site. Per-program override is possible but
-# unusual; the whole point of these defaults is brand consistency.
-# Renamed from `brand:` 2026-05-21 to match the editor UI label
-# ("GLOBAL TEMPLATE"). Renderer falls back to legacy `brand:` reads for
-# any in-the-wild spec.yaml that hasn't been migrated yet.
+# GLOBAL DEFAULTS — shared across every video, of every template type.
+#
+# This file is primarily STYLE / brand: the `global_template` block (tagline,
+# the Learn/Deliver/Verify/Pay labels, CTA), plus `voice` and `music_bed`.
+# Those are global on purpose — brand consistency across all videos.
+#
+# The `beats:` list below is a *default starter timeline*, NOT global
+# structure. STRUCTURE BELONGS TO THE TEMPLATE: a spec/template that carries
+# its own top-level `beats:` is authoritative (beats.ts::effectiveBeatsForSpec
+# uses it verbatim), and the template editor's add/remove/reorder edits
+# persist there. A spec inherits the list below ONLY when it doesn't define
+# its own — at which point the three optional beats (ai_build/problem/impact)
+# are filtered to the spec's content. So: edit STYLE here; edit a video's
+# STRUCTURE in its template.
+
+# ── Style / brand (truly global) ──
+# global_template: hero tagline, cycle labels, CTA. Mirrors the messaging on
+# connect.dimagi.com. Per-spec override is possible (the editor's "On screen"
+# / global-template widget). Renamed from `brand:` 2026-05-21; renderer still
+# falls back to legacy `brand:` reads for un-migrated specs.
 global_template:
   # Hero tagline rendered on screen during the opening hook beat.
   tagline: "Pay for verified service delivery, not planned activity."
@@ -18,6 +31,11 @@ global_template:
 
 fps: 30
 total_seconds: 67
+# ── Default STARTER timeline (NOT global structure) ──
+# A spec inherits this only when it doesn't carry its own `beats:`. Templates
+# define their own structure; the editor's add/remove/reorder persists to the
+# template, not here. Don't add a new beat here expecting one template to get
+# it — that would change every un-migrated video.
 beats:
   - { id: hook,     kind: intro_hook,         seconds: 4 }
   - { id: cycle,    kind: intro_cycle,        seconds: 8 }

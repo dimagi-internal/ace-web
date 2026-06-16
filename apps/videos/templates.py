@@ -162,15 +162,16 @@ def load_example_spec(workspace, template_id: str) -> dict | None:
         return None
     if not isinstance(doc, dict):
         return None
-    # The React BeatEditor renders from a top-level `beats` array (the
-    # resolved timeline from programs/_defaults.yaml), exactly like a
-    # program run's spec — see service.read_parsed_spec. The example.spec.yaml
-    # on disk carries only beat_overrides (or nothing), so inject the
-    # resolved beats + scrub ruamel round-trip types to plain Python so the
-    # editor renders its beats (and the JSON serializes cleanly).
+    # The React BeatEditor renders from a top-level `beats` array. A template
+    # owns its own structure: when example.spec.yaml carries its own `beats:`
+    # we use it verbatim. Only when it doesn't do we inject the default
+    # starter timeline from programs/_defaults.yaml — FILTERED to this spec's
+    # content (passing spec=doc) so the editor shows exactly the beats that
+    # render, not the full global timeline. Scrub ruamel round-trip types to
+    # plain Python so the JSON serializes cleanly.
     from apps.videos import service
     if "beats" not in doc:
-        doc["beats"] = service._resolved_beats(doc.get("beat_overrides") or {})
+        doc["beats"] = service._resolved_beats(doc.get("beat_overrides") or {}, spec=doc)
     return service._scrub_ruamel(doc)
 
 
@@ -253,13 +254,12 @@ def save_template(
         # validate_spec_structure + write path as example_yaml.  Using
         # ruamel.yaml for a safe, round-trip-friendly serialization that
         # matches how the rest of the module dumps YAML (e.g. meta update above).
-        # Strip the derived `beats` array before writing: load_example_spec
-        # injects it for the BeatEditor (the resolved _defaults.yaml timeline),
-        # so the editor's effectiveSpec round-trips it back here. It is NOT a
-        # source field — example.spec.yaml carries only beat_overrides — so
-        # drop it to keep the persisted YAML clean (mirrors how a run's
-        # spec.yaml never persists the injected beats).
-        example_spec = {k: v for k, v in example_spec.items() if k != "beats"}
+        # PERSIST the `beats` array: a template owns its own structure, so the
+        # editor's add/remove/reorder edits must round-trip to disk. (Previously
+        # beats were stripped as a derived field; with structure-belongs-to-the
+        # -template they're authoritative — beats.ts::effectiveBeatsForSpec uses
+        # spec.beats verbatim when present.) On first save the spec inherits the
+        # filtered default timeline; thereafter it carries its own.
         import io as _io
         _y = _yaml()
         _buf = _io.StringIO()
