@@ -1,8 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
 import { TemplateExamplePanel } from "../TemplateExamplePanel";
-import type { TemplateEditorAction } from "../templateEditorReducer";
-import type { Dispatch } from "react";
 
 const validYaml = "beats:\n  - id: hook\n    seconds: 8";
 const tabYaml = "beats:\n\t- id: hook";
@@ -10,11 +8,8 @@ const unbalancedBracket = "items: [a, b";
 const unbalancedBrace = "data: {x: 1";
 const duplicateKey = "name: foo\nname: bar";
 
-function renderPanel(
-  exampleYaml = validYaml,
-  dispatch: Dispatch<TemplateEditorAction> = vi.fn(),
-) {
-  return { dispatch, ...render(<TemplateExamplePanel exampleYaml={exampleYaml} dispatch={dispatch} />) };
+function renderPanel(exampleYaml = validYaml) {
+  return render(<TemplateExamplePanel exampleYaml={exampleYaml} />);
 }
 
 describe("TemplateExamplePanel", () => {
@@ -28,11 +23,9 @@ describe("TemplateExamplePanel", () => {
     expect(screen.getByLabelText(/example yaml/i)).toBeInTheDocument();
   });
 
-  it("typing dispatches set-example with the new value", () => {
-    const { dispatch } = renderPanel();
-    const newYaml = "beats:\n  - id: intro\n    seconds: 10";
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: newYaml } });
-    expect(dispatch).toHaveBeenCalledWith({ type: "set-example", value: newYaml });
+  it("is a read-only reference (not editable)", () => {
+    renderPanel();
+    expect(screen.getByRole("textbox")).toHaveAttribute("readonly");
   });
 
   it("shows no error hint for valid YAML", () => {

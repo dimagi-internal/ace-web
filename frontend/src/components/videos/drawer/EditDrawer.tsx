@@ -9,6 +9,9 @@ import { ClipTrimPanel } from "./panels/ClipTrimPanel";
 import { NarrationPanel } from "./panels/NarrationPanel";
 import { ProgramNamePanel } from "./panels/ProgramNamePanel";
 import { StatPanel } from "./panels/StatPanel";
+import { AiBuildPanel } from "./panels/AiBuildPanel";
+import { CaptionPanel } from "./panels/CaptionPanel";
+import { LowerThirdPanel } from "./panels/LowerThirdPanel";
 import type { ProgramSpec } from "../types";
 
 // Default shell. Swap to "modal" if the team prefers it after dogfooding.
@@ -75,10 +78,16 @@ export function EditDrawer() {
   } else if (target.kind === "stat") {
     title = statTitle(target.path);
     body = <StatPanel path={target.path} onCommit={close} onCancel={close} />;
+  } else if (target.kind === "ai-build") {
+    title = `Card — ${sectionLabel(target.beatId).name}`;
+    body = <AiBuildPanel onCommit={close} onCancel={close} />;
+  } else if (target.kind === "caption") {
+    title = `${sectionLabel("product").name} — caption ${target.index + 1}`;
+    body = <CaptionPanel index={target.index} onCommit={close} onCancel={close} />;
   } else {
-    // ai-build / caption / lower-third panels land in a later stage of the
-    // template beat editor; nothing dispatches these drawer targets yet.
-    return null;
+    // lower-third
+    title = `${sectionLabel("scene").name} — lower third`;
+    body = <LowerThirdPanel onCommit={close} onCancel={close} />;
   }
 
   const Shell = SHELL_MODE === "drawer" ? DrawerShell : ModalShell;

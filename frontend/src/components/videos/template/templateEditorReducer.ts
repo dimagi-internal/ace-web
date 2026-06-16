@@ -25,7 +25,10 @@ export type TemplateEditorAction =
   | { type: "set-meta-field"; field: keyof Omit<TemplateMeta, "id">; value: string | number }
   | { type: "set-prompt"; value: string }
   | { type: "set-skeleton"; value: string }
-  | { type: "set-example"; value: string };
+  | { type: "set-example"; value: string }
+  // Refresh the read-only example YAML after the BeatEditor persisted it —
+  // updates the displayed value AND its baseline so it isn't flagged dirty.
+  | { type: "sync-example"; value: string };
 
 // ───────── reducer ─────────
 
@@ -55,6 +58,12 @@ export function templateEditorReducer(
       return { ...state, skeletonYaml: action.value };
     case "set-example":
       return { ...state, exampleYaml: action.value };
+    case "sync-example":
+      return {
+        ...state,
+        exampleYaml: action.value,
+        baseline: { ...state.baseline, exampleYaml: action.value },
+      };
   }
 }
 

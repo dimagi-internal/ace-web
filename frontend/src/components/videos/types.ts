@@ -60,7 +60,9 @@ export type PendingChange =
   | { op: "set-lower-third"; text: string }
   // beatId is one of the optional beats: "ai_build" | "problem" | "impact".
   | { op: "add-beat"; beatId: string }
-  | { op: "remove-beat"; beatId: string };
+  | { op: "remove-beat"; beatId: string }
+  // Reorder: the full list of beat ids in the new order (last-write-wins).
+  | { op: "set-beat-order"; order: string[] };
 
 // What the drawer is currently editing.
 export type WidgetRef =
@@ -115,5 +117,8 @@ export function opCoalesceKey(op: PendingChange): string {
       // Add/remove of the same optional beat coalesce to one slot — the
       // last toggle wins, so flipping a beat on then off leaves no net op.
       return `beat-presence:${op.beatId}`;
+    case "set-beat-order":
+      // Every reorder rewrites the full order — coalesce to one slot.
+      return "set-beat-order";
   }
 }

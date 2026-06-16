@@ -49,6 +49,7 @@ function describeOp(op: PendingChange, spec: ProgramSpec): { beatId: string; lab
   if (op.op === "set-lower-third") return { beatId: "scene", label: `${sectionLabel("scene").name} — lower third` };
   if (op.op === "add-beat") return { beatId: op.beatId, label: `Add beat — ${sectionLabel(op.beatId).name}` };
   if (op.op === "remove-beat") return { beatId: op.beatId, label: `Remove beat — ${sectionLabel(op.beatId).name}` };
+  if (op.op === "set-beat-order") return { beatId: op.order[0] ?? "hook", label: "Reorder beats" };
   // set-clip-trim / set-clip-asset
   const beatId = op.kind === "scene-clip" ? "scene" : "product";
   const totalSlots = op.kind === "scene-clip"
@@ -90,7 +91,11 @@ export function BeatEditorTopBar({ onSpecRefetched, onRerender }: Props) {
       if (onSaveOverride) {
         // Custom save target (e.g. a template editor) — caller owns the write.
         await onSaveOverride(effectiveSpec);
-        dispatch({ type: "CLEAR_BUFFER" });
+        // Promote the applied edits to the new base (and clear the buffer) so
+        // the editor keeps showing the saved state instead of snapping back to
+        // the pre-edit spec — critical now that structural edits (add/remove/
+        // reorder beat) live in the buffer.
+        dispatch({ type: "REPLACE_SPEC", spec: effectiveSpec });
       } else {
         await submitEditBatch(workspaceSlug, programSlug, runId, state.buffer.filter(isEditBatchOp));
         // Refetch the canonical spec so effectiveSpec re-derives from server truth.

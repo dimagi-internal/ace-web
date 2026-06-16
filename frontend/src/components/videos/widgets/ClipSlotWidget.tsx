@@ -20,7 +20,7 @@ function formatMS(seconds: number): string {
 }
 
 export function ClipSlotWidget({ beatId, clipKind, index }: Props) {
-  const { effectiveSpec, workspaceSlug, programSlug, runId, dispatch } = useBeatEditor();
+  const { effectiveSpec, workspaceSlug, programSlug, runId, dispatch, fullEdit } = useBeatEditor();
   const [mediaLoadFailed, setMediaLoadFailed] = useState(false);
   const [sourceDuration, setSourceDuration] = useState<number | null>(null);
   const slot =
@@ -150,6 +150,24 @@ export function ClipSlotWidget({ beatId, clipKind, index }: Props) {
         )}
         <div className="flex-1 font-mono text-xs text-muted-foreground">{playWindow}</div>
       </div>
+      {/* Caption — only product beats carry per-clip captions, and they're
+          editable only in the template editor (no workbench backend op). */}
+      {clipKind === "product-beat" && fullEdit && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            dispatch({ type: "OPEN_DRAWER", target: { kind: "caption", beatId, index } });
+          }}
+          className="mt-2 w-full rounded border border-dashed bg-background px-2 py-1 text-left text-xs hover:border-primary"
+          title="Edit this clip's caption"
+        >
+          <span className="font-medium uppercase tracking-wide text-muted-foreground">Caption:</span>{" "}
+          <span className={obj.caption ? "" : "italic text-muted-foreground"}>
+            {obj.caption || "(none — click to add)"}
+          </span>
+        </button>
+      )}
     </div>
   );
 }

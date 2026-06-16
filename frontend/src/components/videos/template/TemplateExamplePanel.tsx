@@ -1,10 +1,8 @@
 import { useMemo } from "react";
 import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
-import type { TemplateEditorAction } from "./templateEditorReducer";
 
 interface Props {
   exampleYaml: string;
-  dispatch: React.Dispatch<TemplateEditorAction>;
 }
 
 /**
@@ -64,15 +62,15 @@ function lintYaml(text: string): string | null {
   return null;
 }
 
-export function TemplateExamplePanel({ exampleYaml, dispatch }: Props) {
+export function TemplateExamplePanel({ exampleYaml }: Props) {
   const yamlError = useMemo(() => lintYaml(exampleYaml), [exampleYaml]);
 
   return (
     <div className="flex flex-col gap-3">
       <div className="text-xs text-muted-foreground">
-        A representative example spec used during testing and as a reference for prompt
-        authoring. Must be valid YAML. Changes here do not affect generated programs
-        but are saved alongside the template.
+        The serialized example spec, shown read-only as a reference. Edit it through the
+        visual editor above (the single source of truth); this view just mirrors what&apos;s
+        saved.
       </div>
 
       <section className="flex flex-col gap-1.5">
@@ -81,23 +79,22 @@ export function TemplateExamplePanel({ exampleYaml, dispatch }: Props) {
             Example YAML
           </label>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-            Demo spec
+            Read-only
           </span>
         </div>
         <AutoResizeTextarea
           id="template-example"
           value={exampleYaml}
-          onChange={(e) => dispatch({ type: "set-example", value: e.target.value })}
+          readOnly
           rows={20}
           spellCheck={false}
           aria-describedby={yamlError ? "example-yaml-error" : undefined}
           className={[
-            "w-full rounded border bg-background p-2 font-mono text-sm leading-relaxed",
-            yamlError ? "border-amber-500 focus:outline-amber-500" : "",
+            "w-full rounded border bg-muted/40 p-2 font-mono text-sm leading-relaxed text-muted-foreground",
+            yamlError ? "border-amber-500" : "",
           ]
             .filter(Boolean)
             .join(" ")}
-          placeholder={"beats:\n  - id: hook\n    seconds: 8\n    # …"}
         />
         {yamlError && (
           <p
@@ -111,8 +108,8 @@ export function TemplateExamplePanel({ exampleYaml, dispatch }: Props) {
       </section>
 
       <p className="text-[11px] text-muted-foreground">
-        Keep indentation consistent (spaces only, no tabs). This example is shown
-        to template authors as a reference — it is not used during program generation.
+        Read-only reference. Edit the example via the <strong>visual editor</strong> above —
+        it is the single source of truth, so the raw YAML can&apos;t drift out of sync.
       </p>
     </div>
   );

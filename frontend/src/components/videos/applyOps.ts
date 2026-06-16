@@ -148,6 +148,17 @@ function applyOne(spec: ProgramSpec, op: PendingChange): void {
       if (spec.beats) spec.beats = spec.beats.filter((b) => b.id !== def.id);
       return;
     }
+    case "set-beat-order": {
+      if (!spec.beats) return;
+      const byId = new Map(spec.beats.map((b) => [b.id, b]));
+      const reordered = op.order.map((id) => byId.get(id)).filter((b): b is NonNullable<typeof b> => b != null);
+      // Defensive: append any current beats not named in `order` so a stale
+      // order list can never silently drop a beat.
+      const named = new Set(op.order);
+      for (const b of spec.beats) if (!named.has(b.id)) reordered.push(b);
+      spec.beats = reordered;
+      return;
+    }
   }
 }
 

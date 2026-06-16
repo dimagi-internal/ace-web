@@ -170,8 +170,17 @@ export default function TemplateEditorPage() {
   async function handleExampleSpecSave(effectiveSpec: ProgramSpec): Promise<void> {
     if (!workspaceSlug || !templateId) return;
     await patchTemplate(workspaceSlug, templateId, { example_spec: effectiveSpec });
-    // Optimistically update the local spec so BeatEditor reflects the saved state.
+    // Optimistically update the local spec so the BeatEditor reflects the saved state.
     setExampleSpec(effectiveSpec);
+    // Refresh the read-only raw-YAML reference so it mirrors what was persisted
+    // (the server re-serializes the spec). Swallow failures — the visual editor
+    // is the source of truth; a stale read-only mirror is non-fatal.
+    try {
+      const exampleOut = await getTemplateExample(workspaceSlug, templateId);
+      dispatch({ type: "sync-example", value: exampleOut.example_yaml });
+    } catch {
+      /* non-fatal */
+    }
   }
 
   // ── rail content ──────────────────────────────────────────────────────────
@@ -287,11 +296,11 @@ export default function TemplateEditorPage() {
                 onClick={() => setShowRawYaml((v) => !v)}
                 className="ml-auto rounded border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
               >
-                {showRawYaml ? "Visual editor" : "Raw YAML"}
+                {showRawYaml ? "Visual editor" : "Raw YAML (read-only)"}
               </button>
             </div>
             {showRawYaml ? (
-              <TemplateExamplePanel exampleYaml={state.exampleYaml} dispatch={dispatch} />
+              <TemplateExamplePanel exampleYaml={state.exampleYaml} />
             ) : exampleSpec != null ? (
               <BeatEditor
                 workspaceSlug={workspaceSlug ?? ""}
@@ -302,7 +311,7 @@ export default function TemplateEditorPage() {
               />
             ) : (
               /* No parsed spec available yet — fall back to the YAML textarea. */
-              <TemplateExamplePanel exampleYaml={state.exampleYaml} dispatch={dispatch} />
+              <TemplateExamplePanel exampleYaml={state.exampleYaml} />
             )}
           </section>
         </div>
