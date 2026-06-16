@@ -165,7 +165,7 @@ def load_example_spec(workspace, template_id: str) -> dict | None:
     # The React BeatEditor renders from a top-level `beats` array. A template
     # owns its own structure: when example.spec.yaml carries its own `beats:`
     # we use it verbatim. Only when it doesn't do we inject the default
-    # starter timeline from programs/_defaults.yaml — FILTERED to this spec's
+    # starter timeline from programs/global_style.yaml — FILTERED to this spec's
     # content (passing spec=doc) so the editor shows exactly the beats that
     # render, not the full global timeline. Scrub ruamel round-trip types to
     # plain Python so the JSON serializes cleanly.

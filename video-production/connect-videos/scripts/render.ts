@@ -114,7 +114,7 @@ async function main() {
   const cli = parseArgs();
   const root = process.cwd();
   const runId = resolveRun(cli.program, cli.run, root);
-  const defaults = loadDefaults(path.join(root, "programs/_defaults.yaml"));
+  const defaults = loadDefaults(path.join(root, "programs/global_style.yaml"));
   const rawSpec = loadProgramSpec(specPath(cli.program, runId, root));
 
   // Resolve @manifest aliases -> concrete asset paths and materialize cache

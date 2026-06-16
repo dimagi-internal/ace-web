@@ -54,7 +54,7 @@ describe("resolveBeats", () => {
 });
 
 describe("filterDefaultsForSpec (explainer mode — optional stat beats)", () => {
-  // Mirror of the global 8-beat timeline in programs/_defaults.yaml.
+  // Mirror of the global 8-beat timeline in programs/global_style.yaml.
   const fullDefaults = {
     fps: 30,
     total_seconds: 60,
@@ -119,7 +119,7 @@ describe("filterDefaultsForSpec (explainer mode — optional stat beats)", () =>
 
 describe("filterDefaultsForSpec (program-designer AI cut — body_ai_build)", () => {
   // The global timeline with the optional ai_build beat present (mirrors
-  // programs/_defaults.yaml after the program-designer change). Total
+  // programs/global_style.yaml after the program-designer change). Total
   // 67s = the 60s base + the 7s ai_build beat between handoff and scene.
   const defaultsWithAiBuild = {
     fps: 30,

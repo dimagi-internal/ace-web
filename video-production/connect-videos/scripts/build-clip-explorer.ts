@@ -146,7 +146,7 @@ function main() {
   const cli = parseArgs();
   const root = process.cwd();
   const runId = resolveRun(cli.program, cli.run, root);
-  const defaults = loadDefaults(path.join(root, "programs/_defaults.yaml"));
+  const defaults = loadDefaults(path.join(root, "programs/global_style.yaml"));
   const spec = loadProgramSpec(specPath(cli.program, runId, root));
   const timeline = resolveBeats(effectiveBeatsForSpec(defaults, spec), spec.beat_overrides ?? {});
   const cacheDir = defaultCacheDir();

@@ -6,7 +6,7 @@ import { ProgramBody } from "./compositions/ProgramBody";
 import { Outro } from "./compositions/Outro";
 import { CaptionBar } from "./components/CaptionBar";
 import { ProspectBranding } from "./components/ProspectBranding";
-import defaultsYaml from "../programs/_defaults.yaml";
+import defaultsYaml from "../programs/global_style.yaml";
 // Programs now live as ``programs/<slug>/runs/run-NNN/spec.yaml`` (mirrors
 // ace-web's opp/run model). Studio preview pins to run-001 of each program
 // — the render CLI passes the spec via props at render time, so this
@@ -54,7 +54,7 @@ const PROGRAMS_REGISTRY: Record<string, string> = {
 };
 
 const defaults = parseDefaults(defaultsYaml);
-// Global-template strings live in _defaults.yaml under
+// Global-template strings live in global_style.yaml under
 // `global_template:` — single source of truth at the template level.
 // Programs may override individual fields by setting
 // `global_template.tagline` and/or `global_template.cycle_steps` on
@@ -64,7 +64,7 @@ const defaults = parseDefaults(defaultsYaml);
 // Renamed from `brand:` 2026-05-21. Legacy `brand:` reads are kept as
 // a fallback so any spec.yaml that hasn't been migrated still
 // renders. The fallback constant ships hardcoded defaults so even an
-// _defaults.yaml that's missing the section renders.
+// global_style.yaml that's missing the section renders.
 const GLOBAL_TEMPLATE_FALLBACK = {
   tagline: "Pay for verified service delivery, not planned activity.",
   cycleSteps: ["Learn", "Deliver", "Verify", "Pay"] as const,

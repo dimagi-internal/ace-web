@@ -56,7 +56,7 @@ interface Props {
  *
  * Two visual states:
  *   - ON SCREEN (amber lock): the beat renders the shared brand default
- *     from programs/_defaults.yaml > global_template.
+ *     from programs/global_style.yaml > global_template.
  *   - ON SCREEN · CUSTOMIZED (emerald): the spec defines its own
  *     global_template.tagline or global_template.cycle_steps. The
  *     renderer prefers these.

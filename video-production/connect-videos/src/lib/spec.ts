@@ -109,7 +109,7 @@ export const ProgramSpecSchema = z.object({
   // The spec's OWN beat timeline (structure-belongs-to-the-template). When
   // present it's authoritative (used verbatim by effectiveBeatsForSpec, no
   // optional-beat filtering); when absent the spec inherits the global
-  // programs/_defaults.yaml timeline. Optional for back-compat — every
+  // programs/global_style.yaml timeline. Optional for back-compat — every
   // pre-existing program spec omits it.
   beats: z
     .array(z.object({ id: z.string(), kind: BeatKind, seconds: z.number().positive() }))

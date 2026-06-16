@@ -1,12 +1,12 @@
 // Catalog of the OPTIONAL beats the template editor can add/remove, mirroring
-// programs/_defaults.yaml (the global timeline) + beats.ts::filterDefaultsForSpec.
+// programs/global_style.yaml (the global timeline) + beats.ts::filterDefaultsForSpec.
 //
 // The full timeline is fixed and global:
 //   hook · cycle · handoff · ai_build · scene · problem · product · impact · cta
 // Six of those are CORE (always present); three are OPTIONAL and render only
 // when the spec carries the matching content block. Adding/removing a beat in
 // the editor adds/removes that block (+ the beat in spec.beats) — it never
-// touches _defaults.yaml, so it only affects this template's spec.
+// touches global_style.yaml, so it only affects this template's spec.
 import type { ProgramSpec, Stat, AiBuild } from "./types";
 
 // Canonical position of every beat in the global timeline (by id). Used to
@@ -36,7 +36,7 @@ export interface OptionalBeatDef {
   removeBlock: (spec: ProgramSpec) => void;
 }
 
-// The three optional beats. Seconds match _defaults.yaml.
+// The three optional beats. Seconds match global_style.yaml.
 export const OPTIONAL_BEATS: OptionalBeatDef[] = [
   {
     id: "ai_build",

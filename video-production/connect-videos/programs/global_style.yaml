@@ -1,4 +1,5 @@
-# GLOBAL DEFAULTS — shared across every video, of every template type.
+# GLOBAL STYLE — shared across every video, of every template type.
+# (Renamed from _defaults.yaml 2026-06: the name now says what it is.)
 #
 # This file is primarily STYLE / brand: the `global_template` block (tagline,
 # the Learn/Deliver/Verify/Pay labels, CTA), plus `voice` and `music_bed`.

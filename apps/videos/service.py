@@ -278,7 +278,7 @@ def read_parsed_spec(workspace: Workspace, slug: str, run_id: str) -> dict | Non
 
     The per-run spec.yaml only carries `beat_overrides` (seconds tweaks) —
     the canonical beat list (id/kind/seconds for the 8 narrative units)
-    lives in `programs/_defaults.yaml`. The React beat editor needs the
+    lives in `programs/global_style.yaml`. The React beat editor needs the
     resolved list to render. We merge here so the frontend stays simple.
     """
     if not is_valid_slug(slug) or not is_valid_run_id(run_id):
@@ -325,7 +325,7 @@ def _scrub_ruamel(node: Any) -> Any:
 
 
 def _resolved_beats(overrides: dict, spec: dict | None = None) -> list[dict]:
-    """Read `programs/_defaults.yaml` and apply per-run beat_overrides.
+    """Read `programs/global_style.yaml` and apply per-run beat_overrides.
 
     Returns a list of {id, kind, seconds} dicts in declaration order.
     Empty list if defaults can't be read (the editor falls back to a no-
@@ -339,7 +339,7 @@ def _resolved_beats(overrides: dict, spec: dict | None = None) -> list[dict]:
     """
     from django.conf import settings
 
-    defaults_path = Path(settings.ACE_VIDEOS_ROOT) / "programs" / "_defaults.yaml"
+    defaults_path = Path(settings.ACE_VIDEOS_ROOT) / "programs" / "global_style.yaml"
     if not defaults_path.is_file():
         return []
     try:
@@ -746,7 +746,7 @@ def _apply_single_op(
         # Per-program override of the global template. Writes under
         # spec.global_template; the renderer's resolveGlobalTemplate()
         # in Root.tsx prefers spec.global_template over
-        # programs/_defaults.yaml > global_template at render time.
+        # programs/global_style.yaml > global_template at render time.
         # Absent fields mean "no change to that field". Pass empty
         # string to tagline OR an empty list to cycle_steps to clear
         # that override (falls back to global default).

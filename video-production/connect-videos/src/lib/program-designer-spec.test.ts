@@ -14,7 +14,7 @@ const exampleSpecPath = path.join(
   "program-designer",
   "example.spec.yaml",
 );
-const defaultsPath = path.join(repoRoot, "programs", "_defaults.yaml");
+const defaultsPath = path.join(repoRoot, "programs", "global_style.yaml");
 
 describe("program-designer example.spec.yaml", () => {
   it("validates against loadProgramSpec (AI cut — ai_build + why benefit cards, no problem)", () => {

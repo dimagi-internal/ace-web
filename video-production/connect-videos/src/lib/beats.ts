@@ -79,7 +79,7 @@ export function parseDefaults(yamlText: string): Defaults {
 }
 
 /**
- * Optional-beat resolution: the global timeline in programs/_defaults.yaml
+ * Optional-beat resolution: the global timeline in programs/global_style.yaml
  * carries three opt-in beats that only have anything to render when the
  * spec carries the matching field:
  *
@@ -133,7 +133,7 @@ export function filterDefaultsForSpec<
  *   - If the spec carries its OWN `beats:` list, that's authoritative and
  *     used verbatim (no optional-beat filtering — the author listed exactly
  *     the beats they want). This is how a template owns its structure; the
- *     global `programs/_defaults.yaml` `beats:` is then just the default a
+ *     global `programs/global_style.yaml` `beats:` is then just the default a
  *     spec inherits when it doesn't define its own.
  *   - Otherwise fall back to the legacy global timeline + optional-beat
  *     filtering (filterDefaultsForSpec). Every existing program spec lacks

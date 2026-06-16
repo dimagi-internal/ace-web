@@ -10,7 +10,7 @@ interface Props {
   onCancel: () => void;
 }
 
-// Defaults from programs/_defaults.yaml > global_template. The
+// Defaults from programs/global_style.yaml > global_template. The
 // renderer's resolveGlobalTemplate() in Root.tsx falls back to these
 // when spec.global_template doesn't override them. Mirrored here so
 // the drawer can show the default value as the placeholder / reset
@@ -31,7 +31,7 @@ const GLOBAL_CYCLE_STEPS = ["Learn", "Deliver", "Verify", "Pay"] as const;
  * doesn't edit, so editing one never clears the other's customization.
  *
  * Each field starts from the shared brand wording in
- * programs/_defaults.yaml; setting a value writes
+ * programs/global_style.yaml; setting a value writes
  * `global_template.tagline` / `global_template.cycle_steps` onto the
  * spec, and clearing it falls back to the default.
  *
