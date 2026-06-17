@@ -2828,8 +2828,6 @@ export interface components {
             readonly title?: string | null;
             /** Narration Sentence */
             readonly narration_sentence?: string | null;
-            /** Vo */
-            readonly vo?: string | null;
             /** In Seconds */
             readonly in_seconds: number;
             /** Out Seconds */

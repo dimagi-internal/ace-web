@@ -88,12 +88,9 @@ class VideoSnippet(models.Model):
     # per workspace — the upsert key for idempotent re-ingest.
     snippet_key = models.CharField(max_length=256)
     title = models.CharField(max_length=512, blank=True)
-    # The caption sentence — the descriptive line shown on screen.
+    # The caption / source sentence — the descriptive line shown on
+    # screen, which is also the spoken line (the narrative IS the VO).
     narration_sentence = models.TextField(blank=True)
-    # The tight spoken line for this beat's voiceover, distinct from
-    # narration_sentence (the caption). Falls back to narration_sentence
-    # at ingest time when the manifest snippet omits a ``vo`` string.
-    vo = models.TextField(blank=True)
     in_seconds = models.FloatField()
     out_seconds = models.FloatField()
     duration_seconds = models.FloatField()

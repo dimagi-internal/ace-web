@@ -371,7 +371,6 @@ def list_video_snippets(
             snippet_key=row.snippet_key,
             title=row.title or None,
             narration_sentence=row.narration_sentence or None,
-            vo=row.vo or None,
             in_seconds=row.in_seconds,
             out_seconds=row.out_seconds,
             duration_seconds=row.duration_seconds,

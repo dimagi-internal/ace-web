@@ -346,11 +346,9 @@ class MediaLibraryAudioOut(StrictModel):
 class VideoSnippetOut(StrictModel):
     snippet_key: str
     title: str | None = None
+    # The caption / source sentence — also the spoken line (the narrative
+    # IS the VO).
     narration_sentence: str | None = None
-    # The tight spoken voiceover line for this beat (distinct from
-    # narration_sentence, the caption). Falls back to narration_sentence
-    # at ingest when the manifest omits it.
-    vo: str | None = None
     in_seconds: float
     out_seconds: float
     duration_seconds: float

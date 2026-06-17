@@ -70,15 +70,10 @@ def ingest_manifest(workspace: Workspace, manifest: dict) -> dict[str, int]:
         clip = _find_clip(workspace, source_clip)
 
         sentence = str(snip.get("sentence") or "")
-        # The tight spoken line. The canopy manifest now emits a `vo`
-        # string per snippet; fall back to the caption sentence when it
-        # is absent so older manifests still ingest a usable VO line.
-        vo = str(snip.get("vo") or sentence)
 
         defaults = dict(
             title=str(snip.get("title") or ""),
             narration_sentence=sentence,
-            vo=vo,
             in_seconds=float(snip.get("in_seconds") or 0.0),
             out_seconds=float(snip.get("out_seconds") or 0.0),
             duration_seconds=float(snip.get("duration_seconds") or 0.0),

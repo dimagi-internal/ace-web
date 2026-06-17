@@ -16,7 +16,6 @@
       "out_seconds": 9.276,
       "duration_seconds": 9.276,
       "sentence": "Read left to right as a six-round bi-monthly timeline, the program's self-reported service-delivery stays above what the independent survey confirms at each round while the control arm stays low \u2014 the gap holds across time, not in a single snapshot.",
-      "vo": "Six rounds in, the self-reported numbers run ahead of the verified ones \u2014 and the gap holds.",
       "tags": [
         "verified-monitoring",
         "trend-hero"
@@ -33,7 +32,6 @@
       "out_seconds": 22.18,
       "duration_seconds": 12.903,
       "sentence": "Program delivery is concentrated inside the intervention ward and absent in the adjacent control ward, while the independent survey covered both \u2014 so the coverage gap tracks where the program went, not where the survey looked; a docked Layers panel turns the designed sampling plan and its real building footprints on over the survey, and stepping the cycle selector flies the map to the next real ward pair.",
-      "vo": "On the map, delivery clusters in the intervention ward \u2014 the survey checked both.",
       "tags": [
         "verified-monitoring",
         "two-ward-map"

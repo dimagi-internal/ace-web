@@ -99,22 +99,6 @@ def test_ingest_maps_manifest_fields(workspace):
     assert s3.status == STATUS_OK
 
 
-def test_ingest_reads_explicit_vo(workspace):
-    # scene-1 carries an explicit `vo` distinct from its caption sentence.
-    ingest_manifest(workspace, _manifest())
-    s1 = VideoSnippet.objects.get(workspace=workspace, snippet_key="verified-monitoring-scene-1")
-    assert s1.vo == "Six rounds in, the self-reported numbers run ahead of the verified ones — and the gap holds."
-    assert s1.vo != s1.narration_sentence  # vo is the tight spoken line, not the caption
-
-
-def test_ingest_vo_falls_back_to_sentence_when_absent(workspace):
-    # scene-3 has no `vo` key in the manifest — vo falls back to sentence.
-    ingest_manifest(workspace, _manifest())
-    s3 = VideoSnippet.objects.get(workspace=workspace, snippet_key="verified-monitoring-scene-3")
-    assert s3.vo == s3.narration_sentence
-    assert s3.vo.startswith("The survey's quality is not asserted")
-
-
 def test_ingest_is_idempotent_on_rerun(workspace):
     ingest_manifest(workspace, _manifest())
     result2 = ingest_manifest(workspace, _manifest())
@@ -234,20 +218,6 @@ def test_list_snippets_filter_by_tag(member_client):
     body = resp.json()
     assert len(body["snippets"]) == 1
     assert body["snippets"][0]["snippet_key"] == "verified-monitoring-scene-3"
-
-
-def test_list_snippets_returns_vo(member_client):
-    client, workspace = member_client
-    ingest_manifest(workspace, _manifest())
-    resp = client.get(f"/api/w/{workspace.slug}/videos/snippets")
-    by_key = {s["snippet_key"]: s for s in resp.json()["snippets"]}
-    # Explicit vo round-trips through the API distinct from the caption.
-    s1 = by_key["verified-monitoring-scene-1"]
-    assert s1["vo"] == "Six rounds in, the self-reported numbers run ahead of the verified ones — and the gap holds."
-    assert s1["vo"] != s1["narration_sentence"]
-    # Fallback vo (== sentence) is also surfaced.
-    s3 = by_key["verified-monitoring-scene-3"]
-    assert s3["vo"] == s3["narration_sentence"]
 
 
 def test_list_snippets_exposes_clip_ref_when_linked(member_client):

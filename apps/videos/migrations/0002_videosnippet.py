@@ -19,7 +19,6 @@ class Migration(migrations.Migration):
                 ('snippet_key', models.CharField(max_length=256)),
                 ('title', models.CharField(blank=True, max_length=512)),
                 ('narration_sentence', models.TextField(blank=True)),
-                ('vo', models.TextField(blank=True)),
                 ('in_seconds', models.FloatField()),
                 ('out_seconds', models.FloatField()),
                 ('duration_seconds', models.FloatField()),
