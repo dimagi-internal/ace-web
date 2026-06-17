@@ -709,6 +709,28 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/videos/snippets": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List video snippets (labeled ranges into master clips)
+         * @description List the workspace's ingested snippets. Optional filters narrow
+         *     by manifest run id (``source_run``), ``narrative_slug``, or a single
+         *     ``tag`` (membership in the snippet's tags list).
+         */
+        readonly get: operations["apps_videos_api_list_video_snippets"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/videos/library/video/{subfolder}/{filename}/stream": {
         readonly parameters: {
             readonly query?: never;
@@ -2792,6 +2814,46 @@ export interface components {
         readonly MediaLibraryAudioOut: {
             /** Items */
             readonly items: readonly components["schemas"]["MediaLibraryAudioItemOut"][];
+        };
+        /** VideoSnippetListOut */
+        readonly VideoSnippetListOut: {
+            /** Snippets */
+            readonly snippets: readonly components["schemas"]["VideoSnippetOut"][];
+        };
+        /** VideoSnippetOut */
+        readonly VideoSnippetOut: {
+            /** Snippet Key */
+            readonly snippet_key: string;
+            /** Title */
+            readonly title?: string | null;
+            /** Narration Sentence */
+            readonly narration_sentence?: string | null;
+            /** Vo */
+            readonly vo?: string | null;
+            /** In Seconds */
+            readonly in_seconds: number;
+            /** Out Seconds */
+            readonly out_seconds: number;
+            /** Duration Seconds */
+            readonly duration_seconds: number;
+            /** Tags */
+            readonly tags?: readonly string[];
+            /** Provenance */
+            readonly provenance?: string | null;
+            /** Source Run */
+            readonly source_run?: string | null;
+            /** Narrative Slug */
+            readonly narrative_slug?: string | null;
+            /** Scene Index */
+            readonly scene_index?: number | null;
+            /** Clip Ref */
+            readonly clip_ref?: string | null;
+            /** Source Clip Ref */
+            readonly source_clip_ref?: string | null;
+            /** Source Clip Url */
+            readonly source_clip_url?: string | null;
+            /** Status */
+            readonly status: string;
         };
         /**
          * ProgramCardOut
@@ -5581,6 +5643,32 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["MediaLibraryAudioOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_list_video_snippets: {
+        readonly parameters: {
+            readonly query?: {
+                readonly source_run?: string | null;
+                readonly narrative_slug?: string | null;
+                readonly tag?: string | null;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["VideoSnippetListOut"];
                 };
             };
         };
