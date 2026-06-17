@@ -62,6 +62,73 @@ class VideoLibraryEntry(models.Model):
         return f"https://drive.google.com/file/d/{self.drive_id}/view"
 
 
+class VideoSnippet(models.Model):
+    """One labeled logical range into a master video clip.
+
+    A *snippet* is a ``[in_seconds, out_seconds]`` range into a master
+    clip plus the one-line sentence that describes it. Many snippets
+    reference one master clip — e.g. five beats of a 60s walkthrough —
+    so unlike ``VideoLibraryEntry`` (one row per whole file) this table
+    is one row per *labeled range*.
+
+    Snippets are ingested from a canopy "snippet manifest" (the
+    ``videos_ingest_snippets`` command). They can be linked to the
+    master clip (``clip`` FK) once it lands in the workspace library;
+    until then ``source_clip_ref`` / ``source_clip_url`` carry the
+    manifest's pointer to the master so the link can be made later by
+    matching filename.
+    """
+
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name="video_snippets",
+    )
+    # Stable manifest id (e.g. "verified-monitoring-scene-3"). Unique
+    # per workspace — the upsert key for idempotent re-ingest.
+    snippet_key = models.CharField(max_length=256)
+    title = models.CharField(max_length=512, blank=True)
+    # The caption sentence — the descriptive line shown on screen.
+    narration_sentence = models.TextField(blank=True)
+    # The tight spoken line for this beat's voiceover, distinct from
+    # narration_sentence (the caption). Falls back to narration_sentence
+    # at ingest time when the manifest snippet omits a ``vo`` string.
+    vo = models.TextField(blank=True)
+    in_seconds = models.FloatField()
+    out_seconds = models.FloatField()
+    duration_seconds = models.FloatField()
+    tags = models.JSONField(default=list)
+    provenance = models.CharField(max_length=128, blank=True, null=True)
+    # Top-level manifest fields, denormalized onto every snippet row so
+    # the list API can filter by them without a join.
+    source_run = models.CharField(max_length=256, blank=True)
+    narrative_slug = models.CharField(max_length=256, blank=True)
+    scene_index = models.IntegerField(null=True, blank=True)
+    # The master clip once it's in the workspace library. Null until the
+    # Drive upload + link step matches source_clip_ref to a library row.
+    clip = models.ForeignKey(
+        VideoLibraryEntry,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="snippets",
+    )
+    # Manifest pointers to the master clip, kept so a snippet can be
+    # ingested + (later) linked to the master without the Drive upload.
+    source_clip_ref = models.CharField(max_length=512, blank=True)
+    source_clip_url = models.URLField(max_length=512, blank=True)
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_OK)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("workspace", "snippet_key")]
+        ordering = ["source_run", "scene_index", "snippet_key"]
+
+    def __str__(self) -> str:
+        return f"{self.workspace.slug}/{self.snippet_key}"
+
+
 class AudioLibraryEntry(models.Model):
     """One TTS-synthesized audio clip in a workspace's library."""
 
