@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { execSync } from "node:child_process";
 import { loadProgramSpec, resolveActiveByBeat } from "../src/lib/spec.node";
-import { loadDefaults, resolveBeats, filterDefaultsForSpec, type ResolvedTimeline, type ResolvedBeat } from "../src/lib/beats.node";
+import { loadDefaults, resolveBeats, effectiveBeatsForSpec, type ResolvedTimeline, type ResolvedBeat } from "../src/lib/beats.node";
 import { resolveRun, specPath, outputPath } from "../src/lib/runs.node";
 import { synthesize, synthesizePerBeat, readAlignment, wordStartSeconds, type PerBeatNarration } from "../src/lib/voiceover";
 import { estimateCaptionTimeline, captionsFromBeats } from "../src/lib/captions";
@@ -129,13 +129,17 @@ async function main() {
     process.exit(1);
   }
 
-  // Explainer mode: drop the problem/impact stat beats from the timeline
-  // when this spec omits them, exactly as Root.tsx does for the visuals.
-  // The dropped beats sit mid-timeline (problem after scene, impact before
-  // outro), so without filtering here the post-scene captions + per-beat
-  // voiceover would key off the UNFILTERED offsets and land later than the
-  // visuals they narrate (and past the real end of an explainer cut).
-  let timeline = resolveBeats(filterDefaultsForSpec(defaults, spec), spec.beat_overrides ?? {});
+  // Beats are template/spec-driven, exactly as Root.tsx does for the
+  // visuals (effectiveBeatsForSpec): a spec carrying its own `beats:` list
+  // (the connect-walkthrough arc) IS the timeline; otherwise the spec
+  // rides the shared global_style.yaml marketing arc with explainer-mode
+  // stat-beat filtering. The dropped marketing stat beats sit mid-timeline
+  // (problem after scene, impact before outro), so without this the
+  // post-scene captions + per-beat voiceover would key off the UNFILTERED
+  // offsets and land later than the visuals they narrate. Keeping render's
+  // timeline source identical to Root.tsx's keeps audio and visuals in lock
+  // step for both arcs.
+  let timeline = resolveBeats(effectiveBeatsForSpec(defaults, spec), spec.beat_overrides ?? {});
   const activeByBeat = resolveActiveByBeat(spec);
 
   if (!spec.narration.script.trim()) {
@@ -196,7 +200,9 @@ async function main() {
 
   // Narration window — defaults to the full pre-outro span so the VO can
   // start at frame 1 if narration.start_seconds is 0.
-  const outroBeat = timeline.beats.find((b) => b.kind === "outro_cta");
+  const outroBeat = timeline.beats.find(
+    (b) => b.kind === "outro_cta" || b.kind === "outro_card",
+  );
   const outroSeconds = outroBeat ? outroBeat.durationFrames / timeline.fps : 0;
   const totalSeconds = timeline.totalFrames / timeline.fps;
   const narrationStartSec = spec.narration.start_seconds;

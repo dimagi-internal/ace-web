@@ -12,7 +12,7 @@ describe("loadProgramSpec", () => {
     const spec = loadProgramSpec(fixture("valid.yaml"));
     expect(spec.slug).toBe("demo");
     expect(spec.problem?.big).toBe("50%");
-    expect(spec.product.beats).toHaveLength(1);
+    expect(spec.product?.beats).toHaveLength(1);
     expect(spec.impact).toHaveLength(2);
   });
 
@@ -156,7 +156,7 @@ describe("partnership-valid fixture", () => {
     expect(spec.narration.variants).toHaveLength(3);
     expect(spec.narration.active_angle).toBe("the-scale-gap");
     expect(spec.prospect?.name).toBeTruthy();
-    expect(spec.product.beats.some((b) => b.is_demo_clip)).toBe(true);
+    expect(spec.product?.beats.some((b) => b.is_demo_clip)).toBe(true);
   });
 
   it("carries the AI cut: active_cut + shared ai_build block + per-angle ai_build narration", () => {
@@ -210,8 +210,8 @@ product:
     - { asset: clip.mp4, caption: "real demo", is_demo_clip: true }
     - { asset: shot.png, caption: "screenshot" }
 `, { fromString: true });
-    expect(spec.product.beats[0].is_demo_clip).toBe(true);
-    expect(spec.product.beats[1].is_demo_clip).toBe(false);
+    expect(spec.product?.beats[0].is_demo_clip).toBe(true);
+    expect(spec.product?.beats[1].is_demo_clip).toBe(false);
   });
 });
 
@@ -239,7 +239,7 @@ voice: { provider: elevenlabs, voice_id: a, model: eleven_turbo_v2 }
     );
 
   const clipAsset = (spec: ReturnType<typeof specWithManifestRef>): string =>
-    (applyManifestRefs(spec).scene.clips[0] as unknown as { asset: string }).asset;
+    (applyManifestRefs(spec).scene!.clips[0] as unknown as { asset: string }).asset;
 
   it("rewrites a gdrive: ref to the program public asset path", () => {
     expect(clipAsset(specWithManifestRef("gdrive:ABC123.mp4"))).toBe(
@@ -340,5 +340,90 @@ voice: { provider: elevenlabs, voice_id: a, model: eleven_turbo_v2 }
       { fromString: true },
     );
     expect(applyManifestRefs(spec).prospect).toBeUndefined();
+  });
+});
+
+describe("walkthrough arc (connect-walkthrough template)", () => {
+  // Minimal walkthrough spec: a template-supplied beats list with one
+  // body_walkthrough beat + matching walkthrough entry. No marketing
+  // blocks (scene/problem/product/impact) — they're optional now.
+  const walkthroughYaml = `
+slug: demo-walkthrough
+name: Demo Walkthrough
+country_focus: Demo
+status: walkthrough
+tagline: "How it works."
+program_url: https://example.com
+manifest:
+  master: "file:assets/programs/demo-walkthrough/walkthrough.mp4"
+beats:
+  - { id: title, kind: intro_title,      seconds: 4 }
+  - { id: s1,    kind: body_walkthrough, seconds: 10 }
+  - { id: outro, kind: outro_card,       seconds: 5 }
+walkthrough:
+  s1:
+    asset: "@master"
+    start_seconds: 0
+    duration_seconds: 10
+    lower_third: "First section"
+narration:
+  generator: manual
+  prompt_version: v1
+  by_beat:
+    title: "Demo Walkthrough."
+    s1: "This is the first section."
+    outro: ""
+  script: "Demo Walkthrough. This is the first section."
+voice: { provider: elevenlabs, voice_id: a, model: eleven_turbo_v2 }
+`;
+
+  it("validates a walkthrough spec with body_walkthrough beats and no marketing blocks", () => {
+    const spec = loadProgramSpec(walkthroughYaml, { fromString: true });
+    expect(spec.beats?.map((b) => b.kind)).toEqual([
+      "intro_title",
+      "body_walkthrough",
+      "outro_card",
+    ]);
+    expect(spec.walkthrough?.s1?.lower_third).toBe("First section");
+    expect(spec.walkthrough?.s1?.start_seconds).toBe(0);
+    // Marketing blocks are absent on a walkthrough spec.
+    expect(spec.scene).toBeUndefined();
+    expect(spec.problem).toBeUndefined();
+    expect(spec.product).toBeUndefined();
+  });
+
+  it("rejects a body_walkthrough beat with no matching walkthrough entry", () => {
+    const missingWt = walkthroughYaml.replace(
+      /walkthrough:[\s\S]*?lower_third: "First section"\n/,
+      "walkthrough: {}\n",
+    );
+    expect(() => loadProgramSpec(missingWt, { fromString: true })).toThrowError(
+      /walkthrough\.s1/,
+    );
+  });
+
+  it("validates templates/connect-walkthrough/example.spec.yaml end-to-end", () => {
+    const examplePath = path.join(
+      here,
+      "..",
+      "..",
+      "templates",
+      "connect-walkthrough",
+      "example.spec.yaml",
+    );
+    const spec = loadProgramSpec(examplePath);
+    expect(spec.slug).toBe("verified-monitoring-walkthrough");
+    const walkthroughBeats = (spec.beats ?? []).filter(
+      (b) => b.kind === "body_walkthrough",
+    );
+    expect(walkthroughBeats).toHaveLength(5);
+    // Every walkthrough beat has a matching entry with a lower_third + VO.
+    for (const b of walkthroughBeats) {
+      expect(spec.walkthrough?.[b.id]?.lower_third).toBeTruthy();
+      expect(spec.narration.by_beat?.[b.id]).toBeTruthy();
+    }
+    // Beat seconds line up with the authored clip ranges.
+    expect(spec.walkthrough?.s1?.duration_seconds).toBe(9.276);
+    expect(spec.walkthrough?.s5?.start_seconds).toBe(45.129);
   });
 });

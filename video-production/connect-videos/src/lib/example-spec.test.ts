@@ -23,8 +23,8 @@ describe("connect-explainer example.spec.yaml", () => {
     expect(spec.name).toBe("Connect");
     expect(spec.problem).toBeUndefined();
     expect(spec.impact).toBeUndefined();
-    expect(spec.product.beats).toHaveLength(4);
-    expect(spec.product.beats.every((b) => b.is_demo_clip)).toBe(true);
+    expect(spec.product?.beats).toHaveLength(4);
+    expect(spec.product?.beats.every((b) => b.is_demo_clip)).toBe(true);
     expect(spec.prospect).toBeUndefined();
   });
 

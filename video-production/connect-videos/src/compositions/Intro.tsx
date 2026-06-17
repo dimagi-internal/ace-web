@@ -223,6 +223,59 @@ const Handoff: React.FC<{ programName: string }> = ({ programName }) => (
   </AbsoluteFill>
 );
 
+/**
+ * Title card for the connect-walkthrough explainer arc (intro_title beat).
+ * A simple logo + program name + subtitle with a spring fade — NO cycle
+ * ring or stat cards (that machinery belongs to the marketing arc's
+ * Intro/Cycle/Handoff). Exported so Root.tsx can render it directly for
+ * the intro_title beat without pulling the full marketing Intro.
+ */
+export const TitleCard: React.FC<{ title: string; subtitle?: string }> = ({
+  title,
+  subtitle,
+}) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const enter = spring({ frame, fps, config: { damping: 14 } });
+  return (
+    <AbsoluteFill
+      style={{
+        background: theme.colors.background,
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: theme.fonts.display,
+        color: theme.colors.foreground,
+        padding: 96,
+        gap: 40,
+        textAlign: "center",
+        opacity: enter,
+      }}
+    >
+      <Logo height={84} variant="dark" />
+      <div
+        style={{
+          fontSize: 76,
+          fontWeight: 700,
+          lineHeight: 1.1,
+          maxWidth: 1500,
+          background: theme.gradients.text,
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          backgroundClip: "text",
+          color: "transparent",
+        }}
+      >
+        {title}
+      </div>
+      {subtitle && (
+        <div style={{ fontSize: 34, fontWeight: 400, color: theme.colors.muted, maxWidth: 1300 }}>
+          {subtitle}
+        </div>
+      )}
+    </AbsoluteFill>
+  );
+};
+
 export const Intro: React.FC<Props> = ({
   programName,
   brand,

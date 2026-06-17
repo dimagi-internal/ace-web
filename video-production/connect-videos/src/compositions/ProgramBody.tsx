@@ -5,6 +5,7 @@ import { KenBurns } from "../components/KenBurns";
 import { StatCard } from "../components/StatCard";
 import { AiBuildCard } from "../components/AiBuildCard";
 import { AppScreen } from "../components/AppScreen";
+import { Walkthrough } from "./Walkthrough";
 import {
   asResolvedClip,
   distributeClipDurations,
@@ -25,6 +26,9 @@ const Scene: React.FC<{ spec: ProgramSpec; durationFrames: number }> = ({
 }) => {
   const { fps } = useVideoConfig();
   const totalSec = durationFrames / fps;
+  // scene is optional (walkthrough specs omit it); the body_scene beat is
+  // never in a walkthrough timeline, so this guard is defensive only.
+  if (!spec.scene) return null;
   const clips = spec.scene.clips.map(asResolvedClip);
   const durations = distributeClipDurations(clips, totalSec);
   let cursor = 0;
@@ -66,6 +70,10 @@ const ProductBeats: React.FC<{ spec: ProgramSpec; durationFrames: number }> = ({
 }) => {
   const { fps } = useVideoConfig();
   const totalSec = durationFrames / fps;
+  // product is optional (walkthrough specs omit it); the
+  // body_product_beats beat is never in a walkthrough timeline, so this
+  // guard is defensive only.
+  if (!spec.product) return null;
   // Reuse the same distribution helper by mapping product beats into a
   // ResolvedClipRef-shaped array.
   const refs = spec.product.beats.map((b) => ({
@@ -150,6 +158,16 @@ export const ProgramBody: React.FC<Props> = ({ spec, bodyBeats }) => {
         return <ProductBeats spec={spec} durationFrames={b.durationFrames} />;
       case "body_impact_stats":
         return <ImpactStats spec={spec} durationFrames={b.durationFrames} />;
+      case "body_walkthrough": {
+        // connect-walkthrough: one master-clip range full-bleed +
+        // lower-third, keyed by this beat's id. The superRefine
+        // guarantees the entry exists for a body_walkthrough beat; guard
+        // so the optional type is satisfied and a stray beat renders
+        // nothing.
+        const wt = spec.walkthrough?.[b.id];
+        if (!wt) return null;
+        return <Walkthrough wt={wt} />;
+      }
       default:
         return null;
     }

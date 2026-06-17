@@ -12,7 +12,9 @@ export function buildNarrationPrompt(
   opts: { wordsPerMinute: number; durationSeconds: number }
 ): string {
   const targetWords = Math.round((opts.wordsPerMinute * opts.durationSeconds) / 60);
-  const productLines = spec.product.beats
+  // product is optional (walkthrough specs omit it and author narration
+  // manually); empty list when absent so the prompt still builds.
+  const productLines = (spec.product?.beats ?? [])
     .map((b) => `  - ${b.caption}`)
     .join("\n");
   // Explainer-mode specs omit problem + impact (no stat-card beats);
