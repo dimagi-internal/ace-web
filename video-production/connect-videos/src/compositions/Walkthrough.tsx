@@ -31,7 +31,7 @@ export const Walkthrough: React.FC<{ wt: WalkthroughBeat }> = ({ wt }) => {
           /* Missing asset — render blank; drop the real file in the cache to fix */
         }}
       />
-      <Lower3rd text={wt.lower_third} />
+      {wt.lower_third ? <Lower3rd text={wt.lower_third} /> : null}
     </AbsoluteFill>
   );
 };

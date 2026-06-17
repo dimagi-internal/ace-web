@@ -71,7 +71,10 @@ const WalkthroughBeatSchema = z.object({
   asset: z.string().min(1),
   start_seconds: z.number().nonnegative().default(0),
   duration_seconds: z.number().positive().optional(),
-  lower_third: z.string().min(1),
+  // Optional: omit (or leave empty) for a clean full-bleed walkthrough with no
+  // lower-third pill — the recorded dashboard usually self-labels and the VO
+  // narrates, so the pill is opt-in.
+  lower_third: z.string().optional().default(""),
 });
 export type WalkthroughBeat = z.infer<typeof WalkthroughBeatSchema>;
 
