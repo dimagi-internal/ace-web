@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -48,6 +49,23 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent
+
+
+def connect_videos_root() -> Path:
+    """The connect-videos project to probe. Mirrors render_locally.py:
+    defaults to this repo's vendored copy; ``$CONNECT_VIDEOS_ROOT``
+    overrides it so the probe targets the same project that was rendered."""
+    env = os.environ.get("CONNECT_VIDEOS_ROOT")
+    return Path(env).expanduser().resolve() if env else REPO / "video-production" / "connect-videos"
+
+
+def _rel(path: Path) -> str:
+    """Display a path relative to REPO when it's underneath it, else as-is —
+    a CONNECT_VIDEOS_ROOT override can put the run dir outside this repo."""
+    try:
+        return str(path.relative_to(REPO))
+    except ValueError:
+        return str(path)
 
 # Lifted from programs/global_style.yaml so the probe doesn't have to spin
 # up Django to read the spec. If a program's spec.yaml overrides
@@ -236,7 +254,7 @@ def check_beat_frames(mp4: Path, run_dir: Path) -> list[tuple[str, str]]:
             ))
         else:
             results.append(
-                ("ok", f"beat {beat_id} @ {mid:.1f}s: rendered (saved to {png.relative_to(REPO)})")
+                ("ok", f"beat {beat_id} @ {mid:.1f}s: rendered (saved to {_rel(png)})")
             )
         t_cursor += dur
     return results
@@ -262,7 +280,7 @@ def main() -> int:
     else:
         slug, run_id = parse_target(args.target)
 
-    run_dir = REPO / "video-production" / "connect-videos" / "programs" / slug / "runs" / run_id
+    run_dir = connect_videos_root() / "programs" / slug / "runs" / run_id
     mp4 = run_dir / "output.mp4"
     spec_path = run_dir / "spec.yaml"
 
