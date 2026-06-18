@@ -1,6 +1,6 @@
 # Template metadata. The generator service reads this to surface the
 # template in the picker and to know which prompt + skeleton to use.
-id: connect-walkthrough
+id: connect-ddd-walkthrough
 name: Walkthrough explainer
 description: |
   Semi-gloss explainer that narrates an EXISTING product walkthrough
@@ -30,5 +30,5 @@ notes: |
   body_walkthrough×N → outro_card), which OVERRIDES the shared
   programs/global_style.yaml marketing beats. A spec without `beats:`
   still falls back to the 60s marketing arc, so this template is purely
-  additive. See templates/connect-walkthrough/example.spec.yaml for a
+  additive. See templates/connect-ddd-walkthrough/example.spec.yaml for a
   worked five-section example.

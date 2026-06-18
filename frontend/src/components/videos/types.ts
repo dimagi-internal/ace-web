@@ -15,7 +15,7 @@ export interface ProgramSpec {
   narration: { by_beat: Record<string, string>; generator?: string };
   manifest?: Record<string, string>;
   beats?: { id: string; kind: string; seconds: number }[];
-  // Walkthrough arc (connect-walkthrough): per-walkthrough-beat clip range +
+  // Walkthrough arc (connect-ddd-walkthrough): per-walkthrough-beat clip range +
   // lower-third, keyed by beat id. Present only on walkthrough specs.
   walkthrough?: Record<
     string,

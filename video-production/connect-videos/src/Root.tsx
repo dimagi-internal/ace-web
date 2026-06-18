@@ -135,7 +135,7 @@ const ProgramVideo: React.FC<VideoProps> = ({
   const effectiveDefaults = effectiveBeatsForSpec(defaults, spec);
   const timeline = resolveBeats(effectiveDefaults, mergedOverrides);
 
-  // Arc selection by beat kind. The connect-walkthrough explainer arc is
+  // Arc selection by beat kind. The connect-ddd-walkthrough explainer arc is
   // detected by ANY intro_title / body_walkthrough / outro_card beat (it
   // can only come from a spec that carries its own `beats:` list, since
   // those kinds never appear in the shared global_style.yaml timeline).
@@ -227,7 +227,7 @@ function renderMarketing(
 }
 
 /**
- * Walkthrough arc (connect-walkthrough template). Rendered generically
+ * Walkthrough arc (connect-ddd-walkthrough template). Rendered generically
  * from the spec's beats: an intro_title card, N body_walkthrough sections
  * (ProgramBody plays each clip range full-bleed with its lower-third), and
  * an outro_card (the brand Outro). No hard-pull of fixed beat ids — any

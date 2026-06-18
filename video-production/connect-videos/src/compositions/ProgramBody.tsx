@@ -159,7 +159,7 @@ export const ProgramBody: React.FC<Props> = ({ spec, bodyBeats }) => {
       case "body_impact_stats":
         return <ImpactStats spec={spec} durationFrames={b.durationFrames} />;
       case "body_walkthrough": {
-        // connect-walkthrough: one master-clip range full-bleed +
+        // connect-ddd-walkthrough: one master-clip range full-bleed +
         // lower-third, keyed by this beat's id. The superRefine
         // guarantees the entry exists for a body_walkthrough beat; guard
         // so the optional type is satisfied and a stray beat renders

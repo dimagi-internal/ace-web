@@ -1,4 +1,4 @@
-# connect-walkthrough — spec skeleton (semi-gloss walkthrough narration).
+# connect-ddd-walkthrough — spec skeleton (semi-gloss walkthrough narration).
 #
 # Author-time docs only; the template loader (apps/videos/templates.py)
 # strips this leading comment block before returning skeleton_yaml so
@@ -25,7 +25,7 @@
 #     {{status}}           short status line
 #     {{program_tagline}}  one-line subtitle shown under the title card
 #     {{program_url}}      canonical URL
-#     {{template_id}}      echo "connect-walkthrough"
+#     {{template_id}}      echo "connect-ddd-walkthrough"
 #     {{generated_at}}     ISO-8601 UTC timestamp
 #
 #   Master clip:

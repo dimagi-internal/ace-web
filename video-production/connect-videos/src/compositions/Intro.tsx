@@ -224,7 +224,7 @@ const Handoff: React.FC<{ programName: string }> = ({ programName }) => (
 );
 
 /**
- * Title card for the connect-walkthrough explainer arc (intro_title beat).
+ * Title card for the connect-ddd-walkthrough explainer arc (intro_title beat).
  * A simple logo + program name + subtitle with a spring fade — NO cycle
  * ring or stat cards (that machinery belongs to the marketing arc's
  * Intro/Cycle/Handoff). Exported so Root.tsx can render it directly for
