@@ -26,7 +26,9 @@ active_cut: ai
 
 prospect:
   name: Living Goods
-  logo_asset: "library:image/prospect-logos/living-goods.png"
+  # Real prospect logo goes here as a library:image/... ref; omitted in this
+  # example (fictional prospect) so it renders without a missing-asset 404.
+  # logo_asset: "library:image/prospect-logos/<prospect>.png"
   region: East Africa
   sector: Community Health
 
@@ -86,7 +88,17 @@ narration:
   generator: manual
   prompt_version: v1-partnership-angles
   start_seconds: 0
-  script: ""
+  # Joined from the active angle's (trust-travels) by_beat lines — the renderer
+  # requires a non-empty script. Regenerate this when active_angle changes.
+  script: |
+    Living Goods is built on a simple promise: a trusted health worker at every door.
+    Connect makes that promise verifiable — one loop: Learn, Deliver, Verify, and Pay.
+    Here's how that trust travels onto Connect.
+    Connect provides the pieces — training, a door-to-door delivery app, verification, and pay — set up around the Living Goods program, so trust is proven, not assumed.
+    Community health workers deliver where families are, and every visit is recorded as it happens.
+    Most of the families they serve live more than five kilometres from the nearest clinic — trust is the whole program.
+    Workers learn on their phones with an AI coach, deliver guided visits, and each one is verified — biometric, GPS, and photo. Then payment follows.
+    Nearly every visit is verified, and payment follows the proof — so the trust families place in Living Goods is backed by evidence.
   active_angle: trust-travels
   variants:
   - angle_id: day-in-the-life
