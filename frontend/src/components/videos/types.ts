@@ -15,6 +15,12 @@ export interface ProgramSpec {
   narration: { by_beat: Record<string, string>; generator?: string };
   manifest?: Record<string, string>;
   beats?: { id: string; kind: string; seconds: number }[];
+  // Walkthrough arc (connect-walkthrough): per-walkthrough-beat clip range +
+  // lower-third, keyed by beat id. Present only on walkthrough specs.
+  walkthrough?: Record<
+    string,
+    { asset: string; start_seconds?: number; duration_seconds?: number; lower_third: string }
+  >;
   voice?: { provider?: string; voice_id?: string; model?: string };
   music_bed?: Record<string, unknown>;
   // unknown extra fields preserved by ruamel; we don't model them

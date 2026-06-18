@@ -51,6 +51,26 @@ describe("resolveBeats", () => {
       warn.mockRestore();
     }
   });
+
+  it("resolves a walkthrough-arc beats list (intro_title + body_walkthrough×N + outro_card)", () => {
+    // The walkthrough arc is just another beats list — resolveBeats is
+    // arc-agnostic, so the new kinds resolve to frames the same way.
+    const walkthrough = {
+      fps: 30,
+      total_seconds: 31,
+      beats: [
+        { id: "title", kind: "intro_title" as const, seconds: 4 },
+        { id: "s1", kind: "body_walkthrough" as const, seconds: 10 },
+        { id: "s2", kind: "body_walkthrough" as const, seconds: 12 },
+        { id: "outro", kind: "outro_card" as const, seconds: 5 },
+      ],
+    };
+    const resolved = resolveBeats(walkthrough, {});
+    expect(resolved.totalFrames).toBe(31 * 30);
+    expect(resolved.beats[0]).toMatchObject({ id: "title", kind: "intro_title", startFrame: 0, durationFrames: 120 });
+    expect(resolved.beats[1]).toMatchObject({ id: "s1", kind: "body_walkthrough", startFrame: 120, durationFrames: 300 });
+    expect(resolved.beats[3]).toMatchObject({ id: "outro", kind: "outro_card", durationFrames: 150 });
+  });
 });
 
 describe("filterDefaultsForSpec (explainer mode — optional stat beats)", () => {

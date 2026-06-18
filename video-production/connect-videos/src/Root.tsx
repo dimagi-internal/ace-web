@@ -1,7 +1,7 @@
 import { Composition, AbsoluteFill, Sequence, registerRoot } from "remotion";
 import { parseProgramSpec, applyManifestRefs, type ProgramSpec } from "./lib/spec";
 import { parseDefaults, resolveBeats, effectiveBeatsForSpec, type ResolvedBeat } from "./lib/beats";
-import { Intro } from "./compositions/Intro";
+import { Intro, TitleCard } from "./compositions/Intro";
 import { ProgramBody } from "./compositions/ProgramBody";
 import { Outro } from "./compositions/Outro";
 import { CaptionBar } from "./components/CaptionBar";
@@ -134,6 +134,46 @@ const ProgramVideo: React.FC<VideoProps> = ({
   // total_seconds so resolveBeats' sum invariant still holds.
   const effectiveDefaults = effectiveBeatsForSpec(defaults, spec);
   const timeline = resolveBeats(effectiveDefaults, mergedOverrides);
+
+  // Arc selection by beat kind. The connect-walkthrough explainer arc is
+  // detected by ANY intro_title / body_walkthrough / outro_card beat (it
+  // can only come from a spec that carries its own `beats:` list, since
+  // those kinds never appear in the shared global_style.yaml timeline).
+  // Everything else — the 60s marketing arc AND main's connect-explainer
+  // (which rides the same intro_hook/cycle/handoff + body_* + outro_cta
+  // arc) — renders unchanged through renderMarketing. This is the single
+  // switch; the shared global_style.yaml defaults are never touched.
+  const isWalkthrough = timeline.beats.some(
+    (b) => b.kind === "intro_title" || b.kind === "body_walkthrough" || b.kind === "outro_card",
+  );
+
+  return (
+    <AbsoluteFill>
+      {isWalkthrough
+        ? renderWalkthrough(spec, timeline.beats)
+        : renderMarketing(spec, brand, timeline, cycleStepStartSeconds)}
+      {captions.map((c, i) => (
+        <Sequence key={i} from={c.startFrame} durationInFrames={c.endFrame - c.startFrame}>
+          <CaptionBar text={c.text} />
+        </Sequence>
+      ))}
+    </AbsoluteFill>
+  );
+};
+
+/**
+ * Marketing arc (60s campaign overview AND connect-explainer). Hard-pulls
+ * the fixed hook/cycle/handoff + cta beats, exactly as before the
+ * walkthrough arc landed — kept byte-for-byte so existing programs (incl.
+ * connect-explainer's explainer-mode stat-drop and prospect branding)
+ * render unchanged.
+ */
+function renderMarketing(
+  spec: ProgramSpec,
+  brand: { tagline: string; cycleSteps: readonly [string, string, string, string] },
+  timeline: { totalFrames: number; beats: ResolvedBeat[] },
+  cycleStepStartSeconds: VideoProps["cycleStepStartSeconds"],
+) {
   const byId = Object.fromEntries(timeline.beats.map((b) => [b.id, b])) as Record<
     string,
     ResolvedBeat
@@ -145,9 +185,8 @@ const ProgramVideo: React.FC<VideoProps> = ({
   };
   const bodyBeats = timeline.beats.filter((b) => b.kind.startsWith("body_"));
   const outroBeat = byId.cta;
-
   return (
-    <AbsoluteFill>
+    <>
       <Sequence durationInFrames={byId.handoff.startFrame + byId.handoff.durationFrames}>
         <Intro
           programName={spec.name}
@@ -180,20 +219,52 @@ const ProgramVideo: React.FC<VideoProps> = ({
       </Sequence>
       {spec.prospect && (
         <Sequence durationInFrames={timeline.totalFrames}>
-          <ProspectBranding
-            name={spec.prospect.name}
-            logoSrc={spec.prospect.logo_asset}
-          />
+          <ProspectBranding name={spec.prospect.name} logoSrc={spec.prospect.logo_asset} />
         </Sequence>
       )}
-      {captions.map((c, i) => (
-        <Sequence key={i} from={c.startFrame} durationInFrames={c.endFrame - c.startFrame}>
-          <CaptionBar text={c.text} />
-        </Sequence>
-      ))}
-    </AbsoluteFill>
+    </>
   );
-};
+}
+
+/**
+ * Walkthrough arc (connect-walkthrough template). Rendered generically
+ * from the spec's beats: an intro_title card, N body_walkthrough sections
+ * (ProgramBody plays each clip range full-bleed with its lower-third), and
+ * an outro_card (the brand Outro). No hard-pull of fixed beat ids — any
+ * beats list shaped this way renders. The per-beat CaptionBar + VO ride on
+ * top via the shared ProgramVideo path.
+ */
+function renderWalkthrough(spec: ProgramSpec, beats: ResolvedBeat[]) {
+  const titleBeat = beats.find((b) => b.kind === "intro_title");
+  const bodyBeats = beats.filter((b) => b.kind === "body_walkthrough");
+  const outroBeat = beats.find((b) => b.kind === "outro_card");
+  return (
+    <>
+      {titleBeat && (
+        <Sequence from={titleBeat.startFrame} durationInFrames={titleBeat.durationFrames}>
+          <TitleCard title={spec.name} subtitle={spec.tagline} />
+        </Sequence>
+      )}
+      {bodyBeats.length > 0 && (
+        <Sequence
+          from={bodyBeats[0].startFrame}
+          durationInFrames={
+            bodyBeats[bodyBeats.length - 1].startFrame +
+            bodyBeats[bodyBeats.length - 1].durationFrames -
+            bodyBeats[0].startFrame
+          }
+        >
+          <ProgramBody spec={spec} bodyBeats={bodyBeats} />
+        </Sequence>
+      )}
+      {outroBeat && (
+        <Sequence from={outroBeat.startFrame} durationInFrames={outroBeat.durationFrames}>
+          <Outro programUrl={spec.program_url} />
+        </Sequence>
+      )}
+    </>
+  );
+}
 
 export const RemotionRoot: React.FC = () => {
   const defaultSlug = "mbw";

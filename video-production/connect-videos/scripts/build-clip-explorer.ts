@@ -139,7 +139,7 @@ interface ClipAssignment {
   // Identifies which YAML path the explorer's /edit endpoint should
   // update when a slider is dragged. Set when we wire scene-clip /
   // product-beat assignments.
-  editScope?: { path: string; kind: "scene-clip" | "product-beat"; index: number };
+  editScope?: { path: string; kind: "scene-clip" | "product-beat" | "walkthrough-clip"; index: number };
 }
 
 function main() {
@@ -278,9 +278,10 @@ function main() {
       missingSlots: [],
     };
 
-    if (b.kind === "body_scene") {
-      const slotPer = block.durationSec / spec.scene.clips.length;
-      spec.scene.clips.forEach((c, i) => {
+    if (b.kind === "body_scene" && spec.scene) {
+      const scene = spec.scene;
+      const slotPer = block.durationSec / scene.clips.length;
+      scene.clips.forEach((c, i) => {
         // Clip can be a bare alias string or an object with start_seconds.
         const refRaw = typeof c === "string" ? c : c.asset;
         const startSec = typeof c === "string" ? 0 : (c.start_seconds ?? 0);
@@ -290,15 +291,30 @@ function main() {
         a.editScope = { path: `scene.clips[${i}]`, kind: "scene-clip", index: i };
         block.assignments.push(a);
       });
-    } else if (b.kind === "body_product_beats") {
-      const slotPer = block.durationSec / spec.product.beats.length;
-      spec.product.beats.forEach((pb, i) => {
+    } else if (b.kind === "body_product_beats" && spec.product) {
+      const product = spec.product;
+      const slotPer = block.durationSec / product.beats.length;
+      product.beats.forEach((pb, i) => {
         const a = resolveAlias(pb.asset, `product-beat[${i}].asset`, slotPer);
         a.usedStartSec = pb.start_seconds ?? 0;
         a.usedDurationSec = Math.min(slotPer, (a.sourceDuration ?? Infinity) - a.usedStartSec);
         a.editScope = { path: `product.beats[${i}]`, kind: "product-beat", index: i };
         block.assignments.push(a);
       });
+    } else if (b.kind === "body_walkthrough") {
+      // Walkthrough arc: one master-clip range per beat. The whole beat
+      // is a single clip slot.
+      const wt = spec.walkthrough?.[b.id];
+      if (wt) {
+        const startSec = wt.start_seconds ?? 0;
+        const a = resolveAlias(wt.asset, `walkthrough[${b.id}].asset`, block.durationSec);
+        a.usedStartSec = startSec;
+        a.usedDurationSec = Math.min(block.durationSec, (a.sourceDuration ?? Infinity) - startSec);
+        a.editScope = { path: `walkthrough.${b.id}`, kind: "walkthrough-clip", index: 0 };
+        block.assignments.push(a);
+      } else {
+        block.missingSlots.push("no walkthrough entry for this beat id");
+      }
     } else if (b.kind === "body_problem_stat") {
       // problem renders a stat card; doesn't take a clip slot
       block.missingSlots.push("no-visual-asset (uses problem stat data)");

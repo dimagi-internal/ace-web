@@ -335,3 +335,34 @@ class MediaLibraryAudioItemOut(StrictModel):
 
 class MediaLibraryAudioOut(StrictModel):
     items: list[MediaLibraryAudioItemOut]
+
+
+# ---------------------------------------------------------------------------
+# Video snippets — labeled logical ranges into a master clip, ingested from
+# a canopy snippet manifest. Mirrors MediaLibraryVideoItemOut style.
+# ---------------------------------------------------------------------------
+
+
+class VideoSnippetOut(StrictModel):
+    snippet_key: str
+    title: str | None = None
+    # The caption / source sentence — also the spoken line (the narrative
+    # IS the VO).
+    narration_sentence: str | None = None
+    in_seconds: float
+    out_seconds: float
+    duration_seconds: float
+    tags: list[str] = Field(default_factory=list)
+    provenance: str | None = None
+    source_run: str | None = None
+    narrative_slug: str | None = None
+    scene_index: int | None = None
+    # Resolved master-clip ref when the clip FK is linked, else null.
+    clip_ref: str | None = None
+    source_clip_ref: str | None = None
+    source_clip_url: str | None = None
+    status: str
+
+
+class VideoSnippetListOut(StrictModel):
+    snippets: list[VideoSnippetOut]

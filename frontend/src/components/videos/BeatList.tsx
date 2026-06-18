@@ -4,6 +4,7 @@ import { useBeatEditor } from "./BeatEditorContext";
 import { BeatCard } from "./BeatCard";
 import { ClipSlotWidget } from "./widgets/ClipSlotWidget";
 import { NarrationWidget } from "./widgets/NarrationWidget";
+import { WalkthroughWidget } from "./widgets/WalkthroughWidget";
 import { StatsWidget } from "./widgets/StatsWidget";
 import { GlobalTemplateWidget } from "./widgets/GlobalTemplateWidget";
 import { ProgramNameWidget } from "./widgets/ProgramNameWidget";
@@ -164,6 +165,16 @@ function renderKindBody(beatId: string, kind: string, spec: ProgramSpec, fullEdi
     // The handoff card edits spec.name, not anything in the global
     // template — different concept, different drawer.
     return <ProgramNameWidget beatId={beatId} />;
+  }
+  if (kind === "body_walkthrough") {
+    // Walkthrough arc: each section plays a range of one master clip with
+    // a lower-third. Narration is already rendered above by BeatList.
+    return <WalkthroughWidget beatId={beatId} />;
+  }
+  if (kind === "intro_title" || kind === "outro_card") {
+    // Walkthrough title / end cards carry only their voiceover (already
+    // rendered above). No extra per-beat content to configure here.
+    return null;
   }
   return <GlobalTemplateWidget beatId={beatId} kind={kind} />;
 }

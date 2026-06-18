@@ -26,7 +26,7 @@ from typing import Annotated
 from django.conf import settings
 from django.http import FileResponse, HttpRequest, HttpResponse, StreamingHttpResponse
 from ninja import Path as PathParam
-from ninja import Router
+from ninja import Query, Router
 
 from apps.api.auth import session_auth
 from apps.api.deps import resolve_workspace_for_member
@@ -65,6 +65,8 @@ from .schemas import (
     TemplateExampleSpecOut,
     TemplateMetaOut,
     TemplatePatchIn,
+    VideoSnippetListOut,
+    VideoSnippetOut,
 )
 
 log = logging.getLogger(__name__)
@@ -330,6 +332,61 @@ def list_media_library_audio(
         )
         for i in raw.items
     ])
+
+
+@router.get(
+    "/snippets",
+    response=VideoSnippetListOut,
+    summary="List video snippets (labeled ranges into master clips)",
+    openapi_extra={"x-mcp-expose": True},
+)
+def list_video_snippets(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    source_run: Annotated[str | None, Query()] = None,
+    narrative_slug: Annotated[str | None, Query()] = None,
+    tag: Annotated[str | None, Query()] = None,
+) -> VideoSnippetListOut:
+    """List the workspace's ingested snippets. Optional filters narrow
+    by manifest run id (``source_run``), ``narrative_slug``, or a single
+    ``tag`` (membership in the snippet's tags list)."""
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+
+    from apps.videos.models import VideoSnippet
+
+    qs = VideoSnippet.objects.filter(workspace=workspace).select_related("clip")
+    if source_run:
+        qs = qs.filter(source_run=source_run)
+    if narrative_slug:
+        qs = qs.filter(narrative_slug=narrative_slug)
+    rows = list(qs)
+    if tag:
+        # JSONField `contains` isn't supported on SQLite (the test DB),
+        # so membership is checked in Python — N is small (a handful of
+        # snippets per manifest), same pattern the library sync uses.
+        rows = [r for r in rows if tag in (r.tags or [])]
+
+    snippets = [
+        VideoSnippetOut(
+            snippet_key=row.snippet_key,
+            title=row.title or None,
+            narration_sentence=row.narration_sentence or None,
+            in_seconds=row.in_seconds,
+            out_seconds=row.out_seconds,
+            duration_seconds=row.duration_seconds,
+            tags=list(row.tags or []),
+            provenance=row.provenance or None,
+            source_run=row.source_run or None,
+            narrative_slug=row.narrative_slug or None,
+            scene_index=row.scene_index,
+            clip_ref=row.clip.ref if row.clip_id is not None else None,
+            source_clip_ref=row.source_clip_ref or None,
+            source_clip_url=row.source_clip_url or None,
+            status=row.status,
+        )
+        for row in rows
+    ]
+    return VideoSnippetListOut(snippets=snippets)
 
 
 @router.get(

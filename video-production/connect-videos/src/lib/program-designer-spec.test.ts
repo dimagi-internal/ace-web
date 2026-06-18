@@ -27,8 +27,8 @@ describe("program-designer example.spec.yaml", () => {
     expect(spec.problem).toBeUndefined();
     // impact beat is repurposed as the three "why scale through Connect" cards.
     expect(spec.impact).toHaveLength(3);
-    expect(spec.product.beats).toHaveLength(4);
-    expect(spec.product.beats.every((b) => b.is_demo_clip)).toBe(true);
+    expect(spec.product?.beats).toHaveLength(4);
+    expect(spec.product?.beats.every((b) => b.is_demo_clip)).toBe(true);
     // Generic, unbranded — partnership-pitch adds the prospect block.
     expect(spec.prospect).toBeUndefined();
     // Every rendered beat has a narration line (cta intentionally empty).
