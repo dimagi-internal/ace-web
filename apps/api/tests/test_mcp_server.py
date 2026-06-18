@@ -56,6 +56,7 @@ _EXPECTED_TOOL_NAMES = {
     "apps_videos_api_get_template_example_spec",
     "apps_videos_api_list_media_library_video",
     "apps_videos_api_list_media_library_audio",
+    "apps_videos_api_list_video_snippets",
 }
 
 

@@ -202,6 +202,7 @@ def test_nul_bytes_stripped_from_turns():
     """Postgres jsonb/text reject U+0000 — the parser must strip it so
     bulk_create can't 500 on a transcript carrying a NUL in tool output."""
     import json
+
     from apps.ingest.parser import parse_session_bytes
 
     rows = [
