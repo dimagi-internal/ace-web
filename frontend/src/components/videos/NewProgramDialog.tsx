@@ -57,24 +57,19 @@ export function NewProgramDialog({ workspaceSlug, onCreated, onClose }: Props) {
     setError(null);
     try {
       const bundle = await getVideoTemplate(workspaceSlug, selectedId);
-      const now = new Date().toISOString();
-      const specYaml = bundle.skeleton_yaml
-        .replace(/\{\{program_slug\}\}/g, slug)
-        .replace(/\{\{workspace_slug\}\}/g, workspaceSlug)
-        .replace(/\{\{program_name\}\}/g, name.trim())
-        .replace(/\{\{template_id\}\}/g, selectedId)
-        .replace(/\{\{generated_at\}\}/g, now)
-        .replace(/\{\{program_url\}\}/g, "")
-        .replace(/\{\{country_focus\}\}/g, "")
-        .replace(/\{\{status\}\}/g, "Draft")
-        .replace(/\{\{program_tagline\}\}/g, "")
-        .replace(/\{\{scene_lower_third\}\}/g, "")
-        .replace(/\{\{problem_big\}\}/g, "")
-        .replace(/\{\{problem_caption\}\}/g, "")
-        .replace(/\{\{problem_source\}\}/g, "")
-        .replace(/\{\{impact_\d+_big\}\}/g, "")
-        .replace(/\{\{impact_\d+_caption\}\}/g, "")
-        .replace(/\{\{narration_\w+\}\}/g, "");
+      if (!bundle.example_yaml) {
+        throw new Error("This template has no example spec to start a program from.");
+      }
+      // Start from the template's example spec and override just the identity
+      // fields, then create the program — the user adapts the rest in the
+      // editor (the example is the canonical starting point now that the
+      // {{placeholder}} skeleton is gone). Anchor to column 0 so only the
+      // top-level slug/workspace/name keys are replaced, never nested ones;
+      // use function replacers so `$` in a name isn't treated as a backref.
+      const specYaml = bundle.example_yaml
+        .replace(/^slug:.*$/m, () => `slug: ${slug}`)
+        .replace(/^workspace:.*$/m, () => `workspace: ${workspaceSlug}`)
+        .replace(/^name:.*$/m, () => `name: ${name.trim()}`);
       const result = await createVideoProgram(workspaceSlug, slug, specYaml);
       onCreated(result.program_slug);
     } catch (e: unknown) {

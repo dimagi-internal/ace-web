@@ -5,14 +5,12 @@ import type { TemplateMeta, TemplateMetaPatch, TemplatePatchIn } from "@/api/vid
 export interface TemplateEditorBaseline {
   meta: TemplateMeta;
   promptMd: string;
-  skeletonYaml: string;
   exampleYaml: string;
 }
 
 export interface TemplateEditorState {
   meta: TemplateMeta;
   promptMd: string;
-  skeletonYaml: string;
   exampleYaml: string;
   /** Pristine snapshot loaded via "init" — used to compute the patch. */
   baseline: TemplateEditorBaseline;
@@ -24,7 +22,6 @@ export type TemplateEditorAction =
   | { type: "init"; payload: TemplateEditorBaseline }
   | { type: "set-meta-field"; field: keyof Omit<TemplateMeta, "id">; value: string | number }
   | { type: "set-prompt"; value: string }
-  | { type: "set-skeleton"; value: string }
   | { type: "set-example"; value: string }
   // Refresh the read-only example YAML after the BeatEditor persisted it —
   // updates the displayed value AND its baseline so it isn't flagged dirty.
@@ -38,13 +35,12 @@ export function templateEditorReducer(
 ): TemplateEditorState {
   switch (action.type) {
     case "init": {
-      const { meta, promptMd, skeletonYaml, exampleYaml } = action.payload;
+      const { meta, promptMd, exampleYaml } = action.payload;
       return {
         meta: { ...meta },
         promptMd,
-        skeletonYaml,
         exampleYaml,
-        baseline: { meta: { ...meta }, promptMd, skeletonYaml, exampleYaml },
+        baseline: { meta: { ...meta }, promptMd, exampleYaml },
       };
     }
     case "set-meta-field":
@@ -54,8 +50,6 @@ export function templateEditorReducer(
       };
     case "set-prompt":
       return { ...state, promptMd: action.value };
-    case "set-skeleton":
-      return { ...state, skeletonYaml: action.value };
     case "set-example":
       return { ...state, exampleYaml: action.value };
     case "sync-example":
@@ -71,9 +65,8 @@ export function templateEditorReducer(
 
 /** True when any field in `state` differs from the baseline snapshot. */
 export function isDirty(state: TemplateEditorState): boolean {
-  const { meta, promptMd, skeletonYaml, exampleYaml, baseline: b } = state;
+  const { meta, promptMd, exampleYaml, baseline: b } = state;
   if (promptMd !== b.promptMd) return true;
-  if (skeletonYaml !== b.skeletonYaml) return true;
   if (exampleYaml !== b.exampleYaml) return true;
   // Check each editable meta field individually (never compare `id`).
   const metaKeys: Array<keyof Omit<TemplateMeta, "id">> = [
@@ -95,7 +88,7 @@ export function isDirty(state: TemplateEditorState): boolean {
  * omitted entirely.
  */
 export function buildPatch(state: TemplateEditorState): TemplatePatchIn {
-  const { meta, promptMd, skeletonYaml, exampleYaml, baseline: b } = state;
+  const { meta, promptMd, exampleYaml, baseline: b } = state;
   const patch: TemplatePatchIn = {};
 
   // ── meta sub-object ────────────────────────────────────────────────────
@@ -119,7 +112,6 @@ export function buildPatch(state: TemplateEditorState): TemplatePatchIn {
 
   // ── top-level text fields ──────────────────────────────────────────────
   if (promptMd !== b.promptMd) patch.prompt_md = promptMd;
-  if (skeletonYaml !== b.skeletonYaml) patch.skeleton_yaml = skeletonYaml;
   if (exampleYaml !== b.exampleYaml) patch.example_yaml = exampleYaml;
 
   return patch;

@@ -623,14 +623,14 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Get the full template bundle (meta + skeleton + skill prompt) */
+        /** Get the full template bundle (meta + skill prompt + example spec) */
         readonly get: operations["apps_videos_api_get_video_template"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
-        /** Update one or more fields of a template (meta, skeleton, prompt, example) */
+        /** Update one or more fields of a template (meta, prompt, example) */
         readonly patch: operations["apps_videos_api_patch_video_template"];
         readonly trace?: never;
     };
@@ -2704,16 +2704,19 @@ export interface components {
         };
         /**
          * TemplateBundleOut
-         * @description Full template payload — agent reads `prompt_md` and follows it,
-         *     fills the `skeleton_yaml` placeholders, and posts the result back
-         *     via POST /programs.
+         * @description Full template payload — the agent reads `prompt_md`, adapts the
+         *     `example_yaml` (the canonical example spec) to the new program per
+         *     those instructions, and posts the result back via POST /programs.
+         *
+         *     `example_yaml` is null only for a malformed template whose
+         *     example.spec.yaml is missing from Drive.
          */
         readonly TemplateBundleOut: {
             readonly meta: components["schemas"]["TemplateMetaOut"];
-            /** Skeleton Yaml */
-            readonly skeleton_yaml: string;
             /** Prompt Md */
             readonly prompt_md: string;
+            /** Example Yaml */
+            readonly example_yaml: string | null;
         };
         /** TemplateMetaPatch */
         readonly TemplateMetaPatch: {
@@ -2731,8 +2734,6 @@ export interface components {
         /** TemplatePatchIn */
         readonly TemplatePatchIn: {
             readonly meta?: components["schemas"]["TemplateMetaPatch"] | null;
-            /** Skeleton Yaml */
-            readonly skeleton_yaml?: string | null;
             /** Prompt Md */
             readonly prompt_md?: string | null;
             /** Example Yaml */

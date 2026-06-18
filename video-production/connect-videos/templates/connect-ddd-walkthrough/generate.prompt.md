@@ -1,8 +1,12 @@
 # Generator skill: walkthrough explainer (connect-ddd-walkthrough)
 
 You are turning an **existing product walkthrough recording** plus a
-short list of per-section sentences into a video spec. The output fills
-the placeholders in `spec.template.yaml`. This is NOT the marketing
+short list of per-section sentences into a video spec. You are given this
+template's **example spec** — a complete, renderable `spec.yaml` — and
+must produce a new `spec.yaml` of the **same structure**: keep the
+example's structure and replace only the content (title, walkthrough
+sections, lower-third labels, per-section narration) per the guidance
+below. This is NOT the marketing
 arc — there is no hook, cycle ring, stat card, or tagline paraphrase.
 The recording is the product; your narration points at the right thing
 at the right moment.
@@ -82,7 +86,8 @@ you do not output a separate script blob.
 
 ## Output format
 
-Return ONLY a single JSON object — no prose, no markdown fences. Keys:
+Output the complete `spec.yaml` — the same shape as the example. The
+keys below are the set of **fields to adapt**:
 
 ```
 {

@@ -6,6 +6,8 @@ import * as api from "@/api/videos";
 import type { ProgramSpec } from "@/components/videos/types";
 import TemplateEditorPage from "@/pages/TemplateEditorPage";
 
+const MOCK_EXAMPLE_YAML = "beats:\n  - id: hook\n    seconds: 8\n  - id: intro\n    seconds: 6";
+
 const MOCK_BUNDLE: api.TemplateBundle = {
   meta: {
     id: "tmpl-1",
@@ -15,13 +17,9 @@ const MOCK_BUNDLE: api.TemplateBundle = {
     intended_audience: "New frontline workers",
     when_to_use: "When onboarding new hires",
   },
-  skeleton_yaml: "beats:\n  - id: hook\n    seconds: 8",
   prompt_md: "# Generate a training video\n\nDetails here.",
-};
-
-const MOCK_EXAMPLE: api.TemplateExampleOut = {
-  template_id: "tmpl-1",
-  example_yaml: "beats:\n  - id: hook\n    seconds: 8\n  - id: intro\n    seconds: 6",
+  // The example spec now travels in the bundle (skeleton.yaml removed).
+  example_yaml: MOCK_EXAMPLE_YAML,
 };
 
 // A minimal parsed spec that the BeatEditor can render.
@@ -52,7 +50,6 @@ describe("TemplateEditorPage", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(api, "getVideoTemplate").mockResolvedValue(MOCK_BUNDLE);
-    vi.spyOn(api, "getTemplateExample").mockResolvedValue(MOCK_EXAMPLE);
     vi.spyOn(api, "patchTemplate").mockResolvedValue(MOCK_BUNDLE);
     // Default: no parsed example spec — falls back to YAML textarea.
     vi.spyOn(api, "getTemplateExampleSpec").mockRejectedValue(new Error("not found"));
@@ -72,12 +69,11 @@ describe("TemplateEditorPage", () => {
     expect(screen.queryByText(/generate prompt/i)).not.toBeInTheDocument();
   });
 
-  it("renders the Skeleton section heading", async () => {
+  it("does NOT render a Skeleton section heading (skeleton removed)", async () => {
     renderPage();
     await screen.findByText("FLW Onboarding");
-    // "Skeleton" appears in the h2 heading and in the panel label — assert the h2
     const headings = screen.getAllByRole("heading", { level: 2 });
-    expect(headings.some((h) => /^skeleton$/i.test(h.textContent?.trim() ?? ""))).toBe(true);
+    expect(headings.some((h) => /^skeleton$/i.test(h.textContent?.trim() ?? ""))).toBe(false);
   });
 
   it("renders the Demo / example section heading", async () => {
@@ -92,18 +88,11 @@ describe("TemplateEditorPage", () => {
     expect(nameInput).toHaveValue("FLW Onboarding");
   });
 
-  it("populates the skeleton textarea with skeleton_yaml", async () => {
-    renderPage();
-    await screen.findByText("FLW Onboarding");
-    const skeletonTextarea = screen.getByLabelText(/skeleton yaml/i);
-    expect(skeletonTextarea).toHaveValue(MOCK_BUNDLE.skeleton_yaml);
-  });
-
-  it("populates the example textarea with example_yaml (fallback when no parsed spec)", async () => {
+  it("populates the example textarea with the bundle's example_yaml (fallback when no parsed spec)", async () => {
     renderPage();
     await screen.findByText("FLW Onboarding");
     const exampleTextarea = screen.getByLabelText(/example yaml/i);
-    expect(exampleTextarea).toHaveValue(MOCK_EXAMPLE.example_yaml);
+    expect(exampleTextarea).toHaveValue(MOCK_BUNDLE.example_yaml);
   });
 
   it("Save button is disabled when not dirty", async () => {
@@ -141,7 +130,6 @@ describe("TemplateEditorPage", () => {
 
   it("Save button returns to disabled after a successful save", async () => {
     vi.spyOn(api, "patchTemplate").mockResolvedValue(MOCK_BUNDLE);
-    vi.spyOn(api, "getTemplateExample").mockResolvedValue(MOCK_EXAMPLE);
 
     renderPage();
     const nameInput = await screen.findByLabelText(/^name$/i);
@@ -164,7 +152,6 @@ describe("TemplateEditorPage — BeatEditor for example spec", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(api, "getVideoTemplate").mockResolvedValue(MOCK_BUNDLE);
-    vi.spyOn(api, "getTemplateExample").mockResolvedValue(MOCK_EXAMPLE);
     vi.spyOn(api, "patchTemplate").mockResolvedValue(MOCK_BUNDLE);
     vi.spyOn(api, "getTemplateExampleSpec").mockResolvedValue({
       template_id: "tmpl-1",

@@ -3,7 +3,6 @@ import { Link, useParams } from "react-router-dom";
 import { AlertTriangle, ChevronLeft } from "lucide-react";
 
 import {
-  getTemplateExample,
   getTemplateExampleSpec,
   getVideoTemplate,
   listVideoTemplates,
@@ -15,7 +14,6 @@ import { WorkbenchLayout, usePaneCollapsed } from "@/components/workbench";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BeatEditor } from "@/components/videos/BeatEditor";
 import { TemplateMetaPanel } from "@/components/videos/template/TemplateMetaPanel";
-import { TemplateSkeletonPanel } from "@/components/videos/template/TemplateSkeletonPanel";
 import { TemplateExamplePanel } from "@/components/videos/template/TemplateExamplePanel";
 import { TemplateNavRail } from "@/components/videos/template/TemplateNavRail";
 import {
@@ -49,12 +47,10 @@ function initialState(): TemplateEditorState {
   return {
     meta: EMPTY_META,
     promptMd: "",
-    skeletonYaml: "",
     exampleYaml: "",
     baseline: {
       meta: EMPTY_META,
       promptMd: "",
-      skeletonYaml: "",
       exampleYaml: "",
     },
   };
@@ -110,21 +106,20 @@ export default function TemplateEditorPage() {
     setError(null);
 
     Promise.all([
+      // The bundle now carries the example YAML (the canonical example spec).
       getVideoTemplate(workspaceSlug, templateId),
-      getTemplateExample(workspaceSlug, templateId),
       // Parsed spec for the BeatEditor — a separate endpoint.
       // Falls back gracefully if it 404s (e.g. no example.spec.yaml yet).
       getTemplateExampleSpec(workspaceSlug, templateId).catch(() => null),
     ])
-      .then(([bundle, exampleOut, exampleSpecOut]) => {
+      .then(([bundle, exampleSpecOut]) => {
         if (cancelled) return;
         dispatch({
           type: "init",
           payload: {
             meta: bundle.meta,
             promptMd: bundle.prompt_md,
-            skeletonYaml: bundle.skeleton_yaml,
-            exampleYaml: exampleOut.example_yaml,
+            exampleYaml: bundle.example_yaml ?? "",
           },
         });
         setExampleSpec(exampleSpecOut?.spec ?? null);
@@ -149,15 +144,12 @@ export default function TemplateEditorPage() {
     try {
       const patch = buildPatch(state);
       const bundle = await patchTemplate(workspaceSlug, templateId, patch);
-      // Re-fetch the example since patchTemplate returns TemplateBundle (no example_yaml).
-      const exampleOut = await getTemplateExample(workspaceSlug, templateId);
       dispatch({
         type: "init",
         payload: {
           meta: bundle.meta,
           promptMd: bundle.prompt_md,
-          skeletonYaml: bundle.skeleton_yaml,
-          exampleYaml: exampleOut.example_yaml,
+          exampleYaml: bundle.example_yaml ?? "",
         },
       });
       setSaveState({ status: "saved", at: Date.now() });
@@ -169,17 +161,15 @@ export default function TemplateEditorPage() {
   // Called by the BeatEditor's onSave when the user saves changes to the example spec.
   async function handleExampleSpecSave(effectiveSpec: ProgramSpec): Promise<void> {
     if (!workspaceSlug || !templateId) return;
-    await patchTemplate(workspaceSlug, templateId, { example_spec: effectiveSpec });
+    // patchTemplate returns the refreshed bundle whose example_yaml is the
+    // server's re-serialized spec — use it to update the read-only mirror.
+    const bundle = await patchTemplate(workspaceSlug, templateId, { example_spec: effectiveSpec });
     // Optimistically update the local spec so the BeatEditor reflects the saved state.
     setExampleSpec(effectiveSpec);
-    // Refresh the read-only raw-YAML reference so it mirrors what was persisted
-    // (the server re-serializes the spec). Swallow failures — the visual editor
-    // is the source of truth; a stale read-only mirror is non-fatal.
-    try {
-      const exampleOut = await getTemplateExample(workspaceSlug, templateId);
-      dispatch({ type: "sync-example", value: exampleOut.example_yaml });
-    } catch {
-      /* non-fatal */
+    // Refresh the read-only raw-YAML reference so it mirrors what was persisted.
+    // The visual editor is the source of truth; a stale mirror is non-fatal.
+    if (bundle.example_yaml != null) {
+      dispatch({ type: "sync-example", value: bundle.example_yaml });
     }
   }
 
@@ -271,16 +261,6 @@ export default function TemplateEditorPage() {
               Metadata
             </h2>
             <TemplateMetaPanel meta={state.meta} dispatch={dispatch} />
-          </section>
-
-          <hr className="border-border" />
-
-          {/* ── Skeleton ─────────────────────────────────────────────────── */}
-          <section id="tpl-section-skeleton" className="scroll-mt-4">
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Skeleton
-            </h2>
-            <TemplateSkeletonPanel skeletonYaml={state.skeletonYaml} dispatch={dispatch} />
           </section>
 
           <hr className="border-border" />

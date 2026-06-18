@@ -4,8 +4,10 @@ You are filling out a video spec for a generic ~57-second explainer aimed
 at a **program designer** — an org that owns a frontline program/protocol
 — that answers two questions at once: **what does it look like to bring an
 existing program onto Connect**, and **why scale through Connect
-at all?** The output is a JSON object whose keys map to `{{placeholders}}`
-in `spec.template.yaml`. Fill every placeholder.
+at all?** You are given this template's **example spec** — a complete,
+renderable `spec.yaml` — and must produce a new `spec.yaml` of the **same
+structure**. Keep the example's beat structure and brand scaffolding, and
+replace only the program-specific content per the guidance below.
 
 This is the **unbranded backbone** of the partnership pitch. Keep it
 generic — no prospect name, no single program's outcomes — so it can be
@@ -108,7 +110,7 @@ auto-fit size.
 
 This template references the standard workspace media-library clips via
 `library:video/...` refs mapped through `manifest` `@alias` entries. The
-clips wired in the skeleton:
+clips wired in the example:
 
 - scene.clips: `@field-walking-towards-house`, `@field-group-around-woman`
 - product.beats (4): `@mobile-learn`, `@mobile-mapping` (GPS),
@@ -121,5 +123,5 @@ max 4) — don't drop an app beat to fit b-roll.
 
 ## Provenance
 
-Fill `{{template_id}}` with `program-designer` and `{{generated_at}}`
-with an ISO-8601 UTC timestamp.
+Set `provenance.template` (and `provenance.generator`) to `program-designer`
+and `provenance.generated_at` to an ISO-8601 UTC timestamp.

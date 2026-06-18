@@ -27,7 +27,6 @@ function freshState(): TemplateEditorState {
       payload: {
         meta: { ...baseMeta },
         promptMd: "# Prompt",
-        skeletonYaml: "skeleton: true",
         exampleYaml: "example: true",
       },
     },
@@ -41,7 +40,6 @@ describe("templateEditorReducer — init", () => {
     const s = freshState();
     expect(s.meta).toEqual(baseMeta);
     expect(s.promptMd).toBe("# Prompt");
-    expect(s.skeletonYaml).toBe("skeleton: true");
     expect(s.exampleYaml).toBe("example: true");
     expect(s.baseline.meta).toEqual(baseMeta);
     expect(s.baseline.promptMd).toBe("# Prompt");
@@ -133,18 +131,6 @@ describe("set-prompt", () => {
   });
 });
 
-// ───────── set-skeleton ─────────
-
-describe("set-skeleton", () => {
-  it("buildPatch returns { skeleton_yaml } and nothing else", () => {
-    const s = templateEditorReducer(freshState(), {
-      type: "set-skeleton",
-      value: "skeleton: updated",
-    });
-    expect(buildPatch(s)).toEqual({ skeleton_yaml: "skeleton: updated" });
-  });
-});
-
 // ───────── set-example ─────────
 
 describe("set-example", () => {
@@ -160,32 +146,28 @@ describe("set-example", () => {
 // ───────── combined mutations ─────────
 
 describe("combined mutations", () => {
-  it("set-skeleton + set-example + set-meta-field name → patch has those three, no prompt_md", () => {
+  it("set-example + set-meta-field name → patch has those two, no prompt_md", () => {
     let s = freshState();
-    s = templateEditorReducer(s, { type: "set-skeleton", value: "skeleton: v2" });
     s = templateEditorReducer(s, { type: "set-example", value: "example: v2" });
     s = templateEditorReducer(s, { type: "set-meta-field", field: "name", value: "New Name" });
 
     const patch = buildPatch(s);
     expect(patch).toEqual({
       meta: { name: "New Name" },
-      skeleton_yaml: "skeleton: v2",
       example_yaml: "example: v2",
     });
     // prompt_md must be absent
     expect("prompt_md" in patch).toBe(false);
   });
 
-  it("all four fields changed → patch includes all four", () => {
+  it("prompt + example + meta changed → patch includes all three", () => {
     let s = freshState();
     s = templateEditorReducer(s, { type: "set-prompt", value: "new prompt" });
-    s = templateEditorReducer(s, { type: "set-skeleton", value: "new skeleton" });
     s = templateEditorReducer(s, { type: "set-example", value: "new example" });
     s = templateEditorReducer(s, { type: "set-meta-field", field: "description", value: "new desc" });
 
     const patch = buildPatch(s);
     expect(patch.prompt_md).toBe("new prompt");
-    expect(patch.skeleton_yaml).toBe("new skeleton");
     expect(patch.example_yaml).toBe("new example");
     expect(patch.meta).toEqual({ description: "new desc" });
   });

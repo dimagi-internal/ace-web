@@ -239,14 +239,17 @@ class TemplateMetaOut(StrictModel):
 
 
 class TemplateBundleOut(StrictModel):
-    """Full template payload — agent reads `prompt_md` and follows it,
-    fills the `skeleton_yaml` placeholders, and posts the result back
-    via POST /programs.
+    """Full template payload — the agent reads `prompt_md`, adapts the
+    `example_yaml` (the canonical example spec) to the new program per
+    those instructions, and posts the result back via POST /programs.
+
+    `example_yaml` is null only for a malformed template whose
+    example.spec.yaml is missing from Drive.
     """
 
     meta: TemplateMetaOut
-    skeleton_yaml: str
     prompt_md: str
+    example_yaml: str | None
 
 
 class TemplateMetaPatch(StrictModel):
@@ -259,7 +262,6 @@ class TemplateMetaPatch(StrictModel):
 
 class TemplatePatchIn(StrictModel):
     meta: TemplateMetaPatch | None = None
-    skeleton_yaml: str | None = None
     prompt_md: str | None = None
     example_yaml: str | None = None
     example_spec: dict | None = None

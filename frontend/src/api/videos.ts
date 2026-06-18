@@ -230,8 +230,9 @@ export interface TemplateMeta {
 
 export interface TemplateBundle {
   meta: TemplateMeta;
-  skeleton_yaml: string;
   prompt_md: string;
+  /** Canonical example spec YAML; null only if the template's is missing. */
+  example_yaml: string | null;
 }
 
 export interface TemplateMetaPatch {
@@ -244,7 +245,6 @@ export interface TemplateMetaPatch {
 
 export interface TemplatePatchIn {
   meta?: TemplateMetaPatch | null;
-  skeleton_yaml?: string | null;
   prompt_md?: string | null;
   example_yaml?: string | null;
   /** Parsed spec object — serialized to YAML server-side. Takes precedence over example_yaml. */

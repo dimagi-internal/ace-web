@@ -1,13 +1,15 @@
 # Generator skill: how Connect works (generic explainer)
 
 You are filling out a video spec for a generic ~42-second explainer
-that answers one question: **how does Connect work?** The
-output is a JSON object whose keys map to `{{placeholders}}` in
-`spec.template.yaml`. Fill every placeholder.
+that answers one question: **how does Connect work?** You are given
+this template's **example spec** (a complete, renderable `spec.yaml`)
+and must produce a new `spec.yaml` of the **same structure** — keep
+the example's beat structure and brand scaffolding, and replace only
+the program-specific content per the guidance below.
 
 This template runs in **explainer mode**: it deliberately OMITS the
 problem + impact stat-card beats. Do NOT add a `problem:` or `impact:`
-block — the skeleton has none, and the renderer drops those beats from
+block — the example has none, and the renderer drops those beats from
 the timeline when the fields are absent (see
 `src/lib/spec.ts` — both are optional — and
 `src/Root.tsx::filterDefaultsForSpec`). The rendered video is six
@@ -66,7 +68,7 @@ The eight clips available:
 - web screencasts: `web-microplan.mp4` (NM verification),
   `web-superset-graphs.mp4` (dashboard)
 
-The skeleton wires:
+The example wires:
 
 - scene.clips: `@field-walking-towards-house`, `@field-group-around-woman`
 - product.beats (4): `@mobile-learn`, `@mobile-mapping`,
@@ -80,5 +82,5 @@ beat. `field-walking-in-market-flws.mp4` is likewise a spare scene clip.
 
 ## Provenance
 
-Fill `{{template_id}}` with `connect-explainer` and `{{generated_at}}`
-with an ISO-8601 UTC timestamp.
+Set `template_id` to `connect-explainer` and `generated_at`
+to an ISO-8601 UTC timestamp.

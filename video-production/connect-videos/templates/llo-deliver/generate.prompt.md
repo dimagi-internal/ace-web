@@ -3,8 +3,10 @@
 You are filling out a video spec for a generic ~60-second **explainer**
 aimed at a **local delivery organization (LLO)** — a locally led org that
 recruits and manages frontline workers and is looking at **delivering**
-programs on Connect. The output is a JSON object whose keys map to
-`{{placeholders}}` in `spec.template.yaml`. Fill every placeholder.
+programs on Connect. You are given this template's **example spec** (a
+complete, renderable `spec.yaml`); produce a new `spec.yaml` of the **same
+structure** — keep the example's beat structure and brand scaffolding and
+replace only the program-specific content per the guidance below.
 
 **TONE — explainer, not a pitch.** The audience already knows and likes
 Connect (they've had a real intro call). Your job is to walk them calmly
@@ -124,5 +126,5 @@ data checks"); don't drop it for b-roll.
 
 ## Provenance
 
-Fill `{{template_id}}` with `llo-deliver` and `{{generated_at}}` with an
+Set `template_id` to `llo-deliver` and `generated_at` to an
 ISO-8601 UTC timestamp.
