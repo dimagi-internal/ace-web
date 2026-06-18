@@ -149,7 +149,7 @@ def run_in_container(script: str) -> None:
 
 
 def host_npm(cv: Path, slug: str, run_id: str, *, draft: bool = True,
-             hydrate: bool = True, explorer: bool = True) -> None:
+             hydrate: bool = True, explorer: bool = True, captions: bool = True) -> None:
     """Run the npm render chain on the host (bare-metal Mac).
 
     Uses the host's Node / Chromium / esbuild (which match the macOS
@@ -160,6 +160,11 @@ def host_npm(cv: Path, slug: str, run_id: str, *, draft: bool = True,
     (build the clip-explorer UI) are skipped in local-spec mode: the
     assets are already local files and the explorer isn't needed to get
     the mp4.
+
+    ``captions`` burns the per-beat caption timeline into the video.
+    DDD connect-ddd-walkthrough renders default this OFF (the dashboard
+    self-labels and the VO narrates — captions just cover the content);
+    opt in per render. Drive-mode renders keep captions on.
     """
     steps: list[list[str]] = []
     if hydrate:
@@ -167,6 +172,8 @@ def host_npm(cv: Path, slug: str, run_id: str, *, draft: bool = True,
     render = ["npm", "run", "render", "--", f"--program={slug}", f"--run={run_id}"]
     if draft:
         render.append("--draft")
+    if not captions:
+        render.append("--no-captions")
     steps.append(render)
     if explorer:
         steps.append(
@@ -292,6 +299,10 @@ def main() -> int:
                    help="Local-spec mode: run id (default run-001).")
     p.add_argument("--final", action="store_true",
                    help="Render at final quality (skip the default --draft preview).")
+    p.add_argument("--captions", action="store_true",
+                   help="Local-spec mode: burn captions in (default OFF for "
+                        "connect-ddd-walkthrough — the dashboard self-labels + VO narrates). "
+                        "Drive-mode renders keep captions on regardless.")
     p.add_argument("--connect-videos-root", default=None,
                    help="Override the connect-videos project to render into "
                         "(also honored via $CONNECT_VIDEOS_ROOT).")
@@ -339,7 +350,8 @@ def main() -> int:
         slug = stage_local_spec(cv, Path(args.local_spec), run_id, master)
 
         print("\n==> Run npm render on host (bare-metal Mac)")
-        host_npm(cv, slug, run_id, draft=not args.final, hydrate=False, explorer=False)
+        host_npm(cv, slug, run_id, draft=not args.final, hydrate=False, explorer=False,
+                 captions=args.captions)
     else:
         if args.run_id:
             slug, run_id = args.target, args.run_id
