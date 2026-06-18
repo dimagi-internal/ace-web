@@ -285,17 +285,24 @@ they read through to Google Drive.
   see `video-production/connect-videos/src/lib/voiceover.ts`); changing
   voice_id or model in spec.yaml invalidates the existing audio.
 - **Video-spec templates** (`apps/videos/templates.py`): Drive-backed, editable
-  spec skeletons surfaced at `videos/templates` (gallery) and
-  `videos/templates/:id` (editor with meta / prompt / skeleton / example panels,
-  batched save via `PATCH /api/w/<slug>/videos/templates/<id>`). Templates live
-  in Drive under `<workspace-drive-root>/videos/_templates/<id>/{meta.yaml,
-  skeleton.yaml, prompt.md, example.yaml}`. The `repo templates/` directory
+  template kits surfaced at `videos/templates` (gallery) and
+  `videos/templates/:id` (editor with meta + example panels, batched save via
+  `PATCH /api/w/<slug>/videos/templates/<id>`). A template is a **3-file kit**:
+  Drive stores `<workspace-drive-root>/videos/_templates/<id>/{meta.yaml,
+  prompt.md, example.spec.yaml}` (repo seed names: `template.yaml`,
+  `generate.prompt.md`, `example.spec.yaml`). The **example.spec.yaml is the
+  single source of truth** for the spec's shape — it's both what the BeatEditor
+  edits (read-only raw-YAML view alongside) AND what the generation agent adapts
+  for a new program. (The old `skeleton.yaml` — a blank spec with
+  `{{placeholders}}` — was removed in the templates-drop-skeleton refactor: it
+  duplicated the example's structure and drifted; an agent adapts a complete
+  example more reliably than it fills a blank form. `NewProgramDialog` and the
+  generate prompts now start from the example.) The `repo templates/` directory
   (in `video-production/connect-videos/`) is the canonical seed source and the
   CI fixture set for connect-videos tests — never edit those files here. Seed
   on-demand or at container start via the `videos_seed_templates` management
   command (lazy auto-seed fires on the first `GET /templates` call against an
-  empty Drive folder). Deferred: example.yaml currently edits as raw YAML; a
-  BeatEditor-on-example follow-up would render it with the full visual editor.
+  empty Drive folder).
 - **Cloud mobile emulator (`apps/mobile/`)**: ace-web orchestrates a single EC2
   instance (`m8i.xlarge` with nested virtualization) running an Android AVD via
   SSM. Packer bake in `infra/mobile-ami/`; runtime API at `/api/mobile/*`

@@ -1,12 +1,18 @@
-"""Video-spec templates: discovery + skeleton loading.
+"""Video-spec templates: discovery + loading.
 
-Templates are stored in Drive under each workspace's
-``videos/_templates/<template-id>/`` folder, with these files:
+A template is a 3-file kit for one *type* of video, stored in Drive under
+each workspace's ``videos/_templates/<template-id>/`` folder:
 
-  meta.yaml       — metadata (id, name, description, duration, …)
-  skeleton.yaml   — YAML skeleton with {{placeholders}}
-  prompt.md       — LLM instructions for filling the placeholders
-  example.spec.yaml (optional)
+  meta.yaml          — metadata (id, name, description, audience, …)
+  prompt.md          — LLM instructions for generating a new spec
+  example.spec.yaml  — the canonical, complete, renderable example spec
+
+The example is the single source of truth for the spec's shape: it's both
+what the in-app BeatEditor edits and what the generation agent adapts for a
+new program. (There used to be a separate ``skeleton.yaml`` — a blank spec
+with ``{{placeholders}}`` — but it duplicated the example's structure and
+drifted from it, so it was removed: an agent adapts a complete example far
+more reliably than it fills a blank form.)
 
 The repo tree under ``video-production/connect-videos/templates/<id>/``
 is the seed source (T2: ``seed_templates``). The Drive copy is the
@@ -49,11 +55,16 @@ class TemplateMeta:
 
 @dataclass(frozen=True)
 class TemplateBundle:
-    """A loaded template: metadata + skeleton + prompt."""
+    """A loaded template: metadata + generation prompt + example spec.
+
+    ``example_yaml`` is the canonical example spec — the same text the
+    BeatEditor edits and the generation agent adapts. It's None only for
+    a malformed template whose example.spec.yaml is missing from Drive.
+    """
 
     meta: TemplateMeta
-    skeleton_yaml: str
     prompt_md: str
+    example_yaml: str | None
 
 
 _TEMPLATE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -96,9 +107,11 @@ def list_templates(workspace) -> list[TemplateMeta]:
 
 
 def load_template(workspace, template_id: str) -> TemplateBundle | None:
-    """Load skeleton + prompt for a specific template from Drive, with caching.
+    """Load prompt + example for a specific template from Drive, with caching.
 
-    Returns None if the template is not found in Drive.
+    Returns None if the template is not found in Drive (no meta.yaml or
+    no prompt.md). A template with a missing example.spec.yaml still loads
+    (``example_yaml`` is None) so the editor can surface the gap.
     """
     if not is_valid_template_id(template_id):
         return None
@@ -114,17 +127,15 @@ def load_template(workspace, template_id: str) -> TemplateBundle | None:
     meta_raw = drive.read_template_file(layout, client, template_id, "meta.yaml")
     if meta_raw is None:
         return None
-    skeleton_raw = drive.read_template_file(layout, client, template_id, "skeleton.yaml")
-    if skeleton_raw is None:
-        return None
     prompt_raw = drive.read_template_file(layout, client, template_id, "prompt.md")
     if prompt_raw is None:
         return None
+    example_raw = drive.read_template_file(layout, client, template_id, "example.spec.yaml")
 
     bundle = TemplateBundle(
         meta=_parse_meta(template_id, meta_raw),
-        skeleton_yaml=_strip_leading_doc_comments(skeleton_raw),
         prompt_md=prompt_raw,
+        example_yaml=example_raw,
     )
     vcache.set_tpl_bundle(ws_slug, template_id, _bundle_to_dict(bundle))
     return bundle
@@ -180,7 +191,6 @@ def save_template(
     template_id: str,
     *,
     meta: dict | None = None,
-    skeleton_yaml: str | None = None,
     prompt_md: str | None = None,
     example_yaml: str | None = None,
     example_spec: dict | None = None,
@@ -188,9 +198,9 @@ def save_template(
     """Persist one or more template fields to Drive and return the refreshed bundle.
 
     For each non-None argument:
-      - ``skeleton_yaml`` / ``example_yaml``: must parse as a YAML mapping.
-        ``example_yaml`` additionally passes program-spec structural validation
-        (slug + workspace present) so saved examples can always be rendered.
+      - ``example_yaml``: must parse as a YAML mapping and pass program-spec
+        structural validation (slug + workspace present) so saved examples
+        can always be rendered.
       - ``example_spec``: a pre-parsed dict (e.g. the BeatEditor's
         ``effectiveSpec``).  Serialized to YAML via ``_yaml().dump`` and run
         through the same ``validate_spec_structure`` + write path as
@@ -222,15 +232,6 @@ def save_template(
     existing_meta_raw = drive.read_template_file(layout, client, template_id, "meta.yaml")
     if existing_meta_raw is None:
         raise ValueError(f"Template {template_id!r} does not exist in Drive")
-
-    if skeleton_yaml is not None:
-        try:
-            doc = _yaml().load(skeleton_yaml)
-        except Exception as e:
-            raise ValueError(f"skeleton_yaml is not valid YAML: {e}") from e
-        if not isinstance(doc, dict):
-            raise ValueError("skeleton_yaml must parse to a YAML mapping at the top level")
-        drive.write_template_file(layout, client, template_id, "skeleton.yaml", skeleton_yaml)
 
     if prompt_md is not None:
         drive.write_template_file(layout, client, template_id, "prompt.md", prompt_md)
@@ -287,35 +288,8 @@ def save_template(
     return bundle
 
 
-def _strip_leading_doc_comments(skeleton: str) -> str:
-    """Drop the skeleton's authoring-time doc header before returning it.
-
-    The on-disk ``spec.template.yaml`` opens with a comment block that
-    documents every ``{{placeholder}}`` — useful for template authors,
-    but harmful in the generated output because the substitution
-    replaces those documentation references too, leaving a garbled
-    header like::
-
-        #   kangaroo-mother-care            slug, lowercase + hyphens (e.g. "kangaroo-care")
-
-    Strip everything from the start of the file up to (and including)
-    the first blank line that follows a comment run. The remaining
-    skeleton starts directly at the first real YAML field. Templates
-    that don't have a leading comment block are returned unchanged.
-    """
-    lines = skeleton.splitlines(keepends=True)
-    if not lines or not lines[0].lstrip().startswith("#"):
-        return skeleton
-    i = 0
-    n = len(lines)
-    while i < n and (lines[i].lstrip().startswith("#") or lines[i].strip() == ""):
-        i += 1
-    return "".join(lines[i:])
-
-
 _FILE_MAP: dict[str, str] = {
     "template.yaml": "meta.yaml",
-    "spec.template.yaml": "skeleton.yaml",
     "generate.prompt.md": "prompt.md",
     "example.spec.yaml": "example.spec.yaml",
 }
@@ -422,14 +396,15 @@ def _meta_from_dict(d: dict) -> TemplateMeta:
 def _bundle_to_dict(bundle: TemplateBundle) -> dict:
     return {
         "meta": dataclasses.asdict(bundle.meta),
-        "skeleton_yaml": bundle.skeleton_yaml,
         "prompt_md": bundle.prompt_md,
+        "example_yaml": bundle.example_yaml,
     }
 
 
 def _bundle_from_dict(d: dict) -> TemplateBundle:
     return TemplateBundle(
         meta=TemplateMeta(**d["meta"]),
-        skeleton_yaml=d["skeleton_yaml"],
         prompt_md=d["prompt_md"],
+        # Tolerate a pre-skeleton-removal cache entry: fall back to None.
+        example_yaml=d.get("example_yaml"),
     )

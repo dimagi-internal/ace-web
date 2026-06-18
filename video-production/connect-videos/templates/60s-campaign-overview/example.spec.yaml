@@ -1,0 +1,89 @@
+# 60s-campaign-overview — fully-filled demo spec. Ready to render; no placeholder tokens remain.
+#
+# A 60-second campaign overview for a Connect program (Kangaroo Care in
+# Uganda). Walks Connect's Learn / Deliver / Verify / Pay loop, then hands
+# off to the specific program with its problem stat and impact numbers.
+
+provenance:
+  generator: 60s-campaign-overview
+  template: 60s-campaign-overview
+  generated_from: https://labs.connect.dimagi.com/programs/kangaroo-care
+  generated_at: "2026-06-17T00:00:00Z"
+
+slug: 60s-campaign-overview
+workspace: dimagi-team
+name: Kangaroo Care
+country_focus: Uganda
+status: "Active in 4 countries"
+tagline: "Skin-to-skin care, delivered to every newborn that needs it."
+program_url: https://labs.connect.dimagi.com/programs/kangaroo-care
+
+# Standard workspace media-library clips (library: refs resolve against the
+# workspace library; the render-prep staging step rewrites each to
+# gdrive:<id>.<ext> before the renderer runs, so this example stays portable).
+manifest:
+  field-walking-towards-house: library:video/field-broll/field-walking-towards-house.mp4
+  field-group-around-woman: library:video/field-broll/field-group-around-woman.mp4
+  mobile-learn: library:video/mobile-screencast/mobile-learn.mp4
+  mobile-mapping: library:video/mobile-screencast/mobile-mapping.mp4
+  web-microplan: library:video/web-screencast/web-microplan.mp4
+  mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
+
+scene:
+  clips:
+    - "@field-walking-towards-house"
+    - "@field-group-around-woman"
+  lower_third: "Uganda · Kangaroo Care"
+
+problem:
+  big: "350K"
+  caption: "newborns die each year from complications that skin-to-skin care prevents"
+  source: "labs.connect.dimagi.com"
+
+product:
+  beats:
+    - asset: "@mobile-learn"
+      caption: "Learn — with an AI coach"
+      is_demo_clip: true
+    - asset: "@mobile-mapping"
+      caption: "Deliver — GPS at the point of care"
+      is_demo_clip: true
+    - asset: "@web-microplan"
+      caption: "Verify — AI-assisted review"
+      is_demo_clip: true
+    - asset: "@mobile-pay"
+      caption: "Pay — automatic, on verified work"
+      is_demo_clip: true
+
+impact:
+- big: "$1.40"
+  caption: "cost per verified newborn visit"
+- big: "92%"
+  caption: "of visits verified on the first submission"
+
+narration:
+  generator: manual
+  prompt_version: v3
+  start_seconds: 0
+  by_beat:
+    hook: "Reaching every newborn that needs care has always been the hard part."
+    cycle: "Connect runs every program as one loop: workers Learn the protocol, Deliver in the field, each visit is Verified, and they get Paid for it."
+    handoff: "Here's how Kangaroo Care runs that loop."
+    scene: "Community health workers in Uganda visit new mothers at home, coaching skin-to-skin care in the first fragile days after birth."
+    problem: "Each year 350,000 newborns die from complications that simple skin-to-skin care prevents — most because no trained worker reaches the home in time."
+    product: "Workers train on their phones with an AI coach, deliver guided home visits, and every visit is verified — GPS, photo, and timestamp — the moment it happens. Then payment follows automatically."
+    impact: "Verified visits cost just one dollar forty each, and ninety-two percent clear verification on the very first submission."
+    cta: ""
+  script: |
+    Reaching every newborn that needs care has always been the hard part.
+    Connect runs every program as one loop: workers Learn the protocol, Deliver in the field, each visit is Verified, and they get Paid for it.
+    Here's how Kangaroo Care runs that loop.
+    Community health workers in Uganda visit new mothers at home, coaching skin-to-skin care in the first fragile days after birth.
+    Each year 350,000 newborns die from complications that simple skin-to-skin care prevents — most because no trained worker reaches the home in time.
+    Workers train on their phones with an AI coach, deliver guided home visits, and every visit is verified — GPS, photo, and timestamp — the moment it happens. Then payment follows automatically.
+    Verified visits cost just one dollar forty each, and ninety-two percent clear verification on the very first submission.
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

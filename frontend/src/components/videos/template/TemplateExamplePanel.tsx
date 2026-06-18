@@ -6,8 +6,8 @@ interface Props {
 }
 
 /**
- * Minimal client-side YAML validity check — same heuristics as
- * TemplateSkeletonPanel. Returns null on pass, a short error string on fail.
+ * Minimal client-side YAML validity check for the read-only example panel.
+ * Returns null on pass, a short error string on fail.
  */
 function lintYaml(text: string): string | null {
   if (!text.trim()) return null;

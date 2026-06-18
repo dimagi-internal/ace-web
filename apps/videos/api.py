@@ -157,9 +157,9 @@ def _has_output_anywhere(workspace, slug: str, run_id: str, local_truth: bool) -
 
 # ---------------------------------------------------------------------------
 # Templates — MCP-callable, used by an agent (Claude session) to discover
-# what templates exist and pull the skeleton + skill prompt for one.
-# The agent generates the spec.yaml itself (fetching source content,
-# applying the prompt, filling placeholders) and POSTs it back to
+# what templates exist and pull the generation prompt + example spec for
+# one. The agent generates the spec.yaml itself (fetching source content,
+# applying the prompt, adapting the example) and POSTs it back to
 # /programs below.
 # ---------------------------------------------------------------------------
 
@@ -181,7 +181,7 @@ def list_video_templates(
 @router.get(
     "/templates/{template_id}",
     response=TemplateBundleOut,
-    summary="Get the full template bundle (meta + skeleton + skill prompt)",
+    summary="Get the full template bundle (meta + skill prompt + example spec)",
     openapi_extra={"x-mcp-expose": True},
 )
 def get_video_template(
@@ -195,15 +195,15 @@ def get_video_template(
         raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
     return TemplateBundleOut(
         meta=TemplateMetaOut.model_validate(bundle.meta.__dict__),
-        skeleton_yaml=bundle.skeleton_yaml,
         prompt_md=bundle.prompt_md,
+        example_yaml=bundle.example_yaml,
     )
 
 
 @router.patch(
     "/templates/{template_id}",
     response=TemplateBundleOut,
-    summary="Update one or more fields of a template (meta, skeleton, prompt, example)",
+    summary="Update one or more fields of a template (meta, prompt, example)",
 )
 def patch_video_template(
     request: HttpRequest,
@@ -222,7 +222,6 @@ def patch_video_template(
             workspace,
             template_id,
             meta=body.meta.model_dump(exclude_none=True) if body.meta else None,
-            skeleton_yaml=body.skeleton_yaml,
             prompt_md=body.prompt_md,
             example_yaml=body.example_yaml,
             example_spec=body.example_spec,
@@ -231,8 +230,8 @@ def patch_video_template(
         raise ProblemError(400, "Invalid template edit", type_=TYPE_VALIDATION, detail=str(e))
     return TemplateBundleOut(
         meta=TemplateMetaOut.model_validate(bundle.meta.__dict__),
-        skeleton_yaml=bundle.skeleton_yaml,
         prompt_md=bundle.prompt_md,
+        example_yaml=bundle.example_yaml,
     )
 
 

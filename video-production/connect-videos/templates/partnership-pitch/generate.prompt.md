@@ -2,11 +2,13 @@
 
 You are filling out a video spec for a 90-second partnership pitch
 aimed at a specific prospect organization that runs a real program
-today but is not yet on Connect. The output is a JSON object whose
-keys map to placeholders in `spec.template.yaml`. Each key is
-required — fill every one, even if source material is thin. Where
-source material is missing, prefix the value with `[TBD] ` so it is
-easy to grep for.
+today but is not yet on Connect. You are given this template's
+**example spec** — a complete, renderable `spec.yaml` — and must
+produce a new `spec.yaml` of the **same structure**: keep the
+example's beat structure and brand scaffolding, and replace only the
+prospect/program-specific content per the guidance below. Fill every
+field, even if source material is thin. Where source material is
+missing, prefix the value with `[TBD] ` so it is easy to grep for.
 
 **GROUNDING RULE (load-bearing — this goes to a prospect):** Never
 invent stats, backstory, or organizational claims. Every number and
@@ -218,7 +220,8 @@ Format: `"<Country> · <Prospect name>"`. Examples:
 
 ## Output format
 
-Return ONLY a single JSON object — no prose, no markdown fences. Keys:
+Output the complete `spec.yaml` — the same shape as the example you
+were given. The key list below is the set of **fields to adapt**:
 
 ```
 {
@@ -272,4 +275,4 @@ the top of the generated spec so editors and downstream tools can
 trace a spec back to the URL and run that produced it.
 
 Every value is a string. No nested objects. No arrays. No comments.
-The `cta` beats are left empty in the skeleton and are NOT output keys.
+The `cta` beats are left empty in the example and are NOT output keys.

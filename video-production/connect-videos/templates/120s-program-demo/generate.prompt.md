@@ -2,9 +2,12 @@
 
 You are filling out a video spec for a single Connect by Dimagi
 program at **demo depth** — the viewer already knows what Connect is
-and now wants to see how the mechanism actually runs. The output is a
-JSON object whose keys map to placeholders in `spec.template.yaml`.
-Each key is required.
+and now wants to see how the mechanism actually runs. You are given
+this template's **example spec** — a complete, renderable `spec.yaml`
+— and must produce a new `spec.yaml` of the **same structure**. Keep
+the example's structure and brand scaffolding and replace only the
+program-specific content per the guidance below. Each adapted field
+is required.
 
 **Important:** this template requires program-specific footage the
 operator must hand-attach. The spec ships ready to render only after
@@ -129,7 +132,7 @@ dashboard metrics, and call out screen elements.
 ## Footage requirements
 
 This template REQUIRES program-specific footage. Emit a `manifest_todo:`
-list (already scaffolded in the skeleton) of every clip alias the
+list (already scaffolded in the example) of every clip alias the
 spec references. The operator hand-attaches before render. Until
 attached, `manifest:` stays empty and the rendered output uses [TBD]
 placeholder clips.
@@ -200,7 +203,10 @@ across programs reuses the audio.
 
 ## Output format
 
-Return ONLY a single JSON object — no prose, no markdown fences. Keys:
+Output the **complete `spec.yaml`** — same shape as the example,
+with the example's structure and brand scaffolding preserved. The
+list below is the set of **fields to adapt** (every field is
+required):
 
 ```
 {

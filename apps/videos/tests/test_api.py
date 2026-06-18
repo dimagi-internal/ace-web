@@ -849,18 +849,6 @@ def test_list_programs_401_anonymous(db, client, videos_root):
 # ---------------------------------------------------------------------------
 
 
-def _seed_template(root: Path) -> None:
-    t = root / "templates" / "60s-campaign-overview"
-    t.mkdir(parents=True)
-    (t / "template.yaml").write_text(
-        "id: 60s-campaign-overview\nname: 60s\ndescription: test\n"
-        "intended_audience: x\nwhen_to_use: y\n",
-        encoding="utf-8",
-    )
-    (t / "spec.template.yaml").write_text("slug: \"{{slug}}\"\nworkspace: \"{{ws}}\"\n", encoding="utf-8")
-    (t / "generate.prompt.md").write_text("# Skill prompt\nFill it.\n", encoding="utf-8")
-
-
 @pytest.mark.django_db
 def test_list_templates(member_client):
     client, _ = member_client
@@ -900,21 +888,8 @@ def test_patch_template_meta(member_client):
     body = resp.json()
     assert body["meta"]["name"] == "Patched Name"
     assert body["meta"]["id"] == "60s-campaign-overview"
-    assert body["skeleton_yaml"]
+    assert body["example_yaml"]
     assert body["prompt_md"]
-
-
-@pytest.mark.django_db
-def test_patch_template_400_on_invalid_skeleton(member_client):
-    """PATCH with unparseable skeleton_yaml returns 400."""
-    client, _ = member_client
-    client.get("/api/w/ws1/videos/templates")
-    resp = client.patch(
-        "/api/w/ws1/videos/templates/60s-campaign-overview",
-        data={"skeleton_yaml": "::: not yaml :::"},
-        content_type="application/json",
-    )
-    assert resp.status_code == 400, resp.content
 
 
 @pytest.mark.django_db

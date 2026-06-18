@@ -1,11 +1,12 @@
 # Generator skill: 60-second campaign overview
 
 You are filling out a video spec for a single Connect by Dimagi program.
-The output is a JSON object whose keys map to placeholders in
-`spec.template.yaml`. Each key is required — fill every one, even if
-the source material is thin. Where source material is missing, write
-plausible placeholder text the operator will edit by hand, and prefix
-it with `[TBD] ` so it's easy to grep for.
+You are given this template's **example spec** — a complete, renderable
+`spec.yaml` — and must produce a new `spec.yaml` of the **same structure**.
+Keep the example's structure and brand scaffolding intact and replace only
+the program-specific content per the guidance below. Where source material
+is missing, write plausible placeholder text the operator will edit by hand,
+and prefix it with `[TBD] ` so it's easy to grep for.
 
 ## What this video is for (and what makes it good)
 
@@ -115,7 +116,7 @@ If you'd otherwise drop a clip into `manifest:` (or its `scene.clips[]`
 `available_video_clips`:
 
 1. Identify what the slot is for (scene = field footage; product = app
-   screenshot — see the `spec.template.yaml` comment block at the top).
+   screenshot — see the example spec's comments).
 2. Look for a library item whose tags match the program's
    topic/country AND the slot's role.
 3. If a fit exists, prefer its `ref` over the raw `gdrive:` form.
@@ -231,7 +232,9 @@ Format: `"<Country> · <Program name>"`. Examples:
 
 ## Output format
 
-Return ONLY a single JSON object — no prose, no markdown fences. Keys:
+Output the **complete `spec.yaml`** — the same shape as the example spec,
+with the program-specific content adapted. The keys below are the set of
+**fields to adapt**:
 
 ```
 {

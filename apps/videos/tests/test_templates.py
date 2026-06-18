@@ -1,17 +1,16 @@
-"""Tests for apps.videos.templates — discovery + skeleton loading.
+"""Tests for apps.videos.templates — discovery + loading.
 
-Focus: the load_template path strips the skeleton's author-time doc
-comment block before returning, so substituting placeholders into the
-output doesn't leave garbled comments referencing the placeholders
-themselves.
+Covers the 3-file template kit (meta + prompt + example) loaded through
+Drive, plus the Drive-backed template helpers (templates_folder_id,
+list_template_ids, read_template_file, write_template_file) using the same
+FakeDriveClient the service tests use.
 
-Also covers the Drive-backed template helpers added in T1
-(templates_folder_id, list_template_ids, read_template_file,
-write_template_file) using the same FakeDriveClient the service tests use.
+(The old skeleton.yaml + its author-time doc-comment stripping were removed:
+the example.spec.yaml is now the single source of truth for a template's
+spec shape — see apps/videos/templates.py.)
 """
 from __future__ import annotations
 
-import textwrap
 from types import SimpleNamespace
 
 import pytest
@@ -29,111 +28,14 @@ def clear_cache():
     django_cache.clear()
 
 
-def test_strip_leading_doc_comments_drops_header_until_first_blank():
-    src = textwrap.dedent("""\
-        # Top-level docs.
-        #
-        # Filled by skill: {{program_slug}} {{workspace_slug}}.
-
-        slug: "{{program_slug}}"
-        workspace: "{{workspace_slug}}"
-        """)
-    stripped = templates._strip_leading_doc_comments(src)
-    assert not stripped.startswith("#")
-    assert stripped.startswith("slug:")
-    # The doc-comment placeholder reference is gone; the body's real
-    # placeholder remains (it's where the substitution lands).
-    assert "Top-level docs" not in stripped
-
-
-def test_strip_leading_doc_comments_no_op_when_first_line_is_yaml():
-    src = "slug: \"x\"\nworkspace: \"y\"\n"
-    assert templates._strip_leading_doc_comments(src) == src
-
-
-def test_strip_leading_doc_comments_preserves_inline_comments():
-    """Inline comments AFTER the first YAML field stay — only the
-    leading block is stripped."""
-    src = textwrap.dedent("""\
-        # Header doc.
-
-        slug: "x"
-        # inline note
-        workspace: "y"
-        """)
-    stripped = templates._strip_leading_doc_comments(src)
-    assert "# inline note" in stripped
-
-
-def test_strip_leading_doc_comments_handles_empty_file():
-    assert templates._strip_leading_doc_comments("") == ""
-
-
-def test_strip_leading_doc_comments_handles_only_comments():
-    """Pathological: file is nothing but comments."""
-    src = "# a\n# b\n# c\n"
-    assert templates._strip_leading_doc_comments(src) == ""
-
-
-def test_load_template_60s_campaign_overview_drops_doc_header(fake_drive_ws):
-    """Integration: the real 60s-campaign-overview template fetched
-    via load_template starts at provenance:, not at the `#`-block
-    documenting placeholders."""
-    # Seed from the real templates dir into the fake Drive workspace.
+def test_load_template_carries_example_yaml(fake_drive_ws):
+    """load_template returns the canonical example spec as example_yaml."""
     templates.list_templates(fake_drive_ws.workspace)  # triggers lazy auto-seed
-    bundle = templates.load_template(fake_drive_ws.workspace, "60s-campaign-overview")
+    bundle = templates.load_template(fake_drive_ws.workspace, "program-designer")
     assert bundle is not None
-    first_line = bundle.skeleton_yaml.splitlines()[0]
-    assert first_line.startswith("provenance:")
-    # Sanity: no stale doc-style `{{placeholder}}` references inside
-    # commented lines (the dangerous ones are the ones that look like
-    # examples but get substituted alongside real placeholders).
-    for line in bundle.skeleton_yaml.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("#") and "{{" in stripped:
-            raise AssertionError(
-                f"Surviving doc comment contains a {{placeholder}}: {line!r}"
-            )
-
-
-def test_load_template_partnership_pitch_strips_doc_header(fake_drive_ws):
-    templates.list_templates(fake_drive_ws.workspace)
-    bundle = templates.load_template(fake_drive_ws.workspace, "partnership-pitch")
-    assert bundle is not None
-    assert bundle.skeleton_yaml.splitlines()[0].startswith("provenance:")
-    for angle in ("day-in-the-life", "the-scale-gap", "trust-travels"):
-        assert angle in bundle.skeleton_yaml
-
-
-def test_load_template_connect_explainer_strips_doc_header(fake_drive_ws):
-    """The connect-explainer template (explainer mode — no problem/impact
-    stat beats) loads, and its skeleton starts at the first real field
-    (provenance:), not at the leading `#` doc-comment block."""
-    templates.list_templates(fake_drive_ws.workspace)
-    bundle = templates.load_template(fake_drive_ws.workspace, "connect-explainer")
-    assert bundle is not None
-    assert bundle.skeleton_yaml.splitlines()[0].startswith("provenance:")
-    # No surviving doc comment carries a {{placeholder}} (the dangerous
-    # ones that get substituted alongside real placeholders).
-    for line in bundle.skeleton_yaml.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("#") and "{{" in stripped:
-            raise AssertionError(
-                f"Surviving doc comment contains a {{placeholder}}: {line!r}"
-            )
-
-
-def test_load_template_includes_provenance_placeholders(fake_drive_ws):
-    """The skeleton must include the two new provenance placeholders
-    (template_id, generated_at) that the skill is expected to fill."""
-    templates.list_templates(fake_drive_ws.workspace)
-    bundle = templates.load_template(fake_drive_ws.workspace, "60s-campaign-overview")
-    assert bundle is not None
-    assert "{{template_id}}" in bundle.skeleton_yaml
-    assert "{{generated_at}}" in bundle.skeleton_yaml
-    # And the agent prompt must document them.
-    assert "template_id" in bundle.prompt_md
-    assert "generated_at" in bundle.prompt_md
+    assert bundle.example_yaml is not None
+    # The example is a real, filled spec for this template.
+    assert "slug: program-designer" in bundle.example_yaml
 
 
 # ---------------------------------------------------------------------------
@@ -261,10 +163,10 @@ def test_seed_templates_uploads_repo_tree(fake_drive_ws):
     ids = drive.list_template_ids(layout, client)
     assert {"connect-explainer", "program-designer", "partnership-pitch", "llo-deliver"} <= set(ids)
 
-    # The Drive filename is "skeleton.yaml" (mapped from spec.template.yaml).
-    skeleton = drive.read_template_file(layout, client, "program-designer", "skeleton.yaml")
-    assert skeleton is not None
-    assert "active_cut" in skeleton
+    # The example spec is seeded as "example.spec.yaml" (no skeleton anymore).
+    example = drive.read_template_file(layout, client, "program-designer", "example.spec.yaml")
+    assert example is not None
+    assert "active_cut" in example
 
 
 def test_seed_templates_is_idempotent(fake_drive_ws):
@@ -290,7 +192,7 @@ def test_load_template_from_drive(fake_drive_ws):
     templates.list_templates(fake_drive_ws.workspace)  # seed
     b = templates.load_template(fake_drive_ws.workspace, "program-designer")
     assert b is not None
-    assert "active_cut" in b.skeleton_yaml
+    assert b.example_yaml is not None and "active_cut" in b.example_yaml
     assert b.prompt_md.strip()
     assert b.meta.name
 
@@ -362,22 +264,6 @@ def test_save_template_meta_persists(fake_drive_ws):
     assert templates.load_template(ws, "connect-explainer").meta.name == "Renamed"
 
 
-def test_save_template_rejects_bad_skeleton(fake_drive_ws):
-    """skeleton_yaml that does not parse as a YAML mapping raises ValueError."""
-    ws = fake_drive_ws.workspace
-    templates.list_templates(ws)
-    with pytest.raises(ValueError):
-        templates.save_template(ws, "connect-explainer", skeleton_yaml="::: not yaml :::")
-
-
-def test_save_template_rejects_skeleton_not_mapping(fake_drive_ws):
-    """skeleton_yaml that parses but is not a mapping (e.g. a list) raises ValueError."""
-    ws = fake_drive_ws.workspace
-    templates.list_templates(ws)
-    with pytest.raises(ValueError):
-        templates.save_template(ws, "connect-explainer", skeleton_yaml="- item1\n- item2\n")
-
-
 def test_save_template_rejects_schema_invalid_example(fake_drive_ws):
     """example_yaml missing required program-spec fields raises ValueError."""
     ws = fake_drive_ws.workspace
@@ -428,13 +314,12 @@ def test_load_example(fake_drive_ws):
 
 
 def test_load_example_returns_none_when_missing(fake_drive_ws):
-    """load_example returns None when example.spec.yaml was not seeded."""
+    """load_example returns None for a template with no example.spec.yaml."""
     ws = fake_drive_ws.workspace
     templates.list_templates(ws)
-    # connect-explainer has no example.spec.yaml in the repo tree
-    ex = templates.load_example(ws, "connect-explainer")
-    # May be None (no file) or a string (if it does exist); just ensure no exception.
-    assert ex is None or isinstance(ex, str)
+    # A template id that was never seeded has no files at all in Drive.
+    ex = templates.load_example(ws, "no-such-template")
+    assert ex is None
 
 
 # ---------------------------------------------------------------------------
@@ -450,12 +335,11 @@ def test_load_example_spec_parsed(fake_drive_ws):
 
 
 def test_load_example_spec_returns_none_when_missing(fake_drive_ws):
-    """load_example_spec returns None when no example.spec.yaml is seeded."""
+    """load_example_spec returns None for a template with no example.spec.yaml."""
     ws = fake_drive_ws.workspace
     templates.list_templates(ws)
-    # connect-explainer has no example.spec.yaml in the repo tree.
-    result = templates.load_example_spec(ws, "connect-explainer")
-    assert result is None or isinstance(result, dict)
+    result = templates.load_example_spec(ws, "no-such-template")
+    assert result is None
 
 
 def test_load_example_spec_injects_filtered_default_beats(fake_drive_ws):
@@ -584,7 +468,7 @@ def test_load_template_intent_default_empty_when_absent(fake_drive_ws):
     )
     drive.write_template_file(
         layout, client, "no-intent-tpl",
-        "skeleton.yaml",
+        "example.spec.yaml",
         "slug: x\nworkspace: y\n",
     )
     drive.write_template_file(
