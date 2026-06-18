@@ -59,7 +59,7 @@ const NarrationVariantSchema = z.object({
   by_beat: z.record(z.string(), z.string()),
 });
 
-// A walkthrough beat (connect-walkthrough template) plays a RANGE of one
+// A walkthrough beat (connect-ddd-walkthrough template) plays a RANGE of one
 // master clip full-bleed and overlays a single lower-third. The clip
 // range reuses the same start_seconds / duration_seconds shape as a
 // ClipRef (the range INTO the master clip). The beat's VO rides on
@@ -135,7 +135,7 @@ export const ProgramSpecSchema = z.object({
     .optional(),
   beat_overrides: z.record(z.string(), BeatOverrideSchema).optional(),
   manifest: z.record(z.string(), ManifestEntrySchema).optional(),
-  // Optional so a walkthrough spec (connect-walkthrough template) — which
+  // Optional so a walkthrough spec (connect-ddd-walkthrough template) — which
   // carries `beats:` + `walkthrough:` instead of the marketing body — can
   // omit it. The superRefine below requires it when a body_scene beat is
   // in the effective timeline, so any marketing / connect-explainer spec
@@ -161,7 +161,7 @@ export const ProgramSpecSchema = z.object({
     .optional(),
   impact: z.array(StatSchema).min(2).max(3).optional(),
   // Per-walkthrough-beat clip range + lower-third, keyed by beat id
-  // (connect-walkthrough template). Required (per beat) for every
+  // (connect-ddd-walkthrough template). Required (per beat) for every
   // body_walkthrough beat in `beats:` — enforced by the superRefine
   // below. Absent for marketing + connect-explainer specs.
   walkthrough: z.record(z.string(), WalkthroughBeatSchema).optional(),
@@ -352,7 +352,7 @@ export function applyManifestRefs(spec: ProgramSpec): ProgramSpec {
       }
     : undefined;
 
-  // Walkthrough clip refs (connect-walkthrough): rewrite each beat's
+  // Walkthrough clip refs (connect-ddd-walkthrough): rewrite each beat's
   // asset the same way as scene clips. Absent for marketing/explainer.
   const resolvedWalkthrough = spec.walkthrough
     ? Object.fromEntries(

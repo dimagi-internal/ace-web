@@ -131,7 +131,7 @@ async function main() {
 
   // Beats are template/spec-driven, exactly as Root.tsx does for the
   // visuals (effectiveBeatsForSpec): a spec carrying its own `beats:` list
-  // (the connect-walkthrough arc) IS the timeline; otherwise the spec
+  // (the connect-ddd-walkthrough arc) IS the timeline; otherwise the spec
   // rides the shared global_style.yaml marketing arc with explainer-mode
   // stat-beat filtering. The dropped marketing stat beats sit mid-timeline
   // (problem after scene, impact before outro), so without this the

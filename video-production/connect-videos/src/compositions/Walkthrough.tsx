@@ -4,7 +4,7 @@ import { Lower3rd } from "../components/Lower3rd";
 import type { ProgramSpec, WalkthroughBeat } from "../lib/spec";
 
 /**
- * One walkthrough section of the connect-walkthrough arc. Plays a RANGE
+ * One walkthrough section of the connect-ddd-walkthrough arc. Plays a RANGE
  * of one master clip full-bleed (objectFit: cover, `startFrom` honoring
  * the beat's start_seconds in the source), overlays a single
  * lower-third, and lets the top-level CaptionBar + per-beat VO ride on

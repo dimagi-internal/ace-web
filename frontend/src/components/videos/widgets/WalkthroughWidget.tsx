@@ -2,7 +2,7 @@ import { useBeatEditor } from "../BeatEditorContext";
 
 /**
  * Minimal editor widget for a walkthrough-arc `body_walkthrough` beat
- * (connect-walkthrough template).
+ * (connect-ddd-walkthrough template).
  *
  * A walkthrough beat plays a RANGE of one master clip full-bleed with a
  * lower-third; its voiceover rides on the shared NarrationWidget (which

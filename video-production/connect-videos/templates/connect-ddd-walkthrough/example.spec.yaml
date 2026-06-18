@@ -1,4 +1,4 @@
-# connect-walkthrough — worked example.
+# connect-ddd-walkthrough — worked example.
 #
 # A real DDD verified-monitoring walkthrough narrated as a semi-gloss
 # explainer: one title card, five walkthrough sections (each plays a
@@ -12,7 +12,7 @@
 
 provenance:
   generator: video-from-walkthrough
-  template: connect-walkthrough
+  template: connect-ddd-walkthrough
   generated_from: "verified-monitoring DDD run verified-monitoring-2026-06-16-001"
   generated_at: "2026-06-17T00:00:00Z"
 

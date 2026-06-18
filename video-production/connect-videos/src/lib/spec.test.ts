@@ -343,7 +343,7 @@ voice: { provider: elevenlabs, voice_id: a, model: eleven_turbo_v2 }
   });
 });
 
-describe("walkthrough arc (connect-walkthrough template)", () => {
+describe("walkthrough arc (connect-ddd-walkthrough template)", () => {
   // Minimal walkthrough spec: a template-supplied beats list with one
   // body_walkthrough beat + matching walkthrough entry. No marketing
   // blocks (scene/problem/product/impact) — they're optional now.
@@ -402,13 +402,13 @@ voice: { provider: elevenlabs, voice_id: a, model: eleven_turbo_v2 }
     );
   });
 
-  it("validates templates/connect-walkthrough/example.spec.yaml end-to-end", () => {
+  it("validates templates/connect-ddd-walkthrough/example.spec.yaml end-to-end", () => {
     const examplePath = path.join(
       here,
       "..",
       "..",
       "templates",
-      "connect-walkthrough",
+      "connect-ddd-walkthrough",
       "example.spec.yaml",
     );
     const spec = loadProgramSpec(examplePath);

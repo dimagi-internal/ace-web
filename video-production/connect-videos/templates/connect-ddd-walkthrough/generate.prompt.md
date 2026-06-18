@@ -1,4 +1,4 @@
-# Generator skill: walkthrough explainer (connect-walkthrough)
+# Generator skill: walkthrough explainer (connect-ddd-walkthrough)
 
 You are turning an **existing product walkthrough recording** plus a
 short list of per-section sentences into a video spec. The output fills
@@ -93,7 +93,7 @@ Return ONLY a single JSON object — no prose, no markdown fences. Keys:
   "status": str,
   "program_tagline": str,
   "program_url": str,
-  "template_id": "connect-walkthrough",
+  "template_id": "connect-ddd-walkthrough",
   "generated_at": str,            # ISO-8601 UTC
   "master_asset": str,            # file:/gdrive:/library: ref
   "narration_title": str,

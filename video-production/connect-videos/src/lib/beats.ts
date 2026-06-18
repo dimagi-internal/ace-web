@@ -15,7 +15,7 @@ export const BeatKind = z.enum([
   "body_product_beats",
   "body_impact_stats",
   "outro_cta",
-  // Walkthrough-arc kinds (connect-walkthrough template). `intro_title`
+  // Walkthrough-arc kinds (connect-ddd-walkthrough template). `intro_title`
   // is a single title card, `body_walkthrough` plays a RANGE of one
   // master clip full-bleed with a per-beat lower-third, `outro_card`
   // reuses the brand Outro. The marketing arc (intro_hook/cycle/handoff +
