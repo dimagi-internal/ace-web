@@ -61,7 +61,7 @@ jobs:
       - name: Resolve ACE plugin HEAD SHA
         id: ace-ref
         run: |
-          SHA=$(git ls-remote https://github.com/jjackson/ace.git main | awk '{print $1}')
+          SHA=$(git ls-remote https://github.com/dimagi-internal/ace.git main | awk '{print $1}')
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Build and push

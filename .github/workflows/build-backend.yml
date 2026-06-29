@@ -63,8 +63,8 @@ jobs:
         run: |
           # Dockerfile vendors the ACE plugin via `git clone` — cache this
           # layer on the remote SHA so it invalidates automatically whenever
-          # jjackson/ace main moves, and stays cached otherwise.
-          SHA=$(git ls-remote https://github.com/jjackson/ace.git main | awk '{print $1}')
+          # dimagi-internal/ace main moves, and stays cached otherwise.
+          SHA=$(git ls-remote https://github.com/dimagi-internal/ace.git main | awk '{print $1}')
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "Resolved ACE main → $SHA"
 

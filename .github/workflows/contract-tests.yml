@@ -37,7 +37,7 @@ jobs:
         # apps/system/reader.py can bootstrap the dynamic skill registry at
         # import time (even though system/opps tags are excluded from the
         # contract test run).  Matches the clone in ci.yml.
-        run: git clone --depth 1 https://github.com/jjackson/ace.git ../ace
+        run: git clone --depth 1 https://github.com/dimagi-internal/ace.git ../ace
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v6

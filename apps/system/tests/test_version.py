@@ -106,7 +106,7 @@ class TestCheckVersion:
 
     def test_remote_url_constant(self):
         assert REMOTE_VERSION_URL == (
-            "https://raw.githubusercontent.com/jjackson/ace/main/VERSION"
+            "https://raw.githubusercontent.com/dimagi-internal/ace/main/VERSION"
         )
 
     def test_local_version_is_stripped(self, tmp_path: Path):

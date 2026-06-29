@@ -54,7 +54,7 @@ plugin MCPs is rendered via `op inject` at container start (see
 `mcp-bootstrap-container-traps.md` for traps).
 
 **Plugin auto-update on boot:** the image bakes the plugin at build time, but
-`jjackson/ace` bumps several times a day while ace-web only rebuilds on its own
+`dimagi-internal/ace` bumps several times a day while ace-web only rebuilds on its own
 merges. So `docker-entrypoint.sh` runs `scripts/refresh-ace-plugin.sh` at
 container start: it shallow-clones the latest `main`, and if its `VERSION`
 differs from the baked one, swaps the fresh tree into the plugin cache

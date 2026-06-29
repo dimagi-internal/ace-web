@@ -18,7 +18,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 REMOTE_VERSION_URL = (
-    "https://raw.githubusercontent.com/jjackson/ace/main/VERSION"
+    "https://raw.githubusercontent.com/dimagi-internal/ace/main/VERSION"
 )
 
 # Module-level cache: {"remote_version": (version_str, monotonic_timestamp)}
