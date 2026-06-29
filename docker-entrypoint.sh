@@ -14,7 +14,7 @@ set -e
 PLUGIN_DATA_DIR="${CLAUDE_PLUGIN_DATA:-/home/app/.claude/plugin-data/ace}"
 SA_KEY_PATH="${PLUGIN_DATA_DIR}/gws-sa-key.json"
 
-# Refresh the vendored ACE plugin to the latest jjackson/ace main BEFORE
+# Refresh the vendored ACE plugin to the latest dimagi-internal/ace main BEFORE
 # anything reads the plugin tree (op-inject below reads $ACE_PLUGIN_PATH's
 # .env.tpl; the chat backend's `claude -p` loads the cache dir). The plugin
 # bumps several times a day but the image only rebuilds on ace-web's own

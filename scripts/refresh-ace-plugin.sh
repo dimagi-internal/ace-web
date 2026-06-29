@@ -1,10 +1,10 @@
 #!/bin/bash
-# Refresh the vendored ACE plugin to the latest jjackson/ace `main` at
+# Refresh the vendored ACE plugin to the latest dimagi-internal/ace `main` at
 # container start.
 #
 # Why this exists: the plugin is baked into the image at build time
-# (Dockerfile clones jjackson/ace at the SHA resolved by build-backend.yml).
-# But jjackson/ace bumps several times a day, while ace-web only rebuilds
+# (Dockerfile clones dimagi-internal/ace at the SHA resolved by build-backend.yml).
+# But dimagi-internal/ace bumps several times a day, while ace-web only rebuilds
 # its image on its OWN merges to main. So the deployed plugin lags the
 # plugin repo — the "v0.13.494 deployed / v0.13.502 available" drift the
 # System Overview tab surfaces. A plain `deploy-ace-web-labs.yml` run only
@@ -32,7 +32,7 @@ log() { echo "[refresh-ace-plugin] $*"; }
 PLUGIN_PATH="${ACE_PLUGIN_PATH:-/app/vendor/ace}"
 CACHE_ROOT="/home/app/.claude/plugins/cache/ace/ace"
 INSTALLED_JSON="/home/app/.claude/plugins/installed_plugins.json"
-REPO_URL="https://github.com/jjackson/ace.git"
+REPO_URL="https://github.com/dimagi-internal/ace.git"
 REFRESH_TIMEOUT="${ACE_PLUGIN_REFRESH_TIMEOUT:-150}"
 # Temp dir adjacent to the cache so the final swap (and node_modules reuse)
 # is a cheap same-filesystem rename rather than a cross-device copy.

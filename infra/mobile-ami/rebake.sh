@@ -310,7 +310,7 @@ echo "✓ Rebake + roll complete."
 echo "    AMI:       $AMI_ID ($AMI_VERSION)"
 echo "    LT ver:    $NEW_LT_VER"
 echo "    Instance:  $NEW_INSTANCE_ID (stopped)"
-echo "    Deploy:    https://github.com/jjackson/ace-web/actions/workflows/$DEPLOY_WORKFLOW"
+echo "    Deploy:    https://github.com/dimagi-internal/ace-web/actions/workflows/$DEPLOY_WORKFLOW"
 echo
 echo "Next:"
 echo "  • Watch the deploy: gh run watch"
