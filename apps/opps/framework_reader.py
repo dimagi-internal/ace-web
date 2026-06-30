@@ -1,6 +1,6 @@
 """Wave-4 run-reader swap: the ace-side shim that routes the three opp-read
 chokepoints (``load_opp`` / ``load_opp_card`` / ``list_opp_runs``) through the
-framework's ``canopy_runs.drive.store.DriveRunStore`` instead of ace's own
+framework's ``canopy_agent_runs.drive.store.DriveRunStore`` instead of ace's own
 inline sync logic, then maps the storage-agnostic read model back onto ace's
 legacy dataclasses via ``apps.opps.framework_map``.
 
@@ -48,7 +48,7 @@ from __future__ import annotations
 import logging
 
 import yaml
-from canopy_runs.drive.store import DriveRunStore
+from canopy_agent_runs.drive.store import DriveRunStore
 
 from apps.opps import framework_map as fm
 from apps.opps.drive_client import DriveClient, DriveFile
