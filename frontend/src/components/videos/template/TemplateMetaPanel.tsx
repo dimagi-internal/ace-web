@@ -1,5 +1,5 @@
 import type { TemplateMeta } from "@/api/videos";
-import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
+import { AutoResizeTextarea } from "canopy-ui/ui";
 import type { TemplateEditorAction } from "./templateEditorReducer";
 
 interface Props {

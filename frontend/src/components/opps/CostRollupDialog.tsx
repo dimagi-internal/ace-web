@@ -1,6 +1,6 @@
 import type { CostRollup } from "../../api/types.ws";
 import { CostPhaseRow } from "../cost/CostPhaseRow";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "canopy-ui/ui";
 
 interface Props {
   data: CostRollup | null;

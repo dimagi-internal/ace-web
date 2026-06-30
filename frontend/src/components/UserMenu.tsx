@@ -11,7 +11,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "canopy-ui/ui";
 
 /**
  * Top-right account menu. Surfaces the signed-in identity so users can

@@ -9,7 +9,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "canopy-ui/ui";
 import { Input } from "canopy-ui/ui";
 import { cn } from "@/lib/utils";
 

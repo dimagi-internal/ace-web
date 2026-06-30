@@ -13,7 +13,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "canopy-ui/ui";
 import { cliAuthStatus, disconnectNova, novaAuthStatus, promoteCliAuthToGlobal } from "@/api/auth";
 import { createToken, listTokens, revokeToken, type PersonalToken } from "@/api/tokens";
 import type { CliAuthStatus, NovaAuthStatus } from "@/api/types.ws";

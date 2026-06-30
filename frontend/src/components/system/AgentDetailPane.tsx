@@ -9,7 +9,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "canopy-ui/ui";
 import type { AgentDetail, AgentSummary, PhaseInfo, SkillSummary } from "./types";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 

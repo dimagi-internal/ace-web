@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
+import { AutoResizeTextarea } from "canopy-ui/ui";
 
 interface Props {
   exampleYaml: string;
