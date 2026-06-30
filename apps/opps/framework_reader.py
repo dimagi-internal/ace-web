@@ -49,10 +49,10 @@ Both Drive layouts are handled:
     opp folder is presented to the store as a single synthetic run ``r1`` via
     ``_FlatRunClient``.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import yaml
 from canopy_runs.drive.store import DriveRunStore
@@ -116,7 +116,9 @@ class _FlatRunClient:
 
     def _run_df(self) -> DriveFile:
         return DriveFile(
-            id=self._opp_folder.id, name=self.RUN_ID, mime_type=FOLDER_MIME,
+            id=self._opp_folder.id,
+            name=self.RUN_ID,
+            mime_type=FOLDER_MIME,
             web_view_link="",
         )
 
@@ -226,7 +228,9 @@ def runs_summary_via_store(
     for fw in fw_summaries:
         state = state_by_run.get(fw.id) or {}
         rs = fm.map_run_summary(
-            fw, folder_id=folder_by_run.get(fw.id, ""), run_state=state,
+            fw,
+            folder_id=folder_by_run.get(fw.id, ""),
+            run_state=state,
         )
         _apply_legacy_summary_overrides(rs, state)
         out.append(rs)
@@ -341,7 +345,11 @@ def _recover_run_detail_extras(
     from apps.opps.sync import _load_decisions
 
     artifacts_by_skill = _attribute_run_artifacts(
-        client, run_folder_id, overview, skill_registry, pdd_file=pdd_file,
+        client,
+        run_folder_id,
+        overview,
+        skill_registry,
+        pdd_file=pdd_file,
     )
     for step in rd.steps:
         step.artifacts = artifacts_by_skill.get(step.step.skill_name, [])
@@ -369,8 +377,8 @@ def load_opp_run_via_store(
     """Assemble an ``OppSnapshot`` for a specific run of a multi-run opp from
     ``DriveRunStore.get_run`` + ``framework_map.map_run_detail``, recovering the
     reduced field-groups ace-side."""
-    from apps.opps.sync import OppSnapshot, _read_opp_yaml
     from apps.opps.parsers import OppManifest
+    from apps.opps.sync import OppSnapshot, _read_opp_yaml
 
     if run_id is None:
         target_id = runs_summary[0].run_id
@@ -398,19 +406,20 @@ def load_opp_run_via_store(
         inputs_folder = _find_child_folder(opp_folder_children, "inputs")
         if inputs_folder is not None:
             inputs_children = client.list_folder(inputs_folder.id)
-            pdd_file = (
-                _find_child(inputs_children, "pdd.md")
-                or _find_child(inputs_children, "idea.md")
+            pdd_file = _find_child(inputs_children, "pdd.md") or _find_child(
+                inputs_children, "idea.md"
             )
-    pdd_body = (
-        client.get_content(pdd_file.id, pdd_file.mime_type).content if pdd_file else ""
-    )
+    pdd_body = client.get_content(pdd_file.id, pdd_file.mime_type).content if pdd_file else ""
 
     rd = fm.map_run_detail(fw_run, folder_id=run_folder_id, run_state=state_data)
     _recover_run_detail_extras(
-        client, rd,
-        run_folder_id=run_folder_id, overview=overview,
-        skill_registry=skill_registry, state_data=state_data, pdd_file=pdd_file,
+        client,
+        rd,
+        run_folder_id=run_folder_id,
+        overview=overview,
+        skill_registry=skill_registry,
+        state_data=state_data,
+        pdd_file=pdd_file,
     )
     # current_phase/current_step: mirror the legacy ``_load_opp_run`` exactly —
     # take them from the matching run-summary row (which already applied the
@@ -454,17 +463,15 @@ def load_opp_flat_via_store(
     the opp root, no ``runs/``). The opp folder is presented to
     ``DriveRunStore`` as a single synthetic run ``r1`` via ``_FlatRunClient``;
     artifacts/decisions are recovered against the REAL opp folder tree."""
-    from apps.opps.sync import OppSnapshot
     from apps.opps.parsers import OppManifest
+    from apps.opps.sync import OppSnapshot
 
     opp_children = client.list_folder(opp_folder.id)
     state_data = _read_state(client, opp_children)
 
     # IDD→PDD rename transition: accept either primary-doc filename.
     pdd_file = _find_child(opp_children, "pdd.md") or _find_child(opp_children, "idd.md")
-    pdd_body = (
-        client.get_content(pdd_file.id, pdd_file.mime_type).content if pdd_file else ""
-    )
+    pdd_body = client.get_content(pdd_file.id, pdd_file.mime_type).content if pdd_file else ""
 
     flat_client = _FlatRunClient(client, opp_folder)
     store = build_store(flat_client, _FlatRunClient.ROOT, slug, overview, skill_registry)
@@ -472,9 +479,13 @@ def load_opp_flat_via_store(
 
     rd = fm.map_run_detail(fw_run, folder_id=opp_folder.id, run_state=state_data)
     _recover_run_detail_extras(
-        client, rd,
-        run_folder_id=opp_folder.id, overview=overview,
-        skill_registry=skill_registry, state_data=state_data, pdd_file=pdd_file,
+        client,
+        rd,
+        run_folder_id=opp_folder.id,
+        overview=overview,
+        skill_registry=skill_registry,
+        state_data=state_data,
+        pdd_file=pdd_file,
     )
     # Flat layout: the legacy ``_load_opp_flat`` reads current_phase/current_step
     # from the opp-root run_state's ``current_*`` keys only (no phase/step

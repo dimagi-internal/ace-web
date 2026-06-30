@@ -38,7 +38,6 @@ from apps.opps.parsers import (
     Decision,
     JudgeVerdict,
     OppManifest,
-    QAFailure,
     QAResult,
     StepManifest,
 )

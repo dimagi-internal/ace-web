@@ -74,6 +74,7 @@ into three buckets:
   surface has no gate field), and ``Run.session_link`` / ``Run.forked_from``
   (the legacy snapshot does not expose them).
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -81,15 +82,27 @@ from typing import Any
 
 from canopy_runs.schemas import (
     Artifact as FwArtifact,
+)
+from canopy_runs.schemas import (
     Decision as FwDecision,
+)
+from canopy_runs.schemas import (
     Run as FwRun,
+)
+from canopy_runs.schemas import (
     RunSummary as FwRunSummary,
+)
+from canopy_runs.schemas import (
     Step as FwStep,
+)
+from canopy_runs.schemas import (
     Verdict as FwVerdict,
 )
 
 from apps.opps.parsers import (
     Decision as AceDecision,
+)
+from apps.opps.parsers import (
     JudgeVerdict,
     OppManifest,
     QAFailure,
@@ -100,9 +113,11 @@ from apps.opps.sync import (
     ArtifactRef,
     OppSnapshot,
     RunDetail,
-    RunSummary as AceRunSummary,
     StepSnapshot,
     _derive_phase_progress,
+)
+from apps.opps.sync import (
+    RunSummary as AceRunSummary,
 )
 
 # Framework StepStatus (pending|running|complete|failed|skipped) → ace canonical
@@ -331,10 +346,7 @@ def map_run_detail(
         )
         for s in run.steps
     ]
-    decisions = [
-        map_decision(d, phase=phase_by_key.get(d.step_key, ""))
-        for d in run.decisions
-    ]
+    decisions = [map_decision(d, phase=phase_by_key.get(d.step_key, "")) for d in run.decisions]
 
     skill_versions = rs.get("skill_versions")
     return RunDetail(

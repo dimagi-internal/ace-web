@@ -9,6 +9,7 @@ identity (``drive_file_id`` + run-relative ``path``) and the full decisions log
 through the synthetic-run adapter; and that file-id tracking still flows through
 ace's ``CachedDriveClient`` so the snapshot-cache reverse index keeps populating.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -31,11 +32,7 @@ def _demo_multi_run_tree() -> dict:
     return {
         "ACE": {
             "demo": {
-                "opp.yaml": (
-                    "display_name: Demo Opp\n"
-                    "slug: demo\n"
-                    "created_by: ace@dimagi-ai.com\n"
-                ),
+                "opp.yaml": ("display_name: Demo Opp\nslug: demo\ncreated_by: ace@dimagi-ai.com\n"),
                 "runs": {
                     "20260601-0900": {
                         "run_state.yaml": (
@@ -76,9 +73,7 @@ def _demo_multi_run_tree() -> dict:
 
 
 def _idea_step(snap):
-    return next(
-        s for s in snap.current_run.steps if s.step.skill_name == "idea-to-pdd"
-    )
+    return next(s for s in snap.current_run.steps if s.step.skill_name == "idea-to-pdd")
 
 
 # --------------------------------------------------------------------------- #
@@ -91,7 +86,9 @@ def test_multi_run_recovers_artifact_drive_identity():
     snap = load_opp(client, ace_folder_id=client.folder_id("ACE"), slug="demo")
     art = next(a for a in _idea_step(snap).artifacts if a.name == "idea-to-pdd.md")
     assert art.drive_file_id  # non-empty — would be "" straight off the framework
-    assert art.drive_file_id == client.file_id("ACE/demo/runs/20260601-0900/1-design/idea-to-pdd.md")
+    assert art.drive_file_id == client.file_id(
+        "ACE/demo/runs/20260601-0900/1-design/idea-to-pdd.md"
+    )
     assert art.path == "1-design/idea-to-pdd.md"
 
 
@@ -137,13 +134,9 @@ def test_flat_layout_recovers_artifact_identity_and_status():
     """The flat opp is read through the synthetic ``r1`` run; artifacts keep
     their Drive identity and subfolder-presence still drives status."""
     client = FakeDriveClient.from_tree(nutrition_legacy_flat_tree())
-    snap = load_opp(
-        client, ace_folder_id=client.folder_id("ACE"), slug="nutrition-legacy"
-    )
+    snap = load_opp(client, ace_folder_id=client.folder_id("ACE"), slug="nutrition-legacy")
     assert snap.current_run.run_id == "r1"
-    learn = next(
-        s for s in snap.current_run.steps if s.step.skill_name == "pdd-to-learn-app"
-    )
+    learn = next(s for s in snap.current_run.steps if s.step.skill_name == "pdd-to-learn-app")
     assert learn.step.status == "complete"
     art = next(a for a in learn.artifacts if "learn-app-summary" in a.name)
     assert art.drive_file_id  # non-empty

@@ -6,31 +6,44 @@ asserts the ace-web dataclasses (``OppSnapshot`` / ``RunDetail`` /
 ``QAResult`` / ace ``RunSummary`` / parser ``Decision``) come out field-for-field
 correct. No Drive, no DB — pure mapping.
 """
+
 from __future__ import annotations
 
 import datetime as dt
 
 from canopy_runs.schemas import (
     Artifact as FwArtifact,
+)
+from canopy_runs.schemas import (
     Decision as FwDecision,
+)
+from canopy_runs.schemas import (
     Run as FwRun,
+)
+from canopy_runs.schemas import (
     RunSummary as FwRunSummary,
+)
+from canopy_runs.schemas import (
     Step as FwStep,
+)
+from canopy_runs.schemas import (
     Verdict as FwVerdict,
 )
 
 from apps.opps import framework_map as fm
-from apps.opps.parsers import JudgeVerdict, QAResult, StepManifest
 from apps.opps.parsers import Decision as AceDecision
+from apps.opps.parsers import JudgeVerdict, QAResult, StepManifest
 from apps.opps.sync import (
     ArtifactRef,
     OppSnapshot,
     RunDetail,
-    RunSummary as AceRunSummary,
     StepSnapshot,
 )
+from apps.opps.sync import (
+    RunSummary as AceRunSummary,
+)
 
-UTC = dt.timezone.utc
+UTC = dt.UTC
 
 
 # --------------------------------------------------------------------------- #
@@ -109,12 +122,14 @@ def test_map_qa_result_failed_reconstructs_checks_and_failures():
 
 
 def test_map_qa_result_pass_and_incomplete():
-    assert fm.map_qa_result(
-        FwVerdict(step_key="s", kind="qa", passed=True), target_skill="s"
-    ).verdict == "pass"
-    assert fm.map_qa_result(
-        FwVerdict(step_key="s", kind="qa", passed=None), target_skill="s"
-    ).verdict == "incomplete"
+    assert (
+        fm.map_qa_result(FwVerdict(step_key="s", kind="qa", passed=True), target_skill="s").verdict
+        == "pass"
+    )
+    assert (
+        fm.map_qa_result(FwVerdict(step_key="s", kind="qa", passed=None), target_skill="s").verdict
+        == "incomplete"
+    )
     assert fm.map_qa_result(None, target_skill="s") is None
 
 
@@ -145,7 +160,9 @@ def test_map_decision_uses_step_key_as_skill_and_reasoning_as_notes():
 # --------------------------------------------------------------------------- #
 def test_map_step_snapshot_complete_with_judge():
     step = FwStep(key="idea-to-pdd", ordinal=1, title="design-review", status="complete")
-    art = FwArtifact(step_key="idea-to-pdd", name="pdd.md", url="u", mime_type="text/markdown", size=10)
+    art = FwArtifact(
+        step_key="idea-to-pdd", name="pdd.md", url="u", mime_type="text/markdown", size=10
+    )
     judge = FwVerdict(step_key="idea-to-pdd", kind="judge", score=9.0, passed=True)
     snap = fm.map_step_snapshot(step, [art], [judge], folder_id="run-folder-1")
     assert isinstance(snap, StepSnapshot)
@@ -164,7 +181,9 @@ def test_map_step_snapshot_complete_with_judge():
 def test_map_step_snapshot_failed_with_qa_becomes_qa_failed():
     step = FwStep(key="idea-to-pdd", ordinal=1, title="design-review", status="failed")
     qa = FwVerdict(
-        step_key="idea-to-pdd", kind="qa", passed=False,
+        step_key="idea-to-pdd",
+        kind="qa",
+        passed=False,
         criteria={"checks_run": 1, "checks_passed": 0, "checks_failed": 1, "failures": ["x"]},
     )
     snap = fm.map_step_snapshot(step, [], [qa])
@@ -173,7 +192,9 @@ def test_map_step_snapshot_failed_with_qa_becomes_qa_failed():
 
 
 def test_map_step_snapshot_failed_without_qa_becomes_error():
-    step = FwStep(key="app-deploy", ordinal=5, title="commcare-setup", status="failed", error="boom")
+    step = FwStep(
+        key="app-deploy", ordinal=5, title="commcare-setup", status="failed", error="boom"
+    )
     snap = fm.map_step_snapshot(step, [], [])
     assert snap.step.status == "error"
     assert snap.step.error == "boom"
@@ -211,12 +232,22 @@ def _complete_run() -> FwRun:
         created_at=dt.datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
         steps=steps,
         artifacts=[
-            FwArtifact(step_key="idea-to-pdd", name="pdd.md", url="u1", mime_type="text/markdown", size=1),
-            FwArtifact(step_key="pdd-to-learn-app", name="learn-app-summary.md", url="u2", mime_type="text/markdown", size=2),
+            FwArtifact(
+                step_key="idea-to-pdd", name="pdd.md", url="u1", mime_type="text/markdown", size=1
+            ),
+            FwArtifact(
+                step_key="pdd-to-learn-app",
+                name="learn-app-summary.md",
+                url="u2",
+                mime_type="text/markdown",
+                size=2,
+            ),
         ],
         verdicts=[FwVerdict(step_key="idea-to-pdd", kind="judge", score=9.0, passed=True)],
         decisions=[
-            FwDecision(step_key="idea-to-pdd", question="archetype?", ai_default="sd", status="ai-default"),
+            FwDecision(
+                step_key="idea-to-pdd", question="archetype?", ai_default="sd", status="ai-default"
+            ),
         ],
     )
     return run.with_derived_status()
@@ -225,7 +256,9 @@ def _complete_run() -> FwRun:
 def test_map_run_detail_header_and_children():
     run = _complete_run()
     assert run.status == "complete"  # derived
-    rd = fm.map_run_detail(run, folder_id="rf-1", run_state={"notes": "n", "skill_versions": {"idea-to-pdd": "1.2"}})
+    rd = fm.map_run_detail(
+        run, folder_id="rf-1", run_state={"notes": "n", "skill_versions": {"idea-to-pdd": "1.2"}}
+    )
     assert isinstance(rd, RunDetail)
     assert rd.run_id == "20260601-0900"
     assert rd.mode == "auto"
@@ -303,7 +336,12 @@ def test_map_run_summary_defaults_without_run_state():
 def test_map_opp_snapshot_full_assembly():
     run = _complete_run()
     summaries = [
-        FwRunSummary(id="20260601-0900", agent_slug="malaria-rdt-simple", mode="auto", current_phase="closeout"),
+        FwRunSummary(
+            id="20260601-0900",
+            agent_slug="malaria-rdt-simple",
+            mode="auto",
+            current_phase="closeout",
+        ),
     ]
     snap = fm.map_opp_snapshot(
         run,
@@ -312,7 +350,11 @@ def test_map_opp_snapshot_full_assembly():
         run_folder_id="run-folder-1",
         pdd_body="# PDD body",
         run_state={"created_by": "ace@dimagi-ai.com"},
-        run_state_by_id={"20260601-0900": {"phases": {"closeout": {"status": "complete", "steps": {"x": "done"}}}}},
+        run_state_by_id={
+            "20260601-0900": {
+                "phases": {"closeout": {"status": "complete", "steps": {"x": "done"}}}
+            }
+        },
         folder_id_by_run={"20260601-0900": "run-folder-1"},
     )
     assert isinstance(snap, OppSnapshot)
