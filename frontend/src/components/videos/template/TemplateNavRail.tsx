@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronRight, FileVideo } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@canopy/workbench/ui";
 import { sectionLabel } from "../sectionLabels";
 
 // ──────────────────────────────────────────────────────────────────────────────

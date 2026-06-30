@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@canopy/workbench/ui";
 import type { Draft, SessionSource, SessionStatus } from "../api/types.ws";
 import { IDLE_THRESHOLD_MS, isDraftIdle, msUntilDraftIdle } from "../lib/drafts";
 

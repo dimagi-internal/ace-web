@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { artifactBodyUrl, writeArtifact } from "@/api/opps";
-import { Button } from "@/components/ui/button";
+import { Button } from "@canopy/workbench/ui";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";

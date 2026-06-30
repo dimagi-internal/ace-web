@@ -10,6 +10,15 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // Use the automatic JSX runtime (matches the vite prod build) so .tsx
+  // sources authored without `import React` — including the shared
+  // @canopy/workbench primitives consumed here — transform correctly.
+  // Without this, vitest's esbuild defaults to the classic runtime and the
+  // package's Button/Badge/etc throw "React is not defined".
+  esbuild: { jsx: "automatic" },
+  // @canopy/workbench ships .tsx/.ts source (no prebuilt dist), so it must be
+  // transformed rather than externalized as a normal node_modules dep.
+  server: { deps: { inline: ["@canopy/workbench"] } },
   test: {
     environment: "jsdom",
     globals: true,

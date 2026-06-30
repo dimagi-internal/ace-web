@@ -2,7 +2,7 @@ import { Pencil, Plus } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@canopy/workbench/ui";
 import { createSession, updateSession } from "../api/sessions";
 import type { Session } from "../api/types.ws";
 import { notifySessionsUpdated, useRecentSessions } from "../hooks/useRecentSessions";

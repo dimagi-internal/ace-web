@@ -3,7 +3,7 @@ import { ChevronRight, GitFork, Workflow } from "lucide-react";
 
 import type { OppSnapshot, PhaseInfo, Step } from "@/api/types.ws";
 import { ForkOppDialog } from "@/components/opps/ForkOppDialog";
-import { Button } from "@/components/ui/button";
+import { Button } from "@canopy/workbench/ui";
 import { DecisionsPanel } from "@/components/views/DecisionsPanel";
 import { PhaseSkillRow } from "@/components/views/PhaseSkillRow";
 import { PushToSlackButton } from "@/components/views/PushToSlackButton";
