@@ -10,7 +10,7 @@ import {
   type ForkProgress,
 } from "@/api/opps";
 import { ApiError } from "@/api/client";
-import { Button } from "@marshellis/workbench/ui";
+import { Button } from "@marshellis/canopy-ui/ui";
 import {
   Dialog,
   DialogContent,
