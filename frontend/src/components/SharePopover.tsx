@@ -1,7 +1,7 @@
 import { Check, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { Button } from "@marshellis/canopy-ui/ui";
+import { Button } from "canopy-ui/ui";
 import {
   createShareToken,
   listShareTokens,

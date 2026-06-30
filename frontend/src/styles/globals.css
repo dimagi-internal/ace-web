@@ -6,8 +6,8 @@
 /* Shared design-system token CONTRACT: maps Tailwind color/radius utilities
    onto the canonical CSS-var NAMES (--primary, --muted-foreground, --radius…).
    ace-web keeps its OWN palette VALUES below (:root / .dark); only the token
-   plumbing is shared with canopy-web via @marshellis/canopy-ui. */
-@import "@marshellis/canopy-ui/tokens/preset.css";
+   plumbing is shared with canopy-web via canopy-ui. */
+@import "canopy-ui/tokens/preset.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -60,7 +60,7 @@
     --status-warn: oklch(0.795 0.184 86.047);
     --status-error: oklch(0.577 0.245 27.325);
     --status-info: oklch(0.623 0.214 259.815);
-    /* New token names required by the shared @marshellis/canopy-ui primitives
+    /* New token names required by the shared canopy-ui primitives
        (foreground-secondary/subtle are used by Button/Input/Table text;
        success/warning/info/special complete the contract). ace's own
        neutral identity is preserved — these are derived from the grays

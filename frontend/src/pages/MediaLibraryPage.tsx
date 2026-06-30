@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { AlertTriangle, ExternalLink, Library } from "lucide-react";
 
-import { Badge } from "@marshellis/canopy-ui/ui";
-import { Skeleton } from "@marshellis/canopy-ui/ui";
+import { Badge } from "canopy-ui/ui";
+import { Skeleton } from "canopy-ui/ui";
 import {
   listMediaLibraryAudio,
   listMediaLibraryVideo,
