@@ -1,13 +1,14 @@
 """Tests for the wave-4 run-reader swap shim (``apps.opps.framework_reader``).
 
 These pin the parts of the swap that are otherwise thinly covered: that the
-chokepoints (now backed by ``canopy_runs.drive.store.DriveRunStore``) recover
-the field-groups the framework read model REDUCES — per-step artifact Drive
-identity (``drive_file_id`` + run-relative ``path``) and the full decisions log
-(``id`` / ``options_considered`` / raw ``phase``) — both of which the framework
-``Artifact`` / ``Decision`` schemas drop; that the flat (legacy) layout reads
-through the synthetic-run adapter; and that file-id tracking still flows through
-ace's ``CachedDriveClient`` so the snapshot-cache reverse index keeps populating.
+chokepoints (now backed by ``canopy_runs.drive.store.DriveRunStore``) surface the
+full field-groups end-to-end — per-step artifact Drive identity (``drive_file_id``
++ run-relative ``path``) and the full decisions log (``id`` / ``options_considered``
+/ raw ``phase``), which the framework ``Artifact`` / ``Decision`` schemas now carry
+(``Artifact.ref``/``path`` + the decisions-log fields) and the mapper passes
+straight through; that the flat (legacy) layout reads through the synthetic-run
+adapter; and that file-id tracking still flows through ace's ``CachedDriveClient``
+so the snapshot-cache reverse index keeps populating.
 """
 
 from __future__ import annotations
@@ -26,9 +27,9 @@ pytestmark = pytest.mark.django_db
 
 
 def _demo_multi_run_tree() -> dict:
-    """A multi-run opp carrying everything the framework read model reduces:
-    a phase-prefixed artifact, a phase-prefixed eval verdict, and a run-root
-    decisions.yaml — so we can assert ace-side recovery of each."""
+    """A multi-run opp carrying the full read-model surface: a phase-prefixed
+    artifact, a phase-prefixed eval verdict, and a run-root decisions.yaml — so we
+    can assert each comes through the framework read model end-to-end."""
     return {
         "ACE": {
             "demo": {
@@ -79,9 +80,10 @@ def _idea_step(snap):
 # --------------------------------------------------------------------------- #
 # multi-run: artifact identity + decisions + verdict recovery
 # --------------------------------------------------------------------------- #
-def test_multi_run_recovers_artifact_drive_identity():
-    """The framework ``Artifact`` drops ``drive_file_id`` + ``path``; the shim
-    re-attributes them ace-side so file-open + preview-by-path keep working."""
+def test_multi_run_artifact_drive_identity():
+    """The framework ``Artifact`` carries ``ref`` (the Drive file id) + ``path``;
+    the mapper surfaces them as ``drive_file_id``/``path`` so file-open +
+    preview-by-path keep working — sourced from the framework, not re-attributed."""
     client = FakeDriveClient.from_tree(_demo_multi_run_tree())
     snap = load_opp(client, ace_folder_id=client.folder_id("ACE"), slug="demo")
     art = next(a for a in _idea_step(snap).artifacts if a.name == "idea-to-pdd.md")
@@ -92,9 +94,9 @@ def test_multi_run_recovers_artifact_drive_identity():
     assert art.path == "1-design/idea-to-pdd.md"
 
 
-def test_multi_run_recovers_full_decision_rows():
-    """The framework ``Decision`` drops id/options/raw-phase; the shim re-parses
-    decisions.yaml ace-side so the Decisions panel keeps its full rows."""
+def test_multi_run_full_decision_rows():
+    """The framework ``Decision`` carries id/options/raw-phase; the mapper passes
+    them straight through so the Decisions panel keeps its full rows."""
     client = FakeDriveClient.from_tree(_demo_multi_run_tree())
     snap = load_opp(client, ace_folder_id=client.folder_id("ACE"), slug="demo")
     decisions = snap.current_run.decisions

@@ -57,6 +57,8 @@ def test_map_artifact_ref_field_for_field():
         mime_type="text/markdown",
         size=2048,
         role="idea-to-pdd",
+        ref="drive-file-123",
+        path="1-design/pdd.md",
     )
     ref = fm.map_artifact_ref(a)
     assert isinstance(ref, ArtifactRef)
@@ -64,9 +66,10 @@ def test_map_artifact_ref_field_for_field():
     assert ref.drive_web_link == "https://drive/abc"
     assert ref.mime_type == "text/markdown"
     assert ref.size_bytes == 2048
-    # framework Artifact carries neither a Drive file id nor a path
-    assert ref.drive_file_id == ""
-    assert ref.path == ""
+    # framework Artifact now carries the Drive file id (``ref``) + run-relative
+    # ``path`` — both map straight across (no ace-side re-attribution).
+    assert ref.drive_file_id == "drive-file-123"
+    assert ref.path == "1-design/pdd.md"
 
 
 def test_map_judge_verdict():
@@ -133,7 +136,7 @@ def test_map_qa_result_pass_and_incomplete():
     assert fm.map_qa_result(None, target_skill="s") is None
 
 
-def test_map_decision_uses_step_key_as_skill_and_reasoning_as_notes():
+def test_map_decision_maps_full_schema_straight_across():
     d = FwDecision(
         step_key="idea-to-pdd",
         question="Which archetype?",
@@ -142,17 +145,29 @@ def test_map_decision_uses_step_key_as_skill_and_reasoning_as_notes():
         status="overridden",
         reasoning="partner is a survey org",
         evidence_basis="inferred",
+        id="dec-1",
+        phase="1-design",
+        options_considered=["service-delivery", "data-collection"],
+        source="pdd.md",
+        override_reasoning="reviewer knows the partner",
+        conflict_signals=["doc says A", "interview says B"],
     )
-    ace = fm.map_decision(d, phase="design-review")
+    ace = fm.map_decision(d)
     assert isinstance(ace, AceDecision)
     assert ace.skill == "idea-to-pdd"
-    assert ace.phase == "design-review"
+    # phase + id + the rest now come straight off the framework Decision
+    assert ace.id == "dec-1"
+    assert ace.phase == "1-design"
     assert ace.question == "Which archetype?"
     assert ace.ai_default == "service-delivery"
     assert ace.override == "data-collection"
+    assert ace.options_considered == ["service-delivery", "data-collection"]
+    assert ace.source == "pdd.md"
     assert ace.status == "overridden"
     assert ace.notes == "partner is a survey org"
+    assert ace.override_reasoning == "reviewer knows the partner"
     assert ace.evidence_basis == "inferred"
+    assert ace.conflict_signals == ["doc says A", "interview says B"]
 
 
 # --------------------------------------------------------------------------- #
@@ -246,7 +261,11 @@ def _complete_run() -> FwRun:
         verdicts=[FwVerdict(step_key="idea-to-pdd", kind="judge", score=9.0, passed=True)],
         decisions=[
             FwDecision(
-                step_key="idea-to-pdd", question="archetype?", ai_default="sd", status="ai-default"
+                step_key="idea-to-pdd",
+                question="archetype?",
+                ai_default="sd",
+                status="ai-default",
+                phase="1-design",
             ),
         ],
     )
@@ -270,10 +289,10 @@ def test_map_run_detail_header_and_children():
     assert rd.notes == "n"
     assert rd.folder_id == "rf-1"
     assert len(rd.steps) == 2
-    # decision phase resolved from the producing step's phase
+    # decision phase comes straight off the framework Decision row
     assert len(rd.decisions) == 1
     assert rd.decisions[0].skill == "idea-to-pdd"
-    assert rd.decisions[0].phase == "design-review"
+    assert rd.decisions[0].phase == "1-design"
     # per-step artifacts/verdicts routed by step_key
     by_skill = {s.step.skill_name: s for s in rd.steps}
     assert by_skill["idea-to-pdd"].artifacts[0].name == "pdd.md"
