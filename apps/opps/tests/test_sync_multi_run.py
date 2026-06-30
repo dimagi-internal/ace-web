@@ -589,7 +589,7 @@ def test_parse_verdict_falls_back_to_heuristic_without_scale():
 # NOTE: the unit tests for ace's own ``_attribute_files_to_skills`` (manifest
 # matcher + filename-prefix fallback) were removed in the wave-4 single-reader
 # swap — that attribution now lives in (and is tested by) the framework lib
-# ``canopy_runs.drive.store``. The public chokepoints exercised below
+# ``canopy_agent_runs.drive.store``. The public chokepoints exercised below
 # (``list_opp_runs`` / ``load_opp_card`` / ``load_opp``) remain the ace-side
 # parity gate over the framework-sourced read model.
 

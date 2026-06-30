@@ -1,7 +1,7 @@
-"""Map the framework read model (``canopy_runs.schemas``) onto ace-web's
+"""Map the framework read model (``canopy_agent_runs.schemas``) onto ace-web's
 existing ``apps/opps`` dataclasses.
 
-This is the adapter seam for the wave-4 reader swap: ``canopy_runs`` (the
+This is the adapter seam for the wave-4 reader swap: ``canopy_agent_runs`` (the
 Django-free run-lifecycle core packaged out of the canopy-web monorepo) reads
 ACE's Drive run-folders and returns a storage-agnostic read model
 (``Run`` / ``Step`` / ``Artifact`` / ``Verdict`` / ``Decision`` / ``Gate`` /
@@ -82,22 +82,22 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     Artifact as FwArtifact,
 )
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     Decision as FwDecision,
 )
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     Run as FwRun,
 )
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     RunSummary as FwRunSummary,
 )
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     Step as FwStep,
 )
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     Verdict as FwVerdict,
 )
 
@@ -146,7 +146,7 @@ def _iso(value: dt.datetime | None) -> str | None:
 # leaf mappers
 # --------------------------------------------------------------------------- #
 def map_artifact_ref(a: FwArtifact) -> ArtifactRef:
-    """``canopy_runs.Artifact`` → ``ArtifactRef``, field-for-field.
+    """``canopy_agent_runs.Artifact`` → ``ArtifactRef``, field-for-field.
 
     The framework Artifact now carries the full Drive identity: ``ref`` is the
     opaque adapter handle (the Drive adapter sets it to the Drive file id) and
@@ -219,7 +219,7 @@ def map_qa_result(v: FwVerdict | None, *, target_skill: str) -> QAResult | None:
 
 
 def map_decision(d: FwDecision) -> AceDecision:
-    """``canopy_runs.Decision`` → ace parsers ``Decision``, field-for-field.
+    """``canopy_agent_runs.Decision`` → ace parsers ``Decision``, field-for-field.
 
     The framework Decision now carries the full decisions-schema (ported from
     ACE), so every ace field maps straight across: ``skill`` ← ``step_key``,
@@ -334,7 +334,7 @@ def map_run_detail(
     folder_id: str = "",
     run_state: dict[str, Any] | None = None,
 ) -> RunDetail:
-    """``canopy_runs.Run`` → ace ``RunDetail`` (the full per-run snapshot)."""
+    """``canopy_agent_runs.Run`` → ace ``RunDetail`` (the full per-run snapshot)."""
     rs = run_state if isinstance(run_state, dict) else {}
     arts_by_step = _group_by_step_key(run.artifacts, run)
     verds_by_step = _group_by_step_key(run.verdicts, run)
@@ -375,7 +375,7 @@ def map_run_summary(
     folder_id: str = "",
     run_state: dict[str, Any] | None = None,
 ) -> AceRunSummary:
-    """``canopy_runs.RunSummary`` → ace ``RunSummary`` (one list-view row).
+    """``canopy_agent_runs.RunSummary`` → ace ``RunSummary`` (one list-view row).
 
     Phase progress + last_actor are framework-absent; we derive/supplement them
     from the parsed ``run_state`` via ace's own ``_derive_phase_progress`` so the

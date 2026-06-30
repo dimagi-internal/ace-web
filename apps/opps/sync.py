@@ -335,7 +335,7 @@ def _is_pending_step(step_value) -> bool:
 #
 # Artifact attribution (manifest matchers + filename-prefix fallback +
 # DriveFile→ArtifactRef) was removed in the wave-4 single-reader swap. The
-# framework ``canopy_runs.drive.store.DriveRunStore`` now owns attribution and
+# framework ``canopy_agent_runs.drive.store.DriveRunStore`` now owns attribution and
 # surfaces each Artifact's Drive id (``ref``) + run-relative ``path`` directly,
 # so ace no longer re-attributes files (see ``apps/opps/framework_map`` +
 # ``apps/opps/framework_reader``).
@@ -443,7 +443,7 @@ def _detect_score_scale(data: dict) -> float | None:
 
 # decisions.yaml loading/parsing (``_load_decisions`` + ``_extract_decision_rows``
 # + ``_parse_decision_rows``) was removed in the wave-4 single-reader swap. The
-# framework ``canopy_runs.drive.store.DriveRunStore`` ported ACE's full
+# framework ``canopy_agent_runs.drive.store.DriveRunStore`` ported ACE's full
 # decisions-schema and surfaces each Decision row (id / phase /
 # options_considered / source / override_reasoning / conflict_signals included)
 # directly; ace maps it straight across in ``apps/opps/framework_map`` rather

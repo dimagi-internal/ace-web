@@ -2,7 +2,7 @@
 
 QA *parsing* (``_parse_qa_result_yaml`` / ``_load_qa_results`` / the
 ``_QA_RESULT_PATH_RE`` filename regex) moved into the framework library
-(``canopy_runs.drive.parsers``) in the wave-4 run-reader swap and is tested
+(``canopy_agent_runs.drive.parsers``) in the wave-4 run-reader swap and is tested
 there. ace-web only keeps the public ``QAResult`` dataclass + its serializer,
 so this module pins ``serialize_qa_result`` against a hand-built ``QAResult``.
 """

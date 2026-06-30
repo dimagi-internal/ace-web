@@ -1,7 +1,7 @@
 """Tests for the wave-4 run-reader swap shim (``apps.opps.framework_reader``).
 
 These pin the parts of the swap that are otherwise thinly covered: that the
-chokepoints (now backed by ``canopy_runs.drive.store.DriveRunStore``) surface the
+chokepoints (now backed by ``canopy_agent_runs.drive.store.DriveRunStore``) surface the
 full field-groups end-to-end — per-step artifact Drive identity (``drive_file_id``
 + run-relative ``path``) and the full decisions log (``id`` / ``options_considered``
 / raw ``phase``), which the framework ``Artifact`` / ``Decision`` schemas now carry

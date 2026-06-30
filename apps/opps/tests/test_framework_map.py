@@ -1,6 +1,6 @@
 """Unit tests for ``apps.opps.framework_map``.
 
-Builds representative ``canopy_runs.schemas`` read-model objects directly and
+Builds representative ``canopy_agent_runs.schemas`` read-model objects directly and
 asserts the ace-web dataclasses (``OppSnapshot`` / ``RunDetail`` /
 ``StepSnapshot`` / ``StepManifest`` / ``ArtifactRef`` / ``JudgeVerdict`` /
 ``QAResult`` / ace ``RunSummary`` / parser ``Decision``) come out field-for-field
@@ -11,22 +11,22 @@ from __future__ import annotations
 
 import datetime as dt
 
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     Artifact as FwArtifact,
 )
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     Decision as FwDecision,
 )
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     Run as FwRun,
 )
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     RunSummary as FwRunSummary,
 )
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     Step as FwStep,
 )
-from canopy_runs.schemas import (
+from canopy_agent_runs.schemas import (
     Verdict as FwVerdict,
 )
 
