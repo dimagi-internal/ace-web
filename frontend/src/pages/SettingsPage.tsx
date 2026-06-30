@@ -3,9 +3,9 @@ import { Copy, Key, Plus, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
-import { Badge } from "@marshellis/canopy-ui/ui";
-import { Button } from "@marshellis/canopy-ui/ui";
-import { Input } from "@marshellis/canopy-ui/ui";
+import { Badge } from "canopy-ui/ui";
+import { Button } from "canopy-ui/ui";
+import { Input } from "canopy-ui/ui";
 import {
   Dialog,
   DialogContent,

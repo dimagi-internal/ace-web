@@ -3,7 +3,7 @@ import { ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 
 import type { Message } from "../api/types.ws";
 
-import { Button } from "@marshellis/canopy-ui/ui";
+import { Button } from "canopy-ui/ui";
 import { MessageItem } from "./MessageItem";
 import { ToolCallPair } from "./chat/ToolCallPair";
 import { pairToolMessages } from "./chat/pairToolMessages";

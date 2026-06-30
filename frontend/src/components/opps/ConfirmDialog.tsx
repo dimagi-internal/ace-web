@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@marshellis/canopy-ui/ui";
+import { Button } from "canopy-ui/ui";
 import {
   Dialog,
   DialogContent,

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 
 import { getSkillDetail } from "../../api/system";
-import { Button } from "@marshellis/canopy-ui/ui";
+import { Button } from "canopy-ui/ui";
 import {
   Dialog,
   DialogContent,

@@ -3,9 +3,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Archive, ArchiveRestore, MoreHorizontal, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button } from "@marshellis/canopy-ui/ui";
-import { Input } from "@marshellis/canopy-ui/ui";
-import { Badge } from "@marshellis/canopy-ui/ui";
+import { Button } from "canopy-ui/ui";
+import { Input } from "canopy-ui/ui";
+import { Badge } from "canopy-ui/ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Skeleton } from "@marshellis/canopy-ui/ui";
+import { Skeleton } from "canopy-ui/ui";
 import {
   createSession,
   deleteSession,

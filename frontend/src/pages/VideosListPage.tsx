@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, Plus, Video } from "lucide-react";
 
-import { Badge } from "@marshellis/canopy-ui/ui";
-import { Skeleton } from "@marshellis/canopy-ui/ui";
+import { Badge } from "canopy-ui/ui";
+import { Skeleton } from "canopy-ui/ui";
 import { NewProgramDialog } from "@/components/videos/NewProgramDialog";
 import { listVideoPrograms, type VideoProgramCard } from "@/api/videos";
 
