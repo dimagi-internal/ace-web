@@ -27,7 +27,15 @@ dependencies = [
     "whitenoise>=6.7",
     "fastmcp>=3.2,<4",
     "python-json-logger>=2.0",
+    "canopy-runs",
 ]
+
+# The Django-free run-lifecycle core (read model + DriveRunStore) lives in the
+# canopy-web monorepo at packages/canopy_runs. ace ships the Google Drive client
+# already, so the bare lib (no [drive] extra) is enough — DriveRunStore depends
+# only on the local DriveClient Protocol, not the Google SDK.
+[tool.uv.sources]
+canopy-runs = { git = "https://github.com/jjackson/canopy-web.git", subdirectory = "packages/canopy_runs", branch = "main" }
 
 [project.optional-dependencies]
 dev = [

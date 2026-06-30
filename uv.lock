@@ -14,6 +14,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "boto3" },
+    { name = "canopy-runs" },
     { name = "channels" },
     { name = "channels-redis" },
     { name = "cryptography" },
@@ -58,6 +59,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=0.40,<1.0" },
     { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.20" },
     { name = "boto3", specifier = ">=1.34" },
+    { name = "canopy-runs", git = "https://github.com/jjackson/canopy-web.git?subdirectory=packages%2Fcanopy_runs&branch=main" },
     { name = "channels", specifier = ">=4.1" },
     { name = "channels-redis", specifier = ">=4.2" },
     { name = "cryptography", specifier = ">=42" },
@@ -282,6 +284,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/87/a4/e534cf7d2d0e8d880e25dd61e8d921ffcfe15bd696734589826f5a2df727/caio-0.9.25-cp314-cp314-manylinux_2_34_aarch64.whl", hash = "sha256:628a630eb7fb22381dd8e3c8ab7f59e854b9c806639811fc3f4310c6bd711d79", size = 81565, upload-time = "2026-03-04T22:08:27.483Z" },
     { url = "https://files.pythonhosted.org/packages/3f/ed/bf81aeac1d290017e5e5ac3e880fd56ee15e50a6d0353986799d1bc5cfd5/caio-0.9.25-cp314-cp314-manylinux_2_34_x86_64.whl", hash = "sha256:0ba16aa605ccb174665357fc729cf500679c2d94d5f1458a6f0d5ca48f2060a7", size = 80071, upload-time = "2026-03-04T22:08:28.751Z" },
     { url = "https://files.pythonhosted.org/packages/86/93/1f76c8d1bafe3b0614e06b2195784a3765bbf7b0a067661af9e2dd47fc33/caio-0.9.25-py3-none-any.whl", hash = "sha256:06c0bb02d6b929119b1cfbe1ca403c768b2013a369e2db46bfa2a5761cf82e40", size = 19087, upload-time = "2025-12-26T15:22:00.221Z" },
+]
+
+[[package]]
+name = "canopy-runs"
+version = "0.1.0"
+source = { git = "https://github.com/jjackson/canopy-web.git?subdirectory=packages%2Fcanopy_runs&branch=main#bead7db4e8e6a3328cb15afcdda9fcca515f48c6" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
 ]
 
 [[package]]
