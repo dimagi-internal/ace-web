@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AlertTriangle, LayoutTemplate } from "lucide-react";
 
-import { Skeleton } from "@canopy/workbench/ui";
+import { Skeleton } from "@marshellis/workbench/ui";
 import { WorkbenchLayout, usePaneCollapsed } from "@/components/workbench";
 import { listVideoTemplates, type TemplateMeta } from "@/api/videos";
 

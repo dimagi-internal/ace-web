@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { GitCompareArrows } from "lucide-react";
 
 import type { OppCard } from "@/api/types.ws";
-import { Button } from "@canopy/workbench/ui";
+import { Button } from "@marshellis/workbench/ui";
 import {
   Dialog,
   DialogContent,

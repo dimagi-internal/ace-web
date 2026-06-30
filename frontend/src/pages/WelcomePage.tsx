@@ -10,7 +10,7 @@ import {
   type VerifyResult,
 } from "../api/workspaces";
 import { getCurrentUser, type CurrentUser } from "../api/auth";
-import { Button } from "@canopy/workbench/ui";
+import { Button } from "@marshellis/workbench/ui";
 import { useWorkspace } from "../hooks/useWorkspace";
 
 type Step = "name" | "folder" | "verifying" | "verified" | "creating";

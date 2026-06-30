@@ -11,7 +11,7 @@ import {
 } from "@/api/videos";
 import type { ProgramSpec } from "@/components/videos/types";
 import { WorkbenchLayout, usePaneCollapsed } from "@/components/workbench";
-import { Skeleton } from "@canopy/workbench/ui";
+import { Skeleton } from "@marshellis/workbench/ui";
 import { BeatEditor } from "@/components/videos/BeatEditor";
 import { TemplateMetaPanel } from "@/components/videos/template/TemplateMetaPanel";
 import { TemplateExamplePanel } from "@/components/videos/template/TemplateExamplePanel";

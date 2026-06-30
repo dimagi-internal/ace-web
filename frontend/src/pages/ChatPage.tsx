@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ListTree } from "lucide-react";
 
-import { Button } from "@canopy/workbench/ui";
+import { Button } from "@marshellis/workbench/ui";
 import { createSession, getSession, updateSession } from "../api/sessions";
 import type { Session } from "../api/types.ws";
 import { AddTeammateButton } from "../components/AddTeammateButton";

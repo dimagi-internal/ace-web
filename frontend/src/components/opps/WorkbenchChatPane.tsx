@@ -4,7 +4,7 @@ import { ExternalLink, MessageSquare, Plus } from "lucide-react";
 
 import { discussStep, getLinkedChats } from "../../api/opps";
 import type { LinkedChat } from "../../api/types.ws";
-import { Button } from "@canopy/workbench/ui";
+import { Button } from "@marshellis/workbench/ui";
 import { ChatPanel } from "./ChatPanel";
 
 interface Props {

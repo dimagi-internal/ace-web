@@ -17,7 +17,7 @@ import {
   type WorkspaceMember,
   type WorkspaceRole,
 } from "../api/workspaces";
-import { Button } from "@canopy/workbench/ui";
+import { Button } from "@marshellis/workbench/ui";
 import { SlackPanel } from "@/components/SlackPanel";
 import { useNavigate } from "react-router-dom";
 

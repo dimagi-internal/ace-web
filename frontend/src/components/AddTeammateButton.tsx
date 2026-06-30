@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-import { Button } from "@canopy/workbench/ui";
-import { Input } from "@canopy/workbench/ui";
+import { Button } from "@marshellis/workbench/ui";
+import { Input } from "@marshellis/workbench/ui";
 import { addParticipant } from "../api/participants";
 
 interface Props {

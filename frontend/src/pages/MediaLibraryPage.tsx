@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { AlertTriangle, ExternalLink, Library } from "lucide-react";
 
-import { Badge } from "@canopy/workbench/ui";
-import { Skeleton } from "@canopy/workbench/ui";
+import { Badge } from "@marshellis/workbench/ui";
+import { Skeleton } from "@marshellis/workbench/ui";
 import {
   listMediaLibraryAudio,
   listMediaLibraryVideo,
