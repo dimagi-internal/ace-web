@@ -14,25 +14,18 @@ What the framework supplies vs. what ace supplies
 -------------------------------------------------
 ``DriveRunStore`` returns the run lifecycle read model (per-step STATUS, judge
 verdicts, QA results, the run header: mode/current_phase/current_step/started_at
-/derived run status). The framework read model is a deliberate REDUCTION of
-ace's richer Drive shape, so two field-groups are recovered ace-side after the
-map (exactly the caller-supplied buckets the mapper documents):
+/derived run status). As of the wave-4 enrichment ace is a TRUE single reader:
+the framework ``Artifact`` now carries ``ref`` (the Drive file id) + ``path``
+(run-relative), and the framework ``Decision`` ported ACE's full decisions-schema
+(``id`` / ``phase`` / ``options_considered`` / ``source`` /
+``override_reasoning`` / ``conflict_signals``). Both map straight across in
+``framework_map`` — there is NO second pass over the run tree to re-attribute
+artifacts or re-load decisions.
 
-  * **artifacts** — the framework ``Artifact`` dropped ``drive_file_id`` + the
-    run-relative ``path`` (it keeps name/url/mime/size/role). Those are
-    load-bearing (file-open + preview-by-path), so each step's artifacts are
-    re-attributed ace-side from the run tree with ace's own
-    ``_attribute_files_to_skills`` (full Drive identity, byte-for-byte the same
-    files + order the framework attributed — the store ports the identical
-    attribution, so status parity is preserved).
-  * **decisions** — the framework ``Decision`` dropped ``id`` /
-    ``options_considered`` / ``source`` / ``override_reasoning`` /
-    ``conflict_signals`` / the raw row ``phase``. Decisions are re-parsed
-    ace-side from ``decisions.yaml`` via ace's full ``_load_decisions``.
-
-Plus the Drive-identity / body fields with no framework source (opp manifest,
-pdd body, folder ids, raw run mode, per-run phase progress + last_actor) are
-supplied ace-side, same as the mapper's docstring prescribes.
+Only the genuinely framework-unavailable Drive-identity / body fields are still
+supplied ace-side (opp manifest, pdd body, folder ids, per-run phase progress +
+last_actor), plus the one-line raw run-mode override (the framework canonicalizes
+``mode`` to review|auto; ace keeps the literal run_state value).
 
 Cache + file-id tracking: every Drive read the store issues goes through the
 SAME client instance the chokepoint received — in production a
@@ -290,78 +283,6 @@ def flat_runs_summary_via_store(
 
 
 # --------------------------------------------------------------------------- #
-# artifact + decision recovery (the framework read model reduces both)
-# --------------------------------------------------------------------------- #
-def _attribute_run_artifacts(
-    client: DriveClient,
-    run_folder_id: str,
-    overview: dict,
-    skill_registry,
-    *,
-    pdd_file: DriveFile | None,
-) -> dict[str, list]:
-    """ace-side artifact attribution over the run tree → ``{skill: [ArtifactRef]}``
-    carrying full Drive identity (id + path). Reuses ace's own attribution so
-    the per-step artifact list (and order) is byte-for-byte the legacy result.
-    Appends the resolved PDD to ``idea-to-pdd`` when not already attributed,
-    mirroring the legacy reader."""
-    from apps.opps.sync import (
-        _artifact_matchers,
-        _attribute_files_to_skills,
-        _drive_file_to_artifact_ref,
-    )
-
-    run_tree = client.list_files(run_folder_id, recursive=True)
-    matchers = _artifact_matchers(overview.get("artifacts") or [])
-    registered = {s.name for s in skill_registry}
-    files_by_skill = _attribute_files_to_skills(run_tree, matchers, registered)
-    artifacts_by_skill: dict[str, list] = {
-        skill: [_drive_file_to_artifact_ref(f) for f in files]
-        for skill, files in files_by_skill.items()
-        if skill
-    }
-    if pdd_file is not None and not any(
-        a.name == pdd_file.name for a in artifacts_by_skill.get("idea-to-pdd", [])
-    ):
-        artifacts_by_skill.setdefault("idea-to-pdd", []).append(
-            _drive_file_to_artifact_ref(pdd_file)
-        )
-    return artifacts_by_skill
-
-
-def _recover_run_detail_extras(
-    client: DriveClient,
-    rd,
-    *,
-    run_folder_id: str,
-    overview: dict,
-    skill_registry,
-    state_data: dict,
-    pdd_file: DriveFile | None,
-) -> None:
-    """Mutate a mapped ``RunDetail`` in place to restore the field-groups the
-    framework read model dropped: per-step artifact Drive-identity, the full
-    decisions log, and the raw run mode."""
-    from apps.opps.sync import _load_decisions
-
-    artifacts_by_skill = _attribute_run_artifacts(
-        client,
-        run_folder_id,
-        overview,
-        skill_registry,
-        pdd_file=pdd_file,
-    )
-    for step in rd.steps:
-        step.artifacts = artifacts_by_skill.get(step.step.skill_name, [])
-
-    run_tree = client.list_files(run_folder_id, recursive=True)
-    rd.decisions = _load_decisions(client, run_tree)
-
-    # Framework canonicalizes mode to review|auto; ace keeps the literal.
-    rd.mode = state_data.get("mode") or rd.mode
-
-
-# --------------------------------------------------------------------------- #
 # full opp snapshot — multi-run layout
 # --------------------------------------------------------------------------- #
 def load_opp_run_via_store(
@@ -412,15 +333,8 @@ def load_opp_run_via_store(
     pdd_body = client.get_content(pdd_file.id, pdd_file.mime_type).content if pdd_file else ""
 
     rd = fm.map_run_detail(fw_run, folder_id=run_folder_id, run_state=state_data)
-    _recover_run_detail_extras(
-        client,
-        rd,
-        run_folder_id=run_folder_id,
-        overview=overview,
-        skill_registry=skill_registry,
-        state_data=state_data,
-        pdd_file=pdd_file,
-    )
+    # Framework canonicalizes mode to review|auto; ace keeps the literal.
+    rd.mode = state_data.get("mode") or rd.mode
     # current_phase/current_step: mirror the legacy ``_load_opp_run`` exactly —
     # take them from the matching run-summary row (which already applied the
     # ``phase``/``step`` → ``current_*`` precedence).
@@ -462,7 +376,7 @@ def load_opp_flat_via_store(
     """Assemble an ``OppSnapshot`` for a FLAT-layout opp (``run_state.yaml`` at
     the opp root, no ``runs/``). The opp folder is presented to
     ``DriveRunStore`` as a single synthetic run ``r1`` via ``_FlatRunClient``;
-    artifacts/decisions are recovered against the REAL opp folder tree."""
+    artifacts + decisions come straight from the framework read model."""
     from apps.opps.parsers import OppManifest
     from apps.opps.sync import OppSnapshot
 
@@ -478,15 +392,8 @@ def load_opp_flat_via_store(
     fw_run = store.get_run(slug, _FlatRunClient.RUN_ID)
 
     rd = fm.map_run_detail(fw_run, folder_id=opp_folder.id, run_state=state_data)
-    _recover_run_detail_extras(
-        client,
-        rd,
-        run_folder_id=opp_folder.id,
-        overview=overview,
-        skill_registry=skill_registry,
-        state_data=state_data,
-        pdd_file=pdd_file,
-    )
+    # Framework canonicalizes mode to review|auto; ace keeps the literal.
+    rd.mode = state_data.get("mode") or rd.mode
     # Flat layout: the legacy ``_load_opp_flat`` reads current_phase/current_step
     # from the opp-root run_state's ``current_*`` keys only (no phase/step
     # fallback).

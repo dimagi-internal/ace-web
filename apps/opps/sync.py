@@ -28,7 +28,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 import yaml
 from django.conf import settings
@@ -333,116 +332,13 @@ def _is_pending_step(step_value) -> bool:
 
 
 # --- Manifest-driven skill attribution ---
-
-
-_DATE_TOKEN = re.compile(r"YYYY-MM-DD")
-_DATE_LITERAL = re.compile(r"\d{4}-\d{2}-\d{2}")
-
-
-def _manifest_path_to_regex(path: str) -> re.Pattern[str]:
-    """Convert a manifest path (possibly with YYYY-MM-DD placeholders) to a regex."""
-    escaped = re.escape(path)
-    escaped = escaped.replace(r"YYYY\-MM\-DD", r"\d{4}-\d{2}-\d{2}")
-    return re.compile(rf"^{escaped}$")
-
-
-def _artifact_matchers(artifacts: list[dict[str, Any]]) -> list[tuple[re.Pattern[str], str]]:
-    """Build (regex, produced_by) pairs from the artifact manifest.
-
-    ``produced_by`` == "external" entries are skipped (those are inputs,
-    not skill outputs — e.g. ``idea.md``).
-    """
-    out: list[tuple[re.Pattern[str], str]] = []
-    for art in artifacts:
-        path = art.get("path") or ""
-        producer = art.get("produced_by") or ""
-        if not path or not producer or producer == "external":
-            continue
-        out.append((_manifest_path_to_regex(path), producer))
-    return out
-
-
-_FILENAME_PREFIX_RE = re.compile(r"^([a-z0-9][a-z0-9-]*?)(?:_|-eval[_.]|\.)")
-
-
-def _attribute_files_to_skills(
-    files: list[DriveFile],
-    matchers: list[tuple[re.Pattern[str], str]],
-    registered_skills: set[str] | None = None,
-) -> dict[str, list[DriveFile]]:
-    """Group Drive files by the skill that produces them.
-
-    Primary path: each file's ``.path`` is matched against the
-    plugin-declared manifest entries. The manifest is the source of
-    truth.
-
-    Fallback: when a file lives under a ``<N>-<phase>/`` folder and has
-    a kebab-cased filename prefix that matches a registered skill (the
-    plugin convention is ``<skill>_<role>.<ext>`` and
-    ``<skill>-eval_verdict.<ext>``), attribute it to that skill anyway.
-    This rescues files that the plugin writes but forgets to declare in
-    the manifest — like ``app-release_summary.md``, observed in the
-    wild — without dropping them silently.
-
-    Files with no manifest match and no recognizable filename prefix
-    are attributed to ``""`` so callers can surface them as
-    "unclassified" if desired.
-    """
-    by_skill: dict[str, list[DriveFile]] = {}
-    for f in files:
-        if _is_folder(f):
-            continue
-        matched: str | None = None
-        for pattern, producer in matchers:
-            if pattern.match(f.path):
-                matched = producer
-                break
-        if matched is None and registered_skills:
-            matched = _filename_prefix_skill(f, registered_skills)
-        key = matched or ""
-        by_skill.setdefault(key, []).append(f)
-    return by_skill
-
-
-def _filename_prefix_skill(
-    f: DriveFile, registered_skills: set[str]
-) -> str | None:
-    """Attribute a file via its ``<skill>_…`` or ``<skill>-eval_…`` prefix.
-
-    Only fires for files under a phase-prefixed folder
-    (``<N>-<phase>/…``) since that's where lifecycle skill outputs live;
-    avoids false positives at the opp root or in shared subdirs.
-    """
-    # f.path looks like "2-commcare/app-release_summary.md" — require the
-    # phase-prefixed parent.
-    parts = f.path.split("/")
-    if len(parts) < 2 or not re.match(r"^\d+-", parts[0]):
-        return None
-    name = parts[-1]
-    m = _FILENAME_PREFIX_RE.match(name)
-    if not m:
-        return None
-    candidate = m.group(1)
-    if candidate in registered_skills:
-        return candidate
-    # Also try stripping `-eval` for verdict-style names like
-    # `idea-to-pdd-eval_verdict.yaml` where the prefix is the eval skill.
-    if candidate.endswith("-eval"):
-        target = candidate[: -len("-eval")]
-        if target in registered_skills:
-            return target
-    return None
-
-
-def _drive_file_to_artifact_ref(f: DriveFile) -> ArtifactRef:
-    return ArtifactRef(
-        name=f.name,
-        drive_file_id=f.id,
-        drive_web_link=f.web_view_link,
-        size_bytes=f.size_bytes,
-        mime_type=f.mime_type,
-        path=f.path,
-    )
+#
+# Artifact attribution (manifest matchers + filename-prefix fallback +
+# DriveFile→ArtifactRef) was removed in the wave-4 single-reader swap. The
+# framework ``canopy_runs.drive.store.DriveRunStore`` now owns attribution and
+# surfaces each Artifact's Drive id (``ref``) + run-relative ``path`` directly,
+# so ace no longer re-attributes files (see ``apps/opps/framework_map`` +
+# ``apps/opps/framework_reader``).
 
 
 # --- Verdict extraction ---
@@ -545,153 +441,13 @@ def _detect_score_scale(data: dict) -> float | None:
     return max(candidates)
 
 
-def _load_decisions(
-    client: DriveClient,
-    run_files: list[DriveFile],
-) -> list[Decision]:
-    """Read ``decisions.yaml`` from the run-folder root and return rows.
-
-    Single file at the run root (``ACE/<opp>/runs/<run-id>/decisions.yaml``);
-    no per-phase split — each row carries its own ``phase`` tag. Schema
-    canonical at ACE ``lib/decisions-schema.ts``. Returns an empty list
-    when the file is missing or unparseable; consumers should treat
-    "no decisions log" as a normal state for legacy runs that predate
-    the framework.
-    """
-    file = _find_child(run_files, "decisions.yaml") or _find_child(run_files, "decisions.yml")
-    if file is None or _is_folder(file):
-        return []
-    try:
-        body = _read_text(client, file)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Failed to read decisions.yaml: %s", exc)
-        return []
-    try:
-        data = yaml.safe_load(body) or {}
-    except yaml.YAMLError:
-        return []
-    if not isinstance(data, dict):
-        return []
-    raw_rows = _extract_decision_rows(data)
-    return _parse_decision_rows(raw_rows)
-
-
-def _extract_decision_rows(data: dict) -> list:
-    """Pull the decision-row list out of a parsed decisions.yaml dict.
-
-    Canonical v3 shape uses ``decisions:`` as the top-level key (matches
-    ACE plugin ``lib/decisions-schema.ts:DecisionsLogSchema``).
-
-    Defensive fallback to ``rows:`` — when the ACE ``decisions_append_rows``
-    MCP atom isn't reachable (e.g. 2026-05-27 plugin.json registration gap
-    pre-ace#529), phase subagents fall back to a direct ``drive_create_file``
-    write and copy the SKILL.md example's ``rows:`` parameter name as the
-    YAML key. We accept that shape so legacy malformed files still render
-    in the Workbench (with a warning), instead of silently returning 0
-    rows. Returns ``[]`` when neither key resolves to a list.
-    """
-    canonical = data.get("decisions")
-    if canonical is None and isinstance(data.get("rows"), list):
-        log.warning(
-            "decisions.yaml uses legacy top-level key `rows:` instead of "
-            "canonical `decisions:` — most likely written by a phase subagent "
-            "that fell back from the typed `decisions_append_rows` MCP atom "
-            "to a direct file write. Rendering the rows for back-compat; "
-            "future writes should go through the atom (see ace#529 for the "
-            "registration fix).",
-        )
-        canonical = data["rows"]
-    if not isinstance(canonical, list):
-        return []
-    return canonical
-
-
-def _parse_decision_rows(raw_rows: list) -> list[Decision]:
-    """Convert raw decisions.yaml rows into Decision dataclasses.
-
-    Reads v3 fields first (``options``, ``reasoning``); falls back to
-    v2 (``options_considered``, ``notes``) so older runs still parse.
-    ``ai-default`` (v2/v3) falls back to ``default`` (v1). Old status
-    values (``applied``, ``open``) map to ``ai-default``.
-
-    Emits a single ``warning`` log line per row that has an ``id`` but
-    is missing ``question`` or ``ai-default`` — these are the rows that
-    render as blank cells in the workbench's Decisions Panel. Catches
-    future schema-drift regressions (e.g. ACE 2026-05-25 wrote rows
-    keyed ``decision:`` / ``rationale:`` instead of ``question:`` /
-    ``ai-default:``); without the log they're invisible to anything but
-    a human staring at the UI. The typed ``decisions_append_rows`` MCP
-    atom is the upstream defense — this log catches anything that
-    bypasses it (legacy writers, manual edits, future schema bumps that
-    skill prompts haven't caught up to).
-    """
-    out: list[Decision] = []
-    for row in raw_rows:
-        if not isinstance(row, dict):
-            continue
-        rid = str(row.get("id") or "").strip()
-        if not rid:
-            continue
-        opts_raw = row.get("options")
-        if opts_raw is None:
-            opts_raw = row.get("options_considered") or []
-        ai_default = str(
-            row.get("ai-default") or row.get("default") or ""
-        ).strip()
-        override = str(row.get("override") or "").strip()
-        raw_status = str(row.get("status") or "ai-default").strip().lower()
-        status = raw_status if raw_status == "overridden" else "ai-default"
-        question = str(row.get("question") or "").strip()
-        reasoning = str(row.get("reasoning") or row.get("notes") or "").strip()
-        # Override-reasoning may be written with either underscore (ACE v3)
-        # or hyphen (defensive — some hand-edited files). Both forms parse.
-        override_reasoning = str(
-            row.get("override_reasoning") or row.get("override-reasoning") or ""
-        ).strip()
-        # v4 fields. evidence_basis is a closed enum — normalize case and
-        # fall back to "stated" for legacy rows (no field) or any value
-        # outside the enum, so the frontend chip logic never sees garbage.
-        evidence_basis = str(row.get("evidence_basis") or "").strip().lower()
-        if evidence_basis not in ("stated", "inferred", "conflicting"):
-            evidence_basis = "stated"
-        # Mirror the options list-guard: a malformed scalar becomes [].
-        signals_raw = row.get("conflict_signals") or []
-        conflict_signals = (
-            [str(s) for s in signals_raw] if isinstance(signals_raw, list) else []
-        )
-
-        if not question or not ai_default:
-            log.warning(
-                "decisions.yaml row %r is missing %s — likely written against a "
-                "stale schema (expected v3 fields: question, ai-default, options, "
-                "reasoning). Row keys present: %s",
-                rid,
-                ", ".join(
-                    name
-                    for name, val in (("question", question), ("ai-default", ai_default))
-                    if not val
-                ),
-                sorted(row.keys()),
-            )
-
-        out.append(
-            Decision(
-                id=rid,
-                phase=str(row.get("phase") or "").strip(),
-                skill=str(row.get("skill") or "").strip(),
-                question=question,
-                ai_default=ai_default,
-                override=override,
-                options_considered=[str(o) for o in opts_raw] if isinstance(opts_raw, list) else [],
-                source=str(row.get("source") or "").strip(),
-                status=status,
-                notes=reasoning,
-                override_reasoning=override_reasoning,
-                evidence_basis=evidence_basis,
-                conflict_signals=conflict_signals,
-            )
-        )
-    return out
+# decisions.yaml loading/parsing (``_load_decisions`` + ``_extract_decision_rows``
+# + ``_parse_decision_rows``) was removed in the wave-4 single-reader swap. The
+# framework ``canopy_runs.drive.store.DriveRunStore`` ported ACE's full
+# decisions-schema and surfaces each Decision row (id / phase /
+# options_considered / source / override_reasoning / conflict_signals included)
+# directly; ace maps it straight across in ``apps/opps/framework_map`` rather
+# than re-reading decisions.yaml a second time.
 
 
 def _parse_verdict_yaml(body: str) -> JudgeVerdict | None:

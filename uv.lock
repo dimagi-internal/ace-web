@@ -289,7 +289,7 @@ wheels = [
 [[package]]
 name = "canopy-runs"
 version = "0.1.0"
-source = { git = "https://github.com/jjackson/canopy-web.git?subdirectory=packages%2Fcanopy_runs&branch=main#bead7db4e8e6a3328cb15afcdda9fcca515f48c6" }
+source = { git = "https://github.com/jjackson/canopy-web.git?subdirectory=packages%2Fcanopy_runs&branch=main#f39c712c0246d7233d664975f99fd7cbe7b58576" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },

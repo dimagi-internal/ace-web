@@ -63,12 +63,14 @@ into three buckets:
       * OppSnapshot.opp_folder_id  — the opp root folder id (``opp_folder_id``).
       * RunSummary.folder_id       — per-run folder id (``run_folder_id`` map).
       * OppSnapshot.pdd_body       — the PDD markdown body (``pdd_body``).
-      * ArtifactRef.drive_file_id  — UNAVAILABLE: the framework ``Artifact`` schema
-      * ArtifactRef.path             dropped both the Drive file id and the
-                                     run-relative path (it keeps name/url/mime/
-                                     size/role only). Emitted as ``""``. To restore
-                                     value-parity the framework ``Artifact`` would
-                                     need ``drive_file_id`` + ``path`` fields.
+
+  ArtifactRef.drive_file_id / .path and the full Decision row (id / phase /
+  options_considered / source / override_reasoning / conflict_signals) USED to
+  be in this "no framework source, recover ace-side" bucket. The framework read
+  model now carries them: ``Artifact.ref`` (the Drive file id) + ``Artifact.path``
+  (run-relative), and the Decision schema ported ACE's full decisions-schema.
+  They map straight across in ``map_artifact_ref`` / ``map_decision`` — ace is
+  now a TRUE single reader, with no second pass over the run tree.
 
   Framework-only with NO ace home (NOT mapped): ``Gate`` (ace's OppSnapshot
   surface has no gate field), and ``Run.session_link`` / ``Run.forked_from``
@@ -144,18 +146,20 @@ def _iso(value: dt.datetime | None) -> str | None:
 # leaf mappers
 # --------------------------------------------------------------------------- #
 def map_artifact_ref(a: FwArtifact) -> ArtifactRef:
-    """``canopy_runs.Artifact`` → ``ArtifactRef``.
+    """``canopy_runs.Artifact`` → ``ArtifactRef``, field-for-field.
 
-    ``drive_file_id`` and ``path`` have no framework source (the framework
-    Artifact keeps name/url/mime/size/role only) → emitted as ``""``.
+    The framework Artifact now carries the full Drive identity: ``ref`` is the
+    opaque adapter handle (the Drive adapter sets it to the Drive file id) and
+    ``path`` is the run-relative path. Both map straight across, so the file-id
+    + path no longer need ace-side re-attribution.
     """
     return ArtifactRef(
         name=a.name,
-        drive_file_id="",  # framework Artifact carries no Drive file id
+        drive_file_id=a.ref or "",
         drive_web_link=a.url or "",
         size_bytes=a.size,
         mime_type=a.mime_type or "",
-        path="",  # framework Artifact carries no run-relative path
+        path=a.path or "",
     )
 
 
@@ -214,25 +218,29 @@ def map_qa_result(v: FwVerdict | None, *, target_skill: str) -> QAResult | None:
     )
 
 
-def map_decision(d: FwDecision, *, phase: str = "") -> AceDecision:
-    """``canopy_runs.Decision`` → ace parsers ``Decision``.
+def map_decision(d: FwDecision) -> AceDecision:
+    """``canopy_runs.Decision`` → ace parsers ``Decision``, field-for-field.
 
-    ``skill`` ← ``step_key``; ``notes`` ← ``reasoning``. ``phase`` is supplied
-    by the caller (looked up from the step's phase), since the framework
-    Decision dropped it. ``id`` / ``options_considered`` / ``source`` /
-    ``override_reasoning`` / ``conflict_signals`` have no framework source and
-    take their dataclass defaults.
+    The framework Decision now carries the full decisions-schema (ported from
+    ACE), so every ace field maps straight across: ``skill`` ← ``step_key``,
+    ``notes`` ← ``reasoning``, and ``id`` / ``phase`` / ``options_considered`` /
+    ``source`` / ``override_reasoning`` / ``conflict_signals`` come directly off
+    the framework Decision. No ace-side decisions re-load is needed.
     """
     return AceDecision(
-        id="",
-        phase=phase,
+        id=d.id,
+        phase=d.phase,
         skill=d.step_key,
         question=d.question,
         ai_default=d.ai_default,
         override=d.override,
+        options_considered=list(d.options_considered or []),
+        source=d.source,
         status=d.status if d.status in ("ai-default", "overridden") else "ai-default",
         notes=d.reasoning or "",
+        override_reasoning=d.override_reasoning,
         evidence_basis=d.evidence_basis or "stated",
+        conflict_signals=list(d.conflict_signals or []),
     )
 
 
@@ -320,10 +328,6 @@ def _group_by_step_key(rows: list, run: FwRun) -> dict[str, list]:
     return out
 
 
-def _phase_by_step_key(run: FwRun) -> dict[str, str]:
-    return {s.key: s.title for s in run.steps}
-
-
 def map_run_detail(
     run: FwRun,
     *,
@@ -334,7 +338,6 @@ def map_run_detail(
     rs = run_state if isinstance(run_state, dict) else {}
     arts_by_step = _group_by_step_key(run.artifacts, run)
     verds_by_step = _group_by_step_key(run.verdicts, run)
-    phase_by_key = _phase_by_step_key(run)
 
     steps = [
         map_step_snapshot(
@@ -346,7 +349,7 @@ def map_run_detail(
         )
         for s in run.steps
     ]
-    decisions = [map_decision(d, phase=phase_by_key.get(d.step_key, "")) for d in run.decisions]
+    decisions = [map_decision(d) for d in run.decisions]
 
     skill_versions = rs.get("skill_versions")
     return RunDetail(
