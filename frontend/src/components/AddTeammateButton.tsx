@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@marshellis/canopy-ui/ui";
+import { Input } from "@marshellis/canopy-ui/ui";
 import { addParticipant } from "../api/participants";
 
 interface Props {

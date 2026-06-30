@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { createOpp } from "@/api/opps";
-import { Button } from "@/components/ui/button";
+import { Button } from "@marshellis/canopy-ui/ui";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Input } from "@marshellis/canopy-ui/ui";
 import { cn } from "@/lib/utils";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;

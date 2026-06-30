@@ -7,7 +7,7 @@ import {
   type ActivityEvent,
   type ActivityKind,
 } from "@/api/activity";
-import { Button } from "@/components/ui/button";
+import { Button } from "@marshellis/canopy-ui/ui";
 import { relativeTime } from "@/lib/relativeTime";
 
 interface Props {

@@ -14,7 +14,7 @@ import { TimelineView } from "../components/views/TimelineView";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
 import { useViewMode } from "../hooks/useViewMode";
 import { sortOpps, SORT_OPTIONS, type SortKey } from "../lib/sortOpps";
-import { Button } from "@/components/ui/button";
+import { Button } from "@marshellis/canopy-ui/ui";
 
 type LoadState =
   | { kind: "loading" }

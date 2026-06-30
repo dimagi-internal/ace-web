@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@marshellis/canopy-ui/ui";
+import { Button } from "@marshellis/canopy-ui/ui";
 import { getSlackStatus, type SlackStatus } from "@/api/slack";
 
 interface Props {

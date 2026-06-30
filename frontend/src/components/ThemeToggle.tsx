@@ -1,6 +1,6 @@
 import { Moon, Sun } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@marshellis/canopy-ui/ui";
 import { useTheme } from "@/components/ThemeProvider";
 
 export function ThemeToggle() {
