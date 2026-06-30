@@ -10,7 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "canopy-ui/ui";
 import {
   getSlackPushInfo,
   listSlackChannels,

@@ -16,7 +16,7 @@ import { useEffect, useState } from "react";
 import { getScorecard } from "../../api/opps";
 import type { Scorecard } from "../../api/types.ws";
 import { MarkdownRenderer } from "../MarkdownRenderer";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "canopy-ui/ui";
 
 interface Props {
   workspaceSlug: string;

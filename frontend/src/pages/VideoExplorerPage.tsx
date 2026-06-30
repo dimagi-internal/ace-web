@@ -30,7 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "canopy-ui/ui";
 import { relativeTime } from "@/lib/relativeTime";
 
 const POLL_INTERVAL_MS = 4000;

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AutoResizeTextarea } from "../AutoResizeTextarea";
+import { AutoResizeTextarea } from "canopy-ui/ui";
 
 describe("AutoResizeTextarea", () => {
   it("renders as a textbox", () => {

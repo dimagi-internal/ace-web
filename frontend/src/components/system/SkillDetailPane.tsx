@@ -9,7 +9,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "canopy-ui/ui";
 import type { SkillDetail, SkillSummary } from "./types";
 import { ArtifactList } from "./ArtifactList";
 import { MarkdownRenderer } from "../MarkdownRenderer";

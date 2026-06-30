@@ -5,7 +5,7 @@ import { artifactBodyUrl, writeArtifact } from "@/api/opps";
 import { Button } from "canopy-ui/ui";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
+} from "canopy-ui/ui";
 
 interface Props {
   open: boolean;
