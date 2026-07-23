@@ -135,7 +135,11 @@ export async function inviteMember(
     email: out.email,
     role: out.role,
     expires_at: out.updated_at, // best available timestamp
-    accept_url: "",             // not in v2 schema
+    // The v2 schema doesn't return accept_url, but it does return the token —
+    // build the path the router actually serves (`invite/:token` under the
+    // `/ace` basename). Callers prefix `{origin}/ace`. Previously hard-coded
+    // to "" here, which made "copy invite link" yield a tokenless, dead URL.
+    accept_url: `/invite/${out.token}`,
   };
 }
 

@@ -157,9 +157,14 @@ they read through to Google Drive.
   `Workspace.auto_join_domains` (JSONField, lowercased) — on every OAuth callback,
   users whose email domain matches a workspace's list are added
   as Editor (idempotent; never downgrades). `dimagi-team` is seeded with
-  `[dimagi.com, dimagi-ai.com]` so Dimagi sign-ins land inside the workspace
-  instead of the empty `/welcome` wizard. Owners can edit the list via
-  `PATCH /api/workspaces/{slug}` or the Workspace Settings page. Spec:
+  `[dimagi.com, dimagi-ai.com]` (migration 0004) plus `dimagi-associate.com`
+  (migration 0006, append-only) so Dimagi staff and associate sign-ins land
+  inside the workspace instead of the empty `/welcome` wizard. Owners can edit
+  the list via `PATCH /api/workspaces/{slug}` or the Workspace Settings page —
+  so **new auto-join migrations must APPEND, never overwrite** (0004's
+  wholesale-set style predates the editable UI and would clobber operator
+  edits). The auto-join role is hard-coded `editor` in
+  `apps/workspaces/auto_join.py`; it is not per-domain. Spec:
   `docs/specs/2026-04-27-multi-tenant-workspaces-design.md`.
 - **Automation auth on labs — Bearer PAT**: scripted tools authenticate with
   `Authorization: Bearer $ACE_WEB_PAT_TOKEN`. Per-human tokens are minted via
