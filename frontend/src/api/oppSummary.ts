@@ -48,6 +48,10 @@ export interface OppSummaryPayload {
     url: string;
     eval_score: number | null;
   }[];
+  dashboards: {
+    title: string;
+    url: string;
+  }[];
   selected_llo: {
     org_slug: string;
     org_display_name: string;

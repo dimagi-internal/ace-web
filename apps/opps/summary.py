@@ -25,7 +25,7 @@ What lives where:
     | ``connect-setup``         | ``products.connect.{program, opportunity, ace_test_user}`` |
     | ``ocs-setup``             | ``products.ocs_chatbot.{experiment_id, public_id, embed_key, admin_url, team_slug}`` |
     | ``qa-and-training``       | ``products.training.{deck, docs.*}``                  |
-    | ``synthetic-data-and-workflows`` | ``products.synthetic.{walkthroughs, workflows, labs_opp_id}`` |
+    | ``synthetic-data-and-workflows`` | ``products.synthetic.{walkthroughs, dashboards, workflows, labs_opp_id}`` |
     | ``solicitation-management`` | ``products.{solicitation, selected_llo}``           |
     | ``execution-management``  | ``products.launch``                                  |
     | ``closeout``              | ``products.{cycle_grade, opp_eval, learnings}``      |
@@ -306,6 +306,31 @@ def _read_walkthroughs(state: dict) -> list[dict]:
     return out
 
 
+def _read_dashboards(state: dict) -> list[dict]:
+    """Demo dashboards for the run — `synthetic.dashboards`.
+
+    Each entry is a ``{title, url}`` link (e.g. a Connect-Labs dashboard).
+    Skips malformed entries and any without a non-empty url; returns an
+    empty list when the block is absent.
+    """
+    synthetic = _phase_products(state, "synthetic-data-and-workflows", "synthetic")
+    raw = synthetic.get("dashboards") or []
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for d in raw:
+        if not isinstance(d, dict):
+            continue
+        url = d.get("url")
+        if not url:
+            continue
+        out.append({
+            "title": d.get("title") or "Dashboard",
+            "url": url,
+        })
+    return out
+
+
 def _read_selected_llo(state: dict) -> dict | None:
     llo = _phase_products(state, "solicitation-management", "selected_llo")
     if not llo or not llo.get("org_slug"):
@@ -458,6 +483,7 @@ def build_summary_payload(
         "training": _read_training(state),
         "assistant": _read_assistant(state),
         "walkthroughs": _read_walkthroughs(state),
+        "dashboards": _read_dashboards(state),
         "selected_llo": _read_selected_llo(state),
         "solicitation": _read_solicitation(state),
         "launch": _read_launch(state),

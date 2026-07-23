@@ -110,7 +110,7 @@ export default function OppSummaryPage() {
   const { payload } = state;
   const {
     opp, apps, connect, training, assistant, open_questions, workbench_url,
-    walkthroughs, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
+    walkthroughs, dashboards, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
   } = payload;
 
   return (
@@ -248,6 +248,22 @@ export default function OppSummaryPage() {
             ))
           ) : (
             <NotCreated label="Demo" />
+          )}
+        </SummarySection>
+
+        {/* Dashboards */}
+        <SummarySection title="Dashboards">
+          {dashboards.length > 0 ? (
+            dashboards.map((d) => (
+              <SummaryRow
+                key={d.url}
+                label="Dashboard"
+                name={d.title}
+                links={[{ label: "Open dashboard", href: d.url }]}
+              />
+            ))
+          ) : (
+            <NotCreated label="Dashboard" />
           )}
         </SummarySection>
 
