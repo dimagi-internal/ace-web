@@ -21,7 +21,7 @@ interface Props {
   driveFileId?: string;
 }
 
-export function ArtifactBody({ workspaceSlug, slug, runId, skill, artifactName, mimeType, webViewLink, driveFileId }: Props) {
+export function ArtifactBody({ workspaceSlug, slug, runId, artifactName, mimeType, webViewLink, driveFileId }: Props) {
   const [state, setState] = useState<
     | { kind: "loading" }
     | { kind: "error"; message: string }
@@ -40,7 +40,14 @@ export function ArtifactBody({ workspaceSlug, slug, runId, skill, artifactName, 
 
   useEffect(() => {
     setState({ kind: "loading" });
-    const url = artifactBodyUrl(workspaceSlug, slug, runId, skill, artifactName);
+    if (!driveFileId) {
+      // The download endpoint is keyed by the artifact's Drive file id;
+      // without it there is nothing to fetch. Fall through to the error
+      // state, which offers the Drive web link as a fallback.
+      setState({ kind: "error", message: "No Drive file id for this artifact" });
+      return;
+    }
+    const url = artifactBodyUrl(workspaceSlug, slug, runId, driveFileId);
     let cancelled = false;
     fetch(url, { credentials: "include" })
       .then(async (r) => {
@@ -78,7 +85,7 @@ export function ArtifactBody({ workspaceSlug, slug, runId, skill, artifactName, 
     return () => {
       cancelled = true;
     };
-  }, [workspaceSlug, slug, runId, skill, artifactName, mimeType, retryNonce]);
+  }, [workspaceSlug, slug, runId, driveFileId, artifactName, mimeType, retryNonce]);
 
   if (state.kind === "loading") {
     return (
