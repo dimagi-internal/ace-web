@@ -15,9 +15,11 @@ interface Props {
   runId: string;
   skill: string;
   artifactName: string;
+  /** Drive file id — the key the /artifacts/{id}/download endpoint uses. */
+  artifactId: string;
 }
 
-export function EditArtifactDialog({ open, onOpenChange, workspaceSlug, slug, runId, skill, artifactName }: Props) {
+export function EditArtifactDialog({ open, onOpenChange, workspaceSlug, slug, runId, skill, artifactName, artifactId }: Props) {
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -26,7 +28,7 @@ export function EditArtifactDialog({ open, onOpenChange, workspaceSlug, slug, ru
     if (!open) return;
     setLoading(true);
     let cancelled = false;
-    fetch(artifactBodyUrl(workspaceSlug, slug, runId, skill, artifactName), { credentials: "include" })
+    fetch(artifactBodyUrl(workspaceSlug, slug, runId, artifactId), { credentials: "include" })
       .then((r) => r.text())
       .then((text) => {
         if (!cancelled) setContent(text);
@@ -40,7 +42,7 @@ export function EditArtifactDialog({ open, onOpenChange, workspaceSlug, slug, ru
     return () => {
       cancelled = true;
     };
-  }, [open, slug, runId, skill, artifactName]);
+  }, [open, workspaceSlug, slug, runId, artifactId]);
 
   async function save() {
     setSaving(true);

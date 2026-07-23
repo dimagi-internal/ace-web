@@ -339,18 +339,19 @@ export function artifactBodyUrl(
   workspaceSlug: string,
   slug: string,
   runId: string,
-  skill: string,
-  artifactName: string,
+  artifactId: string,
 ): string {
-  // Prepend Vite's BASE_URL so this raw-fetch helper lands on the same
-  // /ace/ prefix the rest of the API uses via apiClient. Without this,
-  // prod fetches went to labs.connect.dimagi.com/api/... instead of
-  // /ace/api/..., which nginx refuses to route and the artifact body
-  // preview showed "Error: 404".
+  // Raw artifact content comes from the ninja backend's canonical
+  // id-keyed endpoint: GET /artifacts/{artifact_id}/download (raw bytes).
+  // The backend does NOT expose /steps/{skill}/artifacts/{name}, so the
+  // old skill+name path 404'd for EVERY step's preview (the artifact pane
+  // rendered "404"). Key by the artifact's Drive file id instead — it's
+  // present on every step-detail artifact. BASE_URL keeps the raw fetch on
+  // the /ace/ prefix nginx routes (a bare /api/... 404s in prod).
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   return (
     `${base}/api/w/${encodeURIComponent(workspaceSlug)}/opps/${encodeURIComponent(slug)}` +
-    `/steps/${encodeURIComponent(skill)}/artifacts/${encodeURIComponent(artifactName)}` +
+    `/artifacts/${encodeURIComponent(artifactId)}/download` +
     `?run_id=${encodeURIComponent(runId)}`
   );
 }

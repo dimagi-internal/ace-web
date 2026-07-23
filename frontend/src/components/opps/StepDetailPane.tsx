@@ -168,6 +168,7 @@ export function StepDetailPane({ workspaceSlug, slug, runId, skill, skillDisplay
           runId={runId}
           skill={skill}
           artifactName={editing.name}
+          artifactId={editing.drive_file_id}
         />
       )}
     </div>
