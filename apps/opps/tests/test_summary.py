@@ -163,16 +163,17 @@ def test_complete_run_returns_full_payload():
     learn = next(a for a in p["apps"] if a["kind"] == "Learn")
     deliver = next(a for a in p["apps"] if a["kind"] == "Deliver")
     assert learn["name"] == "Turmeric Market Survey — FLW Training"
-    assert learn["nova_url"] == "https://commcare.app/build/mFknxMlsoLlkR28R2qpE"
+    # nova_url is intentionally not surfaced on the public payload.
+    assert "nova_url" not in learn
     assert "d29dbb77" in learn["hq_url"]
     assert deliver["name"] == "Turmeric Market Survey — Vendor Visit"
     assert "91cf053e" in deliver["hq_url"]
 
-    # Connect
+    # Connect — only the opportunity is surfaced (program URL 404s publicly).
     assert p["connect"]["opportunity"]["name"].startswith("Turmeric Market Survey")
     assert "/opportunity/8c46d744" in p["connect"]["opportunity"]["url"]
     assert p["connect"]["opportunity"]["start_date"] == "2026-06-14"
-    assert p["connect"]["program"]["url"].endswith("cc8ff997-46ac-4c79-a7dd-9563b3babbba/")
+    assert "program" not in p["connect"]
 
     # Training
     assert p["training"]["deck"]["title"] == "Turmeric Market Survey — Training Deck"
@@ -205,9 +206,9 @@ def test_empty_state_omits_every_section():
     )
     assert p is not None
     assert p["apps"] == []
-    # Connect program still resolves from opp.yaml fallback.
-    assert p["connect"]["program"]["url"].endswith("cc8ff997-46ac-4c79-a7dd-9563b3babbba/")
-    assert p["connect"]["opportunity"] is None
+    # No opportunity → connect section is None (program is no longer surfaced,
+    # so the opp.yaml program fallback no longer keeps the block alive).
+    assert p["connect"] is None
     assert p["training"] is None
     assert p["assistant"] is None
     assert p["walkthroughs"] == []
@@ -531,7 +532,7 @@ def test_connect_renders_from_flat_products_shape():
 
     assert p["connect"]["opportunity"] is not None
     assert "/opportunity/8c46d744" in p["connect"]["opportunity"]["url"]
-    assert p["connect"]["program"]["url"].endswith("cc8ff997-46ac-4c79-a7dd-9563b3babbba/")
+    assert "program" not in p["connect"]
     learn = next(a for a in p["apps"] if a["kind"] == "Learn")
     assert learn["hq_url"] == (
         "https://www.commcarehq.org/a/connect-ace-prod/apps/view/d29dbb77012e400f9a700a731319ea55/"
