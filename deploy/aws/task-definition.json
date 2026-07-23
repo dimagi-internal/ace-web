@@ -54,7 +54,7 @@
         },
         {
           "name": "ACE_ALLOWED_EMAIL_DOMAINS",
-          "value": "dimagi.com,dimagi-ai.com"
+          "value": "dimagi.com,dimagi-ai.com,dimagi-associate.com"
         },
         {
           "name": "AWS_REGION",
