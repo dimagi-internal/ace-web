@@ -19,20 +19,18 @@ export interface OppSummaryPayload {
   apps: {
     kind: "Learn" | "Deliver";
     name: string;
-    nova_url: string | null;
+    // nova_url is intentionally not surfaced — the Nova build tool has no
+    // valid public URL. hq_url is the stakeholder-facing app link.
     hq_url: string | null;
   }[];
   connect: {
+    // Only the opportunity is surfaced — the program URL 404s publicly.
     opportunity: {
       name: string;
       url: string | null;
       start_date: string | null;
       end_date: string | null;
-    } | null;
-    program: {
-      name: string;
-      url: string | null;
-    } | null;
+    };
   } | null;
   training: {
     deck: { title: string; url: string } | null;

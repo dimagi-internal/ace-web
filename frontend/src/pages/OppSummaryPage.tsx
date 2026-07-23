@@ -135,27 +135,13 @@ export default function OppSummaryPage() {
             const app = apps.find((a) => a.kind === kind);
             if (!app) return <NotCreated key={kind} label={kind} />;
             const links: { label: string; href: string }[] = [];
-            if (app.nova_url) links.push({ label: "Open in Nova", href: app.nova_url });
             if (app.hq_url) links.push({ label: "Open in CommCare HQ", href: app.hq_url });
             return <SummaryRow key={kind} label={kind} name={app.name} links={links} />;
           })}
         </SummarySection>
 
-        {/* Connect opportunity — program + opp slots */}
+        {/* Connect opportunity — opp slot only (program URL 404s publicly) */}
         <SummarySection title="Connect opportunity">
-          {connect?.program ? (
-            <SummaryRow
-              label="Program"
-              name={connect.program.name}
-              links={
-                connect.program.url
-                  ? [{ label: "Open on Connect", href: connect.program.url }]
-                  : []
-              }
-            />
-          ) : (
-            <NotCreated label="Program" />
-          )}
           {connect?.opportunity ? (
             <SummaryRow
               label="Opp"
