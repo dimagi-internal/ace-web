@@ -211,6 +211,7 @@ def test_empty_state_omits_every_section():
     assert p["training"] is None
     assert p["assistant"] is None
     assert p["walkthroughs"] == []
+    assert p["dashboards"] == []
     assert p["opp"]["status"] == "in_progress"  # no end_date, no cycle_grade
 
 
@@ -347,6 +348,46 @@ def test_walkthroughs_render_from_synthetic_block():
     personas = [w["persona"] for w in p["walkthroughs"]]
     assert personas == ["llo-weekly-review", "program-admin-audit"]
     assert p["walkthroughs"][0]["eval_score"] == 8.4
+
+
+def test_dashboards_render_from_synthetic_block():
+    state = _state_yaml(**{
+        "synthetic-data-and-workflows": {
+            "synthetic": {
+                "dashboards": [
+                    {"title": "Household poverty score distribution",
+                     "url": "https://labs.connect.dimagi.com/dashboards/d1"},
+                    {"title": "FLW field verification",
+                     "url": "https://labs.connect.dimagi.com/dashboards/d2"},
+                    {"title": "No url yet"},          # filtered out
+                    {"url": "https://labs.connect.dimagi.com/dashboards/d3"},  # title defaults
+                    "not-a-dict",                       # filtered out
+                ],
+            },
+        },
+    })
+    drive = FakeDriveClient.from_tree(_full_tree(state_yaml=state))
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["dashboards"] == [
+        {"title": "Household poverty score distribution",
+         "url": "https://labs.connect.dimagi.com/dashboards/d1"},
+        {"title": "FLW field verification",
+         "url": "https://labs.connect.dimagi.com/dashboards/d2"},
+        {"title": "Dashboard",
+         "url": "https://labs.connect.dimagi.com/dashboards/d3"},
+    ]
+
+
+def test_dashboards_empty_when_absent():
+    drive = FakeDriveClient.from_tree(_full_tree())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["dashboards"] == []
 
 
 def test_selected_llo_renders_from_solicitation_block():
