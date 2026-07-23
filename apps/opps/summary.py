@@ -166,9 +166,10 @@ def _read_apps(state: dict) -> list[dict]:
             app = all_products.get(f"{kind_key}_app")
         if not isinstance(app, dict) or not app:
             continue
-        nova_url = app.get("nova_url")
-        if not nova_url and app.get("nova_app_id"):
-            nova_url = f"https://nova.dimagi.com/apps/{app['nova_app_id']}"
+        # nova_url is deliberately NOT surfaced on the public payload: the
+        # Nova build tool has no valid public URL (nova.dimagi.com fails DNS,
+        # commcare.app/apps/<id> 404s) and it's an internal artifact anyway.
+        # hq_url is the real, stakeholder-facing app link.
         hq_url = app.get("hq_url")
         if not hq_url and app.get("hq_app_id"):
             domain = app.get("domain") or apps_block.get("domain") or _connect_domain(state)
@@ -177,7 +178,6 @@ def _read_apps(state: dict) -> list[dict]:
         out.append({
             "kind": kind_label,
             "name": app.get("name") or f"{kind_label} app",
-            "nova_url": nova_url,
             "hq_url": hq_url,
         })
     return out
@@ -200,45 +200,32 @@ def _connect_domain(state: dict) -> str | None:
     )
 
 
-def _read_connect(state: dict, opp_yaml: dict) -> dict | None:
+def _read_connect(state: dict) -> dict | None:
+    """Public payload surfaces only the Connect *opportunity*.
+
+    The program URL (``connect.dimagi.com/a/<domain>/program/<uuid>/``) is
+    NOT a stakeholder page — it 404s even unauthenticated — so it's omitted.
+    The opportunity URL correctly 302s to sign-in, so it stays.
+    """
     connect = _phase_products(state, "connect-setup", "connect")
-    # Defensive fallback: some runs wrote the opportunity/program flat at
-    # products.* instead of nested under products.connect (jjackson/ace#705).
-    # Accept both so the summary renders rather than showing a blank section.
+    # Defensive fallback: some runs wrote the opportunity flat at products.*
+    # instead of nested under products.connect (jjackson/ace#705). Accept both.
     root = _phase_products(state, "connect-setup")
-    # Old schema: connect.program.{id, url}; new schema: connect.program_id
-    program = (
-        (opp_yaml.get("connect") or {}).get("program")
-        or connect.get("program")
-        or root.get("program")
-        or {}
-    )
     # Old schema: connect.opportunity.{id, name, url}; new schema: connect.opportunity_id
     opp = connect.get("opportunity") or root.get("opportunity") or {}
 
-    opp_block = None
     opp_id = opp.get("id") or connect.get("opportunity_id")
     opp_url = opp.get("url") or connect.get("deep_link")
-    if opp_id or opp_url:
-        opp_block = {
+    if not (opp_id or opp_url):
+        return None
+    return {
+        "opportunity": {
             "name": opp.get("name") or connect.get("opportunity_name") or "Connect opportunity",
             "url": opp_url,
             "start_date": opp.get("start_date") or connect.get("start_date"),
             "end_date": opp.get("end_date") or connect.get("end_date"),
-        }
-
-    prog_block = None
-    prog_id = program.get("id") or connect.get("program_id")
-    prog_url = program.get("url")
-    if prog_id or prog_url:
-        prog_block = {
-            "name": program.get("name") or connect.get("program_name") or "Program",
-            "url": prog_url,
-        }
-
-    if not opp_block and not prog_block:
-        return None
-    return {"opportunity": opp_block, "program": prog_block}
+        },
+    }
 
 
 def _read_training(state: dict) -> dict | None:
@@ -479,7 +466,7 @@ def build_summary_payload(
             run_id=run_id,
         ),
         "apps": _read_apps(state),
-        "connect": _read_connect(state, opp_yaml),
+        "connect": _read_connect(state),
         "training": _read_training(state),
         "assistant": _read_assistant(state),
         "walkthroughs": _read_walkthroughs(state),
