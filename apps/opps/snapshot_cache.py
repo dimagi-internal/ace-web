@@ -50,7 +50,9 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        cached Decision objects from v4 lack the new attrs)
 #   v6 — Decision grew ``override_reasoning``; entries written before this
 #        bump deserialise without the attr and serialize_decision crashes
-_KEY_VERSION = "v6"
+#   v7 — OppSnapshot grew ``saved_overrides`` (issue #673 PR 2); entries
+#        written before this bump deserialise without the attr
+_KEY_VERSION = "v7"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

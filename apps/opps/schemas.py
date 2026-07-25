@@ -170,6 +170,14 @@ class OppForkOut(StrictModel):
     working_session_slug: str
 
 
+class DecisionOverridesSaveIn(StrictModel):
+    """Body for POST /{slug}/decision-overrides. Carries NO edits — the
+    server reads the Redis shared buffer as the authoritative set, so a
+    stale tab can't clobber another reviewer's concurrent edits."""
+
+    source_run_id: RunId = Field(min_length=1)
+
+
 ForkStatus = Literal["unknown", "counting", "copying", "finalizing", "done", "error"]
 
 

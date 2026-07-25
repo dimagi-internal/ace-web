@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, ChevronRight, HelpCircle } from "lucide-react";
 
-import type { Decision } from "@/api/types.ws";
+import type { Decision, SavedDecisionOverride } from "@/api/types.ws";
 import { cn } from "@/lib/utils";
 
 import type { EditOp } from "./decisions/decisionsReducer";
@@ -17,6 +17,12 @@ interface Props {
    * three are omitted, the panel renders read-only (legacy behavior).
    */
   editBuffer?: readonly EditOp[];
+  /**
+   * Durable overrides from `<opp>/inputs/decision-overrides.yaml`, keyed
+   * by row id. Per-row precedence: pending buffer edit > saved override >
+   * committed run override > AI default.
+   */
+  savedOverrides?: Record<string, SavedDecisionOverride>;
   /**
    * Commit an override for a row. `new_answer` may be a new option not in
    * `decision.options_considered` — the write path appends it to options
@@ -38,7 +44,14 @@ const STATUS_RANK: Record<Decision["status"], number> = {
   "ai-default": 1,
 };
 
-export function DecisionsPanel({ phase, decisions, editBuffer, onEdit, onRevert }: Props) {
+export function DecisionsPanel({
+  phase,
+  decisions,
+  editBuffer,
+  savedOverrides,
+  onEdit,
+  onRevert,
+}: Props) {
   const phaseRows = useMemo(
     () =>
       decisions
@@ -61,6 +74,7 @@ export function DecisionsPanel({ phase, decisions, editBuffer, onEdit, onRevert 
       phaseRows={phaseRows}
       overridden={overridden}
       editBuffer={editBuffer}
+      savedOverrides={savedOverrides}
       onEdit={onEdit}
       onRevert={onRevert}
     />
@@ -71,12 +85,14 @@ function DecisionsPanelInner({
   phaseRows,
   overridden,
   editBuffer,
+  savedOverrides,
   onEdit,
   onRevert,
 }: {
   phaseRows: Decision[];
   overridden: number;
   editBuffer?: readonly EditOp[];
+  savedOverrides?: Record<string, SavedDecisionOverride>;
   onEdit?: (row_id: string, new_answer: string, override_reasoning?: string) => void;
   onRevert?: (row_id: string) => void;
 }) {
@@ -118,6 +134,7 @@ function DecisionsPanelInner({
               <DecisionRow
                 decision={d}
                 editBuffer={editBuffer}
+                savedOverride={savedOverrides?.[d.id]}
                 onEdit={onEdit}
                 onRevert={onRevert}
               />
@@ -132,11 +149,13 @@ function DecisionsPanelInner({
 function DecisionRow({
   decision,
   editBuffer,
+  savedOverride,
   onEdit,
   onRevert,
 }: {
   decision: Decision;
   editBuffer?: readonly EditOp[];
+  savedOverride?: SavedDecisionOverride;
   onEdit?: (row_id: string, new_answer: string, override_reasoning?: string) => void;
   onRevert?: (row_id: string) => void;
 }) {
@@ -151,9 +170,13 @@ function DecisionRow({
 
   const pendingEdit = editBuffer?.find((e) => e.row_id === decision.id);
   const committedAnswer = decision.override || decision.ai_default;
-  const effectiveValue = pendingEdit?.new_answer ?? committedAnswer;
+  // Precedence: pending buffer edit > saved override (durable file in
+  // inputs/) > committed run override > AI default.
+  const effectiveValue =
+    pendingEdit?.new_answer ?? savedOverride?.override ?? committedAnswer;
   const effectiveReason =
-    pendingEdit?.override_reasoning ?? decision.override_reasoning ?? "";
+    pendingEdit?.override_reasoning ??
+    (savedOverride ? (savedOverride.reasoning ?? "") : (decision.override_reasoning ?? ""));
   const isEdited = !!pendingEdit;
   // "Overridden" = effective answer differs from AI default (whether from a
   // committed override on the run, or a pending edit). Colors the row

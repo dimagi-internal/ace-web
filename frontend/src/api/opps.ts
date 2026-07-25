@@ -301,6 +301,47 @@ export async function forkOpp(
   return data as unknown as { slug: string; run_id: string; working_session_slug: string };
 }
 
+export interface SavedOverrideRow {
+  id: string;
+  phase: string;
+  question: string;
+  ai_default: string;
+  override: string;
+  override_reasoning?: string;
+  decided_by: string;
+  decided_at: string;
+  source_run_id: string;
+}
+
+export interface SaveDecisionOverridesResult {
+  file_id: string | null;
+  override_count: number;
+  /** The complete merged file content after this save. */
+  overrides: SavedOverrideRow[];
+}
+
+/**
+ * Persist the run's buffered decision edits to
+ * `<opp>/inputs/decision-overrides.yaml`. The body carries no edits — the
+ * server reads the shared Redis buffer as the authoritative set. No run
+ * is created; the buffer clears on success.
+ */
+export async function saveDecisionOverrides(
+  workspaceSlug: string,
+  slug: string,
+  sourceRunId: string,
+): Promise<SaveDecisionOverridesResult> {
+  const { data, response } = await apiClient.POST(
+    "/api/w/{workspace_slug}/opps/{slug}/decision-overrides",
+    {
+      params: { path: { workspace_slug: workspaceSlug, slug } },
+      body: { source_run_id: sourceRunId },
+    },
+  );
+  if (!response.ok) throw new Error(`saveDecisionOverrides: ${response.status}`);
+  return data as unknown as SaveDecisionOverridesResult;
+}
+
 export type ForkProgress =
   | { status: "unknown" | "counting" | "finalizing" }
   | { status: "copying"; copied: number; total: number; current?: string }

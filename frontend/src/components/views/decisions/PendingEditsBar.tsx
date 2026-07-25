@@ -1,17 +1,33 @@
-import { GitFork, Undo2 } from "lucide-react";
+import { GitFork, Save, Undo2 } from "lucide-react";
 
 interface Props {
   count: number;
   onDiscardAll: () => void;
   onForkAndRerun: () => void;
+  /**
+   * Persist the buffered edits to `<opp>/inputs/decision-overrides.yaml`
+   * without creating a run. Omit to hide the button (legacy usage).
+   * The label deliberately says "Save to Drive", NOT "Apply to next
+   * run" — the file is inert until the ACE plugin learns to read it.
+   */
+  onSaveToDrive?: () => void;
+  /** True while a save round-trip is in flight — disables the button. */
+  saving?: boolean;
 }
 
 /**
  * Sticky action bar at the bottom of the Phases view when the user has
- * buffered one or more decision edits. The "Fork & re-run" button opens
- * the ForkWithEditsDialog; nothing happens to the current run.
+ * buffered one or more decision edits. "Save to Drive" is the primary
+ * action (durable, no run created); "Fork & re-run" opens the
+ * ForkWithEditsDialog. Nothing happens to the current run either way.
  */
-export function PendingEditsBar({ count, onDiscardAll, onForkAndRerun }: Props) {
+export function PendingEditsBar({
+  count,
+  onDiscardAll,
+  onForkAndRerun,
+  onSaveToDrive,
+  saving,
+}: Props) {
   if (count <= 0) return null;
   const noun = count === 1 ? "pending edit" : "pending edits";
   return (
@@ -40,6 +56,17 @@ export function PendingEditsBar({ count, onDiscardAll, onForkAndRerun }: Props) 
           <GitFork className="h-3.5 w-3.5" />
           Fork & re-run
         </button>
+        {onSaveToDrive && (
+          <button
+            type="button"
+            onClick={onSaveToDrive}
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Save className="h-3.5 w-3.5" />
+            {saving ? "Saving…" : "Save to Drive"}
+          </button>
+        )}
       </div>
     </div>
   );

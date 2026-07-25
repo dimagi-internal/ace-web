@@ -20,6 +20,7 @@ from apps.api.etag import compute_etag, maybe_not_modified
 
 from .schemas import (
     ArtifactOut,
+    DecisionOverridesSaveIn,
     ForkProgress,
     GateDecisionIn,
     GateOut,
@@ -263,11 +264,26 @@ def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -
         from apps.opps.decisions_buffer import get_edits
         run_id_for_edits = run_id or (result.get("current_run") or {}).get("run_id", "")
         result["pending_edits"] = get_edits(slug, run_id_for_edits)
+        # Durable overrides from inputs/decision-overrides.yaml — kept
+        # fresh by the saved_overrides overlay above (#673 PR 2).
+        result["saved_overrides"] = getattr(cached, "saved_overrides", {}) or {}
         return result
     bypass_client = snapshot_cache.cold_load_client(client)
     try:
         with TouchedFileTracker() as tracker:
             snap = load_opp(bypass_client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
+            # Read inputs/decision-overrides.yaml inside the tracker so
+            # the file id lands in the snapshot's tracked set — content
+            # edits to it then invalidate this cache entry normally.
+            # First-creation freshness is the overlay's job (#673 PR 2).
+            from apps.opps.decision_overrides import fetch_saved_overrides
+            try:
+                snap.saved_overrides = fetch_saved_overrides(
+                    bypass_client, opp_folder_id=snap.opp_folder_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("load_rich_opp_snapshot: saved-overrides read failed: %s", exc)
+                snap.saved_overrides = {}
     except FileNotFoundError:
         return None
     access.overlay_workspace_display_name(snap.opp, slug, workspace=workspace)
@@ -280,6 +296,7 @@ def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -
     from apps.opps.decisions_buffer import get_edits
     run_id_for_edits = run_id or (result.get("current_run") or {}).get("run_id", "")
     result["pending_edits"] = get_edits(slug, run_id_for_edits)
+    result["saved_overrides"] = snap.saved_overrides or {}
     return result
 
 
@@ -1233,6 +1250,75 @@ def fork_opp_endpoint(
         ) from exc
     payload = OppForkOut.model_validate(result).model_dump(mode="json")
     return JsonResponse(payload, status=201)
+
+
+# ---------------------------------------------------------------------------
+# Decision overrides — POST /w/{workspace_slug}/opps/{slug}/decision-overrides
+# (issue #673 PR 2, spec docs/specs/2026-07-24-decision-review-save-design.md)
+# ---------------------------------------------------------------------------
+
+
+def save_decision_overrides_and_return(workspace, slug: str, body) -> dict:
+    """Persist the source run's buffered decision edits to
+    ``<opp>/inputs/decision-overrides.yaml``. No run is created.
+
+    The body carries no edits — the Redis buffer is the authoritative
+    set. The monkeypatch target in contract tests is this module-level
+    function.
+    """
+    from apps.opps import access
+    from apps.opps.decision_overrides import save_decision_overrides
+    from apps.opps.drive_cache import CachedDriveClient
+    from apps.opps.drive_client import get_drive_client
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+
+    ace_folder_id = access.resolve_ace_root_folder_id(workspace)
+    if ace_folder_id is None:
+        raise ProblemError(404, "ACE root folder not found", type_=TYPE_NOT_FOUND)
+    try:
+        inner = get_drive_client(workspace=workspace)
+    except ServiceAccountNotFound as exc:
+        raise ProblemError(
+            404, "Drive not configured", type_=TYPE_NOT_FOUND, detail=str(exc),
+        ) from exc
+    # bypass=True: reads go straight to Drive (we're about to write based
+    # on them, so a 30s-stale listing risks clobbering a concurrent save),
+    # while writes still invalidate the shared drive cache so the
+    # read-side saved_overrides overlay sees the new file immediately.
+    drive = CachedDriveClient(inner, bypass=True)
+    return save_decision_overrides(
+        drive=drive,
+        ace_root_folder_id=ace_folder_id,
+        opp_slug=slug,
+        source_run_id=body.source_run_id,
+    )
+
+
+@router.post(
+    "/{slug}/decision-overrides",
+    response={200: dict},
+    summary="Save buffered decision edits to Drive (inputs/decision-overrides.yaml)",
+)
+def save_decision_overrides_endpoint(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    body: DecisionOverridesSaveIn,
+) -> HttpResponse:
+    from apps.opps.decision_overrides import DecisionOverridesError
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    try:
+        result = save_decision_overrides_and_return(workspace, slug, body)
+    except DecisionOverridesError as exc:
+        if exc.code in ("opp-not-found", "run-not-found"):
+            raise ProblemError(
+                404, str(exc), type_=TYPE_NOT_FOUND, detail=exc.code,
+            ) from exc
+        raise ProblemError(
+            409, str(exc), type_=TYPE_CONFLICT, detail=exc.code,
+        ) from exc
+    return JsonResponse(result)
 
 
 # ---------------------------------------------------------------------------

@@ -296,6 +296,85 @@ describe("DecisionsPanel — edit mode", () => {
     expect(statusChip().textContent).toMatch(/^ai-default$/i);
   });
 
+  it("saved override renders as overridden (sky) and drives the header value", () => {
+    // Buffer cleared after a Save to Drive; the saved_overrides overlay
+    // keeps the row honest. Without this, saving looks like data loss.
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec()]}
+        editBuffer={[]}
+        savedOverrides={{
+          "row-1": {
+            override: "FLWs in rural Tanzania",
+            reasoning: "expert reviewed",
+          },
+        }}
+        onEdit={vi.fn()}
+        onRevert={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Decisions").closest("button")!);
+    const chip = statusChip();
+    expect(chip.textContent).toMatch(/^overridden$/i);
+    expect(chip.className).toMatch(/sky/);
+    // Header `→ value` follows the saved override.
+    expect(screen.getByText("FLWs in rural Tanzania")).toBeInTheDocument();
+  });
+
+  it("saved override reasoning shows in the Override reason detail row", () => {
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec()]}
+        savedOverrides={{
+          "row-1": {
+            override: "FLWs in rural Tanzania",
+            reasoning: "expert reviewed on 7/24",
+          },
+        }}
+      />,
+    );
+    expandPanelAndRow();
+    expect(screen.getByText(/expert reviewed on 7\/24/i)).toBeInTheDocument();
+  });
+
+  it("pending buffer edit beats a saved override (precedence)", () => {
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec()]}
+        editBuffer={[{ row_id: "row-1", new_answer: "FLWs in rural Uganda" }]}
+        savedOverrides={{
+          "row-1": { override: "FLWs in rural Tanzania" },
+        }}
+        onEdit={vi.fn()}
+        onRevert={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Decisions").closest("button")!);
+    const chip = statusChip();
+    expect(chip.textContent).toMatch(/overridden · pending/i);
+    // Header shows the pending value, not the saved one.
+    expect(screen.getByText("FLWs in rural Uganda")).toBeInTheDocument();
+  });
+
+  it("saved override beats the committed run override (precedence)", () => {
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[
+          dec({ override: "FLWs in rural Uganda", status: "overridden" }),
+        ]}
+        savedOverrides={{
+          "row-1": { override: "FLWs in rural Tanzania" },
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByText("Decisions").closest("button")!);
+    expect(screen.getByText("FLWs in rural Tanzania")).toBeInTheDocument();
+  });
+
   it("keeps the 'ai' marker on the AI's original pill after an override is staged", () => {
     render(
       <DecisionsPanel
