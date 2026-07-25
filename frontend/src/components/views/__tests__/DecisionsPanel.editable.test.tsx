@@ -1,8 +1,13 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { useReducer } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Decision } from "@/api/types.ws";
 import { DecisionsPanel } from "../DecisionsPanel";
+import {
+  decisionsReducer,
+  initialDecisionsEditState,
+} from "../decisions/decisionsReducer";
 
 function dec(over: Partial<Decision> = {}): Decision {
   return {
@@ -27,6 +32,16 @@ function dec(over: Partial<Decision> = {}): Decision {
 function expandPanelAndRow() {
   fireEvent.click(screen.getByText("Decisions").closest("button")!);
   fireEvent.click(screen.getByText("Who is the target population?"));
+}
+
+/** Chip helper — the status chip is the element whose text starts with the
+ * status word; disambiguated from pills/summary by its uppercase class. */
+function statusChip() {
+  const chips = screen
+    .getAllByText(/ai-default|overridden/i)
+    .filter((el) => /uppercase/.test(el.className));
+  expect(chips).toHaveLength(1);
+  return chips[0];
 }
 
 describe("DecisionsPanel — edit mode", () => {
@@ -60,7 +75,7 @@ describe("DecisionsPanel — edit mode", () => {
     ).toBeInTheDocument();
   });
 
-  it("clicking a non-default option pill stages an override + commits on Save", () => {
+  it("clicking a non-default option pill stages the edit immediately (no Save step)", () => {
     const onEdit = vi.fn();
     render(
       <DecisionsPanel
@@ -72,40 +87,66 @@ describe("DecisionsPanel — edit mode", () => {
       />,
     );
     expandPanelAndRow();
-    // Click the Tanzania pill — enters edit mode.
     fireEvent.click(screen.getByRole("button", { name: /FLWs in rural Tanzania/i }));
-    // Save commits the staged override.
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
     expect(onEdit).toHaveBeenCalledWith("row-1", "FLWs in rural Tanzania", undefined);
   });
 
-  it("clicking the current AI default pill is a no-op (no edit mode)", () => {
+  it("renders no per-row Save button", () => {
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec()]}
+        editBuffer={[]}
+        onEdit={vi.fn()}
+        onRevert={vi.fn()}
+      />,
+    );
+    expandPanelAndRow();
+    fireEvent.click(screen.getByRole("button", { name: /add override reason/i }));
+    expect(screen.queryByRole("button", { name: /^save$/i })).toBeNull();
+  });
+
+  it("clicking the current AI default pill is a no-op (radio semantics)", () => {
     const onEdit = vi.fn();
+    const onRevert = vi.fn();
     render(
       <DecisionsPanel
         phase="design"
         decisions={[dec()]}
         editBuffer={[]}
         onEdit={onEdit}
-        onRevert={vi.fn()}
+        onRevert={onRevert}
       />,
     );
     expandPanelAndRow();
-    // The AI default pill is the one with aria-pressed=true while no edit
-    // is in progress. There are two "FLWs in rural Kenya" matches on screen
-    // (the pill + the header summary line) so we have to disambiguate by
-    // role + pressed-state.
     const pressed = screen
       .getAllByRole("button", { pressed: true })
       .filter((b) => /FLWs in rural Kenya/.test(b.textContent ?? ""));
     expect(pressed).toHaveLength(1);
     fireEvent.click(pressed[0]);
-    // No Save button — edit mode never opened.
-    expect(screen.queryByRole("button", { name: /^save$/i })).toBeNull();
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(onRevert).not.toHaveBeenCalled();
+  });
+
+  it("clicking the AI default pill while an edit is pending reverts the row", () => {
+    const onEdit = vi.fn();
+    const onRevert = vi.fn();
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec()]}
+        editBuffer={[{ row_id: "row-1", new_answer: "FLWs in rural Tanzania" }]}
+        onEdit={onEdit}
+        onRevert={onRevert}
+      />,
+    );
+    expandPanelAndRow();
+    fireEvent.click(screen.getByRole("button", { name: /FLWs in rural Kenya/i }));
+    expect(onRevert).toHaveBeenCalledWith("row-1");
     expect(onEdit).not.toHaveBeenCalled();
   });
 
-  it("'Add override reason' opens textarea + new-option input; Save passes the reason", () => {
+  it("the override-reason textarea stages on blur", () => {
     const onEdit = vi.fn();
     render(
       <DecisionsPanel
@@ -120,7 +161,7 @@ describe("DecisionsPanel — edit mode", () => {
     fireEvent.click(screen.getByRole("button", { name: /add override reason/i }));
     const reason = screen.getByLabelText(/override reason for: Who is the target/i);
     fireEvent.change(reason, { target: { value: "LLO confirmed Tanzania" } });
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    fireEvent.blur(reason);
     expect(onEdit).toHaveBeenCalledWith(
       "row-1",
       "FLWs in rural Tanzania",
@@ -128,7 +169,7 @@ describe("DecisionsPanel — edit mode", () => {
     );
   });
 
-  it("typing a new option overrides the pill selection on Save", () => {
+  it("the new-option input stages on blur and wins over the pill value", () => {
     const onEdit = vi.fn();
     render(
       <DecisionsPanel
@@ -140,13 +181,134 @@ describe("DecisionsPanel — edit mode", () => {
       />,
     );
     expandPanelAndRow();
-    // Enter edit mode by clicking Tanzania, then type a new option.
-    fireEvent.click(screen.getByRole("button", { name: /FLWs in rural Tanzania/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add override reason/i }));
     const newOpt = screen.getByLabelText(/new option for: Who is the target/i);
     fireEvent.change(newOpt, { target: { value: "FLWs in rural Rwanda" } });
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    // New option wins over the pill click.
+    fireEvent.blur(newOpt);
     expect(onEdit).toHaveBeenCalledWith("row-1", "FLWs in rural Rwanda", undefined);
+  });
+
+  it("picking a pill carries the in-progress draft reason with it", () => {
+    const onEdit = vi.fn();
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec()]}
+        editBuffer={[]}
+        onEdit={onEdit}
+        onRevert={vi.fn()}
+      />,
+    );
+    expandPanelAndRow();
+    fireEvent.click(screen.getByRole("button", { name: /add override reason/i }));
+    const reason = screen.getByLabelText(/override reason for: Who is the target/i);
+    fireEvent.change(reason, { target: { value: "typed before picking" } });
+    fireEvent.click(screen.getByRole("button", { name: /FLWs in rural Tanzania/i }));
+    expect(onEdit).toHaveBeenLastCalledWith(
+      "row-1",
+      "FLWs in rural Tanzania",
+      "typed before picking",
+    );
+  });
+
+  it("chip reads ai-default (emerald) when nothing is staged or overridden", () => {
+    render(<DecisionsPanel phase="design" decisions={[dec()]} />);
+    fireEvent.click(screen.getByText("Decisions").closest("button")!);
+    const chip = statusChip();
+    expect(chip.textContent).toMatch(/^ai-default$/i);
+    expect(chip.className).toMatch(/emerald/);
+  });
+
+  it("chip reads overridden (sky) for a committed run override", () => {
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec({ override: "FLWs in rural Tanzania", status: "overridden" })]}
+      />,
+    );
+    fireEvent.click(screen.getByText("Decisions").closest("button")!);
+    const chip = statusChip();
+    expect(chip.textContent).toMatch(/^overridden$/i);
+    expect(chip.className).toMatch(/sky/);
+  });
+
+  it("chip reads 'overridden · pending' (violet) for a buffered edit", () => {
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec()]}
+        editBuffer={[{ row_id: "row-1", new_answer: "FLWs in rural Tanzania" }]}
+        onEdit={vi.fn()}
+        onRevert={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Decisions").closest("button")!);
+    const chip = statusChip();
+    expect(chip.textContent).toMatch(/overridden · pending/i);
+    expect(chip.className).toMatch(/violet/);
+  });
+
+  it("chip falls back to ai-default when the buffered edit equals the default with no reason", () => {
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec({ override: "FLWs in rural Tanzania", status: "overridden" })]}
+        editBuffer={[{ row_id: "row-1", new_answer: "FLWs in rural Kenya" }]}
+        onEdit={vi.fn()}
+        onRevert={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Decisions").closest("button")!);
+    const chip = statusChip();
+    expect(chip.textContent).toMatch(/^ai-default$/i);
+    expect(chip.className).toMatch(/emerald/);
+  });
+
+  it("pill click flips the chip to pending and updates the header value (integration with reducer)", () => {
+    function Harness() {
+      const [state, dispatch] = useReducer(
+        decisionsReducer,
+        undefined,
+        initialDecisionsEditState,
+      );
+      return (
+        <DecisionsPanel
+          phase="design"
+          decisions={[dec()]}
+          editBuffer={state.buffer}
+          onEdit={(row_id, new_answer, override_reasoning) =>
+            dispatch({ type: "APPLY_EDIT", row_id, new_answer, override_reasoning })
+          }
+          onRevert={(row_id) => dispatch({ type: "REVERT_EDIT", row_id })}
+        />
+      );
+    }
+    render(<Harness />);
+    expandPanelAndRow();
+    fireEvent.click(screen.getByRole("button", { name: /FLWs in rural Tanzania/i }));
+    const chip = statusChip();
+    expect(chip.textContent).toMatch(/overridden · pending/i);
+    // Header `→ value` follows the staged pick. The value renders in the
+    // header summary and the pill; assert at least the summary updated.
+    expect(screen.getAllByText("FLWs in rural Tanzania").length).toBeGreaterThanOrEqual(2);
+    // Revert restores AI-DEFAULT.
+    fireEvent.click(screen.getByRole("button", { name: /^revert$/i }));
+    expect(statusChip().textContent).toMatch(/^ai-default$/i);
+  });
+
+  it("keeps the 'ai' marker on the AI's original pill after an override is staged", () => {
+    render(
+      <DecisionsPanel
+        phase="design"
+        decisions={[dec()]}
+        editBuffer={[{ row_id: "row-1", new_answer: "FLWs in rural Tanzania" }]}
+        onEdit={vi.fn()}
+        onRevert={vi.fn()}
+      />,
+    );
+    expandPanelAndRow();
+    const kenyaPill = screen.getByRole("button", { name: /FLWs in rural Kenya/i });
+    expect(within(kenyaPill).getByText("ai")).toBeInTheDocument();
   });
 
   it("shows an 'edited' badge and the effective value when row is in buffer", () => {
@@ -232,7 +394,9 @@ describe("DecisionsPanel — edit mode", () => {
     // Re-expand.
     fireEvent.click(rowButton);
     // Edit mode should be off; the trigger button should be visible again.
-    expect(screen.queryByRole("button", { name: /^save$/i })).toBeNull();
+    expect(
+      screen.queryByLabelText(/override reason for: Who is the target/i),
+    ).toBeNull();
     expect(
       screen.getByRole("button", { name: /add override reason/i }),
     ).toBeInTheDocument();
@@ -254,26 +418,25 @@ describe("DecisionsPanel — edit mode", () => {
     expect(onRevert).toHaveBeenCalledWith("row-1");
   });
 
-  it("Save with answer == ai_default and no reason calls onRevert", () => {
+  it("blurring the reason empty with answer == ai_default reverts a pending edit", () => {
     const onEdit = vi.fn();
     const onRevert = vi.fn();
     render(
       <DecisionsPanel
         phase="design"
         decisions={[dec()]}
-        editBuffer={[{ row_id: "row-1", new_answer: "FLWs in rural Tanzania" }]}
+        editBuffer={[{ row_id: "row-1", new_answer: "FLWs in rural Kenya" }]}
         onEdit={onEdit}
         onRevert={onRevert}
       />,
     );
     expandPanelAndRow();
-    // We have a pending edit → 'Edit override reason' button shows up
-    // because there's no reason yet, and the new-option/reason form opens
-    // pre-seeded with the current selection. Click the Kenya pill (the AI
-    // default) to flip back, then Save → should revert.
+    // Pending edit equals the AI default and has no reason. Opening the
+    // reason editor and blurring it empty should collapse the edit into
+    // a revert rather than stage a meaningless override.
     fireEvent.click(screen.getByRole("button", { name: /add override reason/i }));
-    fireEvent.click(screen.getByRole("button", { name: /FLWs in rural Kenya/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+    const reason = screen.getByLabelText(/override reason for: Who is the target/i);
+    fireEvent.blur(reason);
     expect(onRevert).toHaveBeenCalledWith("row-1");
     expect(onEdit).not.toHaveBeenCalled();
   });
