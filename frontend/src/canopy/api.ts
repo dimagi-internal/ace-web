@@ -124,6 +124,9 @@ export async function fetchOlderMessages(base: string, id: string, before: numbe
   return page.messages;
 }
 
+// The REST twin of the kit's WS `chat.stop` (useSessionSocket's `stopChat`) —
+// this endpoint stops the session's in-flight turn from outside an open
+// socket (e.g. before one has been established).
 export async function stopCanopySession(base: string, id: string): Promise<void> {
   await canopyJson<void>(base, `/api/canopy-sessions/${encodeURIComponent(id)}/stop`, { method: "POST" });
 }
