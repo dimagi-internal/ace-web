@@ -93,6 +93,7 @@ export const router = createBrowserRouter(
         { path: "opps/:slug", element: <NoWorkspaceRedirect subPath="opps/:slug" /> },
         { path: "sessions", element: <NoWorkspaceRedirect subPath="sessions" /> },
         { path: "chat", element: <NoWorkspaceRedirect subPath="chat" /> },
+        { path: "chat/c/:canopyId", element: <NoWorkspaceRedirect subPath="chat/c/:canopyId" /> },
         { path: "chat/:slug", element: <NoWorkspaceRedirect subPath="chat/:slug" /> },
       ],
     },

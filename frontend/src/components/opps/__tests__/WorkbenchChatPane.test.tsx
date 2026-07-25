@@ -3,9 +3,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import * as oppsApi from "@/api/opps";
+import type { LinkedChat } from "@/api/types.ws";
 import * as canopyApi from "@/canopy/api";
 import { useCanopyStatus } from "@/canopy/useCanopyStatus";
-import { WorkbenchChatPane } from "@/components/opps/WorkbenchChatPane";
+import { WorkbenchChatPane, deriveLegacySelection } from "@/components/opps/WorkbenchChatPane";
 
 // The ChatPanel pulls in WebSocket hooks and getSession; we don't need
 // to exercise any of that — stub it out so the "no chats yet" empty
@@ -30,6 +31,46 @@ function LocationProbe() {
   const loc = useLocation();
   return <div data-testid="location">{loc.pathname}</div>;
 }
+
+function stepChat(slug: string): LinkedChat {
+  return {
+    slug,
+    title: slug,
+    updated_at: "",
+    owner_email: "",
+    source: "web",
+    kind: "step",
+    step_skill: null,
+    step_skill_display: null,
+    preview: "",
+  };
+}
+
+describe("deriveLegacySelection (fix-round-1 review, Minor 5)", () => {
+  const list = [stepChat("keep-me")];
+
+  it("drops a stale legacy selection no longer present in the refreshed list, falling through to the first step chat", () => {
+    expect(deriveLegacySelection({ kind: "legacy", slug: "gone" }, list)).toEqual({
+      kind: "legacy",
+      slug: "keep-me",
+    });
+  });
+
+  it("keeps a legacy selection that's still present in the list", () => {
+    const prev = { kind: "legacy" as const, slug: "keep-me" };
+    expect(deriveLegacySelection(prev, list)).toEqual(prev);
+  });
+
+  it("never touches a canopy selection — a legacy-scoped refresh can't see canopy sessions at all", () => {
+    const prev = { kind: "canopy" as const, id: "canopy-1" };
+    expect(deriveLegacySelection(prev, list)).toBe(prev);
+  });
+
+  it("falls through to null when nothing matches and there's no step chat", () => {
+    expect(deriveLegacySelection(null, [])).toBeNull();
+    expect(deriveLegacySelection({ kind: "legacy", slug: "gone" }, [])).toBeNull();
+  });
+});
 
 describe("WorkbenchChatPane — start-chat navigation (issue #470)", () => {
   beforeEach(() => {

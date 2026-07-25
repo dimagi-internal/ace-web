@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { ListTree } from "lucide-react";
 
 import { Button } from "canopy-ui/ui";
@@ -12,7 +12,7 @@ import { RecentSessionsSidebar } from "../components/RecentSessionsSidebar";
 import { SharePopover } from "../components/SharePopover";
 import { ChatPanel } from "../components/opps/ChatPanel";
 import { CanopyChatPanel } from "../canopy/CanopyChatPanel";
-import { listCanopySessions } from "../canopy/api";
+import { getCanopySession } from "../canopy/api";
 import { useCanopyStatus } from "../canopy/useCanopyStatus";
 import {
   SESSIONS_UPDATED_EVENT,
@@ -179,30 +179,37 @@ function ChatNotFound({ slug, detail }: { slug: string; detail: string }) {
  * The canopy hosted-chat twin of `ChatPage` above, for the
  * `/w/:workspaceSlug/chat/c/:canopyId` route. Reuses the same sidebar chrome
  * (extended with `currentCanopyId` for row-highlighting); the live chat body
- * is the ace-agnostic `CanopyChatPanel`. Title comes from the canopy
- * session list (`listCanopySessions`) rather than a per-session detail
- * fetch (no such endpoint exists yet — see Task 3's client), refreshed on
- * `session.title_updated` via the same `SESSIONS_UPDATED_EVENT` bus every
- * other session list already listens on.
+ * is the ace-agnostic `CanopyChatPanel`. Title comes from the single-session
+ * detail endpoint (`getCanopySession` — NOT the filtered/paginated list;
+ * fix-round-1 review, Important 2), refreshed on `session.title_updated`
+ * via the same `SESSIONS_UPDATED_EVENT` bus every other session list
+ * already listens on.
+ *
+ * Guarded against a direct/stale URL to this route with the canopy flag
+ * OFF: without this, the page would mount `CanopyChatPanel` (which mints a
+ * canopy token and opens a WS) against a backend that may never have been
+ * wired up for this deployment, hitting a 503 instead of just bouncing the
+ * user back to ordinary chat (fix-round-1 review, Minor 6). `status ===
+ * null` (still loading) intentionally renders neither the redirect nor the
+ * panel — it waits rather than guessing.
  */
 export function CanopyChatRoutePage() {
-  // workspaceSlug isn't read here — RecentSessionsSidebar (below) reads it
-  // straight from the route params itself, same as the legacy ChatPage's
-  // ChatNotFound branch does.
-  const { canopyId = "" } = useParams<{ canopyId: string; workspaceSlug: string }>();
+  const { canopyId = "", workspaceSlug = "" } = useParams<{
+    canopyId: string;
+    workspaceSlug: string;
+  }>();
   const status = useCanopyStatus();
+  const enabled = status?.enabled ?? false;
   const base = status?.base_url ?? "";
   const [title, setTitle] = useState<string>("");
 
   useEffect(() => {
-    if (!base || !canopyId) return;
+    if (!status || !enabled || !canopyId) return;
     let cancelled = false;
     const load = () => {
-      listCanopySessions(base)
-        .then((rows) => {
-          if (cancelled) return;
-          const mine = rows.find((r) => r.id === canopyId);
-          if (mine) setTitle(mine.title);
+      getCanopySession(base, canopyId)
+        .then((detail) => {
+          if (!cancelled) setTitle(detail.title);
         })
         .catch(() => {
           /* non-fatal: the header just shows a blank/stale title */
@@ -214,7 +221,11 @@ export function CanopyChatRoutePage() {
       cancelled = true;
       window.removeEventListener(SESSIONS_UPDATED_EVENT, load);
     };
-  }, [base, canopyId]);
+  }, [status, enabled, base, canopyId]);
+
+  if (status && !enabled) {
+    return <Navigate to={workspaceSlug ? `/w/${workspaceSlug}/chat` : "/chat"} replace />;
+  }
 
   return (
     <div className="flex h-full bg-background text-foreground">
@@ -222,11 +233,17 @@ export function CanopyChatRoutePage() {
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-border bg-background px-4 py-2">
           <h1 className="truncate text-sm font-semibold text-foreground">
-            {title.trim() || "Chat"}
+            {status ? title.trim() || "Chat" : "Loading…"}
           </h1>
         </header>
         <div className="flex-1 overflow-hidden">
-          <CanopyChatPanel key={canopyId} sessionId={canopyId} />
+          {status ? (
+            <CanopyChatPanel key={canopyId} sessionId={canopyId} />
+          ) : (
+            <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
+              Loading…
+            </div>
+          )}
         </div>
       </div>
     </div>

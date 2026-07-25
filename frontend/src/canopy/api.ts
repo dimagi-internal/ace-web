@@ -30,6 +30,18 @@ export interface CanopySessionSummary {
   metadata?: Record<string, string>;
 }
 
+/** `GET /api/canopy-sessions/{id}` (`SessionDetailOut`) — the single-session
+ *  detail fetch. Unlike `listCanopySessions`, this is NOT filtered by
+ *  `state=active` or capped by a page `limit`, so it's the correct source
+ *  for "does THIS session have a bound runner" / "does THIS session have
+ *  more history before the loaded window" — an archived or page-201st
+ *  session silently vanishes from the list endpoint but is still directly
+ *  gettable here (fix-round-1 review, Important 2). */
+export interface CanopySessionDetail extends CanopySessionSummary {
+  has_more_before: boolean;
+  oldest_loaded_turn_index: number | null;
+}
+
 async function canopyFetch(base: string, path: string, init: RequestInit = {}): Promise<Response> {
   const doFetch = (bearer: string) =>
     fetch(`${base}${path}`, {
@@ -95,6 +107,27 @@ export async function listCanopySessions(
   return rows.map(mapSessionSummary);
 }
 
+/**
+ * `GET /api/canopy-sessions/{id}` — a single session's detail, including
+ * `has_more_before`/`oldest_loaded_turn_index` (absent from the list
+ * endpoint's `SessionOut` rows). This is the correct call for "does THIS
+ * one session have a bound runner right now" — `listCanopySessions` and
+ * filtering client-side silently misses an archived or page-201st session
+ * (fix-round-1 review, Important 2).
+ */
+export async function getCanopySession(base: string, id: string): Promise<CanopySessionDetail> {
+  const raw = await canopyJson<Record<string, unknown>>(
+    base,
+    `/api/canopy-sessions/${encodeURIComponent(id)}`,
+  );
+  return {
+    ...mapSessionSummary(raw),
+    has_more_before: Boolean(raw.has_more_before),
+    oldest_loaded_turn_index:
+      (raw.oldest_loaded_turn_index as number | null | undefined) ?? null,
+  };
+}
+
 export async function createCanopySession(input: {
   title?: string;
   opp_slug?: string;
@@ -131,6 +164,22 @@ export async function stopCanopySession(base: string, id: string): Promise<void>
   await canopyJson<void>(base, `/api/canopy-sessions/${encodeURIComponent(id)}/stop`, { method: "POST" });
 }
 
+// The viewer-liveness pair (`RunnerBinding.stream_desired`): attaching tells
+// the bound runner to start streaming this session live; detaching lets it
+// stop once the last viewer leaves. Best-effort — callers (CanopyChatPanel)
+// fire these on mount/unmount and never block rendering on the result.
+export async function attachCanopySession(base: string, id: string): Promise<void> {
+  await canopyFetch(base, `/api/canopy-sessions/${encodeURIComponent(id)}/attach`, {
+    method: "POST",
+  });
+}
+
+export async function detachCanopySession(base: string, id: string): Promise<void> {
+  await canopyFetch(base, `/api/canopy-sessions/${encodeURIComponent(id)}/detach`, {
+    method: "POST",
+  });
+}
+
 export async function placeCanopySession(
   base: string,
   id: string,
@@ -146,6 +195,18 @@ export async function placeCanopySession(
   });
 }
 
+/**
+ * `Runner.live_status`'s wire VALUES (`apps/harness/models.py`:
+ * `ONLINE, STALE, DISCONNECTED, DEGRADED, RETIRED = ("online", "stale",
+ * "disconnected", "degraded", "retired")`) — lowercase, passed through
+ * unchanged by `listCanopyRunners` below. Referenced as a shared constant
+ * (rather than repeating the literal at every comparison site) after
+ * fix-round-1's Critical 1: an earlier draft compared against `"ONLINE"`
+ * (the Python CONSTANT's name, not its value), which made every runner
+ * look offline and mis-fired the placement banner on every chat.
+ */
+export const RUNNER_STATUS_ONLINE = "online";
+
 export interface CanopyRunnerSummary {
   id: string;
   name: string;
@@ -156,7 +217,8 @@ export interface CanopyRunnerSummary {
 
 export async function listCanopyRunners(base: string): Promise<CanopyRunnerSummary[]> {
   // harness.schemas.RunnerOut's wire field is `status` (resolved from the
-  // model's `live_status`, e.g. ONLINE/OFFLINE/DEGRADED) — renamed here to
+  // model's `live_status` — values are lowercase: online/stale/disconnected/
+  // degraded/retired, see RUNNER_STATUS_ONLINE above) — renamed here to
   // `live_status` to match what the directed-routing UI actually reasons
   // about, per the interface Task 4 consumes.
   const rows = await canopyJson<Record<string, unknown>[]>(base, `/api/harness/runners/`);

@@ -25,7 +25,30 @@ interface Props {
  *  slug) or a canopy hosted-chat session (by id). Kept as a discriminated
  *  union rather than two parallel nullable strings so "both selected" is
  *  unrepresentable. */
-type Selection = { kind: "legacy"; slug: string } | { kind: "canopy"; id: string } | null;
+export type Selection = { kind: "legacy"; slug: string } | { kind: "canopy"; id: string } | null;
+
+/**
+ * Re-derive the legacy selection after a `getLinkedChats` refresh. Extracted
+ * as a pure function so the exact semantics are unit-testable in isolation:
+ * a canopy selection is untouched (it isn't a member of `list` at all, so it
+ * could never satisfy the "still present" check below); a legacy selection
+ * still present in the refreshed list is kept; anything else (a stale
+ * legacy slug no longer in the list, or no selection at all) falls through
+ * to the first step-scoped chat, or `null`.
+ *
+ * This restores the pre-canopy behavior exactly: the original
+ * single-branch `if (prev && list.some(...)) return prev` DROPPED a stale
+ * selection rather than keeping it. An earlier draft of the `Selection`
+ * refactor introduced `if (prev) return prev`, which kept ANY truthy
+ * `prev` — including a legacy slug no longer in `list` — a flag-off
+ * behavior change caught by fix-round-1 review (Minor 5).
+ */
+export function deriveLegacySelection(prev: Selection, list: LinkedChat[]): Selection {
+  if (prev?.kind === "canopy") return prev;
+  if (prev?.kind === "legacy" && list.some((c) => c.slug === prev.slug)) return prev;
+  const firstStep = list.find((c) => c.kind === "step");
+  return firstStep ? { kind: "legacy", slug: firstStep.slug } : null;
+}
 
 /**
  * The Workbench's right pane. Replaces the old in-step LinkedChats list
@@ -62,13 +85,9 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
         setChats(list);
         // Auto-select the first step-scoped chat if nothing is selected.
         // We DON'T auto-select an opp-wide chat — those are off-topic for
-        // a "talk about THIS step" interaction.
-        setSelection((prev) => {
-          if (prev?.kind === "legacy" && list.some((c) => c.slug === prev.slug)) return prev;
-          if (prev) return prev;
-          const firstStep = list.find((c) => c.kind === "step");
-          return firstStep ? { kind: "legacy", slug: firstStep.slug } : null;
-        });
+        // a "talk about THIS step" interaction. See `deriveLegacySelection`
+        // for the exact carry-over/drop semantics.
+        setSelection((prev) => deriveLegacySelection(prev, list));
       })
       .catch(() => setChats([]));
   }, [slug, runId, skill]);

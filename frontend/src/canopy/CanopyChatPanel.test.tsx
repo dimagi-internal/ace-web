@@ -13,6 +13,13 @@ import type { SessionState } from "canopy-ui/chat";
  * here we mock `useSessionSocket` so we control the socket state precisely,
  * and assert CanopyChatPanel wires it into `ChatPanel`/`PlacementBanner`
  * correctly.
+ *
+ * Fix-round-1 note: runner-status fixtures below use the REAL lowercase
+ * wire values (`"online"`/`"stale"` — `apps/harness/models.py`'s
+ * `Runner.live_status` constants), not the Python constant NAMES. An
+ * earlier draft used `"ONLINE"`/`"OFFLINE"` fixtures, which is exactly how
+ * a case-mismatch bug (comparing against the constant's name instead of
+ * its value) slipped through review undetected.
  */
 
 const sessionSocketMock = vi.fn();
@@ -36,20 +43,41 @@ vi.mock("./token", () => ({
 }));
 
 vi.mock("./api", () => ({
-  listCanopySessions: vi.fn().mockResolvedValue([]),
+  RUNNER_STATUS_ONLINE: "online",
+  getCanopySession: vi.fn().mockResolvedValue({
+    id: "sess-1",
+    title: "Chat",
+    agent_slug: null,
+    updated_at: "now",
+    runner_name: null,
+    has_more_before: false,
+    oldest_loaded_turn_index: null,
+  }),
   listCanopyRunners: vi.fn().mockResolvedValue([]),
   placeCanopySession: vi.fn().mockResolvedValue(undefined),
   fetchOlderMessages: vi.fn().mockResolvedValue([]),
+  attachCanopySession: vi.fn().mockResolvedValue(undefined),
+  detachCanopySession: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { useCanopyStatus } from "./useCanopyStatus";
-import { listCanopySessions, listCanopyRunners, placeCanopySession } from "./api";
+import {
+  getCanopySession,
+  listCanopyRunners,
+  placeCanopySession,
+  attachCanopySession,
+  detachCanopySession,
+} from "./api";
+import { getCanopyToken } from "./token";
 import { CanopyChatPanel } from "./CanopyChatPanel";
 
 const useCanopyStatusMock = vi.mocked(useCanopyStatus);
-const listCanopySessionsMock = vi.mocked(listCanopySessions);
+const getCanopySessionMock = vi.mocked(getCanopySession);
 const listCanopyRunnersMock = vi.mocked(listCanopyRunners);
 const placeCanopySessionMock = vi.mocked(placeCanopySession);
+const attachCanopySessionMock = vi.mocked(attachCanopySession);
+const detachCanopySessionMock = vi.mocked(detachCanopySession);
+const getCanopyTokenMock = vi.mocked(getCanopyToken);
 
 function baseState(overrides: Partial<SessionState> = {}): SessionState {
   return {
@@ -88,11 +116,19 @@ describe("CanopyChatPanel", () => {
       workspace: "ws-1",
       agent: "echo",
     });
-    listCanopySessionsMock.mockResolvedValue([]);
+    getCanopySessionMock.mockResolvedValue({
+      id: "sess-1",
+      title: "Chat",
+      agent_slug: null,
+      updated_at: "now",
+      runner_name: null,
+      has_more_before: false,
+      oldest_loaded_turn_index: null,
+    });
     listCanopyRunnersMock.mockResolvedValue([]);
   });
 
-  it("renders and wires ChatPanel from the mocked socket state", async () => {
+  it("shows a Connecting… shell until status + token are ready, then renders the wired ChatPanel", async () => {
     mockSocket({
       state: baseState({
         current_user_id: 7,
@@ -115,12 +151,24 @@ describe("CanopyChatPanel", () => {
 
     render(<CanopyChatPanel sessionId="sess-1" />);
 
+    // Renders once status + the token mint have settled.
+    await screen.findByText("hello");
     expect(sessionSocketMock).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "sess-1" }),
     );
-    expect(screen.getByText("hello")).toBeInTheDocument();
-    // Let the (irrelevant to this test) session/runner-fleet lookups settle.
-    await waitFor(() => expect(listCanopySessionsMock).toHaveBeenCalled());
+  });
+
+  it("renders the Connecting… shell (not the socket) while useCanopyStatus is still null", async () => {
+    useCanopyStatusMock.mockReturnValue(null);
+    mockSocket();
+
+    render(<CanopyChatPanel sessionId="sess-1" />);
+
+    expect(screen.getByText(/connecting/i)).toBeInTheDocument();
+    expect(sessionSocketMock).not.toHaveBeenCalled();
+    // Let the (still-warming, since status hasn't resolved) token-mint
+    // effect settle so its state update lands inside this test's act().
+    await waitFor(() => expect(getCanopyTokenMock).toHaveBeenCalled());
   });
 
   it("calls the kit's stopChat when onStop fires", async () => {
@@ -145,22 +193,39 @@ describe("CanopyChatPanel", () => {
 
     render(<CanopyChatPanel sessionId="sess-1" />);
 
-    const stopButton = screen.getByRole("button", { name: /stop/i });
+    const stopButton = await screen.findByRole("button", { name: /stop/i });
     fireEvent.click(stopButton);
 
     expect(stopChatMock).toHaveBeenCalledWith("m1");
-    // Let the (irrelevant to this test) session/runner-fleet lookups settle.
-    await waitFor(() => expect(listCanopySessionsMock).toHaveBeenCalled());
   });
 
-  it("shows the placement banner when the bound runner is offline, and onPlace posts a placement", async () => {
+  it("attaches on mount and detaches on unmount (viewer-liveness pair)", async () => {
     mockSocket();
-    listCanopySessionsMock.mockResolvedValue([
-      { id: "sess-1", title: "Chat", agent_slug: "echo", updated_at: "now", runner_name: "runner-a" },
-    ]);
+
+    const { unmount } = render(<CanopyChatPanel sessionId="sess-1" />);
+
+    await waitFor(() => expect(attachCanopySessionMock).toHaveBeenCalledWith("/canopy", "sess-1"));
+    expect(detachCanopySessionMock).not.toHaveBeenCalled();
+
+    unmount();
+
+    await waitFor(() => expect(detachCanopySessionMock).toHaveBeenCalledWith("/canopy", "sess-1"));
+  });
+
+  it("shows the placement banner when the bound runner is offline (lowercase wire status), and onPlace posts a placement", async () => {
+    mockSocket();
+    getCanopySessionMock.mockResolvedValue({
+      id: "sess-1",
+      title: "Chat",
+      agent_slug: "echo",
+      updated_at: "now",
+      runner_name: "runner-a",
+      has_more_before: false,
+      oldest_loaded_turn_index: null,
+    });
     listCanopyRunnersMock.mockResolvedValue([
-      { id: "r-a", name: "runner-a", live_status: "OFFLINE", ready: false, capabilities: { sessions: true } },
-      { id: "r-b", name: "runner-b", live_status: "ONLINE", ready: true, capabilities: { sessions: true } },
+      { id: "r-a", name: "runner-a", live_status: "stale", ready: false, capabilities: { sessions: true } },
+      { id: "r-b", name: "runner-b", live_status: "online", ready: true, capabilities: { sessions: true } },
     ]);
 
     render(<CanopyChatPanel sessionId="sess-1" />);
@@ -177,18 +242,62 @@ describe("CanopyChatPanel", () => {
     });
   });
 
-  it("does not show a placement banner when the bound runner is online", async () => {
+  it("does not show a placement banner when the bound runner is online (lowercase wire status)", async () => {
     mockSocket();
-    listCanopySessionsMock.mockResolvedValue([
-      { id: "sess-1", title: "Chat", agent_slug: "echo", updated_at: "now", runner_name: "runner-a" },
-    ]);
+    getCanopySessionMock.mockResolvedValue({
+      id: "sess-1",
+      title: "Chat",
+      agent_slug: "echo",
+      updated_at: "now",
+      runner_name: "runner-a",
+      has_more_before: false,
+      oldest_loaded_turn_index: null,
+    });
     listCanopyRunnersMock.mockResolvedValue([
-      { id: "r-a", name: "runner-a", live_status: "ONLINE", ready: true, capabilities: { sessions: true } },
+      { id: "r-a", name: "runner-a", live_status: "online", ready: true, capabilities: { sessions: true } },
     ]);
 
     render(<CanopyChatPanel sessionId="sess-1" />);
 
     await waitFor(() => expect(listCanopyRunnersMock).toHaveBeenCalled());
     expect(screen.queryByText(/is unavailable/i)).not.toBeInTheDocument();
+  });
+
+  it("seeds hasMoreBefore from the session detail's real has_more_before (not a hardcoded true)", async () => {
+    mockSocket({
+      state: baseState({
+        messages: [
+          {
+            id: "m1",
+            turn_index: 5,
+            role: "user",
+            content: {},
+            plaintext: "hi",
+            status: "complete",
+            error_detail: null,
+            started_at: null,
+            completed_at: "now",
+            created_at: "now",
+          },
+        ],
+      }),
+    });
+    getCanopySessionMock.mockResolvedValue({
+      id: "sess-1",
+      title: "Chat",
+      agent_slug: null,
+      updated_at: "now",
+      runner_name: null,
+      has_more_before: false,
+      oldest_loaded_turn_index: null,
+    });
+
+    render(<CanopyChatPanel sessionId="sess-1" />);
+
+    await screen.findByText("hi");
+    await waitFor(() => expect(getCanopySessionMock).toHaveBeenCalledWith("/canopy", "sess-1"));
+    // has_more_before: false → no "Load earlier" button, even though a
+    // message is already loaded (the old hardcoded-true seed would show it).
+    expect(screen.queryByRole("button", { name: /load earlier/i })).not.toBeInTheDocument();
   });
 });

@@ -11,9 +11,12 @@ import {
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { notifySessionsUpdated } from "../hooks/useRecentSessions";
 import {
+  RUNNER_STATUS_ONLINE,
+  attachCanopySession,
+  detachCanopySession,
   fetchOlderMessages,
+  getCanopySession,
   listCanopyRunners,
-  listCanopySessions,
   placeCanopySession,
   type CanopyRunnerSummary,
 } from "./api";
@@ -71,7 +74,7 @@ function isSessionCapable(runner: Pick<CanopyRunnerSummary, "capabilities">): bo
 /** Online + session-capable runners from the fleet — the eligible set for
  *  the "Continue on…" picker. */
 function onlineSessionCapableRunners(fleet: readonly CanopyRunnerSummary[]): CanopyRunnerSummary[] {
-  return fleet.filter((r) => r.live_status === "ONLINE" && isSessionCapable(r));
+  return fleet.filter((r) => r.live_status === RUNNER_STATUS_ONLINE && isSessionCapable(r));
 }
 
 /** Whether the session's bound runner (matched by name — canopy's
@@ -86,7 +89,7 @@ function isBoundRunnerOffline(
   if (!runnerName) return false;
   const match = fleet.find((r) => r.name === runnerName);
   if (!match) return false;
-  return match.live_status !== "ONLINE";
+  return match.live_status !== RUNNER_STATUS_ONLINE;
 }
 
 const FLEET_POLL_MS = 30_000;
@@ -106,16 +109,55 @@ interface Props {
  * drop-in chat body — `<CanopyChatPanel sessionId={id} />` — for any ace
  * surface (the dedicated `/w/:workspace/chat/c/:canopyId` route, or
  * embedded inline in the Workbench's chat pane).
+ *
+ * Doesn't mount the actual socket (`CanopyChatPanelBody`) until BOTH
+ * `useCanopyStatus()` has resolved (so the WS URL is built from a real
+ * `base_url`, not `""`) AND a token has been minted — the kit's
+ * `useSessionSocket` connects immediately on mount, so mounting it before
+ * either is ready opens a bogus/tokenless socket while the real one is
+ * still loading (fix-round-1 review, Important 4). A brief "Connecting…"
+ * shell renders instead.
  */
 export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
   const status = useCanopyStatus();
-  const base = status?.base_url ?? "";
+  const [tokenReady, setTokenReady] = useState(false);
 
-  // Pre-empt a dead cached token before the first connect attempt.
   useEffect(() => {
-    void getCanopyToken();
+    let cancelled = false;
+    setTokenReady(false);
+    getCanopyToken()
+      .catch(() => {
+        /* A failed mint shouldn't wedge the UI behind "Connecting…"
+           forever — fall through and let the kit's own reconnect ladder
+           handle it (peekCanopyToken() stays null, the WS omits ?token=,
+           the server 4001s, the kit retries). */
+      })
+      .finally(() => {
+        if (!cancelled) setTokenReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
+  if (!status || !tokenReady) {
+    return (
+      <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
+        Connecting…
+      </div>
+    );
+  }
+
+  return <CanopyChatPanelBody sessionId={sessionId} base={status.base_url} onTitleUpdated={onTitleUpdated} />;
+}
+
+interface BodyProps {
+  sessionId: string;
+  base: string;
+  onTitleUpdated?: () => void;
+}
+
+function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
   const handleTitleUpdated = useCallback(() => {
     // Broadcast on the same event bus RecentSessionsSidebar/legacy chat
     // lists already listen on, so any list rendering this session's title
@@ -140,6 +182,25 @@ export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
 
   const socket = useSessionSocket({ sessionId, wsUrl, onTitleUpdated: handleTitleUpdated });
 
+  // Viewer-liveness pair: tells the bound runner to start/stop streaming
+  // this session live (RunnerBinding.stream_desired). Fire-and-forget on
+  // mount/unmount — never block rendering on either call (fix-round-1
+  // review, Scope gap 7). Chained off the attach promise (not raced)
+  // so a StrictMode mount/unmount/remount double-invoke — or a plain fast
+  // unmount — can't detach before its paired attach lands.
+  useEffect(() => {
+    const attached = attachCanopySession(base, sessionId).catch(() => {
+      /* non-fatal: a failed attach just means no bound runner to notify */
+    });
+    return () => {
+      void attached.finally(() => {
+        void detachCanopySession(base, sessionId).catch(() => {
+          /* non-fatal */
+        });
+      });
+    };
+  }, [base, sessionId]);
+
   // --- Placement banner: the session's bound runner going offline. --------
   const [runnerName, setRunnerName] = useState<string | null>(null);
   const [fleetRunners, setFleetRunners] = useState<CanopyRunnerSummary[]>([]);
@@ -147,21 +208,28 @@ export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
   const [placeInfo, setPlaceInfo] = useState<string | null>(null);
   const [placeError, setPlaceError] = useState<string | null>(null);
 
-  // Session summary lookup (for `runner_name` — the socket's `session.state`
-  // snapshot carries no liveness fields). Fetched once per session; a later
-  // reassignment is picked up by the recovery poll below re-deriving
-  // `boundOffline` against a refreshed fleet, same as canopy-web's own page.
+  // --- "Load earlier" history ----------------------------------------------
+  const [hasMoreBefore, setHasMoreBefore] = useState(false);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+
+  // The single-session detail (NOT the filtered/paginated list — Important
+  // 2) for `runner_name` (the socket's `session.state` snapshot carries no
+  // liveness fields) and the real `has_more_before` (Important 3 — this
+  // used to be hardcoded `true`, which is a lie for a session that's
+  // already fully loaded). A later runner reassignment is picked up by the
+  // recovery poll below re-deriving `boundOffline` against a refreshed
+  // fleet, same as canopy-web's own page.
   useEffect(() => {
-    if (!base) return;
     let live = true;
-    listCanopySessions(base)
-      .then((rows) => {
+    getCanopySession(base, sessionId)
+      .then((detail) => {
         if (!live) return;
-        const mine = rows.find((r) => r.id === sessionId);
-        setRunnerName(mine?.runner_name ?? null);
+        setRunnerName(detail.runner_name ?? null);
+        setHasMoreBefore(detail.has_more_before);
       })
       .catch(() => {
-        /* non-fatal: the offline banner just won't have evidence to show */
+        /* non-fatal: the offline banner just won't have evidence to show,
+           and "Load earlier" stays hidden until a later fetch succeeds */
       });
     return () => {
       live = false;
@@ -169,7 +237,6 @@ export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
   }, [base, sessionId]);
 
   const refreshFleet = useCallback(() => {
-    if (!base) return;
     listCanopyRunners(base)
       .then((r) => setFleetRunners(r))
       .catch(() => {
@@ -181,10 +248,16 @@ export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
     refreshFleet();
   }, [refreshFleet]);
 
+  // Reset all per-session UI state on a session switch. In every current
+  // caller `CanopyChatPanel` is rendered with `key={sessionId}` (a fresh
+  // mount per session), but resetting explicitly keeps this component
+  // correct even if a future caller omits the key.
   useEffect(() => {
     setPlacing(false);
     setPlaceInfo(null);
     setPlaceError(null);
+    setHasMoreBefore(false);
+    setLoadingEarlier(false);
   }, [sessionId]);
 
   const boundOffline = isBoundRunnerOffline(runnerName, fleetRunners);
@@ -197,7 +270,6 @@ export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
-      if (!base) return;
       listCanopyRunners(base)
         .then((r) => {
           if (!cancelled) setFleetRunners(r);
@@ -221,7 +293,7 @@ export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
       onlineSessionCapableRunners(fleetRunners).map((r) => ({
         id: r.id,
         name: r.name,
-        online: r.live_status === "ONLINE",
+        online: r.live_status === RUNNER_STATUS_ONLINE,
       })),
     [fleetRunners],
   );
@@ -260,10 +332,6 @@ export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
     [base, sessionId, placementFail, refreshFleet],
   );
 
-  // --- "Load earlier" history ----------------------------------------------
-  const [hasMoreBefore, setHasMoreBefore] = useState(true);
-  const [loadingEarlier, setLoadingEarlier] = useState(false);
-
   const oldestTurn = useMemo(() => {
     const messages = socket.state.messages;
     if (messages.length === 0) return null;
@@ -271,12 +339,10 @@ export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
   }, [socket.state.messages]);
 
   const loadEarlier = useCallback(async () => {
-    if (oldestTurn == null || loadingEarlier || !base) return;
-    const requestedId = sessionId;
+    if (oldestTurn == null || loadingEarlier) return;
     setLoadingEarlier(true);
     try {
-      const older = await fetchOlderMessages(base, requestedId, oldestTurn);
-      if (requestedId !== sessionId) return;
+      const older = await fetchOlderMessages(base, sessionId, oldestTurn);
       if (older.length === 0) {
         setHasMoreBefore(false);
         return;
@@ -285,7 +351,7 @@ export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
     } catch {
       /* keep what's shown; the button stays available to retry */
     } finally {
-      if (requestedId === sessionId) setLoadingEarlier(false);
+      setLoadingEarlier(false);
     }
   }, [base, sessionId, oldestTurn, loadingEarlier, socket]);
 
@@ -326,6 +392,12 @@ export function CanopyChatPanel({ sessionId, onTitleUpdated }: Props) {
       renderMarkdown={renderMarkdown}
       emptyState={emptyState}
       historySlot={historySlot}
+      // Belt-and-suspenders alongside the outer "Connecting…" gate: even
+      // once mounted, disable sending while the socket isn't actually
+      // OPEN (initial connect settling, or any later drop/reconnect) so a
+      // message typed in that window can't be lost to a socket that's
+      // about to be replaced.
+      disabledReason={socket.connected ? undefined : "Reconnecting…"}
       banner={
         boundOffline ? (
           <PlacementBanner
