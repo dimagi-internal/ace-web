@@ -13,6 +13,13 @@ interface Props {
   onSaveToDrive?: () => void;
   /** True while a save round-trip is in flight — disables the button. */
   saving?: boolean;
+  /**
+   * Escape hatch: download the staged edits as a local JSON file
+   * (mirrors the decision-overrides.yaml row shape). Pure client-side —
+   * works even when the WebSocket or save endpoint is broken. Rendered
+   * deliberately understated.
+   */
+  onExportLocal?: () => void;
 }
 
 /**
@@ -27,6 +34,7 @@ export function PendingEditsBar({
   onForkAndRerun,
   onSaveToDrive,
   saving,
+  onExportLocal,
 }: Props) {
   if (count <= 0) return null;
   const noun = count === 1 ? "pending edit" : "pending edits";
@@ -39,6 +47,16 @@ export function PendingEditsBar({
       <span className="text-sm font-medium text-foreground">
         {count} {noun}
       </span>
+      {onExportLocal && (
+        <button
+          type="button"
+          onClick={onExportLocal}
+          title="Download your staged edits as a file on this computer — works even if saving to the server is failing"
+          className="text-[11px] text-muted-foreground/70 underline decoration-dotted underline-offset-2 hover:text-muted-foreground"
+        >
+          Export local copy
+        </button>
+      )}
       <div className="ml-auto flex gap-2">
         <button
           type="button"
