@@ -4207,12 +4207,63 @@ export interface components {
             readonly body_markdown: string;
         };
         /**
+         * EnvInjectOut
+         * @description Outcome of the container's ``op inject`` at boot (ace-web#636).
+         *
+         *     ``status`` is ``ok`` / ``failed`` / ``skipped`` / ``unknown`` (no status
+         *     file — local dev or a pre-upgrade task). ``error`` carries the op-inject
+         *     stderr excerpt when status is ``failed``.
+         */
+        readonly EnvInjectOut: {
+            /** Status */
+            readonly status: string;
+            /** Error */
+            readonly error?: string | null;
+        };
+        /**
+         * NovaAuthHealthOut
+         * @description Nova auth health across both paths (ace-web#636).
+         *
+         *     ``connected``/``valid``/``expires_at`` describe the OAuth blob;
+         *     ``pat_present``/``pat_valid`` describe the user-scope PAT override
+         *     (the preferred subprocess path); ``usable`` is the run-preflight
+         *     verdict — at least one path yields a working bearer. Probes are
+         *     cached ~60s server-side. ``last_refresh_error`` — most recent
+         *     blob-refresh failure, cleared on the next successful refresh.
+         */
+        readonly NovaAuthHealthOut: {
+            /** Connected */
+            readonly connected: boolean;
+            /** Valid */
+            readonly valid: boolean;
+            /** Expires At */
+            readonly expires_at?: string | null;
+            /** Last Refresh Error */
+            readonly last_refresh_error?: string | null;
+            /**
+             * Pat Present
+             * @default false
+             */
+            readonly pat_present: boolean;
+            /**
+             * Pat Valid
+             * @default false
+             */
+            readonly pat_valid: boolean;
+            /**
+             * Usable
+             * @default false
+             */
+            readonly usable: boolean;
+        };
+        /**
          * VersionOut
          * @description Plugin version + remote comparison.
          *
          *     Returned by GET /api/system/version and embedded in SystemOverviewOut.
          *     ``update_available`` is null when the remote check failed (network error
-         *     or rate limit).
+         *     or rate limit). ``nova_auth`` / ``env_inject`` are operational health
+         *     blocks (ace-web#636) populated only on the standalone version endpoint.
          */
         readonly VersionOut: {
             /** Plugin Found */
@@ -4228,6 +4279,8 @@ export interface components {
              * @default
              */
             readonly plugin_path: string;
+            readonly nova_auth?: components["schemas"]["NovaAuthHealthOut"] | null;
+            readonly env_inject?: components["schemas"]["EnvInjectOut"] | null;
         };
         /**
          * RefreshPluginOut
