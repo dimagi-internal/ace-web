@@ -100,7 +100,9 @@ def post_upload(url: str, token: str, blob: dict, scope: str = "user") -> dict:
         raise RuntimeError(f"upload failed: {exc}") from exc
     if body.get("error"):
         raise RuntimeError(f"upload rejected: {body['error']}")
-    return body.get("data") or {}
+    # The {data: {...}} envelope was retired in PR #352; the endpoint now
+    # returns the flat payload. Tolerate both shapes.
+    return body.get("data") or body
 
 
 def main() -> int:
