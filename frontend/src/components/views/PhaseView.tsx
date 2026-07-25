@@ -3,6 +3,10 @@ import { ChevronRight, GitFork, Workflow } from "lucide-react";
 import { toast } from "sonner";
 
 import { saveDecisionOverrides } from "@/api/opps";
+import {
+  buildDecisionOverridesExport,
+  downloadDecisionOverrides,
+} from "@/components/views/decisions/localExport";
 import type { OppSnapshot, PhaseInfo, SavedDecisionOverride, Step } from "@/api/types.ws";
 import { ForkOppDialog } from "@/components/opps/ForkOppDialog";
 import { Button } from "canopy-ui/ui";
@@ -126,8 +130,11 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
       );
     } catch (e) {
       // Human copy, not the thrown "saveDecisionOverrides: 500" — an
-      // outside reviewer needs to know their edits survived the failure.
-      toast.error("Save to Drive failed — your edits are still staged. Try again.");
+      // outside reviewer needs to know their edits survived the failure,
+      // and that the client-side escape hatch exists.
+      toast.error(
+        "Save to Drive failed — your edits are still staged. Try again, or use “Export local copy” to download them.",
+      );
       console.error("saveDecisionOverrides failed", e);
     } finally {
       setSavingToDrive(false);
@@ -389,6 +396,16 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
             : undefined
         }
         saving={savingToDrive}
+        onExportLocal={() =>
+          downloadDecisionOverrides(
+            buildDecisionOverridesExport({
+              oppSlug,
+              runId: snapshot.current_run.run_id,
+              edits: editState.buffer,
+              decisions: allDecisions,
+            }),
+          )
+        }
       />
       {forkDialogOpen &&
         forkPoint &&

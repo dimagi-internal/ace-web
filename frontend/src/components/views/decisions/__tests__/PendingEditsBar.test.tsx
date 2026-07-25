@@ -83,6 +83,36 @@ describe("PendingEditsBar", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it("renders a quiet 'Export local copy' escape hatch when wired", () => {
+    const onExport = vi.fn();
+    render(
+      <PendingEditsBar
+        count={2}
+        onDiscardAll={vi.fn()}
+        onForkAndRerun={vi.fn()}
+        onSaveToDrive={vi.fn()}
+        onExportLocal={onExport}
+      />,
+    );
+    const btn = screen.getByRole("button", { name: /export local copy/i });
+    // Deliberately understated — a muted escape hatch, not a primary action.
+    expect(btn.className).toMatch(/muted-foreground/);
+    fireEvent.click(btn);
+    expect(onExport).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits Export local copy when no handler is wired", () => {
+    render(
+      <PendingEditsBar
+        count={1}
+        onDiscardAll={vi.fn()}
+        onForkAndRerun={vi.fn()}
+        onSaveToDrive={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /export local copy/i })).toBeNull();
+  });
+
   it("omits Save to Drive when no handler is wired (legacy usage)", () => {
     render(<PendingEditsBar count={1} onDiscardAll={vi.fn()} onForkAndRerun={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /save to drive/i })).toBeNull();
