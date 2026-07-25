@@ -254,6 +254,84 @@ class TestSaveDecisionOverrides:
         assert result["override_count"] == 1
 
 
+class StrictMimeFakeDrive(FakeDriveClient):
+    """Enforces the real GoogleDriveClient contract that the base fake
+    ignores: ``get_content(file_id, mime_type)`` must receive the FILE'S
+    actual mime type — Google-native files (Docs-typed YAML happens in
+    real opps) are export-only, and a raw download 403s with
+    ``fileNotDownloadable``. Caught live on bednet-spot-check (#673):
+    hardcoding ``application/x-yaml`` blew up the save endpoint with 500.
+    """
+
+    GDOC = "application/vnd.google-apps.document"
+
+    def make_gdoc(self, path: str) -> None:
+        self._nodes_by_id[self.file_id(path)].mime_type = self.GDOC
+
+    def get_content(self, file_id, mime_type):
+        node = self._nodes_by_id[file_id]
+        if node.mime_type == self.GDOC and mime_type != self.GDOC:
+            raise RuntimeError(
+                "fileNotDownloadable: Only files with binary content can be "
+                "downloaded. Use Export with Docs Editors files.",
+            )
+        return super().get_content(file_id, mime_type)
+
+
+class TestGoogleDocTypedFiles:
+    def _gdoc_drive(self, **kwargs):
+        drive = _drive_with_opp(**kwargs)
+        strict = StrictMimeFakeDrive()
+        # Adopt the built tree wholesale — same nodes, strict reads.
+        strict._root = drive._root
+        strict._nodes_by_id = drive._nodes_by_id
+        strict._counter = drive._counter
+        return strict
+
+    def test_save_reads_gdoc_typed_decisions_yaml(self):
+        drive = self._gdoc_drive()
+        drive.make_gdoc(f"{SLUG}/runs/{RUN}/decisions.yaml")
+        _stage(SLUG, RUN, "archetype-selection", "focus-group")
+
+        result = save_decision_overrides(
+            drive=drive, ace_root_folder_id="fake-root",
+            opp_slug=SLUG, source_run_id=RUN,
+        )
+
+        assert result["override_count"] == 1
+
+    def test_save_reads_gdoc_typed_existing_overrides_file(self):
+        drive = self._gdoc_drive()
+        _stage(SLUG, RUN, "archetype-selection", "focus-group")
+        save_decision_overrides(
+            drive=drive, ace_root_folder_id="fake-root",
+            opp_slug=SLUG, source_run_id=RUN,
+        )
+        drive.make_gdoc(f"{SLUG}/inputs/{OVERRIDES_FILENAME}")
+
+        _stage(SLUG, RUN, "enrollment-unit", "individual")
+        result = save_decision_overrides(
+            drive=drive, ace_root_folder_id="fake-root",
+            opp_slug=SLUG, source_run_id=RUN,
+        )
+
+        assert result["override_count"] == 2
+
+    def test_fetch_reads_gdoc_typed_overrides_file(self):
+        drive = self._gdoc_drive()
+        _stage(SLUG, RUN, "archetype-selection", "focus-group")
+        save_decision_overrides(
+            drive=drive, ace_root_folder_id="fake-root",
+            opp_slug=SLUG, source_run_id=RUN,
+        )
+        drive.make_gdoc(f"{SLUG}/inputs/{OVERRIDES_FILENAME}")
+
+        saved = fetch_saved_overrides(
+            drive, opp_folder_id=drive.folder_id(SLUG),
+        )
+        assert set(saved) == {"archetype-selection"}
+
+
 class TestMergeOverrides:
     def test_merge_by_id_last_write_wins(self):
         existing = [{"id": "a", "ai_default": "x", "override": "y"}]

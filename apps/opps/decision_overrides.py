@@ -185,7 +185,10 @@ def _load_run_decisions_rows(drive, opp_folder_id: str, opp_slug: str,
             "decisions-not-found",
             f"run {source_run_id!r} has no decisions.yaml to join edits against",
         )
-    body = drive.get_content(decisions_file.id, _YAML_MIME).content
+    # Pass the file's OWN mime type (get_content's contract) — real opps
+    # carry Docs-typed decisions.yaml files, which are export-only and 403
+    # on a raw download if we claim they're plain YAML.
+    body = drive.get_content(decisions_file.id, decisions_file.mime_type).content
     try:
         data = yaml.safe_load(body)
     except yaml.YAMLError as exc:
@@ -244,7 +247,7 @@ def save_decision_overrides(
         )
         if existing_file is not None:
             existing_rows = _parse_overrides_body(
-                drive.get_content(existing_file.id, _YAML_MIME).content,
+                drive.get_content(existing_file.id, existing_file.mime_type).content,
             )
 
     merged = merge_overrides(existing_rows, new_rows)
@@ -290,7 +293,7 @@ def fetch_saved_overrides(client, *, opp_folder_id: str) -> dict[str, dict]:
     if overrides_file is None:
         return {}
     rows = _parse_overrides_body(
-        client.get_content(overrides_file.id, _YAML_MIME).content,
+        client.get_content(overrides_file.id, overrides_file.mime_type).content,
     )
     out: dict[str, dict] = {}
     for row in rows:

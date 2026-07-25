@@ -125,7 +125,10 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
         `Saved ${res.override_count} override${res.override_count === 1 ? "" : "s"} to Drive`,
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Save to Drive failed");
+      // Human copy, not the thrown "saveDecisionOverrides: 500" — an
+      // outside reviewer needs to know their edits survived the failure.
+      toast.error("Save to Drive failed — your edits are still staged. Try again.");
+      console.error("saveDecisionOverrides failed", e);
     } finally {
       setSavingToDrive(false);
     }
