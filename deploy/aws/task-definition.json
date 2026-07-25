@@ -75,6 +75,22 @@
         {
           "name": "ACE_MOBILE_AMI_VERSION",
           "value": "2026-05-25-1857"
+        },
+        {
+          "name": "CANOPY_BASE_URL",
+          "value": "https://labs.connect.dimagi.com/canopy"
+        },
+        {
+          "name": "CANOPY_PUBLIC_BASE_URL",
+          "value": "/canopy"
+        },
+        {
+          "name": "CANOPY_WORKSPACE",
+          "value": "connect"
+        },
+        {
+          "name": "CANOPY_AGENT_SLUG",
+          "value": "ace"
         }
       ],
       "secrets": [
@@ -125,6 +141,10 @@
         {
           "name": "SLACK_SIGNING_SECRET",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-signing-secret-9CmCYh"
+        },
+        {
+          "name": "CANOPY_APP_CREDENTIAL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/canopy-app-credential-cbuXNb"
         }
       ],
       "logConfiguration": {

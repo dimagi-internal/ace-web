@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "apps.mobile.apps.MobileConfig",
     "apps.videos.apps.VideosConfig",
     "apps.slack.apps.SlackConfig",
+    "apps.canopy",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -283,6 +284,16 @@ SLACK_SIGNING_SECRET = env("SLACK_SIGNING_SECRET", default="")
 SLACK_DEFAULT_INSTALLATION_ID = env("SLACK_DEFAULT_INSTALLATION_ID", default="")
 ACE_PUBLIC_BASE_URL = env("ACE_PUBLIC_BASE_URL",
                           default="https://labs.connect.dimagi.com/ace")
+
+# --- canopy-web hosted chat (Part 2 cutover; spec lives in canopy-web) -------
+# Server-side base for outbound calls (token exchange, session create).
+CANOPY_BASE_URL = env("CANOPY_BASE_URL", default="")
+# Registered AppCredential raw value (canopy: manage.py create_app_credential).
+CANOPY_APP_CREDENTIAL = env("CANOPY_APP_CREDENTIAL", default="")
+# Browser-facing base: same-origin path prefix on labs, vite proxy path in dev.
+CANOPY_PUBLIC_BASE_URL = env("CANOPY_PUBLIC_BASE_URL", default="/canopy")
+CANOPY_WORKSPACE = env("CANOPY_WORKSPACE", default="connect")
+CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
 
 # --- Allowed email domains ---
 # Empty list = allow any Connect-authenticated user. Workspace memberships
