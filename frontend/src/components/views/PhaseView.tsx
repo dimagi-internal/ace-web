@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { ChevronRight, GitFork, Workflow } from "lucide-react";
+import { toast } from "sonner";
 
-import type { OppSnapshot, PhaseInfo, Step } from "@/api/types.ws";
+import { saveDecisionOverrides } from "@/api/opps";
+import type { OppSnapshot, PhaseInfo, SavedDecisionOverride, Step } from "@/api/types.ws";
 import { ForkOppDialog } from "@/components/opps/ForkOppDialog";
 import { Button } from "canopy-ui/ui";
 import { DecisionsPanel } from "@/components/views/DecisionsPanel";
@@ -82,6 +84,52 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
     initialDecisionsEditState,
   );
   const [forkDialogOpen, setForkDialogOpen] = useState(false);
+
+  // Durable overrides (inputs/decision-overrides.yaml). The snapshot
+  // carries the server-injected map; after a successful Save to Drive we
+  // hold the save response's (newer) full file state locally until the
+  // next snapshot arrives, so cleared-buffer rows keep rendering as
+  // saved instead of visually reverting to AI-DEFAULT.
+  const [savedFromSave, setSavedFromSave] = useState<Record<
+    string,
+    SavedDecisionOverride
+  > | null>(null);
+  const [savingToDrive, setSavingToDrive] = useState(false);
+  useEffect(() => {
+    setSavedFromSave(null);
+  }, [snapshot]);
+  const savedOverrides = savedFromSave ?? snapshot.saved_overrides ?? {};
+
+  async function handleSaveToDrive() {
+    const runId = snapshot.current_run.run_id;
+    if (!workspaceSlug || !runId || savingToDrive) return;
+    setSavingToDrive(true);
+    try {
+      const res = await saveDecisionOverrides(workspaceSlug, oppSlug, runId);
+      setSavedFromSave(
+        Object.fromEntries(
+          res.overrides.map((r) => [
+            r.id,
+            {
+              override: r.override,
+              reasoning: r.override_reasoning,
+              decided_by: r.decided_by,
+              decided_at: r.decided_at,
+              source_run_id: r.source_run_id,
+            },
+          ]),
+        ),
+      );
+      dispatchEdit({ type: "DISCARD_ALL" });
+      toast.success(
+        `Saved ${res.override_count} override${res.override_count === 1 ? "" : "s"} to Drive`,
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save to Drive failed");
+    } finally {
+      setSavingToDrive(false);
+    }
+  }
 
   const allDecisions = useMemo(
     () => snapshot.current_run.decisions ?? [],
@@ -258,6 +306,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
                 <DecisionsPanel
                   phase={selectedPhaseInfo.name}
                   decisions={allDecisions}
+                  savedOverrides={savedOverrides}
                   editBuffer={editingDisabled ? undefined : editState.buffer}
                   onEdit={
                     editingDisabled
@@ -331,6 +380,12 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
         count={editState.buffer.length}
         onDiscardAll={() => dispatchEdit({ type: "DISCARD_ALL" })}
         onForkAndRerun={() => setForkDialogOpen(true)}
+        onSaveToDrive={
+          workspaceSlug && snapshot.current_run.run_id
+            ? handleSaveToDrive
+            : undefined
+        }
+        saving={savingToDrive}
       />
       {forkDialogOpen &&
         forkPoint &&

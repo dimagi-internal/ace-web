@@ -182,6 +182,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/decision-overrides": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Save buffered decision edits to Drive (inputs/decision-overrides.yaml) */
+        readonly post: operations["apps_opps_api_save_decision_overrides_endpoint"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/opps/{slug}/fork/status": {
         readonly parameters: {
             readonly query?: never;
@@ -2370,6 +2387,16 @@ export interface components {
              * @enum {string}
              */
             readonly mode: "keep-overrides-only" | "keep-all";
+        };
+        /**
+         * DecisionOverridesSaveIn
+         * @description Body for POST /{slug}/decision-overrides. Carries NO edits — the
+         *     server reads the Redis shared buffer as the authoritative set, so a
+         *     stale tab can't clobber another reviewer's concurrent edits.
+         */
+        readonly DecisionOverridesSaveIn: {
+            /** Source Run Id */
+            readonly source_run_id: string;
         };
         /** ForkProgress */
         readonly ForkProgress: {
@@ -4858,6 +4885,35 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly apps_opps_api_save_decision_overrides_endpoint: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["DecisionOverridesSaveIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
+                };
             };
         };
     };

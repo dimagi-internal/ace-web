@@ -349,6 +349,17 @@ export interface RunSummary {
   latest_phase_done_ordinal?: number | null;
 }
 
+/** One row from <opp>/inputs/decision-overrides.yaml, keyed by row id in
+ * OppSnapshot.saved_overrides. Durable (survives the 24h Redis buffer);
+ * inert until the ACE plugin learns to read the file. */
+export interface SavedDecisionOverride {
+  override: string;
+  reasoning?: string;
+  decided_by?: string;
+  decided_at?: string;
+  source_run_id?: string;
+}
+
 export interface OppSnapshot {
   opp: OppCard;
   pdd_body: string;
@@ -356,6 +367,8 @@ export interface OppSnapshot {
   selected_run_id: string | null;
   current_run: Run;
   phases: PhaseInfo[];
+  /** Injected server-side from inputs/decision-overrides.yaml (#673 PR 2). */
+  saved_overrides?: Record<string, SavedDecisionOverride>;
 }
 
 export interface StepDetail extends Step {

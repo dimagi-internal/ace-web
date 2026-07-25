@@ -92,6 +92,11 @@ class OppSnapshot:
     opp_folder_id: str
     current_run: RunDetail
     runs_summary: list[RunSummary] = field(default_factory=list)
+    # Durable overrides from <opp>/inputs/decision-overrides.yaml keyed by
+    # row_id (see apps/opps/decision_overrides.py). Kept fresh on cache
+    # hits by the saved_overrides freshness overlay — the file lives in a
+    # listing the Drive Changes API doesn't reliably invalidate.
+    saved_overrides: dict[str, dict] = field(default_factory=dict)
 
 
 # --- Drive helpers ---
