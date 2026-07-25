@@ -107,4 +107,45 @@ describe("getCanopyToken / peekCanopyToken", () => {
     const { peekCanopyToken } = await import("./token");
     expect(peekCanopyToken()).toBeNull();
   });
+
+  it("dedupes concurrent calls into a single in-flight request (I6)", async () => {
+    const { getCanopyToken } = await import("./token");
+    mockTokenResponse("tok-1", "2026-07-25T01:00:00.000Z");
+
+    // Several components mounting at once (sidebar, chat panel, fleet poll)
+    // each calling getCanopyToken() before any has a cached result should
+    // collapse into ONE outbound POST, not one per caller.
+    const [a, b, c] = await Promise.all([getCanopyToken(), getCanopyToken(), getCanopyToken()]);
+
+    expect(a).toBe("tok-1");
+    expect(b).toBe("tok-1");
+    expect(c).toBe("tok-1");
+    expect(postMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a later call after the in-flight request settles fetches independently (dedup doesn't leak across requests)", async () => {
+    const { getCanopyToken } = await import("./token");
+    mockTokenResponse("tok-1", "2026-07-25T01:00:00.000Z");
+    await getCanopyToken();
+
+    vi.setSystemTime(new Date("2026-07-25T00:56:00.000Z")); // inside the 5-min refresh skew
+    mockTokenResponse("tok-2", "2026-07-25T02:00:00.000Z");
+    const token = await getCanopyToken();
+
+    expect(token).toBe("tok-2");
+    expect(postMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats a non-parseable expires_at as already expired, so the very next call refetches (M6)", async () => {
+    const { getCanopyToken } = await import("./token");
+    mockTokenResponse("tok-1", "not-a-real-date");
+    const first = await getCanopyToken();
+    expect(first).toBe("tok-1");
+
+    mockTokenResponse("tok-2", "2026-07-25T02:00:00.000Z");
+    const token = await getCanopyToken();
+
+    expect(token).toBe("tok-2");
+    expect(postMock).toHaveBeenCalledTimes(2);
+  });
 });

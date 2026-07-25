@@ -6,10 +6,13 @@ import { getCanopyToken } from "./token";
  *
  * Two distinct call shapes live here:
  *
- *  - `createCanopySession` hits ace-web's OWN `/api/canopy/sessions`
- *    (session-authed, cookie + CSRF via `apiClient` — same as every other
- *    ace endpoint) because opp-linkage metadata (`opp_slug`/`opp_run_id`/
- *    `opp_step_skill`) is baked in server-side. See apps/canopy/api.py.
+ *  - `createCanopySession` hits ace-web's OWN workspace-scoped
+ *    `/api/w/{workspace_slug}/canopy/sessions` (session-authed, cookie +
+ *    CSRF via `apiClient` — same as every other ace endpoint) because
+ *    opp-linkage metadata (`opp_slug`/`opp_run_id`/`opp_step_skill`) AND the
+ *    `origin_key` that scopes canopy's session list to THIS ace workspace
+ *    are baked in server-side, from the membership-checked path parameter —
+ *    never from anything the client sends. See apps/canopy/api.py.
  *  - Everything else talks to canopy-web directly at `${base}` (canopy's
  *    `CanopyStatus.base_url`) with `Authorization: Bearer <delegated
  *    token>` — canopy-web has no ace session cookie to check. A 401 gets
@@ -27,7 +30,27 @@ export interface CanopySessionSummary {
   agent_slug: string | null;
   updated_at: string;
   runner_name?: string | null;
-  metadata?: Record<string, string>;
+  /**
+   * Whether the session's bound runner is reachable right now (canopy's
+   * `SessionOut.runner_online`) — `true`/`false` when there's a binding,
+   * `null` when there is none (nothing to be offline). Canopy carries this
+   * on the session itself rather than the caller having to cross-reference
+   * the runner fleet, because `GET /api/harness/runners/` is scoped to
+   * runners the caller personally PAIRED — a delegated ace user sees an
+   * EMPTY fleet there and could never otherwise tell a stalled chat
+   * ("bound runner offline, turn waiting") from a merely slow one
+   * (fix-round-2 review, I5/offline-detection correction).
+   */
+  runner_online?: boolean | null;
+}
+
+/** `origin_key` this ace workspace stamps on (and filters by) every canopy
+ *  session it creates/lists — must match `apps/canopy/api.py`'s server-side
+ *  derivation (`f"ace-web:{workspace_slug}"`) exactly, since it's how canopy
+ *  scopes the session LIST to one ace workspace instead of every ace
+ *  workspace sharing the same canopy tenant (C1). */
+export function aceOriginKey(workspaceSlug: string): string {
+  return `ace-web:${workspaceSlug}`;
 }
 
 /** `GET /api/canopy-sessions/{id}` (`SessionDetailOut`) — the single-session
@@ -74,11 +97,11 @@ async function canopyJson<T>(base: string, path: string, init?: RequestInit): Pr
 }
 
 /**
- * canopy_sessions.schemas.SessionOut has no `updated_at`/`metadata` fields —
- * it's `last_activity_at` (mapped to our `updated_at`) and no metadata at
- * all today. `metadata` is passed through opportunistically (undefined if
- * canopy never sends it) so this mapping doesn't need to change the moment
- * canopy-web starts returning it.
+ * canopy_sessions.schemas.SessionOut has no `updated_at` field — it's
+ * `last_activity_at` (mapped to our `updated_at`). `metadata` is NOT part of
+ * SessionOut at all (it never was — an earlier draft of this mapping
+ * optimistically passed it through; removed per M4 so it doesn't read as
+ * available provenance when it can never actually be populated).
  */
 function mapSessionSummary(raw: Record<string, unknown>): CanopySessionSummary {
   return {
@@ -87,18 +110,22 @@ function mapSessionSummary(raw: Record<string, unknown>): CanopySessionSummary {
     agent_slug: (raw.agent_slug as string | null | undefined) ?? null,
     updated_at: (raw.last_activity_at as string | undefined) ?? (raw.updated_at as string),
     runner_name: (raw.runner_name as string | null | undefined) ?? null,
-    metadata: raw.metadata as Record<string, string> | undefined,
+    runner_online: (raw.runner_online as boolean | null | undefined) ?? null,
   };
 }
 
 export async function listCanopySessions(
   base: string,
-  filters: { opp_slug?: string; opp_run_id?: string; state?: string } = {},
+  filters: { opp_slug?: string; opp_run_id?: string; state?: string; origin_key?: string } = {},
 ): Promise<CanopySessionSummary[]> {
   const params = new URLSearchParams({ source: "ace-web" });
   if (filters.opp_slug) params.set("opp_slug", filters.opp_slug);
   if (filters.opp_run_id) params.set("opp_run_id", filters.opp_run_id);
   if (filters.state) params.set("state", filters.state);
+  // Scopes the list to THIS ace workspace (C1) — canopy filters on the
+  // opaque metadata.origin_key it never otherwise interprets. Omitted (no
+  // filter applied) only when the caller has no ace workspace to scope by.
+  if (filters.origin_key) params.set("origin_key", filters.origin_key);
 
   const rows = await canopyJson<Record<string, unknown>[]>(
     base,
@@ -128,40 +155,44 @@ export async function getCanopySession(base: string, id: string): Promise<Canopy
   };
 }
 
-export async function createCanopySession(input: {
-  title?: string;
-  opp_slug?: string;
-  opp_run_id?: string;
-  opp_step_skill?: string;
-}): Promise<{ id: string }> {
-  // Not in generated.ts yet — see the note on token.ts's requestToken().
-  const { response } = await apiClient.POST("/api/canopy/sessions" as never, {
+export async function createCanopySession(
+  workspaceSlug: string,
+  input: {
+    title?: string;
+    opp_slug?: string;
+    opp_run_id?: string;
+    opp_step_skill?: string;
+  } = {},
+): Promise<{ id: string }> {
+  const { data, response } = await apiClient.POST("/api/w/{workspace_slug}/canopy/sessions", {
+    params: { path: { workspace_slug: workspaceSlug } },
     body: {
       title: input.title ?? "",
       opp_slug: input.opp_slug ?? "",
       opp_run_id: input.opp_run_id ?? "",
       opp_step_skill: input.opp_step_skill ?? "",
     },
-  } as never);
+  });
   if (!response.ok) {
     throw new Error(`Failed to create canopy session: ${response.status}`);
   }
-  return (await response.json()) as { id: string };
+  return data as unknown as { id: string };
 }
 
-export async function fetchOlderMessages(base: string, id: string, before: number): Promise<unknown[]> {
-  const page = await canopyJson<{ messages: unknown[]; has_more_before: boolean }>(
+/** One backward page of transcript ("Load earlier"). Threads canopy's own
+ *  `has_more_before` through (Ledger minor) rather than discarding it — the
+ *  caller previously had to infer "any more before this?" from `messages.length
+ *  === 0`, which is wrong the moment the page size ever changes from 1:1
+ *  with "no more history". */
+export async function fetchOlderMessages(
+  base: string,
+  id: string,
+  before: number,
+): Promise<{ messages: unknown[]; has_more_before: boolean }> {
+  return canopyJson<{ messages: unknown[]; has_more_before: boolean }>(
     base,
     `/api/canopy-sessions/${encodeURIComponent(id)}/messages?before=${encodeURIComponent(String(before))}`,
   );
-  return page.messages;
-}
-
-// The REST twin of the kit's WS `chat.stop` (useSessionSocket's `stopChat`) —
-// this endpoint stops the session's in-flight turn from outside an open
-// socket (e.g. before one has been established).
-export async function stopCanopySession(base: string, id: string): Promise<void> {
-  await canopyJson<void>(base, `/api/canopy-sessions/${encodeURIComponent(id)}/stop`, { method: "POST" });
 }
 
 // The viewer-liveness pair (`RunnerBinding.stream_desired`): attaching tells
@@ -215,6 +246,14 @@ export interface CanopyRunnerSummary {
   capabilities?: Record<string, unknown>;
 }
 
+/**
+ * `GET /api/harness/runners/` is scoped to runners the CALLER personally
+ * paired (`apps/harness/api.py::_runner_visibility_q`) — a delegated ace
+ * user typically has paired none, so this usually returns `[]`. It is only
+ * useful here for the "continue on…" picker's list of alternatives, never
+ * for detecting whether the session's OWN bound runner is offline (use
+ * `CanopySessionDetail.runner_online` for that — fix-round-2 correction).
+ */
 export async function listCanopyRunners(base: string): Promise<CanopyRunnerSummary[]> {
   // harness.schemas.RunnerOut's wire field is `status` (resolved from the
   // model's `live_status` — values are lowercase: online/stale/disconnected/

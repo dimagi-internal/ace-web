@@ -88,22 +88,34 @@ export function RecentSessionsSidebar({ currentSlug, currentCanopyId = null }: P
   const canopyEnabled = Boolean(canopyStatus?.enabled);
   const { sessions: canopySessions } = useCanopySessionsList(
     canopyEnabled ? canopyStatus!.base_url : null,
+    workspaceSlug ?? "",
   );
   const navigate = useNavigate();
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+  const [newChatError, setNewChatError] = useState<string | null>(null);
 
   const handleNew = async () => {
     if (!workspaceSlug) return;
-    if (canopyEnabled) {
-      const s = await createCanopySession({});
-      notifySessionsUpdated();
-      navigate(`/w/${workspaceSlug}/chat/c/${s.id}`);
-      return;
+    setNewChatError(null);
+    try {
+      if (canopyEnabled) {
+        const s = await createCanopySession(workspaceSlug, {});
+        notifySessionsUpdated();
+        navigate(`/w/${workspaceSlug}/chat/c/${s.id}`);
+        return;
+      }
+      const s = await createSession(workspaceSlug);
+      await refresh();
+      navigate(`/w/${workspaceSlug}/chat/${s.slug}`);
+    } catch (err) {
+      // I7: this previously had no try/catch at all — a failed
+      // createCanopySession (e.g. the ace user isn't a member of the
+      // matching canopy workspace, or the ace agent isn't registered
+      // there) was an unhandled promise rejection and "New Chat" silently
+      // did nothing. Surface it instead of swallowing it.
+      setNewChatError(err instanceof Error ? err.message : "Could not start a new chat.");
     }
-    const s = await createSession(workspaceSlug);
-    await refresh();
-    navigate(`/w/${workspaceSlug}/chat/${s.slug}`);
   };
 
   const startRename = (slug: string, title: string) => {
@@ -222,6 +234,11 @@ export function RecentSessionsSidebar({ currentSlug, currentCanopyId = null }: P
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           New Chat
         </Button>
+        {newChatError && (
+          <p className="mt-1.5 text-xs text-destructive" role="alert">
+            {newChatError}
+          </p>
+        )}
       </div>
       <nav className="flex-1 overflow-y-auto px-2 pb-2">
         {canopyEnabled && (

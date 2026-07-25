@@ -13,7 +13,7 @@ import { SharePopover } from "../components/SharePopover";
 import { ChatPanel } from "../components/opps/ChatPanel";
 import { CanopyChatPanel } from "../canopy/CanopyChatPanel";
 import { getCanopySession } from "../canopy/api";
-import { useCanopyStatus } from "../canopy/useCanopyStatus";
+import { useCanopyStatus, useCanopyStatusFailed } from "../canopy/useCanopyStatus";
 import {
   SESSIONS_UPDATED_EVENT,
   notifySessionsUpdated,
@@ -199,6 +199,11 @@ export function CanopyChatRoutePage() {
     workspaceSlug: string;
   }>();
   const status = useCanopyStatus();
+  // Ledger minor: useCanopyStatus() alone can't tell "still loading" apart
+  // from "the one status fetch failed" (both are `null`) — this page used
+  // to render "Loading…" forever on a status blip, with no way out short
+  // of a manual reload.
+  const statusFailed = useCanopyStatusFailed();
   const enabled = status?.enabled ?? false;
   const base = status?.base_url ?? "";
   const [title, setTitle] = useState<string>("");
@@ -225,6 +230,14 @@ export function CanopyChatRoutePage() {
 
   if (status && !enabled) {
     return <Navigate to={workspaceSlug ? `/w/${workspaceSlug}/chat` : "/chat"} replace />;
+  }
+
+  if (statusFailed) {
+    return (
+      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-destructive">
+        Couldn't reach canopy chat. Check your connection and reload the page.
+      </div>
+    );
   }
 
   return (

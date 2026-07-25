@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ChatPanel,
@@ -72,27 +72,18 @@ function isSessionCapable(runner: Pick<CanopyRunnerSummary, "capabilities">): bo
 }
 
 /** Online + session-capable runners from the fleet — the eligible set for
- *  the "Continue on…" picker. */
+ *  the "Continue on…" picker. Note: `GET /api/harness/runners/` is scoped to
+ *  runners the CALLER personally paired, so for a delegated ace user this is
+ *  typically empty — see the caller's handling of an empty result. */
 function onlineSessionCapableRunners(fleet: readonly CanopyRunnerSummary[]): CanopyRunnerSummary[] {
   return fleet.filter((r) => r.live_status === RUNNER_STATUS_ONLINE && isSessionCapable(r));
 }
 
-/** Whether the session's bound runner (matched by name — canopy's
- *  `SessionOut` carries no runner id, only `runner_name`) is offline. A
- *  name with no fleet match is NOT treated as offline — that's an unknown,
- *  not evidence, so the banner fails quiet rather than alarms on stale or
- *  not-yet-loaded fleet data. */
-function isBoundRunnerOffline(
-  runnerName: string | null | undefined,
-  fleet: readonly Pick<CanopyRunnerSummary, "name" | "live_status">[],
-): boolean {
-  if (!runnerName) return false;
-  const match = fleet.find((r) => r.name === runnerName);
-  if (!match) return false;
-  return match.live_status !== RUNNER_STATUS_ONLINE;
-}
-
-const FLEET_POLL_MS = 30_000;
+// How often to re-poll the session detail while its bound runner is offline,
+// so the banner clears itself the moment the runner comes back (fix-round-2:
+// this used to poll the RUNNERS list, which a delegated user can't see —
+// see the `runner_online`-based detection below).
+const OFFLINE_RECOVERY_POLL_MS = 30_000;
 
 interface Props {
   sessionId: string;
@@ -166,21 +157,34 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
     onTitleUpdated?.();
   }, [onTitleUpdated]);
 
+  // I5: the kit calls `wsUrl` on every (re)connect attempt. The very first
+  // call is the initial connect; every call after that means the previous
+  // attempt didn't stay connected — i.e. this IS a reconnect. A token that
+  // was revoked (credential rotated, user deactivated) but isn't yet near
+  // its cached TTL would otherwise be reused forever by a bare
+  // `getCanopyToken()`, wedging the socket in a permanent 4001-reconnect
+  // loop that only a page reload recovers from. Forcing a refresh on every
+  // reconnect attempt (not just the first) fixes that without needing to
+  // distinguish "revoked" from "network blip" — a forced mint is cheap and
+  // idempotent-safe either way.
+  const connectAttemptRef = useRef(0);
   const wsUrl = useCallback(
     (_path: string) => {
-      // The kit calls this builder on every (re)connect. Kick off a token
-      // refresh check (fire-and-forget) each time so a soon-to-expire
-      // token is refreshed in the background before the NEXT reconnect
-      // attempt, even if this attempt's URL was built from the old one —
-      // buildCanopyWsUrl reads the token synchronously via
-      // peekCanopyToken().
-      void getCanopyToken();
+      const isReconnect = connectAttemptRef.current > 0;
+      connectAttemptRef.current += 1;
+      void getCanopyToken(isReconnect);
       return buildCanopyWsUrl(base, sessionId);
     },
     [base, sessionId],
   );
 
   const socket = useSessionSocket({ sessionId, wsUrl, onTitleUpdated: handleTitleUpdated });
+
+  // Reset the reconnect-attempt counter on a session switch (a fresh mount
+  // for a different session is not a reconnect of the old one).
+  useEffect(() => {
+    connectAttemptRef.current = 0;
+  }, [sessionId]);
 
   // Viewer-liveness pair: tells the bound runner to start/stop streaming
   // this session live (RunnerBinding.stream_desired). Fire-and-forget on
@@ -202,7 +206,15 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
   }, [base, sessionId]);
 
   // --- Placement banner: the session's bound runner going offline. --------
+  //
+  // Detected from the session detail's `runner_online` (fix-round-2
+  // correction) — NOT by cross-referencing the runner fleet list, which is
+  // scoped to runners the CALLER personally paired
+  // (`apps/harness/api.py::_runner_visibility_q`). A delegated ace user has
+  // typically paired none, so the fleet list is empty for them and matching
+  // `runner_name` against it could never detect an offline bound runner.
   const [runnerName, setRunnerName] = useState<string | null>(null);
+  const [runnerOnline, setRunnerOnline] = useState<boolean | null>(null);
   const [fleetRunners, setFleetRunners] = useState<CanopyRunnerSummary[]>([]);
   const [placing, setPlacing] = useState(false);
   const [placeInfo, setPlaceInfo] = useState<string | null>(null);
@@ -213,29 +225,32 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
   const [loadingEarlier, setLoadingEarlier] = useState(false);
 
   // The single-session detail (NOT the filtered/paginated list — Important
-  // 2) for `runner_name` (the socket's `session.state` snapshot carries no
-  // liveness fields) and the real `has_more_before` (Important 3 — this
-  // used to be hardcoded `true`, which is a lie for a session that's
-  // already fully loaded). A later runner reassignment is picked up by the
-  // recovery poll below re-deriving `boundOffline` against a refreshed
-  // fleet, same as canopy-web's own page.
-  useEffect(() => {
-    let live = true;
-    getCanopySession(base, sessionId)
+  // 2) for `runner_name`/`runner_online` (the socket's `session.state`
+  // snapshot carries no liveness fields) and the real `has_more_before`
+  // (Important 3 — this used to be hardcoded `true`, which is a lie for a
+  // session that's already fully loaded).
+  const refreshSessionDetail = useCallback(() => {
+    return getCanopySession(base, sessionId)
       .then((detail) => {
-        if (!live) return;
         setRunnerName(detail.runner_name ?? null);
+        setRunnerOnline(detail.runner_online ?? null);
         setHasMoreBefore(detail.has_more_before);
+        return detail;
       })
       .catch(() => {
         /* non-fatal: the offline banner just won't have evidence to show,
            and "Load earlier" stays hidden until a later fetch succeeds */
+        return null;
       });
-    return () => {
-      live = false;
-    };
   }, [base, sessionId]);
 
+  useEffect(() => {
+    void refreshSessionDetail();
+  }, [refreshSessionDetail]);
+
+  // The "continue on…" picker's alternatives — best-effort, usually empty
+  // for a delegated user (see the function's own doc comment). Fetched
+  // once; not part of offline detection.
   const refreshFleet = useCallback(() => {
     listCanopyRunners(base)
       .then((r) => setFleetRunners(r))
@@ -260,33 +275,27 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
     setLoadingEarlier(false);
   }, [sessionId]);
 
-  const boundOffline = isBoundRunnerOffline(runnerName, fleetRunners);
+  const boundOffline = runnerOnline === false;
 
-  // Recovery poll while the banner is showing — a bound runner that comes
-  // back later in the same page-load would otherwise leave a stale-offline
-  // false positive forever (the fleet is otherwise only fetched once).
+  // Recovery poll while the banner is showing — re-polls the SESSION DETAIL
+  // (not the runner fleet — fix-round-2) so a bound runner that comes back
+  // later in the same page-load clears the banner, and so a delegated
+  // user (who can't see the fleet at all) still gets the recovery signal.
   useEffect(() => {
     if (!boundOffline) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
-      listCanopyRunners(base)
-        .then((r) => {
-          if (!cancelled) setFleetRunners(r);
-        })
-        .catch(() => {
-          /* non-fatal: retry next tick */
-        })
-        .finally(() => {
-          if (!cancelled) timer = setTimeout(tick, FLEET_POLL_MS);
-        });
+      refreshSessionDetail().finally(() => {
+        if (!cancelled) timer = setTimeout(tick, OFFLINE_RECOVERY_POLL_MS);
+      });
     };
-    timer = setTimeout(tick, FLEET_POLL_MS);
+    timer = setTimeout(tick, OFFLINE_RECOVERY_POLL_MS);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [boundOffline, base]);
+  }, [boundOffline, refreshSessionDetail]);
 
   const placementRunners: PlacementRunner[] = useMemo(
     () =>
@@ -309,11 +318,11 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
     placeCanopySession(base, sessionId, "wait")
       .then(() => {
         setPlaceInfo("Waiting for the bound runner.");
-        refreshFleet();
+        refreshSessionDetail();
       })
       .catch(placementFail)
       .finally(() => setPlacing(false));
-  }, [base, sessionId, placementFail, refreshFleet]);
+  }, [base, sessionId, placementFail, refreshSessionDetail]);
 
   const continueOn = useCallback(
     (runnerId: string) => {
@@ -324,12 +333,12 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
       placeCanopySession(base, sessionId, { runner_id: runnerId })
         .then(() => {
           setPlaceInfo("Placed — the new runner will pick it up shortly.");
-          refreshFleet();
+          refreshSessionDetail();
         })
         .catch(placementFail)
         .finally(() => setPlacing(false));
     },
-    [base, sessionId, placementFail, refreshFleet],
+    [base, sessionId, placementFail, refreshSessionDetail],
   );
 
   const oldestTurn = useMemo(() => {
@@ -342,12 +351,15 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
     if (oldestTurn == null || loadingEarlier) return;
     setLoadingEarlier(true);
     try {
-      const older = await fetchOlderMessages(base, sessionId, oldestTurn);
-      if (older.length === 0) {
-        setHasMoreBefore(false);
-        return;
+      const page = await fetchOlderMessages(base, sessionId, oldestTurn);
+      // Thread canopy's own has_more_before through (Ledger minor) instead
+      // of inferring it from `messages.length === 0` — those aren't the
+      // same thing the moment a page can be non-empty AND still be the
+      // last one.
+      setHasMoreBefore(page.has_more_before);
+      if (page.messages.length > 0) {
+        socket.prependMessages(page.messages.map(restToKitMessage));
       }
-      socket.prependMessages(older.map(restToKitMessage));
     } catch {
       /* keep what's shown; the button stays available to retry */
     } finally {
@@ -379,6 +391,38 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
     </div>
   );
 
+  // The kit's PlacementBanner always renders a "Continue on…" picker,
+  // regardless of how many `eligibleRunners` it's given. For a delegated
+  // ace user `placementRunners` is typically empty (the fleet endpoint is
+  // scoped to runners the caller personally paired), so showing that full
+  // banner would present an empty dropdown with no real exit. Degrade to a
+  // plain "wait for it" banner in that case instead.
+  const banner = !boundOffline ? undefined : placementRunners.length > 0 ? (
+    <PlacementBanner
+      runnerName={runnerName ?? ""}
+      eligibleRunners={placementRunners}
+      busy={placing}
+      error={placeError}
+      info={placeInfo}
+      onWait={waitForIt}
+      onPlace={continueOn}
+    />
+  ) : (
+    <div className="flex flex-wrap items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-[12px] text-warning">
+      <span className="font-medium">{(runnerName || "The bound runner") + " is unavailable"}</span>
+      <button
+        type="button"
+        onClick={waitForIt}
+        disabled={placing}
+        className="rounded-md border border-warning/40 px-2 py-0.5 text-warning hover:bg-warning/20 disabled:opacity-50"
+      >
+        Wait for it
+      </button>
+      {placeError && <span className="text-destructive">{placeError}</span>}
+      {placeInfo && <span className="text-muted-foreground">{placeInfo}</span>}
+    </div>
+  );
+
   return (
     <ChatPanel
       state={socket.state}
@@ -398,19 +442,7 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
       // message typed in that window can't be lost to a socket that's
       // about to be replaced.
       disabledReason={socket.connected ? undefined : "Reconnecting…"}
-      banner={
-        boundOffline ? (
-          <PlacementBanner
-            runnerName={runnerName ?? ""}
-            eligibleRunners={placementRunners}
-            busy={placing}
-            error={placeError}
-            info={placeInfo}
-            onWait={waitForIt}
-            onPlace={continueOn}
-          />
-        ) : undefined
-      }
+      banner={banner}
     />
   );
 }

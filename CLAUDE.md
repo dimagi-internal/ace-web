@@ -204,17 +204,41 @@ they read through to Google Drive.
   user's email for a short-lived canopy `DelegatedToken` via
   `POST {canopy}/api/auth/token-exchange`; (3) the SPA uses that token as
   `Authorization: Bearer` on canopy REST and `?token=` on the canopy chat
-  WebSocket — never the app credential itself. `POST /api/canopy/sessions`
-  additionally bakes in opp linkage (`opp_slug`/`opp_run_id`/`opp_step_skill`
-  metadata) server-side so seeding rules live in one place. Legacy
-  `apps/sessions` remains fully intact until PR 6 (gated on a labs exercise of
-  the new path). Ops: mint the prod `AppCredential` on canopy-web (name
-  `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`), store the
-  raw value in AWS Secrets Manager (`ace-web/canopy-app-credential`), point
-  `CANOPY_APP_CREDENTIAL`'s `valueFrom` in `deploy/aws/task-definition.json`
-  at that secret's ARN, then deploy — the four non-secret `CANOPY_*` vars are
-  already wired in the task def and flip the flag on automatically once the
-  secret exists.
+  WebSocket — never the app credential itself. `POST
+  /api/w/{workspace_slug}/canopy/sessions` (workspace-scoped, not the flat
+  `/api/canopy/sessions` an earlier draft used) additionally bakes in opp
+  linkage (`opp_slug`/`opp_run_id`/`opp_step_skill` metadata) AND stamps
+  `metadata.origin_key = f"ace-web:{workspace_slug}"` server-side, derived
+  from the membership-checked path parameter — never from the request body —
+  so canopy's session LIST (`?origin_key=`) can be scoped to one ace
+  workspace instead of every ace workspace sharing the same `CANOPY_WORKSPACE`
+  tenant (fix-round-2; every ace workspace maps to one canopy workspace
+  today, so without this a `team-b` member could list, and open,
+  `team-a`'s chats). **Residual, not fully closed:** this scopes the LIST
+  only — canopy's own tenancy still lets any member of the canopy workspace
+  open a session directly by id (`GET /api/canopy-sessions/{id}`). Hard
+  isolation requires mapping each ace workspace onto its own canopy
+  workspace, which is a prerequisite for enabling the flag for more than one
+  ace workspace at a time. Legacy `apps/sessions` remains fully intact until
+  PR 6 (gated on a labs exercise of the new path).
+  Ops + deploy prerequisites (undocumented failure modes if any is
+  missed — Important 7): (1) mint the prod `AppCredential` on canopy-web
+  (name `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`),
+  store the raw value in AWS Secrets Manager (`ace-web/canopy-app-credential`),
+  point `CANOPY_APP_CREDENTIAL`'s `valueFrom` in
+  `deploy/aws/task-definition.json` at that secret's ARN, then deploy — the
+  four non-secret `CANOPY_*` vars are already wired in the task def and flip
+  the flag on automatically once the secret exists; (2) a canopy `Agent`
+  with slug matching `CANOPY_AGENT_SLUG` (default `ace`) must exist in the
+  canopy workspace named by `CANOPY_WORKSPACE` — `createCanopySession` 404s
+  otherwise; (3) every ace user who'll use hosted chat must actually be a
+  member of that canopy workspace (canopy auto-joins by email domain, so
+  this is usually automatic, but isn't guaranteed for every domain); (4) the
+  signed-in user's email domain must be in the `AppCredential`'s allowed
+  domains — otherwise `token-exchange` 403s and every canopy call fails.
+  None of these 404/403s are silent in the UI: every user-triggered canopy
+  call (new chat, discuss-this-step) surfaces its error rather than
+  swallowing it — see `RecentSessionsSidebar.handleNew`'s try/catch.
 - **Response envelope removed**: API errors return RFC 7807 `application/problem+json`;
   success responses return bare typed payloads. The legacy `{data, error}` envelope
   was retired in PR #352 along with DRF.

@@ -72,6 +72,7 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
   const canopyBase = canopyStatus?.base_url ?? "";
   const { sessions: canopyChats, refresh: refreshCanopyChats } = useCanopySessionsList(
     canopyEnabled ? canopyBase : null,
+    workspaceSlug,
     { opp_slug: slug, opp_run_id: runId },
   );
   const [chats, setChats] = useState<LinkedChat[] | null>(null);
@@ -113,7 +114,7 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
     setStartError(null);
     try {
       if (canopyEnabled) {
-        const s = await createCanopySession({
+        const s = await createCanopySession(workspaceSlug, {
           title: skillDisplayName || skill,
           opp_slug: slug,
           opp_run_id: runId,

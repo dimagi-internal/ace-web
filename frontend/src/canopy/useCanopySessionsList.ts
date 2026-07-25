@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { SESSIONS_UPDATED_EVENT } from "../hooks/useRecentSessions";
-import { listCanopySessions, type CanopySessionSummary } from "./api";
+import { aceOriginKey, listCanopySessions, type CanopySessionSummary } from "./api";
 
 /**
  * A small list-fetching hook for canopy sessions, shared by every surface
- * that lists them (the chat sidebar, the canopy chat route's title, the
- * Workbench chat pane's linked-chats list) — mirrors `useRecentSessions`'s
- * shape for the legacy session list.
+ * that lists them (the chat sidebar, the Workbench chat pane's linked-chats
+ * list) — mirrors `useRecentSessions`'s shape for the legacy session list.
  *
  * Refetches on the same `SESSIONS_UPDATED_EVENT` bus the legacy list uses
  * (dispatched by `notifySessionsUpdated`, including from
@@ -17,9 +16,18 @@ import { listCanopySessions, type CanopySessionSummary } from "./api";
  *
  * `base` is `null` while canopy chat is disabled/not-yet-loaded — the hook
  * simply returns an empty, non-fetching list in that case.
+ *
+ * `workspaceSlug` is REQUIRED (not optional) and always sent as
+ * `origin_key` on the list call (C1) — without it, this list would return
+ * every ace-web session across every ace workspace sharing the same canopy
+ * tenant, letting a member of one ace workspace see (and open) another's
+ * chats. An empty `workspaceSlug` (a caller not currently under
+ * `/w/:workspaceSlug/`) is treated like a missing `base`: no fetch, empty
+ * list — there is no ace workspace to scope the request to.
  */
 export function useCanopySessionsList(
   base: string | null,
+  workspaceSlug: string,
   filters: { opp_slug?: string; opp_run_id?: string } = {},
 ): { sessions: CanopySessionSummary[]; refresh: () => void } {
   const [sessions, setSessions] = useState<CanopySessionSummary[]>([]);
@@ -27,16 +35,20 @@ export function useCanopySessionsList(
   const oppRunId = filters.opp_run_id;
 
   const refresh = useCallback(() => {
-    if (!base) {
+    if (!base || !workspaceSlug) {
       setSessions([]);
       return;
     }
-    listCanopySessions(base, { opp_slug: oppSlug, opp_run_id: oppRunId })
+    listCanopySessions(base, {
+      opp_slug: oppSlug,
+      opp_run_id: oppRunId,
+      origin_key: aceOriginKey(workspaceSlug),
+    })
       .then(setSessions)
       .catch(() => {
         /* non-fatal: list just stays empty/stale */
       });
-  }, [base, oppSlug, oppRunId]);
+  }, [base, workspaceSlug, oppSlug, oppRunId]);
 
   useEffect(() => {
     refresh();

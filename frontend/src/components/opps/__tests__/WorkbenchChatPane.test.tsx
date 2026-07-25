@@ -174,7 +174,7 @@ describe("WorkbenchChatPane — canopy hosted chat (flag ON)", () => {
     fireEvent.click(btn);
 
     await waitFor(() =>
-      expect(createSpy).toHaveBeenCalledWith({
+      expect(createSpy).toHaveBeenCalledWith("ws-1", {
         title: "idea-to-pdd",
         opp_slug: "opp-a",
         opp_run_id: "run-001",
@@ -183,6 +183,28 @@ describe("WorkbenchChatPane — canopy hosted chat (flag ON)", () => {
     );
     const panel = await screen.findByTestId("canopy-chat-panel-stub");
     expect(panel).toHaveTextContent("canopy-new");
+  });
+
+  it("scopes the linked-chats list to this ace workspace via origin_key (C1)", async () => {
+    vi.spyOn(canopyApi, "listCanopySessions").mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/w/ws-1/opps/opp-a"]}>
+        <Routes>
+          <Route
+            path="/w/:workspaceSlug/opps/:slug"
+            element={<WorkbenchChatPane slug="opp-a" runId="run-001" skill="idea-to-pdd" />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(canopyApi.listCanopySessions).toHaveBeenCalledWith(
+        "/canopy",
+        expect.objectContaining({ origin_key: "ace-web:ws-1" }),
+      ),
+    );
   });
 
   it("lists this run's canopy chats and selecting one renders it inline", async () => {

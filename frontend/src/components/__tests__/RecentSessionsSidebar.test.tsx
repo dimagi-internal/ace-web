@@ -203,6 +203,17 @@ describe("RecentSessionsSidebar — canopy hosted chat (flag ON)", () => {
     expect(screen.getAllByTestId("opp-group").length).toBeGreaterThan(0);
   });
 
+  it("scopes the canopy session list to this ace workspace via origin_key (C1)", async () => {
+    renderSidebar();
+
+    await waitFor(() =>
+      expect(canopyApi.listCanopySessions).toHaveBeenCalledWith(
+        "/canopy",
+        expect.objectContaining({ origin_key: "ace-web:ws-1" }),
+      ),
+    );
+  });
+
   it("New Chat creates a canopy session and navigates to the canopy route", async () => {
     const createSpy = vi
       .spyOn(canopyApi, "createCanopySession")
@@ -223,7 +234,31 @@ describe("RecentSessionsSidebar — canopy hosted chat (flag ON)", () => {
     await waitFor(() => expect(canopyApi.listCanopySessions).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /new chat/i }));
 
-    await waitFor(() => expect(createSpy).toHaveBeenCalledWith({}));
+    await waitFor(() => expect(createSpy).toHaveBeenCalledWith("ws-1", {}));
     await screen.findByTestId("landed");
+  });
+
+  it("surfaces a visible error instead of silently doing nothing when createCanopySession fails (I7)", async () => {
+    vi.spyOn(canopyApi, "createCanopySession").mockRejectedValue(
+      new Error("Failed to create canopy session: 404"),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/w/ws-1/chat/sess-malaria-1"]}>
+        <Routes>
+          <Route
+            path="/w/:workspaceSlug/chat/:slug"
+            element={<RecentSessionsSidebar currentSlug="sess-malaria-1" />}
+          />
+          <Route path="/w/:workspaceSlug/chat/c/:canopyId" element={<div data-testid="landed" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(canopyApi.listCanopySessions).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /new chat/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/404/);
+    expect(screen.queryByTestId("landed")).not.toBeInTheDocument();
   });
 });

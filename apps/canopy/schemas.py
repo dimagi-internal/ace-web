@@ -31,7 +31,13 @@ class CanopyTokenOut(StrictModel):
 
 
 class CanopySessionCreateIn(StrictModel):
-    """POST /api/canopy/sessions request body."""
+    """POST /api/w/{workspace_slug}/canopy/sessions request body.
+
+    Deliberately carries no workspace/tenant field — the ace workspace comes
+    from the URL path (and is membership-checked there), never from the
+    body, so a caller can't spoof ``origin_key`` for a workspace they don't
+    belong to (see apps/canopy/api.py).
+    """
 
     title: str = ""
     opp_slug: str = ""
@@ -40,6 +46,6 @@ class CanopySessionCreateIn(StrictModel):
 
 
 class CanopySessionCreateOut(StrictModel):
-    """POST /api/canopy/sessions response."""
+    """POST /api/w/{workspace_slug}/canopy/sessions response."""
 
     id: str

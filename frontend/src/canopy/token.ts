@@ -13,7 +13,9 @@ import { apiClient } from "../api/apiClient";
  * `force` bypasses the cache outright — the retry-once-on-401 path in
  * api.ts calls `getCanopyToken(true)` when canopy-web itself rejects the
  * token (e.g. revoked early, clock skew), regardless of what our own TTL
- * bookkeeping thinks.
+ * bookkeeping thinks; `CanopyChatPanel` also forces a refresh after a
+ * reconnect attempt, so a revoked-but-unexpired token can't wedge the
+ * socket in a permanent reconnect loop (I5).
  */
 
 interface CachedToken {
@@ -27,20 +29,34 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 
 let cached: CachedToken | null = null;
 
+// In-flight dedup (I6): without this, several components mounting at once
+// (e.g. the sidebar + the chat panel + the placement banner's fleet poll)
+// each call getCanopyToken() before any of them has a cached result, firing
+// N concurrent mints — and N new DelegatedToken rows server-side. Every
+// caller in the same tick instead awaits the one request already underway.
+let inflight: Promise<string> | null = null;
+
 interface CanopyTokenResponse {
   token: string;
   expires_at: string;
 }
 
 async function requestToken(): Promise<CanopyTokenResponse> {
-  // Not present in generated.ts yet (apps.canopy hasn't had `gen:api` run
-  // against it) — same `as never` escape hatch auth.ts's promoteCliAuthToGlobal
-  // uses for an untyped-but-real ace endpoint.
-  const { response } = await apiClient.POST("/api/canopy/token" as never, {} as never);
+  const { response } = await apiClient.POST("/api/canopy/token", {});
   if (!response.ok) {
     throw new Error(`Failed to fetch canopy token: ${response.status}`);
   }
   return (await response.json()) as CanopyTokenResponse;
+}
+
+/** A non-parseable `expires_at` is treated as already-expired (M6) rather
+ *  than caching a token whose expiry is `NaN` — `now < NaN - skew` is always
+ *  `false`, so this was already forcing a refetch on every call; made
+ *  explicit (and covered by a test) rather than relying on that NaN
+ *  coincidence. */
+function expiresAtMsOf(expiresAt: string): number {
+  const ms = new Date(expiresAt).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
 }
 
 export async function getCanopyToken(force = false): Promise<string> {
@@ -48,9 +64,17 @@ export async function getCanopyToken(force = false): Promise<string> {
   if (!force && cached && now < cached.expiresAtMs - REFRESH_SKEW_MS) {
     return cached.token;
   }
-  const { token, expires_at } = await requestToken();
-  cached = { token, expiresAtMs: new Date(expires_at).getTime() };
-  return cached.token;
+  if (!inflight) {
+    inflight = requestToken()
+      .then(({ token, expires_at }) => {
+        cached = { token, expiresAtMs: expiresAtMsOf(expires_at) };
+        return cached.token;
+      })
+      .finally(() => {
+        inflight = null;
+      });
+  }
+  return inflight;
 }
 
 /** Sync read for callers (e.g. ws.ts's URL builder) that can't await. */
