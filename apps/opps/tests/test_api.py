@@ -1901,6 +1901,70 @@ def test_seed_run_for_opp_default_skips_evals(member_client, monkeypatch):
     assert session.messages.get(turn_index=0).plaintext == "/ace:run opp-1/20260601-0900 --no-evals"
 
 
+# ---------------------------------------------------------------------------
+# Nova preflight — ace-web#636
+# ---------------------------------------------------------------------------
+
+
+def test_nova_preflight_raises_when_nova_phase_selected_and_auth_dead(monkeypatch):
+    from apps.opps import api as opps_api
+
+    monkeypatch.setattr("apps.common.nova_auth_flow.validate_token", lambda: False)
+    phases = ["p1", "p2", "commcare-setup", "p4"]
+    with pytest.raises(opps_api.NovaAuthInvalid):
+        opps_api.nova_preflight([3, 4], phases)
+
+
+def test_nova_preflight_skips_when_nova_phase_not_selected(monkeypatch):
+    from apps.opps import api as opps_api
+
+    probed = []
+    monkeypatch.setattr(
+        "apps.common.nova_auth_flow.validate_token",
+        lambda: probed.append(1) is None and False,
+    )
+    opps_api.nova_preflight([4], ["p1", "p2", "commcare-setup", "p4"])
+    assert probed == []  # no live probe when the Nova phase isn't in the run
+
+
+def test_nova_preflight_skips_when_registry_lacks_nova_phase(monkeypatch):
+    from apps.opps import api as opps_api
+
+    monkeypatch.setattr("apps.common.nova_auth_flow.validate_token", lambda: False)
+    opps_api.nova_preflight([3], ["p1", "p2", "p3"])  # must not raise
+
+
+def test_nova_preflight_passes_when_auth_valid(monkeypatch):
+    from apps.opps import api as opps_api
+
+    monkeypatch.setattr("apps.common.nova_auth_flow.validate_token", lambda: True)
+    opps_api.nova_preflight([3], ["p1", "p2", "commcare-setup"])  # must not raise
+
+
+@pytest.mark.django_db
+def test_seeded_run_409_nova_auth_invalid(member_client, monkeypatch):
+    """A dead Nova auth turns the seeded-run action into 409 nova_auth_invalid
+    instead of minting a run doomed to halt at Phase 3 (ace-web#636)."""
+    from apps.opps import api as opps_api
+
+    client, _, _ = member_client
+
+    def _raise(workspace, slug, user, body):
+        raise opps_api.NovaAuthInvalid("Nova auth is not valid")
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _raise)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 409
+    assert response["Content-Type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["extras"]["code"] == "nova_auth_invalid"
+    assert "nova/initiate" in body["extras"]["reconnect_url"]
+
+
 @pytest.mark.django_db
 def test_seed_run_for_opp_rejects_out_of_range_only(member_client, monkeypatch):
     """An --only ordinal past the phase count raises ValueError (→ 404 at the route)."""

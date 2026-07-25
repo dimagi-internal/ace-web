@@ -140,12 +140,40 @@ class McpServerOut(StrictModel):
 # ── Version ──────────────────────────────────────────────────────────────────
 
 
+class NovaAuthHealthOut(StrictModel):
+    """Nova OAuth blob health (ace-web#636).
+
+    ``connected`` — a credential blob is stored; ``valid`` — a live probe
+    (cached ~60s server-side) confirmed the token works;
+    ``last_refresh_error`` — most recent refresh failure, cleared on the
+    next successful refresh.
+    """
+
+    connected: bool
+    valid: bool
+    expires_at: str | None = None
+    last_refresh_error: str | None = None
+
+
+class EnvInjectOut(StrictModel):
+    """Outcome of the container's ``op inject`` at boot (ace-web#636).
+
+    ``status`` is ``ok`` / ``failed`` / ``skipped`` / ``unknown`` (no status
+    file — local dev or a pre-upgrade task). ``error`` carries the op-inject
+    stderr excerpt when status is ``failed``.
+    """
+
+    status: str
+    error: str | None = None
+
+
 class VersionOut(StrictModel):
     """Plugin version + remote comparison.
 
     Returned by GET /api/system/version and embedded in SystemOverviewOut.
     ``update_available`` is null when the remote check failed (network error
-    or rate limit).
+    or rate limit). ``nova_auth`` / ``env_inject`` are operational health
+    blocks (ace-web#636) populated only on the standalone version endpoint.
     """
 
     plugin_found: bool
@@ -153,6 +181,8 @@ class VersionOut(StrictModel):
     remote_version: str | None = None
     update_available: bool | None = None
     plugin_path: str = ""
+    nova_auth: NovaAuthHealthOut | None = None
+    env_inject: EnvInjectOut | None = None
 
 
 class RefreshPluginOut(StrictModel):

@@ -66,6 +66,8 @@ if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -f "$ACE_ENV_TPL" ]; then
     # `op whoami` returning the integration without the flag.
     if op inject -i "$ACE_ENV_TPL" -o "$ACE_ENV_PATH" 2>/tmp/op-inject.err; then
         chmod 600 "$ACE_ENV_PATH"
+        # Status file read by /api/system/version's env_inject block (ace-web#636).
+        printf 'ok\n' > /tmp/op-inject.status
         echo "[entrypoint] op inject succeeded → $ACE_ENV_PATH ($(grep -c '^[A-Z]' "$ACE_ENV_PATH") env keys)"
         # Mirror to the plugin's vendor dir as well. When Claude Code launches
         # the ACE MCP servers, it does NOT pass `${CLAUDE_PLUGIN_DATA}`
@@ -100,11 +102,16 @@ if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -f "$ACE_ENV_TPL" ]; then
         echo "[entrypoint] op inject FAILED — see /tmp/op-inject.err"
         head -c 500 /tmp/op-inject.err >&2
         echo "" >&2
+        # Status file read by /api/system/version's env_inject block (ace-web#636):
+        # a failed inject must flunk a health check, not just stderr.
+        { printf 'failed\n'; head -c 500 /tmp/op-inject.err; } > /tmp/op-inject.status
         echo "[entrypoint] continuing without rendered .env; downstream ACE MCPs may fail to find OCS/HQ/Gmail creds"
     fi
 elif [ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]; then
+    printf 'skipped\nOP_SERVICE_ACCOUNT_TOKEN not set\n' > /tmp/op-inject.status
     echo "[entrypoint] OP_SERVICE_ACCOUNT_TOKEN not set — skipping op inject. ACE plugin MCPs that need 1Password-backed creds (OCS, Connect, Gmail, HQ) will fail."
 elif [ ! -f "$ACE_ENV_TPL" ]; then
+    printf 'skipped\nno .env.tpl found\n' > /tmp/op-inject.status
     echo "[entrypoint] No .env.tpl found at $ACE_ENV_TPL — skipping op inject. Did the ACE plugin clone succeed?"
 fi
 

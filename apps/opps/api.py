@@ -6,6 +6,7 @@ import logging
 from typing import Annotated
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.urls import reverse
 from ninja import Path, Router
 
 from apps.api.auth import session_auth
@@ -1698,6 +1699,38 @@ def seed_chat(
 # ---------------------------------------------------------------------------
 
 
+class NovaAuthInvalid(Exception):
+    """Nova auth can't produce a working token — a seeded run including the
+    Nova-dependent phase would halt at Phase 3 (ace-web#636)."""
+
+
+# The phase whose skills need a live Nova MCP bearer.
+NOVA_PHASE = "commcare-setup"
+
+
+def nova_preflight(run_phases: list[int], phases: list[str]) -> None:
+    """Raise NovaAuthInvalid when the run includes the Nova-dependent phase
+    but the stored OAuth blob can't be validated/refreshed (ace-web#636).
+
+    Skips silently when the plugin registry doesn't declare the phase (unit
+    tests, degraded plugin install) — the preflight must never block a run
+    the halt wouldn't have hit. The monkeypatch target in tests is this
+    module-level function.
+    """
+    from apps.common import nova_auth_flow
+
+    if NOVA_PHASE not in phases:
+        return
+    if (phases.index(NOVA_PHASE) + 1) not in run_phases:
+        return
+    if not nova_auth_flow.validate_token():
+        raise NovaAuthInvalid(
+            "Nova auth is not valid — the run would halt at Phase 3. "
+            "Reconnect via /auth/nova/initiate/ (see "
+            "docs/learnings/nova-mcp-oauth.md § Recovery)."
+        )
+
+
 def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
     """Fork the golden run into a fresh, pre-shaped run, then create a CLI
     session whose first USER turn is a **plain resume** command.
@@ -1750,6 +1783,12 @@ def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
             f"--only ordinal {min_ordinal} out of range 1..{len(phases)}"
         )
     fork_at_phase = phases[min_ordinal - 1]
+
+    # Preflight: refuse to mint a run that will halt at Phase 3 because
+    # Nova auth is dead (ace-web#636) — a month of seeded runs died that
+    # way before anyone noticed. Only gates when the Nova-dependent phase
+    # is actually selected.
+    nova_preflight(run_phases, phases)
 
     # Fork the golden into a fresh run, shaped for a structural resume. No
     # session here — we drive our own headless seeded-run session below.
@@ -1846,6 +1885,17 @@ def seeded_run(
     workspace = resolve_workspace_for_member(request, workspace_slug)
     try:
         result = seed_run_for_opp(workspace, slug, request.user, body)
+    except NovaAuthInvalid as exc:
+        raise ProblemError(
+            409,
+            "Nova authentication invalid",
+            type_=TYPE_CONFLICT,
+            detail=str(exc),
+            extras={
+                "code": "nova_auth_invalid",
+                "reconnect_url": reverse("auth:nova_initiate"),
+            },
+        ) from exc
     except FileNotFoundError as exc:
         raise ProblemError(
             404, "Opp or golden run not found", type_=TYPE_NOT_FOUND, detail=str(exc),

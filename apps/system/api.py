@@ -174,9 +174,15 @@ def agent_detail(
 
 
 def get_version_info() -> dict:
+    from apps.system.health import env_inject_health, nova_auth_health
     from apps.system.version import check_version
 
-    return check_version(_plugin_path())
+    data = check_version(_plugin_path())
+    # Operational health blocks (ace-web#636) — surfaced here because the
+    # iterate loop / doctor already poll this endpoint.
+    data["nova_auth"] = nova_auth_health()
+    data["env_inject"] = env_inject_health()
+    return data
 
 
 @router.get(
