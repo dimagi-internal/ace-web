@@ -135,6 +135,7 @@ def _auth_smoke(request: HttpRequest) -> dict:
 
 from apps.activity.api import router as activity_router  # noqa: E402
 from apps.auth.api import router as auth_router  # noqa: E402
+from apps.canopy.api import router as canopy_router  # noqa: E402
 from apps.common.api import router as common_router  # noqa: E402
 from apps.ingest.api import router as ingest_router  # noqa: E402
 from apps.mobile.api import router as mobile_router  # noqa: E402
@@ -168,4 +169,5 @@ api.add_router("/system", system_router)
 api.add_router("/tokens", tokens_router)
 api.add_router("/auth", auth_router)
 api.add_router("/sessions/sweep", sessions_sweep_router)
+api.add_router("/canopy", canopy_router)
 api.add_router("", common_router)
