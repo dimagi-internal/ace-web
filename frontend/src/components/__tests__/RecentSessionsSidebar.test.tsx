@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, within, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { RecentSessionsSidebar } from "../RecentSessionsSidebar";
 import type { Session } from "../../api/types.ws";
+import { useCanopyStatus } from "../../canopy/useCanopyStatus";
+import * as canopyApi from "../../canopy/api";
 
 /**
  * Issue #527: stronger visual grouping in the chat-session sidebar.
@@ -17,7 +19,19 @@ import type { Session } from "../../api/types.ws";
  *   - A per-row colored accent bar (`[data-testid="opp-accent-bar"]`)
  *     for linked opps, and no accent bar for the unlinked "Other
  *     chats" bucket so it stays recognizable as an end-of-list state
+ *
+ * The canopy hosted-chat cutover added a `useCanopyStatus()`-gated section
+ * above this list. `useCanopyStatus` is mocked disabled-by-default for every
+ * pre-existing test in this file (so the added code path is a true no-op —
+ * "ZERO behavior change" when the flag is off), with a dedicated describe
+ * block below covering the flag-ON behavior.
  */
+
+vi.mock("../../canopy/useCanopyStatus", () => ({
+  useCanopyStatus: vi.fn(),
+}));
+
+const useCanopyStatusMock = vi.mocked(useCanopyStatus);
 
 function buildSession(overrides: Partial<Session>): Session {
   return {
@@ -96,6 +110,10 @@ function renderSidebar() {
 }
 
 describe("RecentSessionsSidebar — visual grouping (issue #527)", () => {
+  beforeEach(() => {
+    useCanopyStatusMock.mockReturnValue(null);
+  });
+
   it("renders one opp-group wrapper per unique opp_slug, unlinked last", () => {
     renderSidebar();
     const groups = screen.getAllByTestId("opp-group");
@@ -155,5 +173,57 @@ describe("RecentSessionsSidebar — visual grouping (issue #527)", () => {
     expect(within(unlinked).queryByTestId("opp-accent-bar")).toBeNull();
     // Header still renders, with "Other chats" label.
     expect(within(unlinked).getByText(/other chats/i)).toBeInTheDocument();
+  });
+});
+
+describe("RecentSessionsSidebar — canopy hosted chat (flag ON)", () => {
+  beforeEach(() => {
+    vi.spyOn(canopyApi, "listCanopySessions").mockResolvedValue([
+      {
+        id: "canopy-1",
+        title: "Canopy chat",
+        agent_slug: "echo",
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+    useCanopyStatusMock.mockReturnValue({
+      enabled: true,
+      base_url: "/canopy",
+      workspace: "ws-1",
+      agent: "echo",
+    });
+  });
+
+  it("lists canopy sessions above a Legacy-labelled section for the existing ace list", async () => {
+    renderSidebar();
+
+    await screen.findByText("Canopy chat");
+    expect(screen.getByTestId("legacy-chats-header")).toHaveTextContent(/legacy/i);
+    // The pre-existing ace sessions still render (old routes unchanged).
+    expect(screen.getAllByTestId("opp-group").length).toBeGreaterThan(0);
+  });
+
+  it("New Chat creates a canopy session and navigates to the canopy route", async () => {
+    const createSpy = vi
+      .spyOn(canopyApi, "createCanopySession")
+      .mockResolvedValue({ id: "canopy-new" });
+
+    render(
+      <MemoryRouter initialEntries={["/w/ws-1/chat/sess-malaria-1"]}>
+        <Routes>
+          <Route
+            path="/w/:workspaceSlug/chat/:slug"
+            element={<RecentSessionsSidebar currentSlug="sess-malaria-1" />}
+          />
+          <Route path="/w/:workspaceSlug/chat/c/:canopyId" element={<div data-testid="landed" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(canopyApi.listCanopySessions).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /new chat/i }));
+
+    await waitFor(() => expect(createSpy).toHaveBeenCalledWith({}));
+    await screen.findByTestId("landed");
   });
 });

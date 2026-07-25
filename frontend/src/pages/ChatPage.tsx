@@ -11,6 +11,9 @@ import { OppHeaderBreadcrumb } from "../components/OppHeaderBreadcrumb";
 import { RecentSessionsSidebar } from "../components/RecentSessionsSidebar";
 import { SharePopover } from "../components/SharePopover";
 import { ChatPanel } from "../components/opps/ChatPanel";
+import { CanopyChatPanel } from "../canopy/CanopyChatPanel";
+import { listCanopySessions } from "../canopy/api";
+import { useCanopyStatus } from "../canopy/useCanopyStatus";
 import {
   SESSIONS_UPDATED_EVENT,
   notifySessionsUpdated,
@@ -166,6 +169,64 @@ function ChatNotFound({ slug, detail }: { slug: string; detail: string }) {
               View all chats
             </Link>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The canopy hosted-chat twin of `ChatPage` above, for the
+ * `/w/:workspaceSlug/chat/c/:canopyId` route. Reuses the same sidebar chrome
+ * (extended with `currentCanopyId` for row-highlighting); the live chat body
+ * is the ace-agnostic `CanopyChatPanel`. Title comes from the canopy
+ * session list (`listCanopySessions`) rather than a per-session detail
+ * fetch (no such endpoint exists yet — see Task 3's client), refreshed on
+ * `session.title_updated` via the same `SESSIONS_UPDATED_EVENT` bus every
+ * other session list already listens on.
+ */
+export function CanopyChatRoutePage() {
+  // workspaceSlug isn't read here — RecentSessionsSidebar (below) reads it
+  // straight from the route params itself, same as the legacy ChatPage's
+  // ChatNotFound branch does.
+  const { canopyId = "" } = useParams<{ canopyId: string; workspaceSlug: string }>();
+  const status = useCanopyStatus();
+  const base = status?.base_url ?? "";
+  const [title, setTitle] = useState<string>("");
+
+  useEffect(() => {
+    if (!base || !canopyId) return;
+    let cancelled = false;
+    const load = () => {
+      listCanopySessions(base)
+        .then((rows) => {
+          if (cancelled) return;
+          const mine = rows.find((r) => r.id === canopyId);
+          if (mine) setTitle(mine.title);
+        })
+        .catch(() => {
+          /* non-fatal: the header just shows a blank/stale title */
+        });
+    };
+    load();
+    window.addEventListener(SESSIONS_UPDATED_EVENT, load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SESSIONS_UPDATED_EVENT, load);
+    };
+  }, [base, canopyId]);
+
+  return (
+    <div className="flex h-full bg-background text-foreground">
+      <RecentSessionsSidebar currentSlug={null} currentCanopyId={canopyId} />
+      <div className="flex flex-1 flex-col">
+        <header className="flex items-center justify-between border-b border-border bg-background px-4 py-2">
+          <h1 className="truncate text-sm font-semibold text-foreground">
+            {title.trim() || "Chat"}
+          </h1>
+        </header>
+        <div className="flex-1 overflow-hidden">
+          <CanopyChatPanel key={canopyId} sessionId={canopyId} />
         </div>
       </div>
     </div>

@@ -9,6 +9,16 @@
    plumbing is shared with canopy-web via canopy-ui. */
 @import "canopy-ui/tokens/preset.css";
 
+/* Tailwind v4's automatic content detection skips node_modules (and any
+   gitignored path) by design, so canopy-ui's own component source — where
+   its Tailwind classes actually live (Button/Input focus rings, invalid
+   states, etc.) — was never scanned. That silently degraded ace-web's own
+   Buttons/Inputs since the 0.3.0 canopy-ui adoption (they share the same
+   base primitives) as well as every canopy-ui/chat class used by
+   CanopyChatPanel. `@source` explicitly re-includes the kit's source tree
+   in the scan. */
+@source "../../node_modules/canopy-ui/src";
+
 @custom-variant dark (&:is(.dark *));
 
 /* App-specific theme extensions NOT covered by the shared preset:

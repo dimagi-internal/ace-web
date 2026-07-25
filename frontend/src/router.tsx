@@ -3,7 +3,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { PublicLayout } from "./components/PublicLayout";
 import { AuthCliPage } from "./pages/AuthCliPage";
-import { ChatPage } from "./pages/ChatPage";
+import { ChatPage, CanopyChatRoutePage } from "./pages/ChatPage";
 import { ChatRedirectPage } from "./pages/ChatRedirectPage";
 import InviteAcceptPage from "./pages/InviteAcceptPage";
 import MediaLibraryPage from "./pages/MediaLibraryPage";
@@ -70,6 +70,7 @@ export const router = createBrowserRouter(
               element: <VideoExplorerPage />,
             },
             { path: "chat", element: <ChatRedirectPage /> },
+            { path: "chat/c/:canopyId", element: <CanopyChatRoutePage /> },
             { path: "chat/:slug", element: <ChatPage /> },
             { path: "chat/:slug/structure", element: <SessionStructurePage /> },
             { path: "workspace-settings", element: <WorkspaceSettingsPage /> },
