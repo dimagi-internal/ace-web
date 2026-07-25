@@ -1710,8 +1710,10 @@ NOVA_PHASE = "commcare-setup"
 
 def nova_preflight(run_phases: list[int], phases: list[str]) -> None:
     """Raise NovaAuthInvalid when the run includes the Nova-dependent phase
-    but the stored OAuth blob can't be validated/refreshed (ace-web#636).
+    but NEITHER Nova auth path yields a working bearer (ace-web#636).
 
+    Subprocess sessions authenticate via the user-scope PAT override
+    (preferred) or the OAuth-blob fallback, so the gate accepts either.
     Skips silently when the plugin registry doesn't declare the phase (unit
     tests, degraded plugin install) — the preflight must never block a run
     the halt wouldn't have hit. The monkeypatch target in tests is this
@@ -1723,10 +1725,11 @@ def nova_preflight(run_phases: list[int], phases: list[str]) -> None:
         return
     if (phases.index(NOVA_PHASE) + 1) not in run_phases:
         return
-    if not nova_auth_flow.validate_token():
+    if not nova_auth_flow.validate_any_token():
         raise NovaAuthInvalid(
-            "Nova auth is not valid — the run would halt at Phase 3. "
-            "Reconnect via /auth/nova/initiate/ (see "
+            "Nova auth is not valid on either path (PAT override or OAuth "
+            "blob) — the run would halt at Phase 3. Fix the rendered .env's "
+            "NOVA_API_KEY or reconnect via /auth/nova/initiate/ (see "
             "docs/learnings/nova-mcp-oauth.md § Recovery)."
         )
 

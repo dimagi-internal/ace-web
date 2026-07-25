@@ -141,18 +141,23 @@ class McpServerOut(StrictModel):
 
 
 class NovaAuthHealthOut(StrictModel):
-    """Nova OAuth blob health (ace-web#636).
+    """Nova auth health across both paths (ace-web#636).
 
-    ``connected`` — a credential blob is stored; ``valid`` — a live probe
-    (cached ~60s server-side) confirmed the token works;
-    ``last_refresh_error`` — most recent refresh failure, cleared on the
-    next successful refresh.
+    ``connected``/``valid``/``expires_at`` describe the OAuth blob;
+    ``pat_present``/``pat_valid`` describe the user-scope PAT override
+    (the preferred subprocess path); ``usable`` is the run-preflight
+    verdict — at least one path yields a working bearer. Probes are
+    cached ~60s server-side. ``last_refresh_error`` — most recent
+    blob-refresh failure, cleared on the next successful refresh.
     """
 
     connected: bool
     valid: bool
     expires_at: str | None = None
     last_refresh_error: str | None = None
+    pat_present: bool = False
+    pat_valid: bool = False
+    usable: bool = False
 
 
 class EnvInjectOut(StrictModel):

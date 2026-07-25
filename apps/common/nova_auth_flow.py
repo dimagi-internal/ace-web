@@ -390,16 +390,61 @@ def _clear_refresh_failure() -> None:
 
 
 def validate_token() -> bool:
-    """Probe the Nova MCP endpoint with the current token.
+    """Probe the Nova MCP endpoint with the current OAuth-blob token."""
+    token = get_fresh_token()
+    if not token:
+        return False
+    return _probe_bearer(token)
+
+
+def get_pat_key() -> str | None:
+    """Read ``NOVA_API_KEY`` from the rendered plugin ``.env``.
+
+    This is the same key ``docker-entrypoint.sh`` uses to register the
+    user-scope Nova MCP bearer override — the documented-preferred auth
+    path for ``claude -p`` subprocesses (see the entrypoint comment and
+    nova-plugin#16). Returns None when the file or key is absent, or the
+    value is an unresolved ``op://`` ref (failed inject).
+    """
+    import os
+
+    data_dir = os.environ.get(
+        "CLAUDE_PLUGIN_DATA", "/home/app/.claude/plugin-data/ace"
+    )
+    try:
+        with open(f"{data_dir}/.env") as f:
+            for line in f:
+                if line.startswith("NOVA_API_KEY="):
+                    value = line.split("=", 1)[1].strip().strip('"')
+                    if value and not value.startswith("op://"):
+                        return value
+                    return None
+    except OSError:
+        return None
+    return None
+
+
+def validate_any_token() -> bool:
+    """True when EITHER Nova auth path yields a working bearer.
+
+    Subprocess sessions get Nova through the user-scope PAT override
+    (preferred) with the plugin's OAuth entry as fallback — so a run
+    preflight must accept either. Probes the PAT first (no refresh
+    machinery involved), then falls back to the OAuth-blob path.
+    """
+    pat = get_pat_key()
+    if pat and _probe_bearer(pat):
+        return True
+    return validate_token()
+
+
+def _probe_bearer(token: str) -> bool:
+    """POST ``initialize`` to the Nova MCP endpoint with the given bearer.
 
     Uses ``stream=True`` so the SSE response body doesn't block waiting for
     the keep-alive connection to close — we only care about the HTTP
     status of the initial response, not the event payload.
     """
-    token = get_fresh_token()
-    if not token:
-        return False
-
     try:
         with httpx.stream(
             "POST",
