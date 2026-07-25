@@ -51,6 +51,11 @@ NOVA_TOKEN_REFRESH_BUFFER = 300
 # Nova chat 401s. Serialize via a Redis SETNX lock; the loser polls
 # the DB instead of POSTing /token itself.
 NOVA_REFRESH_LOCK_KEY = "nova:refresh-lock"
+
+# Django-cache key recording the most recent refresh failure so operators
+# can see it (surfaced via /api/system/version — ace-web#636). Cleared on
+# the next successful refresh.
+LAST_REFRESH_FAILURE_KEY = "nova:last-refresh-failure"
 NOVA_REFRESH_LOCK_TTL = 30  # seconds — /token RTT is sub-second normally
 NOVA_REFRESH_WAIT_TIMEOUT = 5.0  # max wall-clock to wait for another task
 
@@ -350,13 +355,35 @@ def _refresh(blob: dict) -> dict | None:
         resp.raise_for_status()
     except httpx.HTTPError as e:
         logger.warning("nova: refresh failed — %s", e)
+        _record_refresh_failure(str(e))
         return None
 
     new = resp.json()
     # Some authorization servers omit refresh_token on refresh; preserve
     # the old one so we can still refresh next time.
     new.setdefault("refresh_token", refresh_token)
+    _clear_refresh_failure()
     return new
+
+
+def _record_refresh_failure(error: str) -> None:
+    """Persist the failure where /api/system/version can surface it (#636)."""
+    from django.core.cache import cache
+
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    try:
+        cache.set(LAST_REFRESH_FAILURE_KEY, f"{stamp}: {error}", None)
+    except Exception:
+        logger.debug("nova: could not record refresh failure", exc_info=True)
+
+
+def _clear_refresh_failure() -> None:
+    from django.core.cache import cache
+
+    try:
+        cache.delete(LAST_REFRESH_FAILURE_KEY)
+    except Exception:
+        logger.debug("nova: could not clear refresh-failure marker", exc_info=True)
 
 
 # ── Validation ───────────────────────────────────────────────────
