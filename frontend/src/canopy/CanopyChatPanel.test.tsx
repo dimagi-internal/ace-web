@@ -256,6 +256,83 @@ describe("CanopyChatPanel", () => {
     expect(getCanopyTokenMock).toHaveBeenNthCalledWith(2, true);
   });
 
+  it("does not produce an unhandled rejection when a reconnect's mint fails (round-2 review)", async () => {
+    mockSocket();
+    render(<CanopyChatPanel sessionId="sess-1" />);
+
+    await waitFor(() => expect(sessionSocketMock).toHaveBeenCalled());
+    const { wsUrl } = sessionSocketMock.mock.calls[0][0] as { wsUrl: (p: string) => string };
+    getCanopyTokenMock.mockClear();
+    getCanopyTokenMock.mockRejectedValueOnce(new Error("canopy down"));
+
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      // Whichever call this is (initial connect or a reconnect), its mint
+      // rejects — before the `.catch()` fix this was a fire-and-forget
+      // `void getCanopyToken(...)` with no handler, which is exactly an
+      // unhandled promise rejection once the promise actually settles.
+      wsUrl("/ws/canopy-sessions/sess-1/");
+      // Flush microtasks so the rejected promise's continuation (or lack of
+      // one) has a chance to surface as an unhandled rejection.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it("throttles forced refreshes on a flapping reconnect to at most one per 30s", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mockSocket();
+      render(<CanopyChatPanel sessionId="sess-1" />);
+
+      await vi.waitFor(() => expect(sessionSocketMock).toHaveBeenCalled());
+      const { wsUrl } = sessionSocketMock.mock.calls[0][0] as { wsUrl: (p: string) => string };
+      getCanopyTokenMock.mockClear();
+
+      wsUrl("/ws/canopy-sessions/sess-1/"); // initial connect
+      wsUrl("/ws/canopy-sessions/sess-1/"); // reconnect #1 -> forces
+      wsUrl("/ws/canopy-sessions/sess-1/"); // reconnect #2, immediately after -> throttled
+      wsUrl("/ws/canopy-sessions/sess-1/"); // reconnect #3, immediately after -> still throttled
+
+      expect(getCanopyTokenMock).toHaveBeenNthCalledWith(1, false);
+      expect(getCanopyTokenMock).toHaveBeenNthCalledWith(2, true);
+      expect(getCanopyTokenMock).toHaveBeenNthCalledWith(3, false);
+      expect(getCanopyTokenMock).toHaveBeenNthCalledWith(4, false);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      wsUrl("/ws/canopy-sessions/sess-1/"); // reconnect #4, past the throttle window -> forces again
+
+      expect(getCanopyTokenMock).toHaveBeenNthCalledWith(5, true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a non-forced (throttled) reconnect still reads the token cache normally, unaffected by the throttle", async () => {
+    // I5 round 2: "non-forced cached reads must stay unaffected" — the
+    // throttle only ever changes the `force` argument passed to
+    // getCanopyToken; it never skips calling it, so a still-valid cached
+    // token is served exactly as it would be outside a reconnect storm.
+    mockSocket();
+    render(<CanopyChatPanel sessionId="sess-1" />);
+
+    await waitFor(() => expect(sessionSocketMock).toHaveBeenCalled());
+    const { wsUrl } = sessionSocketMock.mock.calls[0][0] as { wsUrl: (p: string) => string };
+    getCanopyTokenMock.mockClear();
+
+    wsUrl("/ws/canopy-sessions/sess-1/"); // initial connect -> false
+    wsUrl("/ws/canopy-sessions/sess-1/"); // reconnect #1 -> forces (true)
+    wsUrl("/ws/canopy-sessions/sess-1/"); // reconnect #2, throttled -> false, but still CALLED
+
+    expect(getCanopyTokenMock).toHaveBeenCalledTimes(3);
+    expect(getCanopyTokenMock).toHaveBeenNthCalledWith(3, false);
+  });
+
   // --- offline-runner banner: driven by session detail's runner_online -----
 
   it("shows the placement banner when the session detail reports runner_online: false, and onPlace posts a placement (fleet non-empty)", async () => {

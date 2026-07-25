@@ -85,6 +85,16 @@ function onlineSessionCapableRunners(fleet: readonly CanopyRunnerSummary[]): Can
 // see the `runner_online`-based detection below).
 const OFFLINE_RECOVERY_POLL_MS = 30_000;
 
+// I5 round 2: minimum spacing between FORCED token refreshes issued from
+// the WS reconnect path (see the `wsUrl` builder below) — a flapping
+// socket riding the kit's reconnect ladder down to its 1s floor would
+// otherwise force a fresh mint roughly once a second per open tab, and
+// canopy's token-exchange endpoint has no rate limit (each call writes a
+// new DelegatedToken row). Reconnects inside this window fall back to a
+// normal cache-respecting (non-forced) read instead of being skipped
+// outright, so a still-valid cached token keeps being used.
+const FORCE_REFRESH_MIN_INTERVAL_MS = 30_000;
+
 interface Props {
   sessionId: string;
   /** Optional extra side-effect on `session.title_updated`, beyond the
@@ -167,24 +177,64 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
   // reconnect attempt (not just the first) fixes that without needing to
   // distinguish "revoked" from "network blip" — a forced mint is cheap and
   // idempotent-safe either way.
+  //
+  // Round-2 review fixes:
+  //  1. `getCanopyToken` now actually issues a request on every reconnect
+  //     (round 1 only read the cache), so a failing mint (canopy down,
+  //     credential revoked) is now a real rejected promise on every
+  //     attempt — `.catch()` it, or a canopy outage spews unhandled
+  //     rejections into the console/error tracker on every reconnect tick.
+  //  2. The kit's reconnect ladder bottoms out at a 1s delay
+  //     (`RECONNECT_DELAYS_MS`) and resets its own attempt counter on every
+  //     successful `onopen` — so a FLAPPING socket would otherwise force a
+  //     fresh mint roughly once a second per open tab, and canopy's
+  //     token-exchange endpoint has no rate limit of its own (each call
+  //     writes a new `DelegatedToken` row). `lastForcedAtRef` caps forced
+  //     refreshes to at most one per `FORCE_REFRESH_MIN_INTERVAL_MS`;
+  //     within that window a reconnect falls back to a normal
+  //     cache-respecting (non-forced) read, never storming the endpoint.
+  //     Scoped to THIS panel's reconnect path only (not a global change to
+  //     `getCanopyToken`'s contract) so the unrelated 401-retry-once path
+  //     in api.ts keeps forcing unconditionally, as before.
+  //  3. The reset-on-session-switch step below used to be a `useEffect`,
+  //     but the kit's OWN mount effect (registered inside
+  //     `useSessionSocket`, called above) fires BEFORE an effect declared
+  //     later in this component's body — so on mount, the real initial
+  //     connect bumped the counter 0→1, and this effect then clobbered it
+  //     straight back to 0, meaning the real first reconnect looked
+  //     identical to the initial connect and forcing only actually began
+  //     on the SECOND reconnect. Resetting synchronously during render
+  //     (comparing against the previous sessionId) instead of in an effect
+  //     avoids that ordering race outright — refs are safe to mutate
+  //     during render, and this always completes before any effect for
+  //     the same commit runs.
+  const lastForcedAtRef = useRef(0);
   const connectAttemptRef = useRef(0);
+  const lastSessionIdRef = useRef(sessionId);
+  if (lastSessionIdRef.current !== sessionId) {
+    lastSessionIdRef.current = sessionId;
+    connectAttemptRef.current = 0;
+  }
   const wsUrl = useCallback(
     (_path: string) => {
       const isReconnect = connectAttemptRef.current > 0;
       connectAttemptRef.current += 1;
-      void getCanopyToken(isReconnect);
+      const now = Date.now();
+      const shouldForce =
+        isReconnect && now - lastForcedAtRef.current >= FORCE_REFRESH_MIN_INTERVAL_MS;
+      if (shouldForce) lastForcedAtRef.current = now;
+      void getCanopyToken(shouldForce).catch(() => {
+        /* non-fatal here: a failed mint just means this attempt's URL
+           carries a stale/no token; the kit's own reconnect ladder (and
+           the next tick's forced-or-not retry above) is what recovers,
+           not this call succeeding. */
+      });
       return buildCanopyWsUrl(base, sessionId);
     },
     [base, sessionId],
   );
 
   const socket = useSessionSocket({ sessionId, wsUrl, onTitleUpdated: handleTitleUpdated });
-
-  // Reset the reconnect-attempt counter on a session switch (a fresh mount
-  // for a different session is not a reconnect of the old one).
-  useEffect(() => {
-    connectAttemptRef.current = 0;
-  }, [sessionId]);
 
   // Viewer-liveness pair: tells the bound runner to start/stop streaming
   // this session live (RunnerBinding.stream_desired). Fire-and-forget on
