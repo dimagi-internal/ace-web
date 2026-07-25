@@ -191,6 +191,30 @@ they read through to Google Drive.
   See `channels-ws-proxy-path.md` for the `/ace/ws/` proxy detail,
   `channels-websocket-auth.md` for the handshake auth pattern, and
   `stream-resume-vercel-open-agents.md` for resume hazards.
+- **Chat is canopy-hosted when `CANOPY_*` is configured** (Part 2 cutover,
+  `feat/canopy-chat`): the flag is `CANOPY_BASE_URL` + `CANOPY_APP_CREDENTIAL`
+  both set (`GET /api/canopy/status`), else the legacy WebSocket path above
+  stays live unchanged. When enabled, session state, messages, drafts,
+  presence, and turn execution all move to canopy-web — the browser talks to
+  canopy **directly** (same-origin `/canopy/*` on labs; a vite proxy in dev),
+  using the shared `canopy-ui/chat` kit. ace-web's own backend (`apps/canopy`)
+  keeps exactly one responsibility: identity brokering. Token-exchange flow:
+  (1) ace-web holds a registered canopy `AppCredential`; (2) server-side,
+  `apps/canopy/client.exchange_token` trades that credential + the signed-in
+  user's email for a short-lived canopy `DelegatedToken` via
+  `POST {canopy}/api/auth/token-exchange`; (3) the SPA uses that token as
+  `Authorization: Bearer` on canopy REST and `?token=` on the canopy chat
+  WebSocket — never the app credential itself. `POST /api/canopy/sessions`
+  additionally bakes in opp linkage (`opp_slug`/`opp_run_id`/`opp_step_skill`
+  metadata) server-side so seeding rules live in one place. Legacy
+  `apps/sessions` remains fully intact until PR 6 (gated on a labs exercise of
+  the new path). Ops: mint the prod `AppCredential` on canopy-web (name
+  `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`), store the
+  raw value in AWS Secrets Manager (`ace-web/canopy-app-credential`), point
+  `CANOPY_APP_CREDENTIAL`'s `valueFrom` in `deploy/aws/task-definition.json`
+  at that secret's ARN, then deploy — the four non-secret `CANOPY_*` vars are
+  already wired in the task def and flip the flag on automatically once the
+  secret exists.
 - **Response envelope removed**: API errors return RFC 7807 `application/problem+json`;
   success responses return bare typed payloads. The legacy `{data, error}` envelope
   was retired in PR #352 along with DRF.

@@ -2147,6 +2147,57 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/canopy/status": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Status */
+        readonly get: operations["apps_canopy_api_status"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/canopy/token": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Token */
+        readonly post: operations["apps_canopy_api_token"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/canopy/sessions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Sessions */
+        readonly post: operations["apps_canopy_api_sessions"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/health": {
         readonly parameters: {
             readonly query?: never;
@@ -4589,6 +4640,68 @@ export interface components {
         readonly SweepDeleteIn: {
             /** Session Ids */
             readonly session_ids?: readonly number[];
+        };
+        /**
+         * CanopyStatusOut
+         * @description GET /api/canopy/status response — drives the frontend feature flag.
+         */
+        readonly CanopyStatusOut: {
+            /** Enabled */
+            readonly enabled: boolean;
+            /** Base Url */
+            readonly base_url: string;
+            /** Workspace */
+            readonly workspace: string;
+            /** Agent */
+            readonly agent: string;
+        };
+        /**
+         * CanopyTokenOut
+         * @description POST /api/canopy/token response — a short-lived delegated token.
+         *
+         *     ``expires_at`` is passed through opaquely from canopy-web (an ISO-8601
+         *     string in practice); typed as ``str`` rather than ``datetime`` since this
+         *     surface never parses it, only forwards it to the browser.
+         */
+        readonly CanopyTokenOut: {
+            /** Token */
+            readonly token: string;
+            /** Expires At */
+            readonly expires_at: string;
+        };
+        /**
+         * CanopySessionCreateOut
+         * @description POST /api/canopy/sessions response.
+         */
+        readonly CanopySessionCreateOut: {
+            /** Id */
+            readonly id: string;
+        };
+        /**
+         * CanopySessionCreateIn
+         * @description POST /api/canopy/sessions request body.
+         */
+        readonly CanopySessionCreateIn: {
+            /**
+             * Title
+             * @default
+             */
+            readonly title: string;
+            /**
+             * Opp Slug
+             * @default
+             */
+            readonly opp_slug: string;
+            /**
+             * Opp Run Id
+             * @default
+             */
+            readonly opp_run_id: string;
+            /**
+             * Opp Step Skill
+             * @default
+             */
+            readonly opp_step_skill: string;
         };
         /**
          * HealthCheckOut
@@ -7611,6 +7724,70 @@ export interface operations {
                     readonly "application/json": {
                         readonly [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    readonly apps_canopy_api_status: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CanopyStatusOut"];
+                };
+            };
+        };
+    };
+    readonly apps_canopy_api_token: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CanopyTokenOut"];
+                };
+            };
+        };
+    };
+    readonly apps_canopy_api_sessions: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CanopySessionCreateIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CanopySessionCreateOut"];
                 };
             };
         };
