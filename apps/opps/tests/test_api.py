@@ -1909,7 +1909,7 @@ def test_seed_run_for_opp_default_skips_evals(member_client, monkeypatch):
 def test_nova_preflight_raises_when_nova_phase_selected_and_auth_dead(monkeypatch):
     from apps.opps import api as opps_api
 
-    monkeypatch.setattr("apps.common.nova_auth_flow.validate_token", lambda: False)
+    monkeypatch.setattr("apps.common.nova_auth_flow.validate_any_token", lambda: False)
     phases = ["p1", "p2", "commcare-setup", "p4"]
     with pytest.raises(opps_api.NovaAuthInvalid):
         opps_api.nova_preflight([3, 4], phases)
@@ -1920,7 +1920,7 @@ def test_nova_preflight_skips_when_nova_phase_not_selected(monkeypatch):
 
     probed = []
     monkeypatch.setattr(
-        "apps.common.nova_auth_flow.validate_token",
+        "apps.common.nova_auth_flow.validate_any_token",
         lambda: probed.append(1) is None and False,
     )
     opps_api.nova_preflight([4], ["p1", "p2", "commcare-setup", "p4"])
@@ -1930,14 +1930,14 @@ def test_nova_preflight_skips_when_nova_phase_not_selected(monkeypatch):
 def test_nova_preflight_skips_when_registry_lacks_nova_phase(monkeypatch):
     from apps.opps import api as opps_api
 
-    monkeypatch.setattr("apps.common.nova_auth_flow.validate_token", lambda: False)
+    monkeypatch.setattr("apps.common.nova_auth_flow.validate_any_token", lambda: False)
     opps_api.nova_preflight([3], ["p1", "p2", "p3"])  # must not raise
 
 
 def test_nova_preflight_passes_when_auth_valid(monkeypatch):
     from apps.opps import api as opps_api
 
-    monkeypatch.setattr("apps.common.nova_auth_flow.validate_token", lambda: True)
+    monkeypatch.setattr("apps.common.nova_auth_flow.validate_any_token", lambda: True)
     opps_api.nova_preflight([3], ["p1", "p2", "commcare-setup"])  # must not raise
 
 

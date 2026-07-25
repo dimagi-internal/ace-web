@@ -22,25 +22,26 @@ _cache: dict[str, tuple[bool, float]] = {}
 _NOVA_PROBE_TTL_SECONDS = 60
 
 
-def _cached_validate() -> bool:
-    from apps.common import nova_auth_flow
-
-    cached = _cache.get("nova_valid")
+def _cached_probe(key: str, probe) -> bool:
+    cached = _cache.get(key)
     if cached is not None:
         valid, ts = cached
         if (time.monotonic() - ts) < _NOVA_PROBE_TTL_SECONDS:
             return valid
-    valid = nova_auth_flow.validate_token()
-    _cache["nova_valid"] = (valid, time.monotonic())
+    valid = probe()
+    _cache[key] = (valid, time.monotonic())
     return valid
 
 
 def nova_auth_health() -> dict:
-    """Return ``{connected, valid, expires_at, last_refresh_error}``.
+    """Return the health of BOTH Nova auth paths.
 
-    ``connected`` — a credential blob is stored at all; ``valid`` — a live
-    probe (cached ~60s) confirmed the token works; ``last_refresh_error``
-    — the most recent refresh failure, cleared on the next success.
+    ``connected``/``valid``/``expires_at`` describe the OAuth blob;
+    ``pat_present``/``pat_valid`` describe the user-scope PAT override
+    (the preferred subprocess path); ``usable`` is the run-preflight
+    verdict — at least one path yields a working bearer. Probes are
+    cached ~60s. ``last_refresh_error`` is the most recent blob-refresh
+    failure, cleared on the next success.
     """
     from django.core.cache import cache as django_cache
 
@@ -48,25 +49,31 @@ def nova_auth_health() -> dict:
 
     blob = nova_auth_flow.get_blob()
     last_error = django_cache.get(nova_auth_flow.LAST_REFRESH_FAILURE_KEY)
+    pat = nova_auth_flow.get_pat_key()
+    pat_valid = bool(pat) and _cached_probe(
+        "pat_valid", lambda: nova_auth_flow._probe_bearer(pat)
+    )
+
     if not blob:
-        return {
-            "connected": False,
-            "valid": False,
-            "expires_at": None,
-            "last_refresh_error": last_error,
-        }
-    raw_expires = blob.get("expires_at")
-    if isinstance(raw_expires, (int, float)):
-        expires_at: str | None = datetime.datetime.fromtimestamp(
-            raw_expires, tz=datetime.UTC
-        ).isoformat()
+        blob_valid = False
+        expires_at: str | None = None
     else:
-        expires_at = raw_expires
+        blob_valid = _cached_probe("nova_valid", nova_auth_flow.validate_token)
+        raw_expires = blob.get("expires_at")
+        if isinstance(raw_expires, (int, float)):
+            expires_at = datetime.datetime.fromtimestamp(
+                raw_expires, tz=datetime.UTC
+            ).isoformat()
+        else:
+            expires_at = raw_expires
     return {
-        "connected": True,
-        "valid": _cached_validate(),
+        "connected": blob is not None,
+        "valid": blob_valid,
         "expires_at": expires_at,
         "last_refresh_error": last_error,
+        "pat_present": bool(pat),
+        "pat_valid": pat_valid,
+        "usable": pat_valid or blob_valid,
     }
 
 
