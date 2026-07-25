@@ -13,6 +13,11 @@ on:
         required: true
         default: false
 
+# Deploys are serialized (one at a time, never cancelled mid-flight). That makes a
+# hung job everyone's problem: it holds this lock and every later deploy queues
+# behind it, so the per-job timeout-minutes below are what keep the queue live —
+# GitHub's default is 6 HOURS. Seen in canopy-web: configure-aws-credentials
+# wedged for ~55min and blocked the queue until it was cancelled by hand.
 concurrency:
   group: deploy-labs-ace-web
   cancel-in-progress: false
@@ -34,6 +39,7 @@ jobs:
   guard:
     name: Enforce main-only deploys
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check ref is refs/heads/main
         run: |
@@ -45,6 +51,7 @@ jobs:
   build-backend:
     name: Build Backend
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: guard
     steps:
       - uses: actions/checkout@v6
@@ -82,6 +89,7 @@ jobs:
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: guard
     steps:
       - uses: actions/checkout@v6
@@ -114,6 +122,7 @@ jobs:
     name: Deploy to Fargate
     needs: [build-backend, build-frontend]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
