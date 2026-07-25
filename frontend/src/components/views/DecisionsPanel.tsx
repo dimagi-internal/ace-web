@@ -141,10 +141,10 @@ function DecisionRow({
   onRevert?: (row_id: string) => void;
 }) {
   const [rowOpen, setRowOpen] = useState(false);
-  // Edit-mode draft. Holds the pending pill selection (or new-option text)
-  // and the override reasoning. `null` = not in edit mode.
+  // Edit-mode draft. Holds in-progress text for the override reasoning and
+  // the new-option field. `null` = not in edit mode. Pill selection is NOT
+  // drafted — picking a pill stages the edit immediately (radio semantics).
   const [draft, setDraft] = useState<{
-    selected: string;
     new_option: string;
     override_reasoning: string;
   } | null>(null);
@@ -161,10 +161,24 @@ function DecisionRow({
   const isOverridden = effectiveValue !== decision.ai_default;
   const canEdit = !!onEdit;
 
-  const tone =
-    decision.status === "overridden"
-      ? "border-sky-500/40 bg-sky-500/10 text-sky-400"
-      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+  // Status chip: three-state derivation from the EFFECTIVE state, not a
+  // passthrough of `decision.status` — otherwise the chip keeps reading
+  // ai-default while a staged pick already highlights a different pill.
+  //   ai-default (emerald)          — effective value equals ai_default, no reasoning
+  //   overridden (sky)              — committed on the run (or saved to Drive)
+  //   overridden · pending (violet) — staged in the shared buffer only
+  const effectiveIsAiDefault =
+    effectiveValue === decision.ai_default && !effectiveReason;
+  const chipLabel = effectiveIsAiDefault
+    ? "ai-default"
+    : isEdited
+      ? "overridden · pending"
+      : "overridden";
+  const tone = effectiveIsAiDefault
+    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+    : isEdited
+      ? "border-violet-500/40 bg-violet-500/10 text-violet-400"
+      : "border-sky-500/40 bg-sky-500/10 text-sky-400";
 
   // Row-level color flip: visible sky-tint on overridden rows (committed
   // or pending) so the user can scan a long list and spot the humans'
@@ -180,7 +194,6 @@ function DecisionRow({
 
   function openEditMode() {
     setDraft({
-      selected: effectiveValue,
       new_option: "",
       override_reasoning: effectiveReason,
     });
@@ -190,24 +203,43 @@ function DecisionRow({
     setDraft(null);
   }
 
-  function commit() {
+  // Stage an answer immediately — a pill click behaves like a radio
+  // button. An in-progress draft reason travels with the pick so typing
+  // a reason first and picking a pill second loses nothing.
+  function pickOption(opt: string) {
+    if (!onEdit) return;
+    if (opt === effectiveValue) return; // radio semantics: no-op
+    const reason = (draft ? draft.override_reasoning : effectiveReason).trim();
+    if (opt === decision.ai_default && !reason) {
+      // Landing back on the AI default with no reasoning is a revert,
+      // not an override-to-the-same-value.
+      if (isEdited && onRevert) onRevert(decision.id);
+      else onEdit(decision.id, opt, undefined);
+    } else {
+      onEdit(decision.id, opt, reason || undefined);
+    }
+    if (draft?.new_option) setDraft({ ...draft, new_option: "" });
+  }
+
+  // Blur handler for the reason textarea + new-option input. New-option
+  // text wins over the current pill value — typing there is the only way
+  // to introduce an answer that wasn't on the AI's list.
+  function commitDraft() {
     if (!draft || !onEdit) return;
-    // New-option text takes precedence over pill selection — typing in
-    // the "new option" field is the only way to introduce an answer
-    // that wasn't on the AI's list, and it should win over a stale
-    // pill click made earlier in the same edit session.
-    const answer = draft.new_option.trim() || draft.selected;
+    const answer = draft.new_option.trim() || effectiveValue;
     const reason = draft.override_reasoning.trim();
     // If the user lands on the AI default with no reason, revert
-    // outright. Otherwise commit the (possibly equal-to-default) value
+    // outright. Otherwise stage the (possibly equal-to-default) value
     // with the reason attached — the reason itself is a meaningful
     // signal even when the answer doesn't change.
     if (answer === decision.ai_default && !reason) {
       if (isEdited && onRevert) onRevert(decision.id);
-    } else {
-      onEdit(decision.id, answer, reason || undefined);
+      return;
     }
-    closeEditMode();
+    // Skip no-op writes so tabbing through the fields doesn't spam the
+    // shared buffer with identical edits.
+    if (answer === effectiveValue && reason === effectiveReason.trim()) return;
+    onEdit(decision.id, answer, reason || undefined);
   }
 
   return (
@@ -259,7 +291,7 @@ function DecisionRow({
             tone,
           )}
         >
-          {decision.status}
+          {chipLabel}
         </span>
         <ChevronRight
           className={cn(
@@ -281,29 +313,14 @@ function DecisionRow({
             />
           )}
           <DetailRow
-            label={canEdit && draft ? "Pick option" : "Options"}
+            label={canEdit ? "Pick option" : "Options"}
             value={
               <OptionsRow
                 decision={decision}
                 draft={draft}
                 effectiveValue={effectiveValue}
                 canEdit={canEdit}
-                onPick={(opt) => {
-                  if (!canEdit) return;
-                  if (draft) {
-                    setDraft({ ...draft, selected: opt, new_option: "" });
-                  } else {
-                    // First click on a non-current pill enters edit mode
-                    // with that pill pre-selected. Click on the
-                    // already-effective pill is a no-op (radio semantics).
-                    if (opt === effectiveValue) return;
-                    setDraft({
-                      selected: opt,
-                      new_option: "",
-                      override_reasoning: effectiveReason,
-                    });
-                  }
-                }}
+                onPick={pickOption}
               />
             }
           />
@@ -387,20 +404,22 @@ function DecisionRow({
                 <div className="flex w-full flex-col gap-2">
                   <label className="flex flex-col gap-1">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-                      Override reason (optional)
+                      Override reason (optional — saves when you click away)
                     </span>
                     <textarea
                       value={draft.override_reasoning}
                       onChange={(e) =>
                         setDraft({ ...draft, override_reasoning: e.target.value })
                       }
+                      onBlur={commitDraft}
                       onKeyDown={(e) => {
                         if (e.key === "Escape") {
                           e.preventDefault();
                           closeEditMode();
                         } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                           e.preventDefault();
-                          commit();
+                          commitDraft();
+                          closeEditMode();
                         }
                       }}
                       autoFocus
@@ -417,13 +436,15 @@ function DecisionRow({
                       type="text"
                       value={draft.new_option}
                       onChange={(e) => setDraft({ ...draft, new_option: e.target.value })}
+                      onBlur={commitDraft}
                       onKeyDown={(e) => {
                         if (e.key === "Escape") {
                           e.preventDefault();
                           closeEditMode();
                         } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                           e.preventDefault();
-                          commit();
+                          commitDraft();
+                          closeEditMode();
                         }
                       }}
                       placeholder={
@@ -438,17 +459,10 @@ function DecisionRow({
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={commit}
-                      className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400 hover:bg-emerald-500/20"
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
                       onClick={closeEditMode}
                       className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
                     >
-                      Cancel
+                      Done
                     </button>
                   </div>
                 </div>
@@ -469,20 +483,16 @@ function OptionsRow({
   onPick,
 }: {
   decision: Decision;
-  draft: { selected: string; new_option: string } | null;
+  draft: { new_option: string } | null;
   effectiveValue: string;
   canEdit: boolean;
   onPick: (opt: string) => void;
 }) {
-  // While editing, the user's pending pill selection wins UNLESS they've
-  // typed text into the new-option field — then no pill highlights,
-  // because the new option will be the committed answer.
+  // The staged/committed answer highlights UNLESS the user has typed
+  // text into the new-option field — then no pill highlights, because
+  // the new option will become the staged answer on blur.
   const highlighted =
-    draft && draft.new_option.trim().length > 0
-      ? null
-      : draft
-      ? draft.selected
-      : effectiveValue;
+    draft && draft.new_option.trim().length > 0 ? null : effectiveValue;
 
   // Surface write-in answers as extra pills so the user sees the current
   // selection somewhere in the pill row, not just in the row header chip.
