@@ -8,6 +8,17 @@ ace@dimagi-ai.com automation bot is added as Editor if it exists.
 After this lands on prod, ACE_DRIVE_ROOT_FOLDER_ID is no longer read at
 runtime — it's a migration-only seed value. Future deployments don't
 need it set.
+
+Note (chat retirement PR): the original version of this migration also
+backfilled `ShareToken.workspace`. That block was removed once
+`apps.sessions.models.ShareToken` was deleted (session-sharing retired
+alongside ace-web's own chat UI in favor of canopy-hosted chat) —
+editing it is safe because this RunPython already executed against
+production (this file's content isn't re-run on an already-applied
+migration) and the block was unreachable in any fresh
+install/test-database replay anyway (`ACE_DRIVE_ROOT_FOLDER_ID` is
+unset there, so the function returns before reaching it — see the
+early return below).
 """
 from django.conf import settings
 from django.db import migrations
@@ -23,7 +34,6 @@ def seed_and_backfill(apps, schema_editor):
     User = apps.get_model("ace_auth", "User")
     OppWorkspace = apps.get_model("opps", "OppWorkspace")
     Session = apps.get_model("ace_sessions", "Session")
-    ShareToken = apps.get_model("ace_sessions", "ShareToken")
     IngestUpload = apps.get_model("ace_sessions", "IngestUpload")
 
     folder_id = getattr(settings, "ACE_DRIVE_ROOT_FOLDER_ID", "")
@@ -70,14 +80,6 @@ def seed_and_backfill(apps, schema_editor):
         Session.objects.filter(
             workspace__isnull=True, opp_slug__in=opp_slugs
         ).update(workspace=ws)
-
-    # Backfill ShareToken.workspace via the related session
-    for tok in (
-        ShareToken.objects.filter(workspace__isnull=True).select_related("session")
-    ):
-        if tok.session.workspace_id is not None:
-            tok.workspace_id = tok.session.workspace_id
-            tok.save(update_fields=["workspace"])
 
     # Backfill IngestUpload.workspace via the related session
     for up in (

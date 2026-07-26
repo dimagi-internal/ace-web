@@ -41,12 +41,12 @@ export function SessionStructurePage() {
         <header className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-3">
             <Link
-              to={`/w/${workspaceSlug}/chat/${slug}`}
+              to={`/w/${workspaceSlug}/sessions`}
               className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-              title="Back to chat"
+              title="Back to sessions"
             >
               <ArrowLeft className="h-4 w-4" />
-              Chat
+              Sessions
             </Link>
             <OppHeaderBreadcrumb
               oppSlug={meta?.opp_slug ?? ""}

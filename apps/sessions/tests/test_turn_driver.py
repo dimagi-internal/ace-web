@@ -285,12 +285,12 @@ class _StubChannelLayer:
 async def test_drive_and_broadcast_drives_to_completion_and_broadcasts(
     session, user_and_assistant_messages
 ):
-    """consumers.drive_and_broadcast drives the SAME turn-driver state machine
-    as a WS turn (DB → complete) AND broadcasts stream_start + stream_complete
-    to the session group — so a programmatically-launched run is a normal,
-    openable, live session. This is the path the seeded-run action uses via the
-    drive_turn management command (ace-web#585)."""
-    from apps.sessions.consumers import drive_and_broadcast
+    """turn_driver.drive_and_broadcast drives the SAME turn-driver state
+    machine as any other turn (DB → complete) AND broadcasts stream_start +
+    stream_complete to the session group — so a programmatically-launched run
+    is a normal, openable, live session. This is the path the seeded-run
+    action uses via the drive_turn management command (ace-web#585)."""
+    from apps.sessions.turn_driver import drive_and_broadcast
 
     _user, asst = user_and_assistant_messages
     events = [StreamEvent.delta(text="done"), StreamEvent.done()]

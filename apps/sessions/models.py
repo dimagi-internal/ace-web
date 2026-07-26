@@ -1,9 +1,16 @@
-"""Data models for the ACE web harness sessions, messages, and drafts.
+"""Data models for ACE's Session/Message execution engine.
+
+Session + Message are NOT chat-only: they're the record of every assistant
+turn ACE drives, whether from a human typing (retired — see canopy-web) or a
+programmatic run (``apps.opps.api::seeded_run``, the ``drive_turn`` mgmt
+command, Slack-triggered runs). turn_driver.py is the shared execution path
+for both. See the PR that retired the interactive chat UI (apps/sessions/
+consumers.py, drafts.py, presence.py, routing.py, and the Draft/ShareToken
+models) for why this app is not a "legacy chat app" in the narrow sense.
 
 These models are designed to be:
-- Append-only for messages: the consumer in Plan 1B/1C is the sole writer
-  and never edits a row after status='complete'. Enforcement lives in the
-  consumer/serializer layer, not at the DB level.
+- Append-only for messages: the turn driver is the sole writer and never
+  edits a row after status='complete'.
 - Multi-player native (many-to-many user-session via SessionParticipant)
 - Extensible to future modules via nullable opportunity_id, ocs_agent_id, idd_ref
 """
@@ -23,7 +30,20 @@ def generate_slug() -> str:
 
 
 def generate_share_token() -> str:
-    """24-byte URL-safe random token for share URLs (~32 chars)."""
+    """24-byte URL-safe random token.
+
+    The ``ShareToken`` model that used this as a field default is gone (the
+    session-sharing feature retired with ace-web's own chat UI), but this
+    function must stay: ``apps/sessions/migrations/0001_initial.py`` (an
+    already-applied, already-shipped migration) references it by dotted path
+    (``apps.sessions.models.generate_share_token``) as that historical
+    field's ``default=``, and Django resolves that reference by importing
+    this module every time the migration graph loads — including on a
+    fresh/test database replaying history from migration 0001 forward, long
+    after the field itself was dropped by a later migration. Removing this
+    function breaks `manage.py migrate`/`makemigrations` with an
+    AttributeError. Do not remove without first squashing migrations.
+    """
     return secrets.token_urlsafe(24)
 
 
@@ -285,73 +305,6 @@ class Message(models.Model):
             ),
         ]
         ordering = ["session_id", "turn_index"]
-
-
-class Draft(models.Model):
-    SLOT_CHOICES = [
-        ("next", "Next"),
-        ("queued", "Queued"),
-    ]
-    STATUS_CHOICES = [
-        ("open", "Open"),
-        ("sent", "Sent"),
-        ("discarded", "Discarded"),
-    ]
-
-    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="drafts")
-    creator_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_drafts"
-    )
-    slot = models.CharField(max_length=8, choices=SLOT_CHOICES, default="queued")
-    queue_position = models.IntegerField(null=True, blank=True)
-    body = models.TextField(blank=True, default="")
-    version = models.IntegerField(default=0)
-    last_editor = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="edited_drafts"
-    )
-    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="open")
-    sent_at = models.DateTimeField(null=True, blank=True)
-    sent_message = models.ForeignKey(
-        Message, on_delete=models.SET_NULL, null=True, blank=True, related_name="from_draft"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Draft {self.id} ({self.slot}/{self.status})"
-
-    class Meta:
-        db_table = "drafts"
-        constraints = [
-            # Only one open "next" draft per session.
-            models.UniqueConstraint(
-                fields=["session"],
-                condition=models.Q(slot="next", status="open"),
-                name="one_next_per_session",
-            ),
-        ]
-
-
-class ShareToken(models.Model):
-    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="share_tokens")
-    token = models.CharField(max_length=64, unique=True, default=generate_share_token)
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="share_tokens"
-    )
-    revoked_at = models.DateTimeField(null=True, blank=True)
-    workspace = models.ForeignKey(
-        "ace_workspaces.Workspace",
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name="share_tokens",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Token {self.token[:8]}... for session {self.session_id}"  # pyright: ignore[reportIndexIssue]
-
-    class Meta:
-        db_table = "share_tokens"
 
 
 class IngestUpload(models.Model):

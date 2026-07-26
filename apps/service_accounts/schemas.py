@@ -1,32 +1,27 @@
 """Pydantic v2 schemas for the service_accounts surface.
 
-This module covers two related surfaces:
-
-1. **Personal tokens** (``PersonalToken`` in ``apps.auth.models``).
-   The management views live at ``apps/auth/token_views.py``; they are
-   grouped here (not in ``apps.auth.schemas``) because the plan treats
-   personal tokens as the user-facing credential API that parallels the
-   service account credential layer.
-
-2. **Share tokens** — The read shape (``ShareTokenOut``) is already
-   defined in ``apps.sessions.schemas`` (it belongs to the session
-   surface).  We re-export it from here so Phase 2 token-management
-   views can import from a single location.
+**Personal tokens** (``PersonalToken`` in ``apps.auth.models``).
+The management views live at ``apps/auth/token_views.py``; they are
+grouped here (not in ``apps.auth.schemas``) because the plan treats
+personal tokens as the user-facing credential API that parallels the
+service account credential layer.
 
 Field-name note:
    The DRF view uses ``"label"`` for the token name field.  The v2
    public API uses ``"name"`` (aligns with the plan's schema names).
    Phase 2 views must map ``token.label -> name`` when populating
    ``PersonalTokenOut``.
+
+(The aspirational "share token" schemas that used to live here —
+``ShareTokenCreateIn`` and a re-export of ``apps.sessions.schemas.
+ShareTokenOut`` — were removed with the session-sharing feature they were
+staged for; see the PR that retired apps/sessions' ShareToken model.)
 """
 from __future__ import annotations
 
 import datetime as dt
 
 from apps.common.schemas import StrictModel
-
-# Re-export for callers that manage share tokens from this surface.
-from apps.sessions.schemas import ShareTokenOut as ShareTokenOut  # noqa: PLC0414
 
 # ── Personal token schemas ───────────────────────────────────────────────────
 
@@ -61,22 +56,8 @@ class PersonalTokenCreatedOut(PersonalTokenOut):
     raw_token: str
 
 
-# ── Share token schemas ──────────────────────────────────────────────────────
-
-
-class ShareTokenCreateIn(StrictModel):
-    """POST /api/sessions/<slug>/share-tokens — create a share link.
-
-    No body fields are required for the current implementation; the
-    schema exists so Phase 2 can extend it (e.g. ``expires_in_days``)
-    without a breaking change.
-    """
-
-
 __all__ = [
     "PersonalTokenCreateIn",
     "PersonalTokenCreatedOut",
     "PersonalTokenOut",
-    "ShareTokenCreateIn",
-    "ShareTokenOut",
 ]

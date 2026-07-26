@@ -3,8 +3,8 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { PublicLayout } from "./components/PublicLayout";
 import { AuthCliPage } from "./pages/AuthCliPage";
-import { ChatPage, CanopyChatRoutePage } from "./pages/ChatPage";
-import { ChatRedirectPage } from "./pages/ChatRedirectPage";
+import { CanopyChatRoutePage } from "./pages/ChatPage";
+import { ChatRedirectPage, LegacyChatSlugRedirect } from "./pages/ChatRedirectPage";
 import InviteAcceptPage from "./pages/InviteAcceptPage";
 import MediaLibraryPage from "./pages/MediaLibraryPage";
 import { NoWorkspaceRedirect } from "./pages/NoWorkspaceRedirect";
@@ -17,7 +17,6 @@ import OppWorkbenchPage from "./pages/OppWorkbenchPage";
 import { SessionStructurePage } from "./pages/SessionStructurePage";
 import SessionsPage from "./pages/SessionsPage";
 import SettingsPage from "./pages/SettingsPage";
-import ShareViewPage from "./pages/ShareViewPage";
 import SystemPage from "./pages/SystemPage";
 import VideoExplorerPage from "./pages/VideoExplorerPage";
 import VideosListPage from "./pages/VideosListPage";
@@ -71,8 +70,17 @@ export const router = createBrowserRouter(
             },
             { path: "chat", element: <ChatRedirectPage /> },
             { path: "chat/c/:canopyId", element: <CanopyChatRoutePage /> },
-            { path: "chat/:slug", element: <ChatPage /> },
+            // The interactive ace-web-native chat page at this exact shape
+            // (`/chat/:slug`, no further sub-path) is retired — canopy chat
+            // is the chat now. Redirect to chat home rather than 404.
+            // `/chat/:slug/structure` below is a DIFFERENT, still-live route
+            // (a read-only transcript view) and must stay registered before
+            // this bare fallback would ever shadow it — react-router ranks
+            // by segment count, not array order, so the two can't collide,
+            // but keeping the more specific route visually first avoids any
+            // doubt.
             { path: "chat/:slug/structure", element: <SessionStructurePage /> },
+            { path: "chat/:slug", element: <LegacyChatSlugRedirect /> },
             { path: "workspace-settings", element: <WorkspaceSettingsPage /> },
           ],
         },
@@ -83,7 +91,6 @@ export const router = createBrowserRouter(
         { path: "settings", element: <SettingsPage /> },
         { path: "system", element: <SystemPage /> },
         { path: "auth/cli", element: <AuthCliPage /> },
-        { path: "share/:token", element: <ShareViewPage /> },
 
         // Legacy redirects: bare /opps, /sessions, /chat — resolve to the
         // user's first workspace (or /welcome if none). Deep links with

@@ -6,7 +6,7 @@ small and the CASCADE behavior is exactly what's being validated.
 import pytest
 from django.contrib.auth import get_user_model
 
-from apps.sessions.models import IngestUpload, Message, Session, ShareToken
+from apps.sessions.models import IngestUpload, Message, Session
 from apps.workspaces.models import Workspace, WorkspaceMembership
 
 User = get_user_model()
@@ -116,7 +116,7 @@ def test_sweep_list_anon_401(client):
 
 
 @pytest.mark.django_db
-def test_sweep_delete_cascades_uploads_messages_and_share_tokens(two_workspaces, client):
+def test_sweep_delete_cascades_uploads_and_messages(two_workspaces, client):
     alice = two_workspaces["alice"]
     ws1 = two_workspaces["ws1"]
     session = _make_session(ws1, alice)
@@ -126,7 +126,6 @@ def test_sweep_delete_cascades_uploads_messages_and_share_tokens(two_workspaces,
     Message.objects.create(
         session=session, turn_index=0, role="user", content={}, plaintext="hi"
     )
-    ShareToken.objects.create(session=session, created_by=alice, workspace=ws1)
 
     client.force_login(alice)
     resp = client.post(
@@ -141,7 +140,6 @@ def test_sweep_delete_cascades_uploads_messages_and_share_tokens(two_workspaces,
     assert not Session.objects.filter(pk=session.pk).exists()
     assert not IngestUpload.objects.filter(session_id=session.pk).exists()
     assert not Message.objects.filter(session_id=session.pk).exists()
-    assert not ShareToken.objects.filter(session_id=session.pk).exists()
 
 
 @pytest.mark.django_db

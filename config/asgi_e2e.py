@@ -4,8 +4,8 @@ Two jobs:
 
 1. Wraps the real ``config.asgi.application`` with a tiny prefix-
    stripping wrapper so that the frontend's hardcoded
-   ``/ace/ws/sessions/<slug>/`` WebSocket URL reaches the Channels
-   router, which registers the bare ``^ws/sessions/...$`` pattern.
+   ``/ace/ws/opps/<slug>/...`` WebSocket URL reaches the Channels
+   router, which registers the bare ``^ws/opps/...$`` pattern.
 
    In production, nginx strips the ``/ace/`` prefix from WebSocket
    handshakes before proxying to the Django container (see
@@ -13,26 +13,27 @@ Two jobs:
    ``docs/learnings/channels-ws-proxy-path.md``. Vite does the same in
    local dev. Neither nginx nor Vite runs during the E2E suite, so we
    emulate the prefix strip here with a small wrapper that only
-   touches ``scope["path"]`` on websocket scopes.
+   touches ``scope["path"]`` on websocket scopes. (Originally added for
+   the now-retired ``ws/sessions/<slug>/`` chat socket — see the PR that
+   deleted apps/sessions/{consumers,drafts,presence,routing}.py in favor
+   of canopy-hosted chat; the wrapper itself is path-generic and still
+   serves the opp-workbench socket unchanged.)
 
 2. Monkey-patches ``apps.common.redis_client.get_redis`` to return a
-   process-local ``fakeredis.aioredis.FakeRedis`` instance so the
-   presence module works without a real Redis. This mirrors what the
-   pytest fixture ``fake_redis`` does in
-   ``apps/sessions/tests/test_consumers.py``. Channels' channel
-   layer already uses ``InMemoryChannelLayer`` via
-   ``config/settings/e2e.py``, so the only Redis dependency left for
-   the E2E suite is presence state.
+   process-local ``fakeredis.aioredis.FakeRedis`` instance so Redis-backed
+   code (e.g. ``apps.common.nova_auth_flow``, ``apps.videos.service``,
+   ``apps.mobile``) works without a real Redis during the E2E suite.
+   Channels' channel layer already uses ``InMemoryChannelLayer`` via
+   ``config/settings/e2e.py``.
 
 This file is only referenced by ``config/settings/e2e.py`` and is not
 imported by any production code path. It is safe to delete in prod.
 """
 from __future__ import annotations
 
-# Monkey-patch Redis BEFORE importing the asgi app, so the presence
-# module's `from apps.common import redis_client` picks up the
-# patched module reference. See the "Note on imports" section at the
-# top of apps/sessions/presence.py for why this works.
+# Monkey-patch Redis BEFORE importing the asgi app, so any
+# `from apps.common import redis_client` caller picks up the patched
+# module reference.
 import fakeredis.aioredis
 
 from apps.common import redis_client as _redis_client_module
