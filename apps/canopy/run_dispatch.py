@@ -160,3 +160,19 @@ def dispatch_turn(assistant_message_id: int) -> str:
 
     Message.objects.filter(pk=assistant.pk).update(canopy_turn_id=str(turn_id))
     return str(turn_id)
+
+
+def start_turn(assistant_message_id: int) -> None:
+    """The ONE entry point every run caller uses. Routes to canopy when run
+    execution is on, and to the legacy in-process subprocess when it is not.
+
+    Imported through the module (not `from ... import start_turn_subprocess`)
+    so the existing monkeypatches on
+    `apps.sessions.turn_driver.start_turn_subprocess` keep working.
+    """
+    if enabled():
+        dispatch_turn(assistant_message_id)
+        return
+    from apps.sessions import turn_driver
+
+    turn_driver.start_turn_subprocess(assistant_message_id)

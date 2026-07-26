@@ -127,3 +127,40 @@ def test_a_null_turn_id_from_canopy_is_a_dispatch_failure():
             run_dispatch.dispatch_turn(assistant.id)
     assistant.refresh_from_db()
     assert assistant.status == "error"
+
+
+def test_start_turn_spawns_the_subprocess_when_disabled():
+    session, assistant = _run()
+    with mock.patch("apps.sessions.turn_driver.start_turn_subprocess") as spawn:
+        run_dispatch.start_turn(assistant.id)
+    spawn.assert_called_once_with(assistant.id)
+
+
+@override_settings(**ON)
+def test_start_turn_dispatches_to_canopy_and_never_spawns_when_enabled():
+    session, assistant = _run()
+    ex, create, send, stop = _patched()
+    with mock.patch("apps.sessions.turn_driver.start_turn_subprocess") as spawn:
+        with ex, create, send, stop:
+            run_dispatch.start_turn(assistant.id)
+    spawn.assert_not_called()
+    assistant.refresh_from_db()
+    assert assistant.canopy_turn_id == "turn-9"
+
+
+def test_start_turn_makes_no_outbound_canopy_call_when_disabled():
+    """The flag-off path must be byte-for-byte the old behaviour: spawn, and
+    touch canopy not at all. Any outbound call would blow up here."""
+    session, assistant = _run()
+    with mock.patch(
+        "apps.canopy.client.urllib.request.urlopen",
+        side_effect=AssertionError("canopy must not be called with the flag off"),
+    ):
+        with mock.patch("apps.sessions.turn_driver.start_turn_subprocess") as spawn:
+            run_dispatch.start_turn(assistant.id)
+    spawn.assert_called_once_with(assistant.id)
+    session.refresh_from_db()
+    assistant.refresh_from_db()
+    assert session.canopy_session_id == ""
+    assert assistant.canopy_turn_id == ""
+    assert assistant.status == "pending"

@@ -305,8 +305,8 @@ def resume_interrupted(
     double-spawn race."""
     from django.http import JsonResponse
 
+    from apps.canopy.run_dispatch import start_turn
     from apps.sessions.models import Session
-    from apps.sessions.turn_driver import start_turn_subprocess
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
     resumed = []
@@ -320,7 +320,7 @@ def resume_interrupted(
     for s in candidates:
         res = resume_session_run(s)
         if res is not None:
-            start_turn_subprocess(res["assistant_message_id"])
+            start_turn(res["assistant_message_id"])
             resumed.append({"slug": s.slug, "opp_run_id": s.opp_run_id})
     return JsonResponse({"resumed": resumed, "count": len(resumed)})
 
@@ -333,7 +333,7 @@ def resume_run(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    from apps.sessions.turn_driver import start_turn_subprocess
+    from apps.canopy.run_dispatch import start_turn
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
     session = _load_session_in_workspace(slug, workspace)
@@ -344,7 +344,7 @@ def resume_run(
         raise ProblemError(
             422, "Not a resumable ACE opp run (no opp_run_id)", type_=TYPE_VALIDATION,
         )
-    start_turn_subprocess(res["assistant_message_id"])
+    start_turn(res["assistant_message_id"])
     return JsonResponse(res, status=202)
 
 

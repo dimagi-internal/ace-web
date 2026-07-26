@@ -1883,7 +1883,7 @@ def seeded_run(
     why an in-request ``create_task`` didn't work — ace-web#585). Exposed as an
     MCP tool (``x-mcp-expose``). Returns 202 (the run executes asynchronously).
     """
-    from apps.sessions.turn_driver import start_turn_subprocess
+    from apps.canopy.run_dispatch import start_turn
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
     try:
@@ -1907,9 +1907,11 @@ def seeded_run(
         raise ProblemError(
             404, str(exc), type_=TYPE_NOT_FOUND,
         ) from exc
-    # Drive the turn out-of-band in a detached process (faithful, openable, and
-    # decoupled from this request's loop). See ace-web#585.
-    start_turn_subprocess(result["assistant_message_id"])
+    # Execute the turn. With CANOPY_RUN_EXECUTION on this enqueues a
+    # session-targeted canopy Turn; with it off it spawns the legacy detached
+    # `manage.py drive_turn` process (ace-web#585). Either way the run is
+    # decoupled from this request's event loop.
+    start_turn(result["assistant_message_id"])
     payload = SeededRunOut.model_validate(result).model_dump(mode="json")
     return JsonResponse(payload, status=202)
 
