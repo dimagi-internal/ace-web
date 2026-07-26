@@ -48,6 +48,22 @@ jobs:
             exit 1
           fi
 
+      # workflow_dispatch pins github.sha to main's tip AT DISPATCH TIME, and the
+      # image is tagged with it — so "merge a PR and kick a deploy" in one breath
+      # can build the PRE-merge commit, deploy green, and ship code that isn't
+      # there. (Seen in canopy-web: a management command missing from a
+      # successful deploy.) It is also how a queued deploy rolls prod BACKWARDS
+      # past anything merged while it waited.
+      - name: Refuse to deploy a stale commit
+        run: |
+          TIP=$(git ls-remote https://github.com/${{ github.repository }} refs/heads/main | cut -f1)
+          if [ "$TIP" != "${{ github.sha }}" ]; then
+            echo "::error::Stale deploy: this run builds ${{ github.sha }} but main is now $TIP."
+            echo "::error::Re-dispatch the deploy so it picks up main's current tip."
+            exit 1
+          fi
+          echo "Deploying main tip $TIP."
+
   build-backend:
     name: Build Backend
     runs-on: ubuntu-latest
