@@ -263,10 +263,25 @@ jobs:
           fi
 
           echo "Forcing new deployment..."
+          # --deployment-configuration is asserted here, on the SAME call as the
+          # cutover, for the same reason the target-group attributes above are
+          # re-applied every deploy: it is idempotent, and if the service is ever
+          # recreated the next deploy restores it rather than silently losing it.
+          # Folding it into this call (rather than a separate update-service)
+          # keeps it to ONE deployment.
+          #
+          # deploymentCircuitBreaker rollback=true is the load-bearing part, and
+          # it matters MORE here than on a rolling service: the step above
+          # deliberately stops every running task first, so if the new tasks
+          # never pass their health checks there is nothing left serving. Without
+          # the breaker ECS retries forever and the outage lasts until a human
+          # notices; with it, ECS reverts to the last good task definition on its
+          # own. (canopy-web hit the same gap — enabled there 2026-07-26.)
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE }} \
             --task-definition ${{ steps.register-task.outputs.task-def-arn }} \
+            --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},minimumHealthyPercent=100,maximumPercent=200" \
             --force-new-deployment \
             --output text > /dev/null
 
