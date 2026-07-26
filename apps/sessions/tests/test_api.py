@@ -34,12 +34,6 @@ _FAKE_SESSION_LIST = {
     "opp_step_skill_display": "",
 }
 
-_FAKE_TURN_STATE = {
-    "running": False,
-    "last_message_at": None,
-    "cli": None,
-}
-
 _FAKE_COST_BREAKDOWN = {
     "schema_version": 0,
     "totals": None,
@@ -404,38 +398,6 @@ def test_list_participants_non_member_404(non_member_client):
 
 
 # ---------------------------------------------------------------------------
-# 2.2.9 — GET /{slug}/turn-state — polling
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_turn_state_happy(member_client, monkeypatch):
-    client, workspace, _ = member_client
-    monkeypatch.setattr(
-        "apps.sessions.api.get_turn_state",
-        lambda ws, slug: _FAKE_TURN_STATE,
-    )
-    resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/turn-state")
-    assert resp.status_code == 200
-    assert resp.json()["running"] is False
-
-
-@pytest.mark.django_db
-def test_turn_state_not_found_404(member_client, monkeypatch):
-    client, workspace, _ = member_client
-    monkeypatch.setattr("apps.sessions.api.get_turn_state", lambda ws, slug: None)
-    resp = client.get(f"/api/w/{workspace.slug}/sessions/no-such/turn-state")
-    assert resp.status_code == 404
-
-
-@pytest.mark.django_db
-def test_turn_state_non_member_404(non_member_client):
-    client, workspace, _ = non_member_client
-    resp = client.get(f"/api/w/{workspace.slug}/sessions/s/turn-state")
-    assert resp.status_code == 404
-
-
-# ---------------------------------------------------------------------------
 # 2.2.10 — GET /{slug}/cost — cost breakdown
 # ---------------------------------------------------------------------------
 
@@ -534,65 +496,6 @@ def test_structure_non_member_404(non_member_client):
     client, workspace, _ = non_member_client
     resp = client.get(f"/api/w/{workspace.slug}/sessions/s/structure")
     assert resp.status_code == 404
-
-
-# ---------------------------------------------------------------------------
-# 2.2.12 — GET /{slug}/share — share tokens
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_list_share_tokens_empty(member_client, monkeypatch):
-    client, workspace, _ = member_client
-    monkeypatch.setattr(
-        "apps.sessions.api.list_share_tokens",
-        lambda ws, slug: [],
-    )
-    resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/share")
-    assert resp.status_code == 200
-    assert resp.json() == []
-
-
-@pytest.mark.django_db
-def test_list_share_tokens_returns_tokens(member_client, monkeypatch):
-    client, workspace, _ = member_client
-    fake_tokens = [
-        {
-            "token": "tok123",
-            "created_at": "2026-05-14T09:00:00Z",
-            "revoked_at": None,
-            "url": None,
-        }
-    ]
-    monkeypatch.setattr(
-        "apps.sessions.api.list_share_tokens",
-        lambda ws, slug: fake_tokens,
-    )
-    resp = client.get(f"/api/w/{workspace.slug}/sessions/sess-0001/share")
-    assert resp.status_code == 200
-    assert resp.json()[0]["token"] == "tok123"
-
-
-@pytest.mark.django_db
-def test_list_share_tokens_not_found_404(member_client, monkeypatch):
-    client, workspace, _ = member_client
-    monkeypatch.setattr("apps.sessions.api.list_share_tokens", lambda ws, slug: None)
-    resp = client.get(f"/api/w/{workspace.slug}/sessions/no-such/share")
-    assert resp.status_code == 404
-
-
-@pytest.mark.django_db
-def test_list_share_tokens_non_member_404(non_member_client):
-    client, workspace, _ = non_member_client
-    resp = client.get(f"/api/w/{workspace.slug}/sessions/s/share")
-    assert resp.status_code == 404
-
-
-@pytest.mark.django_db
-def test_list_share_tokens_anon_401(anon_client):
-    client, workspace = anon_client
-    resp = client.get(f"/api/w/{workspace.slug}/sessions/s/share")
-    assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------

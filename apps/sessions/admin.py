@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Draft, IngestUpload, Message, Session, SessionParticipant, ShareToken
+from .models import IngestUpload, Message, Session, SessionParticipant
 
 
 @admin.register(Session)
@@ -22,17 +22,6 @@ class MessageAdmin(admin.ModelAdmin):
     list_display = ("session", "turn_index", "role", "status", "started_at")
     list_filter = ("role", "status")
     readonly_fields = ("session", "turn_index", "role", "content", "plaintext")
-
-
-@admin.register(Draft)
-class DraftAdmin(admin.ModelAdmin):
-    list_display = ("session", "slot", "queue_position", "status", "creator_user", "version")
-    list_filter = ("slot", "status")
-
-
-@admin.register(ShareToken)
-class ShareTokenAdmin(admin.ModelAdmin):
-    list_display = ("session", "token", "created_by", "revoked_at", "created_at")
 
 
 @admin.register(IngestUpload)

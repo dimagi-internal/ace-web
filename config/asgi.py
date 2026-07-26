@@ -28,9 +28,11 @@ django_asgi_app = get_asgi_application()
 from apps.api.mcp_server import build_http_app  # noqa: E402
 from apps.common.channels_auth import AceSessionAuthMiddleware  # noqa: E402
 from apps.opps.routing import websocket_urlpatterns as opps_ws_urlpatterns  # noqa: E402
-from apps.sessions.routing import websocket_urlpatterns as sessions_ws_urlpatterns  # noqa: E402
 
-websocket_urlpatterns = sessions_ws_urlpatterns + opps_ws_urlpatterns
+# apps.sessions.routing (the interactive chat WebSocket, SessionConsumer) was
+# retired with ace-web's own chat UI in favor of canopy-hosted chat — see the
+# PR that deleted apps/sessions/{consumers,drafts,presence,routing}.py.
+websocket_urlpatterns = opps_ws_urlpatterns
 
 _channels_app = ProtocolTypeRouter(
     {

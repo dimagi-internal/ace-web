@@ -1,8 +1,23 @@
 # ACE Web E2E Tests
 
-Playwright-based multi-player smoke tests for Phase 3 WebSocket
-collaboration. Runs the full stack (Django + Channels + React)
-locally without Docker, Postgres, or Redis.
+Playwright-based smoke tests for the ace-web surfaces that still run
+end-to-end in this repo — opp lifecycle, the read-only sessions/
+upload surface, settings, and a system smoke test. Runs the full
+stack (Django + Channels + React) locally without Docker, Postgres,
+or Redis.
+
+**Chat is no longer tested here.** Interactive chat (multiplayer
+WebSocket collaboration — draft co-editing, presence, live
+streaming) was ace-web's own feature through `apps.sessions`
+(`consumers.py`/`drafts.py`/`presence.py`/`routing.py`) and was
+retired in favor of canopy-hosted chat; `chat-lifecycle.spec.ts`,
+`multiplayer.spec.ts`, and `share-flow.spec.ts` (session sharing,
+also retired) were deleted with it. See the chat-retirement PR's
+description for the full dependency map and what replaces this
+coverage (short version: canopy-web owns the chat backend/E2E now;
+ace-web's own `CanopyChatPanel` has component-level tests instead of
+an E2E one — there's no cross-repo E2E harness that spins up both
+ace-web and canopy-web together).
 
 ## Prerequisites
 
@@ -47,16 +62,17 @@ Playwright's `webServer` config auto-launches uvicorn on
 The ASGI entry point is `config.asgi_e2e:application`, which:
 
 - wraps the real `config.asgi.application` with a tiny
-  prefix-stripping middleware so `/ace/ws/sessions/<slug>/` reaches
-  the Channels router (which registers the bare `^ws/sessions/...$`
-  pattern). In production nginx does the same rewrite; in Vite dev
-  the proxy does it. Neither runs during the E2E suite, so the
-  wrapper emulates the strip. See
+  prefix-stripping middleware so `/ace/ws/opps/<slug>/...` reaches
+  the Channels router (which registers the bare `^ws/opps/...$`
+  pattern — the opp-workbench live socket, the one WebSocket surface
+  left after chat's retirement). In production nginx does the same
+  rewrite; in Vite dev the proxy does it. Neither runs during the
+  E2E suite, so the wrapper emulates the strip. See
   `docs/learnings/channels-ws-proxy-path.md`.
 - patches `apps.common.redis_client.get_redis` to return a
-  `fakeredis.aioredis.FakeRedis` instance so the presence module
-  works without a real Redis — mirroring the `fake_redis` fixture
-  in `apps/sessions/tests/test_consumers.py`.
+  `fakeredis.aioredis.FakeRedis` instance so Redis-backed code
+  (`apps.common.nova_auth_flow`, `apps.videos.service`,
+  `apps.mobile`) works without a real Redis during the suite.
 
 The `globalSetup` hook runs migrations and builds the frontend if
 `frontend/dist/index.html` is missing. Delete the dist directory
@@ -68,23 +84,23 @@ produces double-prefixed URLs like `/ace/ace/api/...`).
 
 ## How it works
 
-1. Each test opens a fresh browser context per user (Alice and
-   Bob) via `newAuthedContext(browser, email, displayName)`.
+1. Each test opens a fresh browser context per user via
+   `newAuthedContext(browser, email, displayName)`.
 2. `loginAs(page, ...)` POSTs to the dev-only
    `/ace/auth/test-login/` endpoint. The Django `sessionid` cookie
    lands on the context. A follow-up GET to `/ace/` warms the
    `csrftoken` cookie so subsequent API POSTs can set the
    `X-CSRFToken` header.
-3. `createSession` + `addParticipant` drive the REST API as Alice
+3. `createSession` (`helpers/session.ts`) drives the REST API
    through `postJson`, which automatically attaches the CSRF
-   token.
-4. Both pages navigate to `/ace/chat/<slug>`. The
-   `useSessionSocket` hook opens the WebSocket handshake; the
-   consumer authenticates via the session cookie middleware; and
-   `session.state` arrives.
-5. The test drives the SendBox textarea and asserts on live
-   updates in the other context (draft propagation, idle unlock,
-   echo response, stop button cancellation).
+   token — used by `sessions.spec.ts` to seed rows for the
+   `/ace/sessions` list/search/filter/archive/delete/pagination
+   surface.
+4. `uploadJsonlFixture` (`helpers/upload.ts`) drives the sessions
+   page's hidden file input to exercise the ingest path
+   (`upload-flow.spec.ts`).
+5. `opp-lifecycle.spec.ts` and `settings.spec.ts` exercise their
+   own surfaces independently of sessions/chat.
 
 ## Security
 
@@ -107,12 +123,12 @@ the hooks are unreachable in any prod path.
 - **"CSRF token missing" on API POSTs.** `loginAs` should warm
   the CSRF cookie via a follow-up GET to `/ace/`. If this fails,
   check that the test is passing the result of `loginAs` into
-  `createSession` / `addParticipant` through the same browser
-  context.
-- **WebSocket closes immediately with no frame.** fakeredis
-  patching happens at import-time in `config/asgi_e2e.py`. If you
-  change the import order, make sure the patch still happens
-  before `from config.asgi import application`.
+  `createSession` through the same browser context.
+- **Opp-workbench WebSocket closes immediately with no frame.**
+  fakeredis patching happens at import-time in
+  `config/asgi_e2e.py`. If you change the import order, make sure
+  the patch still happens before `from config.asgi import
+  application`.
 - **404 on `/ace/assets/index-XXX.js`.** The frontend dist is
   either stale or missing. Delete `frontend/dist/` and re-run —
   `globalSetup` will rebuild it.

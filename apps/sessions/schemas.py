@@ -144,36 +144,6 @@ class SessionPatchIn(StrictModel):
 
 
 # ---------------------------------------------------------------------------
-# Turn state  (GET /api/sessions/<slug>/turn-state)
-# ---------------------------------------------------------------------------
-
-
-class TurnStateCliOut(StrictModel):
-    """CLIBackend introspection state for a single session subprocess."""
-
-    alive: bool
-    pid: int | None = None
-    elapsed_s: float
-    last_active_age_s: float
-    credential_source: str | None = None
-    cli_session_id: str | None = None
-    spawned_with_resume: bool
-
-
-class TurnStateOut(StrictModel):
-    """Cheap polling shape: is a turn currently running on the server?
-
-    ``running`` reflects THIS worker process only (see view docstring for
-    multi-worker caveat).  ``cli`` is null when no long-lived SessionProcess
-    has been spawned for this slug yet.
-    """
-
-    running: bool
-    last_message_at: dt.datetime | None = None
-    cli: TurnStateCliOut | None = None
-
-
-# ---------------------------------------------------------------------------
 # Cost breakdown  (GET /api/sessions/<slug>/cost)
 # ---------------------------------------------------------------------------
 
@@ -317,22 +287,3 @@ class StructureNodeOut(StrictModel):
 
 # Resolve the forward reference on ``children``.
 StructureNodeOut.model_rebuild()
-
-
-# ---------------------------------------------------------------------------
-# Share tokens
-# ---------------------------------------------------------------------------
-
-
-class ShareTokenOut(StrictModel):
-    """Public view of a ShareToken.
-
-    ``url`` is only present in POST /api/sessions/<slug>/share-tokens
-    responses (where the server builds the full URL); GET list responses
-    omit it.  ``revoked_at`` is null for active tokens.
-    """
-
-    token: str
-    created_at: dt.datetime
-    revoked_at: dt.datetime | None = None
-    url: str | None = None

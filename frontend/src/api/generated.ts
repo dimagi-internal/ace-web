@@ -496,23 +496,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/sessions/{slug}/turn-state": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Turn state (polling) */
-        readonly get: operations["apps_sessions_api_session_turn_state"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/api/w/{workspace_slug}/sessions/{slug}/cost": {
         readonly parameters: {
             readonly query?: never;
@@ -542,41 +525,6 @@ export interface paths {
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/api/w/{workspace_slug}/sessions/{slug}/share": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** List share tokens */
-        readonly get: operations["apps_sessions_api_list_share"];
-        readonly put?: never;
-        /** Create share token */
-        readonly post: operations["apps_sessions_api_create_share_token"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/api/w/{workspace_slug}/sessions/{slug}/share/{token_key}": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        readonly post?: never;
-        /** Revoke share token */
-        readonly delete: operations["apps_sessions_api_revoke_share_token"];
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -1183,26 +1131,6 @@ export interface paths {
          *     Cached 60 seconds in the Django cache to absorb refresh storms.
          */
         readonly get: operations["apps_opps_api_public_opp_summary"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/api/share/{token}": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /**
-         * Public shared session view
-         * @description Return a shared session's messages.  No auth required.
-         */
-        readonly get: operations["apps_sessions_api_public_share_view"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -5533,27 +5461,6 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_session_turn_state: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_slug: string;
-                readonly slug: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     readonly apps_sessions_api_session_cost: {
         readonly parameters: {
             readonly query?: never;
@@ -5582,70 +5489,6 @@ export interface operations {
             readonly path: {
                 readonly workspace_slug: string;
                 readonly slug: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    readonly apps_sessions_api_list_share: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_slug: string;
-                readonly slug: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    readonly apps_sessions_api_create_share_token: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_slug: string;
-                readonly slug: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    readonly apps_sessions_api_revoke_share_token: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_slug: string;
-                readonly slug: string;
-                readonly token_key: string;
             };
             readonly cookie?: never;
         };
@@ -6502,26 +6345,6 @@ export interface operations {
                         readonly [key: string]: unknown;
                     };
                 };
-            };
-        };
-    };
-    readonly apps_sessions_api_public_share_view: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly token: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };

@@ -2,12 +2,15 @@
 
 Agent context for the ACE web harness. Read this at the start of every session.
 
-`ace-web` is Module 1 of the ACE initiative: a browser-based chat harness that talks
-to Claude via the local CLI (subscription auth) with multi-player drafts, persistent
-transcripts, and upload support for existing local `.jsonl` sessions. Phases 1–4 of
-the original design spec shipped (foundation, conversation engine, multi-player,
-library/ingest); Phase 5 (Polish) is deferred indefinitely. Active surfaces in 2026-05
-are the opp Workbench, the cloud mobile emulator, and the videos app.
+`ace-web` is Module 1 of the ACE initiative: the opp Workbench that runs and observes
+ACE's own agent work (via Claude, driven through the local CLI or API), with
+persistent transcripts and upload support for existing local `.jsonl` sessions.
+Phases 1–4 of the original design spec shipped (foundation, conversation engine,
+multi-player, library/ingest); Phase 5 (Polish) is deferred indefinitely. Interactive
+chat moved out to canopy-hosted chat (canopy-web) — ace-web's own multi-player
+WebSocket chat UI was retired; see "Chat is canopy-hosted, full stop" below. Active
+surfaces in 2026-07 are the opp Workbench, the cloud mobile emulator, and the videos
+app.
 
 ## Where things live
 
@@ -106,8 +109,11 @@ ace-web/
 │   ├── ingest/          # JSONL upload + cost/timing + structure aggregators + pricing
 │   ├── mobile/          # Cloud emulator controller + jobs
 │   ├── opps/            # ACE opp Workbench (Drive-backed) + summary page + cache
-│   ├── service_accounts/ # Personal tokens + share tokens
-│   ├── sessions/        # Sessions + WebSocket consumer + presence + structure
+│   ├── service_accounts/ # Personal tokens
+│   ├── sessions/        # Session/Message execution engine for programmatic
+│   │                     # ACE runs (seeded-run, drive_turn) + structure view;
+│   │                     # NOT chat — see "ace-web's own interactive chat UI
+│   │                     # is retired" below
 │   ├── slack/           # /ace activity slash command + async dispatcher + run threads
 │   ├── system/          # System Overview tab — reads bundled plugin metadata
 │   ├── videos/          # Video program editor (Drive-backed) + render orchestration
@@ -128,11 +134,14 @@ ace-web/
 └── pyproject.toml
 ```
 
-The sessions data model has 7 core tables: `users`, `sessions`,
-`session_participants`, `messages`, `drafts`, `share_tokens`, `ingest_uploads`.
-`apps/workspaces/` adds `Workspace`, `WorkspaceMembership`, `WorkspaceInvite`,
-and audit-log tables. The `opps` and `videos` modules add **no ORM tables** —
-they read through to Google Drive.
+The sessions data model has 5 core tables: `users`, `sessions`,
+`session_participants`, `messages`, `ingest_uploads` — `drafts` and
+`share_tokens` were dropped when ace-web's own interactive chat UI (co-edited
+drafts, session share links) was retired in favor of canopy-hosted chat; see
+"ace-web's own interactive chat UI is retired" below. `apps/workspaces/` adds
+`Workspace`, `WorkspaceMembership`, `WorkspaceInvite`, and audit-log tables.
+The `opps` and `videos` modules add **no ORM tables** — they read through to
+Google Drive.
 
 ## Key architectural decisions
 
@@ -176,6 +185,8 @@ they read through to Google Drive.
   callers can connect to Channels. For browser contexts that can't set
   custom WS headers, `POST /api/auth/pat-to-session` trades a Bearer for a
   session cookie. Reference walkthrough: `tools/walkthrough/run_chat.py`
+  (**broken** since the chat-retirement PR — it drives the now-deleted chat
+  WebSocket; see its module docstring)
   uses Bearer PAT end-to-end.
 - **Nova MCP integration**: ace-web runs Nova's OAuth 2.1 + PKCE dance server-side
   and injects a fresh access_token into every `claude -p` subprocess so the
@@ -186,20 +197,18 @@ they read through to Google Drive.
   refreshes from sibling tasks would both fail). Bot-identity write permission
   gates on `_can_write_global`, not Django's `is_staff`. See `nova-mcp-oauth.md`
   before touching this.
-- **Chat transport is WebSocket-only**: All realtime chat traffic (send, stream
-  deltas, drafts, presence, stop) flows through the `SessionConsumer` WebSocket.
-  See `channels-ws-proxy-path.md` for the `/ace/ws/` proxy detail,
-  `channels-websocket-auth.md` for the handshake auth pattern, and
-  `stream-resume-vercel-open-agents.md` for resume hazards.
-- **Chat is canopy-hosted when `CANOPY_*` is configured** (Part 2 cutover,
-  `feat/canopy-chat`): the flag is `CANOPY_BASE_URL` + `CANOPY_APP_CREDENTIAL`
-  both set (`GET /api/canopy/status`), else the legacy WebSocket path above
-  stays live unchanged. When enabled, session state, messages, drafts,
-  presence, and turn execution all move to canopy-web — the browser talks to
-  canopy **directly** (same-origin `/canopy/*` on labs; a vite proxy in dev),
-  using the shared `canopy-ui/chat` kit. ace-web's own backend (`apps/canopy`)
-  keeps exactly one responsibility: identity brokering. Token-exchange flow:
-  (1) ace-web holds a registered canopy `AppCredential`; (2) server-side,
+- **The opp-workbench live socket (`OppConsumer`, `apps/opps/{consumers,
+  routing}.py`) is the one WebSocket surface left** now that chat's own
+  `SessionConsumer` is retired (see below). `channels-ws-proxy-path.md` (the
+  `/ace/ws/` proxy detail) and `channels-websocket-auth.md` (the handshake
+  auth pattern) still apply to it.
+- **Chat is canopy-hosted, full stop** — not a flag. Session state, messages,
+  drafts, presence, and turn execution for interactive chat all live in
+  canopy-web; the browser talks to canopy **directly** (same-origin
+  `/canopy/*` on labs; a vite proxy in dev), using the shared `canopy-ui/chat`
+  kit. ace-web's own backend (`apps/canopy`) keeps exactly one
+  responsibility: identity brokering. Token-exchange flow: (1) ace-web holds
+  a registered canopy `AppCredential`; (2) server-side,
   `apps/canopy/client.exchange_token` trades that credential + the signed-in
   user's email for a short-lived canopy `DelegatedToken` via
   `POST {canopy}/api/auth/token-exchange`; (3) the SPA uses that token as
@@ -212,33 +221,52 @@ they read through to Google Drive.
   from the membership-checked path parameter — never from the request body —
   so canopy's session LIST (`?origin_key=`) can be scoped to one ace
   workspace instead of every ace workspace sharing the same `CANOPY_WORKSPACE`
-  tenant (fix-round-2; every ace workspace maps to one canopy workspace
-  today, so without this a `team-b` member could list, and open,
-  `team-a`'s chats). **Residual, not fully closed:** this scopes the LIST
-  only — canopy's own tenancy still lets any member of the canopy workspace
-  open a session directly by id (`GET /api/canopy-sessions/{id}`). Hard
-  isolation requires mapping each ace workspace onto its own canopy
-  workspace, which is a prerequisite for enabling the flag for more than one
-  ace workspace at a time. Legacy `apps/sessions` remains fully intact until
-  PR 6 (gated on a labs exercise of the new path).
+  tenant; every ace workspace maps to one canopy workspace today, so without
+  this a `team-b` member could list, and open, `team-a`'s chats).
+  **Residual, not fully closed:** this scopes the LIST only — canopy's own
+  tenancy still lets any member of the canopy workspace open a session
+  directly by id (`GET /api/canopy-sessions/{id}`). Hard isolation requires
+  mapping each ace workspace onto its own canopy workspace.
   Ops + deploy prerequisites (undocumented failure modes if any is
-  missed — Important 7): (1) mint the prod `AppCredential` on canopy-web
-  (name `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`),
-  store the raw value in AWS Secrets Manager (`ace-web/canopy-app-credential`),
-  point `CANOPY_APP_CREDENTIAL`'s `valueFrom` in
-  `deploy/aws/task-definition.json` at that secret's ARN, then deploy — the
-  four non-secret `CANOPY_*` vars are already wired in the task def and flip
-  the flag on automatically once the secret exists; (2) a canopy `Agent`
+  missed): (1) a registered prod `AppCredential` on canopy-web (name
+  `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`), its raw
+  value in AWS Secrets Manager (`ace-web/canopy-app-credential`), and
+  `CANOPY_APP_CREDENTIAL`'s `valueFrom` in `deploy/aws/task-definition.json`
+  pointed at that secret's ARN — without it `GET /api/canopy/status` reports
+  `enabled: false` and chat is unreachable (see below); (2) a canopy `Agent`
   with slug matching `CANOPY_AGENT_SLUG` (default `ace`) must exist in the
   canopy workspace named by `CANOPY_WORKSPACE` — `createCanopySession` 404s
-  otherwise; (3) every ace user who'll use hosted chat must actually be a
-  member of that canopy workspace (canopy auto-joins by email domain, so
-  this is usually automatic, but isn't guaranteed for every domain); (4) the
+  otherwise; (3) every ace user who uses chat must actually be a member of
+  that canopy workspace (canopy auto-joins by email domain, so this is
+  usually automatic, but isn't guaranteed for every domain); (4) the
   signed-in user's email domain must be in the `AppCredential`'s allowed
   domains — otherwise `token-exchange` 403s and every canopy call fails.
-  None of these 404/403s are silent in the UI: every user-triggered canopy
-  call (new chat, discuss-this-step) surfaces its error rather than
-  swallowing it — see `RecentSessionsSidebar.handleNew`'s try/catch.
+  None of these 404/403s are silent in the UI: `useCanopyStatus()` gates
+  every chat surface (`ChatPage.tsx`'s `CanopyChatRoutePage`,
+  `ChatRedirectPage`, `RecentSessionsSidebar`, `WorkbenchChatPane`) and
+  degrades to a visible "chat is unreachable" message rather than rendering
+  a dead page; every user-triggered canopy call (new chat, discuss-this-step)
+  surfaces its error rather than swallowing it — see
+  `RecentSessionsSidebar.handleNew`'s try/catch.
+- **ace-web's own interactive chat UI is retired.** `apps/sessions/
+  {consumers,drafts,presence,routing}.py`, the `Draft`/`ShareToken` models
+  and their tables, and the frontend's `useSessionSocket`/`sessionReducer`/
+  local `ChatPanel`/`MessageList`/`MessageItem`/`SendBox`/`PresenceChips`/
+  `SharePopover` are all gone — canopy chat is the only interactive chat
+  surface now. Old `/chat/:slug` links redirect to chat home rather than
+  404ing; `/chat/:slug/structure` (the read-only structure/cost breakdown
+  view, `SessionStructurePage` → `StructureTab`) is a **different, still-live
+  route** that survived unchanged. `apps/sessions` itself is **not** a
+  "legacy chat app" you can delete wholesale, though: `Session`/`Message`/
+  `SessionParticipant`/`IngestUpload` and `turn_driver.py` (+ the CLI/API
+  backend selection machinery in `apps/common`) are live production
+  infrastructure for **programmatic** ACE runs — the MCP-exposed
+  `apps.opps.api::seeded_run`, the `drive_turn` management command,
+  Slack-triggered runs, the post-deploy `resume-interrupted` self-heal, and
+  `apps.ingest`/`apps.activity`/`apps.slack` all depend on them regardless of
+  whether any human is chatting interactively. See
+  `apps/sessions/models.py`'s module docstring and the chat-retirement PR's
+  description for the full dependency map.
 - **Response envelope removed**: API errors return RFC 7807 `application/problem+json`;
   success responses return bare typed payloads. The legacy `{data, error}` envelope
   was retired in PR #352 along with DRF.
@@ -380,7 +408,14 @@ they read through to Google Drive.
 `apps/opps/` is a read-through UI on top of Google Drive showing every skill of
 an ACE run, per-step artifact previews, judge verdicts, gate history, a
 run-level opp-eval scorecard + trend, a pending-gates banner, and a "Discuss in
-chat" CTA that seeds a new ace-web `Session` from a step's context.
+chat" CTA (`WorkbenchChatPane`) that seeds a canopy-hosted chat session
+(`createCanopySession`, title + `opp_slug`/`opp_run_id`/`opp_step_skill`
+metadata) from a step's context — see "Chat is canopy-hosted, full stop"
+above. The older `apps/opps/api.py::seed_chat_for_step` (`POST
+.../actions/seed-chat`) still exists and still seeds an ace-web `Session` the
+same way it always did, but is no longer wired to any frontend button; it's
+out of scope for the chat-retirement PR (not touched, not deleted) and is
+effectively dead code reachable only by a direct API/MCP call.
 
 Drive is the source of truth — **no ORM tables** for opps / runs / steps /
 artifacts. The data lives as files under `<workspace.drive_root_folder_id>/<opp-slug>/`

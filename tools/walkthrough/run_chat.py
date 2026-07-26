@@ -1,5 +1,20 @@
 """Drive the deployed ace-web chat over WebSocket using a Bearer PAT.
 
+BROKEN as of the chat-retirement PR (apps/sessions/{consumers,drafts,
+presence,routing}.py deleted — ace-web's own interactive chat WebSocket is
+gone in favor of canopy-hosted chat). This script connects to
+``ws/sessions/<slug>/`` and drives a turn via the ``chat.send`` action; both
+the route and the handler no longer exist. The underlying capability this
+script exists to smoke-test — "can the deployed `claude -p` subprocess
+survive a long-running turn on ECS?" — is still real and still needed
+(``apps.sessions.turn_driver`` + ``apps.common.cli_backend.CLIBackend`` are
+unaffected; they're load-bearing for the MCP-exposed
+``apps.opps.api::seeded_run`` and the ``drive_turn`` management command),
+but this script needs a rework onto a non-WebSocket trigger (e.g. the
+`seeded-run` action, or `POST .../resume` + polling `GET .../messages`)
+before it's usable again. Flagged, not fixed, by that PR — see its
+description for the full context.
+
 A smoke harness for "can the deployed claude subprocess stay alive long
 enough to finish an ACE skill / phase / full /ace:run?" Authenticates with
 ``Authorization: Bearer $ACE_WEB_PAT_TOKEN``, creates a fresh session in a
