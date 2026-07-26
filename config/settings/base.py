@@ -295,6 +295,18 @@ CANOPY_PUBLIC_BASE_URL = env("CANOPY_PUBLIC_BASE_URL", default="/canopy")
 CANOPY_WORKSPACE = env("CANOPY_WORKSPACE", default="connect")
 CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
 
+# Run execution on canopy's harness (spec: canopy-web
+# docs/superpowers/specs/2026-07-26-run-execution-convergence-design.md).
+# OFF by default and it must stay off until a SESSION-CAPABLE canopy runner
+# exists: with none online, every enqueued turn sits QUEUED forever, so
+# flipping this on takes ACE runs from "works" to "nothing runs".
+CANOPY_RUN_EXECUTION = env.bool("CANOPY_RUN_EXECUTION", default=False)
+# Whose canopy identity a run acts as when the owning ace-web user's email is
+# not delegable (canopy's token-exchange 403s a domain outside the app
+# credential's allowed_delegation_domains). Empty = no fallback: dispatch
+# fails loudly rather than silently attributing one human's run to another.
+CANOPY_RUN_ACTOR_FALLBACK_EMAIL = env("CANOPY_RUN_ACTOR_FALLBACK_EMAIL", default="")
+
 # --- Allowed email domains ---
 # Empty list = allow any Connect-authenticated user. Workspace memberships
 # are the actual access-control gate; the domain filter is preserved as a
