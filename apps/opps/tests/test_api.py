@@ -1699,6 +1699,13 @@ def test_seeded_run_routes_through_the_canopy_dispatch_seam(member_client, monke
     client, _, _ = member_client
     called = []
     monkeypatch.setattr("apps.canopy.run_dispatch.start_turn", lambda mid: called.append(mid))
+    # Belt and braces: if the route ever regresses to calling the subprocess
+    # directly, patching only the seam would let it spawn a REAL detached
+    # `manage.py drive_turn` in CI before the assertion below fired.
+    spawned = []
+    monkeypatch.setattr(
+        "apps.sessions.turn_driver.start_turn_subprocess", lambda mid: spawned.append(mid)
+    )
     monkeypatch.setattr(
         "apps.opps.api.seed_run_for_opp",
         lambda *a, **k: {"session_slug": "s", "assistant_message_id": 4242, "run_id": "r"},
@@ -1710,6 +1717,7 @@ def test_seeded_run_routes_through_the_canopy_dispatch_seam(member_client, monke
     )
     assert response.status_code == 202
     assert called == [4242]
+    assert spawned == []  # the route went through the seam, not around it
 
 
 @pytest.mark.django_db

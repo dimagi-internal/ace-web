@@ -80,6 +80,21 @@ def test_list_unclaimable_returns_the_rows_verbatim():
 
 
 @override_settings(**ENABLED)
+def test_stop_session_posts_an_empty_body_to_the_stop_route():
+    """The one new canopy call a resume actually makes live — a resume declares
+    the previous turn dead, and canopy must be told or the stale turn keeps
+    holding one_executing_turn_per_session."""
+    with _urlopen({"cancelled": True}) as opened:
+        out = client.stop_session("usertok", "sess-1")
+    assert out == {"cancelled": True}
+    req = opened.call_args.args[0]
+    assert req.get_method() == "POST"
+    assert req.full_url == "http://canopy.test/api/canopy-sessions/sess-1/stop"
+    assert json.loads(req.data) == {}
+    assert req.get_header("Authorization") == "Bearer usertok"
+
+
+@override_settings(**ENABLED)
 def test_http_error_becomes_canopy_error():
     import urllib.error
 

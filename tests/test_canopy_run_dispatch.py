@@ -3,6 +3,7 @@
 from unittest import mock
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 
@@ -19,6 +20,18 @@ ON = dict(
     CANOPY_AGENT_SLUG="ace",
     CANOPY_RUN_EXECUTION=True,
 )
+
+# Production's canopy wiring MINUS the flag: base URL and credential are both
+# set, exactly as they are on labs, and CANOPY_RUN_EXECUTION is deliberately
+# NOT overridden so the real settings default is what governs.
+#
+# This is load-bearing. `config.settings.test` leaves CANOPY_BASE_URL and
+# CANOPY_APP_CREDENTIAL empty, so `enabled()` short-circuits on those before it
+# ever reads the flag — under bare test settings the off-path tests below pass
+# whether the flag defaults True or False, which makes them mute about the one
+# property they exist to protect. In production both are populated and the flag
+# default is the ONLY guard, so the tests must reproduce that configuration.
+CONFIGURED_BUT_UNFLAGGED = {k: v for k, v in ON.items() if k != "CANOPY_RUN_EXECUTION"}
 
 
 def _run(**kw):
@@ -50,8 +63,11 @@ def _patched(send_return=None):
     )
 
 
+@override_settings(**CONFIGURED_BUT_UNFLAGGED)
 def test_disabled_by_default_is_a_noop():
+    """Fully wired to canopy, flag left at its settings default: still a no-op."""
     session, assistant = _run()
+    assert settings.CANOPY_BASE_URL and settings.CANOPY_APP_CREDENTIAL  # flag is the only guard
     assert run_dispatch.enabled() is False
     assert run_dispatch.dispatch_turn(assistant.id) == ""
     session.refresh_from_db()
@@ -129,8 +145,10 @@ def test_a_null_turn_id_from_canopy_is_a_dispatch_failure():
     assert assistant.status == "error"
 
 
+@override_settings(**CONFIGURED_BUT_UNFLAGGED)
 def test_start_turn_spawns_the_subprocess_when_disabled():
     session, assistant = _run()
+    assert settings.CANOPY_BASE_URL and settings.CANOPY_APP_CREDENTIAL  # flag is the only guard
     with mock.patch("apps.sessions.turn_driver.start_turn_subprocess") as spawn:
         run_dispatch.start_turn(assistant.id)
     spawn.assert_called_once_with(assistant.id)
@@ -148,10 +166,16 @@ def test_start_turn_dispatches_to_canopy_and_never_spawns_when_enabled():
     assert assistant.canopy_turn_id == "turn-9"
 
 
+@override_settings(**CONFIGURED_BUT_UNFLAGGED)
 def test_start_turn_makes_no_outbound_canopy_call_when_disabled():
     """The flag-off path must be byte-for-byte the old behaviour: spawn, and
-    touch canopy not at all. Any outbound call would blow up here."""
+    touch canopy not at all. Any outbound call would blow up here.
+
+    Wired to canopy (base URL + credential set, as in production) with the flag
+    at its settings default, so a flipped default reaches the network and fails.
+    """
     session, assistant = _run()
+    assert settings.CANOPY_BASE_URL and settings.CANOPY_APP_CREDENTIAL  # flag is the only guard
     with mock.patch(
         "apps.canopy.client.urllib.request.urlopen",
         side_effect=AssertionError("canopy must not be called with the flag off"),
