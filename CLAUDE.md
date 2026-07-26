@@ -184,10 +184,20 @@ Google Drive.
   (`apps/common/channels_auth.py`) handles WebSocket Bearer auth so PAT-only
   callers can connect to Channels. For browser contexts that can't set
   custom WS headers, `POST /api/auth/pat-to-session` trades a Bearer for a
-  session cookie. Reference walkthrough: `tools/walkthrough/run_chat.py`
-  (**broken** since the chat-retirement PR — it drives the now-deleted chat
-  WebSocket; see its module docstring)
-  uses Bearer PAT end-to-end.
+  session cookie. `tools/walkthrough/run_chat.py` (a Bearer-PAT-end-to-end
+  reference walkthrough that drove a turn over ace-web's own interactive
+  chat WebSocket) was **deleted** by the chat-retirement PR along with that
+  WebSocket (`ws/sessions/<slug>/`, `apps/sessions/{consumers,drafts,
+  presence,routing}.py`) — it had no other callers (not CI, not a Makefile,
+  not the canopy plugin). The capability it smoke-tested — "does the
+  deployed `claude -p` subprocess survive a long turn on ECS?" — is still
+  real (`apps.sessions.turn_driver` + `apps.common.cli_backend.CLIBackend`
+  are unaffected; they back the MCP-exposed `apps.opps.api::seeded_run` and
+  the `drive_turn` management command), but re-verifying it needs a new
+  non-WebSocket harness (e.g. driving `seeded_run` or `POST .../resume` and
+  polling `GET .../messages`) — not a repoint onto canopy-web's chat
+  WebSocket, which drives a different service's subprocess entirely and
+  would test the wrong thing.
 - **Nova MCP integration**: ace-web runs Nova's OAuth 2.1 + PKCE dance server-side
   and injects a fresh access_token into every `claude -p` subprocess so the
   bundled Nova plugin's HTTP MCP can authenticate without prompting. Auth flow in
