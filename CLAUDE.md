@@ -272,7 +272,13 @@ Google Drive.
   backend selection machinery in `apps/common`) are live production
   infrastructure for **programmatic** ACE runs — the MCP-exposed
   `apps.opps.api::seeded_run`, the `drive_turn` management command,
-  Slack-triggered runs, the post-deploy `resume-interrupted` self-heal, and
+  Slack-triggered runs (which, until 2026-07-26, depended on the *models*
+  only — `apps/slack/run_starter.py` created a Session and a completed user
+  turn and never called the driver at all, so `/ace run` executed nothing;
+  it now creates a pending assistant turn and dispatches it through
+  `apps.canopy.run_dispatch.start_turn`, see
+  `docs/plans/2026-07-26-run-convergence-ace-side.md`),
+  the post-deploy `resume-interrupted` self-heal, and
   `apps.ingest`/`apps.activity`/`apps.slack` all depend on them regardless of
   whether any human is chatting interactively. See
   `apps/sessions/models.py`'s module docstring and the chat-retirement PR's
