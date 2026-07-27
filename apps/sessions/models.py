@@ -341,6 +341,19 @@ class IngestUpload(models.Model):
     # (pre-this-PR) and tests that don't care can omit it. Postgres TOAST
     # transparently out-of-lines large values.
     raw_jsonl_gz = models.BinaryField(null=True, blank=True)
+    # Where these bytes came from (spec 2026-07-26, item 5).
+    #   "local"  — SOURCE OF RECORD. An uploaded transcript (POST /api/ingest/
+    #              upload) or a pre-canopy live capture. Never refetched.
+    #   "canopy" — a CACHE of canopy's per-turn retained transcripts, keyed by
+    #              `canopy_turn_ids`. canopy is the source of record; this row
+    #              exists so /structure does not pull up to 100 MB per turn over
+    #              HTTP on every page view. Safe to delete; it rebuilds.
+    SOURCE_LOCAL, SOURCE_CANOPY = "local", "canopy"
+    SOURCE_CHOICES = [(SOURCE_LOCAL, "Local"), (SOURCE_CANOPY, "Canopy")]
+    source = models.CharField(max_length=16, choices=SOURCE_CHOICES, default=SOURCE_LOCAL)
+    # The canopy Turn ids this cache was built from, in turn order. Cache key:
+    # a differing list means refetch. Always empty for source="local".
+    canopy_turn_ids = models.JSONField(default=list, blank=True)
     workspace = models.ForeignKey(
         "ace_workspaces.Workspace",
         on_delete=models.SET_NULL,
