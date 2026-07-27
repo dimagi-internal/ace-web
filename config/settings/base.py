@@ -306,6 +306,10 @@ CANOPY_RUN_EXECUTION = env.bool("CANOPY_RUN_EXECUTION", default=False)
 # credential's allowed_delegation_domains). Empty = no fallback: dispatch
 # fails loudly rather than silently attributing one human's run to another.
 CANOPY_RUN_ACTOR_FALLBACK_EMAIL = env("CANOPY_RUN_ACTOR_FALLBACK_EMAIL", default="")
+# Ceiling on a single turn transcript fetched from canopy. canopy's own per-turn
+# cap is 100 MB; this is ace-web's defensive limit on what it will pull into a
+# web worker's memory to re-derive cost/structure from.
+CANOPY_TRANSCRIPT_MAX_BYTES = env.int("CANOPY_TRANSCRIPT_MAX_BYTES", default=64 * 1024 * 1024)
 
 # --- Allowed email domains ---
 # Empty list = allow any Connect-authenticated user. Workspace memberships
