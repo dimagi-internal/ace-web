@@ -736,10 +736,10 @@ def get_structure_tree(
 
     The monkeypatch target in contract tests is this module-level function.
     """
-    import gzip as _gzip
     import logging as _logging
 
     from apps.ingest.parser import parse_session_bytes
+    from apps.ingest.sources import session_raw_jsonl
     from apps.ingest.structure_aggregator import SCHEMA_VERSION, aggregate
     from apps.sessions.models import Session
 
@@ -749,8 +749,11 @@ def get_structure_tree(
     if session is None:
         return None, None, False
 
-    upload = session.ingest_records.order_by("-created_at").first()
-    if upload is None or not upload.raw_jsonl_gz:
+    # Where these bytes live is the SESSION's property, not this view's — see
+    # apps/ingest/sources.py. For a canopy-executed run this seats the cache
+    # row from canopy's per-turn transcripts if the turn set has moved.
+    raw = session_raw_jsonl(session)
+    if not raw:
         return (
             {
                 "schema_version": 0,
@@ -762,12 +765,22 @@ def get_structure_tree(
             False,
         )
 
-    etag = f'"v{SCHEMA_VERSION}:{upload.content_sha256}"' if upload.content_sha256 else None
+    # The ETag still comes off the cache row's content hash — for a canopy
+    # session that hash is over the concatenated turn transcripts, and
+    # `session_raw_jsonl` has just re-seated the row if the turn set moved, so
+    # it is current by construction. Absent (pre-0006 rows) means no caching,
+    # exactly as before.
+    upload = session.ingest_records.order_by("-created_at").first()
+    etag = (
+        f'"v{SCHEMA_VERSION}:{upload.content_sha256}"'
+        if upload is not None and upload.content_sha256
+        else None
+    )
     if etag and if_none_match == etag:
         return {}, etag, True
 
     try:
-        _parsed, events = parse_session_bytes(_gzip.decompress(bytes(upload.raw_jsonl_gz)))
+        _parsed, events = parse_session_bytes(raw)
         tree = aggregate(events)
     except Exception:
         _log.exception("structure aggregation failed for session %s", slug)

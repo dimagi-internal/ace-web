@@ -138,6 +138,22 @@ def is_alive(state: str) -> bool:
     return state in _ALIVE
 
 
+def _recompute_cost(session) -> None:
+    """The turn is terminal, so its transcript is final: derive cost now rather
+    than on every read (cost has always been precomputed; see
+    `get_cost_breakdown`, which only reads the stored field back).
+
+    Cost is analytics. It must never be able to fail a reconcile — a run whose
+    state cannot be written back is a run the self-heal sweep will resurrect.
+    """
+    try:
+        from apps.ingest.live_ingest import recompute_cost_from_source
+
+        recompute_cost_from_source(session)
+    except Exception:  # noqa: BLE001
+        log.warning("cost recompute failed for session %s", session.slug, exc_info=True)
+
+
 def reconcile_session(session) -> dict:
     """Read the run's canopy state and write it back onto ace-web's own rows.
 
@@ -169,6 +185,7 @@ def reconcile_session(session) -> dict:
         Message.objects.filter(pk=message.pk).update(
             status="complete", completed_at=timezone.now(),
         )
+        _recompute_cost(session)
     elif state in _TERMINAL_ERROR:
         # `canopy:` prefix, never `cancelled…` — resumable_after_deploy's
         # graceful_cancel leg matches error_detail__startswith="cancelled", and
@@ -178,4 +195,7 @@ def reconcile_session(session) -> dict:
             error_detail=f"canopy:{state}: {out['detail']}".strip(),
             completed_at=timezone.now(),
         )
+        # A failed run still burned tokens, and a run that reports no cost is
+        # indistinguishable from one that was never dispatched.
+        _recompute_cost(session)
     return out

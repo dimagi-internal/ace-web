@@ -292,6 +292,66 @@ def test_reconcile_does_not_touch_a_dispatch_failed_message():
 
 
 # ---------------------------------------------------------------------------
+# Cost is derived when — and only when — the turn goes terminal
+# ---------------------------------------------------------------------------
+
+
+@override_settings(**ON)
+def test_a_terminal_turn_derives_the_runs_cost():
+    """canopy holds the bytes; nothing recomputes cost on read (see
+    `get_cost_breakdown`). If reconcile does not derive it at the one moment
+    the transcript becomes final, a canopy-executed run reports no cost at all."""
+    s = _session_with_turn()
+    ex, get, unc = _canopy(turn={"status": "done", "result_note": ""})
+    with ex, get, unc, mock.patch(
+        "apps.ingest.live_ingest.recompute_cost_from_source"
+    ) as recompute:
+        run_state.reconcile_session(s)
+    recompute.assert_called_once()
+
+
+@override_settings(**ON)
+def test_a_failed_turn_still_derives_its_cost():
+    """A failed run burned tokens too, and a run reporting zero cost is
+    indistinguishable from one that never ran."""
+    s = _session_with_turn()
+    ex, get, unc = _canopy(turn={"status": "failed", "result_note": "boom"})
+    with ex, get, unc, mock.patch(
+        "apps.ingest.live_ingest.recompute_cost_from_source"
+    ) as recompute:
+        run_state.reconcile_session(s)
+    recompute.assert_called_once()
+
+
+@override_settings(**ON)
+def test_a_queued_turn_does_not_derive_cost():
+    """A non-terminal turn's transcript is still growing. Fetching it on every
+    reconcile is an unbounded HTTP pull for a number that is not final."""
+    s = _session_with_turn()
+    ex, get, unc = _canopy(turn={"status": "queued"})
+    with ex, get, unc, mock.patch(
+        "apps.ingest.live_ingest.recompute_cost_from_source"
+    ) as recompute:
+        run_state.reconcile_session(s)
+    recompute.assert_not_called()
+
+
+@override_settings(**ON)
+def test_a_cost_failure_never_fails_the_reconcile():
+    """A reconcile that raises leaves the run's state unwritten, and the
+    self-heal sweep then resurrects a run canopy already finished."""
+    s = _session_with_turn()
+    ex, get, unc = _canopy(turn={"status": "done", "result_note": ""})
+    with ex, get, unc, mock.patch(
+        "apps.ingest.live_ingest.recompute_cost_from_source",
+        side_effect=RuntimeError("boom"),
+    ):
+        out = run_state.reconcile_session(s)
+    assert out["state"] == "done"
+    assert Message.objects.get(session=s).status == "complete"
+
+
+# ---------------------------------------------------------------------------
 # manage.py reconcile_canopy_runs — the deploy-hook / cron entry point
 # ---------------------------------------------------------------------------
 

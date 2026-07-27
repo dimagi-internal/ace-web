@@ -954,3 +954,142 @@ def test_execution_route_is_not_shadowed_by_the_slug_route(member_client, monkey
     resp = client.get(f"/api/w/{workspace.slug}/sessions/{s.slug}/execution")
     assert resp.status_code == 200
     assert "state" in resp.json()
+
+
+# ---------------------------------------------------------------------------
+# 2.2.11 — /structure reads through the transcript SOURCE, not raw_jsonl_gz
+# ---------------------------------------------------------------------------
+
+
+def _session_in(workspace, user, **kwargs):
+    from apps.sessions.models import Session
+
+    return Session.create_with_owner(
+        owner=user, workspace=workspace, title="t", source="web", **kwargs
+    )
+
+
+_STRUCT_LINE = (
+    b'{"type":"assistant","timestamp":"2026-01-01T00:00:00.000Z","uuid":"u1","message":'
+    b'{"role":"assistant","model":"claude-sonnet-4-6",'
+    b'"content":[{"type":"text","text":"x"}],"usage":{"input_tokens":1,"output_tokens":1}}}\n'
+)
+
+
+@pytest.mark.django_db
+def test_structure_reads_through_the_transcript_source(member_client):
+    """/structure must not touch raw_jsonl_gz directly — a canopy-executed
+    session has no local blob until the cache is seated."""
+    from unittest import mock
+
+    client, workspace, user = member_client
+    session = _session_in(workspace, user, canopy_session_id="sess-1")
+    with mock.patch(
+        "apps.ingest.sources.session_raw_jsonl", return_value=_STRUCT_LINE
+    ) as src:
+        resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
+    assert resp.status_code == 200
+    src.assert_called_once()
+    assert "unavailable_reason" not in resp.json()
+
+
+@pytest.mark.django_db
+def test_structure_reports_no_raw_jsonl_when_the_source_has_nothing(member_client):
+    from unittest import mock
+
+    client, workspace, user = member_client
+    session = _session_in(workspace, user, canopy_session_id="sess-1")
+    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=None):
+        resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
+    assert resp.status_code == 200
+    assert resp.json()["unavailable_reason"] == "no-raw-jsonl"
+
+
+@pytest.mark.django_db
+def test_structure_of_a_local_session_still_comes_from_its_own_blob(member_client):
+    """The regression that matters most: a pre-migration run's structure must
+    be byte-identical to what it was before this seam existed."""
+    import gzip
+
+    from apps.sessions.models import IngestUpload
+
+    client, workspace, user = member_client
+    session = _session_in(workspace, user)
+    IngestUpload.objects.create(
+        session=session, uploaded_by=user, raw_jsonl_gz=gzip.compress(_STRUCT_LINE),
+        content_sha256="abc123", line_count=1,
+    )
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "unavailable_reason" not in body
+    assert body["phases"]
+
+
+@pytest.mark.django_db
+def test_structure_etag_still_comes_off_the_cache_rows_content_hash(member_client):
+    import gzip
+
+    from apps.ingest.structure_aggregator import SCHEMA_VERSION
+    from apps.sessions.models import IngestUpload
+
+    client, workspace, user = member_client
+    session = _session_in(workspace, user)
+    IngestUpload.objects.create(
+        session=session, uploaded_by=user, raw_jsonl_gz=gzip.compress(_STRUCT_LINE),
+        content_sha256="abc123",
+    )
+    url = f"/api/w/{workspace.slug}/sessions/{session.slug}/structure"
+    resp = client.get(url)
+    assert resp["ETag"] == f'"v{SCHEMA_VERSION}:abc123"'
+    again = client.get(url, HTTP_IF_NONE_MATCH=resp["ETag"])
+    assert again.status_code == 304
+
+
+@pytest.mark.django_db
+def test_structure_reports_parse_failed_when_the_bytes_do_not_aggregate(member_client):
+    from unittest import mock
+
+    client, workspace, user = member_client
+    session = _session_in(workspace, user, canopy_session_id="sess-1")
+    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=_STRUCT_LINE), \
+         mock.patch(
+             "apps.ingest.structure_aggregator.aggregate", side_effect=RuntimeError("boom")
+         ):
+        resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
+    assert resp.status_code == 200
+    assert resp.json()["unavailable_reason"] == "parse-failed"
+
+
+@pytest.mark.django_db
+@override_settings(**_CANOPY_CONFIGURED_BUT_UNFLAGGED)
+def test_structure_never_reaches_canopy_with_the_flag_off(member_client):
+    """Flag off ⇒ /structure behaves exactly as it did before this PR. canopy is
+    fully wired here, so nothing but the absence of a `canopy_session_id` (which
+    only a dispatch under the flag can write) is guarding the call."""
+    import gzip
+    from unittest import mock
+
+    from django.conf import settings
+
+    from apps.sessions.models import IngestUpload, Message
+
+    assert settings.CANOPY_BASE_URL and settings.CANOPY_APP_CREDENTIAL
+    client, workspace, user = member_client
+    session = _session_in(workspace, user)
+    # A turn id present without a session id is the shape that would tempt a
+    # reader to go to canopy anyway. `canopy_session_id` is the discriminator,
+    # and only a dispatch under the flag ever writes it.
+    Message.objects.create(
+        session=session, turn_index=1, role="assistant", content={"text": ""},
+        status="complete", canopy_turn_id="turn-a",
+    )
+    IngestUpload.objects.create(
+        session=session, uploaded_by=user, raw_jsonl_gz=gzip.compress(_STRUCT_LINE),
+        content_sha256="abc123",
+    )
+    with mock.patch("apps.canopy.client.exchange_token") as ex:
+        resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
+    ex.assert_not_called()
+    assert resp.status_code == 200
+    assert resp.json()["phases"]

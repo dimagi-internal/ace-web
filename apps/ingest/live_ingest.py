@@ -66,3 +66,32 @@ def store_session_transcript(session, new_raw_jsonl: str) -> dict:
         },
     )
     return breakdown
+
+
+def recompute_cost_from_source(session) -> dict:
+    """Recompute `Session.cost_breakdown` from whatever the transcript source
+    currently yields.
+
+    The canopy-era counterpart to `store_session_transcript`. That function
+    exists because the local turn driver held the bytes and had to persist them;
+    this one runs when a canopy turn goes terminal, reads the bytes back from
+    canopy (via `sources.session_raw_jsonl`, which seats the cache), and writes
+    only the derived breakdown. It never touches `raw_jsonl_gz` — the cache is
+    `sources`' business, not this module's.
+    """
+    from apps.ingest import cost_aggregator
+    from apps.ingest.parser import parse_session_bytes
+    from apps.ingest.sources import session_raw_jsonl
+
+    raw = session_raw_jsonl(session)
+    if not raw:
+        return {}
+    _parsed, cost_events = parse_session_bytes(raw)
+    try:
+        breakdown = cost_aggregator.aggregate(cost_events)
+    except Exception:  # noqa: BLE001 — analytics must never break a run
+        log.exception("cost aggregator failed for canopy session %s", session.slug)
+        return {}
+    session.cost_breakdown = breakdown
+    session.save(update_fields=["cost_breakdown", "updated_at"])
+    return breakdown
