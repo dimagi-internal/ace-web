@@ -76,6 +76,25 @@ Resources:
       UnhealthyThresholdCount: 3
       Matcher:
         HttpCode: "200"
+      # Declared here so CloudFormation is the ONLY writer. The deploy workflow
+      # used to re-assert these on every run — self-healing, but a second writer,
+      # which is exactly the pattern this migration removed everywhere else.
+      TargetGroupAttributes:
+        # Default 300s drain is the long pole in a rolling cutover. Labs has no
+        # long-poll requests beyond SSE/WebSocket, which the app handles by
+        # reconnecting.
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
+        # LOAD-BEARING, not a preference: pins each browser to one ECS task via
+        # the AWSALB cookie so a Session's long-lived `claude` subprocess pool is
+        # reused across turns. Without it a 2-task service re-rolls task affinity
+        # on every WebSocket (~50% reuse).
+        - Key: stickiness.enabled
+          Value: "true"
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: "3600"
 
   ListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
