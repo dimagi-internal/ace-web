@@ -34,6 +34,42 @@ class TranscriptEncodingError(Exception):
     pass
 
 
+# `chunked` is a framing, not a compression, and `http.client` has already
+# undone it by the time we read. Every other transfer-coding is a content
+# transformation we would have to reverse — which is precisely the thing this
+# module refuses to do.
+_SAFE_TRANSFER_CODINGS = {"chunked", "identity"}
+
+
+def _refuse_if_encoded(resp) -> None:
+    """Refuse a response whose body is not the plaintext we asked for.
+
+    Both headers are checked BEFORE the first read. `Content-Encoding` is the
+    spelling the falsified canopy scheme used; `Transfer-Encoding` is the other
+    spelling of the same bug — nothing in the path emits it and `http.client`
+    only implements `chunked`, but a `Transfer-Encoding: gzip` body sails
+    through a content-encoding-only check and parses to a cost of ZERO, which
+    is the silent-wrong-number failure wearing a different hat.
+    """
+    content = (resp.getheader("Content-Encoding") or "").strip().lower()
+    if content and content != "identity":
+        raise TranscriptEncodingError(
+            f"canopy transcript came back Content-Encoding: {content!r}; "
+            "this route must stream plaintext (a multi-member gzip body "
+            "silently truncates to its first member)"
+        )
+    codings = {
+        c.strip().lower()
+        for c in (resp.getheader("Transfer-Encoding") or "").split(",")
+        if c.strip()
+    }
+    if codings - _SAFE_TRANSFER_CODINGS:
+        raise TranscriptEncodingError(
+            f"canopy transcript came back Transfer-Encoding: "
+            f"{resp.getheader('Transfer-Encoding')!r}; this route must stream plaintext"
+        )
+
+
 def fetch_turn_transcript(user_token: str, turn_id: str, *, max_bytes: int | None = None) -> bytes:
     """The turn's raw JSONL, byte for byte. Empty bytes when nothing was ever
     appended — absence of a transcript is not absence of a turn."""
@@ -45,13 +81,7 @@ def fetch_turn_transcript(user_token: str, turn_id: str, *, max_bytes: int | Non
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            encoding = (resp.getheader("Content-Encoding") or "").strip().lower()
-            if encoding and encoding != "identity":
-                raise TranscriptEncodingError(
-                    f"canopy transcript came back Content-Encoding: {encoding!r}; "
-                    "this route must stream plaintext (a multi-member gzip body "
-                    "silently truncates to its first member)"
-                )
+            _refuse_if_encoded(resp)
             chunks: list[bytes] = []
             total = 0
             while True:

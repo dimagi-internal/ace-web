@@ -736,10 +736,11 @@ def get_structure_tree(
 
     The monkeypatch target in contract tests is this module-level function.
     """
+    import hashlib as _hashlib
     import logging as _logging
 
     from apps.ingest.parser import parse_session_bytes
-    from apps.ingest.sources import session_raw_jsonl
+    from apps.ingest.sources import read_session_transcript
     from apps.ingest.structure_aggregator import SCHEMA_VERSION, aggregate
     from apps.sessions.models import Session
 
@@ -752,30 +753,30 @@ def get_structure_tree(
     # Where these bytes live is the SESSION's property, not this view's — see
     # apps/ingest/sources.py. For a canopy-executed run this seats the cache
     # row from canopy's per-turn transcripts if the turn set has moved.
-    raw = session_raw_jsonl(session)
+    read = read_session_transcript(session)
+    raw = read.raw
     if not raw:
+        # The seam says WHY, so an unreadable blob still reads "parse-failed"
+        # (as it did when the gunzip sat inside this function's try) and an
+        # unreachable canopy is not reported as "nothing was ever recorded".
         return (
             {
                 "schema_version": 0,
                 "session": None,
                 "phases": [],
-                "unavailable_reason": "no-raw-jsonl",
+                "unavailable_reason": read.reason or "no-raw-jsonl",
             },
             None,
             False,
         )
 
-    # The ETag still comes off the cache row's content hash — for a canopy
-    # session that hash is over the concatenated turn transcripts, and
-    # `session_raw_jsonl` has just re-seated the row if the turn set moved, so
-    # it is current by construction. Absent (pre-0006 rows) means no caching,
-    # exactly as before.
-    upload = session.ingest_records.order_by("-created_at").first()
-    etag = (
-        f'"v{SCHEMA_VERSION}:{upload.content_sha256}"'
-        if upload is not None and upload.content_sha256
-        else None
-    )
+    # The ETag is the hash of the bytes we are ABOUT TO SERVE, not of a row we
+    # looked up separately. It used to be `IngestUpload.content_sha256`, which
+    # for every pre-existing row is the same number — but a session can now
+    # have two rows, and the seam can serve the local prefix when the canopy
+    # cache is unreachable, so "the newest row's hash" is no longer guaranteed
+    # to describe what went out.
+    etag = f'"v{SCHEMA_VERSION}:{_hashlib.sha256(raw).hexdigest()}"'
     if etag and if_none_match == etag:
         return {}, etag, True
 

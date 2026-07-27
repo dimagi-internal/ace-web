@@ -194,3 +194,137 @@ def test_a_pre_migration_runs_cost_is_identical_through_the_new_seam():
     assert through_the_seam["phases"] == write_time["phases"]
     session.refresh_from_db()
     assert session.cost_breakdown == through_the_seam
+
+
+# ---------------------------------------------------------------------------
+# The hybrid session's cost, and the refusal to under-report
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_a_hybrid_sessions_cost_covers_its_local_turns_as_well_as_canopys():
+    """A run that executed locally and was later dispatched to canopy: its cost
+    must be the sum of both halves. Reading only canopy's half is exactly the
+    silent drop this whole PR exists to prevent."""
+    import gzip
+    from unittest import mock
+
+    from apps.ingest import live_ingest
+    from apps.sessions.models import IngestUpload, Message
+
+    _user, session = _canopy_session()
+    local_bytes = (_INIT + _assistant_line(5)).encode()
+    IngestUpload.objects.create(
+        session=session, uploaded_by=session.owner, source="local",
+        raw_jsonl_gz=gzip.compress(local_bytes),
+    )
+    Message.objects.create(
+        session=session, turn_index=9, role="assistant", content={"text": ""},
+        status="complete", canopy_turn_id="turn-a",
+    )
+    canopy_bytes = _assistant_line(7).encode()
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=canopy_bytes):
+        breakdown = live_ingest.recompute_cost_from_source(session)
+    assert breakdown["totals"]["output_tokens"] == 12   # 5 local + 7 canopy
+
+
+@pytest.mark.django_db
+def test_a_multi_turn_canopy_session_sums_its_turns_tokens():
+    """Bytes concatenating is not the same claim as cost adding up."""
+    from unittest import mock
+
+    from apps.ingest import live_ingest
+    from apps.sessions.models import Message
+
+    _user, session = _canopy_session()
+    for idx, turn in ((1, "turn-a"), (3, "turn-b")):
+        Message.objects.create(
+            session=session, turn_index=idx, role="assistant", content={"text": ""},
+            status="complete", canopy_turn_id=turn,
+        )
+    blobs = {"turn-a": _assistant_line(5).encode(), "turn-b": _assistant_line(7).encode()}
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch(
+             "apps.canopy.transcripts.fetch_turn_transcript",
+             side_effect=lambda tok, tid, **kw: blobs[tid],
+         ):
+        breakdown = live_ingest.recompute_cost_from_source(session)
+    assert breakdown["totals"]["output_tokens"] == 12   # 5 + 7
+    assert breakdown["totals"]["input_tokens"] == 20    # 10 + 10
+
+
+@pytest.mark.django_db
+def test_recompute_refuses_to_lower_a_runs_cost():
+    """A session's cost only accumulates, so a smaller recomputed figure means
+    we read FEWER bytes than last time — a truncation, a lost prefix, a partial
+    cache. Keep the larger number: a stuck cost is visible in the logs, a
+    silently shrunken one is visible nowhere."""
+    from unittest import mock
+
+    from apps.ingest import live_ingest
+
+    _user, session = _canopy_session()
+    big = (_INIT + _assistant_line(5) + _assistant_line(7)).encode()
+    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=big):
+        full = live_ingest.recompute_cost_from_source(session)
+    assert full["totals"]["output_tokens"] == 12
+
+    small = (_INIT + _assistant_line(5)).encode()
+    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=small):
+        kept = live_ingest.recompute_cost_from_source(session)
+    assert kept["totals"]["output_tokens"] == 12   # NOT 5
+    session.refresh_from_db()
+    # Bound to a local first: django-stubs types the attribute as JSONField,
+    # which basedpyright refuses to subscript (see test_stores_breakdown…).
+    stored: dict = session.cost_breakdown
+    assert stored["totals"]["output_tokens"] == 12
+
+
+@pytest.mark.django_db
+def test_recompute_still_raises_a_runs_cost_as_it_grows():
+    """The refusal must not freeze a run: a growing transcript still writes."""
+    from unittest import mock
+
+    from apps.ingest import live_ingest
+
+    _user, session = _canopy_session()
+    with mock.patch(
+        "apps.ingest.sources.session_raw_jsonl", return_value=(_INIT + _assistant_line(5)).encode()
+    ):
+        live_ingest.recompute_cost_from_source(session)
+    with mock.patch(
+        "apps.ingest.sources.session_raw_jsonl",
+        return_value=(_INIT + _assistant_line(5) + _assistant_line(7)).encode(),
+    ):
+        grown = live_ingest.recompute_cost_from_source(session)
+    assert grown["totals"]["output_tokens"] == 12
+    session.refresh_from_db()
+    # Bound to a local first: django-stubs types the attribute as JSONField,
+    # which basedpyright refuses to subscript (see test_stores_breakdown…).
+    stored: dict = session.cost_breakdown
+    assert stored["totals"]["output_tokens"] == 12
+
+
+@pytest.mark.django_db
+def test_a_local_turn_after_a_canopy_turn_does_not_fold_canopys_bytes_into_the_local_row():
+    """`store_session_transcript` accumulates onto the newest row. With a canopy
+    row present that would copy canopy's bytes into the local source of record
+    and double them on the next compose."""
+    import gzip
+
+    from apps.ingest import live_ingest
+    from apps.sessions.models import IngestUpload
+
+    _user, session = _canopy_session()
+    IngestUpload.objects.create(
+        session=session, uploaded_by=session.owner, source="canopy",
+        canopy_turn_ids=["turn-a"],
+        raw_jsonl_gz=gzip.compress((_INIT + _assistant_line(7)).encode()),
+    )
+    live_ingest.store_session_transcript(session, _INIT + _assistant_line(5))
+
+    local = IngestUpload.objects.get(session=session, source="local")
+    assert local.read_raw_jsonl() == _INIT + _assistant_line(5)
+    canopy = IngestUpload.objects.get(session=session, source="canopy")
+    assert canopy.read_raw_jsonl() == _INIT + _assistant_line(7)   # untouched

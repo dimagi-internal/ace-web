@@ -591,7 +591,10 @@ export interface StructureTree {
   computed_at?: string;
   session: StructureSession | null;
   phases: StructurePhase[];
-  unavailable_reason?: "no-raw-jsonl" | "parse-failed";
+  // "canopy-unreachable": the run executed on canopy and its transcript could
+  // not be fetched. Distinct from "no-raw-jsonl" (nothing was ever recorded) —
+  // nothing is lost, so the UI must not tell the user to re-upload.
+  unavailable_reason?: "no-raw-jsonl" | "parse-failed" | "canopy-unreachable";
 }
 
 // ---------------------------------------------------------------------------

@@ -86,6 +86,32 @@ def test_an_identity_content_encoding_is_not_treated_as_encoded():
 
 
 @override_settings(**ENABLED)
+def test_a_transfer_encoded_response_is_refused_too():
+    """The other spelling of the same bug. `Transfer-Encoding: gzip` carries no
+    `Content-Encoding`, so a content-encoding-only check waves it through and
+    the raw gzip bytes are handed on as if they were plaintext — every line
+    fails to parse and the cost reads ZERO, silently."""
+    with _urlopen(b"\x1f\x8b garbage", headers={"Transfer-Encoding": "gzip"}):
+        with pytest.raises(transcripts.TranscriptEncodingError):
+            transcripts.fetch_turn_transcript("tok", "turn-1")
+
+
+@override_settings(**ENABLED)
+def test_chunked_transfer_encoding_is_not_refused():
+    """`chunked` is framing, not compression, and http.client has already
+    undone it by the time we read. Refusing it would break the normal case."""
+    with _urlopen(b'{"type":"system"}\n', headers={"Transfer-Encoding": "chunked"}):
+        assert transcripts.fetch_turn_transcript("tok", "turn-1") == b'{"type":"system"}\n'
+
+
+@override_settings(**ENABLED)
+def test_a_mixed_transfer_encoding_list_is_refused():
+    with _urlopen(b"x", headers={"Transfer-Encoding": "gzip, chunked"}):
+        with pytest.raises(transcripts.TranscriptEncodingError):
+            transcripts.fetch_turn_transcript("tok", "turn-1")
+
+
+@override_settings(**ENABLED)
 def test_a_transcript_over_the_ceiling_raises_rather_than_truncating():
     with _urlopen(b"x" * 64):
         with pytest.raises(transcripts.TranscriptTooLarge, match="turn-1"):

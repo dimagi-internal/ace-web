@@ -38,7 +38,14 @@ def store_session_transcript(session, new_raw_jsonl: str) -> dict:
     # Accumulate across turns: a long-lived subprocess only streams the current
     # turn's events on stdout (prior history is loaded internally via --resume),
     # so the cumulative transcript is the concatenation of each turn's capture.
-    existing = IngestUpload.objects.filter(session=session).order_by("-created_at").first()
+    #
+    # Scoped to the LOCAL row on purpose. A session that has also run on canopy
+    # carries a second, `source="canopy"` row holding the composed transcript;
+    # accumulating onto that would fold canopy's bytes into the local source of
+    # record and double them on the next compose.
+    from apps.ingest.sources import local_row
+
+    existing = local_row(session)
     prior = (existing.read_raw_jsonl() if existing else "") or ""
     full_bytes = (prior + new_raw_jsonl).encode("utf-8")
 
@@ -52,19 +59,26 @@ def store_session_transcript(session, new_raw_jsonl: str) -> dict:
     session.cost_breakdown = breakdown
     session.save(update_fields=["cost_breakdown", "updated_at"])
 
-    IngestUpload.objects.update_or_create(
-        session=session,
-        defaults={
-            "uploaded_by": session.owner,
-            "source_path": f"<live:{session.slug}>",
-            "raw_bytes": parsed.raw_bytes,
-            "line_count": parsed.line_count,
-            "cli_session_id": parsed.cli_session_id or (session.cli_session_id or ""),
-            "content_sha256": parsed.content_sha256 or "",
-            "workspace": session.workspace,
-            "raw_jsonl_gz": gzip.compress(full_bytes),
-        },
-    )
+    defaults = {
+        "uploaded_by": session.owner,
+        "source": IngestUpload.SOURCE_LOCAL,
+        "source_path": f"<live:{session.slug}>",
+        "raw_bytes": parsed.raw_bytes,
+        "line_count": parsed.line_count,
+        "cli_session_id": parsed.cli_session_id or (session.cli_session_id or ""),
+        "content_sha256": parsed.content_sha256 or "",
+        "workspace": session.workspace,
+        "raw_jsonl_gz": gzip.compress(full_bytes),
+    }
+    # Re-seat the LOCAL row, never `update_or_create(session=…)`: a session with
+    # both a local and a canopy row raises MultipleObjectsReturned on that, and
+    # a session that has been to canopy now always has two.
+    if existing is None:
+        IngestUpload.objects.create(session=session, **defaults)
+    else:
+        for field, value in defaults.items():
+            setattr(existing, field, value)
+        existing.save(update_fields=list(defaults))
     return breakdown
 
 
@@ -92,6 +106,33 @@ def recompute_cost_from_source(session) -> dict:
     except Exception:  # noqa: BLE001 — analytics must never break a run
         log.exception("cost aggregator failed for canopy session %s", session.slug)
         return {}
+    if _would_under_report(session.cost_breakdown, breakdown):
+        # A session's cost only ever accumulates. A newly-derived figure that is
+        # SMALLER than the stored one therefore means we read fewer bytes than
+        # last time — a truncated fetch, a lost local prefix, a partial cache.
+        # Keep the larger number and say so loudly: an unchanged cost is
+        # visible in the logs, a silently shrunken one is visible nowhere.
+        log.error(
+            "refusing to lower cost for session %s: stored totals %s, recomputed %s "
+            "— the transcript source returned less than it did before",
+            session.slug, session.cost_breakdown.get("totals"), breakdown.get("totals"),
+        )
+        return session.cost_breakdown
     session.cost_breakdown = breakdown
     session.save(update_fields=["cost_breakdown", "updated_at"])
     return breakdown
+
+
+def _billable_tokens(breakdown) -> int:
+    totals = (breakdown or {}).get("totals") or {}
+    return sum(
+        int(totals.get(k, 0) or 0)
+        for k in ("input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens")
+    )
+
+
+def _would_under_report(stored, fresh) -> bool:
+    """True when overwriting `stored` with `fresh` would lower a run's cost."""
+    if not stored or not (stored.get("totals") or {}):
+        return False
+    return _billable_tokens(fresh) < _billable_tokens(stored)

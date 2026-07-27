@@ -18,6 +18,10 @@ const UNAVAILABLE_MESSAGES = {
     "This session has no persisted raw transcript. Re-upload via /ace:upload-transcript to enable the structure view.",
   "parse-failed":
     "Could not parse the persisted transcript for this session. Try re-uploading via /ace:upload-transcript.",
+  // This run executed on canopy, so its transcript lives there and could not be
+  // fetched. Nothing is lost, so "re-upload" would be actively wrong advice.
+  "canopy-unreachable":
+    "This run executed on canopy and its transcript could not be fetched. Nothing is lost — reload once canopy is reachable again.",
 } as const;
 
 export function StructureTab({ slug, workspaceSlug }: Props) {

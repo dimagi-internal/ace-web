@@ -144,6 +144,21 @@ describe("StructureTab", () => {
     ).toBeInTheDocument();
   });
 
+  it("says canopy was unreachable rather than claiming nothing was recorded", async () => {
+    // A canopy-executed run whose transcript could not be fetched has lost
+    // nothing — telling the user to re-upload would be actively wrong.
+    vi.spyOn(structureApi, "getSessionStructure").mockResolvedValue({
+      schema_version: 0,
+      session: null,
+      phases: [],
+      unavailable_reason: "canopy-unreachable",
+    });
+    render(<StructureTab slug="sess-4" workspaceSlug="ws" />);
+
+    expect(await screen.findByText(/executed on canopy/i)).toBeInTheDocument();
+    expect(screen.queryByText(/re-upload/i)).not.toBeInTheDocument();
+  });
+
   it("surfaces a load error instead of silently rendering nothing", async () => {
     vi.spyOn(structureApi, "getSessionStructure").mockRejectedValue(
       new Error("boom"),

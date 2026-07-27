@@ -984,8 +984,11 @@ def test_structure_reads_through_the_transcript_source(member_client):
 
     client, workspace, user = member_client
     session = _session_in(workspace, user, canopy_session_id="sess-1")
+    from apps.ingest.sources import TranscriptRead
+
     with mock.patch(
-        "apps.ingest.sources.session_raw_jsonl", return_value=_STRUCT_LINE
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead(_STRUCT_LINE, ""),
     ) as src:
         resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
     assert resp.status_code == 200
@@ -999,7 +1002,12 @@ def test_structure_reports_no_raw_jsonl_when_the_source_has_nothing(member_clien
 
     client, workspace, user = member_client
     session = _session_in(workspace, user, canopy_session_id="sess-1")
-    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=None):
+    from apps.ingest.sources import TranscriptRead
+
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead(None, "no-raw-jsonl"),
+    ):
         resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
     assert resp.status_code == 200
     assert resp.json()["unavailable_reason"] == "no-raw-jsonl"
@@ -1007,10 +1015,14 @@ def test_structure_reports_no_raw_jsonl_when_the_source_has_nothing(member_clien
 
 @pytest.mark.django_db
 def test_structure_of_a_local_session_still_comes_from_its_own_blob(member_client):
-    """The regression that matters most: a pre-migration run's structure must
-    be byte-identical to what it was before this seam existed."""
+    """The regression that matters most: a pre-migration run's structure tree
+    must be the same tree the aggregator builds from that run's own bytes —
+    not merely a tree, which is all a truthiness check can tell you."""
     import gzip
+    import json
 
+    from apps.ingest.parser import parse_session_bytes
+    from apps.ingest.structure_aggregator import aggregate
     from apps.sessions.models import IngestUpload
 
     client, workspace, user = member_client
@@ -1023,12 +1035,23 @@ def test_structure_of_a_local_session_still_comes_from_its_own_blob(member_clien
     assert resp.status_code == 200
     body = resp.json()
     assert "unavailable_reason" not in body
-    assert body["phases"]
+
+    _parsed, events = parse_session_bytes(_STRUCT_LINE)
+    expected = json.loads(json.dumps(aggregate(events), default=str))
+    # `computed_at` is a wall clock; everything that describes the RUN must match.
+    body.pop("computed_at", None)
+    expected.pop("computed_at", None)
+    assert body == expected
 
 
 @pytest.mark.django_db
-def test_structure_etag_still_comes_off_the_cache_rows_content_hash(member_client):
+def test_structure_etag_is_the_hash_of_the_bytes_actually_served(member_client):
+    """It used to be `IngestUpload.content_sha256` — the same number for every
+    pre-existing row, but a session can now carry two rows and the seam can
+    serve the local prefix when the canopy cache is unreachable, so a hash
+    looked up from a row is no longer guaranteed to describe what went out."""
     import gzip
+    import hashlib
 
     from apps.ingest.structure_aggregator import SCHEMA_VERSION
     from apps.sessions.models import IngestUpload
@@ -1037,11 +1060,11 @@ def test_structure_etag_still_comes_off_the_cache_rows_content_hash(member_clien
     session = _session_in(workspace, user)
     IngestUpload.objects.create(
         session=session, uploaded_by=user, raw_jsonl_gz=gzip.compress(_STRUCT_LINE),
-        content_sha256="abc123",
+        content_sha256="abc123",   # deliberately NOT a hash of these bytes
     )
     url = f"/api/w/{workspace.slug}/sessions/{session.slug}/structure"
     resp = client.get(url)
-    assert resp["ETag"] == f'"v{SCHEMA_VERSION}:abc123"'
+    assert resp["ETag"] == f'"v{SCHEMA_VERSION}:{hashlib.sha256(_STRUCT_LINE).hexdigest()}"'
     again = client.get(url, HTTP_IF_NONE_MATCH=resp["ETag"])
     assert again.status_code == 304
 
@@ -1052,10 +1075,14 @@ def test_structure_reports_parse_failed_when_the_bytes_do_not_aggregate(member_c
 
     client, workspace, user = member_client
     session = _session_in(workspace, user, canopy_session_id="sess-1")
-    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=_STRUCT_LINE), \
-         mock.patch(
-             "apps.ingest.structure_aggregator.aggregate", side_effect=RuntimeError("boom")
-         ):
+    from apps.ingest.sources import TranscriptRead
+
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead(_STRUCT_LINE, ""),
+    ), mock.patch(
+        "apps.ingest.structure_aggregator.aggregate", side_effect=RuntimeError("boom")
+    ):
         resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
     assert resp.status_code == 200
     assert resp.json()["unavailable_reason"] == "parse-failed"
@@ -1093,3 +1120,67 @@ def test_structure_never_reaches_canopy_with_the_flag_off(member_client):
     ex.assert_not_called()
     assert resp.status_code == 200
     assert resp.json()["phases"]
+
+
+@pytest.mark.django_db
+@override_settings(**_CANOPY_ON)
+def test_structure_of_a_hybrid_session_covers_its_local_phases_too(member_client):
+    """A run that executed locally and was later dispatched to canopy must not
+    lose its pre-flag phases from the structure tree."""
+    import gzip
+    from unittest import mock
+
+    from apps.sessions.models import IngestUpload, Message
+
+    client, workspace, user = member_client
+    session = _session_in(workspace, user, canopy_session_id="sess-1")
+    IngestUpload.objects.create(
+        session=session, uploaded_by=user, source="local",
+        raw_jsonl_gz=gzip.compress(_STRUCT_LINE),
+    )
+    Message.objects.create(
+        session=session, turn_index=9, role="assistant", content={"text": ""},
+        status="complete", canopy_turn_id="turn-a",
+    )
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=b""):
+        resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "unavailable_reason" not in body
+    assert body["phases"]   # the LOCAL half, which canopy never held
+
+
+@pytest.mark.django_db
+@override_settings(**_CANOPY_ON)
+def test_structure_says_canopy_was_unreachable_rather_than_never_recorded(member_client):
+    from unittest import mock
+
+    from apps.canopy.client import CanopyError
+    from apps.sessions.models import Message
+
+    client, workspace, user = member_client
+    session = _session_in(workspace, user, canopy_session_id="sess-1")
+    Message.objects.create(
+        session=session, turn_index=1, role="assistant", content={"text": ""},
+        status="complete", canopy_turn_id="turn-a",
+    )
+    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(502, "x")):
+        resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
+    assert resp.json()["unavailable_reason"] == "canopy-unreachable"
+
+
+@pytest.mark.django_db
+def test_structure_of_a_corrupt_blob_still_says_parse_failed(member_client):
+    """Pre-seam this surfaced as `parse-failed` because the gunzip sat inside
+    `get_structure_tree`'s own try/except. Moving the gunzip into the seam must
+    not silently retitle it — the two strings render different user messages."""
+    from apps.sessions.models import IngestUpload
+
+    client, workspace, user = member_client
+    session = _session_in(workspace, user)
+    IngestUpload.objects.create(
+        session=session, uploaded_by=user, raw_jsonl_gz=b"not gzip at all",
+    )
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
+    assert resp.json()["unavailable_reason"] == "parse-failed"
