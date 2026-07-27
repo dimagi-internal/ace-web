@@ -9,6 +9,8 @@
  * PersonalTokenOut, etc.) should be imported from generated.ts instead.
  */
 
+import type { RunExecution } from "@/canopy/runState";
+
 // ---------------------------------------------------------------------------
 // Core enum aliases — exported for backward compat with consumer files
 // ---------------------------------------------------------------------------
@@ -347,6 +349,10 @@ export interface RunSummary {
   latest_phase_done?: string | null;
   latest_phase_done_display?: string | null;
   latest_phase_done_ordinal?: number | null;
+  /** Where this run's execution stands on canopy's harness, or null when the
+   * run was never dispatched there (legacy/local execution). See
+   * `src/canopy/runState.ts`. */
+  execution?: RunExecution | null;
 }
 
 /** One row from <opp>/inputs/decision-overrides.yaml, keyed by row id in

@@ -414,6 +414,31 @@ def resume_run(
     return JsonResponse(res, status=202)
 
 
+@router.get("/{slug}/execution", summary="Where this run's execution actually stands")
+def session_execution(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+) -> HttpResponse:
+    """The run's canopy execution state — including the two states that say, in
+    plain words, that nothing can run it: `no_runner_configured` and
+    `waiting_for_runner`. Reconciles on read (ace-web has no worker; this is the
+    same compute-on-read shape `/structure` uses).
+
+    The monkeypatch target in contract tests is
+    `apps.canopy.run_state.reconcile_session`.
+    """
+    from django.http import JsonResponse
+
+    from apps.canopy import run_state
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    session = _load_session_in_workspace(slug, workspace)
+    if session is None:
+        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
+    return JsonResponse(run_state.reconcile_session(session))
+
+
 # ---------------------------------------------------------------------------
 # 2.2.3 — POST / — create session
 # ---------------------------------------------------------------------------

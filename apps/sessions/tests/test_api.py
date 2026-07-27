@@ -892,3 +892,65 @@ def test_resume_run_reports_a_dispatch_failure_as_a_problem_not_a_500(
     assert resp.status_code == 502
     assert resp["Content-Type"].startswith("application/problem+json")
     assert "403" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# GET /{slug}/execution — where this run's execution actually stands
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_execution_endpoint_reports_the_run_state(member_client, monkeypatch):
+    from apps.sessions.models import Session
+
+    client, workspace, user = member_client
+    s = Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="bednet-spot-check", opp_run_id="20260604-1000",
+    )
+    monkeypatch.setattr(
+        "apps.canopy.run_state.reconcile_session",
+        lambda session: {
+            "state": "no_runner_configured",
+            "detail": "no runner can take this session",
+            "canopy_turn_id": "turn-1",
+            "canopy_session_id": "sess-1",
+        },
+    )
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/{s.slug}/execution")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["state"] == "no_runner_configured"
+    assert body["detail"] == "no runner can take this session"
+
+
+@pytest.mark.django_db
+def test_execution_endpoint_404s_an_unknown_session(member_client):
+    client, workspace, _ = member_client
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/does-not-exist/execution")
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_execution_endpoint_non_member_404(non_member_client):
+    client, workspace, _ = non_member_client
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/s/execution")
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_execution_route_is_not_shadowed_by_the_slug_route(member_client, monkeypatch):
+    """`/{slug}/execution` must not be swallowed by `/{slug}` — the same
+    shadowing that `/interrupted` is registered early to avoid."""
+    from apps.sessions.models import Session
+
+    client, workspace, user = member_client
+    s = Session.create_with_owner(owner=user, workspace=workspace, source="web")
+    monkeypatch.setattr(
+        "apps.canopy.run_state.reconcile_session",
+        lambda session: {"state": "not_dispatched", "detail": "",
+                         "canopy_turn_id": "", "canopy_session_id": ""},
+    )
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/{s.slug}/execution")
+    assert resp.status_code == 200
+    assert "state" in resp.json()

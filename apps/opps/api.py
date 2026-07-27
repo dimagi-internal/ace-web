@@ -813,6 +813,30 @@ def _serialize_card_runs_summary(
     return out
 
 
+def _run_execution_for(workspace, slug: str, run_id: str) -> dict | None:
+    """The canopy execution state for one run, or None if it never went to canopy.
+
+    Never raises: the runs list is the opp workbench's primary read and must not
+    fail because canopy is having a bad minute.
+    """
+    from apps.sessions.models import Session
+
+    session = (
+        Session.objects.filter(workspace=workspace, opp_slug=slug, opp_run_id=run_id)
+        .exclude(canopy_session_id="")
+        .order_by("-created_at")
+        .first()
+    )
+    if session is None:
+        return None
+    try:
+        from apps.canopy.run_state import execution_state
+
+        return execution_state(session)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
     """Return a list of run dicts shaped for OppRunOut.
 
@@ -875,6 +899,13 @@ def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
         rich["finished_at"] = None
         rich["is_active"] = (r.lifecycle_status != "complete")
         rich["scorecard"] = None
+        # Execution state (spec 2026-07-26, item 6). A run whose canopy turn no
+        # runner can claim must not render as "queued" — that is exactly the
+        # "looks like it is working" failure this exists to remove. None when the
+        # run was never dispatched to canopy (legacy/local execution).
+        # Read-only (`execution_state`, not `reconcile_session`): a list read
+        # must not write.
+        rich["execution"] = _run_execution_for(workspace, slug, r.run_id)
         out.append(rich)
     return out
 

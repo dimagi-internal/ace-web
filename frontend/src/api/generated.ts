@@ -418,6 +418,11 @@ export interface paths {
          *     the post-deploy hook: after a rollout drains the tasks driving live runs,
          *     this relaunches them from run_state.yaml. Single serial call → no
          *     double-spawn race.
+         *
+         *     Best-effort per session, never all-or-nothing: a session that cannot be
+         *     restarted is reported in ``failed`` and the sweep carries on. Anything that
+         *     raises here is a *self-heal* failing, and aborting the whole sweep on the
+         *     first one leaves every later run unresumed AND unreported.
          */
         readonly post: operations["apps_sessions_api_resume_interrupted"];
         readonly delete?: never;
@@ -437,6 +442,32 @@ export interface paths {
         readonly put?: never;
         /** Resume one interrupted run */
         readonly post: operations["apps_sessions_api_resume_run"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/execution": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Where this run's execution actually stands
+         * @description The run's canopy execution state — including the two states that say, in
+         *     plain words, that nothing can run it: `no_runner_configured` and
+         *     `waiting_for_runner`. Reconciles on read (ace-web has no worker; this is the
+         *     same compute-on-read shape `/structure` uses).
+         *
+         *     The monkeypatch target in contract tests is
+         *     `apps.canopy.run_state.reconcile_session`.
+         */
+        readonly get: operations["apps_sessions_api_session_execution"];
+        readonly put?: never;
+        readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -5329,6 +5360,27 @@ export interface operations {
         };
     };
     readonly apps_sessions_api_resume_run: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_session_execution: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
