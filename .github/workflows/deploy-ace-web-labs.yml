@@ -26,6 +26,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: 858923557655.dkr.ecr.us-east-1.amazonaws.com
   ECS_CLUSTER: labs-jj-cluster
+  CFN_STACK: ace-web
   ECS_SERVICE: labs-jj-ace-web
   ECR_REPO_BACKEND: labs-jj-ace-web
   ECR_REPO_FRONTEND: labs-jj-ace-web-frontend
@@ -147,22 +148,37 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Register new task definition revision
+      - name: Register migration task definition (image swap only)
         id: register-task
         run: |
-          jq --arg backend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:latest" \
-             --arg frontend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:latest" \
-             '(.containerDefinitions[] | select(.name=="api") | .image) = $backend |
+          # A THROWAWAY task def used ONLY to run migrations. The real one is
+          # registered by CloudFormation in the deploy step below, which owns it.
+          #
+          # It exists because CFN's Service references its TaskDefinition, so a
+          # stack update rolls both atomically — leaving no seam to migrate in.
+          # This gives us one: new code against the current schema, before any
+          # traffic moves.
+          #
+          # Built from the LIVE task def rather than deploy/aws/task-definition.json:
+          # CloudFormation is now the source of truth for the real definition, and
+          # reading live avoids that file drifting into a second, competing one.
+          aws ecs describe-task-definition --task-definition "${{ env.ECS_SERVICE }}" \
+            --query 'taskDefinition' --output json > /tmp/live.json
+
+          jq --arg backend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:${{ github.sha }}" \
+             --arg frontend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:${{ github.sha }}" \
+             'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy) |
+              (.containerDefinitions[] | select(.name=="api") | .image) = $backend |
               (.containerDefinitions[] | select(.name=="web") | .image) = $frontend' \
-             deploy/aws/task-definition.json > /tmp/task-def.json
+             /tmp/live.json > /tmp/task-def.json
 
           NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
             --cli-input-json file:///tmp/task-def.json \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
+            --query 'taskDefinition.taskDefinitionArn' --output text)
 
           echo "task-def-arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
-          echo "::notice::Registered task definition: $NEW_TASK_DEF_ARN"
+          echo "::notice::Migration task def: $NEW_TASK_DEF_ARN"
 
       - name: Run database migrations
         if: ${{ inputs.run_migrations == true }}
@@ -202,6 +218,31 @@ jobs:
             exit 1
           fi
 
+      - name: Deploy (CloudFormation owns the task definition + service)
+        run: |
+          # CloudFormation registers the real task definition and rolls the
+          # service. It is the ONLY writer of both, so the stack cannot drift
+          # from what is running.
+          #
+          # This also PINS the images to the commit SHA. The previous flow
+          # registered `:latest`, so the task definition never recorded what was
+          # actually deployed and a task restart could silently pull different
+          # code. Both tags are already pushed by the build jobs.
+          #
+          # No more hard cutover: the service now has a deployment circuit
+          # breaker, and CFN performs a normal rolling replace, so the ~10s
+          # deliberate downtime is no longer the price of a fast deploy.
+          aws cloudformation deploy \
+            --stack-name "${{ env.CFN_STACK }}" \
+            --template-file deploy/aws/ace-web.cfn.yaml \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides ImageTag="${{ github.sha }}"
+          echo "Rollout complete — new tasks running and healthy."
+
+      # MOVED to after the CloudFormation deploy: the template owns the target
+      # group but does not declare its ATTRIBUTES, so a stack update could reset
+      # them. Re-asserting here preserves this step's self-healing intent.
       - name: Configure ALB target-group attributes (dereg + stickiness)
         run: |
           # Self-healing target-group config. Both attributes are
@@ -246,35 +287,6 @@ jobs:
             echo "TG attrs applied: dereg=30s, stickiness=lb_cookie/3600s on $TG_ARN"
           fi
 
-      - name: Deploy (hard cutover)
-        run: |
-          # Stop existing tasks for instant cutover (~10s downtime).
-          # Acceptable for internal tool; avoids 2-3 min rolling-update wait.
-          echo "Stopping old tasks..."
-          TASK_ARNS=$(aws ecs list-tasks \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service-name ${{ env.ECS_SERVICE }} \
-            --query 'taskArns[]' \
-            --output text 2>/dev/null) || true
-          if [ -n "$TASK_ARNS" ] && [ "$TASK_ARNS" != "None" ]; then
-            for TASK in $TASK_ARNS; do
-              aws ecs stop-task --cluster ${{ env.ECS_CLUSTER }} --task "$TASK" --output text > /dev/null 2>&1 || true
-            done
-          fi
-
-          echo "Forcing new deployment..."
-          aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service ${{ env.ECS_SERVICE }} \
-            --task-definition ${{ steps.register-task.outputs.task-def-arn }} \
-            --force-new-deployment \
-            --output text > /dev/null
-
-          echo "Waiting for rollout to complete (so 'deploy done' actually means serving new code)..."
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }}
-          echo "Rollout complete — new tasks running and healthy."
 
       - name: Auto-resume runs killed by this deploy (self-heal)
         # The hard cutover above drains the tasks driving live ACE opp runs,
