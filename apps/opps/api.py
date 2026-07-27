@@ -1236,11 +1236,13 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
         owner=user,
         source_slug=slug,
         fork_at_phase=body.fork_at_phase,
+        fork_at_skill=body.fork_at_skill,
         source_run_id=source_run_id,
         workspace=workspace,
         progress_cb=_write_progress,
         edits=[e.model_dump() for e in body.edits] if body.edits else None,
         mode=body.mode,
+        feedback=body.feedback,
     )
     from apps.opps.decisions_buffer import clear_edits
     clear_edits(slug, source_run_id or "")
