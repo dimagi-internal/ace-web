@@ -1955,6 +1955,18 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **The migration for existing rows.** Every existing `IngestUpload` was produced either by `POST /api/ingest/upload` or by the local turn driver — both are `"local"`. The migration adds the two fields with defaults, and that is the entire backfill: `source` defaults to `"local"`, so every pre-existing row is correctly labelled with zero data movement. **Nothing existing is rewritten or deleted.** A `"local"` row stays the source of record forever; only sessions that carry `canopy_session_id` ever get a `"canopy"` row.
 
+> **CORRECTION (2026-07-26, found reviewing PR C — this plan contradicted itself and the contradiction was load-bearing).**
+>
+> "Only sessions that carry `canopy_session_id` ever get a `canopy` row" reads as though carrying that id means the session was *always* canopy-executed. It does not. **`dispatch_turn` sets `canopy_session_id` on an EXISTING session**, and `resume_session_run` resumes on that existing session — so a session that already ran locally, and already holds local bytes, acquires a canopy id. Call these **hybrid** sessions.
+>
+> For a hybrid session the run's history is **local prefix + canopy suffix**, and the local prefix exists nowhere else. canopy never had those bytes.
+>
+> A `refresh_canopy_cache` that writes canopy bytes **in place** over that session's `raw_jsonl_gz` therefore destroys the only copy, and cost recomputed from the survivor is silently smaller (reproduced in review: 1000 → 7). That contradicts this same section's "nothing is rewritten", which is the sentence that governs.
+>
+> This is not hypothetical: **the deploy workflow POSTs `resume-interrupted` after every rollout**, so the very deploy that flips the flag manufactures hybrid sessions.
+>
+> **The rule:** a `source="local"` row is never overwritten, for any session, ever. A canopy cache is a **separate row**. Where both exist, a read must not silently return only one part, and cost must never overwrite a larger existing figure with a smaller one — prefer refusing, because a missing cost is visible and a wrong one is not.
+
 - [ ] **Step 1: Write the failing tests.** Create `apps/ingest/tests/test_sources.py`:
 
 ```python
