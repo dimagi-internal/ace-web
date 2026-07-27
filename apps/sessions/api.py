@@ -736,10 +736,11 @@ def get_structure_tree(
 
     The monkeypatch target in contract tests is this module-level function.
     """
-    import gzip as _gzip
+    import hashlib as _hashlib
     import logging as _logging
 
     from apps.ingest.parser import parse_session_bytes
+    from apps.ingest.sources import read_session_transcript
     from apps.ingest.structure_aggregator import SCHEMA_VERSION, aggregate
     from apps.sessions.models import Session
 
@@ -749,25 +750,38 @@ def get_structure_tree(
     if session is None:
         return None, None, False
 
-    upload = session.ingest_records.order_by("-created_at").first()
-    if upload is None or not upload.raw_jsonl_gz:
+    # Where these bytes live is the SESSION's property, not this view's — see
+    # apps/ingest/sources.py. For a canopy-executed run this seats the cache
+    # row from canopy's per-turn transcripts if the turn set has moved.
+    read = read_session_transcript(session)
+    raw = read.raw
+    if not raw:
+        # The seam says WHY, so an unreadable blob still reads "parse-failed"
+        # (as it did when the gunzip sat inside this function's try) and an
+        # unreachable canopy is not reported as "nothing was ever recorded".
         return (
             {
                 "schema_version": 0,
                 "session": None,
                 "phases": [],
-                "unavailable_reason": "no-raw-jsonl",
+                "unavailable_reason": read.reason or "no-raw-jsonl",
             },
             None,
             False,
         )
 
-    etag = f'"v{SCHEMA_VERSION}:{upload.content_sha256}"' if upload.content_sha256 else None
+    # The ETag is the hash of the bytes we are ABOUT TO SERVE, not of a row we
+    # looked up separately. It used to be `IngestUpload.content_sha256`, which
+    # for every pre-existing row is the same number — but a session can now
+    # have two rows, and the seam can serve the local prefix when the canopy
+    # cache is unreachable, so "the newest row's hash" is no longer guaranteed
+    # to describe what went out.
+    etag = f'"v{SCHEMA_VERSION}:{_hashlib.sha256(raw).hexdigest()}"'
     if etag and if_none_match == etag:
         return {}, etag, True
 
     try:
-        _parsed, events = parse_session_bytes(_gzip.decompress(bytes(upload.raw_jsonl_gz)))
+        _parsed, events = parse_session_bytes(raw)
         tree = aggregate(events)
     except Exception:
         _log.exception("structure aggregation failed for session %s", slug)
