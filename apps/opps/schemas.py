@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from apps.common.schemas import StrictModel
 
@@ -158,10 +158,46 @@ class OppForkEditIn(StrictModel):
 
 
 class OppForkIn(StrictModel):
-    fork_at_phase: str = Field(min_length=1)
+    """Fork request. The fork POINT is one concept with two spellings.
+
+    Name a **phase** (``fork_at_phase``) to re-run it whole, or a **skill**
+    (``fork_at_skill``) to keep that phase's earlier artifacts and re-run
+    from that skill onward. Exactly one is required.
+
+    Skill-granular forking existed on the old run-fork endpoint and was lost
+    when ``apps/opps/fork.py`` was deleted in the multi-run simplification
+    (2026-04-20). It depended on a ``steps/<NN>-<skill>/`` folder layout that
+    no longer exists — the current layout is ``<N>-<phase>/<skill>_<role>.ext``
+    — so it's re-implemented here against the artifact manifest's
+    ``produced_by`` map rather than against folder names.
+    """
+
+    fork_at_phase: str | None = Field(default=None, min_length=1)
+    fork_at_skill: str | None = Field(default=None, min_length=1)
     source_run_id: RunId | None = None
     edits: list[OppForkEditIn] = Field(default_factory=list)
     mode: Literal["keep-overrides-only", "keep-all"] = "keep-all"
+    feedback: str | None = Field(default=None, max_length=8000)
+    """Why this fork exists. Seeded as the first user-turn of the new run's
+    working session, so the agent picking it up reads the intent instead of
+    inferring it. Optional — an empty fork is legitimate."""
+
+    @model_validator(mode="after")
+    def _exactly_one_fork_point(self) -> OppForkIn:
+        named = [
+            n
+            for n, v in (
+                ("fork_at_phase", self.fork_at_phase),
+                ("fork_at_skill", self.fork_at_skill),
+            )
+            if v
+        ]
+        if len(named) != 1:
+            raise ValueError(
+                "provide exactly one of fork_at_phase / fork_at_skill "
+                f"(got {named or 'neither'})"
+            )
+        return self
 
 
 class OppForkOut(StrictModel):
