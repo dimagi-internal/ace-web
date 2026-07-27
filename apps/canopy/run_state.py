@@ -125,3 +125,57 @@ def execution_state(session) -> dict:
 
     return _out(state, detail=detail, turn_id=turn_id,
                 session_id=session.canopy_session_id)
+
+
+_ALIVE = (QUEUED, NO_RUNNER_CONFIGURED, WAITING_FOR_RUNNER, RUNNING)
+_TERMINAL_ERROR = ("failed", "lost", "missed", "cancelled")
+
+
+def is_alive(state: str) -> bool:
+    """True when canopy still owns this run: it is queued (however hopelessly),
+    or a runner is executing it. The self-heal sweep must not resume these —
+    see `apps/sessions/api.py::resume_interrupted`."""
+    return state in _ALIVE
+
+
+def reconcile_session(session) -> dict:
+    """Read the run's canopy state and write it back onto ace-web's own rows.
+
+    ace-web has no worker, no queue and no signals — the repo's pattern is
+    compute-on-read plus a management command for the deploy hook. This is
+    called from both.
+    """
+    from django.utils import timezone
+
+    from apps.sessions.models import Message, Session
+
+    out = execution_state(session)
+    state = out["state"]
+    message = _latest_assistant(session)
+    if message is None or state in (UNKNOWN, DISPATCH_FAILED, NOT_DISPATCHED):
+        return out
+
+    if state in _ALIVE:
+        # A run waiting on a runner is ALIVE, not abandoned. Without this beat,
+        # Session.resumable_after_deploy() would match it on every deploy and
+        # resume it forever — the hard_kill leg keys on a stale
+        # driver_heartbeat_at with a non-terminal assistant message, which is
+        # exactly the shape of a turn that is legitimately queued.
+        Session.objects.filter(pk=session.pk).update(driver_heartbeat_at=timezone.now())
+        want = "streaming" if state == RUNNING else "pending"
+        if message.status != want:
+            Message.objects.filter(pk=message.pk).update(status=want)
+    elif state == "done":
+        Message.objects.filter(pk=message.pk).update(
+            status="complete", completed_at=timezone.now(),
+        )
+    elif state in _TERMINAL_ERROR:
+        # `canopy:` prefix, never `cancelled…` — resumable_after_deploy's
+        # graceful_cancel leg matches error_detail__startswith="cancelled", and
+        # a canopy-cancelled turn must not be auto-resumed by the next deploy.
+        Message.objects.filter(pk=message.pk).update(
+            status="error",
+            error_detail=f"canopy:{state}: {out['detail']}".strip(),
+            completed_at=timezone.now(),
+        )
+    return out

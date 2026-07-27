@@ -159,6 +159,12 @@ def dispatch_turn(assistant_message_id: int) -> str:
         raise DispatchError(f"canopy {exc.status}: {exc.detail}") from exc
 
     Message.objects.filter(pk=assistant.pk).update(canopy_turn_id=str(turn_id))
+    # Something IS driving this run now — canopy is. The beat is written by the
+    # subprocess on the legacy path and there is no subprocess here, so without
+    # this the run is born with a NULL heartbeat and a non-terminal assistant
+    # turn, which is exactly `Session.interrupted()`: dispatched and instantly
+    # listed as dead. `run_state.reconcile_session` keeps it fresh from here on.
+    Session.objects.filter(pk=session.pk).update(driver_heartbeat_at=timezone.now())
     return str(turn_id)
 
 

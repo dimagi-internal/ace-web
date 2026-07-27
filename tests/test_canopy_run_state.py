@@ -189,3 +189,162 @@ def test_the_newest_assistant_turn_is_the_one_reported():
         out = run_state.execution_state(s)
     assert seen == ["turn-2"]
     assert out["canopy_turn_id"] == "turn-2"
+
+
+# ---------------------------------------------------------------------------
+# reconcile_session — write the canopy turn's outcome back onto ace-web's rows
+# ---------------------------------------------------------------------------
+
+
+@override_settings(**ON)
+def test_reconcile_marks_a_done_turn_complete():
+    s = _session_with_turn()
+    ex, get, unc = _canopy(turn={"status": "done", "result_note": "ok"})
+    with ex, get, unc:
+        run_state.reconcile_session(s)
+    m = Message.objects.get(session=s, role="assistant")
+    assert m.status == "complete"
+
+
+@override_settings(**ON)
+def test_reconcile_marks_a_failed_turn_error_without_the_cancelled_prefix():
+    s = _session_with_turn()
+    ex, get, unc = _canopy(turn={"status": "failed", "result_note": "boom"})
+    with ex, get, unc:
+        run_state.reconcile_session(s)
+    m = Message.objects.get(session=s, role="assistant")
+    assert m.status == "error"
+    assert m.error_detail.startswith("canopy:failed")
+    # Must NOT match resumable_after_deploy's graceful_cancel leg.
+    assert not m.error_detail.startswith("cancelled")
+
+
+@override_settings(**ON)
+def test_reconcile_of_a_canopy_cancelled_turn_is_not_deploy_resumable():
+    """The trap the `canopy:` prefix exists for: `cancelled` is also a canopy
+    turn status, and writing it raw would make every canopy-cancelled run get
+    auto-resumed by the next deploy sweep, forever."""
+    s = _session_with_turn()
+    ex, get, unc = _canopy(turn={"status": "cancelled", "result_note": "stopped"})
+    with ex, get, unc:
+        run_state.reconcile_session(s)
+    assert not Session.resumable_after_deploy().filter(pk=s.pk).exists()
+
+
+@override_settings(**ON)
+def test_reconcile_keeps_the_heartbeat_fresh_while_waiting_for_a_runner():
+    """A run waiting on a runner is alive. A stale beat would make the
+    post-deploy sweep resume it on every single deploy, forever."""
+    s = _session_with_turn()
+    rows = [{"turn_id": "turn-1", "kind": "config", "reason": "no runner"}]
+    ex, get, unc = _canopy(turn={"status": "queued"}, unclaimable=rows)
+    with ex, get, unc:
+        run_state.reconcile_session(s)
+    s.refresh_from_db()
+    assert s.driver_heartbeat_at is not None
+    assert Message.objects.get(session=s, role="assistant").status == "pending"
+
+
+@override_settings(**ON)
+def test_reconcile_marks_a_claimed_turn_streaming():
+    s = _session_with_turn()
+    ex, get, unc = _canopy(turn={"status": "running", "result_note": ""})
+    with ex, get, unc:
+        run_state.reconcile_session(s)
+    assert Message.objects.get(session=s, role="assistant").status == "streaming"
+
+
+@override_settings(**ON)
+def test_reconcile_leaves_everything_alone_when_canopy_is_unreachable():
+    from apps.canopy.client import CanopyError
+
+    s = _session_with_turn()
+    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(502, "down")):
+        out = run_state.reconcile_session(s)
+    assert out["state"] == "unknown"
+    assert Message.objects.get(session=s, role="assistant").status == "pending"
+
+
+@override_settings(**ON)
+def test_reconcile_does_not_stamp_a_heartbeat_when_canopy_is_unreachable():
+    """UNKNOWN must not look alive: stamping the beat on a canopy we cannot
+    reach would hide a genuinely dead run from the self-heal sweep."""
+    from apps.canopy.client import CanopyError
+
+    s = _session_with_turn()
+    assert s.driver_heartbeat_at is None
+    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(502, "down")):
+        run_state.reconcile_session(s)
+    s.refresh_from_db()
+    assert s.driver_heartbeat_at is None
+
+
+@override_settings(**ON)
+def test_reconcile_does_not_touch_a_dispatch_failed_message():
+    s = _session_with_turn(turn_id="")
+    Message.objects.filter(session=s).update(
+        status="error", error_detail="canopy-dispatch: canopy 403: nope",
+    )
+    out = run_state.reconcile_session(s)
+    assert out["state"] == "dispatch_failed"
+    m = Message.objects.get(session=s, role="assistant")
+    assert m.error_detail == "canopy-dispatch: canopy 403: nope"
+
+
+# ---------------------------------------------------------------------------
+# manage.py reconcile_canopy_runs — the deploy-hook / cron entry point
+# ---------------------------------------------------------------------------
+
+
+@override_settings(**ON)
+def test_reconcile_command_reports_a_count_per_state():
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    _session_with_turn()
+    out = StringIO()
+    ex, get, unc = _canopy(turn={"status": "done", "result_note": ""})
+    with ex, get, unc:
+        call_command("reconcile_canopy_runs", stdout=out)
+    assert "done: 1" in out.getvalue()
+
+
+@override_settings(**ON)
+def test_reconcile_command_skips_sessions_that_never_went_to_canopy():
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    _session_with_turn(turn_id="")  # no canopy_session_id
+    out = StringIO()
+    with mock.patch("apps.canopy.client.exchange_token") as ex:
+        call_command("reconcile_canopy_runs", stdout=out)
+    ex.assert_not_called()
+    assert out.getvalue().strip() == ""
+
+
+@override_settings(**ON)
+def test_reconcile_command_survives_one_bad_run():
+    """A sweep that dies on its first bad row leaves every later run unreconciled
+    — the same defect as the resume sweep, in the batch path."""
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    _session_with_turn()
+    _session_with_turn()
+    calls = []
+
+    def _boom(session):
+        calls.append(session.pk)
+        if len(calls) == 1:
+            raise RuntimeError("kaboom")
+        return {"state": "done", "detail": "", "canopy_turn_id": "", "canopy_session_id": ""}
+
+    out, err = StringIO(), StringIO()
+    with mock.patch("apps.canopy.run_state.reconcile_session", side_effect=_boom):
+        call_command("reconcile_canopy_runs", stdout=out, stderr=err)
+    assert len(calls) == 2
+    assert "kaboom" in err.getvalue()
+    assert "done: 1" in out.getvalue()
