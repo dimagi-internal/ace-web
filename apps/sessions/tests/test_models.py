@@ -114,3 +114,25 @@ def test_session_save_retries_on_slug_collision(user):
     assert colliding.slug == "fresh1234"
     assert Session.objects.filter(slug=taken_slug).count() == 1  # existing untouched
     assert Session.objects.filter(slug="fresh1234").count() == 1  # retried row landed
+
+
+def test_session_carries_canopy_session_id(django_user_model):
+    user = django_user_model.objects.create_user(email="owner@example.com")
+    s = Session.create_with_owner(owner=user, title="t", opp_slug="o", opp_run_id="r")
+    assert s.canopy_session_id == ""          # default: not yet dispatched
+    s.canopy_session_id = "9f1c0e2a-0000-4000-8000-000000000001"
+    s.save(update_fields=["canopy_session_id"])
+    s.refresh_from_db()
+    assert s.canopy_session_id == "9f1c0e2a-0000-4000-8000-000000000001"
+
+
+def test_message_carries_canopy_turn_id(django_user_model):
+    user = django_user_model.objects.create_user(email="owner2@example.com")
+    s = Session.create_with_owner(owner=user, title="t")
+    m = Message.objects.create(
+        session=s, turn_index=0, role="assistant", content={"text": ""}, status="pending",
+    )
+    assert m.canopy_turn_id == ""
+    m.canopy_turn_id = "9f1c0e2a-0000-4000-8000-000000000002"
+    m.save(update_fields=["canopy_turn_id"])
+    assert Message.objects.filter(canopy_turn_id=m.canopy_turn_id).count() == 1

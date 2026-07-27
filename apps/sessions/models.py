@@ -87,6 +87,15 @@ class Session(models.Model):
     opp_run_id = models.CharField(max_length=64, blank=True, default="")
     opp_step_skill = models.CharField(max_length=64, blank=True, default="")
 
+    # The canopy Session this opp-run executes in (spec 2026-07-26). One
+    # canopy Session per ace-web Session, which is already 1:1 with an
+    # opp-run. Targeting the SESSION and not the agent is load-bearing:
+    # canopy's one_executing_turn_per_agent constraint would serialize every
+    # ACE run in the fleet to one at a time; one_executing_turn_per_session
+    # matches ace's real shape (one turn per run, many runs at once).
+    # Empty = this run has never been dispatched to canopy.
+    canopy_session_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
     workspace = models.ForeignKey(
         "ace_workspaces.Workspace",
         on_delete=models.SET_NULL,
@@ -286,6 +295,10 @@ class Message(models.Model):
     content = models.JSONField()
     plaintext = models.TextField(blank=True, default="")
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
+    # The canopy Turn this assistant message is executed by (spec 2026-07-26).
+    # ace-web owns this mapping because canopy's send route builds its own
+    # origin_ref and takes none from the caller — see run_dispatch.py.
+    canopy_turn_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
     error_detail = models.TextField(null=True, blank=True)
     # Set explicitly by the consumer when streaming begins (Plan 1B/1C).
     # Distinct from `created_at`, which is set on row insert.

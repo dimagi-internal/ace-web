@@ -612,6 +612,31 @@ def test_resume_run_422_for_non_opp_session(member_client, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_resume_run_routes_through_the_canopy_dispatch_seam(member_client, monkeypatch):
+    """Mirror of the seeded-run seam test: the resume route must call
+    run_dispatch.start_turn with the assistant message resume_session_run
+    created, or flipping CANOPY_RUN_EXECUTION has no effect on a resume."""
+    from apps.sessions.models import Session
+    client, workspace, user = member_client
+    s = Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="bednet-spot-check", opp_run_id="20260604-2058",
+    )
+    called = []
+    monkeypatch.setattr("apps.canopy.run_dispatch.start_turn", lambda mid: called.append(mid))
+    # Belt and braces: a regression to calling the subprocess directly would
+    # otherwise spawn a REAL detached `manage.py drive_turn` in CI.
+    spawned = []
+    monkeypatch.setattr(
+        "apps.sessions.turn_driver.start_turn_subprocess", lambda mid: spawned.append(mid)
+    )
+    resp = client.post(f"/api/w/{workspace.slug}/sessions/{s.slug}/resume")
+    assert resp.status_code == 202
+    assert called == [resp.json()["assistant_message_id"]]
+    assert spawned == []  # the route went through the seam, not around it
+
+
+@pytest.mark.django_db
 def test_resume_interrupted_non_member_404(non_member_client):
     client, workspace, _ = non_member_client
     resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
