@@ -28,7 +28,6 @@ def store_session_transcript(session, new_raw_jsonl: str) -> dict:
     Returns the computed cost breakdown (``{}`` on parse/aggregate failure —
     analytics must never break a turn).
     """
-    from apps.ingest.cost_aggregator import aggregate
     from apps.ingest.parser import parse_session_bytes
     from apps.sessions.models import IngestUpload
 
@@ -49,16 +48,7 @@ def store_session_transcript(session, new_raw_jsonl: str) -> dict:
     prior = (existing.read_raw_jsonl() if existing else "") or ""
     full_bytes = (prior + new_raw_jsonl).encode("utf-8")
 
-    parsed, cost_events = parse_session_bytes(full_bytes)
-    try:
-        breakdown = aggregate(cost_events)
-    except Exception:  # noqa: BLE001 — never let analytics break a turn
-        log.exception("cost aggregator failed for live session %s", session.slug)
-        breakdown = {}
-
-    session.cost_breakdown = breakdown
-    session.save(update_fields=["cost_breakdown", "updated_at"])
-
+    parsed, _cost_events = parse_session_bytes(full_bytes)
     defaults = {
         "uploaded_by": session.owner,
         "source": IngestUpload.SOURCE_LOCAL,
@@ -79,34 +69,63 @@ def store_session_transcript(session, new_raw_jsonl: str) -> dict:
         for field, value in defaults.items():
             setattr(existing, field, value)
         existing.save(update_fields=list(defaults))
-    return breakdown
+
+    # Cost is derived AFTER the row is written, and from the SEAM — never from
+    # `full_bytes`. For a purely local session those are the same bytes, so the
+    # number is identical to what this function has always produced. For a
+    # session that has also run on canopy they are not: `full_bytes` is the
+    # local half, and writing a local-only cost over a composed one is the same
+    # silent drop, in the other direction. One derivation, one writer.
+    return recompute_cost_from_source(session)
 
 
-def recompute_cost_from_source(session) -> dict:
+def recompute_cost_from_source(
+    session, *, force_refresh: bool = False, force: bool = False
+) -> dict:
     """Recompute `Session.cost_breakdown` from whatever the transcript source
-    currently yields.
+    currently yields. **THE ONLY WRITER of `Session.cost_breakdown`.**
 
-    The canopy-era counterpart to `store_session_transcript`. That function
-    exists because the local turn driver held the bytes and had to persist them;
-    this one runs when a canopy turn goes terminal, reads the bytes back from
-    canopy (via `sources.session_raw_jsonl`, which seats the cache), and writes
-    only the derived breakdown. It never touches `raw_jsonl_gz` — the cache is
-    `sources`' business, not this module's.
+    That is the invariant, and it is why `store_session_transcript` now ends by
+    calling this instead of writing a number of its own: with two writers, each
+    one's idea of "the transcript" wins in turn, and a session that has run on
+    both sides gets whichever half wrote last.
+
+    Two refusals, guarding two different failure shapes:
+
+      * **incomplete** — the read is a known prefix of the run (canopy
+        unreachable, a refused encoding, an over-ceiling turn, a completed turn
+        that came back empty). The resulting figure is SHORT, not smaller, so
+        the ratchet below cannot see it. Do not persist it at all.
+      * **smaller** — a session's cost only accumulates, so a lower figure means
+        we read fewer bytes than last time. Keep the larger one.
+
+    `force_refresh` bypasses the transcript cache; `force` bypasses the
+    refuse-smaller ratchet (see `manage.py recompute_session_cost`). Neither is
+    reachable from a normal read path.
     """
     from apps.ingest import cost_aggregator
     from apps.ingest.parser import parse_session_bytes
-    from apps.ingest.sources import session_raw_jsonl
+    from apps.ingest.sources import read_session_transcript
 
-    raw = session_raw_jsonl(session)
-    if not raw:
+    read = read_session_transcript(session, force_refresh=force_refresh)
+    if not read.raw:
         return {}
-    _parsed, cost_events = parse_session_bytes(raw)
+    if not read.complete:
+        # Short, not smaller. Nothing downstream can tell the difference, so
+        # the only safe move is to leave the last known-good figure alone.
+        log.error(
+            "refusing to derive cost for session %s from an INCOMPLETE transcript "
+            "(canopy holds bytes we could not read); keeping the stored figure",
+            session.slug,
+        )
+        return session.cost_breakdown or {}
+    _parsed, cost_events = parse_session_bytes(read.raw)
     try:
         breakdown = cost_aggregator.aggregate(cost_events)
     except Exception:  # noqa: BLE001 — analytics must never break a run
         log.exception("cost aggregator failed for canopy session %s", session.slug)
         return {}
-    if _would_under_report(session.cost_breakdown, breakdown):
+    if not force and _would_under_report(session.cost_breakdown, breakdown):
         # A session's cost only ever accumulates. A newly-derived figure that is
         # SMALLER than the stored one therefore means we read fewer bytes than
         # last time — a truncated fetch, a lost local prefix, a partial cache.
@@ -114,8 +133,10 @@ def recompute_cost_from_source(session) -> dict:
         # visible in the logs, a silently shrunken one is visible nowhere.
         log.error(
             "refusing to lower cost for session %s: stored totals %s, recomputed %s "
-            "— the transcript source returned less than it did before",
+            "— the transcript source returned less than it did before. "
+            "Override with `manage.py recompute_session_cost --slug %s --force`.",
             session.slug, session.cost_breakdown.get("totals"), breakdown.get("totals"),
+            session.slug,
         )
         return session.cost_breakdown
     session.cost_breakdown = breakdown

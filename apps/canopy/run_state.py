@@ -149,7 +149,12 @@ def _recompute_cost(session) -> None:
     try:
         from apps.ingest.live_ingest import recompute_cost_from_source
 
-        recompute_cost_from_source(session)
+        # `force_refresh`: canopy permits appending to an ALREADY-TERMINAL turn
+        # (a runner may flush its last batch after calling /finish), so the
+        # cached compose may predate the run's final lines. This is the one
+        # moment we know the turn is over, so it is the one moment worth paying
+        # a refetch for rather than trusting the settle window.
+        recompute_cost_from_source(session, force_refresh=True)
     except Exception:  # noqa: BLE001
         log.warning("cost recompute failed for session %s", session.slug, exc_info=True)
 

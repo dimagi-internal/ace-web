@@ -105,9 +105,13 @@ def test_recompute_cost_from_source_uses_the_canopy_transcript():
     from unittest import mock
 
     from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
 
     _user, session = _canopy_session()
-    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=_CANOPY_TURN):
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead(_CANOPY_TURN, ""),
+    ):
         breakdown = live_ingest.recompute_cost_from_source(session)
 
     session.refresh_from_db()
@@ -121,9 +125,13 @@ def test_recompute_cost_is_a_noop_when_there_is_no_transcript():
     from unittest import mock
 
     from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
 
     _user, session = _canopy_session()
-    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=None):
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead(None, "no-raw-jsonl"),
+    ):
         assert live_ingest.recompute_cost_from_source(session) == {}
     session.refresh_from_db()
     assert session.cost_breakdown == {}
@@ -137,6 +145,7 @@ def test_recompute_cost_never_touches_the_transcript_bytes():
     from unittest import mock
 
     from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
     from apps.sessions.models import IngestUpload
 
     user, session = _canopy_session()
@@ -144,7 +153,10 @@ def test_recompute_cost_never_touches_the_transcript_bytes():
         session=session, uploaded_by=user, source="canopy",
         canopy_turn_ids=["turn-a"], raw_jsonl_gz=b"sentinel-bytes",
     )
-    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=_CANOPY_TURN):
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead(_CANOPY_TURN, ""),
+    ):
         live_ingest.recompute_cost_from_source(session)
     row.refresh_from_db()
     assert bytes(row.raw_jsonl_gz) == b"sentinel-bytes"
@@ -157,10 +169,13 @@ def test_recompute_cost_survives_an_aggregator_failure():
     from unittest import mock
 
     from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
 
     _user, session = _canopy_session()
-    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=_CANOPY_TURN), \
-         mock.patch("apps.ingest.cost_aggregator.aggregate", side_effect=RuntimeError("boom")):
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead(_CANOPY_TURN, ""),
+    ), mock.patch("apps.ingest.cost_aggregator.aggregate", side_effect=RuntimeError("boom")):
         assert live_ingest.recompute_cost_from_source(session) == {}
 
 
@@ -263,15 +278,20 @@ def test_recompute_refuses_to_lower_a_runs_cost():
     from unittest import mock
 
     from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
 
     _user, session = _canopy_session()
     big = (_INIT + _assistant_line(5) + _assistant_line(7)).encode()
-    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=big):
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript", return_value=TranscriptRead(big, "")
+    ):
         full = live_ingest.recompute_cost_from_source(session)
     assert full["totals"]["output_tokens"] == 12
 
     small = (_INIT + _assistant_line(5)).encode()
-    with mock.patch("apps.ingest.sources.session_raw_jsonl", return_value=small):
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript", return_value=TranscriptRead(small, "")
+    ):
         kept = live_ingest.recompute_cost_from_source(session)
     assert kept["totals"]["output_tokens"] == 12   # NOT 5
     session.refresh_from_db()
@@ -287,15 +307,17 @@ def test_recompute_still_raises_a_runs_cost_as_it_grows():
     from unittest import mock
 
     from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
 
     _user, session = _canopy_session()
     with mock.patch(
-        "apps.ingest.sources.session_raw_jsonl", return_value=(_INIT + _assistant_line(5)).encode()
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead((_INIT + _assistant_line(5)).encode(), ""),
     ):
         live_ingest.recompute_cost_from_source(session)
     with mock.patch(
-        "apps.ingest.sources.session_raw_jsonl",
-        return_value=(_INIT + _assistant_line(5) + _assistant_line(7)).encode(),
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead((_INIT + _assistant_line(5) + _assistant_line(7)).encode(), ""),
     ):
         grown = live_ingest.recompute_cost_from_source(session)
     assert grown["totals"]["output_tokens"] == 12
@@ -307,24 +329,231 @@ def test_recompute_still_raises_a_runs_cost_as_it_grows():
 
 
 @pytest.mark.django_db
-def test_a_local_turn_after_a_canopy_turn_does_not_fold_canopys_bytes_into_the_local_row():
-    """`store_session_transcript` accumulates onto the newest row. With a canopy
-    row present that would copy canopy's bytes into the local source of record
-    and double them on the next compose."""
+def test_a_local_turn_after_a_canopy_turn_neither_folds_bytes_nor_lowers_cost():
+    """The mirror of the hybrid bug: a flag ROLLBACK plus the deploy's
+    resume-interrupted hook runs a local turn on a session that already has a
+    composed canopy transcript.
+
+    Two distinct damages, and the earlier version of this test asserted only the
+    first — so it stayed green while `store_session_transcript` wrote its
+    LOCAL-ONLY cost over the composed one (measured: 105 -> 6). Bytes were the
+    symptom; `cost_breakdown` is the damage.
+    """
     import gzip
+    from unittest import mock
 
     from apps.ingest import live_ingest
-    from apps.sessions.models import IngestUpload
+    from apps.sessions.models import IngestUpload, Message
 
     _user, session = _canopy_session()
+    canopy_bytes = (_INIT + _assistant_line(7)).encode()
     IngestUpload.objects.create(
         session=session, uploaded_by=session.owner, source="canopy",
-        canopy_turn_ids=["turn-a"],
-        raw_jsonl_gz=gzip.compress((_INIT + _assistant_line(7)).encode()),
+        canopy_turn_ids=["turn-a"], raw_jsonl_gz=gzip.compress(canopy_bytes),
     )
-    live_ingest.store_session_transcript(session, _INIT + _assistant_line(5))
+    Message.objects.create(
+        session=session, turn_index=1, role="assistant", content={"text": ""},
+        status="complete", canopy_turn_id="turn-a",
+    )
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch(
+             "apps.canopy.transcripts.fetch_turn_transcript", return_value=canopy_bytes
+         ):
+        composed = live_ingest.recompute_cost_from_source(session)
+    assert composed["totals"]["output_tokens"] == 7
 
+    # …now a local turn lands on the same session.
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch(
+             "apps.canopy.transcripts.fetch_turn_transcript", return_value=canopy_bytes
+         ):
+        after = live_ingest.store_session_transcript(session, _INIT + _assistant_line(5))
+
+    # 1. The bytes (the symptom): each row keeps its own half.
     local = IngestUpload.objects.get(session=session, source="local")
     assert local.read_raw_jsonl() == _INIT + _assistant_line(5)
     canopy = IngestUpload.objects.get(session=session, source="canopy")
-    assert canopy.read_raw_jsonl() == _INIT + _assistant_line(7)   # untouched
+    assert canopy.read_raw_jsonl().startswith(_INIT + _assistant_line(5))   # recomposed
+
+    # 2. The cost (the damage): it covers BOTH halves and never drops.
+    assert after["totals"]["output_tokens"] == 12   # 5 local + 7 canopy, not 5
+    session.refresh_from_db()
+    stored: dict = session.cost_breakdown
+    assert stored["totals"]["output_tokens"] == 12
+
+
+@pytest.mark.django_db
+def test_cost_is_not_derived_from_an_incomplete_transcript():
+    """An incomplete read is SHORT, not smaller — it parses and aggregates
+    cleanly to a number that is simply too low, which the refuse-smaller
+    ratchet cannot see. It must never be persisted at all."""
+    from unittest import mock
+
+    from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
+
+    _user, session = _canopy_session()
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead((_INIT + _assistant_line(5)).encode(), ""),
+    ):
+        live_ingest.recompute_cost_from_source(session)
+
+    # DELIBERATELY LARGER than the stored figure, so the refuse-smaller ratchet
+    # cannot be what stops it — only the completeness flag can. A known-partial
+    # read must not publish a number at all, in either direction.
+    bigger_but_partial = (_INIT + _assistant_line(5) + _assistant_line(7)).encode()
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead(bigger_but_partial, "", complete=False),
+    ):
+        kept = live_ingest.recompute_cost_from_source(session)
+    assert kept["totals"]["output_tokens"] == 5
+    session.refresh_from_db()
+    stored: dict = session.cost_breakdown
+    assert stored["totals"]["output_tokens"] == 5
+
+
+@pytest.mark.django_db
+def test_an_incomplete_transcript_does_not_seed_a_cost_on_a_fresh_session():
+    """The ratchet only protects a session that already HAS a figure. A brand
+    new run's first read must not seed a short one, which every later read
+    would then be measured against."""
+    from unittest import mock
+
+    from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
+
+    _user, session = _canopy_session()
+    short = (_INIT + _assistant_line(5)).encode()
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead(short, "", complete=False),
+    ):
+        assert live_ingest.recompute_cost_from_source(session) == {}
+    session.refresh_from_db()
+    assert session.cost_breakdown == {}
+
+
+@pytest.mark.django_db
+def test_the_terminal_reconcile_forces_a_transcript_refresh():
+    """canopy permits a post-terminal append, so the cached compose may predate
+    the run's final lines. The one moment we know the turn is over is the one
+    moment worth paying a refetch for."""
+    from unittest import mock
+
+    from apps.canopy import run_state
+    from apps.sessions.models import Message
+
+    _user, session = _canopy_session()
+    Message.objects.create(
+        session=session, turn_index=1, role="assistant", content={"text": ""},
+        status="pending", canopy_turn_id="turn-1",
+    )
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch("apps.canopy.client.get_turn", return_value={"status": "done"}), \
+         mock.patch("apps.canopy.client.list_unclaimable", return_value=[]), \
+         mock.patch("apps.ingest.live_ingest.recompute_cost_from_source") as recompute:
+        run_state.reconcile_session(session)
+    assert recompute.call_args.kwargs.get("force_refresh") is True
+
+
+# ---------------------------------------------------------------------------
+# manage.py recompute_session_cost — the ratchet's only way back down
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_the_recompute_command_can_lower_a_cost_and_says_so():
+    """Refuse-smaller is one-way, so any over-count would otherwise be
+    permanent. The reset is explicit, and it prints before -> after."""
+    from io import StringIO
+    from unittest import mock
+
+    from django.core.management import call_command
+
+    from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
+
+    _user, session = _canopy_session()
+    big = (_INIT + _assistant_line(5) + _assistant_line(7)).encode()
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript", return_value=TranscriptRead(big, "")
+    ):
+        live_ingest.recompute_cost_from_source(session)
+
+    small = (_INIT + _assistant_line(5)).encode()
+    out = StringIO()
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript", return_value=TranscriptRead(small, "")
+    ):
+        call_command("recompute_session_cost", slug=session.slug, force=True, stdout=out)
+    session.refresh_from_db()
+    stored: dict = session.cost_breakdown
+    assert stored["totals"]["output_tokens"] == 5
+    assert "->" in out.getvalue()     # the change is printed, never silent
+
+
+@pytest.mark.django_db
+def test_the_recompute_command_respects_the_ratchet_without_force():
+    from io import StringIO
+    from unittest import mock
+
+    from django.core.management import call_command
+
+    from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
+
+    _user, session = _canopy_session()
+    big = (_INIT + _assistant_line(5) + _assistant_line(7)).encode()
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript", return_value=TranscriptRead(big, "")
+    ):
+        live_ingest.recompute_cost_from_source(session)
+
+    small = (_INIT + _assistant_line(5)).encode()
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript", return_value=TranscriptRead(small, "")
+    ):
+        call_command("recompute_session_cost", slug=session.slug, stdout=StringIO())
+    session.refresh_from_db()
+    stored: dict = session.cost_breakdown
+    assert stored["totals"]["output_tokens"] == 12
+
+
+@pytest.mark.django_db
+def test_the_recompute_command_refuses_a_bare_invocation():
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    with pytest.raises(CommandError):
+        call_command("recompute_session_cost")
+
+
+@pytest.mark.django_db
+def test_force_does_not_let_an_incomplete_transcript_through():
+    """`--force` exists to undo an OVER-count. It is not a licence to publish a
+    figure we already know is derived from a partial read."""
+    from io import StringIO
+    from unittest import mock
+
+    from django.core.management import call_command
+
+    from apps.ingest import live_ingest
+    from apps.ingest.sources import TranscriptRead
+
+    _user, session = _canopy_session()
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead((_INIT + _assistant_line(5) + _assistant_line(7)).encode(), ""),
+    ):
+        live_ingest.recompute_cost_from_source(session)
+
+    with mock.patch(
+        "apps.ingest.sources.read_session_transcript",
+        return_value=TranscriptRead((_INIT + _assistant_line(5)).encode(), "", complete=False),
+    ):
+        call_command("recompute_session_cost", slug=session.slug, force=True, stdout=StringIO())
+    session.refresh_from_db()
+    stored: dict = session.cost_breakdown
+    assert stored["totals"]["output_tokens"] == 12

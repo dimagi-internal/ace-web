@@ -243,7 +243,11 @@ def test_a_canopy_failure_falls_back_to_the_cached_bytes_and_never_raises():
     )
     _turn(s, 3, "turn-b")
     with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(502, "down")):
-        assert sources.session_raw_jsonl(s) == LINE_A   # stale, but never an exception
+        read = sources.read_session_transcript(s)
+    assert read.raw == LINE_A   # stale, but never an exception
+    # …and it must SAY it is stale. These bytes are missing turn-b, so a cost
+    # derived from them is short — and short is invisible to every later check.
+    assert read.complete is False
 
 
 @override_settings(**ON)
@@ -449,3 +453,111 @@ def test_a_corrupt_local_blob_reports_parse_failed_not_no_raw_jsonl():
     read = sources.read_session_transcript(s)
     assert read.raw is None
     assert read.reason == "parse-failed"
+
+
+# ---------------------------------------------------------------------------
+# Short is not smaller: a compose that is missing content must never look done
+# ---------------------------------------------------------------------------
+
+
+@override_settings(**ON)
+def test_an_empty_transcript_for_a_completed_turn_is_not_treated_as_success():
+    """canopy answers 200-with-nothing for a turn whose runner has not flushed.
+    Composing that as if it were finished yields a transcript that is SHORT —
+    it parses, it aggregates, and the cost is simply too low. No downstream
+    check can see that, so refuse the compose instead."""
+    user, s = _session(canopy_session_id="sess-1")
+    _turn(s, 1, "turn-a")            # status="complete"
+    _turn(s, 3, "turn-b")
+    blobs = {"turn-a": LINE_A, "turn-b": b""}
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch(
+             "apps.canopy.transcripts.fetch_turn_transcript",
+             side_effect=lambda tok, tid, **kw: blobs[tid],
+         ):
+        read = sources.read_session_transcript(s)
+    assert read.complete is False
+    assert not IngestUpload.objects.filter(session=s, source="canopy").exists()
+
+
+@override_settings(**ON)
+def test_an_empty_transcript_for_a_turn_that_never_ran_is_fine():
+    """A cancelled or lost turn genuinely produced nothing. Treating THAT as a
+    failure would block the session's cost forever for no reason."""
+    user, s = _session(canopy_session_id="sess-1")
+    _turn(s, 1, "turn-a")
+    _turn(s, 3, "turn-b", status="error")   # canopy:cancelled — never executed
+    blobs = {"turn-a": LINE_A, "turn-b": b""}
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch(
+             "apps.canopy.transcripts.fetch_turn_transcript",
+             side_effect=lambda tok, tid, **kw: blobs[tid],
+         ):
+        read = sources.read_session_transcript(s)
+    assert read.complete is True
+    assert read.raw == LINE_A
+
+
+@override_settings(**ON)
+def test_a_permanently_404ing_turn_reads_as_incomplete_not_as_the_whole_run():
+    """One unfetchable turn used to wedge the read at local-prefix-only and say
+    nothing about it. It still serves the prefix — half a run beats none — but
+    it no longer claims to be the run."""
+    from apps.canopy.client import CanopyError
+
+    user, s = _session(canopy_session_id="sess-1")
+    _hybrid(user, s)
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch(
+             "apps.canopy.transcripts.fetch_turn_transcript",
+             side_effect=CanopyError(404, "no such turn"),
+         ):
+        read = sources.read_session_transcript(s)
+    assert read.raw == LINE_B     # the local prefix
+    assert read.complete is False
+
+
+@override_settings(**ON)
+def test_a_permanently_404ing_turn_recovers_by_itself_once_canopy_answers():
+    """Nothing bad is cached, so the read self-heals — no repair step."""
+    from apps.canopy.client import CanopyError
+
+    user, s = _session(canopy_session_id="sess-1")
+    _hybrid(user, s)
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch(
+             "apps.canopy.transcripts.fetch_turn_transcript",
+             side_effect=CanopyError(404, "no such turn"),
+         ):
+        sources.read_session_transcript(s)
+    exchange, fetch = _canopy_up({"turn-a": LINE_A})
+    with exchange, fetch:
+        read = sources.read_session_transcript(s)
+    assert read.raw == LINE_B + LINE_A
+    assert read.complete is True
+
+
+@override_settings(**ON)
+def test_force_refresh_bypasses_a_cache_that_looks_perfectly_fresh():
+    """canopy permits appending to an ALREADY-TERMINAL turn, so a settled cache
+    can still be short. The terminal reconcile forces a refetch for exactly
+    that reason."""
+    _user, s = _session(canopy_session_id="sess-1")
+    _turn(s, 1, "turn-a")
+    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+         mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=LINE_A) as f:
+        sources.session_raw_jsonl(s)
+        sources.session_raw_jsonl(s)                       # cached
+        assert f.call_count == 1
+        sources.session_raw_jsonl(s, force_refresh=True)   # not cached
+        assert f.call_count == 2
+
+
+@override_settings(**ON)
+def test_a_local_session_is_always_complete():
+    """Its bytes are its own; there is no elsewhere for them to be."""
+    user, s = _session()
+    IngestUpload.objects.create(
+        session=s, uploaded_by=user, raw_jsonl_gz=gzip.compress(LINE_A),
+    )
+    assert sources.read_session_transcript(s).complete is True

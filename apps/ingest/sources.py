@@ -49,13 +49,21 @@ _TERMINAL_MESSAGE_STATUSES = ("complete", "error")
 
 @dataclass(frozen=True)
 class TranscriptRead:
-    """Bytes plus WHY there are none, so `/structure` can keep saying the
-    different things it used to say instead of collapsing them into one."""
+    """Bytes, WHY there are none, and whether they are the WHOLE run.
+
+    `complete` is the one that guards money. A short transcript is not a
+    smaller transcript — it parses fine, aggregates fine, and yields a cost
+    that is simply too low, which no "refuse to lower" rule can see. So
+    anything that knows the bytes might be partial says so here, and the cost
+    writer refuses to persist a figure derived from a partial read.
+    """
 
     raw: bytes | None
     # "" when raw is present. Otherwise one of the `unavailable_reason` values
     # the structure view renders.
     reason: str = ""
+    # False when we know canopy holds transcript we could not get.
+    complete: bool = True
 
 
 def _actor_email(session) -> str:
@@ -72,16 +80,24 @@ def _actor_email(session) -> str:
     return (settings.CANOPY_RUN_ACTOR_FALLBACK_EMAIL or "").strip()
 
 
-def _canopy_turn_ids(session) -> list[str]:
+def _canopy_turns(session) -> list[tuple[str, str]]:
+    """(turn id, ace-web message status) in turn order.
+
+    `turn_index` carries a DB unique constraint per session, so this ordering is
+    total and cannot contain duplicates.
+    """
     from apps.sessions.models import Message
 
-    return [
-        t
-        for t in Message.objects.filter(session=session, role="assistant")
+    return list(
+        Message.objects.filter(session=session, role="assistant")
         .exclude(canopy_turn_id="")
         .order_by("turn_index")
-        .values_list("canopy_turn_id", flat=True)
-    ]
+        .values_list("canopy_turn_id", "status")
+    )
+
+
+def _canopy_turn_ids(session) -> list[str]:
+    return [tid for tid, _status in _canopy_turns(session)]
 
 
 def _newest_row(session, source: str | None = None):
@@ -175,7 +191,8 @@ def refresh_canopy_cache(session):
     from apps.canopy import client, transcripts
     from apps.sessions.models import IngestUpload
 
-    turn_ids = _canopy_turn_ids(session)
+    turns = _canopy_turns(session)
+    turn_ids = [tid for tid, _s in turns]
     if not turn_ids:
         return None
     try:
@@ -188,6 +205,26 @@ def refresh_canopy_cache(session):
         log.error(
             "canopy transcript fetch FAILED for session %s (cost will be missing, not wrong)",
             session.slug, exc_info=True,
+        )
+        return None
+
+    # An empty 200 is a normal answer for a turn that never produced output —
+    # a cancelled or lost turn genuinely has nothing. It is NOT a normal answer
+    # for a turn ace-web recorded as `complete`: that turn ran and said
+    # something, so an empty body means the runner has not flushed yet (or
+    # never will). Composing it as if it were finished yields a transcript that
+    # is short rather than smaller, which is invisible to every downstream
+    # check — so refuse the whole compose, exactly as a fetch error does.
+    missing = [
+        tid
+        for (tid, status), blob in zip(turns, blobs, strict=True)
+        if not blob and status == "complete"
+    ]
+    if missing:
+        log.error(
+            "canopy returned an EMPTY transcript for completed turn(s) %s on session %s; "
+            "refusing to cache a short compose (cost will be missing, not wrong)",
+            missing, session.slug,
         )
         return None
 
@@ -219,10 +256,12 @@ def refresh_canopy_cache(session):
     return row
 
 
-def read_session_transcript(session) -> TranscriptRead:
-    """The session's full raw JSONL and, when there is none, why.
+def read_session_transcript(session, *, force_refresh: bool = False) -> TranscriptRead:
+    """The session's full raw JSONL, why there is none, and whether it is whole.
 
-    THE single read path for transcript bytes.
+    THE single read path for transcript bytes. `force_refresh` bypasses the
+    cache entirely — used at the one moment we most want to be right (a turn
+    going terminal) and by the explicit recompute command.
     """
     from apps.sessions.models import IngestUpload
 
@@ -236,7 +275,8 @@ def read_session_transcript(session) -> TranscriptRead:
     prefix = _local_prefix(session)
     cached, cached_reason = _decompress(row)
     stale = (
-        row is None
+        force_refresh
+        or row is None
         or cached is None
         or list(row.canopy_turn_ids or []) != wanted
         # The composed bytes must still open with the CURRENT local prefix —
@@ -252,21 +292,25 @@ def read_session_transcript(session) -> TranscriptRead:
             row = refreshed
             cached, cached_reason = _decompress(row)
         else:
+            # We KNOW canopy holds transcript we could not get: an unreachable
+            # canopy, a refused encoding, an over-ceiling turn, or a completed
+            # turn that came back empty. Whatever we serve below is a prefix of
+            # the run, not the run.
             fetch_failed = True
 
     if cached is not None:
-        return TranscriptRead(cached, "")
+        return TranscriptRead(cached, "", complete=not fetch_failed)
     if prefix:
         # canopy is unreachable and this session has local bytes. Half the run
         # beats none of it, and it is never MORE than the truth.
-        return TranscriptRead(prefix, "")
+        return TranscriptRead(prefix, "", complete=not fetch_failed)
     if fetch_failed:
-        return TranscriptRead(None, "canopy-unreachable")
+        return TranscriptRead(None, "canopy-unreachable", complete=False)
     if cached_reason == "parse-failed":
         return TranscriptRead(None, "parse-failed")
     return TranscriptRead(None, "no-raw-jsonl")
 
 
-def session_raw_jsonl(session) -> bytes | None:
+def session_raw_jsonl(session, *, force_refresh: bool = False) -> bytes | None:
     """The session's full raw JSONL, or None if there is none to be had."""
-    return read_session_transcript(session).raw
+    return read_session_transcript(session, force_refresh=force_refresh).raw
