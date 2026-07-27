@@ -7,6 +7,7 @@ Pattern mirrors apps/opps/tests/test_api.py:
 """
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 
 from apps.workspaces.models import Workspace, WorkspaceMembership
 
@@ -670,3 +671,286 @@ def test_resume_interrupted_relaunches_graceful_cancel(member_client, monkeypatc
     assert resp.status_code == 200
     assert resp.json()["count"] == 1
     assert len(spawned) == 1
+
+
+# ---------------------------------------------------------------------------
+# The post-deploy sweep vs canopy-dispatched runs. Both cases below were found
+# reviewing the dispatch seam (PR A) and are entry conditions for ever flipping
+# CANOPY_RUN_EXECUTION on.
+# ---------------------------------------------------------------------------
+
+# Production's canopy wiring WITH the flag on. `config.settings.test` leaves
+# CANOPY_BASE_URL and CANOPY_APP_CREDENTIAL empty, and run_dispatch.enabled()
+# is an `and` chain that short-circuits on those BEFORE it reads the flag — so
+# a test that does not set them says nothing about the flag.
+_CANOPY_ON = dict(
+    CANOPY_BASE_URL="http://canopy.test", CANOPY_APP_CREDENTIAL="c",
+    CANOPY_WORKSPACE="connect", CANOPY_AGENT_SLUG="ace", CANOPY_RUN_EXECUTION=True,
+)
+_CANOPY_CONFIGURED_BUT_UNFLAGGED = {
+    k: v for k, v in _CANOPY_ON.items() if k != "CANOPY_RUN_EXECUTION"
+}
+
+
+def _make_canopy_dispatched(workspace, user, *, opp_run_id, turn_id="turn-1"):
+    """An interrupted-looking run whose execution already went to canopy."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.sessions.models import Message, Session
+    s = Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="bednet-spot-check", opp_run_id=opp_run_id,
+        canopy_session_id="sess-1",
+        driver_heartbeat_at=timezone.now() - timedelta(seconds=300),
+    )
+    Message.objects.create(
+        session=s, turn_index=1, role="assistant", status="streaming", content={},
+        canopy_turn_id=turn_id,
+    )
+    return s
+
+
+@pytest.mark.django_db
+def test_resume_interrupted_survives_one_sessions_dispatch_failure(member_client, monkeypatch):
+    """One bad session must not abort the sweep. Before this fix, DispatchError
+    propagated out of the loop as an unhandled 500 and every session after the
+    failing one was left unresumed AND unreported."""
+    from apps.canopy.run_dispatch import DispatchError
+
+    client, workspace, user = member_client
+    _make_interrupted(workspace, user, opp_run_id="20260604-0001")
+    _make_interrupted(workspace, user, opp_run_id="20260604-0002")
+
+    calls = []
+
+    def _boom(mid):
+        calls.append(mid)
+        if len(calls) == 1:
+            raise DispatchError("canopy 403: nope")
+
+    monkeypatch.setattr("apps.canopy.run_dispatch.start_turn", _boom)
+    resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(calls) == 2, "the sweep stopped at the first failure"
+    assert body["count"] == 1
+    assert len(body["failed"]) == 1
+    assert "403" in body["failed"][0]["error"]
+
+
+@pytest.mark.django_db
+def test_resume_interrupted_reports_the_failing_sessions_identity(member_client, monkeypatch):
+    """A silent failure is the thing being fixed — the response must name which
+    run did not restart, or the sweep's caller cannot act on it."""
+    from apps.canopy.run_dispatch import DispatchError
+
+    client, workspace, user = member_client
+    s = _make_interrupted(workspace, user, opp_run_id="20260604-0003")
+    monkeypatch.setattr(
+        "apps.canopy.run_dispatch.start_turn",
+        lambda mid: (_ for _ in ()).throw(DispatchError("canopy 502: down")),
+    )
+    resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+    assert resp.json()["failed"] == [
+        {"slug": s.slug, "opp_run_id": "20260604-0003", "error": "canopy 502: down"},
+    ]
+
+
+@pytest.mark.django_db
+@override_settings(**_CANOPY_ON)
+def test_resume_interrupted_does_not_redispatch_a_run_canopy_still_owns(
+    member_client, monkeypatch,
+):
+    """The re-dispatch loop. A dispatched run sits `pending` with a beat that
+    goes stale in 90s, so resumable_after_deploy matches it on every deploy —
+    the sweep that dispatched it would keep re-dispatching it forever."""
+    from unittest import mock
+
+    client, workspace, user = member_client
+    s = _make_canopy_dispatched(workspace, user, opp_run_id="20260604-0004")
+    dispatched = []
+    monkeypatch.setattr(
+        "apps.canopy.run_dispatch.start_turn", lambda mid: dispatched.append(mid),
+    )
+    rows = [{"turn_id": "turn-1", "kind": "config", "reason": "no runner can take this session"}]
+    with (
+        mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}),
+        mock.patch("apps.canopy.client.get_turn", return_value={"status": "queued"}),
+        mock.patch("apps.canopy.client.list_unclaimable", return_value=rows),
+    ):
+        resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert dispatched == [], "the sweep re-dispatched a run canopy is still holding"
+    assert body["count"] == 0
+    assert body["skipped"] == [
+        {"slug": s.slug, "opp_run_id": "20260604-0004", "state": "no_runner_configured"},
+    ]
+    # …and reconciling refreshed the beat, so the NEXT sweep skips it too.
+    s.refresh_from_db()
+    assert not type(s).resumable_after_deploy().filter(pk=s.pk).exists()
+
+
+@pytest.mark.django_db
+@override_settings(**_CANOPY_ON)
+def test_resume_interrupted_still_resumes_a_run_whose_canopy_turn_died(
+    member_client, monkeypatch,
+):
+    """The skip must be narrow: a canopy turn that FAILED is exactly what the
+    self-heal exists for. Skipping it too would disable the sweep outright."""
+    from unittest import mock
+
+    client, workspace, user = member_client
+    _make_canopy_dispatched(workspace, user, opp_run_id="20260604-0005")
+    dispatched = []
+    monkeypatch.setattr(
+        "apps.canopy.run_dispatch.start_turn", lambda mid: dispatched.append(mid),
+    )
+    with (
+        mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}),
+        mock.patch(
+            "apps.canopy.client.get_turn",
+            return_value={"status": "failed", "result_note": "boom"},
+        ),
+    ):
+        resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+    assert resp.json()["count"] == 1
+    assert len(dispatched) == 1
+
+
+@pytest.mark.django_db
+@override_settings(**_CANOPY_ON)
+def test_resume_interrupted_does_not_resume_on_an_unreachable_canopy(
+    member_client, monkeypatch,
+):
+    """UNKNOWN is not permission to act. canopy may still be executing the turn;
+    resuming on a guess double-executes the run."""
+    from unittest import mock
+
+    from apps.canopy.client import CanopyError
+
+    client, workspace, user = member_client
+    _make_canopy_dispatched(workspace, user, opp_run_id="20260604-0006")
+    dispatched = []
+    monkeypatch.setattr(
+        "apps.canopy.run_dispatch.start_turn", lambda mid: dispatched.append(mid),
+    )
+    with mock.patch(
+        "apps.canopy.client.exchange_token", side_effect=CanopyError(502, "down"),
+    ):
+        resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+    assert dispatched == []
+    assert resp.json()["skipped"][0]["state"] == "unknown"
+
+
+@pytest.mark.django_db
+@override_settings(**_CANOPY_CONFIGURED_BUT_UNFLAGGED)
+def test_resume_interrupted_consults_canopy_only_when_the_flag_is_on(
+    member_client, monkeypatch,
+):
+    """Flag off ⇒ the sweep behaves exactly as it did before this PR. canopy is
+    fully wired here, so the settings default is the only thing guarding it."""
+    from unittest import mock
+
+    from django.conf import settings
+
+    assert settings.CANOPY_BASE_URL and settings.CANOPY_APP_CREDENTIAL
+    client, workspace, user = member_client
+    _make_canopy_dispatched(workspace, user, opp_run_id="20260604-0007")
+    dispatched = []
+    monkeypatch.setattr(
+        "apps.canopy.run_dispatch.start_turn", lambda mid: dispatched.append(mid),
+    )
+    with mock.patch("apps.canopy.client.exchange_token") as ex:
+        resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
+    ex.assert_not_called()
+    assert resp.json()["count"] == 1
+    assert len(dispatched) == 1
+
+
+@pytest.mark.django_db
+def test_resume_run_reports_a_dispatch_failure_as_a_problem_not_a_500(
+    member_client, monkeypatch,
+):
+    from apps.canopy.run_dispatch import DispatchError
+    from apps.sessions.models import Session
+
+    client, workspace, user = member_client
+    s = Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="bednet-spot-check", opp_run_id="20260604-0008",
+    )
+    monkeypatch.setattr(
+        "apps.canopy.run_dispatch.start_turn",
+        lambda mid: (_ for _ in ()).throw(DispatchError("canopy 403: nope")),
+    )
+    resp = client.post(f"/api/w/{workspace.slug}/sessions/{s.slug}/resume")
+    assert resp.status_code == 502
+    assert resp["Content-Type"].startswith("application/problem+json")
+    assert "403" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# GET /{slug}/execution — where this run's execution actually stands
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_execution_endpoint_reports_the_run_state(member_client, monkeypatch):
+    from apps.sessions.models import Session
+
+    client, workspace, user = member_client
+    s = Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="bednet-spot-check", opp_run_id="20260604-1000",
+    )
+    monkeypatch.setattr(
+        "apps.canopy.run_state.reconcile_session",
+        lambda session: {
+            "state": "no_runner_configured",
+            "detail": "no runner can take this session",
+            "canopy_turn_id": "turn-1",
+            "canopy_session_id": "sess-1",
+        },
+    )
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/{s.slug}/execution")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["state"] == "no_runner_configured"
+    assert body["detail"] == "no runner can take this session"
+
+
+@pytest.mark.django_db
+def test_execution_endpoint_404s_an_unknown_session(member_client):
+    client, workspace, _ = member_client
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/does-not-exist/execution")
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_execution_endpoint_non_member_404(non_member_client):
+    client, workspace, _ = non_member_client
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/s/execution")
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_execution_route_is_not_shadowed_by_the_slug_route(member_client, monkeypatch):
+    """`/{slug}/execution` must not be swallowed by `/{slug}` — the same
+    shadowing that `/interrupted` is registered early to avoid."""
+    from apps.sessions.models import Session
+
+    client, workspace, user = member_client
+    s = Session.create_with_owner(owner=user, workspace=workspace, source="web")
+    monkeypatch.setattr(
+        "apps.canopy.run_state.reconcile_session",
+        lambda session: {"state": "not_dispatched", "detail": "",
+                         "canopy_turn_id": "", "canopy_session_id": ""},
+    )
+    resp = client.get(f"/api/w/{workspace.slug}/sessions/{s.slug}/execution")
+    assert resp.status_code == 200
+    assert "state" in resp.json()

@@ -9,7 +9,12 @@ from ninja import Path, Router
 
 from apps.api.auth import session_auth
 from apps.api.deps import resolve_workspace_for_member
-from apps.api.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
+from apps.api.errors import (
+    TYPE_NOT_FOUND,
+    TYPE_UPSTREAM,
+    TYPE_VALIDATION,
+    ProblemError,
+)
 from apps.api.pagination import Page, paginate
 
 from .schemas import SessionCreateIn, SessionListOut, SessionPatchIn
@@ -302,27 +307,81 @@ def resume_interrupted(
     """Bulk-resume every interrupted ACE opp run in the workspace. Intended for
     the post-deploy hook: after a rollout drains the tasks driving live runs,
     this relaunches them from run_state.yaml. Single serial call → no
-    double-spawn race."""
+    double-spawn race.
+
+    Best-effort per session, never all-or-nothing: a session that cannot be
+    restarted is reported in ``failed`` and the sweep carries on. Anything that
+    raises here is a *self-heal* failing, and aborting the whole sweep on the
+    first one leaves every later run unresumed AND unreported."""
     from django.http import JsonResponse
 
-    from apps.canopy.run_dispatch import start_turn
+    from apps.canopy import run_dispatch
     from apps.sessions.models import Session
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
-    resumed = []
+    resumed: list[dict] = []
+    failed: list[dict] = []
+    skipped: list[dict] = []
     # ACE opp runs only (have an opp_run_id → resumable from run_state.yaml).
     # resumable_after_deploy (NOT interrupted) so the sweep catches the common
     # graceful-SIGTERM kill mode (turn marked error:'cancelled (partial:...)'),
     # not just hard kills — and is age-bounded so ancient corpses aren't revived.
-    candidates = (
+    # Materialised up front: the canopy reconcile below writes the very rows the
+    # queryset selects on.
+    candidates = list(
         Session.resumable_after_deploy().filter(workspace=workspace).exclude(opp_run_id="")
     )
     for s in candidates:
+        state = _canopy_state_for_sweep(s)
+        if state is not None:
+            # canopy still owns this run — it is queued (however hopelessly),
+            # executing, or we could not reach canopy to find out. Resuming any
+            # of those double-executes it. This is what stops the sweep from
+            # re-dispatching, on every deploy forever, the very runs it
+            # dispatched: a dispatched turn sits `pending` behind a beat that
+            # goes stale in 90s, which is precisely resumable_after_deploy's
+            # hard_kill shape. Reconciling refreshes that beat as a side effect.
+            skipped.append({"slug": s.slug, "opp_run_id": s.opp_run_id, "state": state})
+            continue
         res = resume_session_run(s)
-        if res is not None:
-            start_turn(res["assistant_message_id"])
-            resumed.append({"slug": s.slug, "opp_run_id": s.opp_run_id})
-    return JsonResponse({"resumed": resumed, "count": len(resumed)})
+        if res is None:
+            continue
+        try:
+            run_dispatch.start_turn(res["assistant_message_id"])
+        except run_dispatch.DispatchError as exc:
+            log.warning("resume dispatch failed for %s: %s", s.slug, exc.detail)
+            failed.append({"slug": s.slug, "opp_run_id": s.opp_run_id, "error": exc.detail})
+            continue
+        resumed.append({"slug": s.slug, "opp_run_id": s.opp_run_id})
+    return JsonResponse(
+        {"resumed": resumed, "count": len(resumed), "failed": failed, "skipped": skipped},
+    )
+
+
+def _canopy_state_for_sweep(session) -> str | None:
+    """The canopy execution state of a run the sweep is about to resume, or
+    None when the sweep should go ahead and resume it.
+
+    Returns a state ONLY when canopy still owns the run. A canopy turn that
+    failed/was lost/was missed is exactly what the self-heal exists for, so
+    those return None and the resume proceeds.
+
+    Inert unless run execution is on: with the flag off nothing ever writes a
+    ``canopy_session_id``, so gating on ``enabled()`` makes "flag off ⇒ the
+    sweep behaves exactly as it did before" structural rather than incidental.
+    """
+    from apps.canopy import run_dispatch, run_state
+
+    if not (run_dispatch.enabled() and session.canopy_session_id):
+        return None
+    try:
+        state = run_state.reconcile_session(session)["state"]
+    except Exception as exc:  # noqa: BLE001 — reconcile must never abort the sweep
+        log.warning("canopy reconcile failed for %s: %s", session.slug, exc)
+        return run_state.UNKNOWN
+    if run_state.is_alive(state) or state == run_state.UNKNOWN:
+        return state
+    return None
 
 
 @router.post("/{slug}/resume", summary="Resume one interrupted run")
@@ -333,7 +392,7 @@ def resume_run(
 ) -> HttpResponse:
     from django.http import JsonResponse
 
-    from apps.canopy.run_dispatch import start_turn
+    from apps.canopy import run_dispatch
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
     session = _load_session_in_workspace(slug, workspace)
@@ -344,8 +403,40 @@ def resume_run(
         raise ProblemError(
             422, "Not a resumable ACE opp run (no opp_run_id)", type_=TYPE_VALIDATION,
         )
-    start_turn(res["assistant_message_id"])
+    try:
+        run_dispatch.start_turn(res["assistant_message_id"])
+    except run_dispatch.DispatchError as exc:
+        # The turn is already marked errored by the dispatcher. Say so in
+        # problem+json rather than as a bare 500 with no machine-readable cause.
+        raise ProblemError(
+            502, "Could not start the run on canopy", type_=TYPE_UPSTREAM, detail=exc.detail,
+        ) from exc
     return JsonResponse(res, status=202)
+
+
+@router.get("/{slug}/execution", summary="Where this run's execution actually stands")
+def session_execution(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+) -> HttpResponse:
+    """The run's canopy execution state — including the two states that say, in
+    plain words, that nothing can run it: `no_runner_configured` and
+    `waiting_for_runner`. Reconciles on read (ace-web has no worker; this is the
+    same compute-on-read shape `/structure` uses).
+
+    The monkeypatch target in contract tests is
+    `apps.canopy.run_state.reconcile_session`.
+    """
+    from django.http import JsonResponse
+
+    from apps.canopy import run_state
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    session = _load_session_in_workspace(slug, workspace)
+    if session is None:
+        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
+    return JsonResponse(run_state.reconcile_session(session))
 
 
 # ---------------------------------------------------------------------------

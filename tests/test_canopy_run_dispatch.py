@@ -188,3 +188,32 @@ def test_start_turn_makes_no_outbound_canopy_call_when_disabled():
     assert session.canopy_session_id == ""
     assert assistant.canopy_turn_id == ""
     assert assistant.status == "pending"
+
+
+@override_settings(**ON)
+def test_dispatch_stamps_the_driver_heartbeat_so_the_run_is_not_born_interrupted():
+    """A seeded run's heartbeat is written by the SUBPROCESS. Under canopy
+    dispatch no subprocess exists, so it stayed NULL — and Session.interrupted()
+    matches a NULL beat, meaning a run listed as dead the instant it started."""
+    session, assistant = _run()
+    assert session.driver_heartbeat_at is None
+    ex, create, send, stop = _patched()
+    with ex, create, send, stop:
+        run_dispatch.dispatch_turn(assistant.pk)
+    session.refresh_from_db()
+    assert session.driver_heartbeat_at is not None
+    assert not Session.interrupted().filter(pk=session.pk).exists()
+
+
+@override_settings(**ON)
+def test_a_failed_dispatch_does_not_stamp_the_heartbeat():
+    """The beat means 'something is driving this'. Stamping it on a dispatch
+    that never produced a turn would hide the corpse from the self-heal."""
+    from apps.canopy.client import CanopyError
+
+    session, assistant = _run()
+    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(403, "nope")):
+        with pytest.raises(run_dispatch.DispatchError):
+            run_dispatch.dispatch_turn(assistant.pk)
+    session.refresh_from_db()
+    assert session.driver_heartbeat_at is None

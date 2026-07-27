@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Workflow } from "lucide-react";
 
 import type { RunSummary } from "@/api/types.ws";
+import { RunExecutionBadge } from "@/components/opps/RunExecutionBadge";
 import { useOppRuns } from "@/hooks/useOppRuns";
 import { relativeTime } from "@/lib/relativeTime";
 
@@ -94,7 +95,8 @@ function ProgressLabel({ run }: { run: RunSummary }) {
   // got to."
   //  1. Live cursor → "<phase> · <step>" (matches the workbench's view).
   //  2. Some phase done but no cursor → "<last done> · X/N".
-  //  3. Nothing done yet → "queued".
+  //  3. Nothing done yet → the run's EXECUTION state if canopy knows one,
+  //     otherwise "queued".
   if (run.current_phase || run.current_step) {
     const phaseLabel = run.current_phase_display ?? run.current_phase;
     const stepLabel = run.current_step_display ?? run.current_step;
@@ -124,6 +126,20 @@ function ProgressLabel({ run }: { run: RunSummary }) {
         {total > 0 && (
           <span className="text-muted-foreground"> · {done}/{total}</span>
         )}
+      </span>
+    );
+  }
+
+  // A run whose canopy turn no runner can claim used to render identically to
+  // one about to start. That is the defect this closes: with no session-capable
+  // runner online the badge is the NORMAL day-one state, not an error case.
+  if (run.execution && run.execution.state !== "not_dispatched") {
+    return (
+      <span className="min-w-0 flex-1 truncate">
+        <RunExecutionBadge
+          state={run.execution.state}
+          detail={run.execution.detail}
+        />
       </span>
     );
   }

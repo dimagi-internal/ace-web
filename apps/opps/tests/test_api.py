@@ -2108,3 +2108,113 @@ def test_invalidate_snapshot_401_anonymous(db, client):
     )
     response = client.post("/api/w/ws1/opps/opp-1/snapshot/invalidate")
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Run execution state on the runs list (spec 2026-07-26, item 6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_run_execution_for_is_none_when_the_run_never_went_to_canopy(member_client):
+    from apps.opps.api import _run_execution_for
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+    Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="opp-a", opp_run_id="run-1",  # no canopy_session_id
+    )
+    assert _run_execution_for(workspace, "opp-a", "run-1") is None
+
+
+@pytest.mark.django_db
+def test_run_execution_for_reports_the_canopy_state(member_client, monkeypatch):
+    from apps.opps.api import _run_execution_for
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+    Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="opp-a", opp_run_id="run-1", canopy_session_id="sess-1",
+    )
+    monkeypatch.setattr(
+        "apps.canopy.run_state.execution_state",
+        lambda s: {"state": "no_runner_configured", "detail": "no runner",
+                   "canopy_turn_id": "turn-1", "canopy_session_id": "sess-1"},
+    )
+    assert _run_execution_for(workspace, "opp-a", "run-1")["state"] == "no_runner_configured"
+
+
+@pytest.mark.django_db
+def test_run_execution_for_never_raises(member_client, monkeypatch):
+    """The runs list is the opp workbench's primary read. A bad minute on
+    canopy must degrade the badge, not 500 the whole page."""
+    from apps.opps.api import _run_execution_for
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+    Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="opp-a", opp_run_id="run-1", canopy_session_id="sess-1",
+    )
+    monkeypatch.setattr(
+        "apps.canopy.run_state.execution_state",
+        lambda s: (_ for _ in ()).throw(RuntimeError("kaboom")),
+    )
+    assert _run_execution_for(workspace, "opp-a", "run-1") is None
+
+
+@pytest.mark.django_db
+def test_run_execution_for_does_not_write(member_client, monkeypatch):
+    """A list read must not reconcile — `reconcile_session` writes rows, and a
+    GET of the opp page is not permission to mutate every run under it."""
+    from apps.opps.api import _run_execution_for
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+    Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="opp-a", opp_run_id="run-1", canopy_session_id="sess-1",
+    )
+    monkeypatch.setattr(
+        "apps.canopy.run_state.execution_state",
+        lambda s: {"state": "queued", "detail": "", "canopy_turn_id": "t",
+                   "canopy_session_id": "sess-1"},
+    )
+    import apps.canopy.run_state as _rs
+    monkeypatch.setattr(
+        _rs, "reconcile_session",
+        lambda s: (_ for _ in ()).throw(AssertionError("the list read reconciled")),
+    )
+    assert _run_execution_for(workspace, "opp-a", "run-1")["state"] == "queued"
+
+
+@pytest.mark.django_db
+def test_runs_list_carries_the_execution_state(member_client, monkeypatch):
+    """The enrichment must actually reach the payload, or the frontend badge is
+    dead code: `RunSummary.execution` would always be undefined."""
+    from apps.opps import api as opps_api
+    from apps.opps.sync import RunSummary
+
+    _, workspace, _user = member_client
+    monkeypatch.setattr(
+        "apps.opps.access.resolve_ace_root_folder_id", lambda ws: "root-1",
+    )
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client", lambda workspace: object())
+    monkeypatch.setattr(
+        "apps.opps.sync.list_opp_runs",
+        lambda drive, *, ace_root_folder_id, opp_slug: [
+            RunSummary(
+                run_id="run-1", folder_id="f", current_phase=None, current_step=None,
+                mode=None, last_actor=None, last_actor_at=None,
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        opps_api, "_run_execution_for",
+        lambda ws, slug, run_id: {"state": "no_runner_configured", "detail": "no runner",
+                                  "canopy_turn_id": "t", "canopy_session_id": "s"},
+    )
+    runs = opps_api.list_opp_runs_for_workspace(workspace, "opp-a")
+    assert runs[0]["execution"]["state"] == "no_runner_configured"
