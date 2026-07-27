@@ -2383,10 +2383,26 @@ export interface components {
              */
             readonly override_reasoning: string;
         };
-        /** OppForkIn */
+        /**
+         * OppForkIn
+         * @description Fork request. The fork POINT is one concept with two spellings.
+         *
+         *     Name a **phase** (``fork_at_phase``) to re-run it whole, or a **skill**
+         *     (``fork_at_skill``) to keep that phase's earlier artifacts and re-run
+         *     from that skill onward. Exactly one is required.
+         *
+         *     Skill-granular forking existed on the old run-fork endpoint and was lost
+         *     when ``apps/opps/fork.py`` was deleted in the multi-run simplification
+         *     (2026-04-20). It depended on a ``steps/<NN>-<skill>/`` folder layout that
+         *     no longer exists — the current layout is ``<N>-<phase>/<skill>_<role>.ext``
+         *     — so it's re-implemented here against the artifact manifest's
+         *     ``produced_by`` map rather than against folder names.
+         */
         readonly OppForkIn: {
             /** Fork At Phase */
-            readonly fork_at_phase: string;
+            readonly fork_at_phase?: string | null;
+            /** Fork At Skill */
+            readonly fork_at_skill?: string | null;
             /** Source Run Id */
             readonly source_run_id?: string | null;
             /** Edits */
@@ -2397,6 +2413,8 @@ export interface components {
              * @enum {string}
              */
             readonly mode: "keep-overrides-only" | "keep-all";
+            /** Feedback */
+            readonly feedback?: string | null;
         };
         /**
          * DecisionOverridesSaveIn
