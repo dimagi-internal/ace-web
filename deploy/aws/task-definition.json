@@ -91,6 +91,10 @@
         {
           "name": "CANOPY_AGENT_SLUG",
           "value": "ace"
+        },
+        {
+          "name": "CANOPY_RUN_EXECUTION",
+          "value": "true"
         }
       ],
       "secrets": [
