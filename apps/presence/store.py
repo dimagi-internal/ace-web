@@ -17,10 +17,19 @@ The key-level TTL is leak insurance: if every client disconnects
 ungracefully the hash self-destructs within two minutes rather than
 lingering forever.
 
-Every function here treats `redis_client.get_redis()` returning None (no
-REDIS_URL configured) as "presence is unavailable" rather than an error:
-touch()/forget() become no-ops and roster() returns an empty list. See
-apps/common/redis_client.py's module docstring.
+Every function here treats `redis_client.get_redis()` returning None as
+"presence is unavailable" rather than an error: touch()/forget() become
+no-ops and roster() returns an empty list. Note this is DEFENSIVE ONLY in
+ace-web — `apps.common.redis_client.get_redis` is annotated
+`-> redis.asyncio.Redis` and always constructs a client from
+`settings.ACE_REDIS_URL`, so the None branches are unreachable here today.
+They are kept for symmetry with canopy-web's presence store, whose client
+factory genuinely can return None, so the two files stay diffable; and they
+cost nothing if ace-web's factory ever grows the same behaviour.
+
+Redis errors, unlike a missing client, are NOT swallowed here — the
+consumer wraps every call (see apps/presence/consumers.py::_redis) so the
+degrade-to-empty policy lives in one place with the logging.
 """
 from __future__ import annotations
 

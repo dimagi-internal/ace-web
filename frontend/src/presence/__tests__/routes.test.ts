@@ -31,8 +31,39 @@ describe("acePresenceRules", () => {
   });
 
   it("puts workspace-agnostic pages in the global namespace", () => {
-    expect(key("/settings")?.pageKey).toBe("ace:global:settings");
-    expect(key("/system")?.pageKey).toBe("ace:global:system");
+    // `~global`, not `global`: the leading `~` cannot match the backend's
+    // WORKSPACE_RE, so no real workspace slug can shadow the sentinel and
+    // skip the membership gate. Cross-app contract with
+    // apps/presence/keys.py::GLOBAL_SENTINEL and canopy-web.
+    expect(key("/settings")?.pageKey).toBe("ace:~global:settings");
+    expect(key("/system")?.pageKey).toBe("ace:~global:system");
+  });
+
+  it("never throws on a malformed percent-escape in the path", () => {
+    // Regression: `decodeURIComponent("100%")` raises URIError. This runs
+    // during render in TopNav, above the router's Outlet, in an SPA with no
+    // error boundary — an unguarded decode blanks the whole app.
+    const step = () => key("/w/ws/opps/o/runs/r/steps/100%");
+    expect(step).not.toThrow();
+    expect(step()?.pageKey).toBe("ace:ws:opp:o/r");
+    expect(step()?.subLocation).toBe("100%");
+  });
+
+  it("still decodes a WELL-formed percent-escape", () => {
+    expect(key("/w/ws/opps/o/runs/r/steps/idea%20to%20pdd")?.subLocation).toBe("idea to pdd");
+  });
+
+  it("does not collapse a program slug that merely starts with a gallery name", () => {
+    // Regression for an unanchored /videos/(library|templates)/ rule:
+    // `library-x` is a real program, not the gallery. (`librarian` does NOT
+    // hit this rule — `/videos/([^/]+)` catches it first only because the
+    // gallery rule is listed earlier, so use the hyphenated form.)
+    expect(key("/w/ws/videos/library-x")?.pageKey).toBe("ace:ws:video:library-x");
+    expect(key("/w/ws/videos/templates-archive")?.pageKey).toBe("ace:ws:video:templates-archive");
+    // ...while the galleries themselves still resolve, with and without a
+    // trailing slash.
+    expect(key("/w/ws/videos/library")?.pageKey).toBe("ace:ws:videos-library");
+    expect(key("/w/ws/videos/library/")?.pageKey).toBe("ace:ws:videos-library");
   });
 
   it("returns null for routes with no rule", () => {

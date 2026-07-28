@@ -94,11 +94,19 @@ ace:dimagi-team:opp:bednet-spot-check/run-001    ← every step of the run
 ace:dimagi-team:videos:campaign-overview/run-003
 ace:dimagi-team:activity
 ace:dimagi-team:opps
-ace:global:settings
+ace:~global:settings
 canopy:dimagi-team:session:<id>
 ```
 
-Format: `<app>:<workspace-slug|global>:<resource-type>[:<resource-id>]`
+Format: `<app>:<workspace-slug|~global>:<resource-type>[:<resource-id>]`
+
+Every segment is charset-validated on the server before anything is joined
+(`apps/presence/keys.py`, and its identical twin in canopy-web):
+`app` `^[a-z0-9-]{1,32}$`, `workspace` `^[a-z0-9][a-z0-9_-]{0,63}$`, whole key
+`<= 512` chars. The global sentinel is spelled `~global` precisely because the
+leading `~` cannot match the workspace charset — workspace CREATION enforces
+no charset at all, so a plain `global` sentinel would let anyone who could
+name a workspace `global` bypass the membership gate for that tenant.
 
 `pageKeyFor(pathname, search, routeTable)` is pure, takes a per-app route table,
 and is the single place grouping correctness lives. It is the most
@@ -117,7 +125,15 @@ announce themselves into one.
 The consumer parses the workspace segment out of the page key and verifies
 membership before joining the group. Malformed keys and non-member workspaces
 are rejected — the enter frame is dropped and no group is joined. Keys in the
-`global` namespace (settings, system) skip the check.
+`~global` namespace (settings, system) skip the membership check, but only
+after confirming no real workspace is named `~global` (charset validation
+alone is insufficient, since slugs are unvalidated at creation).
+
+The consumer also pins the `app` segment to its own app. Both apps' Redis
+clients come from the same `REDIS_URL` on shared labs ElastiCache, so an
+unpinned `app` would let an authenticated user of one app read and write the
+sibling's rosters — with no membership check anywhere, since neither app can
+see the other's memberships.
 
 This mirrors the existing 404-not-403 posture: a rejected enter is silent, so
 key existence is never confirmed.

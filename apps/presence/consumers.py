@@ -3,7 +3,7 @@
 Navigation re-keys the connection with a fresh `presence.enter` rather than
 reconnecting.
 
-Two rules carry the security weight of this surface:
+Three rules carry the security weight of this surface:
 
 1. The page key is CLIENT-SUPPLIED. Its workspace segment is checked against
    the user's memberships before any group is joined — otherwise a user
@@ -14,16 +14,30 @@ Two rules carry the security weight of this surface:
    key or lost membership) also tears down any group the connection
    currently holds — otherwise a member revoked mid-session would keep
    receiving their old workspace's roster broadcasts until they disconnect.
-2. Visibility is enforced HERE, not on the client. An opted-out user joins
+2. The APP segment is pinned to this app. Both apps' Redis clients come
+   from the same `REDIS_URL` on shared labs ElastiCache and the sibling
+   app reserves `canopy:<ws>:session:<id>` in that same keyspace, so
+   without this an authenticated ace-web user could send
+   `canopy:<anything>:<anything>` and both read the sibling's roster and
+   inject themselves into it — with no membership check anywhere, because
+   ace-web has no view of canopy's memberships. Charset validation of all
+   three segments happens in `keys.parse_page_key`; the app-identity pin
+   is enforced here because only the consumer knows which app it is.
+3. Visibility is enforced HERE, not on the client. An opted-out user joins
    the group (so they still see others) but is never written to Redis, so
    no client — tampered, stale, or otherwise — can expose them. Like
    membership, visibility is re-read on every `presence.enter` rather than
    cached at connect time, so flipping "Show me as viewing" off bounds the
    exposure window to "until you next navigate" rather than "until you
    close the tab".
+
+Presence must never take the page down with it, so every Redis call here is
+wrapped: a blip on ElastiCache degrades the badge to empty rather than
+raising out of `receive_json` and killing the whole consumer.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 
 from channels.db import database_sync_to_async
@@ -34,9 +48,14 @@ from apps.workspaces.permissions import is_member
 
 from . import keys as presence_keys
 from . import store as presence_store
+from .keys import GLOBAL_SENTINEL
 from .models import show_presence_for
 
-GLOBAL_WORKSPACE = "global"
+logger = logging.getLogger(__name__)
+
+#: The only `app` segment this consumer will serve. See module docstring
+#: rule 2 — the Redis keyspace is shared with canopy-web.
+APP = "ace"
 
 
 class PresenceConsumer(AsyncJsonWebsocketConsumer):
@@ -89,6 +108,12 @@ class PresenceConsumer(AsyncJsonWebsocketConsumer):
             await self._leave_current()
             return
         app, workspace, resource = parsed
+        if app != APP:
+            # Foreign app segment — see module docstring rule 2. Dropped
+            # with the same silence and the same teardown as a malformed
+            # key: confirming which app names are live is itself a leak.
+            await self._leave_current()
+            return
         # Rebuild the canonical form from the (whitespace-stripped) parsed
         # parts rather than trusting the raw client string — parse_page_key
         # strips each segment, so "ace: ws :activity" and "ace:ws:activity"
@@ -96,7 +121,7 @@ class PresenceConsumer(AsyncJsonWebsocketConsumer):
         # roster across two.
         canonical_key = f"{app}:{workspace}:{resource}"
 
-        if workspace != GLOBAL_WORKSPACE and not await self._member_of(workspace):
+        if not await self._workspace_allowed(workspace):
             # Not a member — drop silently, no existence leak. ALSO tear
             # down whatever group this connection currently holds:
             # without this, a member whose access to their CURRENT
@@ -121,7 +146,7 @@ class PresenceConsumer(AsyncJsonWebsocketConsumer):
             self.idle = False
             self._last_broadcast_idle = False
 
-        # Re-read fresh on every enter (see module docstring rule 2) — this
+        # Re-read fresh on every enter (see module docstring rule 3) — this
         # is the ONLY place visibility is (re-)computed for this connection.
         self.visible = await database_sync_to_async(show_presence_for)(self.user)
 
@@ -142,6 +167,25 @@ class PresenceConsumer(AsyncJsonWebsocketConsumer):
 
     # -- helpers --
 
+    async def _workspace_allowed(self, workspace: str) -> bool:
+        """May this user join a roster scoped to `workspace`?
+
+        The global sentinel is open to every authenticated user — `/settings`
+        and `/system` belong to no tenant. But taking that branch must ALSO
+        confirm nothing shadows the sentinel: `keys.WORKSPACE_RE` cannot
+        match a leading `~`, yet workspace CREATION enforces no charset at
+        all, so a row literally named `~global` would otherwise turn every
+        authenticated user into a member of it. Charset validation and this
+        check are belt and braces — neither alone closes the hole.
+        """
+        if workspace == GLOBAL_SENTINEL:
+            return not await self._sentinel_is_shadowed()
+        return await self._member_of(workspace)
+
+    @database_sync_to_async
+    def _sentinel_is_shadowed(self) -> bool:
+        return Workspace.objects.filter(pk=GLOBAL_SENTINEL).exists()
+
     @database_sync_to_async
     def _member_of(self, slug: str) -> bool:
         # Deliberately NOT cached per connection — re-checked on every
@@ -153,25 +197,60 @@ class PresenceConsumer(AsyncJsonWebsocketConsumer):
         return bool(workspace and is_member(self.user, workspace))
 
     async def _write(self):
-        if not self.visible or self.page_key is None:
+        if self.page_key is None:
             return
-        await presence_store.touch(
-            self.page_key,
-            user_id=self.user.id,
-            connection_id=self.connection_id,
-            name=getattr(self.user, "display_name", "") or self.user.email,
-            email=self.user.email or "",
-            sub_location=self.sub_location,
-            idle=bool(self.idle),
+        if not self.visible:
+            # Opted out — actively REMOVE any prior write for this
+            # connection rather than merely skipping the touch. A same-key
+            # re-enter with visibility flipped off (Settings toggled in
+            # another tab, then a navigation that lands back on the same
+            # page) would otherwise leave the stale field alive for its
+            # full 60s TTL, and the broadcast that follows would re-serve a
+            # roster still containing the user who just opted out.
+            await self._forget()
+            return
+        await self._redis(
+            presence_store.touch(
+                self.page_key,
+                user_id=self.user.id,
+                connection_id=self.connection_id,
+                name=getattr(self.user, "display_name", "") or self.user.email,
+                email=self.user.email or "",
+                sub_location=self.sub_location,
+                idle=bool(self.idle),
+            )
         )
+
+    async def _forget(self):
+        if self.page_key is None:
+            return
+        await self._redis(
+            presence_store.forget(
+                self.page_key, user_id=self.user.id, connection_id=self.connection_id
+            )
+        )
+
+    async def _redis(self, coro, *, default=None):
+        """Await a presence-store coroutine, swallowing Redis failures.
+
+        `store.touch/roster/forget` talk to ElastiCache; unwrapped, a blip
+        propagates out of `receive_json` and Channels tears the consumer
+        down, so a transient Redis error would cost the user their whole
+        presence socket (and, on the read path, spam the log with one
+        traceback per broadcast). Presence degrades to "nobody here"
+        instead.
+        """
+        try:
+            return await coro
+        except Exception:
+            logger.warning("presence redis call failed", exc_info=True)
+            return default
 
     async def _leave_current(self):
         if self.group is None or self.page_key is None:
             return
         if self.visible:
-            await presence_store.forget(
-                self.page_key, user_id=self.user.id, connection_id=self.connection_id
-            )
+            await self._forget()
         group, page_key = self.group, self.page_key
         await self.channel_layer.group_discard(group, self.channel_name)
         self.group, self.page_key = None, None
@@ -196,7 +275,7 @@ class PresenceConsumer(AsyncJsonWebsocketConsumer):
         page_key = event.get("page_key")
         if page_key != self.page_key:
             return
-        viewers = await presence_store.roster(page_key)
+        viewers = await self._redis(presence_store.roster(page_key), default=[])
         await self.send_json({
             "event": "presence.roster",
             "data": {

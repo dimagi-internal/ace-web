@@ -21,6 +21,7 @@ from channels.testing.websocket import WebsocketCommunicator  # noqa: E402
 from django.contrib.auth import get_user_model  # noqa: E402
 
 from apps.presence.consumers import PresenceConsumer  # noqa: E402
+from apps.presence.keys import GLOBAL_SENTINEL  # noqa: E402
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -263,12 +264,12 @@ async def test_a_global_page_key_succeeds_with_no_workspace_memberships():
     assert connected
     await communicator.send_json_to({
         "type": "presence.enter",
-        "page_key": "ace:global:settings",
+        "page_key": f"ace:{GLOBAL_SENTINEL}:settings",
         "sub_location": "Settings",
     })
     message = await communicator.receive_json_from(timeout=2)
     assert message["event"] == "presence.roster"
-    assert message["data"]["page_key"] == "ace:global:settings"
+    assert message["data"]["page_key"] == f"ace:{GLOBAL_SENTINEL}:settings"
     assert [v["email"] for v in message["data"]["viewers"]] == [user.email]
     await communicator.disconnect()
 
@@ -470,5 +471,219 @@ async def test_idle_state_does_not_leak_across_navigation(member_user):
     })
     msg_b = await communicator.receive_json_from(timeout=2)
     assert msg_b["data"]["viewers"][0]["idle"] is False
+
+    await communicator.disconnect()
+
+
+# -- Fix-round-3 regressions: cross-app keyspace isolation, workspace-slug
+# charset, the un-shadowable global sentinel, opt-out eviction, and Redis
+# fault tolerance. --
+
+
+@pytest.mark.asyncio
+async def test_a_foreign_app_segment_is_rejected(member_user):
+    """Both apps derive their Redis client from the same REDIS_URL on shared
+    labs ElastiCache, and canopy-web reserves `canopy:<ws>:session:<id>` in
+    that keyspace. Without pinning the app segment, any authenticated
+    ace-web user could read the sibling app's roster AND inject themselves
+    into it — with no membership check anywhere, since ace-web cannot see
+    canopy's memberships."""
+    from apps.presence import store as presence_store
+
+    communicator, _ = await _connect(member_user)
+    for page_key in (
+        "canopy:test-ws:session:abc",
+        f"canopy:{GLOBAL_SENTINEL}:whatever",
+        "canopy:someone-elses-workspace:x",
+    ):
+        await communicator.send_json_to({
+            "type": "presence.enter", "page_key": page_key, "sub_location": "",
+        })
+        assert await communicator.receive_nothing(timeout=0.5)
+        assert await presence_store.roster(page_key) == []
+    await communicator.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_the_literal_string_global_is_no_longer_a_bypass(member_user):
+    """`global` used to skip the membership gate. It is now an ordinary
+    slug: with no such workspace, the enter is rejected."""
+    from apps.presence import store as presence_store
+
+    communicator, _ = await _connect(member_user)
+    await communicator.send_json_to({
+        "type": "presence.enter", "page_key": "ace:global:settings", "sub_location": "",
+    })
+    assert await communicator.receive_nothing(timeout=1)
+    assert await presence_store.roster("ace:global:settings") == []
+    await communicator.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_a_workspace_named_like_the_sentinel_does_not_grant_a_bypass(member_user):
+    """Charset validation alone is insufficient: `Workspace.slug` is a bare
+    CharField with no validation, so a row can be created spelled exactly
+    like the sentinel. Taking the global branch must therefore ALSO confirm
+    nothing shadows it — otherwise every authenticated user silently becomes
+    a member of that tenant's roster."""
+    from apps.presence import store as presence_store
+    from apps.workspaces.models import Workspace
+
+    await database_sync_to_async(Workspace.objects.create)(
+        slug=GLOBAL_SENTINEL,
+        display_name="Shadow",
+        drive_root_folder_id="folder-shadow",
+        created_by=member_user,
+    )
+
+    outsider = await database_sync_to_async(get_user_model().objects.create_user)(
+        email="outsider@x.com", display_name="O"
+    )
+    communicator, connected = await _connect(outsider)
+    assert connected
+    await communicator.send_json_to({
+        "type": "presence.enter",
+        "page_key": f"ace:{GLOBAL_SENTINEL}:settings",
+        "sub_location": "Settings",
+    })
+    assert await communicator.receive_nothing(timeout=1)
+    assert await presence_store.roster(f"ace:{GLOBAL_SENTINEL}:settings") == []
+    await communicator.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_a_colon_bearing_workspace_slug_never_shares_a_roster_with_its_prefix(
+    member_user,
+):
+    """`Workspace.slug` accepts a colon, and a colon splits the AUTH segment:
+    `ace:acme:eu:activity` can only ever parse as workspace `acme`, resource
+    `eu:activity`. The invariant that must hold is that the two tenants stay
+    disjoint — a member of `acme:eu` must not end up in a roster a member of
+    `acme` can read.
+
+    It holds because `split(":", 2)` makes workspace `acme:eu` UNREACHABLE:
+    no page key can ever resolve to it, so its members simply get no
+    presence rather than a shared one. `WORKSPACE_RE` pins that — a slug
+    with a colon can never be a workspace segment — so a future relaxation
+    of the split (e.g. an unbounded rsplit) cannot quietly re-open it.
+    """
+    from apps.presence import store as presence_store
+    from apps.workspaces.models import Workspace, WorkspaceMembership
+
+    eu = await database_sync_to_async(Workspace.objects.create)(
+        slug="acme:eu", display_name="Acme EU", drive_root_folder_id="f-acme-eu",
+        created_by=member_user,
+    )
+    acme = await database_sync_to_async(Workspace.objects.create)(
+        slug="acme", display_name="Acme", drive_root_folder_id="f-acme",
+        created_by=member_user,
+    )
+    victim = await database_sync_to_async(get_user_model().objects.create_user)(
+        email="victim@x.com", display_name="V"
+    )
+    attacker = await database_sync_to_async(get_user_model().objects.create_user)(
+        email="attacker@x.com", display_name="A"
+    )
+    await database_sync_to_async(WorkspaceMembership.objects.create)(
+        workspace=eu, user=victim, role="editor"
+    )
+    await database_sync_to_async(WorkspaceMembership.objects.create)(
+        workspace=acme, user=attacker, role="editor"
+    )
+
+    key = "ace:acme:eu:activity"
+
+    victim_comm, _ = await _connect(victim)
+    await victim_comm.send_json_to({
+        "type": "presence.enter", "page_key": key, "sub_location": "",
+    })
+    assert await victim_comm.receive_nothing(timeout=1)
+    assert await presence_store.roster(key) == []
+
+    attacker_comm, _ = await _connect(attacker)
+    await attacker_comm.send_json_to({
+        "type": "presence.enter", "page_key": key, "sub_location": "",
+    })
+    message = await attacker_comm.receive_json_from(timeout=2)
+    # The attacker gets only their OWN workspace's roster — the victim is
+    # nowhere in it.
+    assert [v["email"] for v in message["data"]["viewers"]] == [attacker.email]
+
+    await victim_comm.disconnect()
+    await attacker_comm.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_an_over_long_page_key_is_rejected(member_user):
+    communicator, _ = await _connect(member_user)
+    await communicator.send_json_to({
+        "type": "presence.enter",
+        "page_key": "ace:test-ws:" + "a" * 600,
+        "sub_location": "",
+    })
+    assert await communicator.receive_nothing(timeout=1)
+    await communicator.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_opting_out_evicts_you_from_the_page_you_are_already_on(member_user):
+    """Regression for `_write` merely SKIPPING the touch when invisible: a
+    same-key re-enter with visibility flipped off left the prior Redis field
+    alive for its full 60s TTL, and the broadcast that followed re-served a
+    roster still containing the user who had just opted out."""
+    from apps.presence import store as presence_store
+
+    communicator, connected = await _connect(member_user)
+    assert connected
+
+    await communicator.send_json_to({
+        "type": "presence.enter", "page_key": "ace:test-ws:activity", "sub_location": "A",
+    })
+    visible_msg = await communicator.receive_json_from(timeout=2)
+    assert [v["email"] for v in visible_msg["data"]["viewers"]] == [member_user.email]
+
+    await _acreate_pref(member_user)  # opt out, no navigation, SAME page key
+
+    await communicator.send_json_to({
+        "type": "presence.enter", "page_key": "ace:test-ws:activity", "sub_location": "A",
+    })
+    after = await communicator.receive_json_from(timeout=2)
+    assert after["data"]["viewers"] == []
+    assert await presence_store.roster("ace:test-ws:activity") == []
+
+    await communicator.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_a_redis_failure_degrades_the_badge_instead_of_killing_the_socket(
+    member_user, monkeypatch
+):
+    """`store.touch/roster/forget` raised straight out of `receive_json`, so
+    one blip on ElastiCache tore the consumer down and the user lost
+    presence for the rest of the tab's life. Presence must degrade to
+    "nobody here" instead."""
+    class _Boom:
+        def __getattr__(self, name):
+            raise ConnectionError("redis is down")
+
+    async def _broken_redis():
+        return _Boom()
+
+    communicator, connected = await _connect(member_user)
+    assert connected
+
+    monkeypatch.setattr("apps.common.redis_client.get_redis", _broken_redis)
+
+    await communicator.send_json_to({
+        "type": "presence.enter", "page_key": "ace:test-ws:activity", "sub_location": "A",
+    })
+    message = await communicator.receive_json_from(timeout=2)
+    assert message["event"] == "presence.roster"
+    assert message["data"]["viewers"] == []
+
+    # The socket is still alive and still serving after the failure.
+    await communicator.send_json_to({"type": "presence.heartbeat", "idle": True})
+    idle_msg = await communicator.receive_json_from(timeout=2)
+    assert idle_msg["event"] == "presence.roster"
 
     await communicator.disconnect()

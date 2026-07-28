@@ -32,9 +32,25 @@ const WORKSPACE_NAV = [
 // the socket in `usePresence`'s cleanup) and mount a fresh one, which
 // reconnects and sends a brand-new `presence.enter` under the just-saved
 // preference. See `usePresenceReconnectNonce` for the mechanism.
+// Belt and braces around route resolution. `pageKeyFor` runs during
+// render, and this component is mounted ABOVE the router's `<Outlet/>` in
+// an SPA with no `errorElement` anywhere — so ANY throw from a route rule
+// (a malformed percent-escape reaching a decode, a future rule with a bad
+// assumption) blanks the entire app with no navigation left to escape it,
+// instead of letting the page render its own not-found. `safeDecode` in
+// `presence/routes.ts` fixes the one known instance; this makes the whole
+// class of failure non-fatal: no badge is always better than no app.
+function resolvePresenceLocation(pathname: string) {
+  try {
+    return pageKeyFor("ace", pathname, acePresenceRules);
+  } catch {
+    return null;
+  }
+}
+
 function PresenceHeaderBadge() {
   const { pathname } = useLocation();
-  const location = pageKeyFor("ace", pathname, acePresenceRules);
+  const location = resolvePresenceLocation(pathname);
   const { viewers } = usePresence({ url: wsUrl("ws/presence/"), location });
   return <PresenceBadge viewers={viewers} />;
 }
