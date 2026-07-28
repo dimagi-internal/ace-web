@@ -2174,6 +2174,24 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/me/presence-preference": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Presence Preference */
+        readonly get: operations["apps_presence_api_get_presence_preference"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /** Set Presence Preference */
+        readonly patch: operations["apps_presence_api_set_presence_preference"];
+        readonly trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4711,6 +4729,16 @@ export interface components {
             readonly checks: {
                 readonly [key: string]: components["schemas"]["HealthCheckOut"];
             };
+        };
+        /** PresencePreferenceOut */
+        readonly PresencePreferenceOut: {
+            /** Show Presence */
+            readonly show_presence: boolean;
+        };
+        /** PresencePreferenceIn */
+        readonly PresencePreferenceIn: {
+            /** Show Presence */
+            readonly show_presence: boolean;
         };
     };
     responses: never;
@@ -7717,6 +7745,50 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["HealthOut"];
+                };
+            };
+        };
+    };
+    readonly apps_presence_api_get_presence_preference: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PresencePreferenceOut"];
+                };
+            };
+        };
+    };
+    readonly apps_presence_api_set_presence_preference: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PresencePreferenceIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PresencePreferenceOut"];
                 };
             };
         };
