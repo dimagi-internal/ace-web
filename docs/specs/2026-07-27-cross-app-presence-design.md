@@ -214,8 +214,14 @@ Enforcement is server-side on purpose. A client-side filter would mean a
 tampered or stale client could expose a user who opted out. The server is the
 only thing that decides whether you are in a roster.
 
-Storage: a boolean on the user model in each app, default `true`. Surfaced as a
-single Settings row: **Show me as viewing**.
+Storage: an identical `PresencePreference` model in each app — a `OneToOneField`
+to the user plus a `show_presence` boolean defaulting to `true`. A dedicated
+model rather than a user-table field because canopy-web uses Django's stock
+`auth.User`, which we do not extend; mirroring the model in ace-web keeps the
+two backends symmetric and touches neither user table.
+
+Absence of a row means visible, so no backfill migration is load-bearing for
+correctness. Surfaced as a single Settings row: **Show me as viewing**.
 
 ## Idle
 
