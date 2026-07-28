@@ -246,9 +246,14 @@ Google Drive.
   `enabled: false` and chat is unreachable (see below); (2) a canopy `Agent`
   with slug matching `CANOPY_AGENT_SLUG` (default `ace`) must exist in the
   canopy workspace named by `CANOPY_WORKSPACE` — `createCanopySession` 404s
-  otherwise; (3) every ace user who uses chat must actually be a member of
-  that canopy workspace (canopy auto-joins by email domain, so this is
-  usually automatic, but isn't guaranteed for every domain); (4) the
+  otherwise; (3) ~~every ace user who uses chat must actually be a member of
+  that canopy workspace~~ — **no longer a prerequisite.** canopy's
+  token-exchange now provisions membership itself: an `AppCredential` carries
+  `provision_workspace` + `provision_role`, and the exchange creates the
+  membership (and the user, JIT) inside one atomic block, create-only so an
+  existing member's role is never changed. The prod `ace-web` credential is
+  provisioned onto `connect`, which is why an exchange returns
+  `{"workspace": "connect"}`. Do NOT re-add a manual invite step; (4) the
   signed-in user's email domain must be in the `AppCredential`'s allowed
   domains — otherwise `token-exchange` 403s and every canopy call fails.
   None of these 404/403s are silent in the UI: `useCanopyStatus()` gates

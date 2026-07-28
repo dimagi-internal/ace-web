@@ -87,13 +87,27 @@ def create_run_session(user_token: str, *, title: str, metadata: dict) -> dict:
     )
 
 
+# The source ace-web's delegated runs enqueue as, in canopy's `Turn.origin`
+# vocabulary (canopy-web spec 2026-07-27, source-aware runner routing). ace-web
+# is THE producer of this value — canopy's session send defaults to
+# `canopy_web_chat`, so without it a run is indistinguishable from a human
+# typing in canopy's chat UI and a routing rule on `ace_web` never fires.
+RUN_ORIGIN = "ace_web"
+
+
 def send_message(user_token: str, session_id: str, *, text: str, client_id: str) -> dict:
     """Enqueue a session-targeted Turn. `client_id` makes a retried send collapse
     onto the SAME user Message + Turn (canopy send_message's idempotency nonce),
-    which is what makes dispatch safe to retry."""
+    which is what makes dispatch safe to retry.
+
+    `origin` is unconditional rather than a parameter: every caller of this
+    module is the server-side run dispatcher (the browser's chat talks to canopy
+    directly, never through here), so there is no second kind of send that could
+    legitimately want a different source.
+    """
     return _post(
         f"/api/canopy-sessions/{session_id}/send",
-        {"text": text, "client_id": client_id},
+        {"text": text, "client_id": client_id, "origin": RUN_ORIGIN},
         bearer=user_token,
     )
 
