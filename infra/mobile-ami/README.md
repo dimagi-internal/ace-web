@@ -101,7 +101,7 @@ us-east-1: ami-0abcdef1234567890
 ```
 
 If you ran `./rebake.sh` (the recommended path), it's already parsed
-the AMI ID + name and updated `deploy/aws/task-definition.json` for you.
+the AMI ID + name and updated `deploy/aws/ace-web.cfn.yaml` for you.
 If you ran `packer build .` directly, you'll need to feed the AMI ID
 into `rebake.sh --skip-bake ami-0abcdef1234567890` to handle the rest
 of the roll.
@@ -174,7 +174,7 @@ Run `AWS_PROFILE=labs ./rebake.sh` to bake and roll. The script:
    said stop/start did the job — that was incorrect; it's `terminate
    + run-instances` or nothing.)
 4. Stops the new instance (ace-web starts it on demand).
-5. Updates `deploy/aws/task-definition.json` with the new instance ID
+5. Updates `deploy/aws/ace-web.cfn.yaml` with the new instance ID
    + AMI version, opens + merges the PR, triggers the deploy workflow.
 
 ---
