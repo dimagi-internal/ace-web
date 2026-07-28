@@ -157,6 +157,14 @@ Resources:
               Value: "https://labs.connect.dimagi.com/canopy"
             - Name: CANOPY_PUBLIC_BASE_URL
               Value: "/canopy"
+            # Programmatic runs enqueue a session-targeted canopy Turn instead of
+            # spawning `claude -p` in this container. Safe as of 2026-07-28: a
+            # session-capable cloud runner exists and carries the full ACE
+            # toolchain (canopy-web #499/#503/#504, ace #1005). The ace_web
+            # source rule is non-strict, so a dead cloud runner degrades to the
+            # laptop rather than wedging the queue.
+            - Name: CANOPY_RUN_EXECUTION
+              Value: "true"
             - Name: CANOPY_WORKSPACE
               Value: "connect"
             - Name: CONNECT_PRODUCTION_URL
