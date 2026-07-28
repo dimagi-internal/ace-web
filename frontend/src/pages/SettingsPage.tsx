@@ -15,8 +15,10 @@ import {
   DialogTitle,
 } from "canopy-ui/ui";
 import { cliAuthStatus, disconnectNova, novaAuthStatus, promoteCliAuthToGlobal } from "@/api/auth";
+import { getPresencePreference, setPresencePreference } from "@/api/presence";
 import { createToken, listTokens, revokeToken, type PersonalToken } from "@/api/tokens";
 import type { CliAuthStatus, NovaAuthStatus } from "@/api/types.ws";
+import { notifyPresencePreferenceChanged } from "@/presence/events";
 
 const NOVA_CONNECT_URL = `${(import.meta.env.BASE_URL ?? "/").replace(/\/$/, "")}/auth/nova/initiate/`;
 
@@ -28,6 +30,10 @@ export default function SettingsPage() {
   const [rawToken, setRawToken] = useState<string | null>(null);
   const [cliStatus, setCliStatus] = useState<CliAuthStatus | null>(null);
   const [novaStatus, setNovaStatus] = useState<NovaAuthStatus | null>(null);
+  // Defaults to visible (matches the backend default in
+  // apps/presence/models.py) so the toggle doesn't flash "off" while the
+  // preference is still loading.
+  const [showPresence, setShowPresence] = useState(true);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -52,6 +58,29 @@ export default function SettingsPage() {
   useEffect(load, [load]);
   useEffect(loadCliStatus, [loadCliStatus]);
   useEffect(loadNovaStatus, [loadNovaStatus]);
+
+  // Presence is an enhancement, not a critical setting — a failed fetch
+  // just leaves the toggle at its default rather than surfacing an error.
+  useEffect(() => {
+    getPresencePreference()
+      .then((pref) => setShowPresence(pref.show_presence))
+      .catch(() => {});
+  }, []);
+
+  const togglePresence = async (next: boolean) => {
+    setShowPresence(next); // optimistic
+    try {
+      await setPresencePreference(next);
+      // The presence socket only re-reads visibility on its next
+      // `presence.enter` (i.e. the next navigation) — tell every open tab
+      // (including this one) to reconnect right now instead of waiting for
+      // that. See TopNav's PresenceHeaderBadge + usePresenceReconnectNonce.
+      notifyPresencePreferenceChanged();
+    } catch {
+      toast.error("Could not save that preference");
+      setShowPresence(!next);
+    }
+  };
 
   // Surface the redirect from /auth/nova/callback so the user sees
   // a confirmation toast instead of a silent state change.
@@ -243,6 +272,32 @@ export default function SettingsPage() {
             </div>
           </section>
         )}
+
+        <section className="mt-10 max-w-2xl">
+          <h2 className="text-base font-semibold">Presence</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            When you're viewing an opp, run, or page that a teammate is also
+            looking at, a small badge shows who else is there.
+          </p>
+
+          <div className="mt-4 rounded border border-border p-4">
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={showPresence}
+                onChange={(e) => void togglePresence(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-sm text-foreground">Show me as viewing</span>
+                <span className="block text-xs text-muted-foreground">
+                  When off, you can still see who else is viewing a page, but
+                  they cannot see you.
+                </span>
+              </span>
+            </label>
+          </div>
+        </section>
 
         <section className="mt-10 max-w-2xl">
           <div className="flex items-center justify-between">
