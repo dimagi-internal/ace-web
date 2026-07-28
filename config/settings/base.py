@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "apps.videos.apps.VideosConfig",
     "apps.slack.apps.SlackConfig",
     "apps.canopy",
+    "apps.presence.apps.PresenceConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
