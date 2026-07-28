@@ -1,6 +1,0 @@
-[
-  {"ResourceType":"AWS::Logs::LogGroup","LogicalResourceId":"LogGroup","ResourceIdentifier":{"LogGroupName":"/ecs/labs-jj-ace-web"}},
-  {"ResourceType":"AWS::ElasticLoadBalancingV2::TargetGroup","LogicalResourceId":"TargetGroup","ResourceIdentifier":{"TargetGroupArn":"arn:aws:elasticloadbalancing:us-east-1:858923557655:targetgroup/labs-jj-ace-web-tg/02032962660ab09f"}},
-  {"ResourceType":"AWS::ElasticLoadBalancingV2::ListenerRule","LogicalResourceId":"ListenerRule","ResourceIdentifier":{"RuleArn":"arn:aws:elasticloadbalancing:us-east-1:858923557655:listener-rule/app/labs-jj-alb/ffecbe258260c7ee/95873265402e7831/75fd113d85a989ce"}},
-  {"ResourceType":"AWS::ECS::Service","LogicalResourceId":"Service","ResourceIdentifier":{"ServiceArn":"arn:aws:ecs:us-east-1:858923557655:service/labs-jj-cluster/labs-jj-ace-web","Cluster":"labs-jj-cluster"}}
-]

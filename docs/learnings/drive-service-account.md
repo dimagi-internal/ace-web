@@ -18,7 +18,7 @@ rationale.
 - **Prod:** AWS Secrets Manager stores the SA key JSON as a SecretString
   at `labs-jj-ace-web-drive-sa-key-json`. ECS delivers it to the task as
   env var `ACE_DRIVE_SA_KEY_JSON` via the `secrets` array in
-  `deploy/aws/task-definition.json`.
+  `deploy/aws/ace-web.cfn.yaml`.
 - **Dev:** `.env` holds the same key as `ACE_DRIVE_SA_KEY_JSON` on a
   single line. `.env.example` shows the shape with a placeholder.
 - **Code:** `apps/opps/drive_client.get_drive_client()` parses the JSON

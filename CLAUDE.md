@@ -127,7 +127,7 @@ ace-web/
 ├── docs/                # specs/, plans/, learnings/, architecture/, qa/, deploy.md
 ├── scripts/qa/          # Re-runnable Playwright probe of the deployed UI
 ├── infra/mobile-ami/    # Packer bake for the mobile EC2 AMI + rebake.sh
-├── deploy/aws/          # task-definition.json + one-time-setup.sh
+├── deploy/aws/          # ace-web.cfn.yaml (CFN owns the task def + service)
 ├── .github/workflows/   # build-backend, build-frontend, deploy-ace-web-labs, ci,
 │                        # contract-tests, regen-openapi, typecheck,
 │                        # sync-video-library-labs
@@ -241,7 +241,7 @@ Google Drive.
   missed): (1) a registered prod `AppCredential` on canopy-web (name
   `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`), its raw
   value in AWS Secrets Manager (`ace-web/canopy-app-credential`), and
-  `CANOPY_APP_CREDENTIAL`'s `valueFrom` in `deploy/aws/task-definition.json`
+  `CANOPY_APP_CREDENTIAL`'s `ValueFrom` in `deploy/aws/ace-web.cfn.yaml`
   pointed at that secret's ARN — without it `GET /api/canopy/status` reports
   `enabled: false` and chat is unreachable (see below); (2) a canopy `Agent`
   with slug matching `CANOPY_AGENT_SLUG` (default `ace`) must exist in the

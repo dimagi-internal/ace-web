@@ -78,8 +78,10 @@ ace-web ECS task role. The task role itself is owned by another stack;
 attaching it here would import a resource we don't manage.
 
 ```bash
-TASK_ROLE=$(grep '"taskRoleArn"' ../../deploy/aws/task-definition.json \
-  | sed -E 's/.*role\/([^"]+)".*/\1/')
+TASK_ROLE=$(aws cloudformation describe-stacks --stack-name ace-web \
+  --region us-east-1 --query \
+  "Stacks[0].Parameters[?ParameterKey=='TaskRoleArn'].ParameterValue" \
+  --output text | sed -E 's|.*role/||')
 POLICY_ARN=$(terraform output -raw task_addon_policy_arn)
 
 aws iam attach-role-policy \
@@ -90,14 +92,19 @@ aws iam attach-role-policy \
 Run `aws iam list-attached-role-policies --role-name "$TASK_ROLE"` to
 confirm.
 
-## Post-apply: edit `deploy/aws/task-definition.json`
+## Post-apply: edit `deploy/aws/ace-web.cfn.yaml`
 
-Append three env vars to the ace-web container's `environment` array:
+Append three env vars to the ace-web container's `Environment` list
+(CloudFormation owns the task definition — this is the only place they take
+effect):
 
-```json
-{ "name": "ACE_MOBILE_AWS_REGION",  "value": "us-east-1" },
-{ "name": "ACE_MOBILE_INSTANCE_ID", "value": "i-0abc..." },
-{ "name": "ACE_MOBILE_S3_BUCKET",   "value": "ace-mobile-artifacts-labs" },
+```yaml
+- Name: ACE_MOBILE_AWS_REGION
+  Value: "us-east-1"
+- Name: ACE_MOBILE_INSTANCE_ID
+  Value: "i-0abc..."
+- Name: ACE_MOBILE_S3_BUCKET
+  Value: "ace-mobile-artifacts-labs"
 { "name": "ACE_MOBILE_AMI_VERSION", "value": "2026-05-09-1" }
 ```
 
