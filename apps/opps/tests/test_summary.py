@@ -130,10 +130,18 @@ def _full_tree(*, state_yaml: str | None = None) -> dict:
         "ACE": {
             "turmeric": {
                 "opp.yaml": _OPP_YAML,
+                # open-questions.md is PER-OPP and durable across runs, so it
+                # lives here and not under runs/<id>/. The fixture used to put
+                # it in the run folder, which matched the (wrong) reader and so
+                # hid the bug that made every real opp render "Open questions —
+                # Not created".
+                "open-questions.md": "# Open questions\n",
+                "feedback": {
+                    "20260727-sophie-feintuch-ledger": "# Feedback ledger\n",
+                },
                 "runs": {
                     "20260503-0835": {
                         "run_state.yaml": state_yaml,
-                        "open-questions.md": "# Open questions\n",
                     },
                 },
             },
@@ -188,8 +196,21 @@ def test_complete_run_returns_full_payload():
     assert p["assistant"]["embed_key"] == "wDwe70vquTLm4M0carkTHGaQgrb0NYKP"
     assert p["assistant"]["ocs_url"] == "https://www.openchatstudio.com/a/connect-ace/chatbots/12027/"
 
-    # Open questions (still a Drive fetch — no typed handoff yet)
+    # Open questions (still a Drive fetch — no typed handoff yet). Read from
+    # the OPP folder, which is where ACE actually keeps it.
     assert p["open_questions"]["url"].startswith("https://fake/")
+
+    # Feedback ledgers — the "where did my comment go?" derived views, so a
+    # returning reviewer sees the diff against their own last comments.
+    assert [d["title"] for d in p["feedback"]] == ["2026-07-27 · Sophie Feintuch"]
+
+    # Design — the PDD is what a reviewer comments on; it had no section at
+    # all before. URL is synthesised from file_id when the block carries no
+    # web_view_link, which is the common shape in real run_state.
+    assert [d["title"] for d in p["design"]["docs"]] == ["Turmeric Market Survey"]
+    assert p["design"]["docs"][0]["url"] == (
+        "https://docs.google.com/document/d/fake-pdd/edit"
+    )
 
     # Workbench
     assert p["workbench_url"] == "/w/test-team/opps/turmeric/runs/20260503-0835"
@@ -561,3 +582,70 @@ def test_training_renders_from_training_materials_fallback():
     assert p["training"]["deck"]["url"] == "https://docs.google.com/presentation/d/fake-deck/edit"
     titles = [d["title"] for d in p["training"]["docs"]]
     assert "Onboarding email" in titles
+
+
+# ─── Open questions: per-opp location (regression) ──────────────────
+
+
+def test_open_questions_read_from_opp_folder_not_run_folder():
+    """`open-questions.md` is per-opp and durable across runs.
+
+    The reader used to look only in the run folder, so every real opp
+    rendered "Open questions — Not created" while the doc sat one level
+    up. The old fixture put the file in the run folder too, which is why
+    the bug survived. Regression: opp-level only, no run-level copy.
+    """
+    drive = FakeDriveClient.from_tree({
+        "ACE": {
+            "turmeric": {
+                "opp.yaml": _OPP_YAML,
+                "open-questions.md": "# Open questions\n",
+                "runs": {"20260503-0835": {"run_state.yaml": _state_yaml()}},
+            },
+        },
+    })
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835"
+    )
+    assert p["open_questions"] is not None
+    assert p["open_questions"]["url"].startswith("https://fake/")
+
+
+def test_open_questions_falls_back_to_run_folder_for_legacy_runs():
+    """An older run that wrote a run-local copy keeps rendering."""
+    drive = FakeDriveClient.from_tree({
+        "ACE": {
+            "turmeric": {
+                "opp.yaml": _OPP_YAML,
+                "runs": {
+                    "20260503-0835": {
+                        "run_state.yaml": _state_yaml(),
+                        "open-questions.md": "# Open questions\n",
+                    },
+                },
+            },
+        },
+    })
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835"
+    )
+    assert p["open_questions"] is not None
+
+
+def test_open_questions_absent_everywhere_is_none():
+    drive = FakeDriveClient.from_tree({
+        "ACE": {
+            "turmeric": {
+                "opp.yaml": _OPP_YAML,
+                "runs": {"20260503-0835": {"run_state.yaml": _state_yaml()}},
+            },
+        },
+    })
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835"
+    )
+    assert p["open_questions"] is None
+    assert p["feedback"] == []

@@ -400,12 +400,96 @@ def _learnings_link(web_view_link: str | None, file_id: str | None) -> str | Non
     return None
 
 
-def _read_open_questions(drive: DriveClient, run_folder_id: str) -> dict | None:
-    """Open Questions doc — no typed handoff yet; Drive fetch required."""
-    f = _find_in_folder(drive, run_folder_id, "open-questions.md")
-    if f is None or not f.web_view_link:
-        return None
-    return {"url": f.web_view_link}
+def _read_open_questions(
+    drive: DriveClient,
+    opp_folder_id: str,
+    run_folder_id: str | None = None,
+) -> dict | None:
+    """Open Questions doc — no typed handoff yet; Drive fetch required.
+
+    Lives at the OPP level (``ACE/<opp>/open-questions.md``), not in the
+    run folder: ACE keeps it "per-opportunity and durable across runs —
+    refreshed each run, never restarted." Reading only the run folder made
+    every real opp render "Open questions — Not created" while the doc sat
+    one level up, which is the one section a reviewer most needs.
+
+    The run folder is still checked as a fallback so any older run that
+    did write a run-local copy keeps rendering.
+    """
+    for folder_id in (opp_folder_id, run_folder_id):
+        if not folder_id:
+            continue
+        f = _find_in_folder(drive, folder_id, "open-questions.md")
+        if f is not None and f.web_view_link:
+            return {"url": f.web_view_link}
+    return None
+
+
+def _read_design(state: dict) -> dict | None:
+    """Design docs a reviewer needs: the PDD, and the Work Order if present.
+
+    The PDD is the artifact every downstream phase builds on and the one
+    a reviewer actually comments on, yet it had no section on the summary
+    at all — reviewers were sent a page that linked the training pack but
+    not the design it came from.
+
+    Accepts the legacy ``design`` phase key alongside ``idea-to-design``,
+    matching ``_read_opp``.
+    """
+    products = (
+        _phase_products(state, "idea-to-design")
+        or _phase_products(state, "design")
+    )
+    docs: list[dict] = []
+
+    for key, fallback_title in (
+        ("pdd", "Program Design Document"),
+        ("work_order", "Work Order"),
+    ):
+        block = products.get(key) or {}
+        if not isinstance(block, dict):
+            continue
+        url = block.get("web_view_link") or block.get("url")
+        if not url and block.get("file_id"):
+            url = f"https://docs.google.com/document/d/{block['file_id']}/edit"
+        if url:
+            docs.append({"title": block.get("title") or fallback_title, "url": url})
+
+    return {"docs": docs} if docs else None
+
+
+def _read_feedback(drive: DriveClient, opp_folder_id: str) -> list[dict]:
+    """Rendered reviewer feedback ledgers — "where did my comment go?".
+
+    Derived views produced by skills/feedback-ledger, one stable doc per
+    review event at ``ACE/<opp>/feedback/<slug>-ledger``. Surfacing them
+    here is what makes the summary a review surface rather than a link
+    list: a returning reviewer opens the run and sees the diff against
+    their own last set of comments.
+    """
+    folder = _find_folder(drive, opp_folder_id, "feedback")
+    if folder is None:
+        return []
+
+    ledgers: list[dict] = []
+    try:
+        files = drive.list_files(folder.id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("summary: list feedback %s failed: %s", folder.id, exc)
+        return []
+
+    for f in files:
+        if not f.name.endswith("-ledger") or not f.web_view_link:
+            continue
+        # "20260727-sophie-feintuch-ledger" -> "2026-07-27 · Sophie Feintuch"
+        stem = f.name[: -len("-ledger")]
+        date, _, who = stem.partition("-")
+        title = who.replace("-", " ").title() or stem
+        if len(date) == 8 and date.isdigit():
+            title = f"{date[:4]}-{date[4:6]}-{date[6:]} · {title}"
+        ledgers.append({"title": title, "url": f.web_view_link})
+
+    return sorted(ledgers, key=lambda d: d["title"], reverse=True)
 
 
 # ─── Top-level entry point ─────────────────────────────────────────
@@ -465,6 +549,7 @@ def build_summary_payload(
             opp_slug=opp_slug,
             run_id=run_id,
         ),
+        "design": _read_design(state),
         "apps": _read_apps(state),
         "connect": _read_connect(state),
         "training": _read_training(state),
@@ -477,6 +562,9 @@ def build_summary_payload(
         "cycle_grade": _read_cycle_grade(state),
         "opp_eval": _read_opp_eval(state),
         "learnings": _read_learnings(state),
-        "open_questions": _read_open_questions(drive, run_folder.id),
+        "open_questions": _read_open_questions(
+            drive, opp_folder.id, run_folder.id
+        ),
+        "feedback": _read_feedback(drive, opp_folder.id),
         "workbench_url": workbench_url,
     }

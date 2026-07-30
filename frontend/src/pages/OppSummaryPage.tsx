@@ -109,7 +109,7 @@ export default function OppSummaryPage() {
 
   const { payload } = state;
   const {
-    opp, apps, connect, training, assistant, open_questions, workbench_url,
+    opp, design, apps, connect, training, assistant, open_questions, feedback, workbench_url,
     walkthroughs, dashboards, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
   } = payload;
 
@@ -129,6 +129,23 @@ export default function OppSummaryPage() {
       <SummaryHero opp={opp} cycleGrade={cycle_grade} />
 
       <main className="mx-auto max-w-3xl space-y-14 px-6 py-14">
+        {/* Design — first, because it is what everything below was built
+            from and what a reviewer comments on. */}
+        <SummarySection title="Design">
+          {design && design.docs.length > 0 ? (
+            design.docs.map((doc) => (
+              <SummaryRow
+                key={doc.url}
+                label="Doc"
+                name={doc.title}
+                links={[{ label: "Open", href: doc.url }]}
+              />
+            ))
+          ) : (
+            <NotCreated label="Doc" />
+          )}
+        </SummarySection>
+
         {/* CommCare apps — always show Learn + Deliver slots */}
         <SummarySection title="CommCare apps">
           {(["Learn", "Deliver"] as const).map((kind) => {
@@ -379,6 +396,24 @@ export default function OppSummaryPage() {
             />
           ) : (
             <NotCreated label="Doc" />
+          )}
+        </SummarySection>
+
+        {/* Reviewer feedback — where a reviewer's own comments landed.
+            Rendered per review event so a returning reviewer reads a diff
+            instead of re-reviewing from scratch. */}
+        <SummarySection title="Reviewer feedback">
+          {feedback && feedback.length > 0 ? (
+            feedback.map((led) => (
+              <SummaryRow
+                key={led.url}
+                label="Ledger"
+                name={led.title}
+                links={[{ label: "Open", href: led.url }]}
+              />
+            ))
+          ) : (
+            <NotCreated label="Ledger" />
           )}
         </SummarySection>
 
