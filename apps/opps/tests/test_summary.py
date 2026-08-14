@@ -1206,3 +1206,73 @@ def test_payload_carries_the_reactions_collected_on_this_run():
 
 def test_payload_reactions_default_to_empty():
     assert _payload(_full_tree())["reactions"] == {"total": 0, "by_decision": {}}
+
+
+# ─── workbench_url carries the deployment mount (dimagi-internal/ace#1329) ───
+#
+# The run-summary footer link — "See the full build process" — 404'd for
+# ANYONE who clicked it, on every run. The payload emitted it root-relative:
+#
+#     "workbench": {"url": "/w/dimagi-team/opps/spark-facilitator/runs/20260813-2126", ...}
+#
+# The page is served under the `/ace` mount, so a root-relative href resolves
+# against the ORIGIN, not the mount:
+#
+#     https://labs.connect.dimagi.com/w/…      -> 404
+#     https://labs.connect.dimagi.com/ace/w/…  -> 200
+#
+# It went unnoticed because `scripts/check-summary-links.py` collected URLs
+# with `if v.startswith("http")`, so every relative value in the payload was
+# invisible to it. ace#1328 fixed the checker; this is the serializer half.
+#
+# Blast radius is one link — but it is the link that says "here is how we
+# built this", on the page we hand to external partners, so it is the one a
+# partner is most likely to click after reading the summary.
+
+
+def test_workbench_url_carries_the_force_script_name_mount(settings):
+    settings.FORCE_SCRIPT_NAME = "/ace"
+    drive = FakeDriveClient.from_tree(_full_tree())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["workbench"]["url"] == "/ace/w/test-team/opps/turmeric/runs/20260503-0835"
+
+
+def test_workbench_url_has_no_prefix_when_served_at_root(settings):
+    settings.FORCE_SCRIPT_NAME = None
+    drive = FakeDriveClient.from_tree(_full_tree())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["workbench"]["url"] == "/w/test-team/opps/turmeric/runs/20260503-0835"
+
+
+def test_workbench_url_never_doubles_the_slash(settings):
+    # FORCE_SCRIPT_NAME is coerced to None when empty precisely because Django
+    # generates "//api/health" otherwise; the same trap applies here, and a
+    # trailing slash must not survive either.
+    for mount in ("/ace/", "/ace"):
+        settings.FORCE_SCRIPT_NAME = mount
+        drive = FakeDriveClient.from_tree(_full_tree())
+        ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+        p = build_summary_payload(
+            drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+        )
+        assert "//" not in p["workbench"]["url"], mount
+        assert p["workbench"]["url"].startswith("/ace/w/"), mount
+
+
+def test_workbench_url_is_none_without_a_workspace_slug(settings):
+    settings.FORCE_SCRIPT_NAME = "/ace"
+    drive = FakeDriveClient.from_tree(_full_tree())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"), slug="")
+
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["workbench"] is None

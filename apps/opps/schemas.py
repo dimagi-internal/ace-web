@@ -36,7 +36,7 @@ class OppCardOut(StrictModel):
     updated_at: dt.datetime | None = None
 
 
-class ArtifactOut(StrictModel):
+class StepArtifactOut(StrictModel):
     id: str  # Drive file_id
     name: str
     mime_type: str
@@ -69,7 +69,7 @@ class StepSnapshotOut(StrictModel):
     phase: PhaseId
     status: Literal["pending", "in_progress", "complete", "skipped", "failed"]
     artifact_count: int = Field(ge=0)
-    artifacts: list[ArtifactOut]
+    artifacts: list[StepArtifactOut]
     verdicts: list[VerdictOut]
     gate: GateOut | None = None
     preview: str | None = None

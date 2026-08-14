@@ -5,7 +5,6 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.opps.schemas import (
-    ArtifactOut,
     ForkProgress,
     GateOut,
     OppCardOut,
@@ -18,6 +17,7 @@ from apps.opps.schemas import (
     SeedChatOut,
     SeededRunIn,
     SeededRunOut,
+    StepArtifactOut,
     StepSnapshotOut,
 )
 from apps.workspaces.models import Workspace, WorkspaceMembership
@@ -1090,7 +1090,7 @@ def test_get_artifact_happy_path(member_client, monkeypatch):
     )
     response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc")
     assert response.status_code == 200
-    ArtifactOut.model_validate(response.json())
+    StepArtifactOut.model_validate(response.json())
     assert response.json()["id"] == "file-abc"
 
 
@@ -1133,7 +1133,7 @@ def test_download_artifact_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
         "apps.opps.api.download_artifact_bytes",
-        lambda workspace, slug, artifact_id: (b"hello world", "text/plain"),
+        lambda workspace, slug, artifact_id, run_id=None: (b"hello world", "text/plain"),
     )
     response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc/download")
     assert response.status_code == 200
@@ -1155,7 +1155,7 @@ def test_download_artifact_401_anonymous(db, client):
 def test_download_artifact_404_unknown(member_client, monkeypatch):
     client, _, _ = member_client
 
-    def _raise(workspace, slug, artifact_id):
+    def _raise(workspace, slug, artifact_id, run_id=None):
         raise FileNotFoundError("artifact not found")
 
     monkeypatch.setattr("apps.opps.api.download_artifact_bytes", _raise)

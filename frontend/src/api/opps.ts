@@ -221,7 +221,11 @@ export async function getStepDetail(
     },
   });
   if (!response.ok) throw new Error(`getStepDetail: ${response.status}`);
-  return data as unknown as StepDetail;
+  // No `as unknown as` here: StepDetail is structurally compatible with the
+  // generated StepSnapshotOut. The double cast is what let this endpoint's
+  // real shape (id/url) drift from what the pane read (drive_file_id/
+  // drive_web_link) without the compiler noticing.
+  return data as StepDetail;
 }
 
 /** getLinkedChats has no v2 endpoint — will be addressed in a future PR. */
