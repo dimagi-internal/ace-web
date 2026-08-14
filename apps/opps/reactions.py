@@ -63,6 +63,7 @@ from typing import Any
 
 import yaml
 
+from apps.opps import public_input
 from apps.opps.sync import _find_child, _find_child_folder
 
 log = logging.getLogger(__name__)
@@ -79,88 +80,55 @@ PUBLIC_MARKER = "public"
 
 _PUBLIC_SLUG_RE = re.compile(rf"^\d{{8}}-{PUBLIC_MARKER}-[a-z0-9]+(-[a-z0-9]+)*$")
 _ANCHOR_RE = re.compile(rf"^{ANCHOR_PREFIX}([a-z0-9]+(?:-[a-z0-9]+)*)")
-#: Anything that looks like the start of an HTML/XML tag.
-_HTML_RE = re.compile(r"<\s*[/!?]?\s*[A-Za-z]")
-_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[^@\s]+$")
 
 # --- Abuse controls. A public unauthenticated endpoint that accepts
 # writes needs a ceiling on every dimension an actor controls: how long
 # one submission can be, how many they can send, and how large the file
-# they are appending to can grow.
+# they are appending to can grow. Input hygiene itself (control chars,
+# HTML, name/email shape) is shared with the decision-edit surface in
+# ``apps.opps.public_input`` — one public write surface's rules should
+# never drift from the other's.
 MIN_COMMENT_CHARS = 3
 MAX_COMMENT_CHARS = 2000
-MIN_NAME_CHARS = 2
-MAX_NAME_CHARS = 80
-MAX_EMAIL_CHARS = 254
+MIN_NAME_CHARS = public_input.MIN_NAME_CHARS
+MAX_NAME_CHARS = public_input.MAX_NAME_CHARS
+MAX_EMAIL_CHARS = public_input.MAX_EMAIL_CHARS
 #: Ceiling per (run, record) so one actor cannot balloon a Drive file.
 MAX_ITEMS_PER_RECORD = 50
 #: Ceiling across the whole run, counted over every public record.
 MAX_ITEMS_PER_RUN = 300
 
-
-class ReactionRejected(Exception):
-    """Caller-friendly validation failure. ``code`` maps to an HTTP status."""
-
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
+#: The rejection type this module raises. Shared with the decision-edit
+#: surface so the API layer has one exception to map to a status code.
+ReactionRejected = public_input.PublicInputRejected
 
 
 # ─── Input hygiene ─────────────────────────────────────────────────
-
-
-def _no_html(value: str, field: str) -> str:
-    """Reject tag-shaped input rather than silently stripping it.
-
-    React escapes on render, but this text also lands in a YAML file that
-    ``feedback-ledger`` renders into a Google Doc via markdown, so "the
-    frontend escapes it" is not the whole story. Rejecting is louder than
-    stripping: a reviewer whose text was quietly mangled would never know.
-    """
-    if _HTML_RE.search(value):
-        raise ReactionRejected(
-            "invalid", f"{field} may not contain HTML.",
-        )
-    return value
-
-
-def _collapse(value: str) -> str:
-    return _CONTROL_RE.sub("", value).strip()
+# Thin bindings over the shared rules — see ``apps.opps.public_input``.
 
 
 def clean_reviewer(raw: str | None) -> str:
-    name = _collapse(str(raw or ""))
-    name = re.sub(r"\s+", " ", name)
-    if len(name) < MIN_NAME_CHARS:
-        raise ReactionRejected(
-            "invalid",
+    return public_input.clean_name(
+        raw,
+        missing_message=(
             "Tell us who you are — a comment nobody can attribute can't be "
-            "answered or credited.",
-        )
-    if len(name) > MAX_NAME_CHARS:
-        raise ReactionRejected("invalid", f"Name is longer than {MAX_NAME_CHARS} characters.")
-    return _no_html(name, "Name")
+            "answered or credited."
+        ),
+    )
 
 
 def clean_email(raw: str | None) -> str | None:
-    email = _collapse(str(raw or ""))
-    if not email:
-        return None
-    if len(email) > MAX_EMAIL_CHARS or not _EMAIL_RE.match(email):
-        raise ReactionRejected("invalid", "That doesn't look like an email address.")
-    return email
+    return public_input.clean_email(raw)
 
 
 def clean_comment(raw: str | None) -> str:
-    comment = _CONTROL_RE.sub("", str(raw or "").replace("\r\n", "\n")).strip()
-    if len(comment) < MIN_COMMENT_CHARS:
-        raise ReactionRejected("invalid", "Say a little more than that.")
-    if len(comment) > MAX_COMMENT_CHARS:
-        raise ReactionRejected(
-            "invalid", f"Comments are capped at {MAX_COMMENT_CHARS} characters.",
-        )
-    return _no_html(comment, "Comment")
+    return public_input.clean_text(
+        raw,
+        field="Comment",
+        min_chars=MIN_COMMENT_CHARS,
+        max_chars=MAX_COMMENT_CHARS,
+        too_short="Say a little more than that.",
+    )
 
 
 def reviewer_slug(name: str) -> str:

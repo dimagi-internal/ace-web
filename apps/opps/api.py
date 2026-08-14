@@ -20,6 +20,8 @@ from apps.api.errors import (
 from apps.api.etag import compute_etag, maybe_not_modified
 
 from .schemas import (
+    DecisionEditIn,
+    DecisionEditOut,
     DecisionOverridesSaveIn,
     DecisionReactionIn,
     DecisionReactionOut,
@@ -2169,13 +2171,195 @@ def public_opp_summary(
 # Public decision reactions — the write half of the public review surface.
 # ---------------------------------------------------------------------------
 
-#: Per-IP ceilings. Generous enough that a partner can work through the
-#: two conflicting rows and a handful of others in one sitting; tight
-#: enough that the endpoint is not a spam pipe.
-REACTION_BURST_LIMIT = 8
-REACTION_BURST_WINDOW = 10 * 60
-REACTION_DAILY_LIMIT = 40
-REACTION_DAILY_WINDOW = 24 * 60 * 60
+#: Per-IP ceilings, shared across EVERY public write on this page
+#: (comments and decision edits draw on one budget — two endpoints with
+#: separate budgets is just double the budget). Raised from the
+#: comments-only 8/10min when editing landed: a reviewer working through
+#: the flagged rows plus a pass over the 42-row log plausibly makes
+#: 10-20 writes in one sitting, and a limit that stops a real reviewer
+#: mid-review is the barrier this surface exists to remove. Still
+#: bounded, and still only one of four ceilings.
+PUBLIC_WRITE_BURST_LIMIT = 20
+PUBLIC_WRITE_BURST_WINDOW = 10 * 60
+PUBLIC_WRITE_DAILY_LIMIT = 100
+PUBLIC_WRITE_DAILY_WINDOW = 24 * 60 * 60
+
+
+def _enforce_public_write_budget(request: HttpRequest) -> None:
+    """Per-IP burst + per-day ceiling on the public write surfaces.
+
+    Fail-open (see ``apps.common.rate_limit.allow``) — a Redis blip must
+    not lock a real reviewer out of a page whose entire purpose is being
+    easy to respond on. ``X-Forwarded-For``'s first entry is spoofable,
+    which is why the per-record and per-run ceilings exist too.
+    """
+    from apps.common.rate_limit import allow, client_ip
+
+    ip = client_ip(request)
+    if not allow(
+        f"public-write:burst:{ip}",
+        limit=PUBLIC_WRITE_BURST_LIMIT,
+        window_seconds=PUBLIC_WRITE_BURST_WINDOW,
+    ) or not allow(
+        f"public-write:day:{ip}",
+        limit=PUBLIC_WRITE_DAILY_LIMIT,
+        window_seconds=PUBLIC_WRITE_DAILY_WINDOW,
+    ):
+        raise ProblemError(
+            429,
+            "Too many changes",
+            detail="Give it a few minutes before sending another change.",
+        )
+
+
+def _public_run_folders(drive, ws, slug: str, run_id: str):
+    """``(opp_folder, run_folder)`` for a public write, or a 404.
+
+    Same posture as the summary read: workspace + slug + run_id are all
+    in the URL and the URL is the secret, so there is no leak-prevention
+    differentiation to make here.
+    """
+    from apps.opps.sync import _find_child_folder
+
+    opp_folder = _find_child_folder(drive.list_files(ws.drive_root_folder_id), slug)
+    if opp_folder is None:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    runs_folder = _find_child_folder(drive.list_files(opp_folder.id), "runs")
+    run_folder = (
+        _find_child_folder(drive.list_files(runs_folder.id), run_id)
+        if runs_folder is not None
+        else None
+    )
+    if run_folder is None:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    return opp_folder, run_folder
+
+
+def _public_write_drive(ws):
+    """Drive client for a public write.
+
+    ``bypass=True``: reads skip the 30s Drive TTL cache (a write must not
+    decide against a stale folder listing) while writes still invalidate
+    it — otherwise the summary read that follows would serve a cached
+    listing without what we just wrote, and the change would look lost
+    for half a minute.
+    """
+    from apps.opps.drive_cache import CachedDriveClient
+    from apps.opps.drive_client import get_drive_client
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+
+    try:
+        return CachedDriveClient(get_drive_client(workspace=ws), bypass=True)
+    except ServiceAccountNotFound as exc:
+        raise ProblemError(500, "Drive not configured", detail=str(exc)) from exc
+
+
+def _public_workspace(workspace: str):
+    from apps.workspaces.models import Workspace
+
+    try:
+        ws = Workspace.objects.get(slug=workspace)
+    except Workspace.DoesNotExist as exc:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from exc
+    if not ws.drive_root_folder_id:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    return ws
+
+
+@public_summary_router.post(
+    "/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/edit",
+    response={200: DecisionEditOut},
+    summary="Change one decision's answer from the public run summary",
+)
+def public_decision_edit(
+    request: HttpRequest,
+    workspace: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+    decision_id: Annotated[str, Path()],
+    body: DecisionEditIn,
+) -> HttpResponse:
+    """Change a decision's value in place. Anyone with the link may.
+
+    This deliberately does NOT gate on membership, and deliberately has no
+    proposal/promotion state. Jonathan, 2026-08-14: "we definitely want
+    the decisions UI to be editable by users … reviewer 2 can change /
+    update reviewer 1 anyway in the UI, and that should just be the same
+    as Dimagi going in and updating things on top of the anonymous input
+    (also if you are logged in, obviously should not be anonymous)."
+    The bar to start engaging with ACE has to be very low because it is
+    speculative AI work — an account requirement is a barrier, a name
+    field is not. And the PDD these rows summarize is already
+    world-editable via anyone-with-link and already seeds the next run,
+    so gating this more tightly than the design document was backwards.
+
+    It writes the SAME store the Workbench's authenticated editor writes
+    (``<opp>/inputs/decision-overrides.yaml``, read by the plugin's
+    ``decisions_append_rows`` at the decisions write boundary), through
+    the same merge and the same serializer. The only thing that differs
+    between the two surfaces is how the identity on the row was resolved.
+
+    Refusals: a ``decision_id`` the run's ``decisions.yaml`` does not
+    carry is refused, not stored (the override would be unroutable). HTML
+    is refused rather than mangled. Lengths are capped before any Drive
+    round-trip. An anonymous caller with no name is refused; a signed-in
+    caller's typed name is ignored in favour of their session identity.
+    """
+    from apps.opps.decision_overrides import (
+        DecisionOverridesError,
+        apply_decision_edit,
+    )
+    from apps.opps.public_input import (
+        PublicInputRejected,
+        resolve_reviewer,
+        session_identity_is_trustworthy,
+    )
+
+    _enforce_public_write_budget(request)
+    ws = _public_workspace(workspace)
+    drive = _public_write_drive(ws)
+    _public_run_folders(drive, ws, slug, run_id)
+
+    try:
+        reviewer = resolve_reviewer(
+            getattr(request, "user", None)
+            if session_identity_is_trustworthy(request)
+            else None,
+            reviewer=body.reviewer,
+            reviewer_email=body.reviewer_email,
+        )
+        result = apply_decision_edit(
+            drive,
+            ace_root_folder_id=ws.drive_root_folder_id,
+            opp_slug=slug,
+            source_run_id=run_id,
+            decision_id=decision_id,
+            value=body.value,
+            reasoning=body.reasoning or "",
+            reviewer=reviewer,
+        )
+    except PublicInputRejected as exc:
+        raise ProblemError(
+            400, "Change not recorded", type_=TYPE_VALIDATION, detail=str(exc),
+        ) from exc
+    except DecisionOverridesError as exc:
+        status = 404 if exc.code in ("decision-not-found", "opp-not-found",
+                                     "run-not-found") else 400
+        raise ProblemError(
+            status,
+            "Change not recorded",
+            type_=TYPE_NOT_FOUND if status == 404 else TYPE_VALIDATION,
+            detail=str(exc),
+        ) from exc
+
+    _invalidate_summary_cache(workspace, slug, run_id)
+    projected = dict(result["row"] or {})
+    payload = DecisionEditOut.model_validate({
+        "decision_id": decision_id, **projected,
+    }).model_dump(mode="json")
+    return JsonResponse(payload)
+
+
 
 
 @public_summary_router.post(
@@ -2208,58 +2392,12 @@ def public_decision_reaction(
     caps are enforced twice — by the schema before any Drive call, and by
     the writer.
     """
-    from apps.common.rate_limit import allow, client_ip
-    from apps.opps.drive_cache import CachedDriveClient
-    from apps.opps.drive_client import get_drive_client
     from apps.opps.reactions import ReactionRejected, submit_decision_reaction
-    from apps.opps.sync import _find_child_folder
-    from apps.service_accounts.exceptions import ServiceAccountNotFound
-    from apps.workspaces.models import Workspace
 
-    ip = client_ip(request)
-    if not allow(
-        f"reaction:burst:{ip}",
-        limit=REACTION_BURST_LIMIT,
-        window_seconds=REACTION_BURST_WINDOW,
-    ) or not allow(
-        f"reaction:day:{ip}",
-        limit=REACTION_DAILY_LIMIT,
-        window_seconds=REACTION_DAILY_WINDOW,
-    ):
-        raise ProblemError(
-            429,
-            "Too many comments",
-            detail="Give it a few minutes before sending another comment.",
-        )
-
-    try:
-        ws = Workspace.objects.get(slug=workspace)
-    except Workspace.DoesNotExist as exc:
-        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from exc
-    if not ws.drive_root_folder_id:
-        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
-
-    try:
-        # bypass=True: reads skip the 30s Drive TTL cache (a write must not
-        # decide against a stale folder listing) while writes still
-        # invalidate it — otherwise the summary read that follows would
-        # serve a cached listing without the record we just wrote, and the
-        # reviewer's comment would look lost for half a minute.
-        drive = CachedDriveClient(get_drive_client(workspace=ws), bypass=True)
-    except ServiceAccountNotFound as exc:
-        raise ProblemError(500, "Drive not configured", detail=str(exc)) from exc
-
-    opp_folder = _find_child_folder(drive.list_files(ws.drive_root_folder_id), slug)
-    if opp_folder is None:
-        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
-    runs_folder = _find_child_folder(drive.list_files(opp_folder.id), "runs")
-    run_folder = (
-        _find_child_folder(drive.list_files(runs_folder.id), run_id)
-        if runs_folder is not None
-        else None
-    )
-    if run_folder is None:
-        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    _enforce_public_write_budget(request)
+    ws = _public_workspace(workspace)
+    drive = _public_write_drive(ws)
+    opp_folder, run_folder = _public_run_folders(drive, ws, slug, run_id)
 
     summary_url = request.build_absolute_uri(
         f"/ace/opps/{workspace}/{slug}/runs/{run_id}/summary?tab=decisions"

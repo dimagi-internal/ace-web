@@ -1177,6 +1177,50 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/opps/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/edit": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Change one decision's answer from the public run summary
+         * @description Change a decision's value in place. Anyone with the link may.
+         *
+         *     This deliberately does NOT gate on membership, and deliberately has no
+         *     proposal/promotion state. Jonathan, 2026-08-14: "we definitely want
+         *     the decisions UI to be editable by users … reviewer 2 can change /
+         *     update reviewer 1 anyway in the UI, and that should just be the same
+         *     as Dimagi going in and updating things on top of the anonymous input
+         *     (also if you are logged in, obviously should not be anonymous)."
+         *     The bar to start engaging with ACE has to be very low because it is
+         *     speculative AI work — an account requirement is a barrier, a name
+         *     field is not. And the PDD these rows summarize is already
+         *     world-editable via anyone-with-link and already seeds the next run,
+         *     so gating this more tightly than the design document was backwards.
+         *
+         *     It writes the SAME store the Workbench's authenticated editor writes
+         *     (``<opp>/inputs/decision-overrides.yaml``, read by the plugin's
+         *     ``decisions_append_rows`` at the decisions write boundary), through
+         *     the same merge and the same serializer. The only thing that differs
+         *     between the two surfaces is how the identity on the row was resolved.
+         *
+         *     Refusals: a ``decision_id`` the run's ``decisions.yaml`` does not
+         *     carry is refused, not stored (the override would be unroutable). HTML
+         *     is refused rather than mangled. Lengths are capped before any Drive
+         *     round-trip. An anonymous caller with no name is refused; a signed-in
+         *     caller's typed name is ignored in favour of their session identity.
+         */
+        readonly post: operations["apps_opps_api_public_decision_edit"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/opps/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/reactions": {
         readonly parameters: {
             readonly query?: never;
@@ -3375,6 +3419,113 @@ export interface components {
              * @default
              */
             readonly opp_step_skill: string;
+        };
+        /**
+         * DecisionEditHistoryOut
+         * @description One superseded state of a decision row. Newest first.
+         */
+        readonly DecisionEditHistoryOut: {
+            /** Override */
+            readonly override: string;
+            /**
+             * Reasoning
+             * @default
+             */
+            readonly reasoning: string;
+            /**
+             * Decided By Name
+             * @default
+             */
+            readonly decided_by_name: string;
+            /**
+             * Decided By Verified
+             * @default false
+             */
+            readonly decided_by_verified: boolean;
+            /**
+             * Decided At
+             * @default
+             */
+            readonly decided_at: string;
+        };
+        /**
+         * DecisionEditOut
+         * @description A decision's current human-set answer, as any reader sees it.
+         *
+         *     Emails are not projected on the public payload; the NAME always is —
+         *     attribution is the safety mechanism, so hiding it would defeat the
+         *     model.
+         */
+        readonly DecisionEditOut: {
+            /** Decision Id */
+            readonly decision_id: string;
+            /** Override */
+            readonly override: string;
+            /**
+             * Reasoning
+             * @default
+             */
+            readonly reasoning: string;
+            /**
+             * Decided By Name
+             * @default
+             */
+            readonly decided_by_name: string;
+            /**
+             * Decided By Verified
+             * @default false
+             */
+            readonly decided_by_verified: boolean;
+            /**
+             * Decided At
+             * @default
+             */
+            readonly decided_at: string;
+            /**
+             * Source Run Id
+             * @default
+             */
+            readonly source_run_id: string;
+            /**
+             * Is Revert
+             * @default false
+             */
+            readonly is_revert: boolean;
+            /**
+             * History
+             * @default []
+             */
+            readonly history: readonly components["schemas"]["DecisionEditHistoryOut"][];
+        };
+        /**
+         * DecisionEditIn
+         * @description Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/edit.
+         *
+         *     Anyone with the link can change a decision's value in place — no
+         *     proposal state, no promotion step, no member-only privilege, and
+         *     reviewer 2 changing reviewer 1's answer is the same act as Dimagi
+         *     changing either. Safety is visibility and reversibility (attribution
+         *     on every row, full history, undo from the UI), not permission — the
+         *     same way it is in a Google Doc, which is exactly what the PDD these
+         *     decisions summarize already is.
+         *
+         *     Identity resolves per caller and NOT from this body when we already
+         *     know who it is: **signed in ⇒ never anonymous**, so ``reviewer`` and
+         *     ``reviewer_email`` are ignored for an authenticated request and
+         *     REQUIRED for an anonymous one. See ``apps.opps.public_input``.
+         *
+         *     Length ceilings are enforced again in ``apps.opps.decision_overrides``
+         *     — these are the cheap first pass, before any Drive round-trip.
+         */
+        readonly DecisionEditIn: {
+            /** Value */
+            readonly value: string;
+            /** Reasoning */
+            readonly reasoning?: string | null;
+            /** Reviewer */
+            readonly reviewer?: string | null;
+            /** Reviewer Email */
+            readonly reviewer_email?: string | null;
         };
         /**
          * DecisionReactionOut
@@ -6549,6 +6700,35 @@ export interface operations {
                     readonly "application/json": {
                         readonly [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    readonly apps_opps_api_public_decision_edit: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace: string;
+                readonly slug: string;
+                readonly run_id: string;
+                readonly decision_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["DecisionEditIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DecisionEditOut"];
                 };
             };
         };

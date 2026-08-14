@@ -2,9 +2,11 @@ import { useMemo, useState } from "react";
 import { ChevronRight, HelpCircle } from "lucide-react";
 
 import type { Decision, SavedDecisionOverride } from "@/api/types.ws";
+import { DecisionAnswerEditor } from "@/components/opps/decisions/DecisionAnswerEditor";
 import {
   DecisionDetailFields,
 } from "@/components/opps/decisions/DecisionDetailFields";
+import { DecisionHistory } from "@/components/opps/decisions/DecisionHistory";
 import { EvidenceBadge } from "@/components/opps/decisions/EvidenceBadge";
 import { cn } from "@/lib/utils";
 
@@ -164,13 +166,6 @@ function DecisionRow({
   onRevert?: (row_id: string) => void;
 }) {
   const [rowOpen, setRowOpen] = useState(false);
-  // Edit-mode draft. Holds in-progress text for the override reasoning and
-  // the new-option field. `null` = not in edit mode. Pill selection is NOT
-  // drafted — picking a pill stages the edit immediately (radio semantics).
-  const [draft, setDraft] = useState<{
-    new_option: string;
-    override_reasoning: string;
-  } | null>(null);
 
   const pendingEdit = editBuffer?.find((e) => e.row_id === decision.id);
   const committedAnswer = decision.override || decision.ai_default;
@@ -210,76 +205,18 @@ function DecisionRow({
   // Row-level color flip: visible sky-tint on overridden rows (committed
   // or pending) so the user can scan a long list and spot the humans'
   // choices vs the AI-default majority. Pending-edit rows additionally
-  // get a violet left-border to call out "not yet committed". Tint
-  // opacities tuned against dark mode — sky-500/15 reads as a clear band
-  // without overpowering the row contents.
+  // get a violet left-border to call out "not yet committed".
   const rowTint = isOverridden
     ? isEdited
       ? "border-l-2 border-violet-500/60 bg-sky-500/15"
       : "bg-sky-500/15"
     : "";
 
-  function openEditMode() {
-    setDraft({
-      new_option: "",
-      override_reasoning: effectiveReason,
-    });
-  }
-
-  function closeEditMode() {
-    setDraft(null);
-  }
-
-  // Stage an answer immediately — a pill click behaves like a radio
-  // button. An in-progress draft reason travels with the pick so typing
-  // a reason first and picking a pill second loses nothing.
-  function pickOption(opt: string) {
-    if (!onEdit) return;
-    if (opt === effectiveValue) return; // radio semantics: no-op
-    const reason = (draft ? draft.override_reasoning : effectiveReason).trim();
-    if (opt === decision.ai_default && !reason) {
-      // Landing back on the AI default with no reasoning is a revert,
-      // not an override-to-the-same-value.
-      if (isEdited && onRevert) onRevert(decision.id);
-      else onEdit(decision.id, opt, undefined);
-    } else {
-      onEdit(decision.id, opt, reason || undefined);
-    }
-    if (draft?.new_option) setDraft({ ...draft, new_option: "" });
-  }
-
-  // Blur handler for the reason textarea + new-option input. New-option
-  // text wins over the current pill value — typing there is the only way
-  // to introduce an answer that wasn't on the AI's list.
-  function commitDraft() {
-    if (!draft || !onEdit) return;
-    const answer = draft.new_option.trim() || effectiveValue;
-    const reason = draft.override_reasoning.trim();
-    // If the user lands on the AI default with no reason, revert
-    // outright. Otherwise stage the (possibly equal-to-default) value
-    // with the reason attached — the reason itself is a meaningful
-    // signal even when the answer doesn't change.
-    if (answer === decision.ai_default && !reason) {
-      if (isEdited && onRevert) onRevert(decision.id);
-      return;
-    }
-    // Skip no-op writes so tabbing through the fields doesn't spam the
-    // shared buffer with identical edits.
-    if (answer === effectiveValue && reason === effectiveReason.trim()) return;
-    onEdit(decision.id, answer, reason || undefined);
-  }
-
   return (
     <div className={rowTint}>
       <button
         type="button"
-        onClick={() =>
-          setRowOpen((v) => {
-            const next = !v;
-            if (!next) closeEditMode();
-            return next;
-          })
-        }
+        onClick={() => setRowOpen((v) => !v)}
         aria-expanded={rowOpen}
         className="flex w-full items-center gap-3 px-4 py-2 text-left text-xs hover:bg-accent/40"
       >
@@ -313,235 +250,52 @@ function DecisionRow({
         />
       </button>
       {rowOpen && (
-        <div className="animate-in fade-in slide-in-from-top-1 grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 border-t border-border/40 bg-background/30 px-4 pb-3 pt-3 text-[11px] duration-150">
-          <DecisionDetailFields
-            decision={decision}
-            effectiveValue={effectiveValue}
-            // While the override-reason editor is open the textarea owns
-            // that value; showing a stale read-only copy above it reads
-            // as two conflicting fields.
-            effectiveReason={draft ? "" : effectiveReason}
-            optionsLabel={canEdit ? "Pick option" : "Options"}
-            optionsSlot={
-              <OptionsRow
-                decision={decision}
-                draft={draft}
-                effectiveValue={effectiveValue}
-                canEdit={canEdit}
-                onPick={pickOption}
-              />
-            }
-          />
-          {canEdit && (
-            <div className="col-span-2 mt-2 flex flex-col gap-2 border-t border-border/40 pt-3">
-              {!draft && (
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={openEditMode}
-                    className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
-                  >
-                    {effectiveReason ? "Edit override reason" : "Add override reason"}
-                  </button>
-                  {isEdited && onRevert && (
-                    <button
-                      type="button"
-                      onClick={() => onRevert(decision.id)}
-                      className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
-                    >
-                      Revert
-                    </button>
-                  )}
-                </div>
-              )}
-              {draft && (
-                <div className="flex w-full flex-col gap-2">
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-                      Override reason (optional — saves when you click away)
-                    </span>
-                    <textarea
-                      value={draft.override_reasoning}
-                      onChange={(e) =>
-                        setDraft({ ...draft, override_reasoning: e.target.value })
-                      }
-                      onBlur={commitDraft}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          closeEditMode();
-                        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault();
-                          commitDraft();
-                          closeEditMode();
-                        }
-                      }}
-                      autoFocus
-                      rows={2}
-                      aria-label={`Override reason for: ${decision.question}`}
-                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-                      New option (optional — overrides pill choice)
-                    </span>
-                    <input
-                      type="text"
-                      value={draft.new_option}
-                      onChange={(e) => setDraft({ ...draft, new_option: e.target.value })}
-                      onBlur={commitDraft}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          closeEditMode();
-                        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault();
-                          commitDraft();
-                          closeEditMode();
-                        }
-                      }}
-                      placeholder={
-                        decision.options_considered.length > 0
-                          ? "Type a new answer not in the list above"
-                          : "Type the override answer"
-                      }
-                      aria-label={`New option for: ${decision.question}`}
-                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
-                    />
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={closeEditMode}
-                      className="rounded-md border border-border bg-background px-3 py-1 text-xs hover:bg-accent"
-                    >
-                      Done
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+        <div className="animate-in fade-in slide-in-from-top-1 border-t border-border/40 bg-background/30 px-4 pb-3 pt-3 text-[11px] duration-150">
+          <div className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-2">
+            <DecisionDetailFields
+              decision={decision}
+              effectiveValue={effectiveValue}
+              effectiveReason={effectiveReason}
+              optionsLabel={canEdit ? "Pick option" : "Options"}
+              optionsSlot={
+                canEdit ? (
+                  // The SAME editor the public run summary renders — see
+                  // its module docstring. `immediate` because the
+                  // Workbench stages into the shared multi-player buffer
+                  // and a member saves to Drive explicitly, so nothing a
+                  // pill click does is durable yet.
+                  <DecisionAnswerEditor
+                    decision={decision}
+                    effectiveValue={effectiveValue}
+                    effectiveReason={effectiveReason}
+                    commitMode="immediate"
+                    dense
+                    onCommit={(value, reasoning) =>
+                      onEdit?.(decision.id, value, reasoning || undefined)
+                    }
+                    onRevert={onRevert ? () => onRevert(decision.id) : undefined}
+                    // A pending BUFFER edit is what Revert undoes here; a
+                    // saved override is undone through the history block.
+                    revertable={isEdited}
+                  />
+                ) : undefined
+              }
+            />
+          </div>
+          {savedOverride && (
+            <DecisionHistory
+              current={savedOverride}
+              history={savedOverride.history ?? []}
+              onRestore={
+                onEdit
+                  ? (value, reasoning) =>
+                      onEdit(decision.id, value, reasoning || undefined)
+                  : undefined
+              }
+            />
           )}
         </div>
       )}
     </div>
-  );
-}
-
-function OptionsRow({
-  decision,
-  draft,
-  effectiveValue,
-  canEdit,
-  onPick,
-}: {
-  decision: Decision;
-  draft: { new_option: string } | null;
-  effectiveValue: string;
-  canEdit: boolean;
-  onPick: (opt: string) => void;
-}) {
-  // The staged/committed answer highlights UNLESS the user has typed
-  // text into the new-option field — then no pill highlights, because
-  // the new option will become the staged answer on blur.
-  const highlighted =
-    draft && draft.new_option.trim().length > 0 ? null : effectiveValue;
-
-  // Surface write-in answers as extra pills so the user sees the current
-  // selection somewhere in the pill row, not just in the row header chip.
-  // Sources:
-  //   (a) the saved override has a value that wasn't in the AI's original
-  //       options[] (e.g. a committed write-in from a prior session)
-  //   (b) the draft has new_option text the user is currently typing
-  // Each surfaces as a violet-tinted pill with a "(new)" tag so it's
-  // visually distinct from the AI-proposed options.
-  const writeInPills: string[] = [];
-  if (
-    effectiveValue &&
-    effectiveValue !== decision.ai_default &&
-    !decision.options_considered.includes(effectiveValue)
-  ) {
-    writeInPills.push(effectiveValue);
-  }
-  const draftWriteIn = draft?.new_option.trim() ?? "";
-  if (
-    draftWriteIn &&
-    !decision.options_considered.includes(draftWriteIn) &&
-    !writeInPills.includes(draftWriteIn)
-  ) {
-    writeInPills.push(draftWriteIn);
-  }
-
-  if (decision.options_considered.length === 0 && writeInPills.length === 0) {
-    return (
-      <span className="text-muted-foreground/70">
-        (none listed — use the "New option" field to add one)
-      </span>
-    );
-  }
-  return (
-    <span className="flex flex-wrap gap-1.5">
-      {decision.options_considered.map((opt) => {
-        const isPicked = opt === highlighted;
-        const isAiDefault = opt === decision.ai_default;
-        const base = "rounded border px-1.5 py-0.5";
-        const tone = isPicked
-          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-          : "border-border bg-muted/30 text-muted-foreground";
-        if (!canEdit) {
-          return (
-            <span key={opt} className={cn(base, tone)}>
-              {opt}
-            </span>
-          );
-        }
-        return (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => onPick(opt)}
-            aria-pressed={isPicked}
-            title={isAiDefault ? "AI default" : "Pick this option"}
-            className={cn(
-              base,
-              tone,
-              "transition hover:border-emerald-500/40 hover:text-emerald-300",
-              isPicked && "ring-1 ring-emerald-400/50",
-            )}
-          >
-            {opt}
-            {isAiDefault && (
-              <span className="ml-1 text-[9px] uppercase tracking-wider text-muted-foreground/60">
-                ai
-              </span>
-            )}
-          </button>
-        );
-      })}
-      {writeInPills.map((opt) => {
-        // Write-in pills are display-only (clicking them re-selects the
-        // existing write-in, which is the current state — no-op). The
-        // "(new)" tag tells the human this label wasn't in the AI's
-        // options[] array.
-        const isPicked = opt === highlighted || opt === draftWriteIn;
-        const base = "rounded border px-1.5 py-0.5";
-        const tone = isPicked
-          ? "border-violet-500/50 bg-violet-500/15 text-violet-300"
-          : "border-violet-500/30 bg-violet-500/[0.08] text-violet-400";
-        return (
-          <span
-            key={`writein:${opt}`}
-            className={cn(base, tone)}
-            title="Write-in answer not in the original AI options"
-          >
-            {opt}
-            <span className="ml-1 text-[9px] uppercase tracking-wider text-violet-400/70">
-              new
-            </span>
-          </span>
-        );
-      })}
-    </span>
   );
 }

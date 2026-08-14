@@ -3,6 +3,7 @@
 // errors). The public summary URL is meant to circulate as a stakeholder
 // share link, with no cookies required.
 
+import { getCsrfToken } from "@/api/csrf";
 import type { Decision } from "@/api/types.ws";
 
 /**
@@ -32,6 +33,38 @@ export type ReviewDecision = Decision & {
  * row) — it is what lets a reviewer see where their comment went.
  * Reviewer emails are deliberately not served on the public payload.
  */
+/**
+ * One superseded state of a decision row, newest first in `history`.
+ * Emails are never projected publicly; the NAME always is — attribution
+ * is the safety mechanism behind letting anyone edit, so hiding it would
+ * defeat the model.
+ */
+export interface DecisionEditEntry {
+  override: string;
+  reasoning: string;
+  decided_by_name: string;
+  decided_by_verified: boolean;
+  decided_at: string;
+}
+
+/**
+ * A decision's current human-set answer.
+ *
+ * Read out of the SAME `<opp>/inputs/decision-overrides.yaml` the
+ * Workbench's authenticated editor writes and the ACE plugin binds on the
+ * next run — not a public-only shadow store. `decisions.rows` is what the
+ * RUN decided; this is what humans have changed since.
+ *
+ * `is_revert` marks a row restored to the AI default: inert for the next
+ * run, but kept (with its history) so "someone reverted this" stays
+ * visible rather than being erased.
+ */
+export interface PublicDecisionEdit extends DecisionEditEntry {
+  source_run_id: string;
+  is_revert: boolean;
+  history: DecisionEditEntry[];
+}
+
 export interface DecisionReaction {
   reviewer: string;
   comment: string;
@@ -158,6 +191,12 @@ export interface OppSummaryPayload {
     total: number;
     by_decision: Record<string, DecisionReaction[]>;
   };
+  /**
+   * Human-set answers keyed by decision id. Anyone with this link can
+   * change one in place; every change here carries who made it, when,
+   * and every value it replaced.
+   */
+  decision_edits: Record<string, PublicDecisionEdit>;
   // "What we decided and why" — the run's decisions log, the same rows
   // the Workbench renders, stripped to a read/react surface.
   decisions: {
@@ -242,4 +281,64 @@ export async function postDecisionReaction(
     throw new ReactionError(detail);
   }
   return (await resp.json()) as DecisionReaction & { decision_id: string };
+}
+
+
+/**
+ * Change ONE decision's answer.
+ *
+ * Deliberately not member-gated and deliberately without a proposal
+ * state: reviewer 2 changing reviewer 1's answer, and Dimagi changing
+ * either, are the same act (Jonathan, 2026-08-14). The bar to start
+ * engaging with ACE has to be very low because it is speculative AI
+ * work — an account requirement is a barrier, a name field is not.
+ *
+ * `reviewer` is required only for an anonymous caller; the server
+ * ignores it for a signed-in one (logged in ⇒ never anonymous). Writes
+ * land in the same store the Workbench editor writes.
+ */
+export async function postDecisionEdit(
+  workspace: string,
+  slug: string,
+  runId: string,
+  decisionId: string,
+  body: {
+    value: string;
+    reasoning?: string;
+    reviewer?: string;
+    reviewer_email?: string;
+  },
+): Promise<PublicDecisionEdit & { decision_id: string }> {
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const url =
+    `${base}/api/opps/public/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}` +
+    `/runs/${encodeURIComponent(runId)}/decisions/${encodeURIComponent(decisionId)}/edit`;
+  // The CSRF token is what lets the server ATTRIBUTE the change to a
+  // signed-in member rather than treating them as anonymous — the
+  // endpoint is csrf_exempt because it must accept a genuinely anonymous
+  // POST, so a token is how a session identity earns trust. Absent (a
+  // partner with no account) it is simply omitted and the name they typed
+  // is used instead.
+  const csrf = getCsrfToken();
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrf ? { "X-CSRFToken": csrf } : {}),
+    },
+    credentials: "same-origin",
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let detail = "We couldn't record that change. Try again in a moment.";
+    try {
+      const problem = await resp.json();
+      if (typeof problem?.detail === "string" && problem.detail) detail = problem.detail;
+      else if (resp.status === 422) detail = "That answer is too long.";
+    } catch {
+      /* non-JSON error body — keep the generic message */
+    }
+    throw new ReactionError(detail);
+  }
+  return (await resp.json()) as PublicDecisionEdit & { decision_id: string };
 }

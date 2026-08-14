@@ -52,6 +52,7 @@ from canopy_agent_runs.drive.store import DriveRunStore
 
 from apps.opps import framework_map as fm
 from apps.opps.drive_client import DriveClient, DriveFile
+from apps.opps.drive_export import read_prose
 
 log = logging.getLogger(__name__)
 
@@ -131,8 +132,8 @@ class _FlatRunClient:
             return [self._run_df()]
         return self._inner.list_files(folder_id, recursive=recursive, page_size=page_size)
 
-    def get_content(self, file_id: str, mime_type: str):
-        return self._inner.get_content(file_id, mime_type)
+    def get_content(self, file_id: str, mime_type: str, *, export_as: str | None = None):
+        return self._inner.get_content(file_id, mime_type, export_as=export_as)
 
     def get_file(self, file_id: str) -> DriveFile:
         return self._inner.get_file(file_id)
@@ -330,7 +331,10 @@ def load_opp_run_via_store(
             pdd_file = _find_child(inputs_children, "pdd.md") or _find_child(
                 inputs_children, "idea.md"
             )
-    pdd_body = client.get_content(pdd_file.id, pdd_file.mime_type).content if pdd_file else ""
+    # `read_prose`, not a bare get_content: the PDD is a Google Doc and the
+    # plain-text export drops its headings and emphasis. `apps/opps/seed.py`
+    # fences this body as ```markdown, so a flattened body is a lie.
+    pdd_body = read_prose(client, pdd_file) if pdd_file else ""
 
     rd = fm.map_run_detail(fw_run, folder_id=run_folder_id, run_state=state_data)
     # Framework canonicalizes mode to review|auto; ace keeps the literal.
@@ -385,7 +389,10 @@ def load_opp_flat_via_store(
 
     # IDD→PDD rename transition: accept either primary-doc filename.
     pdd_file = _find_child(opp_children, "pdd.md") or _find_child(opp_children, "idd.md")
-    pdd_body = client.get_content(pdd_file.id, pdd_file.mime_type).content if pdd_file else ""
+    # `read_prose`, not a bare get_content: the PDD is a Google Doc and the
+    # plain-text export drops its headings and emphasis. `apps/opps/seed.py`
+    # fences this body as ```markdown, so a flattened body is a lie.
+    pdd_body = read_prose(client, pdd_file) if pdd_file else ""
 
     flat_client = _FlatRunClient(client, opp_folder)
     store = build_store(flat_client, _FlatRunClient.ROOT, slug, overview, skill_registry)

@@ -1,7 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { MessageSquarePlus } from "lucide-react";
 
 import type { DecisionReaction } from "@/api/oppSummary";
+import { ReviewerIdentityFields } from "@/components/opps/decisions/ReviewerIdentityFields";
+import {
+  MIN_NAME_CHARS,
+  rememberIdentity,
+  type ReviewerIdentity,
+} from "@/components/opps/decisions/reviewerIdentity";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,35 +19,21 @@ import { cn } from "@/lib/utils";
  * the per-ROW reply: reacting to a specific call costs one sentence
  * instead of a document review.
  *
- * Identity: the name is REQUIRED and self-reported. The page has no
- * login and a partner cannot self-serve one, so the choices were a
- * required free-text name or anonymous comments — and an anonymous
- * comment defeats the store it lands in, whose value is telling a
- * reviewer where THEIR comment went and telling a future reader whose
- * judgement drove a change. The form says the name is recorded, and the
- * stored record says it is self-reported rather than pretending
- * otherwise. It is remembered locally so a partner working through
- * several rows types it once.
+ * A comment is NOT an edit, and both exist on every row. An edit
+ * asserts a value and changes what the next run builds from; a comment
+ * is discussion — a question, a doubt, context we're missing — and lands
+ * in the feedback ledger with the `Feedback-Ref` stamp downstream
+ * changes cite. Making commenting the only option was the promotion gate
+ * this design removed; making editing the only option would force
+ * anyone with a *question* to assert an *answer*.
+ *
+ * Identity: the name is REQUIRED and self-reported for an anonymous
+ * visitor, and never asked of a signed-in one. It is shared with the
+ * answer editor on the same row (`identity` / `onIdentityChange`) and
+ * remembered locally, so a partner working through several rows types it
+ * once. The stored record says the name is self-reported rather than
+ * pretending otherwise.
  */
-
-const NAME_KEY = "ace.summary.reviewerName";
-const EMAIL_KEY = "ace.summary.reviewerEmail";
-
-function remembered(key: string): string {
-  try {
-    return window.localStorage.getItem(key) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function remember(key: string, value: string): void {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    /* private browsing — the form still works, it just won't prefill */
-  }
-}
 
 function formatWhen(iso: string): string {
   if (!iso) return "";
@@ -60,27 +52,27 @@ export function DecisionReactions({
   decisionId,
   reactions,
   onSubmit,
+  identity,
+  onIdentityChange,
+  hideIdentityFields = false,
   prompt,
 }: {
   decisionId: string;
   reactions: DecisionReaction[];
   onSubmit: (decisionId: string, body: ReactionSubmit) => Promise<void>;
+  /** Shared with the answer editor — one name typed once, per visit. */
+  identity: ReviewerIdentity;
+  onIdentityChange: (next: ReviewerIdentity) => void;
+  /** Signed in ⇒ never anonymous: don't ask a member for their name. */
+  hideIdentityFields?: boolean;
   /** Row-specific invitation — a conflicting row deserves a sharper one. */
   prompt?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setName((v) => v || remembered(NAME_KEY));
-    setEmail((v) => v || remembered(EMAIL_KEY));
-  }, [open]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -89,12 +81,11 @@ export function DecisionReactions({
     setError(null);
     try {
       await onSubmit(decisionId, {
-        reviewer: name.trim(),
-        reviewer_email: email.trim() || undefined,
+        reviewer: identity.name.trim(),
+        reviewer_email: identity.email.trim() || undefined,
         comment: comment.trim(),
       });
-      remember(NAME_KEY, name.trim());
-      remember(EMAIL_KEY, email.trim());
+      rememberIdentity(identity);
       setComment("");
       setOpen(false);
       setDone(true);
@@ -105,7 +96,10 @@ export function DecisionReactions({
     }
   }
 
-  const canSubmit = name.trim().length >= 2 && comment.trim().length >= 3 && !busy;
+  const canSubmit =
+    (hideIdentityFields || identity.name.trim().length >= MIN_NAME_CHARS) &&
+    comment.trim().length >= 3 &&
+    !busy;
 
   return (
     <div className="mt-4 border-t border-border/70 pt-3">
@@ -155,30 +149,13 @@ export function DecisionReactions({
             aria-label="Your comment on this decision"
             className="w-full rounded border border-border bg-background px-3 py-2 text-[13px] leading-[1.6] text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
           />
-          <div className="flex flex-wrap gap-2">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={80}
-              required
-              placeholder="Your name (required)"
-              aria-label="Your name"
-              className="min-w-[9rem] flex-1 rounded border border-border bg-background px-3 py-1.5 text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+          {!hideIdentityFields && (
+            <ReviewerIdentityFields
+              identity={identity}
+              onChange={onIdentityChange}
+              note="Your name is stored with the comment so we can credit it and come back to you. Email is only used to reply."
             />
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              maxLength={254}
-              type="email"
-              placeholder="Email (optional)"
-              aria-label="Your email, optional"
-              className="min-w-[9rem] flex-1 rounded border border-border bg-background px-3 py-1.5 text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
-            />
-          </div>
-          <p className="text-[11px] leading-[1.5] text-muted-foreground/70">
-            Your name is stored with the comment so we can credit it and come
-            back to you. Email is only used to reply.
-          </p>
+          )}
           {error && <p className="text-[13px] text-red-400">{error}</p>}
           <div className="flex items-center gap-3">
             <button
