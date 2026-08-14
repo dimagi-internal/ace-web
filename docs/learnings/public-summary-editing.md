@@ -52,23 +52,84 @@ than a parallel anything.
 | editor UI | `DecisionAnswerEditor` | same component |
 | option pills | `OptionPills` | same component |
 | identity fields | n/a (session) | `ReviewerIdentityFields` |
+| row (header + detail) | `DecisionRow` | same component |
+| collapsible group | `DecisionSection` | same component |
+| type scale | `dense` (console) | `dense` (console) |
+| copy voice | `console` | `partner` |
 | **staging** | Redis multi-player buffer + explicit Save | **write-through** |
-| **commit mode** | `immediate` | `confirm` |
+| **commit mode** | `immediate` | `immediate` — `confirm` only until a name is known |
 
-Only the last two rows are surface-specific, and both are forced:
+**The Workbench is the reference implementation.** Jonathan compared the
+two surfaces on 2026-08-14 and settled it:
 
-* An anonymous caller has no authenticated WebSocket to stage on, and a
-  shared buffer that a member must later "Save" **is** the promotion gate
-  this design removed.
-* `confirm` exists because the identity is collected at submit. A pill
-  click can't be instantly durable when we don't yet know who clicked it —
-  and asking for a name *before* someone can click is the barrier the
-  whole surface exists to remove.
+> yeah, the workbench is what I remember and what I want to replicate for
+> the decisions
 
-Copy differs by mode (`COPY` in `DecisionAnswerEditor`): "Override reason"
-is the Workbench's established vocabulary and matches the field it writes;
-a partner reading a summary page has never met that word. Field
-`aria-label`s stay identical across both.
+So the public surface *replicates* rather than reinterprets, and a
+difference has to be forced to survive. There are exactly four:
+
+1. **Staging.** An anonymous caller has no authenticated WebSocket to
+   stage on, and a shared buffer that a member must later "Save" **is**
+   the promotion gate this design removed.
+2. **Identity**, below — the Workbench reads it off the session.
+3. **Voice** — "override reason" is Workbench vocabulary a partner has
+   never met.
+4. **Layout.** The Workbench is master/detail with a phase rail; the
+   summary is a single-column document, so its phases stack as
+   collapsible `DecisionSection`s instead of being picked from a sidebar.
+
+Everything else — row anatomy, status-chip derivation, the overridden
+tint, the detail grid, the console type scale, pill behaviour — is one
+component rendered twice.
+
+### Commit mode follows IDENTITY, not surface
+
+This one shipped wrong on 2026-08-14 and was corrected the same day.
+`confirm` was made a property of the public surface, so every one of 42
+rows carried a "Save this answer" button:
+
+> that UI looks different than I'm used to seeing in the workbench/phases
+> and the interactions between selection new choices and its visual
+> clarity is worse than what I was used to — Jonathan
+
+The stated justification was *"asking for a name before someone can even
+click a pill would be the barrier this surface exists to remove."* That is
+an argument about the **first** edit of a session, when nobody has told us
+who they are. It never justified a confirm step on the fortieth row: the
+name is typed once and remembered (`reviewerIdentity`), so the barrier was
+removed at the start and reintroduced on every row after it. A signed-in
+member — whose identity is resolved from the session — never had any
+reason to see it at all.
+
+So: **`confirm` iff we do not yet know who is editing.** Anonymous +
+no remembered name ⇒ one confirm step that collects it. Everything after
+that (and every signed-in member, always) is click-and-done, exactly like
+the Workbench.
+
+Two traps found while doing it, both locked by tests:
+
+* **Promote identity on a successful WRITE, not on a keystroke.** Deriving
+  "we know who this is" from the name field as it is typed flips the row
+  from `confirm` to `immediate` mid-draft and pulls the Save button out
+  from under the person aiming at it. `identityKnown` moves on a
+  successful submit; a separate `canSubmit` tracks what is typed right now.
+* **`immediate` mode has no draft block to hang an error off.** A pill
+  click that the server refuses would otherwise just snap back silently,
+  so `DecisionAnswerEditor` renders `error`/`busy` outside the draft too.
+
+### Copy is a THIRD axis (`voice`), independent of both
+
+`COPY` used to be keyed by `commitMode`, which silently coupled *when a
+change becomes durable* to *who is being spoken to* — so the public
+surface could not adopt the Workbench's immediacy without also adopting
+the word "override", which a partner has never met. It is now keyed by
+`voice` (`console` | `partner`). Field `aria-label`s stay identical across
+both voices, and a test asserts it.
+
+`dense` **is** adopted by the public page. An earlier pass reasoned that a
+summary page is "a document a partner reads, not a console" and kept the
+larger reading scale; Jonathan looked at both surfaces and asked for the
+Workbench. Taste arguments lose to a direct comparison.
 
 ## Identity
 
@@ -156,3 +217,60 @@ Writes go through `CachedDriveClient(bypass=True)` and invalidate the 60s
 summary payload cache, for the same reason as comments: a change that
 takes a minute to appear reads as a change that was lost. The POST returns
 the merged row so the page re-renders immediately.
+
+## Phase is the organising structure, not a disclosure
+
+The Workbench organises decisions **by phase** — that is how someone
+reasons about where a call came from in the flow. The first version of
+this surface grouped by phase only *inside* a collapsed "Show all 42"
+disclosure, and lifted the 2 `conflicting` rows out of phase context to
+lead the page:
+
+> we should have the decisions better organized into the phases/sections
+> like they are in the workbench as well so it's obvious where the
+> decisions are coming from in terms of the flow — Jonathan, 2026-08-14
+
+A reader could not see where a decision arose until they expanded
+everything. Now the phase sections **are** the page, and they are literally the
+Workbench's components: `DecisionSection` (the collapsible card, header
+button, chevron and divided list) wrapping `DecisionRow`s, with the
+`Phase N` eyebrow + display name from `PhaseTile`, amber for contested
+from `EvidenceBadge`, and sky for human-changed from the Workbench's
+"N overridden" chip.
+
+One width trap came out of sharing the row: every span in the header
+truncates, and `truncate` resolves a flex item's `min-width:auto` to 0, so
+in the summary's narrower `max-w-3xl` column the QUESTION — the one thing
+a reader is there for — was the item that collapsed to nothing while the
+row id and the answer kept their width. `DecisionRow` now caps the id,
+lets the answer yield, and gives the question a floor.
+
+What the lead-with-the-conflicts view was protecting is kept without
+sacrificing the structure:
+
+* a phase holding a flagged row opens by default, and those rows open
+  inside it — so the contested rows are on screen at first paint, **in**
+  their phase rather than lifted out of it;
+* every other phase collapses to a one-line header with its counts, so 40
+  routine rows can't bury the 2 that matter;
+* "Worth your eye first" is a **jump list**, not a second rendering of the
+  same rows. One decision, one home.
+
+### The phase LABEL must come from the plugin, but may not overrule the run
+
+`decisions.yaml` tags rows with an abbreviation (`3-commcare`), which
+humanises to "Commcare" where the Workbench says "CommCare Setup" — two
+names for one phase across two surfaces defeats the point of organising by
+phase. So `apps/opps/summary.py` reads the label from the plugin's phase
+registry (`_phase_display_index`, the same source the Workbench renders
+from).
+
+**But `serialize_decision` projects a row's tag onto a phase name by
+ORDINAL**, which is silently wrong after a pipeline re-order: ACE's phase 4
+used to be OCS setup, so a run that recorded `4-connect` would be
+published under "OCS Setup" — a confident, wrong claim about provenance on
+a page an outside partner reads. `_registry_label_agrees` therefore takes
+the registry's display name only when every word of the row's own tag
+appears in it (`connect` ⊂ "Connect Setup" ✓, `connect` ⊄ "OCS Setup" ✗),
+and the ordinal always comes from the tag the run wrote. The registry may
+make a label **fuller**, never overrule the run.
