@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink, Pencil } from "lucide-react";
 
 import { getStepDetail } from "../../api/opps";
-import type { Artifact, StepDetail } from "../../api/types.ws";
+import type { StepArtifact, StepDetail } from "../../api/types.ws";
 import { cn } from "@/lib/utils";
 import { ArtifactBody } from "./ArtifactBody";
 import { EditArtifactDialog } from "./EditArtifactDialog";
@@ -14,18 +14,17 @@ interface Props {
   slug: string;
   runId: string;
   skill: string;
-  // Human label for the selected skill (e.g. "Idea to PDD"). When the
-  // detail payload arrives it carries its own display_name; this prop
-  // is just so the loading state shows the friendly name instead of
-  // the raw slug.
+  // Human label for the selected skill (e.g. "Idea to PDD"). The step
+  // endpoint only carries the raw `skill` slug, so this prop is the sole
+  // source of the friendly name — in the loading state AND the header.
   skillDisplayName?: string;
 }
 
 export function StepDetailPane({ workspaceSlug, slug, runId, skill, skillDisplayName }: Props) {
   const [detail, setDetail] = useState<StepDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null);
-  const [editing, setEditing] = useState<Artifact | null>(null);
+  const [activeArtifact, setActiveArtifact] = useState<StepArtifact | null>(null);
+  const [editing, setEditing] = useState<StepArtifact | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -57,12 +56,12 @@ export function StepDetailPane({ workspaceSlug, slug, runId, skill, skillDisplay
       <div>
         <div
           className="text-sm font-semibold text-foreground"
-          title={detail.skill_name}
+          title={detail.skill}
         >
-          {detail.display_name || detail.skill_name}
+          {skillDisplayName || detail.skill}
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span>{detail.phase_display}</span>
+          <span>{detail.phase}</span>
           <span aria-hidden>·</span>
           <StatusPill status={detail.status} />
         </div>
@@ -108,9 +107,9 @@ export function StepDetailPane({ workspaceSlug, slug, runId, skill, skillDisplay
                   {/* Hide the row-level Drive link for the ACTIVE artifact —
                       the viewer header below already shows "Open in Drive",
                       and two identical links 30px apart is just clutter. */}
-                  {a.drive_web_link && !isActive && (
+                  {a.url && !isActive && (
                     <a
-                      href={a.drive_web_link}
+                      href={a.url}
                       target="_blank"
                       rel="noreferrer"
                       className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -131,9 +130,9 @@ export function StepDetailPane({ workspaceSlug, slug, runId, skill, skillDisplay
         <div className="rounded border border-border">
           <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-1.5 font-mono text-[10px] text-muted-foreground">
             <span className="truncate">{activeArtifact.name}</span>
-            {activeArtifact.drive_web_link && (
+            {activeArtifact.url && (
               <a
-                href={activeArtifact.drive_web_link}
+                href={activeArtifact.url}
                 target="_blank"
                 rel="noreferrer"
                 className="flex shrink-0 items-center gap-1 font-sans hover:text-foreground"
@@ -151,13 +150,13 @@ export function StepDetailPane({ workspaceSlug, slug, runId, skill, skillDisplay
             skill={skill}
             artifactName={activeArtifact.name}
             mimeType={activeArtifact.mime_type ?? ""}
-            webViewLink={activeArtifact.drive_web_link}
-            driveFileId={activeArtifact.drive_file_id}
+            webViewLink={activeArtifact.url ?? undefined}
+            driveFileId={activeArtifact.id}
           />
         </div>
       )}
 
-      <EvalResult judge={detail.judge} />
+      <EvalResult judge={detail.judge ?? null} />
 
       {editing && (
         <EditArtifactDialog
@@ -168,7 +167,7 @@ export function StepDetailPane({ workspaceSlug, slug, runId, skill, skillDisplay
           runId={runId}
           skill={skill}
           artifactName={editing.name}
-          artifactId={editing.drive_file_id}
+          artifactId={editing.id}
         />
       )}
     </div>

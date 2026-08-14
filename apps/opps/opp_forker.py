@@ -730,8 +730,9 @@ def _build_run_state_yaml(
     """Synthesize a fresh ``run_state.yaml`` per the State Schema in the
     plugin's orchestrator-reference (§ State Schema, defensive init).
 
-    Adds a ``forked_from`` block so lineage is visible without diving
-    into Drive — the plugin doesn't read this field but humans will.
+    Adds ``forked_from`` (the source run id, as a STRING — see the inline
+    note below) plus ``forked_from_phase`` / ``forked_at`` so lineage is
+    visible without diving into Drive.
 
     The ``phases`` map is always built in the plugin's canonical phase-level
     shape (``phases.<phase>.{status, steps, ...}`` — see ``_build_phases_map``).
@@ -752,11 +753,16 @@ def _build_run_state_yaml(
         "last_actor_at": iso_now,
         "current_phase": fork_at_phase,
         "phases": phases_map,
-        "forked_from": {
-            "run_id": forked_from_run_id,
-            "phase": fork_at_phase,
-            "forked_at": iso_now,
-        },
+        # A top-level STRING, not a block. ``canopy_agent_runs`` reads this
+        # field (``RunSummary.forked_from: str | None``) and its Drive store
+        # documents the contract explicitly; a dict raises pydantic
+        # ValidationError inside ``store.list_runs``, which 500s every
+        # uncached ``load_opp`` for the opp — killing artifact download and,
+        # once the snapshot cache expires, the whole workbench.
+        # The lineage detail a dict used to carry lives in the sibling keys.
+        "forked_from": forked_from_run_id,
+        "forked_from_phase": fork_at_phase,
+        "forked_at": iso_now,
     }
     if run_phases is not None:
         # Informational lineage for a seeded run (not read by any skill; the
