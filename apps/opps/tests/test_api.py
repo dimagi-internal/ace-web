@@ -2265,23 +2265,30 @@ _SUMMARY_URL = "/api/opps/public/summary-ws/turmeric/runs/20260503-0835/summary"
 
 
 @pytest.mark.django_db
-def test_public_summary_hides_workbench_link_from_anonymous_visitors(
+def test_public_summary_serves_the_workbench_link_to_anonymous_visitors(
     client, summary_workspace
 ):
+    """Gated links are shown and tagged, not hidden — an outsider who is
+    shown nothing can't tell a gated link from a run that doesn't exist."""
     body = client.get(_SUMMARY_URL).json()
     assert body["opp"]["slug"] == "turmeric"
-    assert body["workbench_url"] is None
+    assert body["workbench"]["url"] == "/w/summary-ws/opps/turmeric/runs/20260503-0835"
+    assert body["workbench"]["access"] == "admin"
+    assert body["viewer"] == {"is_member": False}
 
 
 @pytest.mark.django_db
-def test_public_summary_keeps_workbench_link_for_members(client, summary_workspace):
+def test_public_summary_marks_a_member_so_the_page_drops_the_tags(
+    client, summary_workspace
+):
     user = User.objects.create_user(email="summary-member@example.com")
     WorkspaceMembership.objects.create(
         workspace=summary_workspace, user=user, role="editor",
     )
     client.force_login(user)
     body = client.get(_SUMMARY_URL).json()
-    assert body["workbench_url"] == "/w/summary-ws/opps/turmeric/runs/20260503-0835"
+    assert body["workbench"]["url"] == "/w/summary-ws/opps/turmeric/runs/20260503-0835"
+    assert body["viewer"] == {"is_member": True}
 
 
 @pytest.mark.django_db
@@ -2295,6 +2302,6 @@ def test_public_summary_cache_does_not_leak_the_member_variant(
         workspace=summary_workspace, user=user, role="editor",
     )
     client.force_login(user)
-    assert client.get(_SUMMARY_URL).json()["workbench_url"] is not None
+    assert client.get(_SUMMARY_URL).json()["viewer"]["is_member"] is True
     client.logout()
-    assert client.get(_SUMMARY_URL).json()["workbench_url"] is None
+    assert client.get(_SUMMARY_URL).json()["viewer"]["is_member"] is False

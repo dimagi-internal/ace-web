@@ -2053,12 +2053,12 @@ def public_opp_summary(
     are meant to circulate. Workspace + slug + run_id all in the URL —
     no leak-prevention 404 differentiation here, the URL is the secret.
 
-    Two variants of the payload are built: members of the workspace get
-    internal links (the Workbench), anyone else does not. The Workbench
-    404s — not "sign in" — for everyone else, and ace-web only admits
-    @dimagi.com accounts, so for an external reviewer that link is
-    indistinguishable from "this run doesn't exist". Both variants are
-    cached under their own key.
+    Every link is served to everyone, each one declaring its own
+    ``access`` (``public`` / ``admin``). The requester's workspace
+    membership is echoed back as ``viewer.is_member`` and decides only
+    whether the page draws the ``admin only`` tag next to a gated link.
+    The two variants are cached under their own keys so the 60s cache
+    can't serve one to the other.
 
     Cached 60 seconds in the Django cache to absorb refresh storms.
     """
@@ -2101,7 +2101,7 @@ def public_opp_summary(
 
     payload = build_summary_payload(
         client, workspace=ws, opp_slug=slug, run_id=run_id,
-        include_internal_links=is_member,
+        viewer_is_member=is_member,
     )
     if payload is None:
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
