@@ -52,6 +52,7 @@ import logging
 from datetime import date
 
 import yaml
+from django.conf import settings
 
 from apps.opps.drive_client import DriveClient
 from apps.opps.reactions import read_reactions
@@ -1017,9 +1018,25 @@ def build_summary_payload(
         state = _read_yaml(drive, state_file.id, state_file.mime_type)
 
     workspace_slug = getattr(workspace, "slug", "")
+    # Prefix the deployment mount (dimagi-internal/ace#1329). This link is
+    # rendered as a plain `href`, so a ROOT-relative path resolves against the
+    # origin rather than the mount: on labs the app is served under `/ace`, and
+    # `/w/<ws>/opps/<opp>/runs/<run>` 404s while `/ace/w/...` is 200. Every
+    # reader of the run summary who clicked "See the full build process" got a
+    # 404, on every run.
+    #
+    # It went unnoticed because `scripts/check-summary-links.py` collected URLs
+    # with `if v.startswith("http")`, so every RELATIVE value in the payload
+    # was invisible to it (ace#1328 fixed the checker; this is the serializer
+    # half).
+    #
+    # `.rstrip("/")` matters for the same reason FORCE_SCRIPT_NAME coerces ""
+    # to None in settings: a trailing slash produces `//w/...`, which browsers
+    # read as a protocol-relative URL to a host named "w".
+    script_name = (settings.FORCE_SCRIPT_NAME or "").rstrip("/")
     workbench = (
         {
-            "url": f"/w/{workspace_slug}/opps/{opp_slug}/runs/{run_id}",
+            "url": f"{script_name}/w/{workspace_slug}/opps/{opp_slug}/runs/{run_id}",
             "access": ACCESS_ADMIN,
         }
         if workspace_slug
