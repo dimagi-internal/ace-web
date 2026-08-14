@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "apps.videos.apps.VideosConfig",
     "apps.slack.apps.SlackConfig",
     "apps.canopy",
+    "apps.presence.apps.PresenceConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -244,7 +245,7 @@ ACE_DRIVE_SA_KEY_JSON = env("ACE_DRIVE_SA_KEY_JSON", default="")
 # deploy without these env vars 503s with a clear "not-configured" error
 # rather than failing mid-call.
 #
-# Set in deploy/aws/task-definition.json after `terraform apply` emits
+# Set in deploy/aws/ace-web.cfn.yaml after `terraform apply` emits
 # the values from infra/mobile/outputs.tf.
 ACE_MOBILE_AWS_REGION = env("ACE_MOBILE_AWS_REGION", default="us-east-1")
 ACE_MOBILE_INSTANCE_ID = env("ACE_MOBILE_INSTANCE_ID", default="")
@@ -258,7 +259,7 @@ ACE_MOBILE_AMI_VERSION = env("ACE_MOBILE_AMI_VERSION", default="")
 # ACE plugin can POST back for upload-transcript and call /api/mobile/
 # for cloud-emulator-driven flows. Empty disables the staging — the
 # plugin's smart-default then silently skips back-channel calls. Set
-# in deploy/aws/task-definition.json for labs; defaults to the local
+# in deploy/aws/ace-web.cfn.yaml for labs; defaults to the local
 # docker-compose port for dev.
 ACE_WEB_BASE_URL = env("ACE_WEB_BASE_URL", default="")
 

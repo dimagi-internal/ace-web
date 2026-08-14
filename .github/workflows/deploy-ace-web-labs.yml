@@ -159,9 +159,10 @@ jobs:
           # This gives us one: new code against the current schema, before any
           # traffic moves.
           #
-          # Built from the LIVE task def rather than deploy/aws/task-definition.json:
-          # CloudFormation is now the source of truth for the real definition, and
-          # reading live avoids that file drifting into a second, competing one.
+          # Built from the LIVE task def: CloudFormation is the source of truth for
+          # the real definition (deploy/aws/ace-web.cfn.yaml), and this throwaway
+          # revision exists only to run migrations against the new image before the
+          # stack rolls the service.
           aws ecs describe-task-definition --task-definition "${{ env.ECS_SERVICE }}" \
             --query 'taskDefinition' --output json > /tmp/live.json
 

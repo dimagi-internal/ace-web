@@ -127,7 +127,7 @@ ace-web/
 ├── docs/                # specs/, plans/, learnings/, architecture/, qa/, deploy.md
 ├── scripts/qa/          # Re-runnable Playwright probe of the deployed UI
 ├── infra/mobile-ami/    # Packer bake for the mobile EC2 AMI + rebake.sh
-├── deploy/aws/          # task-definition.json + one-time-setup.sh
+├── deploy/aws/          # ace-web.cfn.yaml (CFN owns the task def + service)
 ├── .github/workflows/   # build-backend, build-frontend, deploy-ace-web-labs, ci,
 │                        # contract-tests, regen-openapi, typecheck,
 │                        # sync-video-library-labs
@@ -241,14 +241,19 @@ Google Drive.
   missed): (1) a registered prod `AppCredential` on canopy-web (name
   `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`), its raw
   value in AWS Secrets Manager (`ace-web/canopy-app-credential`), and
-  `CANOPY_APP_CREDENTIAL`'s `valueFrom` in `deploy/aws/task-definition.json`
+  `CANOPY_APP_CREDENTIAL`'s `ValueFrom` in `deploy/aws/ace-web.cfn.yaml`
   pointed at that secret's ARN — without it `GET /api/canopy/status` reports
   `enabled: false` and chat is unreachable (see below); (2) a canopy `Agent`
   with slug matching `CANOPY_AGENT_SLUG` (default `ace`) must exist in the
   canopy workspace named by `CANOPY_WORKSPACE` — `createCanopySession` 404s
-  otherwise; (3) every ace user who uses chat must actually be a member of
-  that canopy workspace (canopy auto-joins by email domain, so this is
-  usually automatic, but isn't guaranteed for every domain); (4) the
+  otherwise; (3) ~~every ace user who uses chat must actually be a member of
+  that canopy workspace~~ — **no longer a prerequisite.** canopy's
+  token-exchange now provisions membership itself: an `AppCredential` carries
+  `provision_workspace` + `provision_role`, and the exchange creates the
+  membership (and the user, JIT) inside one atomic block, create-only so an
+  existing member's role is never changed. The prod `ace-web` credential is
+  provisioned onto `connect`, which is why an exchange returns
+  `{"workspace": "connect"}`. Do NOT re-add a manual invite step; (4) the
   signed-in user's email domain must be in the `AppCredential`'s allowed
   domains — otherwise `token-exchange` 403s and every canopy call fails.
   None of these 404/403s are silent in the UI: `useCanopyStatus()` gates

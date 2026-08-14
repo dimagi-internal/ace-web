@@ -2,9 +2,14 @@
 #
 # ace-web one-time AWS setup runbook.
 #
-# Run this ONCE when first deploying ace-web to the connect-labs AWS
-# environment. It creates all the AWS resources that the GitHub Actions
-# deploy workflow then reuses on every deploy.
+# Run this ONCE when first standing up ace-web in a new AWS environment.
+#
+# It creates ONLY the resources CloudFormation does not own: the ECR
+# repositories, the Secrets Manager entries, and the two IAM roles. The task
+# definition, ECS service, target group, listener rule and log group belong to
+# the `ace-web` stack (deploy/aws/ace-web.cfn.yaml) — creating them here too
+# would leave duplicates the stack cannot then adopt. Create the stack after
+# this script; the closing "next steps" print the command.
 #
 # Prerequisites:
 #   - AWS CLI authenticated as an admin-level role in account 858923557655
@@ -26,11 +31,6 @@ AWS_REGION="us-east-1"
 ACCOUNT_ID="858923557655"
 ECR_BACKEND="labs-jj-ace-web"
 ECR_FRONTEND="labs-jj-ace-web-frontend"
-TASK_FAMILY="labs-jj-ace-web"
-SERVICE_NAME="labs-jj-ace-web"
-TARGET_GROUP_NAME="labs-jj-ace-web-tg"
-CLUSTER_NAME="labs-jj-cluster"
-LOG_GROUP="/ecs/labs-jj-ace-web"
 
 echo "=== ace-web AWS one-time setup ==="
 echo "Region:  $AWS_REGION"
@@ -43,16 +43,7 @@ echo "→ Creating ECR repositories..."
 aws ecr create-repository --repository-name "$ECR_BACKEND" --region "$AWS_REGION" || true
 aws ecr create-repository --repository-name "$ECR_FRONTEND" --region "$AWS_REGION" || true
 
-# ── 2. CloudWatch log group ────────────────────────────────────────────
-
-echo "→ Creating CloudWatch log group..."
-aws logs create-log-group --log-group-name "$LOG_GROUP" --region "$AWS_REGION" || true
-aws logs put-retention-policy \
-  --log-group-name "$LOG_GROUP" \
-  --retention-in-days 30 \
-  --region "$AWS_REGION"
-
-# ── 3. Secrets Manager entries ─────────────────────────────────────────
+# ── 2. Secrets Manager entries ─────────────────────────────────────────
 
 echo "→ Creating Secrets Manager entries..."
 echo "  NOTE: you will be prompted to paste secret values."
@@ -79,7 +70,7 @@ aws secretsmanager create-secret \
   --secret-string "$CONNECT_OAUTH_CLIENT_SECRET" \
   --region "$AWS_REGION"
 
-# ── 4. IAM roles (execution + task) ────────────────────────────────────
+# ── 3. IAM roles (execution + task) ────────────────────────────────────
 
 echo "→ Creating IAM roles..."
 
@@ -121,71 +112,7 @@ aws iam create-role \
     }]
   }' || true
 
-# ── 5. Register the initial task definition ────────────────────────────
-
-echo "→ Registering initial task definition..."
-echo "  Uses deploy/aws/task-definition.json with the :latest tag."
-echo "  After the first successful deploy, CI will register new revisions."
-
-cd "$(dirname "$0")/../.."
-aws ecs register-task-definition \
-  --cli-input-json "file://deploy/aws/task-definition.json" \
-  --region "$AWS_REGION"
-
-# ── 6. Target group ────────────────────────────────────────────────────
-
-echo "→ Creating target group..."
-echo "  Find the VPC ID with: aws ec2 describe-vpcs --region $AWS_REGION"
-read -r -p "  VPC ID (vpc-xxxxx): " VPC_ID
-
-TG_ARN=$(aws elbv2 create-target-group \
-  --name "$TARGET_GROUP_NAME" \
-  --protocol HTTP \
-  --port 3000 \
-  --vpc-id "$VPC_ID" \
-  --target-type ip \
-  --health-check-path "/ace/api/health" \
-  --health-check-interval-seconds 30 \
-  --healthy-threshold-count 2 \
-  --unhealthy-threshold-count 3 \
-  --region "$AWS_REGION" \
-  --query 'TargetGroups[0].TargetGroupArn' --output text)
-
-echo "  Target group ARN: $TG_ARN"
-
-# ── 7. ALB listener rule ───────────────────────────────────────────────
-
-echo "→ Adding ALB listener rule for /ace/* ..."
-echo "  Find the ALB listener ARN with:"
-echo "    aws elbv2 describe-load-balancers --region $AWS_REGION"
-echo "    aws elbv2 describe-listeners --load-balancer-arn <alb-arn> --region $AWS_REGION"
-read -r -p "  ALB listener ARN: " LISTENER_ARN
-read -r -p "  Rule priority (unused integer, e.g. 200): " RULE_PRIORITY
-
-aws elbv2 create-rule \
-  --listener-arn "$LISTENER_ARN" \
-  --priority "$RULE_PRIORITY" \
-  --conditions "Field=path-pattern,Values=/ace/*" \
-  --actions "Type=forward,TargetGroupArn=$TG_ARN" \
-  --region "$AWS_REGION"
-
-# ── 8. ECS service ─────────────────────────────────────────────────────
-
-echo "→ Creating ECS service..."
-read -r -p "  Subnet IDs (comma-separated, no spaces): " SUBNET_IDS
-read -r -p "  Security group ID (sg-xxxxx): " SG_ID
-
-aws ecs create-service \
-  --cluster "$CLUSTER_NAME" \
-  --service-name "$SERVICE_NAME" \
-  --task-definition "$TASK_FAMILY" \
-  --desired-count 1 \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_IDS],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
-  --load-balancers "targetGroupArn=$TG_ARN,containerName=web,containerPort=3000" \
-  --region "$AWS_REGION"
-
-# ── 9. Database creation reminder ──────────────────────────────────────
+# ── 4. Database creation reminder ──────────────────────────────────────
 
 echo
 echo "→ Create the 'ace_web' database on the shared RDS instance:"
@@ -210,7 +137,14 @@ echo "     Grant type: Authorization code"
 echo "     Client type: Confidential (PKCE required)"
 echo "  2. Update ace-web/connect-oauth-client-id and -secret secrets with"
 echo "     the real values from the Connect admin (if you entered placeholders)."
-echo "  3. Trigger the deploy workflow: Actions > Deploy to Labs (AWS) > Run"
+echo "  3. Create the stack, which owns the task definition, service, target"
+echo "     group, listener rule and log group:"
+echo ""
+echo "       aws cloudformation deploy --stack-name ace-web \\"
+echo "         --template-file deploy/aws/ace-web.cfn.yaml \\"
+echo "         --capabilities CAPABILITY_IAM --parameter-overrides ImageTag=<sha>"
+echo ""
+echo "  4. Trigger the deploy workflow: Actions > Deploy to Labs (AWS) > Run"
 echo "     with run_migrations=true for the first deploy."
-echo "  4. Visit https://labs.connect.dimagi.com/ace/ and sign in with a"
+echo "  5. Visit https://labs.connect.dimagi.com/ace/ and sign in with a"
 echo "     @dimagi.com Connect account."

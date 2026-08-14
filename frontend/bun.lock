@@ -7,6 +7,7 @@
       "dependencies": {
         "@base-ui/react": "^1.3.0",
         "@fontsource-variable/geist": "^5.2.8",
+        "canopy-ui": "0.6.1",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "lucide-react": "^1.8.0",
@@ -440,6 +441,8 @@
     "callsites": ["callsites@3.1.0", "", {}, "sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ=="],
 
     "caniuse-lite": ["caniuse-lite@1.0.30001787", "", {}, "sha512-mNcrMN9KeI68u7muanUpEejSLghOKlVhRqS/Za2IeyGllJ9I9otGpR9g3nsw7n4W378TE/LyIteA0+/FOZm4Kg=="],
+
+    "canopy-ui": ["canopy-ui@0.6.1", "", { "peerDependencies": { "@base-ui/react": "^1.3.0", "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "lucide-react": "^1.8.0", "react": "^19.0.0", "react-dom": "^19.0.0", "sonner": "^2.0.7", "tailwind-merge": "^3.5.0" }, "optionalPeers": ["lucide-react", "sonner"] }, "sha512-vops9eGoGZHYnWYKfx5A+R2Pm3m81Hs2w4t88QvULK9DbcG/mUg8I6rXL5YhFcC4JZcSE/9qkhO9IRXRKDyVmQ=="],
 
     "ccount": ["ccount@2.0.1", "", {}, "sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg=="],
 

@@ -56,7 +56,21 @@ def test_send_message_posts_text_and_client_id_and_returns_turn_id():
     assert out["turn_id"] == "turn-1"
     req = opened.call_args.args[0]
     assert req.full_url == "http://canopy.test/api/canopy-sessions/sess-1/send"
-    assert json.loads(req.data) == {"text": "/ace:run o/r", "client_id": "k1"}
+    assert json.loads(req.data) == {
+        "text": "/ace:run o/r", "client_id": "k1", "origin": "ace_web",
+    }
+
+
+@override_settings(**ENABLED)
+def test_send_message_declares_ace_web_as_the_turn_source():
+    # THE producer half of canopy's source-aware runner routing (canopy-web spec
+    # 2026-07-27). Without this the turn enqueues as `canopy_web_chat` — canopy's
+    # default for a session send — and is indistinguishable from a human typing
+    # in canopy's chat UI, so a routing rule that sends ace-web's runs to the
+    # cloud runner has nothing to match on. It is not cosmetic labelling.
+    with _urlopen({"turn_id": "t"}) as opened:
+        client.send_message("usertok", "sess-1", text="x", client_id="k")
+    assert json.loads(opened.call_args.args[0].data)["origin"] == "ace_web"
 
 
 @override_settings(**ENABLED)

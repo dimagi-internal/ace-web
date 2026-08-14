@@ -37,6 +37,7 @@ import datetime as _dt
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import yaml
 
@@ -103,12 +104,14 @@ def fork_opp(
     ace_root_folder_id: str,
     owner,
     source_slug: str,
-    fork_at_phase: str,
+    fork_at_phase: str | None = None,
+    fork_at_skill: str | None = None,
     source_run_id: str | None = None,
     workspace=None,
     progress_cb: ProgressCb | None = None,
     edits: list[dict[str, str]] | None = None,
     mode: str = DEFAULT_FORK_MODE,
+    feedback: str | None = None,
     now: _dt.datetime | None = None,
     run_phases: list[int] | None = None,
     create_session: bool = True,
@@ -145,19 +148,35 @@ def fork_opp(
             f"mode {mode!r} is not valid; expected one of {FORK_MODES}",
         )
 
-    fork_ordinal = _resolve_phase_ordinal(fork_at_phase)
-    if fork_ordinal is None:
+    from apps.opps.skills import resolve_fork_point
+
+    if (fork_at_phase is None) == (fork_at_skill is None):
+        raise ForkOppError(
+            "invalid-fork-point",
+            "provide exactly one of fork_at_phase / fork_at_skill",
+        )
+
+    try:
+        point = resolve_fork_point(phase=fork_at_phase, skill=fork_at_skill)
+    except KeyError as exc:
         # Fail fast rather than degenerate to "copy everything." A fork
-        # against an unknown phase silently producing a no-op trim (i.e.
+        # against an unknown point silently producing a no-op trim (i.e.
         # cloning the source run wholesale) is the bug the per-run fork
         # contract exists to prevent — the next /ace:run would see every
         # phase already done. The most likely cause is ACE_PLUGIN_PATH
         # pointing at a missing/stale plugin checkout.
+        kind = "phase" if fork_at_phase else "skill"
         raise ForkOppError(
-            "unknown-phase",
-            f"phase {fork_at_phase!r} is not in the skill registry — "
+            f"unknown-{kind}",
+            f"{kind} {exc.args[0]!r} is not in the skill registry — "
             "check ACE_PLUGIN_PATH",
-        )
+        ) from exc
+
+    fork_ordinal = point.phase_ordinal
+    # Everything downstream reports the fork point by phase name; a skill
+    # fork resolves to its owning phase, so run_state / decisions trimming
+    # is identical either way.
+    fork_at_phase = point.phase
 
     source_folder = _find_child_folder(
         drive.list_files(ace_root_folder_id), source_slug
@@ -199,7 +218,7 @@ def fork_opp(
     # copy_file), so the UX win — accurate "X of Y" — is worth it.
     _emit(progress_cb, {"status": "counting", "copied": 0, "total": 0})
     total_files = _count_files_to_copy(
-        drive, source_run.id, fork_ordinal=fork_ordinal,
+        drive, source_run.id, point=point,
     )
     counter = _Counter(total=total_files)
     _emit(progress_cb, {
@@ -211,7 +230,7 @@ def fork_opp(
         drive=drive,
         source_run_folder_id=source_run.id,
         dest_run_folder_id=new_run_folder_id,
-        fork_ordinal=fork_ordinal,
+        point=point,
         counter=counter,
         progress_cb=progress_cb,
     )
@@ -253,7 +272,7 @@ def fork_opp(
     if create_session:
         session = Session.create_with_owner(
             owner=owner,
-            title=f"{source_slug} — new run {new_run_id} (fork @ {fork_at_phase})",
+            title=f"{source_slug} — new run {new_run_id} (fork @ {point.label()})",
             backend_kind="cli",
             status="active",
             source="web",
@@ -271,15 +290,32 @@ def fork_opp(
                 "source": "opps-fork",
                 "opp_slug": source_slug,
                 "fork_at_phase": fork_at_phase,
+                "fork_at_skill": point.skill,
                 "source_run_id": source_run.name,
                 "new_run_id": new_run_id,
             },
             plaintext=(
-                f"Forked run `{new_run_id}` from `{source_run.name}` at phase "
-                f"`{fork_at_phase}`. Re-run /ace:run to continue from there."
+                f"Forked run `{new_run_id}` from `{source_run.name}` at "
+                f"{'skill' if point.is_skill_fork else 'phase'} "
+                f"`{point.label()}`. Re-run /ace:run to continue from there."
             ),
             status="complete",
         )
+        if feedback:
+            # Seed the operator's reason as the first USER turn, so the
+            # agent picking up the fork reads the intent instead of
+            # inferring it from artifacts. This restored a capability lost
+            # when apps/opps/fork.py was deleted (2026-04-20), where it was
+            # the whole point of the `with-feedback` mode.
+            Message.objects.create(
+                session=session,
+                turn_index=1,
+                role="user",
+                sender_user=owner,
+                content={"type": "text", "text": feedback},
+                plaintext=feedback,
+                status="complete",
+            )
 
     _emit(progress_cb, {
         "status": "done",
@@ -345,50 +381,125 @@ class _Counter:
 
 
 def _count_files_to_copy(
-    drive: DriveClient, source_run_folder_id: str, *, fork_ordinal: int | None,
+    drive: DriveClient, source_run_folder_id: str, *, point: ForkPoint | None,
 ) -> int:
     """Count files we'll actually copy from the source run folder.
 
     Mirrors the filter applied by ``_copy_run_subtree`` — files at the
     run root that aren't in ``_RUN_ROOT_FILES_TO_COPY`` aren't counted,
-    and phase folders past the fork point aren't recursed into.
+    phase folders past the fork point aren't recursed into, and on a skill
+    fork the fork-point phase is counted through the SAME predicate the
+    copy uses. If the two ever diverge the progress bar lies, so they are
+    deliberately written against one shared helper.
     """
     n = 0
     for child in drive.list_files(source_run_folder_id):
         if child.mime_type == _FOLDER_MIME:
-            if _should_skip_phase_folder(child.name, fork_ordinal):
-                continue
             if not _PHASE_FOLDER_RE.match(child.name):
                 # Run-root folders other than `<N>-phase/` aren't part
                 # of the canonical per-run layout; skip them rather than
                 # blindly copying unknown content.
                 continue
-            n += _count_files_recursive(drive, child.id)
+            disposition = _phase_folder_disposition(child.name, point)
+            if disposition == "skip":
+                continue
+            n += _count_files_recursive(
+                drive,
+                child.id,
+                keep_file=(
+                    (lambda name: _keep_artifact_for_skill_fork(name, point))
+                    if disposition == "partial"
+                    else None
+                ),
+            )
         else:
             if child.name in _RUN_ROOT_FILES_TO_COPY:
                 n += 1
     return n
 
 
-def _count_files_recursive(drive: DriveClient, folder_id: str) -> int:
+def _count_files_recursive(
+    drive: DriveClient,
+    folder_id: str,
+    keep_file: Callable[[str], bool] | None = None,
+) -> int:
+    """Count files under ``folder_id``, honouring the same ``keep_file``
+    predicate ``_copy_subtree_verbatim`` applies, so counts and copies
+    cannot disagree."""
     n = 0
     for child in drive.list_files(folder_id):
         if child.mime_type == _FOLDER_MIME:
-            n += _count_files_recursive(drive, child.id)
-        else:
+            n += _count_files_recursive(drive, child.id, keep_file)
+        elif keep_file is None or keep_file(child.name):
             n += 1
     return n
 
 
 def _should_skip_phase_folder(folder_name: str, fork_ordinal: int | None) -> bool:
     """True iff ``folder_name`` is a phase folder for a phase at or after
-    the fork point. Folders not matching ``<N>-…`` are never skipped here."""
+    the fork point. Folders not matching ``<N>-…`` are never skipped here.
+
+    Phase-granularity only. For skill forks the fork-point phase is copied
+    PARTIALLY, which this predicate can't express — see
+    :func:`_phase_folder_disposition`.
+    """
     if fork_ordinal is None:
         return False
     m = _PHASE_FOLDER_RE.match(folder_name)
     if not m:
         return False
     return int(m.group(1)) >= fork_ordinal
+
+
+def _phase_folder_disposition(folder_name: str, point: ForkPoint | None) -> str:
+    """How to treat one ``<N>-<phase>/`` folder: keep | partial | skip.
+
+    - ``keep``    — phase strictly before the fork point; copy verbatim.
+    - ``partial`` — the fork-point phase on a SKILL fork; copy only the
+      artifacts produced by skills with a lower ordinal than the fork skill.
+    - ``skip``    — at/after the fork point; leave empty so it re-runs.
+
+    A phase fork never yields ``partial``: naming a phase means re-running
+    all of it.
+    """
+    if point is None:
+        return "keep"
+    m = _PHASE_FOLDER_RE.match(folder_name)
+    if not m:
+        return "keep"
+    ordinal = int(m.group(1))
+    if ordinal < point.phase_ordinal:
+        return "keep"
+    if ordinal > point.phase_ordinal:
+        return "skip"
+    return "partial" if point.is_skill_fork else "skip"
+
+
+def _keep_artifact_for_skill_fork(basename: str, point: ForkPoint) -> bool:
+    """True iff ``basename`` should survive a skill fork of its phase.
+
+    Attribution comes from the artifact manifest's ``produced_by`` map, not
+    from filename parsing — the 0.13.0+ convention is
+    ``<skill>[_<role>].<ext>``, but real runs also contain files that don't
+    follow it (e.g. ``deliver-connect-coverage.md``), and guessing a producer
+    by string-splitting would silently drop them.
+
+    Unattributed files are KEPT. Copying one needlessly costs a Drive call;
+    dropping one loses an artifact the fork was meant to preserve.
+    """
+    # Deferred, like every other skills import here: opp_forker loads during
+    # view import and the registry pulls in the heavier system reader.
+    from apps.opps.skills import skill_ordinal_for_artifact
+
+    ordinal = skill_ordinal_for_artifact(basename)
+    if ordinal is None:
+        return True
+    assert point.skill_ordinal is not None  # guaranteed by is_skill_fork
+    return ordinal < point.skill_ordinal
+
+
+if TYPE_CHECKING:  # annotations only — the runtime import stays deferred
+    from apps.opps.skills import ForkPoint
 
 
 # ── Copy ───────────────────────────────────────────────────────────
@@ -399,7 +510,7 @@ def _copy_run_subtree(
     drive: DriveClient,
     source_run_folder_id: str,
     dest_run_folder_id: str,
-    fork_ordinal: int | None,
+    point: ForkPoint | None,
     counter: _Counter,
     progress_cb: ProgressCb | None,
 ) -> tuple[str | None, str | None]:
@@ -413,12 +524,13 @@ def _copy_run_subtree(
     decisions_source_body: str | None = None
     for child in drive.list_files(source_run_folder_id):
         if child.mime_type == _FOLDER_MIME:
-            if _should_skip_phase_folder(child.name, fork_ordinal):
-                continue
             if not _PHASE_FOLDER_RE.match(child.name):
                 # Per the canonical layout, run-root subfolders are all
                 # `<N>-phase/`. Anything else is unrecognized; leave it
                 # in the source and don't propagate to the new run.
+                continue
+            disposition = _phase_folder_disposition(child.name, point)
+            if disposition == "skip":
                 continue
             sub_id = drive.create_folder(dest_run_folder_id, child.name)
             _copy_subtree_verbatim(
@@ -428,6 +540,13 @@ def _copy_run_subtree(
                 rel_path=child.name,
                 counter=counter,
                 progress_cb=progress_cb,
+                # On a skill fork the fork-point phase is kept only up to
+                # the fork skill; every other kept phase copies whole.
+                keep_file=(
+                    (lambda name: _keep_artifact_for_skill_fork(name, point))
+                    if disposition == "partial"
+                    else None
+                ),
             )
         else:
             if child.name not in _RUN_ROOT_FILES_TO_COPY:
@@ -454,8 +573,15 @@ def _copy_subtree_verbatim(
     rel_path: str,
     counter: _Counter,
     progress_cb: ProgressCb | None,
+    keep_file: Callable[[str], bool] | None = None,
 ) -> None:
-    """Copy every child of a kept phase folder, no filtering."""
+    """Copy the children of a kept phase folder.
+
+    ``keep_file`` is None for a whole-phase copy. On a skill fork it's a
+    per-basename predicate that keeps only artifacts produced by skills
+    before the fork point. Nested folders inherit the predicate — a phase's
+    sub-folders (``screenshots/``, ``recipes/``) are still skill-owned.
+    """
     for child in drive.list_files(source_folder_id):
         new_path = f"{rel_path}/{child.name}"
         if child.mime_type == _FOLDER_MIME:
@@ -467,8 +593,11 @@ def _copy_subtree_verbatim(
                 rel_path=new_path,
                 counter=counter,
                 progress_cb=progress_cb,
+                keep_file=keep_file,
             )
         else:
+            if keep_file is not None and not keep_file(child.name):
+                continue
             drive.copy_file(child.id, dest_folder_id, child.name)
             counter.copied += 1
             _emit(progress_cb, {

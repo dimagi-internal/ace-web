@@ -159,3 +159,102 @@ def all_phases() -> list[str]:
 def skills_in_phase(phase: str) -> list[Skill]:
     """Return all skills in a phase, ordered by ordinal."""
     return sorted((s for s in _load_registry() if s.phase == phase), key=lambda s: s.ordinal)
+
+
+@dataclass(frozen=True)
+class ForkPoint:
+    """A resolved point in the lifecycle to fork at.
+
+    A fork point is *one concept with two spellings*. Callers name either a
+    phase or a skill; both resolve to the same shape, so downstream trim
+    logic never branches on which spelling arrived.
+
+    ``phase_ordinal`` is 1-based and matches the ``<N>-`` prefix of a run's
+    phase folders. ``skill_ordinal`` is ``None`` for a phase fork (the whole
+    phase is re-run) and set for a skill fork (that phase is partially
+    kept — artifacts from strictly-earlier skills survive).
+    """
+
+    phase: str
+    phase_ordinal: int
+    skill: str | None = None
+    skill_ordinal: int | None = None
+
+    @property
+    def is_skill_fork(self) -> bool:
+        return self.skill_ordinal is not None
+
+    def label(self) -> str:
+        """Human-readable fork point for session titles and messages."""
+        return self.skill or self.phase
+
+
+def resolve_fork_point(*, phase: str | None = None, skill: str | None = None) -> ForkPoint:
+    """Resolve a phase name OR a skill name into a :class:`ForkPoint`.
+
+    Exactly one of ``phase`` / ``skill`` must be given. Raises ``KeyError``
+    with the offending name when it isn't in the registry; callers translate
+    that into their own error envelope.
+
+    A skill fork resolves to its owning phase, so a caller that names the
+    FIRST skill of a phase gets a fork functionally equivalent to naming the
+    phase itself — with one deliberate difference: no artifact in that phase
+    has a lower ordinal, so nothing from it is kept either way.
+    """
+    if (phase is None) == (skill is None):
+        raise ValueError("resolve_fork_point requires exactly one of phase / skill")
+
+    phases = all_phases()
+
+    if phase is not None:
+        try:
+            return ForkPoint(phase=phase, phase_ordinal=phases.index(phase) + 1)
+        except ValueError as exc:
+            raise KeyError(phase) from exc
+
+    target = get_skill(skill)  # raises KeyError(skill) when unknown
+    return ForkPoint(
+        phase=target.phase,
+        phase_ordinal=phases.index(target.phase) + 1,
+        skill=target.name,
+        skill_ordinal=target.ordinal,
+    )
+
+
+def artifact_producers() -> dict[str, str]:
+    """Map artifact basename → producing skill name, across all phases.
+
+    Keyed by BASENAME rather than full path because the trim walks Drive
+    folders and only sees leaf filenames. Basenames are unique in practice
+    (the 0.13.0+ convention is ``<N>-<phase>/<skill>[_<role>].<ext>``); on
+    the rare collision, last-writer-wins is acceptable — the fallback in
+    ``skill_ordinal_for_artifact`` keeps unknown files rather than dropping
+    them, so a wrong answer costs an extra copied file, never a lost one.
+    """
+    from apps.system.reader import load_system_overview
+
+    plugin_path = getattr(settings, "ACE_PLUGIN_PATH", "") or ""
+    overview = load_system_overview(plugin_path)
+    out: dict[str, str] = {}
+    for art in overview.get("artifacts") or []:
+        path = art.get("path") or ""
+        producer = art.get("produced_by") or ""
+        if path and producer:
+            out[path.rsplit("/", 1)[-1]] = producer
+    return out
+
+
+def skill_ordinal_for_artifact(basename: str) -> int | None:
+    """Ordinal of the skill that produces ``basename``, or None if unknown.
+
+    None means "not attributable" — callers must KEEP such files. An
+    unattributed artifact is far cheaper to copy needlessly than to drop
+    from a fork that was supposed to preserve it.
+    """
+    producer = artifact_producers().get(basename)
+    if not producer:
+        return None
+    try:
+        return get_skill(producer).ordinal
+    except KeyError:
+        return None
