@@ -35,7 +35,7 @@ dependencies = [
 # already, so the bare lib (no [drive] extra) is enough — DriveRunStore depends
 # only on the local DriveClient Protocol, not the Google SDK.
 [tool.uv.sources]
-canopy-agent-runs = { git = "https://github.com/dimagi-internal/canopy-web.git", subdirectory = "packages/canopy_agent_runs", tag = "canopy-agent-runs-v0.1.0" }
+canopy-agent-runs = { git = "https://github.com/dimagi-internal/canopy-web.git", subdirectory = "packages/canopy_agent_runs", tag = "canopy-agent-runs-v0.1.1" }
 
 [project.optional-dependencies]
 dev = [

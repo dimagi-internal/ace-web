@@ -2,7 +2,6 @@ import pytest
 from pydantic import ValidationError
 
 from apps.opps.schemas import (  # noqa: F401 — import-existence smoke test
-    ArtifactOut,
     ForkProgress,
     GateOut,
     OppCardOut,
@@ -14,6 +13,7 @@ from apps.opps.schemas import (  # noqa: F401 — import-existence smoke test
     OppRunOut,
     OppSnapshotOut,
     ScorecardOut,
+    StepArtifactOut,
     StepSnapshotOut,
     VerdictOut,
 )
