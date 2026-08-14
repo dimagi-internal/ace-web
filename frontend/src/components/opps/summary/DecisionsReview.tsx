@@ -261,7 +261,8 @@ function DecisionItem({
 
   const canSubmit = viewerIsMember || identity.name.trim().length >= MIN_NAME_CHARS;
 
-  async function commit(value: string, reasoning: string) {
+  /** Returns false when the change did not save — see `onCommit`'s contract. */
+  async function commit(value: string, reasoning: string): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
@@ -276,9 +277,10 @@ function DecisionItem({
             }),
       });
       if (!viewerIsMember) rememberIdentity(identity);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "We couldn't record that change.");
-      throw err;
+      return false;
     } finally {
       setBusy(false);
     }

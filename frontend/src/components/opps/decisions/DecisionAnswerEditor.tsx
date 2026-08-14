@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { Decision } from "@/api/types.ws";
+import { fireAndForget } from "@/components/opps/decisions/fireAndForget";
 import { OptionPills } from "@/components/opps/decisions/OptionPills";
 import { cn } from "@/lib/utils";
 
@@ -69,9 +70,16 @@ export interface DecisionAnswerEditorProps {
   /** Override rationale currently in force; "" when none. */
   effectiveReason: string;
   commitMode: CommitMode;
-  onCommit: (value: string, reasoning: string) => void | Promise<void>;
+  /**
+   * Persist the answer. Returning (or resolving to) `false` means "it did
+   * not save" and keeps the draft open with `error` showing; anything
+   * else closes it. A REJECTION is also treated as a failure — the
+   * caller owns surfacing it through `error`, and letting it escape here
+   * would be an unhandled rejection on every failed save.
+   */
+  onCommit: (value: string, reasoning: string) => unknown;
   /** Back to the AI default with nothing to say. Omit to hide the control. */
-  onRevert?: () => void | Promise<void>;
+  onRevert?: () => unknown;
   /**
    * Is there anything to undo? The two surfaces know different things:
    * the Workbench means "a pending buffer edit exists" (a saved override
@@ -133,9 +141,9 @@ export function DecisionAnswerEditor({
       if (opt === effectiveValue) return; // radio semantics: no-op
       const reasoning = (draft ? draft.reasoning : effectiveReason).trim();
       if (opt === decision.ai_default && !reasoning && onRevert) {
-        void onRevert();
+        fireAndForget(onRevert());
       } else {
-        void onCommit(opt, reasoning);
+        fireAndForget(onCommit(opt, reasoning));
       }
       if (draft?.new_option) setDraft({ ...draft, new_option: "" });
       return;
@@ -155,8 +163,11 @@ export function DecisionAnswerEditor({
       setDraft(null);
       return;
     }
-    await onCommit(value, reasoning);
-    setDraft(null);
+    try {
+      if ((await onCommit(value, reasoning)) !== false) setDraft(null);
+    } catch {
+      /* surfaced through `error`; the draft stays open so the text isn't lost */
+    }
   }
 
   // Immediate mode saves the reason on blur — the Workbench's existing
@@ -166,11 +177,11 @@ export function DecisionAnswerEditor({
     const value = draft.new_option.trim() || draft.value;
     const reasoning = draft.reasoning.trim();
     if (value === decision.ai_default && !reasoning) {
-      if (canRevert && onRevert) void onRevert();
+      if (canRevert && onRevert) fireAndForget(onRevert());
       return;
     }
     if (value === effectiveValue && reasoning === effectiveReason.trim()) return;
-    void onCommit(value, reasoning);
+    fireAndForget(onCommit(value, reasoning));
   }
 
   const dirty =
@@ -198,7 +209,7 @@ export function DecisionAnswerEditor({
           {canRevert && onRevert && (
             <button
               type="button"
-              onClick={() => void onRevert()}
+              onClick={() => fireAndForget(onRevert())}
               className="rounded-md border border-border bg-background px-3 py-1 hover:bg-accent"
             >
               {copy.revert}
@@ -260,7 +271,7 @@ export function DecisionAnswerEditor({
             {commitMode === "confirm" && (
               <button
                 type="button"
-                onClick={() => void submit()}
+                onClick={() => { void submit(); }}
                 disabled={!dirty || !canSubmit || busy}
                 className={cn(
                   "rounded px-3 py-1.5 font-medium transition",
