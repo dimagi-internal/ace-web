@@ -24,7 +24,7 @@ interface Props {
 export function SummaryRow({ label, name, links }: Props) {
   return (
     <div className="group flex items-baseline justify-between gap-6 -mx-3 px-3 py-3.5 rounded-md transition-colors [&+&]:border-t [&+&]:border-border hover:bg-muted/40">
-      <span className="w-16 shrink-0 text-[11px] uppercase tracking-[0.16em] text-muted-foreground/80 group-hover:text-muted-foreground">
+      <span className="w-20 shrink-0 text-[11px] uppercase tracking-[0.16em] text-muted-foreground/80 group-hover:text-muted-foreground">
         {label}
       </span>
       <span className="flex-1 text-[0.975rem] text-foreground">{name}</span>

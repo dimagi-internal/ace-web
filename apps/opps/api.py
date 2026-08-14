@@ -2053,6 +2053,13 @@ def public_opp_summary(
     are meant to circulate. Workspace + slug + run_id all in the URL —
     no leak-prevention 404 differentiation here, the URL is the secret.
 
+    Two variants of the payload are built: members of the workspace get
+    internal links (the Workbench), anyone else does not. The Workbench
+    404s — not "sign in" — for everyone else, and ace-web only admits
+    @dimagi.com accounts, so for an external reviewer that link is
+    indistinguishable from "this run doesn't exist". Both variants are
+    cached under their own key.
+
     Cached 60 seconds in the Django cache to absorb refresh storms.
     """
     from django.core.cache import cache as _cache
@@ -2061,9 +2068,18 @@ def public_opp_summary(
     from apps.opps.drive_client import get_drive_client
     from apps.opps.summary import build_summary_payload
     from apps.service_accounts.exceptions import ServiceAccountNotFound
-    from apps.workspaces.models import Workspace
+    from apps.workspaces.models import Workspace, WorkspaceMembership
 
-    cache_key = f"opp-summary:v1:{workspace}:{slug}:{run_id}"
+    is_member = bool(
+        getattr(request.user, "is_authenticated", False)
+        and WorkspaceMembership.objects.filter(
+            workspace__slug=workspace, user=request.user
+        ).exists()
+    )
+    cache_key = (
+        f"opp-summary:v2:{'member' if is_member else 'public'}"
+        f":{workspace}:{slug}:{run_id}"
+    )
     cached = _cache.get(cache_key)
     if cached is not None:
         return JsonResponse(cached)
@@ -2085,6 +2101,7 @@ def public_opp_summary(
 
     payload = build_summary_payload(
         client, workspace=ws, opp_slug=slug, run_id=run_id,
+        include_internal_links=is_member,
     )
     if payload is None:
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)

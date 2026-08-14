@@ -36,15 +36,19 @@ function formatConnectDateRange(start?: string | null, end?: string | null): str
   return s ?? e ?? null;
 }
 
-function NotCreated({ label }: { label: string }) {
+function Placeholder({ label, text }: { label: string; text: string }) {
   return (
     <div className="flex items-baseline gap-6 -mx-3 px-3 py-3.5 [&+&]:border-t [&+&]:border-border">
-      <span className="w-16 shrink-0 text-[11px] uppercase tracking-[0.16em] text-muted-foreground/50">
+      <span className="w-20 shrink-0 text-[11px] uppercase tracking-[0.16em] text-muted-foreground/50">
         {label}
       </span>
-      <span className="text-[0.975rem] italic text-muted-foreground/40">Not created</span>
+      <span className="text-[0.975rem] italic text-muted-foreground/40">{text}</span>
     </div>
   );
+}
+
+function NotCreated({ label }: { label: string }) {
+  return <Placeholder label={label} text="Not created" />;
 }
 
 export default function OppSummaryPage() {
@@ -111,7 +115,23 @@ export default function OppSummaryPage() {
   const {
     opp, design, apps, connect, training, assistant, open_questions, feedback, workbench_url,
     walkthroughs, dashboards, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
+    stage,
   } = payload;
+
+  // Sections whose phase hasn't run yet say so, instead of "Not created".
+  // Six of ten sections are legitimately empty on a run paused at the
+  // Phase 8→9 boundary; undifferentiated, that reads as an abandoned
+  // build rather than a healthy run waiting on a partner.
+  const pending = new Set(stage?.pending_sections ?? []);
+  const notStartedText = stage?.label
+    ? `Not started — this run is at the ${stage.label} stage`
+    : "Not started yet";
+  const slot = (section: string, label: string, key?: string) =>
+    pending.has(section) ? (
+      <Placeholder key={key} label={label} text={notStartedText} />
+    ) : (
+      <NotCreated key={key} label={label} />
+    );
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -142,7 +162,7 @@ export default function OppSummaryPage() {
               />
             ))
           ) : (
-            <NotCreated label="Doc" />
+            slot("design", "Doc")
           )}
         </SummarySection>
 
@@ -150,7 +170,7 @@ export default function OppSummaryPage() {
         <SummarySection title="CommCare apps">
           {(["Learn", "Deliver"] as const).map((kind) => {
             const app = apps.find((a) => a.kind === kind);
-            if (!app) return <NotCreated key={kind} label={kind} />;
+            if (!app) return slot("apps", kind, kind);
             const links: { label: string; href: string }[] = [];
             if (app.hq_url) links.push({ label: "Open in CommCare HQ", href: app.hq_url });
             return <SummaryRow key={kind} label={kind} name={app.name} links={links} />;
@@ -183,7 +203,7 @@ export default function OppSummaryPage() {
               }
             />
           ) : (
-            <NotCreated label="Opp" />
+            slot("connect", "Opp")
           )}
         </SummarySection>
 
@@ -200,7 +220,7 @@ export default function OppSummaryPage() {
               }
             />
           ) : (
-            <NotCreated label="Bot" />
+            slot("assistant", "Bot")
           )}
         </SummarySection>
 
@@ -225,32 +245,53 @@ export default function OppSummaryPage() {
               ))}
             </>
           ) : (
-            <NotCreated label="Deck" />
+            slot("training", "Deck")
           )}
         </SummarySection>
 
-        {/* Persona walkthroughs */}
+        {/* Persona walkthroughs — absent / withheld / available.
+            A withheld walkthrough was produced but failed its concept
+            eval, so it is named without a link. Rendering it as "Not
+            created" would tell a reviewer something doesn't exist when
+            it does and we chose not to show it. */}
         <SummarySection title="Persona walkthroughs">
           {walkthroughs.length > 0 ? (
-            walkthroughs.map((w) => (
-              <SummaryRow
-                key={w.url}
-                label="Demo"
-                name={
-                  <>
-                    {w.persona}
-                    {w.eval_score != null && (
-                      <span className="text-muted-foreground">
-                        {" · "}eval {w.eval_score}/10
+            walkthroughs.map((w, i) =>
+              w.availability === "withheld" || !w.url ? (
+                <SummaryRow
+                  key={`withheld-${i}`}
+                  label="Demo"
+                  name={
+                    <>
+                      {w.persona}
+                      <span className="italic text-muted-foreground">
+                        {" · "}
+                        {w.withheld_reason ?? "Not shown — did not pass quality review"}
                       </span>
-                    )}
-                  </>
-                }
-                links={[{ label: "Open deck", href: w.url }]}
-              />
-            ))
+                    </>
+                  }
+                  links={[]}
+                />
+              ) : (
+                <SummaryRow
+                  key={w.url}
+                  label="Demo"
+                  name={
+                    <>
+                      {w.persona}
+                      {w.eval_score != null && (
+                        <span className="text-muted-foreground">
+                          {" · "}eval {w.eval_score}/10
+                        </span>
+                      )}
+                    </>
+                  }
+                  links={[{ label: "Open deck", href: w.url }]}
+                />
+              ),
+            )
           ) : (
-            <NotCreated label="Demo" />
+            slot("walkthroughs", "Demo")
           )}
         </SummarySection>
 
@@ -266,7 +307,7 @@ export default function OppSummaryPage() {
               />
             ))
           ) : (
-            <NotCreated label="Dashboard" />
+            slot("dashboards", "Dashboard")
           )}
         </SummarySection>
 
@@ -293,7 +334,7 @@ export default function OppSummaryPage() {
               links={[{ label: "Open solicitation", href: solicitation.url }]}
             />
           ) : (
-            <NotCreated label="RFP" />
+            slot("solicitation", "RFP")
           )}
         </SummarySection>
 
@@ -319,7 +360,7 @@ export default function OppSummaryPage() {
               }
             />
           ) : (
-            <NotCreated label="LLO" />
+            slot("selected_llo", "LLO")
           )}
           {launch ? (
             <SummaryRow
@@ -337,7 +378,7 @@ export default function OppSummaryPage() {
               links={[]}
             />
           ) : (
-            <NotCreated label="Live" />
+            slot("launch", "Live")
           )}
         </SummarySection>
 
@@ -364,7 +405,7 @@ export default function OppSummaryPage() {
               links={[]}
             />
           ) : (
-            <NotCreated label="Score" />
+            slot("opp_eval", "Score")
           )}
           {learnings ? (
             <SummaryRow
@@ -382,7 +423,7 @@ export default function OppSummaryPage() {
               ]}
             />
           ) : (
-            <NotCreated label="Learnings" />
+            slot("learnings", "Learnings")
           )}
         </SummarySection>
 
@@ -413,7 +454,7 @@ export default function OppSummaryPage() {
               />
             ))
           ) : (
-            <NotCreated label="Ledger" />
+            <Placeholder label="Ledger" text="No review logged yet" />
           )}
         </SummarySection>
 

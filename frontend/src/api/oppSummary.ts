@@ -47,10 +47,15 @@ export interface OppSummaryPayload {
     public_id: string;
     embed_key: string;
   } | null;
+  // Three honest states per entry. `withheld` means the walkthrough
+  // exists but failed its concept eval, so we deliberately don't put it
+  // in front of a stakeholder — distinct from never having been made.
   walkthroughs: {
     persona: string;
-    url: string;
+    url: string | null;
     eval_score: number | null;
+    availability: "available" | "withheld";
+    withheld_reason: string | null;
   }[];
   dashboards: {
     title: string;
@@ -87,9 +92,18 @@ export interface OppSummaryPayload {
     iteration_warranted: boolean;
   } | null;
   open_questions: { url: string } | null;
+  // How far the run got, and which sections that makes premature. A run
+  // paused at the Phase 8→9 boundary has no LLO / launch / score by
+  // design — those read "not started", not "missing".
+  stage: {
+    label: string | null;
+    pending_sections: string[];
+  } | null;
   // Rendered reviewer feedback ledgers ("where did my comment go?"), one
   // stable doc per review event. Newest first.
   feedback: { title: string; url: string }[];
+  // Null for anyone who isn't a signed-in member of the workspace: the
+  // Workbench 404s (not "sign in") for everyone else.
   workbench_url: string | null;
 }
 
