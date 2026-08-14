@@ -16,6 +16,12 @@ export interface OppSummaryPayload {
     status: "active" | "closed" | "in_progress";
     end_date: string | null;
   };
+  // The PDD (and Work Order when present) — what a reviewer actually
+  // comments on. Absent before: the page linked the training pack but not
+  // the design it came from.
+  design: {
+    docs: { title: string; url: string }[];
+  } | null;
   apps: {
     kind: "Learn" | "Deliver";
     name: string;
@@ -81,6 +87,9 @@ export interface OppSummaryPayload {
     iteration_warranted: boolean;
   } | null;
   open_questions: { url: string } | null;
+  // Rendered reviewer feedback ledgers ("where did my comment go?"), one
+  // stable doc per review event. Newest first.
+  feedback: { title: string; url: string }[];
   workbench_url: string | null;
 }
 
