@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from apps.common.schemas import StrictModel
 
@@ -64,6 +64,29 @@ class GateOut(StrictModel):
     note: str | None = None
 
 
+class JudgeOut(StrictModel):
+    """A step's eval verdict, in the shape the Workbench eval panel renders.
+
+    Mirrors ``apps.opps.serializers.serialize_judge`` (the legacy
+    opp-detail payload has carried exactly this for a long time) so both
+    surfaces agree. ``criteria`` is free-form: rubrics differ per skill
+    and grow over time, and the panel renders whatever rows it finds.
+
+    Deliberately not ``VerdictOut``: that has nowhere to put ``criteria``
+    and would force us to invent a ``kind`` the verdict file doesn't
+    declare.
+    """
+
+    model_config = ConfigDict(extra="allow", from_attributes=True)
+
+    score: float | None = None
+    score_pct: float | None = None
+    passed: bool | None = None
+    evaluated_at: str | None = None
+    criteria: dict = {}
+    rationale: str = ""
+
+
 class StepSnapshotOut(StrictModel):
     skill: SkillId
     phase: PhaseId
@@ -71,6 +94,9 @@ class StepSnapshotOut(StrictModel):
     artifact_count: int = Field(ge=0)
     artifacts: list[StepArtifactOut]
     verdicts: list[VerdictOut]
+    # The step's eval verdict. Populated for every step; the eval panel
+    # reads this. `verdicts` above stays empty (see _snapshot_to_dict).
+    judge: JudgeOut | None = None
     gate: GateOut | None = None
     preview: str | None = None
 

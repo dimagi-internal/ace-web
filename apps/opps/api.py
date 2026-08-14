@@ -424,6 +424,8 @@ def _snapshot_to_dict(snap) -> dict:
     active_run_id = snap.current_run.run_id if snap.current_run else None
 
     # Build steps list from current_run.steps (StepSnapshot dataclass).
+    from apps.opps.serializers import serialize_judge
+
     steps: list[dict] = []
     if snap.current_run is not None:
         for s in snap.current_run.steps:
@@ -447,7 +449,13 @@ def _snapshot_to_dict(snap) -> dict:
                     }
                     for a in s.artifacts
                 ],
-                "verdicts": [],  # verdicts are per-skill; omit in v2 snapshot summary
+                # `verdicts` stays empty here: VerdictOut has no home for a
+                # judge's per-criterion breakdown, and the verdict files
+                # don't declare the `kind` it requires. The eval data the UI
+                # actually renders rides on `judge` below — same shape the
+                # legacy opp-detail payload has always carried.
+                "verdicts": [],
+                "judge": serialize_judge(s.judge),
                 "gate": None,
                 "preview": None,
             })
