@@ -32,8 +32,8 @@ log = logging.getLogger(__name__)
 
 _set = set  # preserve builtin before our module-level `set` shadows it
 
-# Bump when the cached dataclass shape *or* the file_id-tracking
-# semantics change — stale entries from before the bump deserialize into
+# Bump when the cached dataclass shape, the file_id-tracking semantics,
+# *or what the reader produces from the same bytes* changes — stale entries from before the bump deserialize into
 # the new dataclass with leftover attributes (or missing required ones),
 # and tracking-semantic bumps similarly orphan entries written with the
 # old set of dependencies (they can't receive the new invalidation
@@ -52,7 +52,15 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        bump deserialise without the attr and serialize_decision crashes
 #   v7 — OppSnapshot grew ``saved_overrides`` (issue #673 PR 2); entries
 #        written before this bump deserialise without the attr
-_KEY_VERSION = "v7"
+#   v8 — the framework-reader migration changed artifact ATTRIBUTION
+#        (which files land on which step) without changing any dataclass
+#        shape, so nothing above tripped and v7 entries were never
+#        invalidated. Measured 2026-08-14 (issue #716): spark-facilitator
+#        served ``[open-questions.md, decisions.yaml, idea-to-pdd.md]``
+#        from a July snapshot while a cold load — and every opp cached
+#        since — yields ``[idea-to-pdd-eval_verdict.yaml, idea-to-pdd.md]``.
+#        Same code, different cache age, different artifact list.
+_KEY_VERSION = "v8"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:
