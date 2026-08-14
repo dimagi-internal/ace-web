@@ -1,7 +1,11 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ChevronRight, HelpCircle } from "lucide-react";
+import { ChevronRight, HelpCircle } from "lucide-react";
 
 import type { Decision, SavedDecisionOverride } from "@/api/types.ws";
+import {
+  DecisionDetailFields,
+} from "@/components/opps/decisions/DecisionDetailFields";
+import { EvidenceBadge } from "@/components/opps/decisions/EvidenceBadge";
 import { cn } from "@/lib/utils";
 
 import type { EditOp } from "./decisions/decisionsReducer";
@@ -292,22 +296,7 @@ function DecisionRow({
             edited{pendingEdit?.editor_name ? ` by ${pendingEdit.editor_name}` : ""}
           </span>
         )}
-        {decision.evidence_basis === "conflicting" ? (
-          <span
-            className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400"
-            title="The sources disagreed — this default resolved a contested fork"
-          >
-            <AlertTriangle className="h-3 w-3" />
-            conflicting
-          </span>
-        ) : decision.evidence_basis === "inferred" ? (
-          <span
-            className="shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
-            title="Extrapolated beyond what the source directly states"
-          >
-            inferred
-          </span>
-        ) : null}
+        <EvidenceBadge basis={decision.evidence_basis} />
         <span
           className={cn(
             "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
@@ -325,19 +314,15 @@ function DecisionRow({
       </button>
       {rowOpen && (
         <div className="animate-in fade-in slide-in-from-top-1 grid grid-cols-[120px_1fr] gap-x-4 gap-y-2 border-t border-border/40 bg-background/30 px-4 pb-3 pt-3 text-[11px] duration-150">
-          <DetailRow
-            label="AI default"
-            value={<span className="font-medium text-foreground">{decision.ai_default}</span>}
-          />
-          {decision.override && (
-            <DetailRow
-              label="Override"
-              value={<span className="font-medium text-sky-400">{decision.override}</span>}
-            />
-          )}
-          <DetailRow
-            label={canEdit ? "Pick option" : "Options"}
-            value={
+          <DecisionDetailFields
+            decision={decision}
+            effectiveValue={effectiveValue}
+            // While the override-reason editor is open the textarea owns
+            // that value; showing a stale read-only copy above it reads
+            // as two conflicting fields.
+            effectiveReason={draft ? "" : effectiveReason}
+            optionsLabel={canEdit ? "Pick option" : "Options"}
+            optionsSlot={
               <OptionsRow
                 decision={decision}
                 draft={draft}
@@ -347,60 +332,6 @@ function DecisionRow({
               />
             }
           />
-          {decision.source && (
-            <DetailRow
-              label="Source"
-              value={<span className="text-muted-foreground">{decision.source}</span>}
-            />
-          )}
-          {decision.evidence_basis !== "stated" && (
-            <DetailRow
-              label="Evidence basis"
-              value={
-                <span
-                  className={cn(
-                    "font-medium",
-                    decision.evidence_basis === "conflicting"
-                      ? "text-amber-400"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {decision.evidence_basis}
-                </span>
-              }
-            />
-          )}
-          {decision.evidence_basis === "conflicting" &&
-            decision.conflict_signals.length > 0 && (
-              <DetailRow
-                label="Conflicting source signals"
-                value={
-                  <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
-                    {decision.conflict_signals.map((signal, i) => (
-                      <li key={i}>{signal}</li>
-                    ))}
-                  </ul>
-                }
-              />
-            )}
-          <DetailRow
-            label="Raised by"
-            value={
-              <span className="font-mono text-[10px] text-muted-foreground/80">{decision.skill}</span>
-            }
-          />
-          {decision.notes && (
-            <DetailRow
-              label="AI reasoning"
-              value={<span className="whitespace-pre-line text-muted-foreground">{decision.notes}</span>}
-            />
-          )}
-          {effectiveReason && !draft && (
-            <DetailRow
-              label="Override reason"
-              value={<span className="whitespace-pre-line text-sky-400/90">{effectiveReason}</span>}
-            />
-          )}
           {canEdit && (
             <div className="col-span-2 mt-2 flex flex-col gap-2 border-t border-border/40 pt-3">
               {!draft && (
@@ -612,16 +543,5 @@ function OptionsRow({
         );
       })}
     </span>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-        {label}
-      </div>
-      <div className="min-w-0">{value}</div>
-    </>
   );
 }

@@ -123,6 +123,71 @@ def _state_yaml(**overrides) -> str:
     return _yaml.dump({"phases": {p: {"products": v} for p, v in phases.items()}})
 
 
+# Shape ACE actually writes (verified against
+# spark-facilitator/20260813-2126): one bullet per question, a bolded
+# title, then "Owner:" and "Answered in:" clauses.
+_OPEN_QUESTIONS_MD = """\
+# Open Questions — turmeric / 20260503-0835
+
+Seeded from the approved PDD's § Open Questions (Phase 1).
+
+- **Rate confirmation** — the USD 2-5 per-visit band is ACE-inferred; no source \
+documents current vendor compensation. Owner: responding LLO + partner. Answered \
+in: solicitation response rate proposal (Phase 8).
+- **Device reality** — whether every FLW carries a capable Android device is \
+undocumented. Owner: responding LLO. Answered in: the LLO's solicitation response.
+"""
+
+_DECISIONS_YAML = """\
+schema_version: 4
+opportunity: turmeric
+run_id: 20260503-0835
+generated_at: 2026-05-03T08:35:00.000Z
+decisions:
+  - id: archetype-selection
+    phase: 1-design
+    skill: idea-to-pdd
+    question: Which delivery archetype fits the pilot?
+    ai-default: atomic-visit
+    options:
+      - atomic-visit
+      - focus-group
+    reasoning: One structured delivery per market visit.
+    source: PDD § Evidence Model
+    status: ai-default
+    evidence_basis: inferred
+  - id: solicitation-expected-period
+    phase: 8-solicitation-management
+    skill: solicitation-create
+    question: Which dates should the solicitation advertise?
+    ai-default: Work order period of performance
+    options:
+      - Work order period of performance
+      - Phase 4 Connect opportunity dates
+    reasoning: The Connect opp is an is_test artifact dated the run day.
+    source: pdd-to-work-order § Period of Performance
+    status: ai-default
+    evidence_basis: conflicting
+    conflict_signals:
+      - "work order § Period of Performance: 2026-09-15 to 2027-03-31"
+      - "run_state connect opportunity: start_date 2026-08-14, is_test true"
+  - id: payment-rate
+    phase: 4-connect
+    skill: connect-opp-setup
+    question: What is the per-visit rate?
+    ai-default: USD 3.00
+    override: USD 4.00
+    options:
+      - USD 3.00
+      - USD 4.00
+    reasoning: Midpoint of the inferred band.
+    override_reasoning: Partner confirmed the going rate is 4.
+    source: Research brief § 7
+    status: overridden
+    evidence_basis: stated
+"""
+
+
 def _full_tree(*, state_yaml: str | None = None) -> dict:
     if state_yaml is None:
         state_yaml = _state_yaml()
@@ -135,13 +200,14 @@ def _full_tree(*, state_yaml: str | None = None) -> dict:
                 # it in the run folder, which matched the (wrong) reader and so
                 # hid the bug that made every real opp render "Open questions —
                 # Not created".
-                "open-questions.md": "# Open questions\n",
+                "open-questions.md": _OPEN_QUESTIONS_MD,
                 "feedback": {
                     "20260727-sophie-feintuch-ledger": "# Feedback ledger\n",
                 },
                 "runs": {
                     "20260503-0835": {
                         "run_state.yaml": state_yaml,
+                        "decisions.yaml": _DECISIONS_YAML,
                     },
                 },
             },
@@ -197,8 +263,13 @@ def test_complete_run_returns_full_payload():
     assert p["assistant"]["ocs_url"] == "https://www.openchatstudio.com/a/connect-ace/chatbots/12027/"
 
     # Open questions (still a Drive fetch — no typed handoff yet). Read from
-    # the OPP folder, which is where ACE actually keeps it.
+    # the OPP folder, which is where ACE actually keeps it — and rendered as
+    # CONTENT, because the doc itself is unshared.
     assert p["open_questions"]["url"].startswith("https://fake/")
+    assert p["open_questions"]["access"] == "admin"
+    assert [q["title"] for q in p["open_questions"]["items"]] == [
+        "Rate confirmation", "Device reality",
+    ]
 
     # Feedback ledgers — the "where did my comment go?" derived views, so a
     # returning reviewer sees the diff against their own last comments.
@@ -212,8 +283,12 @@ def test_complete_run_returns_full_payload():
         "https://docs.google.com/document/d/fake-pdd/edit"
     )
 
-    # Workbench
-    assert p["workbench_url"] == "/w/test-team/opps/turmeric/runs/20260503-0835"
+    # Workbench — always present, always tagged. Hiding it from an
+    # outsider reads exactly like the run not existing.
+    assert p["workbench"] == {
+        "url": "/w/test-team/opps/turmeric/runs/20260503-0835",
+        "access": "admin",
+    }
 
 
 def test_empty_state_omits_every_section():
@@ -395,11 +470,14 @@ def test_dashboards_render_from_synthetic_block():
     )
     assert p["dashboards"] == [
         {"title": "Household poverty score distribution",
-         "url": "https://labs.connect.dimagi.com/dashboards/d1"},
+         "url": "https://labs.connect.dimagi.com/dashboards/d1",
+         "access": "admin"},
         {"title": "FLW field verification",
-         "url": "https://labs.connect.dimagi.com/dashboards/d2"},
+         "url": "https://labs.connect.dimagi.com/dashboards/d2",
+         "access": "admin"},
         {"title": "Dashboard",
-         "url": "https://labs.connect.dimagi.com/dashboards/d3"},
+         "url": "https://labs.connect.dimagi.com/dashboards/d3",
+         "access": "admin"},
     ]
 
 
@@ -722,10 +800,12 @@ def test_dashboards_read_par_url_from_source_block():
         {
             "title": "LLO weekly",
             "url": "https://labs.connect.dimagi.com/labs/workflow/5117/run/?run_id=5123&opportunity_id=10043",
+            "access": "admin",
         },
         {
             "title": "Verification integrity",
             "url": "https://labs.connect.dimagi.com/labs/workflow/5125/run/?run_id=5127&opportunity_id=10043",
+            "access": "admin",
         },
     ]
 
@@ -871,16 +951,216 @@ def test_stage_is_none_when_run_state_has_no_phases():
 # ─── Internal links ────────────────────────────────────────────────
 
 
-def test_workbench_url_dropped_when_internal_links_excluded():
+def test_workbench_link_is_served_to_everyone_and_declares_its_access():
     """The Workbench 404s for anyone who isn't a signed-in member, and
-    ace-web rejects non-@dimagi.com sign-ins, so on a public payload the
-    only "go deeper" link on the page was a dead end."""
+    ace-web rejects non-@dimagi.com sign-ins. #707 responded by HIDING
+    the link from non-members; Jonathan's ruling (2026-08-14) is to show
+    it with an `admin only` tag instead — "nothing is Dimagi only at
+    scale for ACE, even if right now it needs to be." Membership now
+    changes only ``viewer.is_member``, which is what the page keys the
+    tag off.
+    """
     drive = FakeDriveClient.from_tree(_full_tree())
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
     kwargs = dict(workspace=ws, opp_slug="turmeric", run_id="20260503-0835")
-    assert build_summary_payload(drive, **kwargs)["workbench_url"] == (
-        "/w/test-team/opps/turmeric/runs/20260503-0835"
+    expected = {
+        "url": "/w/test-team/opps/turmeric/runs/20260503-0835",
+        "access": "admin",
+    }
+    member = build_summary_payload(drive, **kwargs)
+    public = build_summary_payload(drive, viewer_is_member=False, **kwargs)
+    assert member["workbench"] == expected
+    assert public["workbench"] == expected
+    assert member["viewer"] == {"is_member": True}
+    assert public["viewer"] == {"is_member": False}
+
+
+def test_every_gated_link_declares_admin_access():
+    """The gating is a property of the PAYLOAD, not a hostname table in
+    the component — the URLs change every run, the access model of the
+    system behind them doesn't. These five were verified anonymously on
+    spark-facilitator/20260813-2126."""
+    state = _state_yaml(**{
+        "synthetic-data-and-workflows": {
+            "synthetic": {"dashboards": [{"title": "D", "url": "https://labs/d"}]},
+        },
+        "solicitation-management": {
+            "solicitation": {"url": "https://labs/solicitations/1/"},
+        },
+    })
+    drive = FakeDriveClient.from_tree(_full_tree(state_yaml=state))
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
     )
-    assert build_summary_payload(
-        drive, include_internal_links=False, **kwargs,
-    )["workbench_url"] is None
+    assert {a["access"] for a in p["apps"]} == {"admin"}       # CommCare HQ
+    assert p["connect"]["opportunity"]["access"] == "admin"    # Connect
+    assert p["assistant"]["access"] == "admin"                 # OCS console
+    assert p["dashboards"][0]["access"] == "admin"             # connect-labs
+    assert p["solicitation"]["access"] == "admin"              # connect-labs
+    assert p["workbench"]["access"] == "admin"                 # ace-web
+
+
+def test_drive_deliverables_are_not_tagged_admin():
+    """Drive ACLs are per-file and `/ace:share-run-access` shares exactly
+    these with reviewers — claiming "admin only" here would be a guess in
+    the wrong direction."""
+    drive = FakeDriveClient.from_tree(_full_tree())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert {d["access"] for d in p["design"]["docs"]} == {"public"}
+    assert p["training"]["deck"]["access"] == "public"
+    assert {d["access"] for d in p["training"]["docs"]} == {"public"}
+    assert {f["access"] for f in p["feedback"]} == {"public"}
+
+
+# ─── Review surface: decisions + open questions ────────────────────
+
+
+def _payload(tree=None):
+    drive = FakeDriveClient.from_tree(tree or _full_tree())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    return build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+
+
+def test_decisions_are_surfaced_as_rows_not_a_link():
+    """A 24-page PDD is a bad instrument for eliciting decisions. The
+    typed rows are what a partner can react to — and the doc they live in
+    is an internal working artifact nobody shares, so a link is useless."""
+    d = _payload()["decisions"]
+    assert d["total"] == 3
+    assert d["counts"] == {
+        "stated": 1, "inferred": 1, "conflicting": 1, "overridden": 1,
+    }
+    assert [r["id"] for r in d["rows"]] == [
+        "archetype-selection", "solicitation-expected-period", "payment-rate",
+    ]
+
+
+def test_decision_rows_carry_the_workbench_shape():
+    """Rows go through the same ``serialize_decision`` the Workbench uses,
+    so one component renders both and they can't drift on field names."""
+    row = _payload()["decisions"]["rows"][0]
+    assert row["ai_default"] == "atomic-visit"           # from YAML `ai-default`
+    assert row["options_considered"] == ["atomic-visit", "focus-group"]
+    assert row["notes"] == "One structured delivery per market visit."  # `reasoning`
+    assert row["evidence_basis"] == "inferred"
+    assert row["source"] == "PDD § Evidence Model"
+    assert row["status"] == "ai-default"
+
+
+def test_decision_rows_carry_a_phase_label_and_ordinal_for_grouping():
+    rows = {r["id"]: r for r in _payload()["decisions"]["rows"]}
+    assert rows["archetype-selection"]["phase_label"] == "Design"
+    assert rows["archetype-selection"]["phase_ordinal"] == 1
+    assert rows["solicitation-expected-period"]["phase_label"] == "Solicitation management"
+    assert rows["solicitation-expected-period"]["phase_ordinal"] == 8
+
+
+def test_conflicting_rows_keep_their_competing_signals():
+    """`evidence_basis: conflicting` means ACE resolved a fork the sources
+    disagreed on — the competing readings are exactly what a partner is
+    best placed to correct, so they must survive to the page."""
+    rows = {r["id"]: r for r in _payload()["decisions"]["rows"]}
+    row = rows["solicitation-expected-period"]
+    assert row["evidence_basis"] == "conflicting"
+    assert len(row["conflict_signals"]) == 2
+    assert "is_test true" in row["conflict_signals"][1]
+
+
+def test_overridden_rows_keep_the_human_rationale():
+    row = {r["id"]: r for r in _payload()["decisions"]["rows"]}["payment-rate"]
+    assert row["status"] == "overridden"
+    assert row["override"] == "USD 4.00"
+    assert row["override_reasoning"] == "Partner confirmed the going rate is 4."
+
+
+def test_decisions_absent_when_the_run_has_no_log():
+    tree = _full_tree()
+    del tree["ACE"]["turmeric"]["runs"]["20260503-0835"]["decisions.yaml"]
+    assert _payload(tree)["decisions"] is None
+
+
+def test_decisions_absent_when_the_log_is_empty_or_malformed():
+    for body in ("decisions: []\n", "schema_version: 4\n", "not: a log\n"):
+        tree = _full_tree()
+        tree["ACE"]["turmeric"]["runs"]["20260503-0835"]["decisions.yaml"] = body
+        assert _payload(tree)["decisions"] is None
+
+
+def test_decision_rows_without_id_or_question_are_dropped_loudly():
+    """A row we can't render is skipped with a log line — a silent drop is
+    what made dashboards read "Not created" while two live ones existed."""
+    tree = _full_tree()
+    tree["ACE"]["turmeric"]["runs"]["20260503-0835"]["decisions.yaml"] = (
+        "decisions:\n"
+        "  - id: fine\n"
+        "    phase: 1-design\n"
+        "    question: A real question?\n"
+        "    ai-default: yes\n"
+        "  - phase: 1-design\n"
+        "    question: No id\n"
+        "  - id: no-question\n"
+        "    phase: 1-design\n"
+        "  - just-a-string\n"
+    )
+    d = _payload(tree)["decisions"]
+    assert [r["id"] for r in d["rows"]] == ["fine"]
+
+
+def test_open_questions_parse_owner_and_where_it_gets_answered():
+    """An unresolved question with no owner is an unassigned one. The
+    convention ACE writes carries both; parsing keeps them separable."""
+    items = _payload()["open_questions"]["items"]
+    assert items[0] == {
+        "title": "Rate confirmation",
+        "detail": (
+            "the USD 2-5 per-visit band is ACE-inferred; no source documents "
+            "current vendor compensation"
+        ),
+        "owner": "responding LLO + partner",
+        "answered_in": "solicitation response rate proposal (Phase 8)",
+    }
+
+
+def test_open_questions_unparseable_bullet_still_renders():
+    """A question we can't parse is still a question the reviewer should
+    see — degrade to prose, never drop."""
+    tree = _full_tree()
+    tree["ACE"]["turmeric"]["open-questions.md"] = (
+        "# Open Questions\n\n- Just a bare sentence with no structure at all\n"
+    )
+    items = _payload(tree)["open_questions"]["items"]
+    assert items == [{
+        "title": "",
+        "detail": "Just a bare sentence with no structure at all",
+        "owner": None,
+        "answered_in": None,
+    }]
+
+
+def test_open_questions_survive_an_unreadable_body():
+    """Losing the body must not lose the link — the section degrades to
+    what #705 shipped rather than vanishing."""
+    tree = _full_tree()
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+
+    real_get_content = drive.get_content
+    oq_id = drive.file_id("ACE/turmeric/open-questions.md")
+
+    def boom(file_id, mime_type):
+        if file_id == oq_id:
+            raise RuntimeError("drive is down")
+        return real_get_content(file_id, mime_type)
+
+    drive.get_content = boom  # type: ignore[method-assign]
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["open_questions"]["items"] == []
+    assert p["open_questions"]["url"].startswith("https://fake/")

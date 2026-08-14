@@ -3,10 +3,16 @@ import { useParams } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 
 import { ApiError } from "@/api/client";
-import { getPublicOppSummary, type OppSummaryPayload } from "@/api/oppSummary";
+import {
+  getPublicOppSummary,
+  type LinkAccess,
+  type OppSummaryPayload,
+} from "@/api/oppSummary";
+import { DecisionsReview } from "@/components/opps/summary/DecisionsReview";
 import { OcsWidgetMount } from "@/components/opps/summary/OcsWidgetMount";
+import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
 import { SummaryHero } from "@/components/opps/summary/SummaryHero";
-import { SummaryRow } from "@/components/opps/summary/SummaryRow";
+import { AdminOnlyTag, SummaryRow } from "@/components/opps/summary/SummaryRow";
 import { SummarySection } from "@/components/opps/summary/SummarySection";
 
 type LoadState =
@@ -113,10 +119,20 @@ export default function OppSummaryPage() {
 
   const { payload } = state;
   const {
-    opp, design, apps, connect, training, assistant, open_questions, feedback, workbench_url,
+    opp, design, apps, connect, training, assistant, open_questions, feedback, workbench,
     walkthroughs, dashboards, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
-    stage,
+    stage, decisions, viewer,
   } = payload;
+
+  // Every link is served to everyone and carries its own `access`. Whether
+  // the page DRAWS the "admin only" tag is decided once, here: a member
+  // already knows which links are internal, so the tag would be noise.
+  const showAccessTags = !viewer?.is_member;
+  const link = (label: string, href: string, access?: LinkAccess) => ({
+    label,
+    href,
+    access: showAccessTags ? access : undefined,
+  });
 
   // Sections whose phase hasn't run yet say so, instead of "Not created".
   // Six of ten sections are legitimately empty on a run paused at the
@@ -158,11 +174,59 @@ export default function OppSummaryPage() {
                 key={doc.url}
                 label="Doc"
                 name={doc.title}
-                links={[{ label: "Open", href: doc.url }]}
+                links={[link("Open", doc.url, doc.access)]}
               />
             ))
           ) : (
             slot("design", "Doc")
+          )}
+        </SummarySection>
+
+        {/* ── The review surface ──────────────────────────────────────
+            "What we decided and why, and what we could not decide."
+
+            Sits directly under Design, ahead of the artifact links,
+            because it is the part of the page a partner can actually
+            react to. The PDD below is 24 pages of prose and people skim
+            prose; these are the individual calls, each with its
+            alternatives and its reasoning, so disagreeing costs one
+            sentence instead of a document review. */}
+        {decisions && (
+          <SummarySection title="Decisions">
+            <DecisionsReview decisions={decisions} />
+          </SummarySection>
+        )}
+
+        <SummarySection title="Open questions">
+          {open_questions && open_questions.items.length > 0 ? (
+            <>
+              <p className="mb-4 text-[0.975rem] leading-[1.7] text-muted-foreground">
+                What this run could <span className="text-foreground">not</span> settle —
+                each one already has an owner and a place it gets answered.
+              </p>
+              <OpenQuestionsList items={open_questions.items} />
+              {open_questions.url && (
+                <p className="mt-4 flex items-center justify-end gap-2 text-sm">
+                  <a
+                    href={open_questions.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-foreground underline-offset-4 hover:underline"
+                  >
+                    Source document
+                  </a>
+                  {showAccessTags && open_questions.access === "admin" && <AdminOnlyTag />}
+                </p>
+              )}
+            </>
+          ) : open_questions?.url ? (
+            <SummaryRow
+              label="Doc"
+              name="Outstanding design questions for this run"
+              links={[link("Open in Drive", open_questions.url, open_questions.access)]}
+            />
+          ) : (
+            <NotCreated label="Doc" />
           )}
         </SummarySection>
 
@@ -171,8 +235,10 @@ export default function OppSummaryPage() {
           {(["Learn", "Deliver"] as const).map((kind) => {
             const app = apps.find((a) => a.kind === kind);
             if (!app) return slot("apps", kind, kind);
-            const links: { label: string; href: string }[] = [];
-            if (app.hq_url) links.push({ label: "Open in CommCare HQ", href: app.hq_url });
+            const links: ReturnType<typeof link>[] = [];
+            if (app.hq_url) {
+              links.push(link("Open in CommCare HQ", app.hq_url, app.access));
+            }
             return <SummaryRow key={kind} label={kind} name={app.name} links={links} />;
           })}
         </SummarySection>
@@ -198,7 +264,13 @@ export default function OppSummaryPage() {
               }
               links={
                 connect.opportunity.url
-                  ? [{ label: "Open on Connect", href: connect.opportunity.url }]
+                  ? [
+                      link(
+                        "Open on Connect",
+                        connect.opportunity.url,
+                        connect.opportunity.access,
+                      ),
+                    ]
                   : []
               }
             />
@@ -215,7 +287,7 @@ export default function OppSummaryPage() {
               name="Trained on the design doc, training pack, and app guides for this opportunity."
               links={
                 assistant.ocs_url
-                  ? [{ label: "View in OCS", href: assistant.ocs_url }]
+                  ? [link("View in OCS", assistant.ocs_url, assistant.access)]
                   : []
               }
             />
@@ -232,7 +304,7 @@ export default function OppSummaryPage() {
                 <SummaryRow
                   label="Deck"
                   name={training.deck.title}
-                  links={[{ label: "Open in Slides", href: training.deck.url }]}
+                  links={[link("Open in Slides", training.deck.url, training.deck.access)]}
                 />
               )}
               {training.docs.map((doc) => (
@@ -240,7 +312,7 @@ export default function OppSummaryPage() {
                   key={doc.url}
                   label="Doc"
                   name={doc.title}
-                  links={[{ label: "Open", href: doc.url }]}
+                  links={[link("Open", doc.url, doc.access)]}
                 />
               ))}
             </>
@@ -286,7 +358,7 @@ export default function OppSummaryPage() {
                       )}
                     </>
                   }
-                  links={[{ label: "Open deck", href: w.url }]}
+                  links={[link("Open deck", w.url, w.access)]}
                 />
               ),
             )
@@ -303,7 +375,7 @@ export default function OppSummaryPage() {
                 key={d.url}
                 label="Dashboard"
                 name={d.title}
-                links={[{ label: "Open dashboard", href: d.url }]}
+                links={[link("Open dashboard", d.url, d.access)]}
               />
             ))
           ) : (
@@ -331,7 +403,7 @@ export default function OppSummaryPage() {
                   )}
                 </>
               }
-              links={[{ label: "Open solicitation", href: solicitation.url }]}
+              links={[link("Open solicitation", solicitation.url, solicitation.access)]}
             />
           ) : (
             slot("solicitation", "RFP")
@@ -416,27 +488,14 @@ export default function OppSummaryPage() {
                   : "Synthesis of what this run learned"
               }
               links={[
-                { label: "Open in Drive", href: learnings.summary_url },
+                link("Open in Drive", learnings.summary_url, learnings.access),
                 ...(learnings.new_pdd_url
-                  ? [{ label: "Next PDD", href: learnings.new_pdd_url }]
+                  ? [link("Next PDD", learnings.new_pdd_url, learnings.access)]
                   : []),
               ]}
             />
           ) : (
             slot("learnings", "Learnings")
-          )}
-        </SummarySection>
-
-        {/* Open questions */}
-        <SummarySection title="Open questions">
-          {open_questions ? (
-            <SummaryRow
-              label="Doc"
-              name="Outstanding design questions for this run"
-              links={[{ label: "Open in Drive", href: open_questions.url }]}
-            />
-          ) : (
-            <NotCreated label="Doc" />
           )}
         </SummarySection>
 
@@ -450,7 +509,7 @@ export default function OppSummaryPage() {
                 key={led.url}
                 label="Ledger"
                 name={led.title}
-                links={[{ label: "Open", href: led.url }]}
+                links={[link("Open", led.url, led.access)]}
               />
             ))
           ) : (
@@ -463,17 +522,20 @@ export default function OppSummaryPage() {
             Generated by ACE · run{" "}
             <span className="font-mono">{opp.run_id}</span>
           </span>
-          {workbench_url && (
-            <a
-              href={workbench_url}
-              className="group inline-flex items-center gap-1 underline-offset-4 transition-all hover:underline"
-            >
-              See the full build process
-              <ArrowRight
-                size={14}
-                className="transition-transform group-hover:translate-x-0.5"
-              />
-            </a>
+          {workbench && (
+            <span className="inline-flex items-center gap-2">
+              <a
+                href={workbench.url}
+                className="group inline-flex items-center gap-1 underline-offset-4 transition-all hover:underline"
+              >
+                See the full build process
+                <ArrowRight
+                  size={14}
+                  className="transition-transform group-hover:translate-x-0.5"
+                />
+              </a>
+              {showAccessTags && workbench.access === "admin" && <AdminOnlyTag />}
+            </span>
           )}
         </footer>
       </main>
