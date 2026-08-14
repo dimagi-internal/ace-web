@@ -2378,6 +2378,43 @@ export interface components {
             /** Note */
             readonly note?: string | null;
         };
+        /**
+         * JudgeOut
+         * @description A step's eval verdict, in the shape the Workbench eval panel renders.
+         *
+         *     Mirrors ``apps.opps.serializers.serialize_judge`` (the legacy
+         *     opp-detail payload has carried exactly this for a long time) so both
+         *     surfaces agree. ``criteria`` is free-form: rubrics differ per skill
+         *     and grow over time, and the panel renders whatever rows it finds.
+         *
+         *     Deliberately not ``VerdictOut``: that has nowhere to put ``criteria``
+         *     and would force us to invent a ``kind`` the verdict file doesn't
+         *     declare.
+         */
+        readonly JudgeOut: {
+            /** Score */
+            readonly score?: number | null;
+            /** Score Pct */
+            readonly score_pct?: number | null;
+            /** Passed */
+            readonly passed?: boolean | null;
+            /** Evaluated At */
+            readonly evaluated_at?: string | null;
+            /**
+             * Criteria
+             * @default {}
+             */
+            readonly criteria: {
+                readonly [key: string]: unknown;
+            };
+            /**
+             * Rationale
+             * @default
+             */
+            readonly rationale: string;
+        } & {
+            readonly [key: string]: unknown;
+        };
         /** StepArtifactOut */
         readonly StepArtifactOut: {
             /** Id */
@@ -2412,6 +2449,7 @@ export interface components {
             readonly artifacts: readonly components["schemas"]["StepArtifactOut"][];
             /** Verdicts */
             readonly verdicts: readonly components["schemas"]["VerdictOut"][];
+            readonly judge?: components["schemas"]["JudgeOut"] | null;
             readonly gate?: components["schemas"]["GateOut"] | null;
             /** Preview */
             readonly preview?: string | null;
