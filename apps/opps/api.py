@@ -20,7 +20,6 @@ from apps.api.errors import (
 from apps.api.etag import compute_etag, maybe_not_modified
 
 from .schemas import (
-    ArtifactOut,
     DecisionOverridesSaveIn,
     DecisionReactionIn,
     DecisionReactionOut,
@@ -40,6 +39,7 @@ from .schemas import (
     SeedChatOut,
     SeededRunIn,
     SeededRunOut,
+    StepArtifactOut,
     StepSnapshotOut,
 )
 
@@ -1086,7 +1086,7 @@ def load_artifact_meta(
 ) -> dict | None:
     """Find an artifact by Drive file_id across all steps of an OppSnapshot.
 
-    Returns an ArtifactOut-compatible dict, or None if not found.
+    Returns a StepArtifactOut-compatible dict, or None if not found.
     The monkeypatch target in contract tests is this module-level function.
     """
     snap = load_opp_snapshot(workspace, slug, run_id=run_id)
@@ -1106,7 +1106,7 @@ def load_artifact_meta(
 
 @router.get(
     "/{slug}/artifacts/{artifact_id}",
-    response=ArtifactOut,
+    response=StepArtifactOut,
     summary="Artifact metadata",
     openapi_extra={"x-mcp-expose": True},
 )
@@ -1116,7 +1116,7 @@ def get_artifact(
     slug: Annotated[str, Path()],
     artifact_id: Annotated[str, Path()],
     run_id: str | None = None,
-) -> ArtifactOut:
+) -> StepArtifactOut:
     workspace = resolve_workspace_for_member(request, workspace_slug)
     artifact = load_artifact_meta(workspace, slug, artifact_id, run_id=run_id)
     if artifact is None:
@@ -1125,7 +1125,7 @@ def get_artifact(
         raise ProblemError(
             404, f"Artifact {artifact_id!r} not found", type_=TYPE_NOT_FOUND,
         )
-    return ArtifactOut.model_validate(artifact)
+    return StepArtifactOut.model_validate(artifact)
 
 
 # ---------------------------------------------------------------------------
@@ -1133,8 +1133,15 @@ def get_artifact(
 # ---------------------------------------------------------------------------
 
 
-def download_artifact_bytes(workspace, slug: str, artifact_id: str) -> tuple[bytes, str]:
+def download_artifact_bytes(
+    workspace, slug: str, artifact_id: str, *, run_id: str | None = None
+) -> tuple[bytes, str]:
     """Download Drive binary for a given artifact_id.
+
+    ``run_id`` selects which run to search; omitting it keeps the previous
+    behaviour of using the opp's current run. The frontend has always sent
+    it, so without this an artifact on any non-current run 404'd even
+    though the step listing beside it resolved fine.
 
     Returns (content_bytes, mime_type). Raises FileNotFoundError when the
     opp or artifact doesn't exist. The monkeypatch target for contract tests.
@@ -1154,7 +1161,7 @@ def download_artifact_bytes(workspace, slug: str, artifact_id: str) -> tuple[byt
         raise FileNotFoundError(f"Drive not configured: {exc}") from exc
 
     try:
-        snap = load_opp(drive, ace_folder_id=ace_folder_id, slug=slug)
+        snap = load_opp(drive, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
     except FileNotFoundError:
         raise
 
@@ -1184,10 +1191,13 @@ def download_artifact(
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
     artifact_id: Annotated[str, Path()],
+    run_id: str | None = None,
 ) -> HttpResponse:
     workspace = resolve_workspace_for_member(request, workspace_slug)
     try:
-        data, mime_type = download_artifact_bytes(workspace, slug, artifact_id)
+        data, mime_type = download_artifact_bytes(
+            workspace, slug, artifact_id, run_id=run_id
+        )
     except FileNotFoundError as exc:
         raise ProblemError(
             404, "Artifact not found", type_=TYPE_NOT_FOUND, detail=str(exc),

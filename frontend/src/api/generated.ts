@@ -2318,40 +2318,6 @@ export interface components {
              */
             readonly decided_at: string;
         };
-        /**
-         * ArtifactOut
-         * @description One entry in the plugin's artifact-manifest.ts.
-         *
-         *     Uses ``extra="allow"`` because the artifact manifest evolves with the
-         *     plugin (new fields like ``phase``, ``role``, etc. appear over time);
-         *     pinning the schema causes the System Overview to 500 every time the
-         *     plugin adds a metadata field. Tradeoff: drift not caught at schema
-         *     validation, but the System Overview is a read-through display and
-         *     new fields just get passed through to the frontend.
-         */
-        readonly ArtifactOut: {
-            /** Path */
-            readonly path: string;
-            /**
-             * Description
-             * @default
-             */
-            readonly description: string;
-            /**
-             * Required
-             * @default false
-             */
-            readonly required: boolean;
-            /** Produced By */
-            readonly produced_by?: string | null;
-            /**
-             * Consumed By
-             * @default []
-             */
-            readonly consumed_by: readonly string[];
-        } & {
-            readonly [key: string]: unknown;
-        };
         /** GateOut */
         readonly GateOut: {
             /** Skill */
@@ -2368,6 +2334,23 @@ export interface components {
             /** Note */
             readonly note?: string | null;
         };
+        /** StepArtifactOut */
+        readonly StepArtifactOut: {
+            /** Id */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+            /** Mime Type */
+            readonly mime_type: string;
+            /** Size Bytes */
+            readonly size_bytes?: number | null;
+            /** Url */
+            readonly url?: string | null;
+            /** Is Text */
+            readonly is_text: boolean;
+            /** Preview */
+            readonly preview?: string | null;
+        };
         /** StepSnapshotOut */
         readonly StepSnapshotOut: {
             /** Skill */
@@ -2382,7 +2365,7 @@ export interface components {
             /** Artifact Count */
             readonly artifact_count: number;
             /** Artifacts */
-            readonly artifacts: readonly components["schemas"]["ArtifactOut"][];
+            readonly artifacts: readonly components["schemas"]["StepArtifactOut"][];
             /** Verdicts */
             readonly verdicts: readonly components["schemas"]["VerdictOut"][];
             readonly gate?: components["schemas"]["GateOut"] | null;
@@ -4171,6 +4154,40 @@ export interface components {
             readonly model: string;
         };
         /**
+         * ArtifactOut
+         * @description One entry in the plugin's artifact-manifest.ts.
+         *
+         *     Uses ``extra="allow"`` because the artifact manifest evolves with the
+         *     plugin (new fields like ``phase``, ``role``, etc. appear over time);
+         *     pinning the schema causes the System Overview to 500 every time the
+         *     plugin adds a metadata field. Tradeoff: drift not caught at schema
+         *     validation, but the System Overview is a read-through display and
+         *     new fields just get passed through to the frontend.
+         */
+        readonly ArtifactOut: {
+            /** Path */
+            readonly path: string;
+            /**
+             * Description
+             * @default
+             */
+            readonly description: string;
+            /**
+             * Required
+             * @default false
+             */
+            readonly required: boolean;
+            /** Produced By */
+            readonly produced_by?: string | null;
+            /**
+             * Consumed By
+             * @default []
+             */
+            readonly consumed_by: readonly string[];
+        } & {
+            readonly [key: string]: unknown;
+        };
+        /**
          * McpServerOut
          * @description One MCP server declared in the plugin's plugin.json.
          */
@@ -5100,14 +5117,16 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["ArtifactOut"];
+                    readonly "application/json": components["schemas"]["StepArtifactOut"];
                 };
             };
         };
     };
     readonly apps_opps_api_download_artifact: {
         readonly parameters: {
-            readonly query?: never;
+            readonly query?: {
+                readonly run_id?: string | null;
+            };
             readonly header?: never;
             readonly path: {
                 readonly workspace_slug: string;
