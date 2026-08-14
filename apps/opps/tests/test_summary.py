@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import yaml
+
 from apps.opps import summary as summary_mod
 from apps.opps.summary import build_summary_payload
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
@@ -1014,7 +1016,11 @@ def test_drive_deliverables_are_not_tagged_admin():
     assert {d["access"] for d in p["design"]["docs"]} == {"public"}
     assert p["training"]["deck"]["access"] == "public"
     assert {d["access"] for d in p["training"]["docs"]} == {"public"}
-    assert {f["access"] for f in p["feedback"]} == {"public"}
+    # NOT the feedback ledgers: a ledger is only "public" when the review it
+    # renders was itself left on a public page. The fixture's is a privately
+    # captured gdoc review, so it is member-only — see
+    # test_private_feedback_ledger_is_not_served_to_a_non_member.
+    assert {f["access"] for f in p["feedback"]} == {"admin"}
 
 
 # ─── Review surface: decisions + open questions ────────────────────
@@ -1308,3 +1314,95 @@ def test_workbench_url_is_none_without_a_workspace_slug(settings):
         drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
     )
     assert p["workbench"] is None
+
+
+# ─── Confidentiality: a private review's ledger is not a public link ──
+
+
+def _tree_with_ledgers():
+    """Two ledgers side by side: one private review, one public reaction."""
+    tree = _full_tree()
+    fb = tree["ACE"]["turmeric"]["feedback"]
+    fb["20260727-sophie-feintuch.yaml"] = yaml.safe_dump({
+        "schema_version": 1,
+        "slug": "20260727-sophie-feintuch",
+        "reviewer": "Sophie Feintuch",
+        "received_at": "2026-07-27",
+        "channel": "gdoc-comments",
+        "items": [{"id": "d", "verbatim": "This is a private review."}],
+    })
+    fb["20260814-public-anne-kuhlmann.yaml"] = yaml.safe_dump({
+        "schema_version": 1,
+        "slug": "20260814-public-anne-kuhlmann",
+        "reviewer": "Anne Kuhlmann",
+        "received_at": "2026-08-14",
+        "channel": "other",
+        "items": [{"id": "photo-required", "verbatim": "Left on the public page."}],
+    })
+    fb["20260814-public-anne-kuhlmann-ledger"] = "# Feedback ledger\n"
+    return tree
+
+
+def test_private_feedback_ledger_is_not_served_to_a_non_member():
+    """`read_reactions` refuses to republish a privately-captured review —
+    and linking the ledger RENDERED FROM that review would walk straight
+    around it. The title alone discloses that a named person reviewed the
+    run; the doc behind it is one anyone-with-link grant from disclosing
+    everything they said."""
+    drive = FakeDriveClient.from_tree(_tree_with_ledgers())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+        viewer_is_member=False,
+    )
+    titles = [d["title"] for d in p["feedback"]]
+    assert titles == ["2026-08-14 · Public Anne Kuhlmann"]
+    assert "Sophie" not in str(p["feedback"])
+
+
+def test_member_sees_every_ledger_with_the_private_ones_tagged():
+    drive = FakeDriveClient.from_tree(_tree_with_ledgers())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+        viewer_is_member=True,
+    )
+    by_title = {d["title"]: d["access"] for d in p["feedback"]}
+    assert by_title["2026-07-27 · Sophie Feintuch"] == "admin"
+    assert by_title["2026-08-14 · Public Anne Kuhlmann"] == "public"
+
+
+def test_a_ledger_with_no_record_at_all_is_private():
+    """Default-deny. An orphaned ledger — record deleted, renamed, or never
+    written — must not be assumed public because nothing said otherwise."""
+    drive = FakeDriveClient.from_tree(_full_tree())  # ledger, no record yaml
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+        viewer_is_member=False,
+    )
+    assert p["feedback"] == []
+
+
+def test_public_summary_channel_marks_a_record_public_without_the_slug():
+    """The boundary is a FIELD now (dimagi-internal/ace#1362). A record that
+    declares `channel: public-summary` is public even if its slug carries no
+    `-public-` segment, so the filename convention stops being load-bearing."""
+    tree = _full_tree()
+    fb = tree["ACE"]["turmeric"]["feedback"]
+    fb["20260815-anne-kuhlmann.yaml"] = yaml.safe_dump({
+        "schema_version": 1,
+        "slug": "20260815-anne-kuhlmann",
+        "reviewer": "Anne Kuhlmann",
+        "received_at": "2026-08-15",
+        "channel": "public-summary",
+        "items": [{"id": "a", "verbatim": "Left on the public page."}],
+    })
+    fb["20260815-anne-kuhlmann-ledger"] = "# Feedback ledger\n"
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+        viewer_is_member=False,
+    )
+    assert [d["title"] for d in p["feedback"]] == ["2026-08-15 · Anne Kuhlmann"]

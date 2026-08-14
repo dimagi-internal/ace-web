@@ -774,7 +774,9 @@ def _read_design(state: dict) -> dict | None:
     return {"docs": docs} if docs else None
 
 
-def _read_feedback(drive: DriveClient, opp_folder_id: str) -> list[dict]:
+def _read_feedback(
+    drive: DriveClient, opp_folder_id: str, *, viewer_is_member: bool,
+) -> list[dict]:
     """Rendered reviewer feedback ledgers — "where did my comment go?".
 
     Derived views produced by skills/feedback-ledger, one stable doc per
@@ -782,6 +784,24 @@ def _read_feedback(drive: DriveClient, opp_folder_id: str) -> list[dict]:
     here is what makes the summary a review surface rather than a link
     list: a returning reviewer opens the run and sees the diff against
     their own last set of comments.
+
+    A PRIVATE review's ledger is omitted for a non-member, and that is
+    the one exception to this module's "every link is served to
+    everyone, each declaring its own ``access``" rule. That rule is
+    about USABILITY — hiding a link an external reviewer can't use is as
+    bad as letting it 404. Confidentiality is a different rule, and it
+    removes the row: ``read_reactions`` in the very same payload refuses
+    to republish a privately-captured review, and linking the ledger
+    RENDERED FROM that review would walk straight around it. The title
+    alone ("2026-07-27 · Sophie Feintuch") discloses that a named person
+    reviewed this run; the doc behind it is one anyone-with-link grant
+    away from disclosing everything they said.
+
+    So: default-deny by the same predicate the reactions reader uses
+    (``reactions.is_public_record`` — the ``public-summary`` channel, or
+    the legacy ``-public-`` slug marker). A ledger whose record is
+    missing or unparseable counts as private. Members see everything,
+    with the private ones tagged ``admin`` so the page can say why.
     """
     folder = _find_folder(drive, opp_folder_id, "feedback")
     if folder is None:
@@ -794,17 +814,26 @@ def _read_feedback(drive: DriveClient, opp_folder_id: str) -> list[dict]:
         log.warning("summary: list feedback %s failed: %s", folder.id, exc)
         return []
 
+    from apps.opps.reactions import public_record_slugs
+
+    public_slugs = public_record_slugs(drive, opp_folder_id)
+
     for f in files:
         if not f.name.endswith("-ledger") or not f.web_view_link:
             continue
         # "20260727-sophie-feintuch-ledger" -> "2026-07-27 · Sophie Feintuch"
         stem = f.name[: -len("-ledger")]
+        is_public = stem in public_slugs
+        if not is_public and not viewer_is_member:
+            continue
         date, _, who = stem.partition("-")
         title = who.replace("-", " ").title() or stem
         if len(date) == 8 and date.isdigit():
             title = f"{date[:4]}-{date[4:6]}-{date[6:]} · {title}"
         ledgers.append({
-            "title": title, "url": f.web_view_link, "access": ACCESS_PUBLIC,
+            "title": title,
+            "url": f.web_view_link,
+            "access": ACCESS_PUBLIC if is_public else ACCESS_ADMIN,
         })
 
     return sorted(ledgers, key=lambda d: d["title"], reverse=True)
@@ -1074,8 +1103,11 @@ def build_summary_payload(
     404 without leaking which segment was the miss.
 
     ``viewer_is_member`` is echoed back as ``viewer.is_member``. It does
-    NOT change which links are served: every link is always present and
-    always declares its ``access`` (see the classification block above).
+    NOT change which links are served — with ONE exception: a privately
+    captured review's feedback ledger is omitted for a non-member, on
+    confidentiality rather than usability grounds (see
+    ``_read_feedback``). Every other link is always present and always
+    declares its ``access`` (see the classification block above).
     Membership only decides whether the page draws the ``admin only``
     tag — a member already knows, and the tag would be noise. This
     replaces the earlier ``include_internal_links``, which HID the
@@ -1160,7 +1192,9 @@ def build_summary_payload(
             drive, opp_folder.id, run_folder.id
         ),
         "stage": _read_stage(state),
-        "feedback": _read_feedback(drive, opp_folder.id),
+        "feedback": _read_feedback(
+            drive, opp_folder.id, viewer_is_member=viewer_is_member,
+        ),
         "decisions": _read_decisions(drive, run_folder.id),
         # Partner reactions collected on this page, keyed by decision id.
         # Written by apps.opps.reactions into the same feedback records
