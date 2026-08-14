@@ -377,8 +377,57 @@ export interface OppSnapshot {
   saved_overrides?: Record<string, SavedDecisionOverride>;
 }
 
-export interface StepDetail extends Step {
-  primary_body: string;
+/**
+ * One artifact as the STEP-DETAIL endpoint returns it (``ArtifactOut`` in
+ * apps/opps/schemas.py). Deliberately NOT the ``Artifact`` above: that one
+ * is the opp-detail/``Step.artifacts`` shape (``drive_file_id`` /
+ * ``drive_web_link`` / ``path``), and the two endpoints genuinely differ.
+ * Conflating them is what broke the artifact pane — the pane read
+ * ``drive_file_id`` off a payload that only carries ``id``, so it bailed
+ * before ever fetching and offered no Drive fallback link.
+ */
+export interface StepArtifact {
+  id: string;
+  name: string;
+  mime_type: string;
+  size_bytes: number | null;
+  url: string | null;
+  is_text: boolean;
+  preview: string | null;
+}
+
+/**
+ * GET /api/w/{ws}/opps/{slug}/steps/{skill} — ``StepSnapshotOut``.
+ *
+ * This does NOT extend ``Step``: the v2 endpoint returns a different
+ * object, and declaring otherwise made ``skill_name`` / ``display_name`` /
+ * ``phase_display`` / ``judge`` silently undefined at runtime.
+ *
+ * ``judge`` is not on this endpoint (it returns ``verdicts``, which are
+ * currently empty for every step — restoring the eval panel needs a
+ * backend change and is tracked separately). It stays optional so the
+ * pane keeps its existing "no eval for this step" rendering.
+ */
+export interface StepDetail {
+  skill: string;
+  phase: string;
+  status: string;
+  artifact_count: number;
+  artifacts: StepArtifact[];
+  verdicts: StepVerdict[];
+  gate: unknown | null;
+  preview: string | null;
+  judge?: Judge | null;
+}
+
+export interface StepVerdict {
+  skill: string;
+  phase: string;
+  kind: "quick" | "deep" | "monitor";
+  score: number;
+  verdict: "pass" | "warn" | "fail";
+  rationale: string;
+  decided_at: string;
 }
 
 export interface LinkedChat {
