@@ -49,6 +49,7 @@ surface: what we decided and why, and what we could not decide.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date
 
 import yaml
@@ -814,6 +815,15 @@ def _read_feedback(drive: DriveClient, opp_folder_id: str) -> list[dict]:
 # Ordinal-prefixed phase tags (``1-design``, ``8-solicitation-management``)
 # are what the decisions log writes. Only the ordinal is load-bearing for
 # ordering; the tail is humanised for the label.
+#
+# The tag is an ABBREVIATION of the phase, though — ``3-commcare`` for the
+# ``commcare-setup`` phase — so humanising it yields "Commcare" where the
+# Workbench says "CommCare setup". The public review surface is organised
+# by phase precisely so a reader can see which part of the flow produced a
+# call; two names for the same phase across the two surfaces defeats that.
+# So prefer the plugin's own phase registry (the same source the Workbench
+# renders from, keyed on the decision's real ``phase`` name) and fall back
+# to humanising the tag only when the plugin can't be read.
 def _decision_phase_label(phase_raw: str) -> str:
     head, _, tail = str(phase_raw or "").partition("-")
     if head.isdigit() and tail:
@@ -824,6 +834,47 @@ def _decision_phase_label(phase_raw: str) -> str:
 def _decision_phase_ordinal(phase_raw: str) -> int:
     head, _, _tail = str(phase_raw or "").partition("-")
     return int(head) if head.isdigit() else 99
+
+
+def _plugin_phase_index() -> dict[str, tuple[str, int]]:
+    """{phase_name: (display_name, ordinal)} from the ACE plugin registry.
+
+    Empty dict when the plugin isn't readable (local dev, a broken
+    checkout) — callers degrade to the tag-derived label, which is what
+    this surface shipped with.
+    """
+    try:
+        from apps.opps.api import _phase_display_index
+
+        return _phase_display_index()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("summary: phase registry unavailable (%s) — using tag labels", exc)
+        return {}
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in re.split(r"[^a-z0-9]+", str(text or "").lower()) if w}
+
+
+def _registry_label_agrees(phase_raw: str, display: str) -> bool:
+    """Does the registry's display name describe the phase the ROW claims?
+
+    ``serialize_decision`` projects a row's tag onto a phase NAME by
+    ORDINAL (``4-connect`` → whatever the plugin currently calls phase 4).
+    That is fine while the pipeline is stable and actively wrong after a
+    re-order: the ACE plugin's phase 4 used to be OCS setup, so a run that
+    recorded ``4-connect`` would be published under "OCS Setup" — a
+    confident, wrong statement about where a decision came from, on a page
+    an outside partner reads.
+
+    So the registry is used to make the label FULLER, never to overrule
+    the run: take the display name only when every word of the row's own
+    tag appears in it (``connect`` ⊂ "Connect Setup" ✓,
+    ``connect`` ⊄ "OCS Setup" ✗). Otherwise keep what the run wrote.
+    """
+    _, _, tail = str(phase_raw or "").partition("-")
+    tag_words = _words(tail or phase_raw)
+    return bool(tag_words) and tag_words <= _words(display)
 
 
 def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
@@ -859,6 +910,7 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
 
     rows: list[dict] = []
     counts = {"stated": 0, "inferred": 0, "conflicting": 0, "overridden": 0}
+    phase_index = _plugin_phase_index()
     for raw in raw_rows:
         if not isinstance(raw, dict):
             log.warning("summary: decision entry is not a mapping — skipped")
@@ -891,7 +943,21 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
             conflict_signals=[str(c) for c in (raw.get("conflict_signals") or [])],
         )
         serialized = serialize_decision(decision)
-        serialized["phase_label"] = _decision_phase_label(decision.phase)
+        # ``decision.phase`` is the phase TAG the log writes (``3-commcare``);
+        # the phase NAME it projects onto (``commcare-setup``) rides on the
+        # serialized ``phase`` field, which is what the registry is keyed on.
+        # The tag is an abbreviation, so humanising it gives "Commcare"
+        # where the Workbench says "CommCare Setup" — two names for one
+        # phase across the two surfaces, which defeats the point of
+        # organising this page by phase at all.
+        display, _ordinal = phase_index.get(str(serialized.get("phase") or ""), ("", 0))
+        serialized["phase_label"] = (
+            display
+            if _registry_label_agrees(decision.phase, display)
+            else _decision_phase_label(decision.phase)
+        )
+        # Ordinal always comes from the tag the RUN wrote — see
+        # ``_registry_label_agrees``.
         serialized["phase_ordinal"] = _decision_phase_ordinal(decision.phase)
         rows.append(serialized)
         counts[basis] += 1

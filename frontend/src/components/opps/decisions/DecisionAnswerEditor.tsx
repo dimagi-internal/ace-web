@@ -19,47 +19,64 @@ import { cn } from "@/lib/utils";
  * would have drifted on write-in semantics, revert semantics, and what
  * counts as a no-op within a week.
  *
- * Two things are genuinely per-surface, and they are the only two props
- * that differ:
+ * Three things vary, and they vary along DIFFERENT axes — conflating them
+ * is what made the public surface feel unlike the Workbench:
  *
- * - `commitMode`. The Workbench stages into a shared multi-player Redis
- *   buffer that a member later saves to Drive, so a pill click can commit
- *   instantly — nothing is durable yet and Revert/Discard-all are one
- *   click away. The public page writes THROUGH on submit and has to
- *   collect a self-reported identity at that moment, so it stages the
- *   pick locally and confirms. Asking for a name before someone can even
- *   click a pill would be the barrier this surface exists to remove.
- * - `identitySlot` / `dense`. Who is asked for a name, and the type scale
- *   (a console vs a document a partner reads).
+ * - `commitMode` follows **identity, not surface**. `immediate` commits a
+ *   pill click as it happens; `confirm` stages it locally behind a Save
+ *   button. Confirm exists for exactly one situation — we don't yet know
+ *   who is editing, so the pick can't be durable until they say. The
+ *   Workbench is never in that situation (a member is authenticated) and
+ *   neither is the public page once the reviewer has given a name once,
+ *   so both are `immediate` from that point on. Making it a per-surface
+ *   constant put a Save button on every row of a 42-row page and undid
+ *   the immediacy for the 41 rows after the name was known.
+ * - `voice` follows **surface**. "Override reason" is Workbench
+ *   vocabulary; a partner reading a summary page has never met the word.
+ *   The mechanics are identical, the words are not, and the `aria-label`s
+ *   stay identical across both regardless of voice.
+ * - `dense` follows **type scale** — the Workbench's console scale vs the
+ *   reading scale of a document a partner reads. The CONTROLS are the
+ *   same either way.
  */
 export type CommitMode = "immediate" | "confirm";
 
+/** Whose vocabulary the visible copy speaks. See `COPY`. */
+export type EditorVoice = "console" | "partner";
+
 /**
- * Per-surface copy. The mechanics are identical; the words are not, and
- * pretending otherwise would be a worse kind of sharing. "Override
- * reason" is the Workbench's established vocabulary and matches the field
- * this writes (`override_reasoning`); a partner reading a summary page
- * has never met that word. The FIELD LABELS (aria-label) stay identical
- * across both so assistive tech and tests see one component.
+ * Per-surface copy, keyed by VOICE rather than by commit mode.
+ *
+ * The mechanics are identical; the words are not, and pretending
+ * otherwise would be a worse kind of sharing. "Override reason" is the
+ * Workbench's established vocabulary and matches the field this writes
+ * (`override_reasoning`); a partner reading a summary page has never met
+ * that word. The FIELD LABELS (aria-label) stay identical across both so
+ * assistive tech and tests see one component.
+ *
+ * This used to be keyed by `commitMode`, which silently coupled two
+ * unrelated things: the moment a change becomes durable, and who is being
+ * spoken to. The public surface can't adopt the Workbench's immediacy
+ * without also adopting its vocabulary until they're separated.
  */
 const COPY = {
-  immediate: {
+  console: {
     openEdit: "Add override reason",
     editExisting: "Edit override reason",
     revert: "Revert",
-    reasonLegend: "Override reason (optional — saves when you click away)",
+    reasonLegend: "Override reason",
     writeInLegend: "New option (optional — overrides pill choice)",
     writeInPlaceholder: "Type a new answer not in the list above",
     close: "Done",
   },
-  confirm: {
+  partner: {
     openEdit: "Write in a different answer",
     editExisting: "Edit this answer",
     revert: "Restore the AI default",
-    reasonLegend: "Why (optional)",
+    reasonLegend: "Why",
     writeInLegend: "A different answer (optional — overrides the pick above)",
     writeInPlaceholder: "Type an answer not in the list above",
-    close: "Cancel",
+    close: "Done",
   },
 } as const;
 
@@ -70,6 +87,8 @@ export interface DecisionAnswerEditorProps {
   /** Override rationale currently in force; "" when none. */
   effectiveReason: string;
   commitMode: CommitMode;
+  /** Whose vocabulary the copy speaks — the Workbench's, or a partner's. */
+  voice: EditorVoice;
   /**
    * Persist the answer. Returning (or resolving to) `false` means "it did
    * not save" and keeps the draft open with `error` showing; anything
@@ -104,6 +123,7 @@ export function DecisionAnswerEditor({
   effectiveValue,
   effectiveReason,
   commitMode,
+  voice,
   onCommit,
   onRevert,
   revertable,
@@ -122,7 +142,16 @@ export function DecisionAnswerEditor({
     reasoning: string;
   } | null>(null);
 
-  const copy = COPY[commitMode];
+  const copy = COPY[voice];
+  // The reason field saves on blur in immediate mode; say so rather than
+  // leaving someone wondering whether their typing was kept.
+  const reasonLegend =
+    commitMode === "immediate"
+      ? `${copy.reasonLegend} (optional — saves when you click away)`
+      : `${copy.reasonLegend} (optional)`;
+  // Confirm mode has a staged pick to throw away, so the close button
+  // cancels; immediate mode has nothing pending, so it just closes.
+  const closeLabel = commitMode === "confirm" ? "Cancel" : copy.close;
   const text = dense ? "text-xs" : "text-[13px]";
   const canRevert = revertable ?? effectiveValue !== decision.ai_default;
   const open = draft !== null;
@@ -197,6 +226,16 @@ export function DecisionAnswerEditor({
         onPick={pick}
       />
 
+      {/* In `immediate` mode there is no draft block to hang these off,
+          and a pill click that failed server-side would otherwise be
+          silently lost — the row would just snap back. */}
+      {!open && busy && (
+        <p className="text-muted-foreground" role="status">
+          Saving…
+        </p>
+      )}
+      {!open && error && <p className="text-red-400">{error}</p>}
+
       {!open && (
         <div className="flex flex-wrap gap-2">
           <button
@@ -222,7 +261,7 @@ export function DecisionAnswerEditor({
         <div className="flex w-full flex-col gap-2">
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-              {copy.reasonLegend}
+              {reasonLegend}
             </span>
             <textarea
               value={draft.reasoning}
@@ -288,7 +327,7 @@ export function DecisionAnswerEditor({
               onClick={() => setDraft(null)}
               className="rounded-md border border-border bg-background px-3 py-1 hover:bg-accent"
             >
-              {copy.close}
+              {closeLabel}
             </button>
           </div>
         </div>

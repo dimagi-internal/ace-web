@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from apps.opps import summary as summary_mod
 from apps.opps.summary import build_summary_payload
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
 
@@ -1054,11 +1055,42 @@ def test_decision_rows_carry_the_workbench_shape():
 
 
 def test_decision_rows_carry_a_phase_label_and_ordinal_for_grouping():
+    """Phase is the ORGANISING structure of the public review surface, so
+    the label has to be the same phase name the Workbench shows — the row
+    tag ``3-commcare`` humanises to "Commcare" where the plugin (and the
+    Workbench reading it) says "CommCare Setup"."""
     rows = {r["id"]: r for r in _payload()["decisions"]["rows"]}
-    assert rows["archetype-selection"]["phase_label"] == "Design"
+    # Tag `1-design` → the plugin's own display name for that phase.
+    assert rows["archetype-selection"]["phase_label"] == "Design Review"
     assert rows["archetype-selection"]["phase_ordinal"] == 1
     assert rows["solicitation-expected-period"]["phase_label"] == "Solicitation management"
     assert rows["solicitation-expected-period"]["phase_ordinal"] == 8
+
+
+def test_a_reordered_pipeline_cannot_relabel_an_old_decision():
+    """`serialize_decision` projects a row's tag onto a phase name by
+    ORDINAL, so a pipeline re-order silently re-points old rows: the stub
+    registry's phase 4 is OCS setup, while this run recorded `4-connect`.
+
+    Publishing that row as "OCS Setup" would be a confident, wrong claim
+    about where a decision came from, on a page an outside partner reads.
+    The registry may only make a label FULLER, never overrule the run.
+    """
+    rows = {r["id"]: r for r in _payload()["decisions"]["rows"]}
+    row = rows["payment-rate"]
+    assert row["phase_raw"] == "4-connect"
+    assert row["phase"] == "ocs-setup"          # the ordinal projection
+    assert row["phase_label"] == "Connect"      # …but the label follows the run
+    assert row["phase_ordinal"] == 4
+
+
+def test_phase_label_falls_back_to_the_tag_without_a_plugin_registry(monkeypatch):
+    """No readable plugin (local dev, a broken checkout) is not a reason to
+    lose the phase headings — degrade to the tag-derived label."""
+    monkeypatch.setattr(summary_mod, "_plugin_phase_index", lambda: {})
+    rows = {r["id"]: r for r in _payload()["decisions"]["rows"]}
+    assert rows["archetype-selection"]["phase_label"] == "Design"
+    assert rows["archetype-selection"]["phase_ordinal"] == 1
 
 
 def test_conflicting_rows_keep_their_competing_signals():

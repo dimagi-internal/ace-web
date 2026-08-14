@@ -187,37 +187,66 @@ describe("OppSummaryPage", () => {
     expect(screen.getByText("responding LLO + Spark")).toBeTruthy();
   });
 
-  it("leads the decisions surface with the conflicting rows, expanded", async () => {
-    renderWith({
-      ...BASE,
-      decisions: {
-        total: 2,
-        counts: { stated: 1, inferred: 0, conflicting: 1, overridden: 0 },
-        rows: [
-          {
-            ...DECISION,
-            id: "quiet-one",
-            question: "A settled call",
-            evidence_basis: "stated",
-          },
-          {
-            ...DECISION,
-            id: "loud-one",
-            question: "A contested call",
-            evidence_basis: "conflicting",
-            conflict_signals: ["source A says X", "source B says Y"],
-          },
-        ],
-      },
-    });
+  const TWO_PHASES: OppSummaryPayload = {
+    ...BASE,
+    decisions: {
+      total: 2,
+      counts: { stated: 1, inferred: 0, conflicting: 1, overridden: 0 },
+      rows: [
+        {
+          ...DECISION,
+          id: "quiet-one",
+          question: "A settled call",
+          evidence_basis: "stated",
+          phase_raw: "4-connect-setup",
+          phase_label: "Connect setup",
+          phase_ordinal: 4,
+        },
+        {
+          ...DECISION,
+          id: "loud-one",
+          question: "A contested call",
+          evidence_basis: "conflicting",
+          conflict_signals: ["source A says X", "source B says Y"],
+        },
+      ],
+    },
+  };
+
+  it("organises the decisions by phase, the way the Workbench does", async () => {
+    // Phase is the structure of the tab, not something you reach by
+    // expanding a disclosure — a reader has to be able to see WHERE in
+    // the flow a call came from (Jonathan, 2026-08-14).
+    renderWith(TWO_PHASES);
     await openDecisionsTab();
-    expect(await screen.findByText("A contested call")).toBeTruthy();
-    // Flagged rows open by default, so their conflicting signals are
-    // already on the page — that is the point of the section.
-    expect(screen.getByText("source A says X")).toBeTruthy();
-    // The settled one is behind the disclosure.
+    expect(await screen.findByText("Design")).toBeTruthy();
+    expect(screen.getByText("Connect setup")).toBeTruthy();
+    expect(screen.getByText("Phase 4")).toBeTruthy();
+  });
+
+  it("opens the contested rows in their phase, and leaves the routine ones collapsed", async () => {
+    renderWith(TWO_PHASES);
+    await openDecisionsTab();
+    // The conflicting row is expanded IN its phase section, so its
+    // competing signals are on screen at first paint.
+    expect(screen.getAllByText("A contested call").length).toBeGreaterThan(0);
+    expect(await screen.findByText("source A says X")).toBeTruthy();
+    // The phase with nothing contested stays collapsed, so 40 routine
+    // rows can't bury the 2 that need an eye.
     expect(screen.queryByText("A settled call")).toBeNull();
-    expect(screen.getByText(/Show all 2/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Connect setup"));
+    expect(screen.getByText("A settled call")).toBeTruthy();
+  });
+
+  it("jumps to a flagged row rather than rendering it twice", async () => {
+    renderWith(TWO_PHASES);
+    await openDecisionsTab();
+    // One entry in the "worth your eye" list + the row itself in its
+    // phase — the list is a jump list, and clicking it lands on the row.
+    const hits = screen.getAllByText("A contested call");
+    expect(hits.length).toBe(2);
+    fireEvent.click(hits[0]);
+    expect(screen.getByText("source A says X")).toBeTruthy();
   });
 
   // ── The response affordance ─────────────────────────────────────
@@ -249,7 +278,8 @@ describe("OppSummaryPage", () => {
     // Overview first — the decisions body is not on screen yet.
     expect(screen.queryByText("A contested call")).toBeNull();
     await openDecisionsTab();
-    expect(await screen.findByText("A contested call")).toBeTruthy();
+    await screen.findByText("Design");
+    expect(screen.getAllByText("A contested call").length).toBeGreaterThan(0);
   });
 
   it("draws no tab strip when a run has nothing to review", async () => {
@@ -349,15 +379,43 @@ describe("OppSummaryPage", () => {
     expect(post).not.toHaveBeenCalled();
   });
 
-  it("never asks a signed-in viewer to type their name", async () => {
-    // Logged in ⇒ never anonymous. The session identity is used instead.
+  it("never asks a signed-in viewer to type their name, or to confirm", async () => {
+    // Logged in ⇒ never anonymous: the session identity is used, so we
+    // already know who is editing and there is nothing left to confirm.
+    // A member gets the Workbench's click-and-done editing.
+    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
     renderWith({ ...CONFLICTED, viewer: { is_member: true } });
     await openDecisionsTab();
     fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
     expect(screen.queryByLabelText("Your name")).toBeNull();
-    expect((screen.getByText("Save this answer") as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    expect(screen.queryByText("Save this answer")).toBeNull();
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0][4]).toMatchObject({ value: "the other one" });
+  });
+
+  it("asks for a name once, then edits click-and-done like the Workbench", async () => {
+    // The confirm step exists for exactly one situation: we don't yet
+    // know who is editing. Once they've told us, a Save button on every
+    // one of 42 rows is the barrier this surface exists to remove.
+    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
+    renderWith(CONFLICTED);
+    await openDecisionsTab();
+
+    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
+    fireEvent.change(screen.getByLabelText("Your name"), {
+      target: { value: "Anne Kuhlmann" },
+    });
+    // The mode does not flip mid-draft — the Save button they are aiming
+    // at stays where it is.
+    expect(screen.getByText("Save this answer")).toBeTruthy();
+    fireEvent.click(screen.getByText("Save this answer"));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+
+    // Second change: no name field, no Save button, no confirm step.
+    expect(await screen.findByText(/saved as/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^the pick/i }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("Save this answer")).toBeNull();
   });
 
   it("shows who changed a row, and lets anyone put the old answer back", async () => {
