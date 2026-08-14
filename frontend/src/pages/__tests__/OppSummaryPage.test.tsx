@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/api/oppSummary";
 import type { OppSummaryPayload } from "@/api/oppSummary";
+import { rememberIdentity } from "@/components/opps/decisions/reviewerIdentity";
 import OppSummaryPage from "@/pages/OppSummaryPage";
 
 const BASE: OppSummaryPayload = {
@@ -82,7 +83,15 @@ async function openDecisionsTab() {
 }
 
 describe("OppSummaryPage", () => {
-  beforeEach(() => vi.restoreAllMocks());
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    // The reviewer's name is remembered in localStorage so working
+    // through several rows costs one typing — which means it leaks
+    // between tests in this file unless cleared. Written through the
+    // same helper the app uses: the test env's storage stub has no
+    // `.clear()`.
+    rememberIdentity({ name: "", email: "" });
+  });
 
   it("links the design docs a reviewer is meant to comment on", async () => {
     renderWith(BASE);

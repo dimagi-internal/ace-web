@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronRight, RotateCcw, ShieldCheck } from "lucide-react";
 
+import { fireAndForget } from "@/components/opps/decisions/fireAndForget";
 import { cn } from "@/lib/utils";
 
 /**
@@ -74,7 +75,7 @@ export function DecisionHistory({
   current: DecisionEditEntry;
   history: DecisionEditEntry[];
   /** Undo — writes the old value back as a new, attributed change. */
-  onRestore?: (value: string, reasoning: string) => void | Promise<void>;
+  onRestore?: (value: string, reasoning: string) => unknown;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -126,7 +127,7 @@ export function DecisionHistory({
                   {onRestore && (
                     <button
                       type="button"
-                      onClick={() => void onRestore(h.override, h.reasoning ?? "")}
+                      onClick={() => fireAndForget(onRestore(h.override, h.reasoning ?? ""))}
                       className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 hover:bg-accent"
                     >
                       <RotateCcw size={10} />
