@@ -168,6 +168,56 @@ def is_public_record_slug(slug: str | None) -> bool:
     return bool(_PUBLIC_SLUG_RE.match(str(slug or "")))
 
 
+def is_public_record(record: dict | None) -> bool:
+    """May this feedback record be republished on a page anyone can open?
+
+    THE boundary predicate. Everything that reads
+    ``ACE/<opp>/feedback/`` for a public surface must go through here —
+    including anything that merely LINKS to a derived view of it.
+
+    Two markers, because the store outlived its first one:
+
+    * ``channel: public-summary`` — the schema FIELD, added plugin-side
+      in dimagi-internal/ace#1362. This is the real answer.
+    * the ``-public-`` segment in the slug — the original marker, which
+      made a filename convention load-bearing for a confidentiality
+      boundary. Still honoured because records written before the field
+      existed carry ``channel: other`` and nothing else.
+
+    Default-deny: anything unparseable, unmarked, or absent is PRIVATE.
+    A gdoc review, an email, a meeting note — all given in confidence,
+    all sitting in the same folder.
+    """
+    if not isinstance(record, dict):
+        return False
+    if record.get("channel") == "public-summary":
+        return True
+    return is_public_record_slug(record.get("slug"))
+
+
+def public_record_slugs(drive, opp_folder_id: str) -> set[str]:
+    """Slugs of every publicly-republishable record in the opp's folder.
+
+    The set a public surface may name. Any read failure yields the empty
+    set, which hides everything — the safe direction.
+    """
+    out: set[str] = set()
+    try:
+        files = _list_feedback_files(drive, opp_folder_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("reactions: list feedback failed: %s", exc)
+        return out
+    for f in files:
+        try:
+            rec = _parse_record(drive.get_content(f.id, f.mime_type).content or "")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("reactions: read %s failed: %s", f.name, exc)
+            continue
+        if is_public_record(rec) and rec.get("slug"):
+            out.add(str(rec["slug"]))
+    return out
+
+
 # ─── Drive plumbing ────────────────────────────────────────────────
 
 
@@ -271,7 +321,7 @@ def submit_decision_reaction(
         if not f.name.endswith(".yaml"):
             continue
         rec = _parse_record(drive.get_content(f.id, f.mime_type).content or "")
-        if not is_public_record_slug(rec.get("slug")) or rec.get("against_run") != run_id:
+        if not is_public_record(rec) or rec.get("against_run") != run_id:
             continue
         run_total += len(rec.get("items") or [])
     if run_total >= MAX_ITEMS_PER_RUN:
@@ -381,7 +431,7 @@ def read_reactions(drive, opp_folder_id: str, *, run_id: str) -> dict:
             log.warning("reactions: read %s failed: %s", f.name, exc)
             continue
         slug = rec.get("slug")
-        if not is_public_record_slug(slug) or rec.get("against_run") != run_id:
+        if not is_public_record(rec) or rec.get("against_run") != run_id:
             continue
         reviewer = str(rec.get("reviewer") or "").strip() or "Anonymous"
         received_at = str(rec.get("received_at") or "")
