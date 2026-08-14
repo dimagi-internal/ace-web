@@ -1165,14 +1165,37 @@ def download_artifact_bytes(
     except FileNotFoundError:
         raise
 
+    def _fetch(file_id: str, mime_type: str | None) -> tuple[bytes, str]:
+        content = drive.get_content(file_id, mime_type)
+        body = content.content
+        return (
+            body.encode() if isinstance(body, str) else body,
+            mime_type or "application/octet-stream",
+        )
+
     # Search all steps for the artifact by id.
     for step_snap in snap.current_run.steps:
         for artifact in step_snap.artifacts:
             if artifact.drive_file_id == artifact_id:
-                content = drive.get_content(artifact.drive_file_id, artifact.mime_type)
-                return content.content.encode() if isinstance(
-                    content.content, str
-                ) else content.content, artifact.mime_type or "application/octet-stream"
+                return _fetch(artifact.drive_file_id, artifact.mime_type)
+
+    # Not every artifact belongs to a STEP. `decisions.yaml` and
+    # `open-questions.md` live at the run root, and a cold load_opp
+    # attributes them to no step — so a step-only scan 404s them while the
+    # step listing beside them lists them happily (that listing is served
+    # from a cached snapshot which still attributes them). Fall back to the
+    # run folder itself.
+    #
+    # Scoped deliberately: we resolve the id WITHIN this run's folder rather
+    # than fetching whatever id we were handed. The scan is the
+    # authorization boundary — without it any workspace member could read
+    # any Drive file the service account can see.
+    run_folder_id = getattr(snap.current_run, "folder_id", "") or ""
+    if run_folder_id:
+        lister = getattr(drive, "list_folder", None) or getattr(drive, "list_files", None)
+        for f in (lister(run_folder_id) if lister else []):
+            if getattr(f, "id", None) == artifact_id:
+                return _fetch(f.id, getattr(f, "mime_type", None))
 
     raise FileNotFoundError(f"artifact {artifact_id!r} not found")
 
