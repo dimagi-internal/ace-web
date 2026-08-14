@@ -25,6 +25,20 @@ export type ReviewDecision = Decision & {
   phase_ordinal: number;
 };
 
+/**
+ * One partner reaction to one decision row. `feedback_ref` is the
+ * `<record-slug>/<item-id>` provenance stamp every downstream change
+ * cites (`Feedback-Ref:` on an issue, `feedback_ref:` on a decisions
+ * row) — it is what lets a reviewer see where their comment went.
+ * Reviewer emails are deliberately not served on the public payload.
+ */
+export interface DecisionReaction {
+  reviewer: string;
+  comment: string;
+  received_at: string;
+  feedback_ref: string;
+}
+
 // Matches apps/opps/summary.py build_summary_payload return shape.
 // Backed by phases.<phase>.products.* blocks in run_state.yaml as of
 // plugin v0.13.155-v0.13.172 state-consolidation.
@@ -134,6 +148,16 @@ export interface OppSummaryPayload {
       answered_in: string | null;
     }[];
   } | null;
+  /**
+   * Reactions this run has collected from partners, keyed by decision id.
+   * A comment nobody can find later is theatre — these are read back out
+   * of the same feedback records `skills/feedback-ledger` consumes, so
+   * what a partner writes here reaches the next run's ledger.
+   */
+  reactions: {
+    total: number;
+    by_decision: Record<string, DecisionReaction[]>;
+  };
   // "What we decided and why" — the run's decisions log, the same rows
   // the Workbench renders, stripped to a read/react surface.
   decisions: {
@@ -177,4 +201,45 @@ export async function getPublicOppSummary(
     throw new Error(`getPublicOppSummary: ${resp.status}`);
   }
   return (await resp.json()) as OppSummaryPayload;
+}
+
+/** Raised with the server's human-readable detail when a reaction is refused. */
+export class ReactionError extends Error {}
+
+/**
+ * Submit one reaction against one decision row.
+ *
+ * Public endpoint, same no-auth posture as the summary read: the page a
+ * partner is handed has no login and they cannot self-serve one. The
+ * reviewer name is required and self-reported — see
+ * `apps/opps/reactions.py` for why anonymous was not an option.
+ */
+export async function postDecisionReaction(
+  workspace: string,
+  slug: string,
+  runId: string,
+  decisionId: string,
+  body: { reviewer: string; reviewer_email?: string; comment: string },
+): Promise<DecisionReaction & { decision_id: string }> {
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const url =
+    `${base}/api/opps/public/${encodeURIComponent(workspace)}/${encodeURIComponent(slug)}` +
+    `/runs/${encodeURIComponent(runId)}/decisions/${encodeURIComponent(decisionId)}/reactions`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let detail = "We couldn't record that. Try again in a moment.";
+    try {
+      const problem = await resp.json();
+      if (typeof problem?.detail === "string" && problem.detail) detail = problem.detail;
+      else if (resp.status === 422) detail = "That comment is too long.";
+    } catch {
+      /* non-JSON error body — keep the generic message */
+    }
+    throw new ReactionError(detail);
+  }
+  return (await resp.json()) as DecisionReaction & { decision_id: string };
 }

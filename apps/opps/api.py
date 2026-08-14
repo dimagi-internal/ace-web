@@ -22,6 +22,8 @@ from apps.api.etag import compute_etag, maybe_not_modified
 from .schemas import (
     ArtifactOut,
     DecisionOverridesSaveIn,
+    DecisionReactionIn,
+    DecisionReactionOut,
     ForkProgress,
     GateDecisionIn,
     GateOut,
@@ -2038,6 +2040,29 @@ def invalidate_snapshot(
 public_summary_router = Router(auth=None, tags=["opps-public"])
 
 
+def _summary_cache_key(
+    workspace: str, slug: str, run_id: str, *, is_member: bool
+) -> str:
+    """Cache key for one variant of the public summary payload.
+
+    Member and public payloads are cached separately (they differ in
+    whether the page draws ``admin only`` tags). Shared by the read path
+    and by every write that must invalidate it — a reaction that doesn't
+    show up for 60 seconds reads as a lost comment.
+    """
+    return (
+        f"opp-summary:v2:{'member' if is_member else 'public'}"
+        f":{workspace}:{slug}:{run_id}"
+    )
+
+
+def _invalidate_summary_cache(workspace: str, slug: str, run_id: str) -> None:
+    from django.core.cache import cache as _cache
+
+    for member in (True, False):
+        _cache.delete(_summary_cache_key(workspace, slug, run_id, is_member=member))
+
+
 @public_summary_router.get(
     "/public/{workspace}/{slug}/runs/{run_id}/summary",
     response={200: dict},
@@ -2076,10 +2101,7 @@ def public_opp_summary(
             workspace__slug=workspace, user=request.user
         ).exists()
     )
-    cache_key = (
-        f"opp-summary:v2:{'member' if is_member else 'public'}"
-        f":{workspace}:{slug}:{run_id}"
-    )
+    cache_key = _summary_cache_key(workspace, slug, run_id, is_member=is_member)
     cached = _cache.get(cache_key)
     if cached is not None:
         return JsonResponse(cached)
@@ -2108,6 +2130,133 @@ def public_opp_summary(
 
     _cache.set(cache_key, payload, timeout=60)
     return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# Public decision reactions — the write half of the public review surface.
+# ---------------------------------------------------------------------------
+
+#: Per-IP ceilings. Generous enough that a partner can work through the
+#: two conflicting rows and a handful of others in one sitting; tight
+#: enough that the endpoint is not a spam pipe.
+REACTION_BURST_LIMIT = 8
+REACTION_BURST_WINDOW = 10 * 60
+REACTION_DAILY_LIMIT = 40
+REACTION_DAILY_WINDOW = 24 * 60 * 60
+
+
+@public_summary_router.post(
+    "/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/reactions",
+    response={201: DecisionReactionOut},
+    summary="React to one decision on the public run summary (no auth)",
+)
+def public_decision_reaction(
+    request: HttpRequest,
+    workspace: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+    decision_id: Annotated[str, Path()],
+    body: DecisionReactionIn,
+) -> HttpResponse:
+    """Record a partner's reaction to ONE decision row.
+
+    Same URL family and same no-auth posture as the summary itself: the
+    page a partner is handed has no login, and sending them elsewhere to
+    respond is how a response never happens.
+
+    The reaction lands as a feedback-ledger record in Drive
+    (``ACE/<opp>/feedback/<YYYYMMDD>-public-<reviewer>.yaml``), which is
+    the store the ACE plugin's ``skills/feedback-ledger`` already reads —
+    see ``apps.opps.reactions`` for why this is neither the gates
+    endpoint nor ``decision-overrides.yaml``.
+
+    Writes are bounded on four axes: a per-IP burst window, a per-IP day,
+    a per-record item ceiling, and a per-run item ceiling. Body length
+    caps are enforced twice — by the schema before any Drive call, and by
+    the writer.
+    """
+    from apps.common.rate_limit import allow, client_ip
+    from apps.opps.drive_cache import CachedDriveClient
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.reactions import ReactionRejected, submit_decision_reaction
+    from apps.opps.sync import _find_child_folder
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+    from apps.workspaces.models import Workspace
+
+    ip = client_ip(request)
+    if not allow(
+        f"reaction:burst:{ip}",
+        limit=REACTION_BURST_LIMIT,
+        window_seconds=REACTION_BURST_WINDOW,
+    ) or not allow(
+        f"reaction:day:{ip}",
+        limit=REACTION_DAILY_LIMIT,
+        window_seconds=REACTION_DAILY_WINDOW,
+    ):
+        raise ProblemError(
+            429,
+            "Too many comments",
+            detail="Give it a few minutes before sending another comment.",
+        )
+
+    try:
+        ws = Workspace.objects.get(slug=workspace)
+    except Workspace.DoesNotExist as exc:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from exc
+    if not ws.drive_root_folder_id:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+
+    try:
+        # bypass=True: reads skip the 30s Drive TTL cache (a write must not
+        # decide against a stale folder listing) while writes still
+        # invalidate it — otherwise the summary read that follows would
+        # serve a cached listing without the record we just wrote, and the
+        # reviewer's comment would look lost for half a minute.
+        drive = CachedDriveClient(get_drive_client(workspace=ws), bypass=True)
+    except ServiceAccountNotFound as exc:
+        raise ProblemError(500, "Drive not configured", detail=str(exc)) from exc
+
+    opp_folder = _find_child_folder(drive.list_files(ws.drive_root_folder_id), slug)
+    if opp_folder is None:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    runs_folder = _find_child_folder(drive.list_files(opp_folder.id), "runs")
+    run_folder = (
+        _find_child_folder(drive.list_files(runs_folder.id), run_id)
+        if runs_folder is not None
+        else None
+    )
+    if run_folder is None:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+
+    summary_url = request.build_absolute_uri(
+        f"/ace/opps/{workspace}/{slug}/runs/{run_id}/summary?tab=decisions"
+    )
+    try:
+        result = submit_decision_reaction(
+            drive=drive,
+            opp_folder_id=opp_folder.id,
+            run_folder_id=run_folder.id,
+            run_id=run_id,
+            decision_id=decision_id,
+            reviewer=body.reviewer,
+            reviewer_email=body.reviewer_email,
+            comment=body.comment,
+            artifact_url=summary_url,
+        )
+    except ReactionRejected as exc:
+        status = {"not-found": 404, "too-many": 429}.get(exc.code, 400)
+        raise ProblemError(
+            status,
+            "Comment not recorded",
+            type_=TYPE_NOT_FOUND if status == 404 else TYPE_VALIDATION,
+            detail=str(exc),
+        ) from exc
+
+    _invalidate_summary_cache(workspace, slug, run_id)
+    payload = DecisionReactionOut.model_validate(
+        {**result, "decision_id": decision_id}
+    ).model_dump(mode="json")
+    return JsonResponse(payload, status=201)
 
 
 # ---------------------------------------------------------------------------

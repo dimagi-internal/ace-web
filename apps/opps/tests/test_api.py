@@ -2305,3 +2305,154 @@ def test_public_summary_cache_does_not_leak_the_member_variant(
     assert client.get(_SUMMARY_URL).json()["viewer"]["is_member"] is True
     client.logout()
     assert client.get(_SUMMARY_URL).json()["viewer"]["is_member"] is False
+
+
+# ---------------------------------------------------------------------------
+# Public decision reactions — the write half of the review surface
+#
+# #708 shipped 42 decision rows on the public summary with no way to say
+# anything about any of them. These cover the endpoint: it writes where
+# skills/feedback-ledger reads, it refuses what it can't route, it
+# invalidates the cache it shares with the read path, and it is bounded.
+# ---------------------------------------------------------------------------
+
+
+_REACTION_DECISIONS = """\
+schema_version: 4
+opp: turmeric
+run_id: '20260503-0835'
+decisions:
+  - id: visit-window
+    phase: 1-design
+    question: How long is the visit window?
+    ai-default: 30 days
+    evidence_basis: inferred
+"""
+
+
+@pytest.fixture
+def reaction_workspace(db, monkeypatch):
+    from django.core.cache import cache
+
+    from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
+
+    cache.clear()
+    drive = FakeDriveClient.from_tree({
+        "ACE": {
+            "turmeric": {
+                "opp.yaml": "display_name: Turmeric\nslug: turmeric\n",
+                "runs": {
+                    "20260503-0835": {
+                        "run_state.yaml": "phases: {}\n",
+                        "decisions.yaml": _REACTION_DECISIONS,
+                    },
+                },
+            },
+        },
+    })
+    creator = User.objects.create_user(email="reaction-creator@example.com")
+    Workspace.objects.create(
+        slug="summary-ws", display_name="Summary WS",
+        drive_root_folder_id=drive.folder_id("ACE"), created_by=creator,
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client", lambda workspace=None: drive,
+    )
+    return drive
+
+
+_REACTION_URL = (
+    "/api/opps/public/summary-ws/turmeric/runs/20260503-0835"
+    "/decisions/visit-window/reactions"
+)
+
+
+def _react(client, **body):
+    payload = {"reviewer": "Anne Kuhlmann", "comment": "30 days is too long here."}
+    payload.update(body)
+    return client.post(_REACTION_URL, payload, content_type="application/json")
+
+
+@pytest.mark.django_db
+def test_anonymous_visitor_can_react_to_a_decision(client, reaction_workspace):
+    """No auth, by design: the page a partner is handed has no login, and
+    sending them somewhere else to respond is how a response never happens."""
+    resp = _react(client)
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["decision_id"] == "visit-window"
+    assert body["feedback_ref"].endswith("/visit-window")
+    assert body["reviewer"] == "Anne Kuhlmann"
+
+    names = [f.name for f in reaction_workspace.list_files(
+        reaction_workspace.folder_id("ACE/turmeric/feedback"),
+    )]
+    assert names and names[0].endswith(".yaml") and "-public-" in names[0]
+
+
+@pytest.mark.django_db
+def test_reaction_shows_up_on_the_next_summary_read(client, reaction_workspace):
+    """The read path caches for 60s. A comment that takes a minute to
+    appear reads as a comment that was lost."""
+    summary_url = "/api/opps/public/summary-ws/turmeric/runs/20260503-0835/summary"
+    assert client.get(summary_url).json()["reactions"]["total"] == 0
+    _react(client)
+    reactions = client.get(summary_url).json()["reactions"]
+    assert reactions["total"] == 1
+    assert reactions["by_decision"]["visit-window"][0]["reviewer"] == "Anne Kuhlmann"
+
+    # …and again on the update path, which touches an existing record
+    # rather than creating the folder (a different cache key).
+    _react(client, comment="One more thought on the same row.")
+    assert client.get(summary_url).json()["reactions"]["total"] == 2
+
+
+@pytest.mark.django_db
+def test_reaction_requires_a_name(client, reaction_workspace):
+    assert _react(client, reviewer="").status_code == 422
+    assert _react(client, reviewer=" a ").status_code == 400
+
+
+@pytest.mark.django_db
+def test_reaction_rejects_html(client, reaction_workspace):
+    resp = _react(client, comment="<script>alert(1)</script> and also this")
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_reaction_to_an_unknown_decision_404s(client, reaction_workspace):
+    resp = client.post(
+        "/api/opps/public/summary-ws/turmeric/runs/20260503-0835"
+        "/decisions/no-such-row/reactions",
+        {"reviewer": "Anne Kuhlmann", "comment": "this row does not exist"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_reaction_to_an_unknown_run_404s(client, reaction_workspace):
+    resp = client.post(
+        "/api/opps/public/summary-ws/turmeric/runs/no-such-run"
+        "/decisions/visit-window/reactions",
+        {"reviewer": "Anne Kuhlmann", "comment": "no such run"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_reaction_rate_limit_kicks_in(client, reaction_workspace):
+    from apps.opps.api import REACTION_BURST_LIMIT
+
+    for i in range(REACTION_BURST_LIMIT):
+        assert _react(client, comment=f"comment number {i}").status_code == 201
+    assert _react(client, comment="one over the line").status_code == 429
+
+
+@pytest.mark.django_db
+def test_oversized_comment_is_refused_before_any_drive_write(client, reaction_workspace):
+    resp = _react(client, comment="x" * 5000)
+    assert resp.status_code == 422
+    root = reaction_workspace.folder_id("ACE/turmeric")
+    assert "feedback" not in [f.name for f in reaction_workspace.list_files(root)]

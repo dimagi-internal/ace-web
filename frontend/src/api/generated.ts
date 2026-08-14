@@ -1177,6 +1177,41 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/opps/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/reactions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * React to one decision on the public run summary (no auth)
+         * @description Record a partner's reaction to ONE decision row.
+         *
+         *     Same URL family and same no-auth posture as the summary itself: the
+         *     page a partner is handed has no login, and sending them elsewhere to
+         *     respond is how a response never happens.
+         *
+         *     The reaction lands as a feedback-ledger record in Drive
+         *     (``ACE/<opp>/feedback/<YYYYMMDD>-public-<reviewer>.yaml``), which is
+         *     the store the ACE plugin's ``skills/feedback-ledger`` already reads —
+         *     see ``apps.opps.reactions`` for why this is neither the gates
+         *     endpoint nor ``decision-overrides.yaml``.
+         *
+         *     Writes are bounded on four axes: a per-IP burst window, a per-IP day,
+         *     a per-record item ceiling, and a per-run item ceiling. Body length
+         *     caps are enforced twice — by the schema before any Drive call, and by
+         *     the writer.
+         */
+        readonly post: operations["apps_opps_api_public_decision_reaction"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/workspaces": {
         readonly parameters: {
             readonly query?: never;
@@ -3357,6 +3392,52 @@ export interface components {
              * @default
              */
             readonly opp_step_skill: string;
+        };
+        /**
+         * DecisionReactionOut
+         * @description What the page needs to render the reaction it just submitted.
+         */
+        readonly DecisionReactionOut: {
+            /** Feedback Ref */
+            readonly feedback_ref: string;
+            /** Record Slug */
+            readonly record_slug: string;
+            /** Item Id */
+            readonly item_id: string;
+            /** Decision Id */
+            readonly decision_id: string;
+            /** Reviewer */
+            readonly reviewer: string;
+            /** Comment */
+            readonly comment: string;
+            /** Received At */
+            readonly received_at: string;
+        };
+        /**
+         * DecisionReactionIn
+         * @description Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/reactions.
+         *
+         *     ``reviewer`` is REQUIRED and self-reported. The page has no login and
+         *     a partner cannot self-serve one, so the only honest options were a
+         *     required free-text name or anonymous reactions — and an anonymous
+         *     reaction defeats the store it lands in: the feedback ledger's whole
+         *     value is being able to tell a reviewer where THEIR comment went, and
+         *     to tell a future reader whose judgement drove a change. An unsigned
+         *     comment is unanswerable and uncreditable. So: required name, optional
+         *     email (the reply path), and the record says the name is self-reported
+         *     rather than pretending it is verified.
+         *
+         *     Length ceilings live in ``apps.opps.reactions`` and are enforced
+         *     there too — these are the cheap first pass, so an oversized body is
+         *     rejected before any Drive round-trip.
+         */
+        readonly DecisionReactionIn: {
+            /** Reviewer */
+            readonly reviewer: string;
+            /** Comment */
+            readonly comment: string;
+            /** Reviewer Email */
+            readonly reviewer_email?: string | null;
         };
         /** WorkspaceOut */
         readonly WorkspaceOut: {
@@ -6449,6 +6530,35 @@ export interface operations {
                     readonly "application/json": {
                         readonly [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    readonly apps_opps_api_public_decision_reaction: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace: string;
+                readonly slug: string;
+                readonly run_id: string;
+                readonly decision_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["DecisionReactionIn"];
+            };
+        };
+        readonly responses: {
+            /** @description Created */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DecisionReactionOut"];
                 };
             };
         };
