@@ -275,6 +275,61 @@ class DecisionReactionOut(StrictModel):
     received_at: str
 
 
+class DecisionEditIn(StrictModel):
+    """Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/edit.
+
+    Anyone with the link can change a decision's value in place — no
+    proposal state, no promotion step, no member-only privilege, and
+    reviewer 2 changing reviewer 1's answer is the same act as Dimagi
+    changing either. Safety is visibility and reversibility (attribution
+    on every row, full history, undo from the UI), not permission — the
+    same way it is in a Google Doc, which is exactly what the PDD these
+    decisions summarize already is.
+
+    Identity resolves per caller and NOT from this body when we already
+    know who it is: **signed in ⇒ never anonymous**, so ``reviewer`` and
+    ``reviewer_email`` are ignored for an authenticated request and
+    REQUIRED for an anonymous one. See ``apps.opps.public_input``.
+
+    Length ceilings are enforced again in ``apps.opps.decision_overrides``
+    — these are the cheap first pass, before any Drive round-trip.
+    """
+
+    value: Annotated[str, Field(min_length=1, max_length=800)]
+    reasoning: Annotated[str, Field(max_length=4000)] | None = None
+    reviewer: Annotated[str, Field(max_length=120)] | None = None
+    reviewer_email: Annotated[str, Field(max_length=254)] | None = None
+
+
+class DecisionEditHistoryOut(StrictModel):
+    """One superseded state of a decision row. Newest first."""
+
+    override: str
+    reasoning: str = ""
+    decided_by_name: str = ""
+    decided_by_verified: bool = False
+    decided_at: str = ""
+
+
+class DecisionEditOut(StrictModel):
+    """A decision's current human-set answer, as any reader sees it.
+
+    Emails are not projected on the public payload; the NAME always is —
+    attribution is the safety mechanism, so hiding it would defeat the
+    model.
+    """
+
+    decision_id: str
+    override: str
+    reasoning: str = ""
+    decided_by_name: str = ""
+    decided_by_verified: bool = False
+    decided_at: str = ""
+    source_run_id: str = ""
+    is_revert: bool = False
+    history: list[DecisionEditHistoryOut] = []
+
+
 # --- Multi-run compare -------------------------------------------------
 
 

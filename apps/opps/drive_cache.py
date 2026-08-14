@@ -53,8 +53,13 @@ def _list_key(folder_id: str, recursive: bool) -> str:
     return f"drive:{_KEY_VERSION}:list:{folder_id}:{int(bool(recursive))}"
 
 
-def _content_key(file_id: str, mime_type: str) -> str:
-    return f"drive:{_KEY_VERSION}:body:{file_id}:{mime_type}"
+def _content_key(file_id: str, mime_type: str, export_as: str | None = None) -> str:
+    # ``export_as`` is part of the key: the same file exported as text/plain
+    # and as text/markdown are different bodies, and collapsing them would
+    # serve a prose reader the plain-text export (or worse, hand a YAML
+    # reader a markdown-escaped body).
+    suffix = f":as={export_as}" if export_as else ""
+    return f"drive:{_KEY_VERSION}:body:{file_id}:{mime_type}{suffix}"
 
 
 def _file_meta_key(file_id: str) -> str:
@@ -141,8 +146,10 @@ class CachedDriveClient(DriveClient):
             tracker.record(result.id, result.modified_time)
         return result
 
-    def get_content(self, file_id: str, mime_type: str) -> FileContent:
-        key = _content_key(file_id, mime_type)
+    def get_content(
+        self, file_id: str, mime_type: str, *, export_as: str | None = None
+    ) -> FileContent:
+        key = _content_key(file_id, mime_type, export_as)
         if not self._bypass:
             hit = cache.get(key)
             if hit is not None:
@@ -150,7 +157,7 @@ class CachedDriveClient(DriveClient):
                 if tracker is not None:
                     tracker.record(file_id)
                 return hit
-        result = self._inner.get_content(file_id, mime_type)
+        result = self._inner.get_content(file_id, mime_type, export_as=export_as)
         cache.set(key, result, timeout=self._ttl)
         tracker = current_tracker()
         if tracker is not None:

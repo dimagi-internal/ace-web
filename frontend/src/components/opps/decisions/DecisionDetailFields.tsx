@@ -1,4 +1,5 @@
 import type { Decision } from "@/api/types.ws";
+import { OptionPills } from "@/components/opps/decisions/OptionPills";
 import { cn } from "@/lib/utils";
 
 /**
@@ -20,39 +21,6 @@ export function DetailRow({
       </div>
       <div className="min-w-0">{value}</div>
     </>
-  );
-}
-
-/**
- * Static option pills. The Workbench swaps this out for a clickable
- * variant via `optionsSlot`; the public review surface uses it as-is.
- */
-export function StaticOptions({
-  decision,
-  selected,
-}: {
-  decision: Decision;
-  selected: string;
-}) {
-  if (decision.options_considered.length === 0) {
-    return <span className="text-muted-foreground/70">(none listed)</span>;
-  }
-  return (
-    <span className="flex flex-wrap gap-1.5">
-      {decision.options_considered.map((opt) => (
-        <span
-          key={opt}
-          className={cn(
-            "rounded border px-1.5 py-0.5",
-            opt === selected
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-              : "border-border bg-muted/30 text-muted-foreground",
-          )}
-        >
-          {opt}
-        </span>
-      ))}
-    </span>
   );
 }
 
@@ -99,7 +67,7 @@ export function DecisionDetailFields({
       <DetailRow
         label={optionsLabel}
         value={
-          optionsSlot ?? <StaticOptions decision={decision} selected={effectiveValue} />
+          optionsSlot ?? <OptionPills decision={decision} selected={effectiveValue} />
         }
       />
       {decision.source && (

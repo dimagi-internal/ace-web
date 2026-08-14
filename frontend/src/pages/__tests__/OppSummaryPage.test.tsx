@@ -37,6 +37,7 @@ const BASE: OppSummaryPayload = {
   decisions: null,
   feedback: [],
   reactions: { total: 0, by_decision: {} },
+  decision_edits: {},
   stage: null,
   workbench: null,
   viewer: { is_member: false },
@@ -261,7 +262,7 @@ describe("OppSummaryPage", () => {
     await openDecisionsTab();
 
     // Conflicting rows open expanded, so the reply box is one click away.
-    fireEvent.click(await screen.findByText(/Did we pick right\?/));
+    fireEvent.click(await screen.findByText(/Say what you.d want to know/));
     fireEvent.change(screen.getByLabelText("Your comment on this decision"), {
       target: { value: "The later date is right." },
     });
@@ -281,13 +282,135 @@ describe("OppSummaryPage", () => {
     expect(await screen.findByText("The later date is right.")).toBeTruthy();
   });
 
+  // ── Editing ──────────────────────────────────────────────────────
+  //
+  // Anyone with the link can change an answer in place. No account, no
+  // proposal state, no promotion step, and a member's edit is the same
+  // act as a partner's (Jonathan, 2026-08-14). What makes that safe is
+  // attribution + history + undo, so those are tested as behaviour, not
+  // as decoration.
+
+  const EDIT = {
+    decision_id: "loud-one",
+    override: "the other one",
+    reasoning: "",
+    decided_by_name: "Anne Kuhlmann",
+    decided_by_verified: false,
+    decided_at: "2026-08-14T10:00:00+00:00",
+    source_run_id: "20260813-2126",
+    is_revert: false,
+    history: [],
+  };
+
+  it("lets an anonymous visitor change a decision's answer in place", async () => {
+    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
+    renderWith(CONFLICTED);
+    await openDecisionsTab();
+
+    // Pick a different option. Nothing has left the browser yet — the
+    // name is asked at submit, never as a gate before someone can click.
+    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
+    expect(post).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Your name"), {
+      target: { value: "Anne Kuhlmann" },
+    });
+    fireEvent.click(screen.getByText("Save this answer"));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0].slice(0, 4)).toEqual([
+      "dimagi-team", "spark-facilitator", "20260813-2126", "loud-one",
+    ]);
+    expect(post.mock.calls[0][4]).toMatchObject({
+      value: "the other one", reviewer: "Anne Kuhlmann",
+    });
+    // …and the row re-renders as changed immediately, rather than after
+    // the 60s read cache.
+    expect(await screen.findByText(/changed by Anne Kuhlmann/)).toBeTruthy();
+  });
+
+  it("will not submit an anonymous change without a name", async () => {
+    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
+    renderWith(CONFLICTED);
+    await openDecisionsTab();
+    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
+    expect((screen.getByText("Save this answer") as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("never asks a signed-in viewer to type their name", async () => {
+    // Logged in ⇒ never anonymous. The session identity is used instead.
+    renderWith({ ...CONFLICTED, viewer: { is_member: true } });
+    await openDecisionsTab();
+    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
+    expect(screen.queryByLabelText("Your name")).toBeNull();
+    expect((screen.getByText("Save this answer") as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it("shows who changed a row, and lets anyone put the old answer back", async () => {
+    // The safety mechanism, in full: reviewer 2 sees reviewer 1's name,
+    // sees what it used to say, and can restore it in one click.
+    const post = vi.spyOn(api, "postDecisionEdit").mockResolvedValue(EDIT);
+    renderWith({
+      ...CONFLICTED,
+      decision_edits: {
+        "loud-one": {
+          override: "the other one",
+          reasoning: "the source we trust says so",
+          decided_by_name: "Anne Kuhlmann",
+          decided_by_verified: false,
+          decided_at: "2026-08-14T10:00:00+00:00",
+          source_run_id: "20260813-2126",
+          is_revert: false,
+          history: [{
+            override: "the pick",
+            reasoning: "",
+            decided_by_name: "Ben Okoro",
+            decided_by_verified: true,
+            decided_at: "2026-08-13T09:00:00+00:00",
+          }],
+        },
+      },
+    });
+    await openDecisionsTab();
+
+    expect(await screen.findByText(/changed by Anne Kuhlmann/)).toBeTruthy();
+    // The self-reported marker is shown, never enforced.
+    expect(screen.getAllByText("(self-reported)").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByText(/1 earlier/));
+    fireEvent.click(screen.getByText("Restore"));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0][4]).toMatchObject({ value: "the pick" });
+  });
+
+  it("surfaces the server's refusal of a change", async () => {
+    vi.spyOn(api, "postDecisionEdit").mockRejectedValue(
+      new api.ReactionError("Give it a few minutes before sending another change."),
+    );
+    renderWith(CONFLICTED);
+    await openDecisionsTab();
+    fireEvent.click(await screen.findByRole("button", { name: /the other one/i }));
+    fireEvent.change(screen.getByLabelText("Your name"), {
+      target: { value: "Anne Kuhlmann" },
+    });
+    fireEvent.click(screen.getByText("Save this answer"));
+    expect(
+      await screen.findByText(/Give it a few minutes before sending another change/),
+    ).toBeTruthy();
+  });
+
   it("surfaces the server's refusal instead of pretending it saved", async () => {
     vi.spyOn(api, "postDecisionReaction").mockRejectedValue(
       new api.ReactionError("Give it a few minutes before sending another comment."),
     );
     renderWith(CONFLICTED);
     await openDecisionsTab();
-    fireEvent.click(await screen.findByText(/Did we pick right\?/));
+    fireEvent.click(await screen.findByText(/Say what you.d want to know/));
     fireEvent.change(screen.getByLabelText("Your comment on this decision"), {
       target: { value: "one more thought" },
     });

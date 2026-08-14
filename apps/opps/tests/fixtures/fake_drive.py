@@ -57,6 +57,8 @@ class FakeDriveClient(DriveClient):
         # token (treated as a decimal sequence number).
         self._mutation_log: list[tuple[int, str]] = []
         self._seq = count(1)
+        # (file_id, export_mime) -> body, for get_content(export_as=...).
+        self._export_bodies: dict[tuple[str, str], str] = {}
 
     @classmethod
     def from_tree(cls, tree: dict) -> FakeDriveClient:
@@ -158,11 +160,24 @@ class FakeDriveClient(DriveClient):
             modified_time=node.modified_time,
         )
 
-    def get_content(self, file_id: str, mime_type: str) -> FileContent:
+    def get_content(
+        self, file_id: str, mime_type: str, *, export_as: str | None = None
+    ) -> FileContent:
         node = self._nodes_by_id[file_id]
         if node.body is None:
             raise ValueError(f"{node.name} is a folder, not a file")
-        return FileContent(content=node.body, content_type=node.mime_type)
+        # Mirror Drive: a Google-native doc read with an explicit export MIME
+        # can come back in a different serialization. Tests that care register
+        # the alternate body via `set_export_body`.
+        alt = self._export_bodies.get((file_id, export_as)) if export_as else None
+        return FileContent(
+            content=alt if alt is not None else node.body,
+            content_type=export_as or node.mime_type,
+        )
+
+    def set_export_body(self, file_id: str, export_as: str, body: str) -> None:
+        """Register what `get_content(..., export_as=...)` returns for a file."""
+        self._export_bodies[(file_id, export_as)] = body
 
     # --- Write surface ---
 

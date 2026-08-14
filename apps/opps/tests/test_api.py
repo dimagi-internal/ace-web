@@ -1,4 +1,5 @@
 import datetime as dt
+import json
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -2443,7 +2444,7 @@ def test_reaction_to_an_unknown_run_404s(client, reaction_workspace):
 
 @pytest.mark.django_db
 def test_reaction_rate_limit_kicks_in(client, reaction_workspace):
-    from apps.opps.api import REACTION_BURST_LIMIT
+    from apps.opps.api import PUBLIC_WRITE_BURST_LIMIT as REACTION_BURST_LIMIT
 
     for i in range(REACTION_BURST_LIMIT):
         assert _react(client, comment=f"comment number {i}").status_code == 201
@@ -2456,3 +2457,184 @@ def test_oversized_comment_is_refused_before_any_drive_write(client, reaction_wo
     assert resp.status_code == 422
     root = reaction_workspace.folder_id("ACE/turmeric")
     assert "feedback" not in [f.name for f in reaction_workspace.list_files(root)]
+
+
+# ---------------------------------------------------------------------------
+# Public decision EDIT — anyone with the link may change an answer.
+#
+# The bar to start engaging with ACE has to be very low because it is
+# speculative AI work, so this surface deliberately has no account
+# requirement, no proposal state, and no promotion gate. What makes that
+# safe is not permission — it is that every change is attributed,
+# reversible, and lands in the same store a member's edit lands in.
+# ---------------------------------------------------------------------------
+
+_EDIT_URL = (
+    "/api/opps/public/summary-ws/turmeric/runs/20260503-0835"
+    "/decisions/visit-window/edit"
+)
+_SUMMARY_URL = "/api/opps/public/summary-ws/turmeric/runs/20260503-0835/summary"
+
+
+def _edit(client, **body):
+    payload = {"value": "14 days", "reviewer": "Anne Kuhlmann"}
+    payload.update(body)
+    return client.post(_EDIT_URL, payload, content_type="application/json")
+
+
+def _overrides_rows(drive):
+    import yaml as _yaml
+    inputs = drive.folder_id("ACE/turmeric/inputs")
+    f = next(x for x in drive.list_files(inputs) if x.name == "decision-overrides.yaml")
+    return _yaml.safe_load(drive.get_content(f.id, f.mime_type).content)["overrides"]
+
+
+@pytest.mark.django_db
+def test_anonymous_visitor_can_change_a_decision(client, reaction_workspace):
+    resp = _edit(client, reasoning="Two weeks matches the payment cycle.")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["override"] == "14 days"
+    assert body["decided_by_name"] == "Anne Kuhlmann"
+    assert body["decided_by_verified"] is False
+
+    rows = _overrides_rows(reaction_workspace)
+    assert [r["id"] for r in rows] == ["visit-window"]
+    assert rows[0]["override"] == "14 days"
+    assert rows[0]["ai_default"] == "30 days"
+    assert rows[0]["decided_by_verified"] is False
+
+
+@pytest.mark.django_db
+def test_the_public_edit_lands_in_the_store_the_workbench_writes(
+    client, reaction_workspace,
+):
+    """Not a parallel store: `inputs/decision-overrides.yaml` is exactly
+    what the Workbench's authenticated editor saves and what the plugin's
+    `decisions_append_rows` binds on the next run."""
+    from apps.opps.decision_overrides import OVERRIDES_FILENAME, fetch_saved_overrides
+
+    _edit(client)
+    inputs = reaction_workspace.folder_id("ACE/turmeric/inputs")
+    assert OVERRIDES_FILENAME in [f.name for f in reaction_workspace.list_files(inputs)]
+
+    saved = fetch_saved_overrides(
+        reaction_workspace, opp_folder_id=reaction_workspace.folder_id("ACE/turmeric"),
+    )
+    assert saved["visit-window"]["override"] == "14 days"
+
+
+@pytest.mark.django_db
+def test_a_signed_in_member_is_never_anonymous(client, reaction_workspace):
+    """Logged in ⇒ the session identity wins and the typed name is
+    discarded. Two names on one change is worse than one."""
+    user = User.objects.create_user(email="ada@dimagi.com", display_name="Ada Member")
+    client.force_login(user)
+    resp = _edit(client, reviewer="Somebody Else")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["decided_by_name"] == "Ada Member"
+    assert body["decided_by_verified"] is True
+    assert _overrides_rows(reaction_workspace)[0]["decided_by"] == "ada@dimagi.com"
+
+
+@pytest.mark.django_db
+def test_reviewer_two_can_change_reviewer_one_and_the_first_answer_survives(
+    client, reaction_workspace,
+):
+    """The whole model: last-writer-wins is acceptable only because the
+    loser is recoverable."""
+    _edit(client, value="14 days", reviewer="Anne Kuhlmann")
+    resp = _edit(client, value="21 days", reviewer="Ben Okoro")
+    assert resp.status_code == 200
+
+    row = _overrides_rows(reaction_workspace)[0]
+    assert row["override"] == "21 days"
+    assert row["decided_by_name"] == "Ben Okoro"
+    assert [h["override"] for h in row["history"]] == ["14 days"]
+    assert row["history"][0]["decided_by_name"] == "Anne Kuhlmann"
+
+    served = client.get(_SUMMARY_URL).json()["decision_edits"]["visit-window"]
+    assert served["override"] == "21 days"
+    assert [h["override"] for h in served["history"]] == ["14 days"]
+
+
+@pytest.mark.django_db
+def test_an_edit_is_reversible_from_the_ui(client, reaction_workspace):
+    """Restoring the AI default is a normal edit, and leaves the trail
+    rather than erasing it."""
+    _edit(client, value="14 days", reviewer="Anne Kuhlmann")
+    resp = _edit(client, value="30 days", reviewer="Anne Kuhlmann")
+    assert resp.status_code == 200
+    assert resp.json()["is_revert"] is True
+
+    row = _overrides_rows(reaction_workspace)[0]
+    assert row["override"] == "30 days"
+    assert [h["override"] for h in row["history"]] == ["14 days"]
+
+
+@pytest.mark.django_db
+def test_an_edit_naming_an_unknown_decision_is_refused_not_stored(
+    client, reaction_workspace,
+):
+    resp = client.post(
+        "/api/opps/public/summary-ws/turmeric/runs/20260503-0835"
+        "/decisions/no-such-row/edit",
+        {"value": "whatever", "reviewer": "Anne Kuhlmann"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 404
+    root = reaction_workspace.folder_id("ACE/turmeric")
+    assert "inputs" not in [f.name for f in reaction_workspace.list_files(root)]
+
+
+@pytest.mark.django_db
+def test_an_anonymous_edit_requires_a_name(client, reaction_workspace):
+    assert _edit(client, reviewer=None).status_code == 400
+    assert _edit(client, reviewer=" a ").status_code == 400
+
+
+@pytest.mark.django_db
+def test_edit_rejects_html_rather_than_mangling_it(client, reaction_workspace):
+    assert _edit(client, value="<b>14 days</b>").status_code == 400
+    assert _edit(client, reasoning="<script>alert(1)</script>").status_code == 400
+
+
+@pytest.mark.django_db
+def test_oversized_edit_is_refused_before_any_drive_write(client, reaction_workspace):
+    assert _edit(client, value="x" * 900).status_code == 422
+    root = reaction_workspace.folder_id("ACE/turmeric")
+    assert "inputs" not in [f.name for f in reaction_workspace.list_files(root)]
+
+
+@pytest.mark.django_db
+def test_edit_shows_up_on_the_next_summary_read(client, reaction_workspace):
+    """The read path caches for 60s. A change that takes a minute to
+    appear reads as a change that was lost."""
+    assert client.get(_SUMMARY_URL).json()["decision_edits"] == {}
+    _edit(client)
+    assert client.get(_SUMMARY_URL).json()["decision_edits"]["visit-window"][
+        "override"
+    ] == "14 days"
+
+
+@pytest.mark.django_db
+def test_public_payload_never_carries_a_reviewer_email(client, reaction_workspace):
+    user = User.objects.create_user(email="ada@dimagi.com", display_name="Ada Member")
+    client.force_login(user)
+    _edit(client)
+    client.logout()
+    served = client.get(_SUMMARY_URL).json()["decision_edits"]["visit-window"]
+    assert "decided_by" not in served
+    assert "ada@dimagi.com" not in json.dumps(served)
+
+
+@pytest.mark.django_db
+def test_edits_and_comments_share_one_per_ip_budget(client, reaction_workspace):
+    """Two public write endpoints with separate budgets is just double
+    the budget."""
+    from apps.opps.api import PUBLIC_WRITE_BURST_LIMIT
+
+    for i in range(PUBLIC_WRITE_BURST_LIMIT):
+        assert _edit(client, value=f"{i} days").status_code == 200
+    assert _react(client).status_code == 429

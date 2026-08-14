@@ -5,13 +5,18 @@ import { ArrowRight, FileText, Scale } from "lucide-react";
 import { ApiError } from "@/api/client";
 import {
   getPublicOppSummary,
+  postDecisionEdit,
   postDecisionReaction,
   type DecisionReaction,
   type LinkAccess,
   type OppSummaryPayload,
+  type PublicDecisionEdit,
 } from "@/api/oppSummary";
 import type { ReactionSubmit } from "@/components/opps/summary/DecisionReactions";
-import { DecisionsReview } from "@/components/opps/summary/DecisionsReview";
+import {
+  DecisionsReview,
+  type DecisionEditSubmit,
+} from "@/components/opps/summary/DecisionsReview";
 import { OcsWidgetMount } from "@/components/opps/summary/OcsWidgetMount";
 import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
 import { SummaryHero } from "@/components/opps/summary/SummaryHero";
@@ -91,6 +96,10 @@ export default function OppSummaryPage() {
   // the read path is cached for 60s server-side, and a comment that
   // doesn't appear immediately reads as a comment that was lost.
   const [reactions, setReactions] = useState<Record<string, DecisionReaction[]>>({});
+  // Same reason: the write returns the merged row (value, attribution,
+  // full history) so the row re-renders as changed immediately instead of
+  // waiting out the 60s payload cache and looking like nothing happened.
+  const [edits, setEdits] = useState<Record<string, PublicDecisionEdit>>({});
 
   async function handleReact(decisionId: string, body: ReactionSubmit) {
     const saved = await postDecisionReaction(workspace, slug, runId, decisionId, body);
@@ -98,6 +107,11 @@ export default function OppSummaryPage() {
       ...prev,
       [decisionId]: [...(prev[decisionId] ?? []), saved],
     }));
+  }
+
+  async function handleEdit(decisionId: string, body: DecisionEditSubmit) {
+    const saved = await postDecisionEdit(workspace, slug, runId, decisionId, body);
+    setEdits((prev) => ({ ...prev, [decisionId]: saved }));
   }
 
   useEffect(() => {
@@ -108,6 +122,7 @@ export default function OppSummaryPage() {
         if (cancelled) return;
         setState({ kind: "loaded", payload });
         setReactions(payload.reactions?.by_decision ?? {});
+        setEdits(payload.decision_edits ?? {});
       })
       .catch((e) => {
         if (cancelled) return;
@@ -593,7 +608,10 @@ export default function OppSummaryPage() {
               <DecisionsReview
                 decisions={decisions}
                 reactions={reactions}
+                edits={edits}
+                viewerIsMember={!!viewer?.is_member}
                 onReact={handleReact}
+                onEdit={handleEdit}
               />
             </SummarySection>
           )}

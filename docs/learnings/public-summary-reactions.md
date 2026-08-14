@@ -1,6 +1,13 @@
 # Partner reactions on the public run summary
 
-**Status:** shipped 2026-08-14.
+**Status:** shipped 2026-08-14. **Partly superseded the same day** — the
+"an anonymous self-asserted name must not silently rewrite the next run's
+inputs" rule below was overruled by Jonathan and decision rows are now
+editable in place by anyone with the link. See
+[public-summary-editing](public-summary-editing.md). Everything here about
+COMMENTS (the feedback-ledger store, the `public-` slug marker as a
+confidentiality boundary, the identity model, the abuse controls) still
+holds; comments and edits coexist as different acts.
 **Code:** `apps/opps/reactions.py`, `apps/common/rate_limit.py`,
 `frontend/src/components/opps/summary/DecisionReactions.tsx`.
 

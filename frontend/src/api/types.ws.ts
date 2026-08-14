@@ -361,9 +361,24 @@ export interface RunSummary {
 export interface SavedDecisionOverride {
   override: string;
   reasoning?: string;
+  /** Email — member-only payloads. Never served on the public summary. */
   decided_by?: string;
+  /** Display name, always served: attribution is the safety mechanism. */
+  decided_by_name?: string;
+  /** True for a signed-in editor, false for a self-reported name. */
+  decided_by_verified?: boolean;
   decided_at?: string;
   source_run_id?: string;
+  /** Row restored to the AI default — inert for the next run, kept visible. */
+  is_revert?: boolean;
+  /** Prior states, newest first. What makes any change undoable. */
+  history?: {
+    override: string;
+    reasoning?: string;
+    decided_by_name?: string;
+    decided_by_verified?: boolean;
+    decided_at?: string;
+  }[];
 }
 
 export interface OppSnapshot {

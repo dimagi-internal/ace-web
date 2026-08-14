@@ -110,7 +110,9 @@ class FakeDrive:
         walk(node, "")
         return out
 
-    def get_content(self, file_id: str, mime_type: str) -> FileContent:
+    def get_content(
+        self, file_id: str, mime_type: str, *, export_as: str | None = None
+    ) -> FileContent:
         node = self._index_by_id.get(file_id)
         body = getattr(node, "body", "") if node else ""
         return FileContent(content=body)

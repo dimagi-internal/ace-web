@@ -189,7 +189,13 @@ class TestSaveDecisionOverrides:
             "changed my mind — reaffirming the default"
         )
 
-    def test_revert_drops_row_from_file(self):
+    def test_revert_keeps_the_row_but_only_as_history(self):
+        """A revert used to leave no trace beyond absence. It now leaves a
+        row whose value is back to the AI default and whose ``history``
+        holds what was reverted — that is what makes the change visible
+        and undoable, which is the whole basis for letting anyone edit.
+        The plugin skips such a row when binding, so it stays inert.
+        """
         drive = _drive_with_opp()
         _stage(SLUG, RUN, "archetype-selection", "focus-group")
         _stage(SLUG, RUN, "enrollment-unit", "individual")
@@ -199,8 +205,6 @@ class TestSaveDecisionOverrides:
         )
         assert len(_read_overrides_file(drive, SLUG)["overrides"]) == 2
 
-        # Staging the AI default with no reasoning is a revert — the row
-        # must disappear from the file, leaving no trace beyond absence.
         _stage(SLUG, RUN, "archetype-selection", "atomic-visit")
         save_decision_overrides(
             drive=drive, ace_root_folder_id="fake-root",
@@ -208,7 +212,10 @@ class TestSaveDecisionOverrides:
         )
 
         rows = _read_overrides_file(drive, SLUG)["overrides"]
-        assert [r["id"] for r in rows] == ["enrollment-unit"]
+        assert [r["id"] for r in rows] == ["archetype-selection", "enrollment-unit"]
+        reverted = rows[0]
+        assert reverted["override"] == reverted["ai_default"] == "atomic-visit"
+        assert [h["override"] for h in reverted["history"]] == ["focus-group"]
 
     def test_cumulative_merge_across_two_source_runs(self):
         run2 = "20260723-0900"
@@ -268,7 +275,7 @@ class StrictMimeFakeDrive(FakeDriveClient):
     def make_gdoc(self, path: str) -> None:
         self._nodes_by_id[self.file_id(path)].mime_type = self.GDOC
 
-    def get_content(self, file_id, mime_type):
+    def get_content(self, file_id, mime_type, *, export_as=None):
         node = self._nodes_by_id[file_id]
         if node.mime_type == self.GDOC and mime_type != self.GDOC:
             raise RuntimeError(
@@ -333,11 +340,15 @@ class TestGoogleDocTypedFiles:
 
 
 class TestMergeOverrides:
-    def test_merge_by_id_last_write_wins(self):
+    def test_merge_by_id_last_write_wins_and_remembers_the_loser(self):
+        """Last-writer-wins is only acceptable because nothing is lost."""
         existing = [{"id": "a", "ai_default": "x", "override": "y"}]
         new = [{"id": "a", "ai_default": "x", "override": "z"}]
         merged = merge_overrides(existing, new)
-        assert merged == [{"id": "a", "ai_default": "x", "override": "z"}]
+        assert merged == [{
+            "id": "a", "ai_default": "x", "override": "z",
+            "history": [{"override": "y"}],
+        }]
 
     def test_revert_row_dropped_even_when_new(self):
         merged = merge_overrides(
@@ -490,3 +501,98 @@ def test_endpoint_service_resolves_workspace_via_access_module(monkeypatch):
     # No run was created — runs/ still contains only the source run.
     runs = {f.name for f in drive.list_files(drive.folder_id(f"{SLUG}/runs"))}
     assert runs == {RUN}
+
+
+class TestHistory:
+    """History is what makes an unauthenticated in-place edit safe: the
+    prior value is always recoverable and any change is undoable. It is
+    also the only unbounded axis a public writer controls in this file,
+    hence the cap.
+    """
+
+    def test_history_accumulates_newest_first(self):
+        rows: list = []
+        for value in ("a", "b", "c"):
+            rows = merge_overrides(
+                rows, [{"id": "r", "ai_default": "x", "override": value}],
+            )
+        assert rows[0]["override"] == "c"
+        assert [h["override"] for h in rows[0]["history"]] == ["b", "a"]
+
+    def test_history_is_capped(self):
+        from apps.opps.decision_overrides import MAX_HISTORY_PER_ROW
+
+        rows: list = []
+        for i in range(MAX_HISTORY_PER_ROW + 10):
+            rows = merge_overrides(
+                rows, [{"id": "r", "ai_default": "x", "override": f"v{i}"}],
+            )
+        assert len(rows[0]["history"]) == MAX_HISTORY_PER_ROW
+
+    def test_a_caller_cannot_supply_its_own_history(self):
+        """History is derived on merge, never trusted from the writer —
+        otherwise a public caller could erase the trail that makes their
+        own edit reviewable."""
+        rows = merge_overrides(
+            [{"id": "r", "ai_default": "x", "override": "real"}],
+            [{
+                "id": "r", "ai_default": "x", "override": "new",
+                "history": [{"override": "fabricated"}],
+            }],
+        )
+        assert [h["override"] for h in rows[0]["history"]] == ["real"]
+
+
+class TestPluginContract:
+    """The file we write must stay readable by the ACE plugin.
+
+    `lib/decision-overrides.ts` fail-louds on any `schema_version` other
+    than 1, and `DecisionOverrideRowSchema` is a NON-strict zod object —
+    it strips keys it doesn't know rather than rejecting them. That is
+    what makes `decided_by_name` / `decided_by_verified` / `history`
+    safe to add without a paired plugin change, and what makes bumping
+    `schema_version` unsafe without one.
+
+    Verified live on 2026-08-14 by running the plugin's own
+    `parseDecisionOverridesYaml` + `applyDecisionOverrides` over a file
+    this writer produced (via the real endpoint, against a scratch Drive
+    opp): it parsed, kept the six fields below, dropped the three
+    additions, bound `status: overridden` + appended the value to
+    `options`, and correctly treated a reverted row as a no-op.
+    """
+
+    #: Fields `DecisionOverrideRowSchema` declares. Anything else is
+    #: stripped by the plugin — fine, but it must never be load-bearing.
+    PLUGIN_KNOWN = {
+        "id", "override", "override_reasoning",
+        "phase", "question", "ai_default",
+        "decided_by", "decided_at", "source_run_id",
+    }
+    #: Ours. Read by ace-web only, invisible to the plugin.
+    ACE_WEB_ONLY = {"decided_by_name", "decided_by_verified", "history"}
+
+    def _row(self) -> dict:
+        drive = _drive_with_opp()
+        _stage(SLUG, RUN, "archetype-selection", "focus-group")
+        save_decision_overrides(
+            drive=drive, ace_root_folder_id="fake-root",
+            opp_slug=SLUG, source_run_id=RUN,
+        )
+        return _read_overrides_file(drive, SLUG)
+
+    def test_schema_version_stays_1(self):
+        assert self._row()["schema_version"] == 1
+
+    def test_every_row_key_is_known_or_deliberately_ours(self):
+        row = self._row()["overrides"][0]
+        unexpected = set(row) - self.PLUGIN_KNOWN - self.ACE_WEB_ONLY
+        assert unexpected == set(), (
+            f"new field(s) {sorted(unexpected)} on the override row — the "
+            "plugin will silently strip them. If they are load-bearing for "
+            "the next run, they need a paired change in "
+            "dimagi-internal/ace lib/decision-overrides.ts."
+        )
+
+    def test_the_load_bearing_fields_are_present(self):
+        row = self._row()["overrides"][0]
+        assert row["id"] and row["override"]

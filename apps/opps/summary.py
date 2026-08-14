@@ -54,6 +54,7 @@ from datetime import date
 import yaml
 
 from apps.opps.drive_client import DriveClient
+from apps.opps.drive_export import read_prose
 from apps.opps.reactions import read_reactions
 
 log = logging.getLogger(__name__)
@@ -643,7 +644,13 @@ def _read_open_questions(
             continue
         body = ""
         try:
-            body = (drive.get_content(f.id, f.mime_type).content or "")
+            # Read as MARKDOWN, not the plain default. This doc is a Google
+            # Doc (everything ACE writes is), and Drive's plain-text export
+            # renders its `-` bullets as `*` and drops `**bold**` entirely —
+            # so the `- **Title** — detail` convention this parser is written
+            # against survives only by the accident that `* ` and the em dash
+            # happen to come through. See apps/opps/drive_export.
+            body = read_prose(drive, f)
         except Exception as exc:  # noqa: BLE001
             log.warning("summary: read open-questions %s failed: %s", f.id, exc)
         items = _parse_open_questions(body)
@@ -895,6 +902,26 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
     return {"total": len(rows), "counts": counts, "rows": rows}
 
 
+def _read_decision_edits(drive: DriveClient, opp_folder_id: str) -> dict:
+    """Saved decision overrides, keyed by row id, emails stripped.
+
+    Degrades to ``{}`` on any Drive failure: an unreadable overrides file
+    must not take the whole summary down, and "nobody has changed
+    anything" is the correct rendering of "we could not read the file"
+    only in the sense that the page still loads — the rows themselves
+    still show what the run decided.
+    """
+    from apps.opps.decision_overrides import fetch_saved_overrides
+
+    try:
+        return fetch_saved_overrides(
+            drive, opp_folder_id=opp_folder_id, include_email=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("summary: read decision overrides failed: %s", exc)
+        return {}
+
+
 # ─── Lifecycle stage ───────────────────────────────────────────────
 
 # Canonical phase order, with the short label the page shows and the
@@ -1058,6 +1085,14 @@ def build_summary_payload(
         # reachable from the ledger the next run publishes — not a write
         # into a store nothing reads.
         "reactions": read_reactions(drive, opp_folder.id, run_id=run_id),
+        # Human-set answers, keyed by decision id — the SAME
+        # `inputs/decision-overrides.yaml` the Workbench's authenticated
+        # editor writes and the plugin binds on the next run, projected
+        # without emails. The decisions rows above are what the RUN
+        # recorded; this is what humans have changed since, with who and
+        # when and every prior value, so the page can render an edit as a
+        # reversible change rather than a fait accompli.
+        "decision_edits": _read_decision_edits(drive, opp_folder.id),
         "workbench": workbench,
         "viewer": {"is_member": bool(viewer_is_member)},
     }
