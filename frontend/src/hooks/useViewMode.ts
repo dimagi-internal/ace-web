@@ -9,30 +9,48 @@ const VALID: readonly ViewKind[] = [
   "story",
 ] as const;
 
-function parse(raw: string | null, fallback: ViewKind): ViewKind {
-  if (raw && (VALID as readonly string[]).includes(raw)) return raw as ViewKind;
-  return fallback;
-}
-
 /**
- * URL-state-driven view mode. Lives in `?view=`. Default is whichever
- * the caller declares per surface (Hierarchy on /opps; Flow on
- * /opps/<slug> when the run-graph endpoint ships).
+ * URL-state-driven tab selection, generic over the tab key.
  *
- * Replace-history on change so back-button navigates between filters,
- * not between view tabs (matches Notion / Linear UX).
+ * Replace-history on change so the back button navigates between
+ * filters, not between tabs (matches Notion / Linear UX). Selecting the
+ * default tab drops the param entirely, which keeps the canonical URL —
+ * the one a partner is handed — clean.
  */
-export function useViewMode(defaultView: ViewKind = "hierarchy") {
+export function useUrlTab<K extends string>({
+  param,
+  valid,
+  defaultTab,
+}: {
+  param: string;
+  valid: readonly K[];
+  defaultTab: K;
+}): { tab: K; setTab: (k: K) => void } {
   const [params, setParams] = useSearchParams();
-  const current = parse(params.get("view"), defaultView);
-  const setView = (k: ViewKind) => {
+  const raw = params.get(param);
+  const tab = raw && (valid as readonly string[]).includes(raw) ? (raw as K) : defaultTab;
+  const setTab = (k: K) => {
     const next = new URLSearchParams(params);
-    if (k === defaultView) {
-      next.delete("view");
+    if (k === defaultTab) {
+      next.delete(param);
     } else {
-      next.set("view", k);
+      next.set(param, k);
     }
     setParams(next, { replace: true });
   };
-  return { view: current, setView };
+  return { tab, setTab };
+}
+
+/**
+ * The Workbench's view mode. Lives in `?view=`. Default is whichever
+ * the caller declares per surface (Hierarchy on /opps; Flow on
+ * /opps/<slug> when the run-graph endpoint ships).
+ */
+export function useViewMode(defaultView: ViewKind = "hierarchy") {
+  const { tab, setTab } = useUrlTab<ViewKind>({
+    param: "view",
+    valid: VALID,
+    defaultTab: defaultView,
+  });
+  return { view: tab, setView: setTab };
 }

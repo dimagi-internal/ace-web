@@ -1,9 +1,13 @@
 import { useMemo, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, MessageSquare } from "lucide-react";
 
-import type { OppSummaryPayload, ReviewDecision } from "@/api/oppSummary";
+import type { DecisionReaction, OppSummaryPayload, ReviewDecision } from "@/api/oppSummary";
 import { DecisionDetailFields } from "@/components/opps/decisions/DecisionDetailFields";
 import { EvidenceBadge } from "@/components/opps/decisions/EvidenceBadge";
+import {
+  DecisionReactions,
+  type ReactionSubmit,
+} from "@/components/opps/summary/DecisionReactions";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,7 +27,9 @@ import { cn } from "@/lib/utils";
  * Ordering is the whole argument. `conflicting` (ACE had to resolve
  * sources that disagreed) and `overridden` (a human already changed it)
  * lead, expanded, because those are the calls an outside reader is best
- * placed to correct. Everything else sits behind one disclosure.
+ * placed to correct. Everything else sits behind one disclosure. Those
+ * rows open with their reply box already visible, so reacting to the
+ * two calls we most need help with is the path of least resistance.
  */
 function isFlagged(d: ReviewDecision): boolean {
   return d.evidence_basis === "conflicting" || d.status === "overridden";
@@ -31,8 +37,13 @@ function isFlagged(d: ReviewDecision): boolean {
 
 export function DecisionsReview({
   decisions,
+  reactions,
+  onReact,
 }: {
   decisions: NonNullable<OppSummaryPayload["decisions"]>;
+  /** Reactions already collected, keyed by decision id. */
+  reactions: Record<string, DecisionReaction[]>;
+  onReact: (decisionId: string, body: ReactionSubmit) => Promise<void>;
 }) {
   const [showAll, setShowAll] = useState(false);
   const { counts, rows, total } = decisions;
@@ -78,7 +89,13 @@ export function DecisionsReview({
           <ul className="mt-3 divide-y divide-border border-y border-border">
             {flagged.map((d) => (
               <li key={d.id}>
-                <DecisionItem decision={d} defaultOpen />
+                <DecisionItem
+                  decision={d}
+                  defaultOpen
+                  reactions={reactions[d.id] ?? []}
+                  onReact={onReact}
+                  prompt="We had to pick a side here. Did we pick right?"
+                />
               </li>
             ))}
           </ul>
@@ -109,7 +126,11 @@ export function DecisionsReview({
               <ul className="mt-2 divide-y divide-border border-y border-border">
                 {g.rows.map((d) => (
                   <li key={d.id}>
-                    <DecisionItem decision={d} />
+                    <DecisionItem
+                      decision={d}
+                      reactions={reactions[d.id] ?? []}
+                      onReact={onReact}
+                    />
                   </li>
                 ))}
               </ul>
@@ -154,9 +175,15 @@ function Count({
 function DecisionItem({
   decision,
   defaultOpen = false,
+  reactions,
+  onReact,
+  prompt,
 }: {
   decision: ReviewDecision;
   defaultOpen?: boolean;
+  reactions: DecisionReaction[];
+  onReact: (decisionId: string, body: ReactionSubmit) => Promise<void>;
+  prompt?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const answer = decision.override || decision.ai_default;
@@ -183,6 +210,15 @@ function DecisionItem({
             <span className="font-medium text-foreground/90">{answer}</span>
           </span>
         </span>
+        {reactions.length > 0 && (
+          <span
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground"
+            title={`${reactions.length} comment${reactions.length === 1 ? "" : "s"}`}
+          >
+            <MessageSquare size={12} />
+            {reactions.length}
+          </span>
+        )}
         {decision.status === "overridden" && (
           <span className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-sky-400">
             reviewer changed
@@ -191,11 +227,19 @@ function DecisionItem({
         <EvidenceBadge basis={decision.evidence_basis} />
       </button>
       {open && (
-        <div className="grid grid-cols-[130px_1fr] gap-x-5 gap-y-2.5 pb-5 pl-6 pr-1 text-[13px] leading-[1.6]">
-          <DecisionDetailFields
-            decision={decision}
-            effectiveValue={answer}
-            effectiveReason={decision.override_reasoning}
+        <div className="pb-5 pl-6 pr-1">
+          <div className="grid grid-cols-[130px_1fr] gap-x-5 gap-y-2.5 text-[13px] leading-[1.6]">
+            <DecisionDetailFields
+              decision={decision}
+              effectiveValue={answer}
+              effectiveReason={decision.override_reasoning}
+            />
+          </div>
+          <DecisionReactions
+            decisionId={decision.id}
+            reactions={reactions}
+            onSubmit={onReact}
+            prompt={prompt}
           />
         </div>
       )}

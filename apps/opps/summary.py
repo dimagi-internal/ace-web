@@ -54,6 +54,7 @@ from datetime import date
 import yaml
 
 from apps.opps.drive_client import DriveClient
+from apps.opps.reactions import read_reactions
 
 log = logging.getLogger(__name__)
 
@@ -1051,6 +1052,12 @@ def build_summary_payload(
         "stage": _read_stage(state),
         "feedback": _read_feedback(drive, opp_folder.id),
         "decisions": _read_decisions(drive, run_folder.id),
+        # Partner reactions collected on this page, keyed by decision id.
+        # Written by apps.opps.reactions into the same feedback records
+        # the ledgers above are rendered from, so a comment left here is
+        # reachable from the ledger the next run publishes — not a write
+        # into a store nothing reads.
+        "reactions": read_reactions(drive, opp_folder.id, run_id=run_id),
         "workbench": workbench,
         "viewer": {"is_member": bool(viewer_is_member)},
     }

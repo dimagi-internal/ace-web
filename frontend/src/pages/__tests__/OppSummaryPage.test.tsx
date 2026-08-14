@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -36,6 +36,7 @@ const BASE: OppSummaryPayload = {
   open_questions: null,
   decisions: null,
   feedback: [],
+  reactions: { total: 0, by_decision: {} },
   stage: null,
   workbench: null,
   viewer: { is_member: false },
@@ -72,6 +73,11 @@ function renderWith(payload: OppSummaryPayload) {
       </Routes>
     </MemoryRouter>,
   );
+}
+
+/** The review surface is a tab now — open it the way a reader would. */
+async function openDecisionsTab() {
+  fireEvent.click(await screen.findByText("Review the decisions"));
 }
 
 describe("OppSummaryPage", () => {
@@ -165,6 +171,7 @@ describe("OppSummaryPage", () => {
         }],
       },
     });
+    await openDecisionsTab();
     expect(await screen.findByText("Rate confirmation")).toBeTruthy();
     expect(screen.getByText("the USD 2-5 band is ACE-inferred")).toBeTruthy();
     expect(screen.getByText("responding LLO + Spark")).toBeTruthy();
@@ -193,6 +200,7 @@ describe("OppSummaryPage", () => {
         ],
       },
     });
+    await openDecisionsTab();
     expect(await screen.findByText("A contested call")).toBeTruthy();
     // Flagged rows open by default, so their conflicting signals are
     // already on the page — that is the point of the section.
@@ -200,5 +208,113 @@ describe("OppSummaryPage", () => {
     // The settled one is behind the disclosure.
     expect(screen.queryByText("A settled call")).toBeNull();
     expect(screen.getByText(/Show all 2/)).toBeTruthy();
+  });
+
+  // ── The response affordance ─────────────────────────────────────
+  // #708 shipped 42 decisions with no way to say anything about any of
+  // them, which is the skim-and-agree failure the log exists to fix,
+  // just in a nicer shape.
+
+  const CONFLICTED: OppSummaryPayload = {
+    ...BASE,
+    decisions: {
+      total: 1,
+      counts: { stated: 0, inferred: 0, conflicting: 1, overridden: 0 },
+      rows: [{
+        ...DECISION,
+        id: "loud-one",
+        question: "A contested call",
+        evidence_basis: "conflicting",
+        conflict_signals: ["source A says X"],
+      }],
+    },
+  };
+
+  it("keeps the review surface one URL away, not one link away", async () => {
+    // A partner gets ONE link. The decisions live on a tab of the same
+    // page, so pointing someone at them is still that link + ?tab=.
+    renderWith(CONFLICTED);
+    expect(await screen.findByText("Overview")).toBeTruthy();
+    expect(screen.getByText("Decisions")).toBeTruthy();
+    // Overview first — the decisions body is not on screen yet.
+    expect(screen.queryByText("A contested call")).toBeNull();
+    await openDecisionsTab();
+    expect(await screen.findByText("A contested call")).toBeTruthy();
+  });
+
+  it("draws no tab strip when a run has nothing to review", async () => {
+    renderWith(BASE);
+    expect(await screen.findByText("Program Design Document")).toBeTruthy();
+    expect(screen.queryByText("Decisions")).toBeNull();
+    expect(screen.queryByText("Review the decisions")).toBeNull();
+  });
+
+  it("lets a partner react to ONE decision row, and requires a name", async () => {
+    const post = vi.spyOn(api, "postDecisionReaction").mockResolvedValue({
+      decision_id: "loud-one",
+      reviewer: "Anne Kuhlmann",
+      comment: "The later date is right.",
+      received_at: "2026-08-14",
+      feedback_ref: "20260814-public-anne-kuhlmann/loud-one",
+    });
+    renderWith(CONFLICTED);
+    await openDecisionsTab();
+
+    // Conflicting rows open expanded, so the reply box is one click away.
+    fireEvent.click(await screen.findByText(/Did we pick right\?/));
+    fireEvent.change(screen.getByLabelText("Your comment on this decision"), {
+      target: { value: "The later date is right." },
+    });
+    // Name is required — an unattributable comment can't be answered or
+    // credited, which is the whole value of the ledger it lands in.
+    expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Your name"), {
+      target: { value: "Anne Kuhlmann" },
+    });
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0].slice(0, 4)).toEqual([
+      "dimagi-team", "spark-facilitator", "20260813-2126", "loud-one",
+    ]);
+    // …and it shows up immediately, rather than after the 60s read cache.
+    expect(await screen.findByText("The later date is right.")).toBeTruthy();
+  });
+
+  it("surfaces the server's refusal instead of pretending it saved", async () => {
+    vi.spyOn(api, "postDecisionReaction").mockRejectedValue(
+      new api.ReactionError("Give it a few minutes before sending another comment."),
+    );
+    renderWith(CONFLICTED);
+    await openDecisionsTab();
+    fireEvent.click(await screen.findByText(/Did we pick right\?/));
+    fireEvent.change(screen.getByLabelText("Your comment on this decision"), {
+      target: { value: "one more thought" },
+    });
+    fireEvent.change(screen.getByLabelText("Your name"), {
+      target: { value: "Anne Kuhlmann" },
+    });
+    fireEvent.click(screen.getByText("Send"));
+    expect(await screen.findByText(/Give it a few minutes/)).toBeTruthy();
+  });
+
+  it("renders reactions the run already collected", async () => {
+    renderWith({
+      ...CONFLICTED,
+      reactions: {
+        total: 1,
+        by_decision: {
+          "loud-one": [{
+            reviewer: "Anne Kuhlmann",
+            comment: "We start in October, not September.",
+            received_at: "2026-08-14",
+            feedback_ref: "20260814-public-anne-kuhlmann/loud-one",
+          }],
+        },
+      },
+    });
+    await openDecisionsTab();
+    expect(await screen.findByText("We start in October, not September.")).toBeTruthy();
+    expect(screen.getByText(/Anne Kuhlmann/)).toBeTruthy();
   });
 });

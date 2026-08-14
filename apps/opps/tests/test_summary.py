@@ -1164,3 +1164,45 @@ def test_open_questions_survive_an_unreadable_body():
     )
     assert p["open_questions"]["items"] == []
     assert p["open_questions"]["url"].startswith("https://fake/")
+
+
+# ─── Reactions on the payload ──────────────────────────────────────
+
+
+def test_payload_carries_the_reactions_collected_on_this_run():
+    """Reactions ride the same payload as the rows they attach to.
+
+    A separate fetch would mean the page renders 42 decisions and their
+    replies at different moments — and the empty state (before the second
+    request lands) says "nobody has said anything", which is a lie.
+    """
+    import yaml as _yaml
+
+    tree = _full_tree()
+    tree["ACE"]["turmeric"]["feedback"]["20260814-public-anne-kuhlmann.yaml"] = (
+        _yaml.safe_dump({
+            "schema_version": 1,
+            "slug": "20260814-public-anne-kuhlmann",
+            "reviewer": "Anne Kuhlmann",
+            "reviewer_email": "anne@example.org",
+            "received_at": "2026-08-14",
+            "channel": "other",
+            "against_run": "20260503-0835",
+            "items": [{
+                "id": "photo-required",
+                "verbatim": "A photo per visit is too much in the rainy season.",
+                "anchor": "decision:photo-required · Should each visit require a photo?",
+            }],
+        })
+    )
+    p = _payload(tree)
+    assert p["reactions"]["total"] == 1
+    row = p["reactions"]["by_decision"]["photo-required"][0]
+    assert row["reviewer"] == "Anne Kuhlmann"
+    assert row["feedback_ref"] == "20260814-public-anne-kuhlmann/photo-required"
+    # Emails are collected so we can reply, never published.
+    assert "anne@example.org" not in repr(p)
+
+
+def test_payload_reactions_default_to_empty():
+    assert _payload(_full_tree())["reactions"] == {"total": 0, "by_decision": {}}

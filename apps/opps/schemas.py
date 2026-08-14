@@ -237,6 +237,44 @@ class GateDecisionIn(StrictModel):
     note: str | None = None
 
 
+# --- Public decision reactions -----------------------------------------
+
+
+class DecisionReactionIn(StrictModel):
+    """Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/reactions.
+
+    ``reviewer`` is REQUIRED and self-reported. The page has no login and
+    a partner cannot self-serve one, so the only honest options were a
+    required free-text name or anonymous reactions — and an anonymous
+    reaction defeats the store it lands in: the feedback ledger's whole
+    value is being able to tell a reviewer where THEIR comment went, and
+    to tell a future reader whose judgement drove a change. An unsigned
+    comment is unanswerable and uncreditable. So: required name, optional
+    email (the reply path), and the record says the name is self-reported
+    rather than pretending it is verified.
+
+    Length ceilings live in ``apps.opps.reactions`` and are enforced
+    there too — these are the cheap first pass, so an oversized body is
+    rejected before any Drive round-trip.
+    """
+
+    reviewer: Annotated[str, Field(min_length=1, max_length=120)]
+    comment: Annotated[str, Field(min_length=1, max_length=4000)]
+    reviewer_email: Annotated[str, Field(max_length=254)] | None = None
+
+
+class DecisionReactionOut(StrictModel):
+    """What the page needs to render the reaction it just submitted."""
+
+    feedback_ref: str
+    record_slug: str
+    item_id: str
+    decision_id: str
+    reviewer: str
+    comment: str
+    received_at: str
+
+
 # --- Multi-run compare -------------------------------------------------
 
 
