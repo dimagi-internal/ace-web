@@ -33,8 +33,9 @@ log = logging.getLogger(__name__)
 _set = set  # preserve builtin before our module-level `set` shadows it
 
 # Bump when the cached dataclass shape, the file_id-tracking semantics,
-# *or what the reader produces from the same bytes* changes — stale entries from before the bump deserialize into
-# the new dataclass with leftover attributes (or missing required ones),
+# *or what the reader produces from the same bytes* changes — stale
+# entries from before the bump deserialize into the new dataclass with
+# leftover attributes (or missing required ones),
 # and tracking-semantic bumps similarly orphan entries written with the
 # old set of dependencies (they can't receive the new invalidation
 # signals). Without the bump, the changes-feed pipeline silently serves
