@@ -1,8 +1,19 @@
 import { ArrowUpRight } from "lucide-react";
 
+import type { LinkAccess } from "@/api/oppSummary";
+
 interface RowLink {
   label: string;
   href: string;
+  /**
+   * Set to `"admin"` when the link needs an account we can't give an
+   * external partner. The link is still rendered — it just says so.
+   *
+   * The page leaves this undefined for a signed-in workspace member, so
+   * "should this viewer see tags at all" is decided once, at the top,
+   * rather than by every row.
+   */
+  access?: LinkAccess;
 }
 
 interface Props {
@@ -45,7 +56,31 @@ export function SummaryRow({ label, name, links }: Props) {
             />
           </a>
         ))}
+        {links.some((l) => l.access === "admin") && <AdminOnlyTag />}
       </span>
     </div>
+  );
+}
+
+/**
+ * Marks a link that needs Dimagi access today.
+ *
+ * Jonathan, 2026-08-14: "Nothing is 'Dimagi only' at scale for ACE, even
+ * if right now it needs to be because of shared tenancy. For now we can
+ * show the link but have a tag on it (admin only)." Hiding these links
+ * (or letting them 404 silently) told an outside reader the run was
+ * thinner than it is; the tag says what's actually true.
+ */
+export function AdminOnlyTag({ className }: { className?: string }) {
+  return (
+    <span
+      className={
+        "shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70 " +
+        (className ?? "")
+      }
+      title="Needs a Dimagi account today — ask us and we'll walk you through it"
+    >
+      admin only
+    </span>
   );
 }

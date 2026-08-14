@@ -36,8 +36,15 @@ empty — they get the same defensive ``dict.get`` chain that the rest
 of the loader uses, so nothing 500s. Each section is independently
 nullable.
 
-Open Questions doc is the lone exception that still requires a Drive
-fetch — the orchestrator doesn't yet write a typed pointer for it.
+Two artifacts still require a Drive fetch — the orchestrator writes no
+typed pointer for either:
+
+- ``ACE/<opp>/open-questions.md``      (opp-level, durable across runs)
+- ``ACE/<opp>/runs/<run-id>/decisions.yaml``
+
+Both are internal WORKING artifacts that nobody shares, so this loader
+carries their CONTENT rather than a link. Together they are the review
+surface: what we decided and why, and what we could not decide.
 """
 from __future__ import annotations
 
@@ -114,6 +121,42 @@ def _phase_products(state: dict, phase: str, block: str | None = None) -> dict:
     return sub if isinstance(sub, dict) else {}
 
 
+# ─── Link access classification ────────────────────────────────────
+#
+# Every link the page renders declares who can actually open it. This is
+# a PROPERTY OF THE PAYLOAD, never a hostname table in the component:
+# the URLs change every run, but each reader knows which SYSTEM it just
+# read a link out of, and that system's access model is what's stable.
+#
+# Jonathan, 2026-08-14: "Nothing is 'Dimagi only' at scale for ACE, even
+# if right now it needs to be because of shared tenancy. For now we can
+# show the link but have a tag on it (admin only)." So a gated link is
+# never hidden and never silently 404s — it renders with an `admin only`
+# tag, and a workspace member sees no tag at all.
+#
+# ``admin`` means: opening this needs an account we cannot give an
+# external partner today.
+#   * CommCare HQ app pages   — project-space membership; a signed-in
+#     non-member gets 404 (verified anonymously, spark-facilitator run).
+#   * Connect opportunity     — workspace membership.
+#   * OCS console             — team membership.
+#   * connect-labs (dashboards, solicitations) — redirects to a
+#     CommCare-HQ OAuth login an external partner can't self-serve.
+#   * ace-web Workbench       — workspace membership, and ace-web admits
+#     @dimagi.com only.
+#
+# ``public`` means: no ACE-side account gate. Google Drive DELIVERABLES
+# (PDD, work order, training pack, learnings, feedback ledgers) are
+# classified public: their ACL is per-file and ``/ace:share-run-access``
+# shares exactly these with reviewers, so asserting "admin only" here
+# would be a guess in the wrong direction. Drive WORKING artifacts —
+# ``open-questions.md`` and ``decisions.yaml`` — are admin: nothing
+# shares them, which is why this payload carries their CONTENT rather
+# than leaning on the link.
+ACCESS_PUBLIC = "public"
+ACCESS_ADMIN = "admin"
+
+
 # ─── Per-section readers ───────────────────────────────────────────
 
 
@@ -185,6 +228,9 @@ def _read_apps(state: dict) -> list[dict]:
             "kind": kind_label,
             "name": app.get("name") or f"{kind_label} app",
             "hq_url": hq_url,
+            # HQ app pages need project-space membership: a signed-in
+            # non-member gets a 404, not a "request access" page.
+            "access": ACCESS_ADMIN,
         })
     return out
 
@@ -230,6 +276,8 @@ def _read_connect(state: dict) -> dict | None:
             "url": opp_url,
             "start_date": opp.get("start_date") or connect.get("start_date"),
             "end_date": opp.get("end_date") or connect.get("end_date"),
+            # Connect gates opportunity pages on workspace membership.
+            "access": ACCESS_ADMIN,
         },
     }
 
@@ -248,6 +296,7 @@ def _read_training(state: dict) -> dict | None:
         deck_block = {
             "title": deck.get("title") or "Training deck",
             "url": deck.get("web_view_link"),
+            "access": ACCESS_PUBLIC,
         }
 
     docs_block = training.get("docs") or {}
@@ -259,6 +308,7 @@ def _read_training(state: dict) -> dict | None:
             docs.append({
                 "title": doc.get("title") or key.replace("_", " ").title(),
                 "url": doc.get("web_view_link"),
+                "access": ACCESS_PUBLIC,
             })
 
     if deck_block is None and not docs:
@@ -298,6 +348,9 @@ def _read_assistant(state: dict) -> dict | None:
         return None
     return {
         "ocs_url": chatbot.get("admin_url"),
+        # The OCS console needs team membership; the WIDGET below does
+        # not, which is why the embed key stays on the public payload.
+        "access": ACCESS_ADMIN,
         "public_id": public_id,
         "embed_key": embed_key,
     }
@@ -398,6 +451,10 @@ def _read_walkthroughs(state: dict) -> list[dict]:
             "eval_score": w.get("eval_score"),
             "availability": "available",
             "withheld_reason": None,
+            # A published walkthrough is either a Drive file or a
+            # canopy-web share minted with a link-visibility token — both
+            # circulate by design, so no admin tag is claimed here.
+            "access": ACCESS_PUBLIC,
         })
     return out
 
@@ -460,7 +517,13 @@ def _read_dashboards(state: dict) -> list[dict]:
         title = d.get("title") or d.get("name")
         if not title:
             title = _humanize(str(d.get("key") or "")) or "Dashboard"
-        out.append({"title": title, "url": url})
+        out.append({
+            "title": title,
+            "url": url,
+            # connect-labs redirects to a CommCare-HQ OAuth login an
+            # external partner cannot self-serve.
+            "access": ACCESS_ADMIN,
+        })
     return out
 
 
@@ -484,6 +547,8 @@ def _read_solicitation(state: dict) -> dict | None:
         "url": sol.get("url") or sol.get("public_url"),
         "deadline": sol.get("deadline"),
         "status": sol.get("status"),
+        # Published on connect-labs — same OAuth gate as the dashboards.
+        "access": ACCESS_ADMIN,
     }
 
 
@@ -531,6 +596,7 @@ def _read_learnings(state: dict) -> dict | None:
             learn.get("new_pdd_web_view_link"), learn.get("new_pdd_file_id"),
         ),
         "iteration_warranted": bool(learn.get("iteration_warranted")),
+        "access": ACCESS_PUBLIC,
     }
 
 
@@ -551,13 +617,19 @@ def _read_open_questions(
     opp_folder_id: str,
     run_folder_id: str | None = None,
 ) -> dict | None:
-    """Open Questions doc — no typed handoff yet; Drive fetch required.
+    """Open Questions — the "what we could NOT decide" half of the review
+    surface. Content, not just a link.
 
     Lives at the OPP level (``ACE/<opp>/open-questions.md``), not in the
     run folder: ACE keeps it "per-opportunity and durable across runs —
     refreshed each run, never restarted." Reading only the run folder made
     every real opp render "Open questions — Not created" while the doc sat
     one level up, which is the one section a reviewer most needs.
+
+    The doc itself is an internal working artifact — nothing shares it —
+    so a link alone is useless to the partner it is written for. The body
+    is parsed into items here and rendered on the page; the link is still
+    carried (tagged admin-only) for whoever does have Drive access.
 
     The run folder is still checked as a fallback so any older run that
     did write a run-local copy keeps rendering.
@@ -566,9 +638,93 @@ def _read_open_questions(
         if not folder_id:
             continue
         f = _find_in_folder(drive, folder_id, "open-questions.md")
-        if f is not None and f.web_view_link:
-            return {"url": f.web_view_link}
+        if f is None:
+            continue
+        body = ""
+        try:
+            body = (drive.get_content(f.id, f.mime_type).content or "")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("summary: read open-questions %s failed: %s", f.id, exc)
+        items = _parse_open_questions(body)
+        if not (f.web_view_link or items):
+            continue
+        return {
+            "url": f.web_view_link or None,
+            "access": ACCESS_ADMIN,
+            "items": items,
+        }
     return None
+
+
+def _strip_md_inline(text: str) -> str:
+    """Drop the inline markdown emphasis markers ACE writes into these
+    docs. Deliberately not a markdown renderer — these bodies are one
+    sentence plus two labelled clauses, and the page renders plain text.
+    """
+    return text.replace("**", "").replace("__", "").strip()
+
+
+def _split_labelled(text: str, label: str) -> tuple[str, str | None]:
+    """Split ``"body Owner: x"`` on ``"Owner:"`` → ``("body", "x")``.
+
+    Returns ``(text, None)`` when the label is absent, so an item written
+    without the convention still renders its prose instead of vanishing.
+    """
+    head, sep, tail = text.partition(label)
+    if not sep:
+        return text.strip(), None
+    return head.strip().rstrip(".").strip(), tail.strip()
+
+
+def _parse_open_questions(body: str) -> list[dict]:
+    """Parse ``open-questions.md`` bullets into typed items.
+
+    The convention ACE writes (``skills/idea-to-pdd`` seeds it, later
+    phases append) is one bullet per question::
+
+        - **Rate confirmation** — the USD 2-5 band is ACE-inferred; no
+          source documents current CBF compensation. Owner: responding
+          LLO + Spark. Answered in: solicitation response (Phase 8).
+
+    Anything that doesn't match degrades to ``{title: "", detail: <line>}``
+    rather than being dropped — a question we can't parse is still a
+    question the reviewer should see.
+    """
+    items: list[dict] = []
+    for raw in (body or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith(("- ", "* ")):
+            items.append({"_raw": line[2:].strip()})
+        elif items and not line.startswith("#"):
+            # Continuation of the previous bullet (wrapped line).
+            items[-1]["_raw"] = f"{items[-1]['_raw']} {line}"
+
+    out: list[dict] = []
+    for item in items:
+        text = _strip_md_inline(item["_raw"])
+        title = ""
+        detail = text
+        # "Title — detail" (em dash is what the template writes; the
+        # hyphen form is accepted so a hand-edited doc still parses).
+        for dash in ("\u2014", " - "):
+            head, sep, tail = text.partition(dash)
+            if sep and len(head) <= 80 and tail.strip():
+                title, detail = head.strip(), tail.strip()
+                break
+        detail, answered = _split_labelled(detail, "Answered in:")
+        detail, owner = _split_labelled(detail, "Owner:")
+        if owner is None and answered is not None:
+            # "Owner:" came after "Answered in:" — recover it from the tail.
+            answered, owner = _split_labelled(answered, "Owner:")
+        out.append({
+            "title": title,
+            "detail": detail,
+            "owner": (owner or "").rstrip(".").strip() or None,
+            "answered_in": (answered or "").rstrip(".").strip() or None,
+        })
+    return out
 
 
 def _read_design(state: dict) -> dict | None:
@@ -599,7 +755,11 @@ def _read_design(state: dict) -> dict | None:
         if not url and block.get("file_id"):
             url = f"https://docs.google.com/document/d/{block['file_id']}/edit"
         if url:
-            docs.append({"title": block.get("title") or fallback_title, "url": url})
+            docs.append({
+                "title": block.get("title") or fallback_title,
+                "url": url,
+                "access": ACCESS_PUBLIC,
+            })
 
     return {"docs": docs} if docs else None
 
@@ -633,9 +793,105 @@ def _read_feedback(drive: DriveClient, opp_folder_id: str) -> list[dict]:
         title = who.replace("-", " ").title() or stem
         if len(date) == 8 and date.isdigit():
             title = f"{date[:4]}-{date[4:6]}-{date[6:]} · {title}"
-        ledgers.append({"title": title, "url": f.web_view_link})
+        ledgers.append({
+            "title": title, "url": f.web_view_link, "access": ACCESS_PUBLIC,
+        })
 
     return sorted(ledgers, key=lambda d: d["title"], reverse=True)
+
+
+# ─── Decisions log ─────────────────────────────────────────────────
+
+# Ordinal-prefixed phase tags (``1-design``, ``8-solicitation-management``)
+# are what the decisions log writes. Only the ordinal is load-bearing for
+# ordering; the tail is humanised for the label.
+def _decision_phase_label(phase_raw: str) -> str:
+    head, _, tail = str(phase_raw or "").partition("-")
+    if head.isdigit() and tail:
+        return _humanize(tail)
+    return _humanize(str(phase_raw or "")) or "Other"
+
+
+def _decision_phase_ordinal(phase_raw: str) -> int:
+    head, _, _tail = str(phase_raw or "").partition("-")
+    return int(head) if head.isdigit() else 99
+
+
+def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
+    """The run's decisions log — "what we decided, and why".
+
+    A 24-page PDD is a poor instrument for eliciting decisions: people
+    skim prose. Every load-bearing default a phase applied is already
+    recorded as a typed row in ``runs/<run-id>/decisions.yaml`` — the
+    question, the value the AI picked, the alternatives it weighed, its
+    reasoning, and (v4) an ``evidence_basis`` saying whether the value was
+    *stated* in a source, *inferred* beyond one, or a resolution of
+    *conflicting* signals. That is the artifact a partner can react to.
+
+    Rows are projected through the SAME ``serialize_decision`` the
+    Workbench uses, so the public review surface and the Workbench render
+    one shape and can't drift apart. Grouping/filtering is left to the
+    page; this returns the rows plus the counts that let the page lead
+    with the interesting ones (``conflicting`` and ``overridden``).
+
+    The doc itself is an internal working artifact and is not shared, so
+    no link is emitted — the content is the payload.
+    """
+    from apps.opps.parsers import Decision
+    from apps.opps.serializers import serialize_decision
+
+    f = _find_in_folder(drive, run_folder_id, "decisions.yaml")
+    if f is None:
+        return None
+    log_data = _read_yaml(drive, f.id, f.mime_type)
+    raw_rows = log_data.get("decisions")
+    if not isinstance(raw_rows, list) or not raw_rows:
+        return None
+
+    rows: list[dict] = []
+    counts = {"stated": 0, "inferred": 0, "conflicting": 0, "overridden": 0}
+    for raw in raw_rows:
+        if not isinstance(raw, dict):
+            log.warning("summary: decision entry is not a mapping — skipped")
+            continue
+        row_id = str(raw.get("id") or "").strip()
+        question = str(raw.get("question") or "").strip()
+        if not row_id or not question:
+            log.warning("summary: decision row missing id/question (keys=%s) — skipped",
+                        sorted(raw))
+            continue
+        status = raw.get("status")
+        status = status if status in ("ai-default", "overridden") else "ai-default"
+        basis = raw.get("evidence_basis")
+        basis = basis if basis in ("stated", "inferred", "conflicting") else "stated"
+        decision = Decision(
+            id=row_id,
+            phase=str(raw.get("phase") or ""),
+            skill=str(raw.get("skill") or ""),
+            question=question,
+            ai_default=str(raw.get("ai-default") or raw.get("ai_default") or ""),
+            override=str(raw.get("override") or ""),
+            options_considered=[
+                str(o) for o in (raw.get("options") or raw.get("options_considered") or [])
+            ],
+            source=str(raw.get("source") or ""),
+            status=status,
+            notes=str(raw.get("reasoning") or raw.get("notes") or ""),
+            override_reasoning=str(raw.get("override_reasoning") or ""),
+            evidence_basis=basis,
+            conflict_signals=[str(c) for c in (raw.get("conflict_signals") or [])],
+        )
+        serialized = serialize_decision(decision)
+        serialized["phase_label"] = _decision_phase_label(decision.phase)
+        serialized["phase_ordinal"] = _decision_phase_ordinal(decision.phase)
+        rows.append(serialized)
+        counts[basis] += 1
+        if status == "overridden":
+            counts["overridden"] += 1
+
+    if not rows:
+        return None
+    return {"total": len(rows), "counts": counts, "rows": rows}
 
 
 # ─── Lifecycle stage ───────────────────────────────────────────────
@@ -714,7 +970,7 @@ def build_summary_payload(
     workspace,
     opp_slug: str,
     run_id: str,
-    include_internal_links: bool = True,
+    viewer_is_member: bool = True,
 ) -> dict | None:
     """Build the public summary JSON payload for a per-run summary page.
 
@@ -722,11 +978,15 @@ def build_summary_payload(
     the requested run folder can't be located, so callers can map to a
     404 without leaking which segment was the miss.
 
-    ``include_internal_links=False`` drops links that only work for a
-    signed-in workspace member — currently the Workbench URL, which
-    404s (not "sign in") for anyone else and can never work for an
-    external reviewer, since ace-web only admits @dimagi.com accounts.
-    The public endpoint passes the requesting user's auth state.
+    ``viewer_is_member`` is echoed back as ``viewer.is_member``. It does
+    NOT change which links are served: every link is always present and
+    always declares its ``access`` (see the classification block above).
+    Membership only decides whether the page draws the ``admin only``
+    tag — a member already knows, and the tag would be noise. This
+    replaces the earlier ``include_internal_links``, which HID the
+    Workbench link from non-members; hiding a link an external reviewer
+    can\'t use is the same failure as letting it 404 silently, just
+    quieter. Both variants stay separately cached.
     """
     ace_root_id = getattr(workspace, "drive_root_folder_id", None)
     if not ace_root_id:
@@ -756,9 +1016,12 @@ def build_summary_payload(
         state = _read_yaml(drive, state_file.id, state_file.mime_type)
 
     workspace_slug = getattr(workspace, "slug", "")
-    workbench_url = (
-        f"/w/{workspace_slug}/opps/{opp_slug}/runs/{run_id}"
-        if workspace_slug and include_internal_links
+    workbench = (
+        {
+            "url": f"/w/{workspace_slug}/opps/{opp_slug}/runs/{run_id}",
+            "access": ACCESS_ADMIN,
+        }
+        if workspace_slug
         else None
     )
 
@@ -787,5 +1050,7 @@ def build_summary_payload(
         ),
         "stage": _read_stage(state),
         "feedback": _read_feedback(drive, opp_folder.id),
-        "workbench_url": workbench_url,
+        "decisions": _read_decisions(drive, run_folder.id),
+        "workbench": workbench,
+        "viewer": {"is_member": bool(viewer_is_member)},
     }

@@ -17,7 +17,9 @@ const BASE: OppSummaryPayload = {
     end_date: "2027-03-14",
   },
   design: {
-    docs: [{ title: "Program Design Document", url: "https://docs/pdd" }],
+    docs: [
+      { title: "Program Design Document", url: "https://docs/pdd", access: "public" },
+    ],
   },
   apps: [],
   connect: null,
@@ -32,10 +34,31 @@ const BASE: OppSummaryPayload = {
   opp_eval: null,
   learnings: null,
   open_questions: null,
+  decisions: null,
   feedback: [],
   stage: null,
-  workbench_url: null,
+  workbench: null,
+  viewer: { is_member: false },
 };
+
+const DECISION = {
+  id: "row",
+  phase: "idea-to-design",
+  phase_raw: "1-design",
+  phase_label: "Design",
+  phase_ordinal: 1,
+  skill: "idea-to-pdd",
+  question: "A question",
+  ai_default: "the pick",
+  override: "",
+  options_considered: ["the pick", "the other one"],
+  source: "PDD § 2",
+  status: "ai-default",
+  notes: "because",
+  override_reasoning: "",
+  evidence_basis: "stated",
+  conflict_signals: [],
+} satisfies NonNullable<OppSummaryPayload["decisions"]>["rows"][number];
 
 function renderWith(payload: OppSummaryPayload) {
   vi.spyOn(api, "getPublicOppSummary").mockResolvedValue(payload);
@@ -90,22 +113,92 @@ describe("OppSummaryPage", () => {
     expect(screen.getAllByText("Not created").length).toBeGreaterThan(0);
   });
 
-  it("hides the Workbench link when the payload has none (public visitor)", async () => {
-    renderWith(BASE);
-    await screen.findAllByText("Spark Facilitator");
-    expect(screen.queryByText(/See the full build process/)).toBeNull();
-  });
-
-  it("shows the Workbench link for a member payload", async () => {
-    renderWith({ ...BASE, workbench_url: "/w/dimagi-team/opps/spark-facilitator/runs/20260813-2126" });
-    expect(await screen.findByText(/See the full build process/)).toBeTruthy();
-  });
-
-  it("renders dashboards when the payload carries them", async () => {
+  it("shows the Workbench link to an anonymous visitor, tagged admin only", async () => {
+    // Hiding it (the previous behaviour) reads to an outsider exactly
+    // like the run not existing. Jonathan, 2026-08-14: show the link,
+    // tag it.
     renderWith({
       ...BASE,
-      dashboards: [{ title: "LLO weekly", url: "https://labs/one" }],
+      workbench: {
+        url: "/w/dimagi-team/opps/spark-facilitator/runs/20260813-2126",
+        access: "admin",
+      },
+    });
+    expect(await screen.findByText(/See the full build process/)).toBeTruthy();
+    expect(screen.getAllByText("admin only").length).toBe(1);
+  });
+
+  it("drops the admin-only tags for a workspace member", async () => {
+    renderWith({
+      ...BASE,
+      viewer: { is_member: true },
+      workbench: {
+        url: "/w/dimagi-team/opps/spark-facilitator/runs/20260813-2126",
+        access: "admin",
+      },
+      dashboards: [{ title: "LLO weekly", url: "https://labs/one", access: "admin" }],
     });
     expect(await screen.findByText("LLO weekly")).toBeTruthy();
+    expect(screen.queryByText("admin only")).toBeNull();
+  });
+
+  it("renders dashboards when the payload carries them, tagged admin only", async () => {
+    renderWith({
+      ...BASE,
+      dashboards: [{ title: "LLO weekly", url: "https://labs/one", access: "admin" }],
+    });
+    expect(await screen.findByText("LLO weekly")).toBeTruthy();
+    expect(screen.getAllByText("admin only").length).toBe(1);
+  });
+
+  it("renders open questions as content, not just a link to a doc nobody can open", async () => {
+    renderWith({
+      ...BASE,
+      open_questions: {
+        url: "https://docs/open-questions",
+        access: "admin",
+        items: [{
+          title: "Rate confirmation",
+          detail: "the USD 2-5 band is ACE-inferred",
+          owner: "responding LLO + Spark",
+          answered_in: "solicitation response (Phase 8)",
+        }],
+      },
+    });
+    expect(await screen.findByText("Rate confirmation")).toBeTruthy();
+    expect(screen.getByText("the USD 2-5 band is ACE-inferred")).toBeTruthy();
+    expect(screen.getByText("responding LLO + Spark")).toBeTruthy();
+  });
+
+  it("leads the decisions surface with the conflicting rows, expanded", async () => {
+    renderWith({
+      ...BASE,
+      decisions: {
+        total: 2,
+        counts: { stated: 1, inferred: 0, conflicting: 1, overridden: 0 },
+        rows: [
+          {
+            ...DECISION,
+            id: "quiet-one",
+            question: "A settled call",
+            evidence_basis: "stated",
+          },
+          {
+            ...DECISION,
+            id: "loud-one",
+            question: "A contested call",
+            evidence_basis: "conflicting",
+            conflict_signals: ["source A says X", "source B says Y"],
+          },
+        ],
+      },
+    });
+    expect(await screen.findByText("A contested call")).toBeTruthy();
+    // Flagged rows open by default, so their conflicting signals are
+    // already on the page — that is the point of the section.
+    expect(screen.getByText("source A says X")).toBeTruthy();
+    // The settled one is behind the disclosure.
+    expect(screen.queryByText("A settled call")).toBeNull();
+    expect(screen.getByText(/Show all 2/)).toBeTruthy();
   });
 });
