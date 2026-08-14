@@ -1159,6 +1159,13 @@ export interface paths {
          *     are meant to circulate. Workspace + slug + run_id all in the URL —
          *     no leak-prevention 404 differentiation here, the URL is the secret.
          *
+         *     Two variants of the payload are built: members of the workspace get
+         *     internal links (the Workbench), anyone else does not. The Workbench
+         *     404s — not "sign in" — for everyone else, and ace-web only admits
+         *     @dimagi.com accounts, so for an external reviewer that link is
+         *     indistinguishable from "this run doesn't exist". Both variants are
+         *     cached under their own key.
+         *
          *     Cached 60 seconds in the Django cache to absorb refresh storms.
          */
         readonly get: operations["apps_opps_api_public_opp_summary"];

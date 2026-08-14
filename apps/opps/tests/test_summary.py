@@ -649,3 +649,238 @@ def test_open_questions_absent_everywhere_is_none():
     )
     assert p["open_questions"] is None
     assert p["feedback"] == []
+
+
+# ─── Dashboards: every shape Phase 7 actually writes ───────────────
+
+
+_REAL_SYNTHETIC_BLOCK = {
+    # Verbatim shape from spark-facilitator/20260813-2126 (trimmed): the
+    # dashboards live under `synthetic.source.dashboards` keyed `key` +
+    # `par_url`, NOT `synthetic.dashboards` keyed `title` + `url`.
+    "synthetic": {
+        "labs_opp_id": 10043,
+        "source": {
+            "dashboards": [
+                {
+                    "key": "llo_weekly",
+                    "role": "review",
+                    "workflow_id": 5117,
+                    "par_url": "https://labs.connect.dimagi.com/labs/workflow/5117/run/?run_id=5123&opportunity_id=10043",
+                },
+                {
+                    "key": "verification_integrity",
+                    "role": "payment_integrity",
+                    "workflow_id": 5125,
+                    "par_url": "https://labs.connect.dimagi.com/labs/workflow/5125/run/?run_id=5127&opportunity_id=10043",
+                },
+            ],
+        },
+        "workflows": {
+            "llo_weekly": {
+                "workflow_id": 5117,
+                "run_url": "https://labs.connect.dimagi.com/labs/workflow/5117/run/?run_id=5123&opportunity_id=10043",
+            },
+            "verification_integrity": {
+                "workflow_id": 5125,
+                "run_url": "https://labs.connect.dimagi.com/labs/workflow/5125/run/?run_id=5127&opportunity_id=10043",
+            },
+        },
+        "walkthroughs": [
+            {
+                "eval_score": 2,
+                "eval_verdict": "fail",
+                "eval_rubric": "ddd-concept-eval v0.2.153",
+            },
+        ],
+    },
+}
+
+
+def _payload_with_synthetic(products: dict, *, phase_meta: dict | None = None):
+    """Build a payload whose synthetic phase carries `products` (and
+    optionally phase-level keys like status / verdict)."""
+    import yaml as _yaml
+
+    state = _yaml.safe_load(_state_yaml())
+    block = {"products": products}
+    block.update(phase_meta or {})
+    state["phases"]["synthetic-data-and-workflows"] = block
+    drive = FakeDriveClient.from_tree(_full_tree(state_yaml=_yaml.dump(state)))
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    return build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+
+
+def test_dashboards_read_par_url_from_source_block():
+    """The page said "Dashboards — Not created" while two live labs
+    dashboards existed, because the reader required `url` and Phase 7
+    writes `par_url` one level down under `source`."""
+    p = _payload_with_synthetic(_REAL_SYNTHETIC_BLOCK)
+    assert p["dashboards"] == [
+        {
+            "title": "LLO weekly",
+            "url": "https://labs.connect.dimagi.com/labs/workflow/5117/run/?run_id=5123&opportunity_id=10043",
+        },
+        {
+            "title": "Verification integrity",
+            "url": "https://labs.connect.dimagi.com/labs/workflow/5125/run/?run_id=5127&opportunity_id=10043",
+        },
+    ]
+
+
+def test_dashboards_dedupe_across_the_three_locations():
+    """`source.dashboards` and `workflows` describe the same dashboards.
+    Reading both must not double them."""
+    products = {
+        "synthetic": {
+            "dashboards": [
+                {"title": "Weekly review", "url": "https://labs/one"},
+            ],
+            "source": {
+                "dashboards": [
+                    {"key": "weekly_review", "par_url": "https://labs/one"},
+                    {"key": "integrity", "par_url": "https://labs/two"},
+                ],
+            },
+            "workflows": {"integrity": {"run_url": "https://labs/two"}},
+        },
+    }
+    p = _payload_with_synthetic(products)
+    assert [d["url"] for d in p["dashboards"]] == ["https://labs/one", "https://labs/two"]
+    # First-seen wins, so an explicit title beats a humanised key.
+    assert p["dashboards"][0]["title"] == "Weekly review"
+
+
+def test_dashboard_entry_without_any_url_is_skipped_not_fatal(caplog):
+    p = _payload_with_synthetic({
+        "synthetic": {"source": {"dashboards": [{"key": "no_url_yet"}]}},
+    })
+    assert p["dashboards"] == []
+    assert "has no url" in caplog.text
+
+
+# ─── Walkthroughs: absent / withheld / available ────────────────────
+
+
+def test_failing_walkthrough_is_withheld_not_absent():
+    """The run rendered a walkthrough whose concept eval failed. It must
+    say so — "Not created" would tell a reviewer it doesn't exist."""
+    p = _payload_with_synthetic(_REAL_SYNTHETIC_BLOCK, phase_meta={"verdict": "fail"})
+    assert len(p["walkthroughs"]) == 1
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "withheld"
+    assert w["url"] is None
+    assert w["withheld_reason"] == "Not shown — did not pass quality review"
+
+
+def test_walkthrough_withheld_by_phase_verdict_when_entry_has_none():
+    p = _payload_with_synthetic(
+        {"synthetic": {"walkthroughs": [{"persona": "llo-weekly-review"}]}},
+        phase_meta={"verdict": "fail"},
+    )
+    assert p["walkthroughs"][0]["availability"] == "withheld"
+    assert p["walkthroughs"][0]["persona"] == "llo-weekly-review"
+
+
+def test_passing_walkthrough_stays_available_and_linked():
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "llo-weekly-review",
+                    "slideshow_url": "https://drive.google.com/file/d/w1/view",
+                    "eval_score": 8.4,
+                    "eval_verdict": "pass",
+                }],
+            },
+        },
+        phase_meta={"verdict": "pass"},
+    )
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "available"
+    assert w["url"] == "https://drive.google.com/file/d/w1/view"
+    assert w["eval_score"] == 8.4
+
+
+def test_url_less_walkthrough_with_a_passing_phase_is_dropped_loudly(caplog):
+    p = _payload_with_synthetic(
+        {"synthetic": {"walkthroughs": [{"persona": "no-url-yet"}]}},
+        phase_meta={"verdict": "pass"},
+    )
+    assert p["walkthroughs"] == []
+    assert "has no url" in caplog.text
+
+
+# ─── Lifecycle stage ───────────────────────────────────────────────
+
+
+def _state_with_phase_meta(meta: dict) -> str:
+    import yaml as _yaml
+
+    state = _yaml.safe_load(_state_yaml())
+    for phase, block in meta.items():
+        state["phases"].setdefault(phase, {}).update(block)
+    return _yaml.dump(state)
+
+
+def test_stage_marks_unreached_sections_as_pending_not_missing():
+    """A run halted at the Phase 8→9 boundary has no LLO / launch /
+    score / learnings BY DESIGN. Six of ten sections reading "Not
+    created" made a healthy paused run look abandoned."""
+    state = _state_with_phase_meta({
+        "solicitation-management": {"status": "complete",
+                                    "products": {"solicitation": {"url": "https://labs/s/1"}}},
+        "execution-management": {"status": "pending", "products": {}},
+        "closeout": {"status": "pending", "products": {}},
+    })
+    drive = FakeDriveClient.from_tree(_full_tree(state_yaml=state))
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["stage"]["label"] == "solicitation"
+    assert p["stage"]["pending_sections"] == [
+        "cycle_grade", "launch", "learnings", "opp_eval", "selected_llo",
+    ]
+
+
+def test_stage_treats_a_phase_with_products_as_started_even_without_status():
+    """Older runs (and every fixture here) write products with no phase
+    status. Calling those "not started" would be worse than the bug."""
+    drive = FakeDriveClient.from_tree(_full_tree())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert "training" not in p["stage"]["pending_sections"]
+    assert "apps" not in p["stage"]["pending_sections"]
+
+
+def test_stage_is_none_when_run_state_has_no_phases():
+    tree = _full_tree(state_yaml="phases: {}\n")
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["stage"] is None
+
+
+# ─── Internal links ────────────────────────────────────────────────
+
+
+def test_workbench_url_dropped_when_internal_links_excluded():
+    """The Workbench 404s for anyone who isn't a signed-in member, and
+    ace-web rejects non-@dimagi.com sign-ins, so on a public payload the
+    only "go deeper" link on the page was a dead end."""
+    drive = FakeDriveClient.from_tree(_full_tree())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    kwargs = dict(workspace=ws, opp_slug="turmeric", run_id="20260503-0835")
+    assert build_summary_payload(drive, **kwargs)["workbench_url"] == (
+        "/w/test-team/opps/turmeric/runs/20260503-0835"
+    )
+    assert build_summary_payload(
+        drive, include_internal_links=False, **kwargs,
+    )["workbench_url"] is None

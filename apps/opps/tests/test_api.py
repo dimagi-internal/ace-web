@@ -2218,3 +2218,83 @@ def test_runs_list_carries_the_execution_state(member_client, monkeypatch):
     )
     runs = opps_api.list_opp_runs_for_workspace(workspace, "opp-a")
     assert runs[0]["execution"]["state"] == "no_runner_configured"
+
+
+# ---------------------------------------------------------------------------
+# Public per-run summary — internal links are member-only
+#
+# The footer's "See the full build process" pointed at the Workbench,
+# which 404s (not "sign in") for anyone who isn't a signed-in member —
+# and ace-web rejects non-@dimagi.com sign-ins at the OAuth callback, so
+# for an external reviewer it can never work. Indistinguishable from
+# "this run doesn't exist".
+# ---------------------------------------------------------------------------
+
+
+def _summary_drive():
+    from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
+
+    return FakeDriveClient.from_tree({
+        "ACE": {
+            "turmeric": {
+                "opp.yaml": "display_name: Turmeric\nslug: turmeric\n",
+                "runs": {"20260503-0835": {"run_state.yaml": "phases: {}\n"}},
+            },
+        },
+    })
+
+
+@pytest.fixture
+def summary_workspace(db, monkeypatch):
+    from django.core.cache import cache
+
+    cache.clear()
+    drive = _summary_drive()
+    creator = User.objects.create_user(email="summary-creator@example.com")
+    workspace = Workspace.objects.create(
+        slug="summary-ws", display_name="Summary WS",
+        drive_root_folder_id=drive.folder_id("ACE"), created_by=creator,
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client", lambda workspace=None: drive,
+    )
+    return workspace
+
+
+_SUMMARY_URL = "/api/opps/public/summary-ws/turmeric/runs/20260503-0835/summary"
+
+
+@pytest.mark.django_db
+def test_public_summary_hides_workbench_link_from_anonymous_visitors(
+    client, summary_workspace
+):
+    body = client.get(_SUMMARY_URL).json()
+    assert body["opp"]["slug"] == "turmeric"
+    assert body["workbench_url"] is None
+
+
+@pytest.mark.django_db
+def test_public_summary_keeps_workbench_link_for_members(client, summary_workspace):
+    user = User.objects.create_user(email="summary-member@example.com")
+    WorkspaceMembership.objects.create(
+        workspace=summary_workspace, user=user, role="editor",
+    )
+    client.force_login(user)
+    body = client.get(_SUMMARY_URL).json()
+    assert body["workbench_url"] == "/w/summary-ws/opps/turmeric/runs/20260503-0835"
+
+
+@pytest.mark.django_db
+def test_public_summary_cache_does_not_leak_the_member_variant(
+    client, summary_workspace
+):
+    """Both variants are cached; the anonymous one must not be served a
+    payload built for a member (or vice versa)."""
+    user = User.objects.create_user(email="summary-member2@example.com")
+    WorkspaceMembership.objects.create(
+        workspace=summary_workspace, user=user, role="editor",
+    )
+    client.force_login(user)
+    assert client.get(_SUMMARY_URL).json()["workbench_url"] is not None
+    client.logout()
+    assert client.get(_SUMMARY_URL).json()["workbench_url"] is None

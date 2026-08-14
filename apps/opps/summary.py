@@ -93,6 +93,12 @@ def _find_folder(drive: DriveClient, parent_id: str, name: str):
     return f
 
 
+def _phase(state: dict, phase: str) -> dict:
+    """Pull ``state.phases.<phase>`` with empty-dict fallback."""
+    block = (state.get("phases") or {}).get(phase) or {}
+    return block if isinstance(block, dict) else {}
+
+
 def _phase_products(state: dict, phase: str, block: str | None = None) -> dict:
     """Pull ``state.phases.<phase>.products[.block]`` with empty-dict fallback."""
     products = (
@@ -261,6 +267,30 @@ def _read_training(state: dict) -> dict | None:
 
 
 def _read_assistant(state: dict) -> dict | None:
+    """Support-assistant credentials for the OCS widget.
+
+    ``embed_key`` is served on the PUBLIC payload, deliberately. The
+    OCS widget is a browser component: it authenticates the anonymous
+    visitor's chat session with ``chatbot-id`` + ``embed-key`` from the
+    page itself, so any key that reaches the widget is by construction
+    readable by anyone who can load the page. There is no server-side
+    variant of the widget to proxy it behind, and dropping the key from
+    the payload removes the "Need help?" assistant entirely — the one
+    interactive thing an external reviewer can use.
+
+    What that means in practice: the key authorises starting sessions
+    against this opportunity's bot, and the same bot is used for QA. It
+    is a per-chatbot public identifier, NOT an OCS account credential —
+    it cannot read other chatbots, other teams, or existing transcripts.
+    The exposure is therefore "someone can talk to this bot", bounded by
+    whatever rate limiting OCS applies.
+
+    Reviewed 2026-08-14 (ace-web#706) and left in place as an accepted,
+    documented exposure rather than silently removed. If we ever want it
+    gone, the fix is upstream: a session-scoped token minted server-side
+    by OCS, or an ace-web proxy endpoint that starts the session and
+    hands the widget a short-lived token. Both are OCS-side work.
+    """
     chatbot = _phase_products(state, "ocs-setup", "ocs_chatbot")
     public_id = chatbot.get("public_id")
     embed_key = chatbot.get("embed_key")
@@ -273,48 +303,164 @@ def _read_assistant(state: dict) -> dict | None:
     }
 
 
+_SYNTHETIC_PHASE = "synthetic-data-and-workflows"
+
+# An eval verdict that means "produced, but we are not showing it".
+_FAILING_VERDICTS = {"fail", "failed", "halt", "blocked", "reject"}
+
+_DASHBOARD_URL_KEYS = ("url", "par_url", "run_url", "web_view_link")
+
+# Tokens that should stay upper-case when a machine key is humanised.
+_ACRONYMS = {"llo", "flw", "ocs", "qa", "ace", "kpi", "pdd", "cbf", "hq"}
+
+
+def _humanize(key: str) -> str:
+    """``llo_weekly`` → ``LLO weekly``; ``verification-integrity`` →
+    ``Verification integrity``. Used only for machine keys — a real
+    ``title`` is passed through verbatim."""
+    words = key.replace("_", " ").replace("-", " ").split()
+    if not words:
+        return ""
+    out = [w.upper() if w.lower() in _ACRONYMS else w.lower() for w in words]
+    if out[0].lower() not in _ACRONYMS:
+        out[0] = out[0].capitalize()
+    return " ".join(out)
+
+
+_WALKTHROUGH_URL_KEYS = ("slideshow_url", "web_view_link", "url", "video_url")
+
+
 def _read_walkthroughs(state: dict) -> list[dict]:
-    synthetic = _phase_products(state, "synthetic-data-and-workflows", "synthetic")
+    """Persona walkthroughs, as one of three honest states per entry.
+
+    ``availability`` is the point of this reader. A run can have
+
+    - **nothing** — no entry at all; the section renders "Not created";
+    - **withheld** — a walkthrough was produced but its concept eval
+      failed, so we do not put it in front of a stakeholder. It still
+      says so, with no link;
+    - **available** — produced, passed, linked.
+
+    Before this, a withheld walkthrough was indistinguishable from one
+    that never existed: entries without a URL were dropped silently, so
+    a rendered-but-failing walkthrough rendered as "Not created". A
+    reviewer must never be told something does not exist when it does
+    and we chose not to show it.
+
+    An entry is withheld when its own ``eval_verdict`` is failing, or —
+    for entries that carry no verdict of their own — when the phase's
+    verdict is. Everything else needs a URL to be linkable; a URL-less,
+    non-withheld entry is dropped, loudly.
+    """
+    synthetic = _phase_products(state, _SYNTHETIC_PHASE, "synthetic")
+    phase_verdict = str(_phase(state, _SYNTHETIC_PHASE).get("verdict") or "").lower()
+    phase_failed = phase_verdict in _FAILING_VERDICTS
+
     raw = synthetic.get("walkthroughs") or []
     if not isinstance(raw, list):
         return []
+
+    # Converged Phase 7 (the /ace:demo pipeline) writes one narrative-wide
+    # walkthrough with no persona, so name it after the narrative.
+    narrative = synthetic.get("narrative") or {}
+    default_name = _humanize(
+        str(narrative.get("narrative_slug") or "") if isinstance(narrative, dict) else ""
+    ) or "Walkthrough"
+
     out: list[dict] = []
     for w in raw:
         if not isinstance(w, dict):
+            log.warning("summary: walkthrough entry is not a mapping — skipped")
             continue
-        url = w.get("slideshow_url") or w.get("web_view_link")
+        url = next((w[k] for k in _WALKTHROUGH_URL_KEYS if w.get(k)), None)
+        verdict = str(w.get("eval_verdict") or "").lower()
+        withheld = verdict in _FAILING_VERDICTS or (not verdict and phase_failed)
+        persona = w.get("persona") or default_name
+
+        if withheld:
+            out.append({
+                "persona": persona,
+                "url": None,
+                "eval_score": None,
+                "availability": "withheld",
+                "withheld_reason": "Not shown — did not pass quality review",
+            })
+            continue
         if not url:
+            log.warning(
+                "summary: walkthrough %r has no url (keys=%s) — skipped",
+                persona, sorted(w),
+            )
             continue
         out.append({
-            "persona": w.get("persona") or "walkthrough",
+            "persona": persona,
             "url": url,
             "eval_score": w.get("eval_score"),
+            "availability": "available",
+            "withheld_reason": None,
         })
     return out
 
 
 def _read_dashboards(state: dict) -> list[dict]:
-    """Demo dashboards for the run — `synthetic.dashboards`.
+    """Demo dashboards for the run — every shape Phase 7 actually writes.
 
-    Each entry is a ``{title, url}`` link (e.g. a Connect-Labs dashboard).
-    Skips malformed entries and any without a non-empty url; returns an
-    empty list when the block is absent.
+    The reader used to accept exactly one shape:
+    ``synthetic.dashboards[] = {title, url}``. Phase 7 writes
+    ``synthetic.source.dashboards[] = {key, par_url, ...}`` and
+    ``synthetic.workflows{<key>: {run_url}}`` — so entries were dropped
+    for having no ``url`` key and the page told reviewers "Dashboards —
+    Not created" while two live dashboards existed
+    (spark-facilitator/20260813-2126, workflows 5117 + 5125).
+
+    All three locations are read; entries are de-duplicated by URL in
+    first-seen order. A dropped entry is logged rather than swallowed —
+    a silent key-contract mismatch is what caused the original bug.
     """
-    synthetic = _phase_products(state, "synthetic-data-and-workflows", "synthetic")
-    raw = synthetic.get("dashboards") or []
-    if not isinstance(raw, list):
-        return []
+    synthetic = _phase_products(state, _SYNTHETIC_PHASE, "synthetic")
+    source = synthetic.get("source") or {}
+    if not isinstance(source, dict):
+        source = {}
+
+    candidates: list[tuple[str, dict]] = []
+    for where, block in (
+        ("synthetic.dashboards", synthetic.get("dashboards")),
+        ("synthetic.source.dashboards", source.get("dashboards")),
+    ):
+        if block is None:
+            continue
+        if not isinstance(block, list):
+            log.warning("summary: %s is not a list — ignored", where)
+            continue
+        for entry in block:
+            candidates.append((where, entry))
+
+    workflows = synthetic.get("workflows")
+    if isinstance(workflows, dict):
+        for key, wf in workflows.items():
+            if isinstance(wf, dict):
+                candidates.append(("synthetic.workflows", {"key": key, **wf}))
+
     out: list[dict] = []
-    for d in raw:
+    seen: set[str] = set()
+    for where, d in candidates:
         if not isinstance(d, dict):
+            log.warning("summary: dashboard entry at %s is not a mapping — skipped", where)
             continue
-        url = d.get("url")
+        url = next((d[k] for k in _DASHBOARD_URL_KEYS if d.get(k)), None)
         if not url:
+            log.warning(
+                "summary: dashboard entry at %s has no url (keys=%s) — skipped",
+                where, sorted(d),
+            )
             continue
-        out.append({
-            "title": d.get("title") or "Dashboard",
-            "url": url,
-        })
+        if url in seen:
+            continue
+        seen.add(url)
+        title = d.get("title") or d.get("name")
+        if not title:
+            title = _humanize(str(d.get("key") or "")) or "Dashboard"
+        out.append({"title": title, "url": url})
     return out
 
 
@@ -492,6 +638,73 @@ def _read_feedback(drive: DriveClient, opp_folder_id: str) -> list[dict]:
     return sorted(ledgers, key=lambda d: d["title"], reverse=True)
 
 
+# ─── Lifecycle stage ───────────────────────────────────────────────
+
+# Canonical phase order, with the short label the page shows and the
+# payload sections each phase is responsible for producing.
+_PHASE_ORDER: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("idea-to-design", "design", ("design",)),
+    ("design", "design", ("design",)),                       # legacy key
+    ("scenarios-and-acceptance", "scenarios", ()),
+    ("commcare-setup", "app build", ("apps",)),
+    ("connect-setup", "Connect setup", ("connect",)),
+    ("ocs-setup", "assistant setup", ("assistant",)),
+    ("qa-and-training", "QA and training", ("training",)),
+    (_SYNTHETIC_PHASE, "demo", ("walkthroughs", "dashboards")),
+    # `selected_llo` sits with execution, not solicitation: an awarded
+    # partner is what STARTS execution, so "no LLO yet" is expected for
+    # as long as the run hasn't reached Phase 9.
+    ("solicitation-management", "solicitation", ("solicitation",)),
+    ("execution-management", "execution", ("selected_llo", "launch")),
+    ("closeout", "closeout", ("cycle_grade", "opp_eval", "learnings")),
+)
+
+# A phase in one of these states has not run yet — the sections it owns
+# are "not started", not "missing".
+_NOT_STARTED_STATUSES = {"", "pending", "not_started", "not-started", "queued", "todo"}
+
+
+def _read_stage(state: dict) -> dict | None:
+    """Where the run stopped, and which sections that makes premature.
+
+    A run that halts at the Phase 8→9 boundary by design has no LLO, no
+    launch, no score and no learnings — correctly. Rendering all four as
+    "Not created" alongside genuinely-missing things made a healthy
+    paused run read as an abandoned build. This block lets the page say
+    "not started yet" for sections whose phase simply hasn't run.
+
+    ``pending_sections`` names payload keys, so the page can look each
+    section up directly. ``label`` is the furthest phase that HAS run.
+    """
+    phases = state.get("phases")
+    if not isinstance(phases, dict) or not phases:
+        return None
+
+    current_label: str | None = None
+    pending: list[str] = []
+    for name, label, sections in _PHASE_ORDER:
+        block = phases.get(name)
+        if not isinstance(block, dict):
+            continue
+        status = str(block.get("status") or "").strip().lower()
+        # A phase that wrote products has run, whatever its status says —
+        # older runs (and every test fixture) carry products with no
+        # status at all, and calling those "not started" would be worse
+        # than the bug this fixes.
+        started = status not in _NOT_STARTED_STATUSES or bool(block.get("products"))
+        if started:
+            current_label = label
+        else:
+            pending.extend(sections)
+
+    if current_label is None and not pending:
+        return None
+    return {
+        "label": current_label,
+        "pending_sections": sorted(set(pending)),
+    }
+
+
 # ─── Top-level entry point ─────────────────────────────────────────
 
 
@@ -501,12 +714,19 @@ def build_summary_payload(
     workspace,
     opp_slug: str,
     run_id: str,
+    include_internal_links: bool = True,
 ) -> dict | None:
     """Build the public summary JSON payload for a per-run summary page.
 
     Returns ``None`` when the workspace's ACE root, the opp folder, or
     the requested run folder can't be located, so callers can map to a
     404 without leaking which segment was the miss.
+
+    ``include_internal_links=False`` drops links that only work for a
+    signed-in workspace member — currently the Workbench URL, which
+    404s (not "sign in") for anyone else and can never work for an
+    external reviewer, since ace-web only admits @dimagi.com accounts.
+    The public endpoint passes the requesting user's auth state.
     """
     ace_root_id = getattr(workspace, "drive_root_folder_id", None)
     if not ace_root_id:
@@ -538,7 +758,7 @@ def build_summary_payload(
     workspace_slug = getattr(workspace, "slug", "")
     workbench_url = (
         f"/w/{workspace_slug}/opps/{opp_slug}/runs/{run_id}"
-        if workspace_slug
+        if workspace_slug and include_internal_links
         else None
     )
 
@@ -565,6 +785,7 @@ def build_summary_payload(
         "open_questions": _read_open_questions(
             drive, opp_folder.id, run_folder.id
         ),
+        "stage": _read_stage(state),
         "feedback": _read_feedback(drive, opp_folder.id),
         "workbench_url": workbench_url,
     }
