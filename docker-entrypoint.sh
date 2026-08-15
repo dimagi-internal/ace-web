@@ -61,6 +61,20 @@ ACE_ENV_TPL="${ACE_PLUGIN_PATH:-/app/vendor/ace}/.env.tpl"
 ACE_ENV_PATH="${PLUGIN_DATA_DIR}/.env"
 if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -f "$ACE_ENV_TPL" ]; then
     mkdir -p "$PLUGIN_DATA_DIR"
+    # Log WHICH 1Password identity we authenticated as, and what it can see.
+    # ace#986: the runner spent 19 days injecting nothing because its token
+    # belonged to a legacy service account scoped to the old `AI-Agents` vault,
+    # while `.env.tpl` had moved to `Agent-Ace`. The only clue in the log was
+    # op's own `"Agent-Ace" isn't a vault in this account` — which names the
+    # vault it wanted and never the account it asked as, so it read as "the
+    # grant is missing" rather than "wrong identity". Two cheap calls make that
+    # a single glance. Neither prints the token; `op whoami` reports the
+    # integration id, not the credential.
+    OP_WHO="$(op whoami 2>&1 | tr '\n' ' ' || true)"
+    OP_VAULTS="$(op vault list --format=json 2>/dev/null \
+        | python3 -c 'import json,sys; print(", ".join(v["name"] for v in json.load(sys.stdin)))' 2>/dev/null || true)"
+    echo "[entrypoint] 1Password identity: ${OP_WHO:-<op whoami failed>}"
+    echo "[entrypoint] 1Password vaults visible: ${OP_VAULTS:-<none — this token can read NO vaults>}"
     # Service-account auth (OP_SERVICE_ACCOUNT_TOKEN) doesn't accept --account;
     # the token's tied to a single sign-in URL already. Verified via
     # `op whoami` returning the integration without the flag.
@@ -102,6 +116,11 @@ if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -f "$ACE_ENV_TPL" ]; then
         echo "[entrypoint] op inject FAILED — see /tmp/op-inject.err"
         head -c 500 /tmp/op-inject.err >&2
         echo "" >&2
+        # Repeat the identity next to the error, so the two facts that have to
+        # be read TOGETHER are together (ace#986).
+        echo "[entrypoint] ...as identity: ${OP_WHO:-unknown}" >&2
+        echo "[entrypoint] ...which can read vaults: ${OP_VAULTS:-<none>}" >&2
+        echo "[entrypoint] If the error names a vault this identity cannot see, the token is for the WRONG service account — check the AWS secret behind OP_SERVICE_ACCOUNT_TOKEN, not the vault ACL." >&2
         # Status file read by /api/system/version's env_inject block (ace-web#636):
         # a failed inject must flunk a health check, not just stderr.
         { printf 'failed\n'; head -c 500 /tmp/op-inject.err; } > /tmp/op-inject.status
