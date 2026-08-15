@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
 import yaml
 
 from apps.opps import summary as summary_mod
@@ -435,7 +436,7 @@ def test_walkthroughs_render_from_synthetic_block():
                 "walkthroughs": [
                     {"persona": "llo-weekly-review", "slideshow_url": "https://drive.google.com/file/d/w1/view", "eval_score": 8.4},
                     {"persona": "program-admin-audit", "slideshow_url": "https://drive.google.com/file/d/w2/view"},
-                    {"persona": "no-url-yet"},  # filtered out
+                    {"persona": "no-url-yet"},  # surfaced as unavailable
                 ],
             },
         },
@@ -446,8 +447,11 @@ def test_walkthroughs_render_from_synthetic_block():
         drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
     )
     personas = [w["persona"] for w in p["walkthroughs"]]
-    assert personas == ["llo-weekly-review", "program-admin-audit"]
+    # The URL-less entry is kept and labelled, not filtered — a produced
+    # walkthrough must never read as one that was never made (ace#1432).
+    assert personas == ["llo-weekly-review", "program-admin-audit", "no-url-yet"]
     assert p["walkthroughs"][0]["eval_score"] == 8.4
+    assert p["walkthroughs"][2]["availability"] == "unavailable"
 
 
 def test_dashboards_render_from_synthetic_block():
@@ -887,13 +891,97 @@ def test_passing_walkthrough_stays_available_and_linked():
     assert w["eval_score"] == 8.4
 
 
-def test_url_less_walkthrough_with_a_passing_phase_is_dropped_loudly(caplog):
+def test_url_less_walkthrough_is_surfaced_not_dropped(caplog):
+    """A produced walkthrough with no recognised URL must appear on the
+    page as ``unavailable``. Dropping it renders identically to a run
+    that never made one — the reader would be lying by omission about
+    work that exists. The log line is a debugging aid, not the report:
+    "loudly" has to mean visible to the reviewer (ace#1432)."""
     p = _payload_with_synthetic(
         {"synthetic": {"walkthroughs": [{"persona": "no-url-yet"}]}},
         phase_meta={"verdict": "pass"},
     )
-    assert p["walkthroughs"] == []
-    assert "has no url" in caplog.text
+    assert len(p["walkthroughs"]) == 1
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "unavailable"
+    assert w["url"] is None
+    assert w["persona"] == "no-url-yet"
+    assert w["withheld_reason"]
+    # The log must name both sides so the fix is one line.
+    assert "no recognised url key" in caplog.text
+    assert "accepted=" in caplog.text
+
+
+def test_warn_verdict_walkthrough_is_shown_not_withheld():
+    """``warn`` is deliberately not a failing verdict. The concept gate
+    scores the MINIMUM of 60 independently-drawn cells, so a clean pass
+    is not reachable for an artifact with any soft dimension — treating
+    warn as failing would withhold permanently rather than temporarily.
+    Measured on spark-facilitator/20260813-2126: every accuracy defect
+    fixed, all 60 cells at 3 or 4, overall still warn."""
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "verified-meetings",
+                    "video_url": "https://drive.google.com/file/d/w9/view",
+                    "eval_score": 3,
+                    "eval_verdict": "warn",
+                }],
+            },
+        },
+        phase_meta={"verdict": "warn"},
+    )
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "available"
+    assert w["url"] == "https://drive.google.com/file/d/w9/view"
+
+
+@pytest.mark.parametrize("key", [
+    "slideshow_url", "web_view_link", "url",
+    "video_url", "video_web_view_link", "video_link",
+])
+def test_every_documented_url_key_links(key):
+    """Phase 7 picks whichever name reads well beside its siblings, and
+    an unrecognised one used to erase the entry. spark-facilitator wrote
+    ``video_web_view_link``; the page served ``walkthroughs: []`` while
+    the video sat published in Drive (ace#1432). Each accepted key is
+    pinned so widening the list cannot silently narrow again."""
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "k",
+                    key: "https://drive.google.com/file/d/kk/view",
+                    "eval_verdict": "pass",
+                }],
+            },
+        },
+        phase_meta={"verdict": "pass"},
+    )
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "available", f"{key} did not link"
+    assert w["url"] == "https://drive.google.com/file/d/kk/view"
+
+
+def test_no_produced_walkthrough_is_ever_dropped():
+    """The invariant behind all of the above: whatever Phase 7 wrote,
+    the payload has one entry for it. Every entry then declares its own
+    state. Nothing vanishes."""
+    entries = [
+        {"persona": "a", "url": "https://x/1", "eval_verdict": "pass"},
+        {"persona": "b", "eval_verdict": "fail"},
+        {"persona": "c"},
+        {"persona": "d", "video_web_view_link": "https://x/4"},
+    ]
+    p = _payload_with_synthetic(
+        {"synthetic": {"walkthroughs": entries}}, phase_meta={"verdict": "pass"},
+    )
+    assert len(p["walkthroughs"]) == len(entries)
+    assert [w["persona"] for w in p["walkthroughs"]] == ["a", "b", "c", "d"]
+    assert {w["availability"] for w in p["walkthroughs"]} == {
+        "available", "withheld", "unavailable",
+    }
 
 
 # ─── Lifecycle stage ───────────────────────────────────────────────
