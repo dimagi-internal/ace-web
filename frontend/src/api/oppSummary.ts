@@ -120,14 +120,18 @@ export interface OppSummaryPayload {
     public_id: string;
     embed_key: string;
   } | null;
-  // Three honest states per entry. `withheld` means the walkthrough
+  // Four honest states per entry. `withheld` means the walkthrough
   // exists but failed its concept eval, so we deliberately don't put it
   // in front of a stakeholder — distinct from never having been made.
+  // `unavailable` means it exists and was not withheld, but no URL came
+  // through in a shape the summary reader recognises; it is surfaced
+  // rather than dropped so a produced artifact never reads as absent
+  // (ace#1432). Both render through the same no-link branch.
   walkthroughs: {
     persona: string;
     url: string | null;
     eval_score: number | null;
-    availability: "available" | "withheld";
+    availability: "available" | "withheld" | "unavailable";
     withheld_reason: string | null;
     access?: LinkAccess;
   }[];

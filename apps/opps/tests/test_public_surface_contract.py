@@ -138,6 +138,14 @@ def _maximal_state_yaml() -> str:
                             "slideshow_url": "https://drive.google.com/file/d/w2/view",
                             "eval_verdict": "fail",
                         },
+                        # unavailable — produced, NOT withheld, but carrying
+                        # no URL under any key this reader knows. It stays on
+                        # the page; dropping it is what shipped as
+                        # `walkthroughs: []` on a real run (ace#1432).
+                        {
+                            "persona": "field-supervisor-daily",
+                            "eval_verdict": "pass",
+                        },
                     ],
                     "dashboards": [
                         {
@@ -371,9 +379,9 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     "training.deck": frozenset({"title", "url", "access"}),
     "training.docs[]": frozenset({"title", "url", "access"}),
     "assistant": frozenset({"ocs_url", "access", "public_id", "embed_key"}),
-    # `walkthroughs[]` is deliberately absent: it has TWO legal shapes
-    # (available / withheld), so a single frozen key set would be a lie.
-    # Both are frozen below, one test each.
+    # `walkthroughs[]` is deliberately absent: it has THREE legal shapes
+    # (available / withheld / unavailable), so a single frozen key set
+    # would be a lie. All three are frozen below, one test each.
     "dashboards[]": frozenset({"title", "url", "access"}),
     "selected_llo": frozenset({
         "org_slug", "org_display_name", "contact_email", "awarded_at",
@@ -452,6 +460,35 @@ def test_a_withheld_walkthrough_still_declares_why(payload):
         }
         assert entry["url"] is None
         assert entry["withheld_reason"]
+
+
+def test_an_unavailable_walkthrough_is_present_rather_than_dropped(payload):
+    """The third shape, and the one that cost a real run. A walkthrough
+    that passed but whose URL came through under a key the reader did not
+    recognise used to be dropped, so the page served `walkthroughs: []`
+    while the video sat published in Drive. Silence there is worse than
+    withholding: withholding says "we have it and are not showing you",
+    an empty list says "there is nothing". Same keys as withheld — no
+    `access`, because there is nothing to open — and a reason is
+    mandatory."""
+    entries = [w for w in payload["walkthroughs"] if w["availability"] == "unavailable"]
+    assert entries, "the maximal fixture must include an unavailable walkthrough"
+    for entry in entries:
+        assert set(entry) == {
+            "persona", "url", "eval_score", "availability", "withheld_reason",
+        }
+        assert entry["url"] is None
+        assert entry["withheld_reason"]
+
+
+def test_every_produced_walkthrough_reaches_the_page(payload):
+    """The invariant the three shapes exist to serve. Whatever Phase 7
+    wrote, the page carries one entry for it — the entry then declares
+    its own state. Nothing is filtered on the way out."""
+    assert len(payload["walkthroughs"]) == 3
+    assert {w["availability"] for w in payload["walkthroughs"]} == {
+        "available", "withheld", "unavailable",
+    }
 
 
 def test_reaction_and_edit_rows_keep_their_wire_names(payload):

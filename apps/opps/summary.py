@@ -384,11 +384,24 @@ def _humanize(key: str) -> str:
     return " ".join(out)
 
 
-_WALKTHROUGH_URL_KEYS = ("slideshow_url", "web_view_link", "url", "video_url")
+# Every key a producer has actually written a walkthrough URL under. This
+# list is a compatibility surface, not a spec: Phase 7 writes whichever
+# name reads well next to its siblings, and an unrecognised one used to
+# mean the entry vanished from the page entirely (ace#1432 — the spark
+# run wrote ``video_web_view_link`` and the walkthrough silently became
+# ``walkthroughs: []``). Add to it freely; never let a miss be silent.
+_WALKTHROUGH_URL_KEYS = (
+    "slideshow_url",
+    "web_view_link",
+    "url",
+    "video_url",
+    "video_web_view_link",
+    "video_link",
+)
 
 
 def _read_walkthroughs(state: dict) -> list[dict]:
-    """Persona walkthroughs, as one of three honest states per entry.
+    """Persona walkthroughs, as one of four honest states per entry.
 
     ``availability`` is the point of this reader. A run can have
 
@@ -396,18 +409,30 @@ def _read_walkthroughs(state: dict) -> list[dict]:
     - **withheld** — a walkthrough was produced but its concept eval
       failed, so we do not put it in front of a stakeholder. It still
       says so, with no link;
-    - **available** — produced, passed, linked.
+    - **unavailable** — produced, not withheld, but carrying no URL
+      under any key this reader recognises;
+    - **available** — produced, cleared, linked.
 
-    Before this, a withheld walkthrough was indistinguishable from one
-    that never existed: entries without a URL were dropped silently, so
-    a rendered-but-failing walkthrough rendered as "Not created". A
-    reviewer must never be told something does not exist when it does
-    and we chose not to show it.
+    Every state above exists to serve one rule: **a reviewer must never
+    be told something does not exist when it does.** The first version
+    of this reader broke that rule for withheld walkthroughs, which
+    rendered as "Not created". Its docstring then claimed a URL-less
+    entry was "dropped, loudly" — but loud meant ``log.warning``, which
+    no reviewer will ever read, and the page still said nothing was
+    produced. That is the same bug wearing the word "loudly", and it
+    cost a real run: spark-facilitator/20260813-2126 wrote its video
+    under ``video_web_view_link``, the key list did not include it, and
+    a passing walkthrough served as ``walkthroughs: []`` (ace#1432).
+
+    So: loud now means *visible on the page*. A URL-less non-withheld
+    entry is surfaced as ``unavailable`` with its keys logged for the
+    one-line fix. Nothing a run produced is ever dropped here.
 
     An entry is withheld when its own ``eval_verdict`` is failing, or —
     for entries that carry no verdict of their own — when the phase's
-    verdict is. Everything else needs a URL to be linkable; a URL-less,
-    non-withheld entry is dropped, loudly.
+    verdict is. Note that ``warn`` is deliberately *not* failing: a
+    warn-verdict walkthrough is shown, because withholding everything
+    short of a clean pass withholds permanently.
     """
     synthetic = _phase_products(state, _SYNTHETIC_PHASE, "synthetic")
     phase_verdict = str(_phase(state, _SYNTHETIC_PHASE).get("verdict") or "").lower()
@@ -444,10 +469,27 @@ def _read_walkthroughs(state: dict) -> list[dict]:
             })
             continue
         if not url:
+            # A produced walkthrough with no URL we recognise is the one
+            # case that must never be silent. Dropping it renders the page
+            # as if Phase 7 produced nothing, which is indistinguishable
+            # from a run that genuinely didn't — the reader is then lying
+            # by omission about work that exists. Surface it instead, and
+            # name the keys the entry did carry so the fix is one line.
             log.warning(
-                "summary: walkthrough %r has no url (keys=%s) — skipped",
-                persona, sorted(w),
+                "summary: walkthrough %r has no recognised url key "
+                "(carried=%s, accepted=%s) — surfaced as unavailable",
+                persona, sorted(w), list(_WALKTHROUGH_URL_KEYS),
             )
+            out.append({
+                "persona": persona,
+                "url": None,
+                "eval_score": w.get("eval_score"),
+                "availability": "unavailable",
+                "withheld_reason": (
+                    "Produced, but no shareable link was recorded in a "
+                    "form this page recognises."
+                ),
+            })
             continue
         out.append({
             "persona": persona,
