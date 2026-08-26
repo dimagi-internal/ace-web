@@ -396,6 +396,7 @@ def map_run_summary(
         phases_total=progress["phases_total"],
         phases_done=progress["phases_done"],
         latest_phase_done=progress["latest_phase_done"],
+        phase_states=progress["phase_states"],
     )
 
 

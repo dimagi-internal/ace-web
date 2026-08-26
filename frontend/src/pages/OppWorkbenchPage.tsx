@@ -13,6 +13,7 @@ import { SkillList } from "../components/opps/SkillList";
 import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
+import { RunsTable } from "../components/opps/RunsTable";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
 import { WorkbenchLayout, usePaneCollapsed } from "../components/workbench";
 import { useOppCostRollup } from "../hooks/useOppCostRollup";
@@ -26,6 +27,11 @@ import { useViewMode } from "../hooks/useViewMode";
 const VIEW_TABS: ViewTab[] = [
   { kind: "phase", label: "Phases" },
   { kind: "workbench", label: "Workbench" },
+  // Cross-run view. Every other tab is scoped to ONE run; this is the only
+  // place the opp's whole run history is comparable side by side. It reads
+  // `snapshot.runs`, which the page already loads for the run selector, so
+  // the tab costs no additional fetch.
+  { kind: "runs", label: "Runs" },
 ];
 
 // Cheap human form for the initial loading label, before the API
@@ -253,6 +259,19 @@ export default function OppWorkbenchPage() {
                 </div>
               ),
             }}
+          />
+        </div>
+      )}
+      {view === "runs" && (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <RunsTable
+            runs={snapshot.runs ?? []}
+            workspaceSlug={workspaceSlug ?? ""}
+            oppSlug={slug}
+            selectedRunId={snapshot.selected_run_id ?? snapshot.current_run.run_id}
+            // Switch the workbench's run in place rather than navigating —
+            // same handler the run dropdown already uses.
+            onSelect={(id) => setSearchParams({ run_id: id, view: "runs" })}
           />
         </div>
       )}
