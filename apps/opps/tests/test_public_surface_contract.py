@@ -64,7 +64,12 @@ from typing import Any
 import pytest
 import yaml
 
-from apps.opps.summary import ACCESS_ADMIN, ACCESS_PUBLIC, build_summary_payload
+from apps.opps.summary import (
+    ACCESS_ADMIN,
+    ACCESS_PUBLIC,
+    ACCESS_UNKNOWN,
+    build_summary_payload,
+)
 from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
 
 # Reused, never re-invented: one fake Drive and one fixture vocabulary for
@@ -81,6 +86,19 @@ from apps.opps.tests.test_summary import (
 
 OPP_SLUG = "turmeric"
 RUN_ID = "20260503-0835"
+
+#: The DDD loop's own qualifiers on a walkthrough (ace-web#740). Frozen
+#: as a set because dropping ANY of them puts a bare score back on the
+#: page: on ``spark-facilitator/20260820-0817`` the run state recorded
+#: ``ddd_terminal_status: stopped_not_converged``,
+#: ``ddd_iterations_completed_end_to_end: 0``,
+#: ``ddd_render_measures_pre_fix_artifact: true`` and a
+#: ``ddd_honesty_note`` beginning "READ THIS BEFORE QUOTING THE 2.0" —
+#: and the payload carried none of them, so the page showed a score and
+#: linked a video that films a product four fixes out of date.
+_DDD_KEYS = frozenset({
+    "terminal_status", "iterations_completed", "measures_pre_fix_artifact", "note",
+})
 
 
 # ─── The maximal fixture ────────────────────────────────────────────
@@ -264,8 +282,39 @@ def _maximal_tree() -> dict:
     }
 
 
+#: The maximal fixture's Drive ACLs, mirroring what an anonymous probe
+#: actually found on ``spark-facilitator/20260820-0817`` (ace-web#740):
+#: the design docs answer 401 to a reader with no account, the training
+#: pack is anyone-with-link readable, and the internal working artifacts
+#: are not. Encoded here rather than defaulted in the fake so that
+#: "maximal" means "every fact declared", not "every fact assumed".
+_MAXIMAL_LINK_SHARING = {
+    "fake-pdd": False,
+    "fake-wo": False,
+    "fake-learnings": False,
+    "fake-deck": True,
+    "fake-llo": True,
+    "fake-flw": True,
+    "fake-qr": True,
+    "fake-faq": True,
+    "fake-onb": True,
+}
+
+#: Drive files the fixture creates as tree nodes, so their ids are only
+#: knowable after the tree is built. Path -> anyone-with-link?
+_MAXIMAL_LINK_SHARING_BY_PATH = {
+    f"ACE/{OPP_SLUG}/open-questions.md": False,
+    f"ACE/{OPP_SLUG}/feedback/20260727-sophie-feintuch-ledger": False,
+    f"ACE/{OPP_SLUG}/feedback/20260814-public-anne-kuhlmann-ledger": True,
+}
+
+
 def _build(*, viewer_is_member: bool = True) -> dict:
     drive = FakeDriveClient.from_tree(_maximal_tree())
+    for file_id, shared in _MAXIMAL_LINK_SHARING.items():
+        drive.set_link_shared(file_id, shared)
+    for path, shared in _MAXIMAL_LINK_SHARING_BY_PATH.items():
+        drive.set_link_shared(drive.file_id(path), shared)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
     payload = build_summary_payload(
         drive, workspace=ws, opp_slug=OPP_SLUG, run_id=RUN_ID,
@@ -393,7 +442,14 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     "training": frozenset({"deck", "docs"}),
     "training.deck": frozenset({"title", "url", "access"}),
     "training.docs[]": frozenset({"title", "url", "access"}),
-    "assistant": frozenset({"ocs_url", "access", "public_id", "embed_key"}),
+    # `knowledge_sources` (ace-web#740) is what the run recorded the
+    # assistant as actually indexing. It is a LIST, empty when the run
+    # recorded nothing, and the page's claim about what the bot knows is
+    # conditional on it — the sentence used to be a constant string that
+    # named a training pack the collection did not contain.
+    "assistant": frozenset({
+        "ocs_url", "access", "public_id", "embed_key", "knowledge_sources",
+    }),
     # `walkthroughs[]` is deliberately absent: it has THREE legal shapes
     # (available / withheld / unavailable), so a single frozen key set
     # would be a lie. All three are frozen below, one test each.
@@ -456,10 +512,11 @@ def test_an_available_walkthrough_declares_its_link_and_access(payload):
     for entry in available:
         assert set(entry) == {
             "persona", "url", "eval_score", "availability", "withheld_reason",
-            "access",
+            "access", "ddd",
         }
         assert entry["url"]
         assert entry["access"] in (ACCESS_PUBLIC, ACCESS_ADMIN)
+        assert set(entry["ddd"]) == _DDD_KEYS
 
 
 def test_a_withheld_walkthrough_still_declares_why(payload):
@@ -472,9 +529,11 @@ def test_a_withheld_walkthrough_still_declares_why(payload):
     for entry in withheld:
         assert set(entry) == {
             "persona", "url", "eval_score", "availability", "withheld_reason",
+            "ddd",
         }
         assert entry["url"] is None
         assert entry["withheld_reason"]
+        assert set(entry["ddd"]) == _DDD_KEYS
 
 
 def test_an_unavailable_walkthrough_is_present_rather_than_dropped(payload):
@@ -491,9 +550,11 @@ def test_an_unavailable_walkthrough_is_present_rather_than_dropped(payload):
     for entry in entries:
         assert set(entry) == {
             "persona", "url", "eval_score", "availability", "withheld_reason",
+            "ddd",
         }
         assert entry["url"] is None
         assert entry["withheld_reason"]
+        assert set(entry["ddd"]) == _DDD_KEYS
 
 
 def test_a_run_declared_access_tag_survives_into_the_payload(payload):
@@ -559,6 +620,16 @@ def test_every_link_bearing_object_declares_its_access(anon_payload):
     it uses ``availability`` because it has a third state (produced but
     withheld) that a two-valued access tag cannot express. See
     ``test_a_withheld_walkthrough_still_declares_why``.
+
+    **The vocabulary gained ``unknown`` in ace-web#740**, and this is the
+    same commit that changed both consumers. A Drive link's tag is now
+    MEASURED from the file's ACL rather than asserted, and when the ACL
+    cannot be read the honest answer is neither ``public`` (the bug being
+    fixed: the audited run served two anonymously-401 documents tagged
+    ``public``) nor ``admin`` (a wall that may not exist). The ACE
+    auditor is unaffected by the widening: its ``LINK-ACCESS-MISLABELLED``
+    rule fires on "the page says ``public``, an outsider gets a gate", so
+    a tag that is not ``public`` cannot trip it.
     """
     checked = 0
     for path, node in _dicts(anon_payload):
@@ -568,9 +639,9 @@ def test_every_link_bearing_object_declares_its_access(anon_payload):
             continue
         checked += 1
         assert "access" in node, f"{path} carries a link but declares no access"
-        assert node["access"] in (ACCESS_PUBLIC, ACCESS_ADMIN), (
+        assert node["access"] in (ACCESS_PUBLIC, ACCESS_ADMIN, ACCESS_UNKNOWN), (
             f"{path} declares access={node['access']!r}, "
-            f"which is neither ACCESS_PUBLIC nor ACCESS_ADMIN"
+            f"which is none of ACCESS_PUBLIC / ACCESS_ADMIN / ACCESS_UNKNOWN"
         )
     # Belt and braces: a walker that silently matched nothing would make
     # this test pass on an empty payload.
@@ -678,7 +749,16 @@ def test_a_non_member_payload_never_carries_an_admin_feedback_ledger(anon_payloa
         "the fixture must serve at least one ledger to a non-member, or "
         "this test passes vacuously"
     )
-    assert {f["access"] for f in anon_payload["feedback"]} == {ACCESS_PUBLIC}
+    # Since ace-web#740 the `access` tag no longer restates the
+    # confidentiality gate — the gate is `is_public` (derived from the
+    # review's channel) and still decides what a non-member SEES; the
+    # tag answers only "can this door be opened", measured per file. The
+    # surviving ledger's doc IS anyone-with-link shared in the fixture,
+    # so it reads `public`; a fixture that shared nothing would read
+    # `unknown`, which is equally not a leak.
+    assert {f["access"] for f in anon_payload["feedback"]} <= {
+        ACCESS_PUBLIC, ACCESS_UNKNOWN,
+    }
 
     # Usability: gated links elsewhere are served, and tagged.
     assert admin_paths >= {

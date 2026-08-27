@@ -224,6 +224,11 @@ def _full_tree(*, state_yaml: str | None = None) -> dict:
 
 def test_complete_run_returns_full_payload():
     drive = FakeDriveClient.from_tree(_full_tree())
+    # A "complete run" now includes complete ACL knowledge: since
+    # ace-web#740 every Drive link's tag is measured, so a fixture that
+    # declares nothing renders `unknown` — correctly. The unshared
+    # open-questions doc is the one this fixture cares about.
+    drive.set_link_shared(drive.file_id("ACE/turmeric/open-questions.md"), False)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
 
     p = build_summary_payload(
@@ -1203,6 +1208,190 @@ def test_access_is_derived_from_the_link_when_the_run_does_not_tag_it(url, expec
     )
     assert p["walkthroughs"][0]["access"] == expected
 
+
+# ─── Walkthroughs: the DDD loop's own honesty record (ace-web#740) ───
+#
+# The bug: the reader took `eval_score` and dropped every field that
+# says whether the number means anything. On
+# spark-facilitator/20260820-0817 the page rendered a score and a video
+# link while the run state recorded `stopped_not_converged`, zero
+# end-to-end iterations, and — the one that matters most — that the
+# render measures a PRE-FIX artifact: four accuracy fixes landed during
+# the iteration and appear in no captured frame, so the published video
+# films a product that no longer exists.
+#
+# The load-bearing test is again the NEGATIVE one: a non-converged run
+# must not render as a bare score.
+
+
+def _walkthrough_with(**synthetic_extra):
+    return _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "p",
+                    "url": "https://drive.google.com/file/d/w1/view",
+                    "eval_score": 2,
+                    "eval_verdict": "pass",
+                }],
+                **synthetic_extra,
+            },
+        },
+        phase_meta={"verdict": "pass"},
+    )["walkthroughs"][0]
+
+
+def test_a_score_never_travels_without_its_terminal_status():
+    """THE regression test. The audited run, reproduced: a score of 2 and
+    a loop that stopped without converging. The payload must carry the
+    status, or the page has no way to show anything but the number."""
+    w = _walkthrough_with(
+        ddd_terminal_status="stopped_not_converged",
+        ddd_iterations_completed_end_to_end=0,
+    )
+    assert w["eval_score"] == 2
+    assert w["ddd"]["terminal_status"] == "stopped_not_converged"
+    assert w["ddd"]["iterations_completed"] == 0
+
+
+def test_a_pre_fix_render_is_flagged_as_a_hard_caveat():
+    """`render_measures_pre_fix_artifact` is the field that makes the
+    linked VIDEO misleading, not just the score. It must reach the page
+    as its own boolean rather than being folded into prose."""
+    w = _walkthrough_with(
+        ddd_terminal_status="stopped_not_converged",
+        ddd_render_measures_pre_fix_artifact=True,
+    )
+    assert w["ddd"]["measures_pre_fix_artifact"] is True
+
+
+def test_the_honesty_note_reaches_the_page_verbatim():
+    note = (
+        "READ THIS BEFORE QUOTING THE 2.0. One iteration rendered and\n"
+        "  was fully judged; NO SECOND RENDER HAPPENED."
+    )
+    w = _walkthrough_with(ddd_honesty_note=note)
+    assert w["ddd"]["note"].startswith("READ THIS BEFORE QUOTING THE 2.0.")
+    assert "NO SECOND RENDER HAPPENED" in w["ddd"]["note"]
+
+
+@pytest.mark.parametrize("status", [
+    "converged_clean",
+    "converged_with_open_questions",
+    "stopped_not_converged",
+    "diverging",
+])
+def test_all_four_terminal_statuses_survive_distinctly(status):
+    """No pass/fail collapse. "Converged, good" and "converged, still
+    failing" must not render identically — the difference is the whole
+    point of the field, and a boolean would erase it."""
+    assert _walkthrough_with(ddd_terminal_status=status)["ddd"][
+        "terminal_status"
+    ] == status
+
+
+def test_an_unrecognised_terminal_status_is_surfaced_not_dropped(caplog):
+    """Same rule as the walkthrough URL keys (ace#1432): a value we do
+    not recognise must not silently become absence."""
+    w = _walkthrough_with(ddd_terminal_status="stalled_on_a_gate")
+    assert w["ddd"]["terminal_status"] == "stalled_on_a_gate"
+    assert "ddd_terminal_status" in caplog.text
+
+
+def test_a_run_that_recorded_no_ddd_state_claims_nothing():
+    """A run predating these fields renders exactly as before. Absence
+    must not be dressed up as reassurance — an unrecorded caveat is not
+    a cleared one, so `terminal_status` is null rather than
+    "converged"."""
+    w = _walkthrough_with()
+    assert w["ddd"] == {
+        "terminal_status": None,
+        "iterations_completed": None,
+        "measures_pre_fix_artifact": False,
+        "note": None,
+    }
+
+
+def test_an_entry_level_status_overrides_the_phase_level_one():
+    """The plugin writes these as siblings of `walkthroughs` today, but a
+    run with two narratives needs per-entry values. Entry wins."""
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "p",
+                    "url": "https://drive.google.com/file/d/w1/view",
+                    "eval_verdict": "pass",
+                    "ddd_terminal_status": "converged_clean",
+                }],
+                "ddd_terminal_status": "stopped_not_converged",
+            },
+        },
+        phase_meta={"verdict": "pass"},
+    )
+    assert p["walkthroughs"][0]["ddd"]["terminal_status"] == "converged_clean"
+
+
+def test_a_withheld_walkthrough_still_carries_the_loop_state():
+    """A reader looking at a withheld entry still needs to know the loop
+    never converged — the qualifiers are not attached to the score."""
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{"persona": "p"}],
+                "ddd_terminal_status": "stopped_not_converged",
+            },
+        },
+        phase_meta={"verdict": "fail"},
+    )
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "withheld"
+    assert w["ddd"]["terminal_status"] == "stopped_not_converged"
+
+
+# ─── The assistant claims only what the run recorded (ace-web#740) ───
+
+
+def test_assistant_knowledge_sources_are_empty_when_the_run_recorded_none():
+    """The page used to state "Trained on the design doc, training pack,
+    and app guides for this opportunity" as a constant. On the audited
+    run the opp collection held 16 files and NONE of the five
+    training-pack documents the same page links were among them. With
+    nothing recorded, the payload must claim nothing."""
+    drive = FakeDriveClient.from_tree(_full_tree())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["assistant"]["knowledge_sources"] == []
+
+
+def test_assistant_knowledge_sources_carry_what_the_run_did_record():
+    """ACE shipped `ocs-knowledge-refresh` (ace#1715), so later runs DO
+    index the training docs. The claim has to become true for those runs
+    and stay false for the earlier ones, which a constant cannot do."""
+    state = _state_yaml(**{
+        "ocs-setup": {
+            "ocs_chatbot": {
+                "public_id": "1fcddd08-02cb-4b22-b482-181cb2f10dcb",
+                "embed_key": "wDwe70vquTLm4M0carkTHGaQgrb0NYKP",
+                "admin_url": "https://www.openchatstudio.com/a/connect-ace/chatbots/12027/",
+                "knowledge_sources": [
+                    "the design doc", "the app guides", "the training pack",
+                ],
+            },
+        },
+    })
+    drive = FakeDriveClient.from_tree(_full_tree(state_yaml=state))
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["assistant"]["knowledge_sources"] == [
+        "the design doc", "the app guides", "the training pack",
+    ]
+
+
 # ─── Lifecycle stage ───────────────────────────────────────────────
 
 
@@ -1311,23 +1500,109 @@ def test_every_gated_link_declares_admin_access():
     assert p["workbench"]["access"] == "admin"                 # ace-web
 
 
-def test_drive_deliverables_are_not_tagged_admin():
-    """Drive ACLs are per-file and `/ace:share-run-access` shares exactly
-    these with reviewers — claiming "admin only" here would be a guess in
-    the wrong direction."""
+# ─── Drive link access is MEASURED, not asserted (ace-web#740) ──────
+#
+# The bug these replace: `_read_design` and `_read_training` stamped
+# `access: public` on every Drive deliverable unconditionally. On
+# spark-facilitator/20260820-0817 an anonymous audit fetched
+# `.../export?format=txt` for the two documents `design.docs` served and
+# got **401** on both — while the page rendered them "Open" to a partner
+# with no Google account. The page's verdict was NOT SAFE TO SHARE.
+#
+# The load-bearing test is the NEGATIVE one: an unreachable document must
+# not be tagged public. A fixture where everything is shared proves
+# nothing — the old hard-coded reader passes it.
+
+def test_an_unreachable_document_is_not_tagged_public():
+    """THE regression test for ace-web#740. Both design docs exist, both
+    have working-looking URLs, and NEITHER is anyone-with-link shared —
+    exactly the audited run. The page must not call them public."""
     drive = FakeDriveClient.from_tree(_full_tree())
+    drive.set_link_shared("fake-pdd", False)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert {d["access"] for d in p["design"]["docs"]} == {"admin"}
+
+
+def test_a_shared_document_is_tagged_public():
+    """The other direction, so the reader is not just always-admin: a doc
+    carrying an `anyone` permission IS public, and saying otherwise would
+    tell a reader they cannot open something they can."""
+    drive = FakeDriveClient.from_tree(_full_tree())
+    drive.set_link_shared("fake-pdd", True)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
     p = build_summary_payload(
         drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
     )
     assert {d["access"] for d in p["design"]["docs"]} == {"public"}
+
+
+def test_an_unreadable_acl_is_unknown_rather_than_public():
+    """When the ACL read FAILS the honest answer is `unknown`. Falling back
+    to `public` is the original bug with an extra step; falling back to
+    `admin` invents a wall that may not exist."""
+    drive = FakeDriveClient.from_tree(_full_tree())
+    drive.set_link_unreadable("fake-pdd")
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert {d["access"] for d in p["design"]["docs"]} == {"unknown"}
+
+
+def test_the_training_pack_is_measured_per_document():
+    """Same class, different section — and the audited run is why this is
+    per-document rather than per-section: the training pack WAS anonymously
+    reachable on the very run whose design docs were not. One blanket tag
+    could not have been right for both."""
+    drive = FakeDriveClient.from_tree(_full_tree())
+    for fid in ("fake-deck", "fake-llo", "fake-flw", "fake-qr", "fake-faq"):
+        drive.set_link_shared(fid, True)
+    drive.set_link_shared("fake-onb", False)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
     assert p["training"]["deck"]["access"] == "public"
-    assert {d["access"] for d in p["training"]["docs"]} == {"public"}
-    # NOT the feedback ledgers: a ledger is only "public" when the review it
-    # renders was itself left on a public page. The fixture's is a privately
-    # captured gdoc review, so it is member-only — see
-    # test_private_feedback_ledger_is_not_served_to_a_non_member.
-    assert {f["access"] for f in p["feedback"]} == {"admin"}
+    by_title = {d["title"]: d["access"] for d in p["training"]["docs"]}
+    assert by_title["Onboarding email"] == "admin"
+    assert by_title["FAQ"] == "public"
+
+
+def test_open_questions_access_is_measured_not_hardcoded_admin():
+    """It used to be a flat `ACCESS_ADMIN` on the theory that nothing
+    shares this doc. On the audited run that happens to be true — and it
+    is still a habit rather than a fact about the file."""
+    drive = FakeDriveClient.from_tree(_full_tree())
+    oq = drive.file_id("ACE/turmeric/open-questions.md")
+    drive.set_link_shared(oq, True)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    assert p["open_questions"]["access"] == "public"
+
+
+def test_every_drive_link_is_measured_in_one_batch():
+    """Latency guard. ace-web#738 made this endpoint batch its Drive reads;
+    measuring N links with N sequential ACL round-trips would give that
+    back. The state-derived links must all be resolved in one call."""
+    drive = FakeDriveClient.from_tree(_full_tree())
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+    )
+    first = drive.link_shared_calls[0]
+    for fid in ("fake-pdd", "fake-deck", "fake-llo", "fake-onb"):
+        assert fid in first, f"{fid} was not in the primed batch"
+
+# Only DRIVE links are measured; the systems above (HQ, Connect, OCS,
+# connect-labs, the Workbench) are gated by membership in those systems
+# — a property of the SYSTEM, not of the object, with nothing per-object
+# to read. `test_every_gated_link_declares_admin_access` above pins that
+# half and is unchanged by ace-web#740.
 
 
 # ─── Review surface: decisions + open questions ────────────────────
@@ -1667,16 +1942,51 @@ def test_private_feedback_ledger_is_not_served_to_a_non_member():
     assert "Sophie" not in str(p["feedback"])
 
 
-def test_member_sees_every_ledger_with_the_private_ones_tagged():
+def test_member_sees_every_ledger_including_the_private_ones():
+    """The confidentiality GATE (may a non-member see this ledger at all?)
+    is `is_public`, derived from the feedback record's channel. It is not
+    the same question as the ledger doc's Drive ACL, and since ace-web#740
+    the `access` tag answers only the second one — measured, per file. A
+    member sees both ledgers here; the private one is still gated out for
+    a non-member, which `test_private_feedback_ledger_is_not_served_to_a_
+    non_member` covers."""
     drive = FakeDriveClient.from_tree(_tree_with_ledgers())
+    for name in ("20260727-sophie-feintuch-ledger",
+                 "20260814-public-anne-kuhlmann-ledger"):
+        drive.set_link_shared(drive.file_id(f"ACE/turmeric/feedback/{name}"), False)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
     p = build_summary_payload(
         drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
         viewer_is_member=True,
     )
     by_title = {d["title"]: d["access"] for d in p["feedback"]}
-    assert by_title["2026-07-27 · Sophie Feintuch"] == "admin"
+    assert set(by_title) == {
+        "2026-07-27 · Sophie Feintuch", "2026-08-14 · Public Anne Kuhlmann",
+    }
+    # Neither doc is anyone-with-link shared, so neither is tagged public —
+    # including the one whose REVIEW is public. Before ace-web#740 the
+    # public-review ledger was stamped `access: public` on the strength of
+    # its channel, which is a claim about the review, not about the door.
+    assert set(by_title.values()) == {"admin"}
+
+
+def test_a_public_review_whose_doc_is_shared_is_tagged_public():
+    """The other half of the split: the tag follows the FILE."""
+    drive = FakeDriveClient.from_tree(_tree_with_ledgers())
+    drive.set_link_shared(
+        drive.file_id("ACE/turmeric/feedback/20260814-public-anne-kuhlmann-ledger"),
+        True,
+    )
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    p = build_summary_payload(
+        drive, workspace=ws, opp_slug="turmeric", run_id="20260503-0835",
+        viewer_is_member=True,
+    )
+    by_title = {d["title"]: d["access"] for d in p["feedback"]}
     assert by_title["2026-08-14 · Public Anne Kuhlmann"] == "public"
+    # Nothing declared the private ledger's ACL, so it is honestly unknown
+    # rather than guessed either way.
+    assert by_title["2026-07-27 · Sophie Feintuch"] == "unknown"
 
 
 def test_a_ledger_with_no_record_at_all_is_private():

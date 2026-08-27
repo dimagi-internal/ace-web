@@ -150,16 +150,159 @@ def _phase_products(state: dict, phase: str, block: str | None = None) -> dict:
 #   * ace-web Workbench       — workspace membership, and ace-web admits
 #     @dimagi.com only.
 #
-# ``public`` means: no ACE-side account gate. Google Drive DELIVERABLES
-# (PDD, work order, training pack, learnings, feedback ledgers) are
-# classified public: their ACL is per-file and ``/ace:share-run-access``
-# shares exactly these with reviewers, so asserting "admin only" here
-# would be a guess in the wrong direction. Drive WORKING artifacts —
-# ``open-questions.md`` and ``decisions.yaml`` — are admin: nothing
-# shares them, which is why this payload carries their CONTENT rather
-# than leaning on the link.
+# ``public`` means: no ACE-side account gate.
+#
+# For a Google Drive link, ``public`` is now MEASURED, never asserted
+# (ace-web#740). Every Drive deliverable — PDD, work order, training
+# pack, learnings, feedback ledgers, open questions — used to be stamped
+# ``public`` on the theory that ``/ace:share-run-access`` shares exactly
+# these with reviewers. It does not always run, and nothing checked. An
+# anonymous audit of ``spark-facilitator/20260820-0817`` found the PDD
+# and the Work Order both rendering "Open" while
+# ``.../export?format=txt`` answered **401** to a reader with no
+# account, on a page whose whole job is to be forwarded to someone who
+# has none. Three of that run's link classes were wrong the same way,
+# and the run's verdict was NOT SAFE TO SHARE.
+#
+# So: a Drive link's tag comes from the file's own ACL, read through
+# ``DriveClient.link_shared`` (an ``anyone`` permission ⇒ ``public``).
+# When the ACL cannot be read the tag is ``unknown`` — a third value,
+# added deliberately. "We could not check" and "anyone can open this"
+# are different facts and the page must not print the second when it
+# means the first; ``admin`` would be the same lie pointed the other
+# way (see ``_derive_walkthrough_access``). ``unknown`` renders as
+# "access unverified", which is honest and costs a reader one click to
+# find out.
+#
+# NON-Drive links keep their system's stable access model, which is a
+# property of the system rather than of the object: HQ app pages need
+# project-space membership, Connect needs a workspace, OCS needs a team.
+# Those stay asserted, because there is nothing per-object to measure.
 ACCESS_PUBLIC = "public"
 ACCESS_ADMIN = "admin"
+ACCESS_UNKNOWN = "unknown"
+
+
+# Drive file-id shapes this page actually hands out. ``/d/<id>`` covers
+# Docs, Sheets, Slides and Forms; ``/file/d/<id>`` covers the blob
+# preview URL ``_learnings_link`` builds.
+_DRIVE_ID_RE = re.compile(r"/(?:file/)?d/([A-Za-z0-9_-]{10,})")
+
+_DRIVE_HOSTS = ("docs.google.com", "drive.google.com")
+
+
+def drive_file_id(url: str | None) -> str | None:
+    """The Drive file id a URL addresses, or ``None`` if it is not a
+    Drive URL we can key on. Used to measure a link whose producer
+    recorded a ``web_view_link`` but no ``file_id``."""
+    if not isinstance(url, str) or not url:
+        return None
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return None
+    if host not in _DRIVE_HOSTS:
+        return None
+    m = _DRIVE_ID_RE.search(url)
+    return m.group(1) if m else None
+
+
+class LinkAccessReader:
+    """Measures who can open a Drive link, with one batched ACL read.
+
+    Built once per payload. ``prime()`` resolves a whole batch
+    concurrently before the section readers run, so measuring ~10 links
+    costs ONE round of concurrent calls rather than ten sequential ones
+    — the summary endpoint is already latency-sensitive and this must
+    not undo the batching work in ace-web#738.
+
+    ``tag()`` answers from the primed memo. A miss falls through to a
+    single read rather than silently guessing: a reader that forgot to
+    prime should be slow, never wrong.
+    """
+
+    def __init__(self, drive: DriveClient) -> None:
+        self._drive = drive
+        self._memo: dict[str, bool] = {}
+        self._resolved: set[str] = set()
+
+    def prime(self, file_ids) -> None:
+        pending = [
+            fid for fid in dict.fromkeys(f for f in file_ids if f)
+            if fid not in self._resolved
+        ]
+        if not pending:
+            return
+        try:
+            found = self._drive.link_shared(pending)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("summary: link_shared batch failed: %s", exc)
+            found = {}
+        self._memo.update(found)
+        # Marked resolved either way: an id the client could not answer
+        # for stays unknown for this payload rather than being retried
+        # once per section.
+        self._resolved.update(pending)
+
+    def tag(self, *, file_id: str | None = None, url: str | None = None) -> str:
+        fid = file_id or drive_file_id(url)
+        if not fid:
+            # Not a Drive link at all (or a producer wrote a bare URL on
+            # a host we don't recognise). Nothing measurable here.
+            return ACCESS_UNKNOWN
+        if fid not in self._resolved:
+            self.prime([fid])
+        shared = self._memo.get(fid)
+        if shared is None:
+            return ACCESS_UNKNOWN
+        return ACCESS_PUBLIC if shared else ACCESS_ADMIN
+
+
+def _state_drive_file_ids(state: dict) -> list[str]:
+    """Every Drive file id the state-driven sections will need tagged.
+
+    Collected up front so ``LinkAccessReader.prime`` can resolve them in
+    one concurrent batch. Deliberately over-collects: an id that no
+    section ends up rendering costs one cheap ACL read, while a missed
+    one costs a sequential round-trip mid-render.
+    """
+    ids: list[str] = []
+
+    def _add(block: dict, *keys: str) -> None:
+        for key in keys:
+            fid = block.get(key) or drive_file_id(
+                block.get(key.replace("file_id", "web_view_link"))
+            )
+            if fid:
+                ids.append(fid)
+
+    design = (
+        _phase_products(state, "idea-to-design")
+        or _phase_products(state, "design")
+    )
+    for key in ("pdd", "work_order"):
+        block = design.get(key)
+        if isinstance(block, dict):
+            ids.append(block.get("file_id") or drive_file_id(
+                block.get("web_view_link") or block.get("url")) or "")
+
+    training = _phase_products(state, "qa-and-training", "training")
+    materials = _phase_products(state, "qa-and-training", "training_materials")
+    docs_block = training.get("docs") or {}
+    candidates = [training.get("deck"), materials.get("deck")]
+    for key in ("llo_guide", "flw_guide", "quick_reference", "faq", "onboarding_email"):
+        candidates.append(docs_block.get(key))
+        candidates.append(materials.get(key))
+    for block in candidates:
+        if isinstance(block, dict):
+            ids.append(block.get("file_id") or drive_file_id(
+                block.get("web_view_link") or block.get("url")) or "")
+
+    learn = _phase_products(state, "closeout", "learnings")
+    if isinstance(learn, dict):
+        _add(learn, "summary_file_id", "new_pdd_file_id")
+
+    return [fid for fid in ids if fid]
 
 
 # ─── Per-section readers ───────────────────────────────────────────
@@ -290,7 +433,12 @@ def _read_connect(state: dict) -> dict | None:
     }
 
 
-def _read_training(state: dict) -> dict | None:
+def _read_training(state: dict, access: LinkAccessReader) -> dict | None:
+    """The training pack. Every entry's ``access`` is measured, not
+    asserted — see ``_read_design``. On the audited run these documents
+    happened to be anyone-with-link readable while the design docs were
+    not, which is exactly why a blanket ``public`` on both was never
+    evidence of anything."""
     training = _phase_products(state, "qa-and-training", "training")
     # Defensive fallback: some runs wrote the deck / onboarding email under
     # products.training_materials instead of products.training (jjackson/ace#705).
@@ -304,7 +452,9 @@ def _read_training(state: dict) -> dict | None:
         deck_block = {
             "title": deck.get("title") or "Training deck",
             "url": deck.get("web_view_link"),
-            "access": ACCESS_PUBLIC,
+            "access": access.tag(
+                file_id=deck.get("file_id"), url=deck.get("web_view_link"),
+            ),
         }
 
     docs_block = training.get("docs") or {}
@@ -316,7 +466,9 @@ def _read_training(state: dict) -> dict | None:
             docs.append({
                 "title": doc.get("title") or key.replace("_", " ").title(),
                 "url": doc.get("web_view_link"),
-                "access": ACCESS_PUBLIC,
+                "access": access.tag(
+                    file_id=doc.get("file_id"), url=doc.get("web_view_link"),
+                ),
             })
 
     if deck_block is None and not docs:
@@ -361,7 +513,53 @@ def _read_assistant(state: dict) -> dict | None:
         "access": ACCESS_ADMIN,
         "public_id": public_id,
         "embed_key": embed_key,
+        "knowledge_sources": _knowledge_sources(chatbot),
     }
+
+
+# What a producing phase may write to say what it actually indexed.
+# ``knowledge_sources`` is the name to use; the others are accepted
+# because a phase writing this for the first time reasonably reaches for
+# either, and a miss here is silent (ace#1432).
+_KNOWLEDGE_SOURCE_KEYS = ("knowledge_sources", "knowledge", "indexed_sources")
+
+
+def _knowledge_sources(chatbot: dict) -> list[str]:
+    """What the assistant was actually given, as the run recorded it.
+
+    Empty when the run recorded nothing — which is the common case
+    today, and the page MUST then say nothing about what the bot knows.
+
+    Until ace-web#740 the page carried a hard-coded sentence: "Trained
+    on the design doc, training pack, and app guides for this
+    opportunity." It was derived from nothing. On
+    ``spark-facilitator/20260820-0817`` the opp collection (OCS 567) held
+    16 files — ``00-program-contacts.md`` through
+    ``15-connect-setup-summary.md`` — and **none of the five training-pack
+    documents the same page links were among them**; the run state says
+    so in as many words ("Phase 6 training docs are not in collection 567
+    - Phase 6 has not run"). The design doc and the app summaries WERE
+    there, which is what made the sentence plausible enough to survive.
+
+    ACE shipped ``ocs-knowledge-refresh`` (ace#1715) so later runs do
+    index the training docs. That is exactly why this must be data: the
+    claim becomes true for some runs and stays false for others, and a
+    constant string cannot tell them apart.
+    """
+    for key in _KNOWLEDGE_SOURCE_KEYS:
+        raw = chatbot.get(key)
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, list):
+            continue
+        out = [
+            " ".join(item.split())
+            for item in raw
+            if isinstance(item, str) and item.strip()
+        ]
+        if out:
+            return out
+    return []
 
 
 _SYNTHETIC_PHASE = "synthetic-data-and-workflows"
@@ -449,6 +647,45 @@ _ACCESS_ALIASES = {
     "restricted": ACCESS_ADMIN,
 }
 
+# ─── The DDD loop's own honesty record ─────────────────────────────
+#
+# A walkthrough's ``eval_score`` is produced by canopy's DDD loop, and
+# the loop records ALONGSIDE it the facts that decide whether the score
+# means anything. Until ace-web#740 this reader took the number and
+# dropped every one of them, so the page showed a score with no way to
+# read it. On ``spark-facilitator/20260820-0817`` the run state said:
+#
+#     ddd_terminal_status: stopped_not_converged
+#     ddd_iterations_completed_end_to_end: 0
+#     ddd_render_measures_pre_fix_artifact: true
+#     ddd_honesty_note: "READ THIS BEFORE QUOTING THE 2.0. ..."
+#
+# and the page rendered "eval 2/10" and a link to the video. The video
+# films the PRE-FIX product: four accuracy fixes landed during the
+# iteration and appear in no captured frame.
+#
+# Two rules follow, and both are why this is not a boolean:
+#
+# 1. ``terminal_status`` is FOUR-VALUED and must stay that way.
+#    "converged, good" and "converged, still failing" must not render
+#    identically, so a pass/fail collapse is forbidden here — that is
+#    precisely the information a reader needs.
+# 2. ``render_measures_pre_fix_artifact`` is a HARD CAVEAT, not a note.
+#    It says the score and the video measure an artifact that has since
+#    been fixed. A published video filmed against a pre-fix product,
+#    presented bare, is the specific thing this must never do again.
+#
+# The plugin writes these as SIBLINGS of ``walkthroughs`` under
+# ``products.synthetic`` (they describe the loop, not one entry), but an
+# entry may carry its own — a run with two narratives would need to.
+# Entry-level wins; the phase-level block is the fallback.
+_DDD_TERMINAL_STATUSES = frozenset({
+    "converged_clean",
+    "converged_with_open_questions",
+    "stopped_not_converged",
+    "diverging",
+})
+
 AVAILABILITY_AVAILABLE = "available"
 AVAILABILITY_WITHHELD = "withheld"
 AVAILABILITY_UNAVAILABLE = "unavailable"
@@ -529,6 +766,53 @@ def _derive_walkthrough_access(url: str) -> str:
     if any(path.startswith(prefix) for prefix in _CANOPY_PUBLIC_PREFIXES):
         return ACCESS_PUBLIC
     return ACCESS_ADMIN
+
+
+def _ddd_honesty(entry: dict, phase_block: dict) -> dict:
+    """The DDD loop's qualifiers for one walkthrough entry.
+
+    Entry-level keys win; the ``products.synthetic``-level block is the
+    fallback, because that is where the plugin actually writes them.
+    Every field is independently nullable — a run that recorded none of
+    them renders exactly as before, with no invented reassurance.
+
+    An unrecognised ``terminal_status`` is passed through rather than
+    dropped: a new status the loop invents should show up as itself, not
+    vanish into "no status recorded" (the same failure class as the
+    dropped walkthrough URL key, ace#1432). It is logged so the
+    vocabulary above can be updated.
+    """
+    def _pick(key: str):
+        if key in entry:
+            return entry.get(key)
+        return phase_block.get(key)
+
+    status = _pick("ddd_terminal_status")
+    status = status.strip() if isinstance(status, str) and status.strip() else None
+    if status and status not in _DDD_TERMINAL_STATUSES:
+        log.warning(
+            "summary: walkthrough declares ddd_terminal_status=%r, not one of %s "
+            "— surfaced verbatim; add it to _DDD_TERMINAL_STATUSES if it is real",
+            status, sorted(_DDD_TERMINAL_STATUSES),
+        )
+
+    iterations = _pick("ddd_iterations_completed_end_to_end")
+    if not isinstance(iterations, int) or isinstance(iterations, bool):
+        iterations = None
+
+    note = _pick("ddd_honesty_note")
+    note = " ".join(note.split()) if isinstance(note, str) and note.strip() else None
+
+    return {
+        "terminal_status": status,
+        "iterations_completed": iterations,
+        # Default FALSE, not None: this is a caveat, and a run that says
+        # nothing is not asserting the caveat. The honest-unknown case
+        # here is "no DDD block at all", which the null status already
+        # carries.
+        "measures_pre_fix_artifact": bool(_pick("ddd_render_measures_pre_fix_artifact")),
+        "note": note,
+    }
 
 
 def _read_walkthroughs(state: dict) -> list[dict]:
@@ -617,6 +901,12 @@ def _read_walkthroughs(state: dict) -> list[dict]:
             )
             declared = None
 
+        # The loop's own qualifiers ride on EVERY state, including the
+        # ones that show no score: a reader looking at a withheld
+        # walkthrough still needs to know the loop stopped without
+        # converging.
+        ddd = _ddd_honesty(w, synthetic)
+
         if withheld or declared == AVAILABILITY_WITHHELD:
             out.append({
                 "persona": persona,
@@ -626,6 +916,7 @@ def _read_walkthroughs(state: dict) -> list[dict]:
                 "withheld_reason": (
                     declared_reason or "Not shown — did not pass quality review"
                 ),
+                "ddd": ddd,
             })
             continue
         if declared == AVAILABILITY_UNAVAILABLE:
@@ -640,6 +931,7 @@ def _read_walkthroughs(state: dict) -> list[dict]:
                 "withheld_reason": (
                     declared_reason or "Produced, but not shared for this run."
                 ),
+                "ddd": ddd,
             })
             continue
         if not url:
@@ -663,6 +955,7 @@ def _read_walkthroughs(state: dict) -> list[dict]:
                     "Produced, but no shareable link was recorded in a "
                     "form this page recognises."
                 ),
+                "ddd": ddd,
             })
             continue
         out.append({
@@ -677,6 +970,7 @@ def _read_walkthroughs(state: dict) -> list[dict]:
             # circulate by design — but a canopy OPERATOR URL sits behind
             # Dimagi OAuth and the page has to say so.
             "access": _normalise_access(w.get("access")) or _derive_walkthrough_access(url),
+            "ddd": ddd,
         })
     return out
 
@@ -806,19 +1100,26 @@ def _read_opp_eval(state: dict) -> dict | None:
     }
 
 
-def _read_learnings(state: dict) -> dict | None:
+def _read_learnings(state: dict, access: LinkAccessReader) -> dict | None:
+    """Closeout learnings. ``access`` measured, not asserted — see
+    ``_read_design``. One tag covers both links here because the section
+    renders one row; it is taken from the summary doc, which is the link
+    that is always present."""
     learn = _phase_products(state, "closeout", "learnings")
     if not learn or not (learn.get("summary_file_id") or learn.get("summary_web_view_link")):
         return None
+    summary_url = _learnings_link(
+        learn.get("summary_web_view_link"), learn.get("summary_file_id"),
+    )
     return {
-        "summary_url": _learnings_link(
-            learn.get("summary_web_view_link"), learn.get("summary_file_id"),
-        ),
+        "summary_url": summary_url,
         "new_pdd_url": _learnings_link(
             learn.get("new_pdd_web_view_link"), learn.get("new_pdd_file_id"),
         ),
         "iteration_warranted": bool(learn.get("iteration_warranted")),
-        "access": ACCESS_PUBLIC,
+        "access": access.tag(
+            file_id=learn.get("summary_file_id"), url=summary_url,
+        ),
     }
 
 
@@ -838,6 +1139,7 @@ def _read_open_questions(
     drive: DriveClient,
     opp_folder_id: str,
     run_folder_id: str | None = None,
+    access: LinkAccessReader | None = None,
 ) -> dict | None:
     """Open Questions — the "what we could NOT decide" half of the review
     surface. Content, not just a link.
@@ -848,10 +1150,18 @@ def _read_open_questions(
     every real opp render "Open questions — Not created" while the doc sat
     one level up, which is the one section a reviewer most needs.
 
-    The doc itself is an internal working artifact — nothing shares it —
-    so a link alone is useless to the partner it is written for. The body
-    is parsed into items here and rendered on the page; the link is still
-    carried (tagged admin-only) for whoever does have Drive access.
+    The doc itself is an internal working artifact — usually nothing
+    shares it — so a link alone is useless to the partner it is written
+    for. The body is parsed into items here and rendered on the page; the
+    link is still carried for whoever does have Drive access.
+
+    Its tag is MEASURED like every other Drive link (ace-web#740) rather
+    than asserted ``admin``. On the audited run the measurement agrees
+    with the old hard-coded value — the doc is anonymously 401 — but
+    "usually nothing shares it" is a habit, not a fact about this file,
+    and one ``/ace:share-run-access`` run that includes it would have
+    made the assertion wrong in the direction that hides a document from
+    someone who can read it.
 
     The run folder is still checked as a fallback so any older run that
     did write a run-local copy keeps rendering.
@@ -878,7 +1188,9 @@ def _read_open_questions(
             continue
         return {
             "url": f.web_view_link or None,
-            "access": ACCESS_ADMIN,
+            "access": (
+                access.tag(file_id=f.id) if access is not None else ACCESS_UNKNOWN
+            ),
             "items": items,
         }
     return None
@@ -955,7 +1267,7 @@ def _parse_open_questions(body: str) -> list[dict]:
     return out
 
 
-def _read_design(state: dict) -> dict | None:
+def _read_design(state: dict, access: LinkAccessReader) -> dict | None:
     """Design docs a reviewer needs: the PDD, and the Work Order if present.
 
     The PDD is the artifact every downstream phase builds on and the one
@@ -965,6 +1277,11 @@ def _read_design(state: dict) -> dict | None:
 
     Accepts the legacy ``design`` phase key alongside ``idea-to-design``,
     matching ``_read_opp``.
+
+    ``access`` is MEASURED per document (ace-web#740). This reader used
+    to stamp ``ACCESS_PUBLIC`` on both entries unconditionally; on the
+    audited spark-facilitator run both documents answered 401 to an
+    anonymous reader while the page said "Open".
     """
     products = (
         _phase_products(state, "idea-to-design")
@@ -986,7 +1303,7 @@ def _read_design(state: dict) -> dict | None:
             docs.append({
                 "title": block.get("title") or fallback_title,
                 "url": url,
-                "access": ACCESS_PUBLIC,
+                "access": access.tag(file_id=block.get("file_id"), url=url),
             })
 
     return {"docs": docs} if docs else None
@@ -994,6 +1311,7 @@ def _read_design(state: dict) -> dict | None:
 
 def _read_feedback(
     drive: DriveClient, opp_folder_id: str, *, viewer_is_member: bool,
+    access: LinkAccessReader | None = None,
 ) -> list[dict]:
     """Rendered reviewer feedback ledgers — "where did my comment go?".
 
@@ -1036,6 +1354,12 @@ def _read_feedback(
 
     public_slugs = public_record_slugs(drive, opp_folder_id)
 
+    # One batch for the whole section — see LinkAccessReader.prime.
+    if access is not None:
+        access.prime(
+            f.id for f in files if f.name.endswith("-ledger") and f.web_view_link
+        )
+
     for f in files:
         if not f.name.endswith("-ledger") or not f.web_view_link:
             continue
@@ -1048,10 +1372,17 @@ def _read_feedback(
         title = who.replace("-", " ").title() or stem
         if len(date) == 8 and date.isdigit():
             title = f"{date[:4]}-{date[4:6]}-{date[6:]} · {title}"
+        # `is_public` is a CONFIDENTIALITY decision about the review (may
+        # this ledger be shown to a non-member at all?) and still gates
+        # visibility above. It is not a claim about the Drive file's ACL,
+        # and conflating the two is how a privately-shared ledger came to
+        # be tagged `public`. The tag is measured; the gate is not.
         ledgers.append({
             "title": title,
             "url": f.web_view_link,
-            "access": ACCESS_PUBLIC if is_public else ACCESS_ADMIN,
+            "access": (
+                access.tag(file_id=f.id) if access is not None else ACCESS_UNKNOWN
+            ),
         })
 
     return sorted(ledgers, key=lambda d: d["title"], reverse=True)
@@ -1369,6 +1700,13 @@ def build_summary_payload(
         return None
     state: dict = _read_yaml(drive, state_file.id, state_file.mime_type) or {}
 
+    # Measure every Drive link's real sharing state in ONE concurrent
+    # batch before the section readers run (ace-web#740). Sequential
+    # per-link reads would undo ace-web#738's batching on the very
+    # endpoint it was written for.
+    access = LinkAccessReader(drive)
+    access.prime(_state_drive_file_ids(state))
+
     workspace_slug = getattr(workspace, "slug", "")
     # Prefix the deployment mount (dimagi-internal/ace#1329). This link is
     # rendered as a plain `href`, so a ROOT-relative path resolves against the
@@ -1402,10 +1740,10 @@ def build_summary_payload(
             opp_slug=opp_slug,
             run_id=run_id,
         ),
-        "design": _read_design(state),
+        "design": _read_design(state, access),
         "apps": _read_apps(state),
         "connect": _read_connect(state),
-        "training": _read_training(state),
+        "training": _read_training(state, access),
         "assistant": _read_assistant(state),
         "walkthroughs": _read_walkthroughs(state),
         "dashboards": _read_dashboards(state),
@@ -1414,13 +1752,13 @@ def build_summary_payload(
         "launch": _read_launch(state),
         "cycle_grade": _read_cycle_grade(state),
         "opp_eval": _read_opp_eval(state),
-        "learnings": _read_learnings(state),
+        "learnings": _read_learnings(state, access),
         "open_questions": _read_open_questions(
-            drive, opp_folder.id, run_folder.id
+            drive, opp_folder.id, run_folder.id, access=access,
         ),
         "stage": _read_stage(state),
         "feedback": _read_feedback(
-            drive, opp_folder.id, viewer_is_member=viewer_is_member,
+            drive, opp_folder.id, viewer_is_member=viewer_is_member, access=access,
         ),
         "decisions": _read_decisions(drive, run_folder.id),
         # Partner reactions collected on this page, keyed by decision id.

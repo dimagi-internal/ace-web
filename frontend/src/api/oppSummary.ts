@@ -14,8 +14,16 @@ import type { Decision } from "@/api/types.ws";
  * (CommCare HQ project membership, a Connect / OCS workspace, the
  * connect-labs OAuth login, the ace-web Workbench). Gated links are
  * still shown — tagged, not hidden.
+ *
+ * `unknown` (ace-web#740) is the honest answer for a Google Drive link
+ * whose sharing state the server could not read. Drive tags are MEASURED
+ * from the file's ACL now; they used to be asserted, and on
+ * spark-facilitator/20260820-0817 that shipped a page telling an
+ * external partner "Open" beside two documents that answered 401. When
+ * the measurement fails, saying "public" is that bug with an extra step
+ * and saying "admin" invents a wall that may not exist.
  */
-export type LinkAccess = "public" | "admin";
+export type LinkAccess = "public" | "admin" | "unknown";
 
 /**
  * A decisions-log row as the public review surface renders it — the
@@ -119,6 +127,21 @@ export interface OppSummaryPayload {
     access: LinkAccess;
     public_id: string;
     embed_key: string;
+    /**
+     * What the run recorded the assistant as actually indexing. EMPTY on
+     * every run that recorded nothing, which is most of them today — and
+     * the page must then say nothing about what the bot knows.
+     *
+     * The page used to carry a constant: "Trained on the design doc,
+     * training pack, and app guides for this opportunity." It was
+     * derived from nothing. On spark-facilitator/20260820-0817 the opp
+     * collection held 16 files and none of the five training-pack
+     * documents the same page links were among them. ACE shipped
+     * `ocs-knowledge-refresh` (ace#1715) so later runs do index them —
+     * which is exactly why this has to be data: the claim is true for
+     * some runs and false for others.
+     */
+    knowledge_sources: string[];
   } | null;
   // Four honest states per entry. `withheld` means the walkthrough
   // exists but failed its concept eval, so we deliberately don't put it
@@ -130,10 +153,40 @@ export interface OppSummaryPayload {
   walkthroughs: {
     persona: string;
     url: string | null;
+    /**
+     * The canopy DDD concept rubric is anchored 1–5
+     * (`skills/ddd-concept-eval/rubric.yaml`, anchors "5"…"1"), NOT
+     * 1–10. The page rendered `{score}/10` until ace-web#740, so the
+     * audited run's concept 2.0 — 2 out of 5 — read as 2 out of 10,
+     * roughly half as good as it actually was.
+     */
     eval_score: number | null;
     availability: "available" | "withheld" | "unavailable";
     withheld_reason: string | null;
     access?: LinkAccess;
+    /**
+     * The DDD loop's own record of whether the score means anything.
+     * Every field independently nullable — a run that recorded none of
+     * them must render as before, with no invented reassurance.
+     *
+     * `terminal_status` is FOUR-VALUED on purpose
+     * (`converged_clean` / `converged_with_open_questions` /
+     * `stopped_not_converged` / `diverging`) and must never be collapsed
+     * to pass/fail: "converged, good" and "converged, still failing"
+     * cannot render identically. An unrecognised value is passed through
+     * verbatim rather than dropped.
+     *
+     * `measures_pre_fix_artifact` is a HARD caveat, not a footnote: it
+     * says the score AND the linked video measure an artifact that has
+     * since been fixed. Presenting either bare is the specific failure
+     * this field exists to prevent.
+     */
+    ddd: {
+      terminal_status: string | null;
+      iterations_completed: number | null;
+      measures_pre_fix_artifact: boolean;
+      note: string | null;
+    };
   }[];
   dashboards: {
     title: string;
