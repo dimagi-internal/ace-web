@@ -382,7 +382,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OppRunOut"
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
                 }
               }
             }
@@ -5886,103 +5888,6 @@
         "title": "OppPatchIn",
         "type": "object"
       },
-      "OppRunOut": {
-        "additionalProperties": false,
-        "properties": {
-          "run_id": {
-            "title": "Run Id",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "started_at": {
-            "format": "date-time",
-            "title": "Started At",
-            "type": "string"
-          },
-          "finished_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Finished At"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "scorecard": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ScorecardOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "run_id",
-          "label",
-          "started_at",
-          "is_active"
-        ],
-        "title": "OppRunOut",
-        "type": "object"
-      },
-      "ScorecardOut": {
-        "additionalProperties": false,
-        "properties": {
-          "score": {
-            "maximum": 100,
-            "minimum": 0,
-            "title": "Score",
-            "type": "integer"
-          },
-          "verdict": {
-            "enum": [
-              "pass",
-              "warn",
-              "fail"
-            ],
-            "title": "Verdict",
-            "type": "string"
-          },
-          "rationale": {
-            "title": "Rationale",
-            "type": "string"
-          },
-          "trend": {
-            "items": {
-              "type": "integer"
-            },
-            "title": "Trend",
-            "type": "array"
-          },
-          "decided_at": {
-            "format": "date-time",
-            "title": "Decided At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "score",
-          "verdict",
-          "rationale",
-          "trend",
-          "decided_at"
-        ],
-        "title": "ScorecardOut",
-        "type": "object"
-      },
       "GateOut": {
         "additionalProperties": false,
         "properties": {
@@ -6565,6 +6470,58 @@
         "title": "OppCompareOut",
         "type": "object"
       },
+      "OppRunOut": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "scorecard": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScorecardOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "run_id",
+          "label",
+          "started_at",
+          "is_active"
+        ],
+        "title": "OppRunOut",
+        "type": "object"
+      },
       "OppSnapshotOut": {
         "additionalProperties": false,
         "properties": {
@@ -6633,6 +6590,51 @@
           "updated_at"
         ],
         "title": "OppSnapshotOut",
+        "type": "object"
+      },
+      "ScorecardOut": {
+        "additionalProperties": false,
+        "properties": {
+          "score": {
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Score",
+            "type": "integer"
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "trend": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Trend",
+            "type": "array"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "score",
+          "verdict",
+          "rationale",
+          "trend",
+          "decided_at"
+        ],
+        "title": "ScorecardOut",
         "type": "object"
       },
       "SeedChatIn": {
