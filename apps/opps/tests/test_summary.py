@@ -984,6 +984,219 @@ def test_no_produced_walkthrough_is_ever_dropped():
     }
 
 
+# ─── Walkthroughs: what the RUN declares about its own entry ────────
+#
+# ace-web#726. `_read_walkthroughs` used to stamp every entry
+# `access: public` / `availability: available` / `withheld_reason: null`,
+# discarding whatever the run had written. Measured on
+# hh-poverty-targeting/20260824-1404: the run wrote `unavailable` /
+# `auth-gated` / a paragraph of reason and the anonymous payload
+# returned `available` / `public` / null for all three, so a canopy-web
+# DDD package behind Dimagi OAuth was advertised to outside readers as
+# public. There was no data-side workaround: leaving the entry in
+# tripped the ACE auditor's LINK-ACCESS-MISLABELLED, removing it tripped
+# WALKTHROUGH-DROPPED.
+
+
+_CANOPY_DDD_CONSOLE_URL = (
+    "https://labs.connect.dimagi.com/canopy/ddd/"
+    "hh-poverty-targeting-coverage-integrity/"
+    "hh-poverty-targeting-coverage-integrity-2026-08-26-001"
+)
+
+
+def test_a_run_can_say_a_walkthrough_was_produced_but_not_shared():
+    """The hh-poverty-targeting/20260824-1404 repro, end to end. The DDD
+    loop ended `stopped_not_converged` and its `external_release` gate
+    resolved HOLD, so "produced, deliberately not shared" is the true
+    state — and the page must be able to say exactly that: named, with
+    the run's own reason, and with no link an outsider cannot open."""
+    reason = (
+        "The DDD loop ended stopped_not_converged and its external_release "
+        "gate resolved HOLD, so this package was never externally released."
+    )
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "Coverage you can audit",
+                    "web_view_link": _CANOPY_DDD_CONSOLE_URL,
+                    "eval_score": 2,
+                    "availability": "unavailable",
+                    "access": "auth-gated",
+                    "withheld_reason": reason,
+                }],
+            },
+        },
+        phase_meta={"verdict": "warn"},
+    )
+    assert len(p["walkthroughs"]) == 1
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "unavailable"
+    assert w["withheld_reason"] == reason
+    assert w["url"] is None
+    assert "access" not in w, "an entry with no link must claim no access"
+    assert w["persona"] == "Coverage you can audit"
+
+
+def test_an_author_supplied_access_tag_is_honoured_not_overwritten():
+    """The narrower half of #726: the run is willing to show the link,
+    it just needs the page to say the link is gated. `auth-gated` is
+    normalised into the payload's two-valued vocabulary rather than
+    widening it — the frozen contract and the ACE auditor both key on
+    exactly `public` / `admin`."""
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "Coverage you can audit",
+                    "web_view_link": _CANOPY_DDD_CONSOLE_URL,
+                    "access": "auth-gated",
+                    "eval_verdict": "pass",
+                }],
+            },
+        },
+        phase_meta={"verdict": "pass"},
+    )
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "available"
+    assert w["url"] == _CANOPY_DDD_CONSOLE_URL
+    assert w["access"] == "admin"
+
+
+def test_a_run_supplied_reason_replaces_the_canned_withheld_text():
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "llo-weekly-review",
+                    "slideshow_url": "https://drive.google.com/file/d/w1/view",
+                    "eval_verdict": "fail",
+                    "withheld_reason": "Scene 4 mislabels the payment trigger.",
+                }],
+            },
+        },
+    )
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "withheld"
+    assert w["withheld_reason"] == "Scene 4 mislabels the payment trigger."
+
+
+def test_a_run_can_withhold_a_walkthrough_its_verdict_would_have_shown():
+    """Declaring `withheld` needs no failing verdict behind it — a run
+    may have any number of reasons not to show something it made."""
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "llo-weekly-review",
+                    "slideshow_url": "https://drive.google.com/file/d/w1/view",
+                    "eval_verdict": "pass",
+                    "availability": "withheld",
+                }],
+            },
+        },
+        phase_meta={"verdict": "pass"},
+    )
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "withheld"
+    assert w["url"] is None
+
+
+def test_a_declared_availability_can_only_hide_never_reveal():
+    """The one asymmetry, and it is deliberate. A failing eval verdict
+    guards against putting a bad demo in front of a stakeholder;
+    `availability: available` in the run state must not lift that guard.
+    Author metadata may make an entry LESS visible, never more."""
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "llo-weekly-review",
+                    "slideshow_url": "https://drive.google.com/file/d/w1/view",
+                    "eval_verdict": "fail",
+                    "availability": "available",
+                }],
+            },
+        },
+    )
+    w = p["walkthroughs"][0]
+    assert w["availability"] == "withheld"
+    assert w["url"] is None
+
+
+def test_an_unrecognised_availability_word_is_ignored_loudly(caplog):
+    """Falling back to the derived state is right — but silently
+    accepting a word nobody reads would hide the typo forever."""
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "llo-weekly-review",
+                    "slideshow_url": "https://drive.google.com/file/d/w1/view",
+                    "availability": "not-shared",
+                    "eval_verdict": "pass",
+                }],
+            },
+        },
+        phase_meta={"verdict": "pass"},
+    )
+    assert p["walkthroughs"][0]["availability"] == "available"
+    assert "not-shared" in caplog.text
+
+
+def test_an_unrecognised_access_word_falls_back_to_derivation_loudly(caplog):
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{
+                    "persona": "llo-weekly-review",
+                    "web_view_link": _CANOPY_DDD_CONSOLE_URL,
+                    "access": "sort-of-public",
+                    "eval_verdict": "pass",
+                }],
+            },
+        },
+        phase_meta={"verdict": "pass"},
+    )
+    assert p["walkthroughs"][0]["access"] == "admin"
+    assert "sort-of-public" in caplog.text
+
+
+# ─── Walkthroughs: the derived access tag when the run says nothing ──
+
+
+@pytest.mark.parametrize(("url", "expected"), [
+    # canopy-web's auth middleware is default-deny with a short allowlist
+    # of share-token-gated SPA shells (canopy-web
+    # apps/common/middleware.py, pinned by its
+    # tests/test_public_routes_reachable.py). The DDD OPERATOR console is
+    # explicitly not on it —
+    # `test_the_ddd_console_is_gated_even_though_ddd_release_is_public`.
+    (_CANOPY_DDD_CONSOLE_URL, "admin"),
+    ("https://labs.connect.dimagi.com/canopy/insights", "admin"),
+    ("https://labs.connect.dimagi.com/canopy/w/dimagi/ddd/x", "admin"),
+    ("https://labs.connect.dimagi.com/canopy/ddd-release/x/x-2026-08-26-001", "public"),
+    ("https://labs.connect.dimagi.com/canopy/share/abc123", "public"),
+    ("https://labs.connect.dimagi.com/canopy/walkthrough/abc123", "public"),
+    ("https://labs.connect.dimagi.com/canopy/narrative/verified-monitoring", "public"),
+    # Not canopy: a Drive file, a token-minted share — these circulate by
+    # design, and guessing `admin` would tell a reader they cannot open
+    # something they can. Same class of lie, other direction.
+    ("https://drive.google.com/file/d/w1/view", "public"),
+    ("https://example.org/some/deck", "public"),
+])
+def test_access_is_derived_from_the_link_when_the_run_does_not_tag_it(url, expected):
+    p = _payload_with_synthetic(
+        {
+            "synthetic": {
+                "walkthroughs": [{"persona": "p", "url": url, "eval_verdict": "pass"}],
+            },
+        },
+        phase_meta={"verdict": "pass"},
+    )
+    assert p["walkthroughs"][0]["access"] == expected
+
 # ─── Lifecycle stage ───────────────────────────────────────────────
 
 

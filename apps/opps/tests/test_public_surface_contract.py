@@ -146,6 +146,21 @@ def _maximal_state_yaml() -> str:
                             "persona": "field-supervisor-daily",
                             "eval_verdict": "pass",
                         },
+                        # available, but behind Dimagi OAuth — and the RUN
+                        # says so. Before ace-web#726 the reader stamped
+                        # every entry `access: public`, so a canopy-web DDD
+                        # package was advertised to anonymous readers as
+                        # openable. `auth-gated` normalises to `admin`; the
+                        # payload vocabulary stays two-valued.
+                        {
+                            "persona": "coverage-you-can-audit",
+                            "web_view_link": (
+                                "https://labs.connect.dimagi.com/canopy/ddd/"
+                                "coverage-integrity/coverage-integrity-2026-08-26-001"
+                            ),
+                            "eval_score": 6.1,
+                            "access": "auth-gated",
+                        },
                     ],
                     "dashboards": [
                         {
@@ -481,11 +496,31 @@ def test_an_unavailable_walkthrough_is_present_rather_than_dropped(payload):
         assert entry["withheld_reason"]
 
 
+def test_a_run_declared_access_tag_survives_into_the_payload(payload):
+    """ace-web#726. The reader used to stamp `access: public` on every
+    walkthrough regardless of what the run wrote, so a canopy-web page
+    behind Dimagi OAuth was advertised to anonymous readers as openable
+    — worse than a dead link, because it reads as an invitation, and it
+    is exactly what the ACE auditor calls LINK-ACCESS-MISLABELLED.
+
+    The run's own tag wins. It is normalised into this module's
+    two-valued vocabulary rather than widening it: the auditor and the
+    page both key on `public` / `admin`, so a third word would go
+    unread by both."""
+    by_persona = {w["persona"]: w for w in payload["walkthroughs"]}
+    entry = by_persona["coverage-you-can-audit"]
+    assert entry["availability"] == "available"
+    assert entry["access"] == ACCESS_ADMIN, (
+        "the fixture declared access `auth-gated` on this entry; a payload "
+        "that reports `public` is telling an outside reader something untrue"
+    )
+
+
 def test_every_produced_walkthrough_reaches_the_page(payload):
     """The invariant the three shapes exist to serve. Whatever Phase 7
     wrote, the page carries one entry for it — the entry then declares
     its own state. Nothing is filtered on the way out."""
-    assert len(payload["walkthroughs"]) == 3
+    assert len(payload["walkthroughs"]) == 4
     assert {w["availability"] for w in payload["walkthroughs"]} == {
         "available", "withheld", "unavailable",
     }

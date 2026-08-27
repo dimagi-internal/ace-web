@@ -51,6 +51,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date
+from urllib.parse import urlparse
 
 import yaml
 from django.conf import settings
@@ -400,6 +401,133 @@ _WALKTHROUGH_URL_KEYS = (
 )
 
 
+# ─── Author-declared walkthrough state ─────────────────────────────
+#
+# A producing phase may declare a walkthrough's own state in
+# ``run_state.yaml`` — ``availability`` / ``access`` / ``withheld_reason``
+# — and this reader honours it. Until ace-web#726 it did not: every entry
+# was emitted ``access: public`` / ``availability: available`` /
+# ``withheld_reason: null`` no matter what the run had written. That
+# advertised a canopy-web DDD package sitting behind Dimagi OAuth to
+# anonymous readers as public, which is worse than a dead link: a dead
+# link reads as broken, this reads as an invitation. And there was no
+# data-side workaround — leaving the entry in tripped the ACE auditor's
+# ``LINK-ACCESS-MISLABELLED``, removing it tripped ``WALKTHROUGH-DROPPED``
+# — so a correct run could not reach "safe to share" at all.
+#
+# The payload's ``access`` vocabulary stays two-valued (``public`` /
+# ``admin``): the frozen contract in
+# ``apps/opps/tests/test_public_surface_contract.py`` and the ACE auditor
+# both key on exactly those. Author words are normalised INTO it rather
+# than widening it, so a phase can write whichever word reads well
+# ("auth-gated", "private", "internal") without inventing a third
+# vocabulary every consumer would then have to learn.
+_ACCESS_ALIASES = {
+    "public": ACCESS_PUBLIC,
+    "anonymous": ACCESS_PUBLIC,
+    "anyone": ACCESS_PUBLIC,
+    "anyone-with-link": ACCESS_PUBLIC,
+    "link": ACCESS_PUBLIC,
+    "open": ACCESS_PUBLIC,
+    "shared": ACCESS_PUBLIC,
+    "admin": ACCESS_ADMIN,
+    "auth": ACCESS_ADMIN,
+    "auth-gated": ACCESS_ADMIN,
+    "authenticated": ACCESS_ADMIN,
+    "dimagi": ACCESS_ADMIN,
+    "gated": ACCESS_ADMIN,
+    "internal": ACCESS_ADMIN,
+    "login": ACCESS_ADMIN,
+    "login-required": ACCESS_ADMIN,
+    "member": ACCESS_ADMIN,
+    "members-only": ACCESS_ADMIN,
+    "oauth": ACCESS_ADMIN,
+    "private": ACCESS_ADMIN,
+    "restricted": ACCESS_ADMIN,
+}
+
+AVAILABILITY_AVAILABLE = "available"
+AVAILABILITY_WITHHELD = "withheld"
+AVAILABILITY_UNAVAILABLE = "unavailable"
+_AVAILABILITY_VALUES = frozenset({
+    AVAILABILITY_AVAILABLE, AVAILABILITY_WITHHELD, AVAILABILITY_UNAVAILABLE,
+})
+
+# canopy-web is served same-origin under ``/canopy/*`` on labs. Its own
+# auth middleware is default-deny with a small allowlist of SPA shells
+# that self-enforce a share token — canopy-web
+# ``apps/common/middleware.py``, pinned by its
+# ``tests/test_public_routes_reachable.py``, which asserts
+# ``/ddd-release/<slug>/<run-id>`` is anonymously reachable and
+# ``/ddd/<slug>`` — the operator console — is NOT
+# (``test_the_ddd_console_is_gated_even_though_ddd_release_is_public``).
+# So a canopy link is public only when its path is on that allowlist;
+# every other canopy path is a Dimagi OAuth wall. This is the derived
+# DEFAULT — an author-supplied tag always wins over it.
+_CANOPY_PUBLIC_PREFIXES = (
+    "/ddd-release/",
+    "/invite/",
+    "/narrative/",
+    "/review/",
+    "/share/",
+    "/storyboard/",
+    "/walkthrough/",
+)
+
+
+def _normalise_access(value: object) -> str | None:
+    """An author's access word as one of this module's ``ACCESS_*``
+    constants, or ``None`` when it is absent or unrecognised."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    key = value.strip().lower().replace("_", "-").replace(" ", "-")
+    resolved = _ACCESS_ALIASES.get(key)
+    if resolved is None:
+        log.warning(
+            "summary: walkthrough declares access=%r, which is not a recognised "
+            "alias of %r/%r — ignored, tag derived from the URL instead",
+            value, ACCESS_PUBLIC, ACCESS_ADMIN,
+        )
+    return resolved
+
+
+def _canopy_path(url: str) -> str | None:
+    """The canopy-web path a URL addresses, or ``None`` if it is not a
+    canopy-web URL. Labs mounts canopy under ``/canopy/``; a dedicated
+    canopy host serves the same routes at the root."""
+    if not isinstance(url, str):
+        return None
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    path = parsed.path or "/"
+    if path == "/canopy" or path.startswith("/canopy/"):
+        return path[len("/canopy"):] or "/"
+    host = (parsed.hostname or "").lower()
+    if host.startswith("canopy.") or host.startswith("canopy-"):
+        return path
+    return None
+
+
+def _derive_walkthrough_access(url: str) -> str:
+    """Access tag for a walkthrough link the run did not tag itself.
+
+    Only canopy-web URLs are reclassified: everything else keeps the
+    long-standing ``public`` default (a walkthrough is otherwise a Drive
+    file or a token-minted share, both of which circulate by design).
+    Guessing ``admin`` for an unknown host would tell a reader they
+    cannot open something they can — the same class of lie, pointed the
+    other way.
+    """
+    path = _canopy_path(url)
+    if path is None:
+        return ACCESS_PUBLIC
+    if any(path.startswith(prefix) for prefix in _CANOPY_PUBLIC_PREFIXES):
+        return ACCESS_PUBLIC
+    return ACCESS_ADMIN
+
+
 def _read_walkthroughs(state: dict) -> list[dict]:
     """Persona walkthroughs, as one of four honest states per entry.
 
@@ -409,8 +537,9 @@ def _read_walkthroughs(state: dict) -> list[dict]:
     - **withheld** — a walkthrough was produced but its concept eval
       failed, so we do not put it in front of a stakeholder. It still
       says so, with no link;
-    - **unavailable** — produced, not withheld, but carrying no URL
-      under any key this reader recognises;
+    - **unavailable** — produced, and either carrying no URL under any
+      key this reader recognises, or deliberately not shared (the run
+      said so itself);
     - **available** — produced, cleared, linked.
 
     Every state above exists to serve one rule: **a reviewer must never
@@ -427,6 +556,16 @@ def _read_walkthroughs(state: dict) -> list[dict]:
     So: loud now means *visible on the page*. A URL-less non-withheld
     entry is surfaced as ``unavailable`` with its keys logged for the
     one-line fix. Nothing a run produced is ever dropped here.
+
+    **The run gets a say (ace-web#726).** An entry may declare its own
+    ``availability`` / ``access`` / ``withheld_reason``, and those win
+    over anything derived here — that is how a producing phase says
+    "produced, deliberately not shared" (a DDD package whose
+    ``external_release`` gate resolved HOLD) or "this link needs a
+    Dimagi login". One asymmetry, deliberate: an author declaration may
+    only make an entry LESS visible, never more. A failing eval verdict
+    is a guard against putting a bad demo in front of a stakeholder, and
+    an ``availability: available`` in the run state does not lift it.
 
     An entry is withheld when its own ``eval_verdict`` is failing, or —
     for entries that carry no verdict of their own — when the phase's
@@ -458,14 +597,46 @@ def _read_walkthroughs(state: dict) -> list[dict]:
         verdict = str(w.get("eval_verdict") or "").lower()
         withheld = verdict in _FAILING_VERDICTS or (not verdict and phase_failed)
         persona = w.get("persona") or default_name
+        declared_reason = w.get("withheld_reason")
+        declared_reason = (
+            declared_reason.strip()
+            if isinstance(declared_reason, str) and declared_reason.strip()
+            else None
+        )
 
-        if withheld:
+        declared = w.get("availability")
+        declared = declared.strip().lower() if isinstance(declared, str) else None
+        if declared is not None and declared not in _AVAILABILITY_VALUES:
+            log.warning(
+                "summary: walkthrough %r declares availability=%r, which is not one "
+                "of %s — ignored, state derived instead",
+                persona, w.get("availability"), sorted(_AVAILABILITY_VALUES),
+            )
+            declared = None
+
+        if withheld or declared == AVAILABILITY_WITHHELD:
             out.append({
                 "persona": persona,
                 "url": None,
                 "eval_score": None,
-                "availability": "withheld",
-                "withheld_reason": "Not shown — did not pass quality review",
+                "availability": AVAILABILITY_WITHHELD,
+                "withheld_reason": (
+                    declared_reason or "Not shown — did not pass quality review"
+                ),
+            })
+            continue
+        if declared == AVAILABILITY_UNAVAILABLE:
+            # The run produced this and chose not to share it — e.g. a DDD
+            # package whose external_release gate resolved HOLD. Name it,
+            # say why, hand out no link.
+            out.append({
+                "persona": persona,
+                "url": None,
+                "eval_score": w.get("eval_score"),
+                "availability": AVAILABILITY_UNAVAILABLE,
+                "withheld_reason": (
+                    declared_reason or "Produced, but not shared for this run."
+                ),
             })
             continue
         if not url:
@@ -484,8 +655,8 @@ def _read_walkthroughs(state: dict) -> list[dict]:
                 "persona": persona,
                 "url": None,
                 "eval_score": w.get("eval_score"),
-                "availability": "unavailable",
-                "withheld_reason": (
+                "availability": AVAILABILITY_UNAVAILABLE,
+                "withheld_reason": declared_reason or (
                     "Produced, but no shareable link was recorded in a "
                     "form this page recognises."
                 ),
@@ -495,12 +666,14 @@ def _read_walkthroughs(state: dict) -> list[dict]:
             "persona": persona,
             "url": url,
             "eval_score": w.get("eval_score"),
-            "availability": "available",
+            "availability": AVAILABILITY_AVAILABLE,
             "withheld_reason": None,
-            # A published walkthrough is either a Drive file or a
+            # The run's own tag wins; otherwise derive it from the link.
+            # A published walkthrough is usually a Drive file or a
             # canopy-web share minted with a link-visibility token — both
-            # circulate by design, so no admin tag is claimed here.
-            "access": ACCESS_PUBLIC,
+            # circulate by design — but a canopy OPERATOR URL sits behind
+            # Dimagi OAuth and the page has to say so.
+            "access": _normalise_access(w.get("access")) or _derive_walkthrough_access(url),
         })
     return out
 
