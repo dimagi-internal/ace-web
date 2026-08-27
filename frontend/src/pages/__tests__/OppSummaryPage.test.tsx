@@ -337,6 +337,23 @@ describe("OppSummaryPage", () => {
     expect(screen.queryByText("admin only")).toBeNull();
   });
 
+  it("tags the open-questions source doc too, which renders outside SummaryRow", async () => {
+    // That link is hand-rolled on the Decisions tab, so it does not
+    // inherit the row's tag logic. Leaving it untagged would read as
+    // "anyone can open this" — the ace-web#740 bug in a second place.
+    renderWith({
+      ...BASE,
+      open_questions: {
+        url: "https://docs/open-questions",
+        access: "unknown",
+        items: [{ title: "Rate", detail: "d", owner: null, answered_in: null }],
+      },
+    });
+    await openDecisionsTab();
+    expect(await screen.findByText("Source document")).toBeTruthy();
+    expect(screen.getAllByText("access unverified").length).toBe(1);
+  });
+
   it("distinguishes 'not started yet' from 'Not created'", async () => {
     renderWith({
       ...BASE,

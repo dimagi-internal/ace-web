@@ -20,7 +20,11 @@ import {
 import { OcsWidgetMount } from "@/components/opps/summary/OcsWidgetMount";
 import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
 import { SummaryHero } from "@/components/opps/summary/SummaryHero";
-import { AdminOnlyTag, SummaryRow } from "@/components/opps/summary/SummaryRow";
+import {
+  AccessUnknownTag,
+  AdminOnlyTag,
+  SummaryRow,
+} from "@/components/opps/summary/SummaryRow";
 import { SummarySection } from "@/components/opps/summary/SummarySection";
 import { ViewSwitcher, type ViewTab } from "@/components/views/ViewSwitcher";
 import { useUrlTab } from "@/hooks/useViewMode";
@@ -778,7 +782,16 @@ export default function OppSummaryPage() {
                     >
                       Source document
                     </a>
+                    {/* This "Source document" link is rendered outside
+                        `SummaryRow`, so it does not inherit the row's
+                        tag logic and has to carry both cases itself.
+                        `unknown` must not render as silence — an
+                        untagged link reads as "anyone can open this",
+                        which is the ace-web#740 bug exactly. */}
                     {showAccessTags && open_questions.access === "admin" && <AdminOnlyTag />}
+                    {showAccessTags && open_questions.access === "unknown" && (
+                      <AccessUnknownTag />
+                    )}
                   </p>
                 )}
               </>
