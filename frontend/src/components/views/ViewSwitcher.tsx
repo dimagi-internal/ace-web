@@ -4,6 +4,7 @@ import {
   Layers,
   LayoutGrid,
   ListTree,
+  Workflow,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -13,7 +14,8 @@ export type ViewKind =
   | "timeline"
   | "workbench"
   | "phase"
-  | "story";
+  | "story"
+  | "runs";
 
 export interface ViewTab<K extends string = ViewKind> {
   kind: K;
@@ -43,6 +45,7 @@ const ICONS: Record<ViewKind, React.ComponentType<{ className?: string }>> = {
   workbench: LayoutGrid,
   phase: Layers,
   story: Film,
+  runs: Workflow,
 };
 
 const DEFAULT_CONTAINER = "border-b border-border bg-background px-6";

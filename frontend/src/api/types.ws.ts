@@ -349,6 +349,13 @@ export interface RunSummary {
   latest_phase_done?: string | null;
   latest_phase_done_display?: string | null;
   latest_phase_done_ordinal?: number | null;
+  /** Per-phase status in authored order — [{ordinal, name, status}].
+   * Served on the workbench snapshot and /opps/{slug}/runs, but NOT on the
+   * opps-list card payload (it would be a few hundred KB nothing renders
+   * there — see _serialize_card_runs_summary). Absent on older payloads. */
+  phase_states?: { ordinal: number; name: string; status: string }[];
+  /** Drive folder id for this run. Lets a row deep-link to the run folder. */
+  folder_id?: string | null;
   /** Where this run's execution stands on canopy's harness, or null when the
    * run was never dispatched there (legacy/local execution). See
    * `src/canopy/runState.ts`. */

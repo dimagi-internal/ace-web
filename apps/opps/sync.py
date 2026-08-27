@@ -167,6 +167,10 @@ class RunSummary:
     phases_total: int = 0
     phases_done: int = 0
     latest_phase_done: str | None = None
+    # Per-phase status in authored order: [{ordinal, name, status}]. Powers
+    # the cross-run strip's per-phase segments; a count alone cannot show a
+    # run that errored mid-way and then recovered.
+    phase_states: list[dict] = field(default_factory=list)
 
 
 def list_opp_runs(
@@ -245,6 +249,12 @@ def _derive_phase_progress(
         "phases_total": 0,
         "phases_done": 0,
         "latest_phase_done": None,
+        # Per-phase status, in authored order. `phases_done` is a COUNT, which
+        # cannot express a run that cleared phases 1-5, errored in 6 and then
+        # completed 7 — a real shape in the record. The cross-run strip renders
+        # one segment per phase off this list. Derived inside the existing loop
+        # below, so it costs no extra Drive read and no extra parse.
+        "phase_states": [],
     }
 
     phases = state.get("phases")
@@ -261,6 +271,14 @@ def _derive_phase_progress(
     phases_done = 0
     latest_phase_done: str | None = None
     has_pending = False
+    phase_states: list[dict] = []
+
+    def _record(name: str, status: str) -> None:
+        phase_states.append({
+            "ordinal": len(phase_states) + 1,
+            "name": name,
+            "status": status,
+        })
 
     for phase_name, phase_value in phases.items():
         if not isinstance(phase_value, dict):
@@ -269,6 +287,7 @@ def _derive_phase_progress(
             # complete.
             phases_total += 1
             has_pending = True
+            _record(phase_name, "pending")
             continue
 
         phases_total += 1
@@ -284,6 +303,10 @@ def _derive_phase_progress(
             else:
                 phases_done += 1
                 latest_phase_done = phase_name
+            # Keep the AUTHORED status verbatim rather than collapsing to
+            # done/pending — `error`, `blocked`, `skipped` and `in_progress`
+            # are the whole point of the per-phase strip.
+            _record(phase_name, str(explicit_status))
             continue
 
         # Phase shape B — older plugin: bare step-name → status-string
@@ -301,16 +324,22 @@ def _derive_phase_progress(
             )
             if any_pending_step:
                 has_pending = True
+                _record(phase_name, "in_progress" if any(
+                    not _is_pending_step(v) for v in steps_map.values()
+                ) else "pending")
             else:
                 phases_done += 1
                 latest_phase_done = phase_name
+                _record(phase_name, "done")
         else:
             # Empty / unparseable phase block — conservatively pending.
             has_pending = True
+            _record(phase_name, "pending")
 
     result["phases_total"] = phases_total
     result["phases_done"] = phases_done
     result["latest_phase_done"] = latest_phase_done
+    result["phase_states"] = phase_states
 
     if phases_total > 0 and not has_pending:
         result["status"] = "complete"

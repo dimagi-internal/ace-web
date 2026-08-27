@@ -802,6 +802,12 @@ def _serialize_card_runs_summary(
 
     Drops the internal ``folder_id`` field — the frontend doesn't need
     it and the legacy RunSummary type doesn't declare it.
+
+    Also drops ``phase_states``. This payload is rendered for EVERY opp on
+    the list page (#512 exists to keep it a single call), and the card only
+    draws a "P{ordinal}" chip per run — it never draws per-phase segments.
+    Carrying ~10 objects per run per opp here would be a few hundred KB of
+    payload nothing renders. The workbench runs endpoint keeps the field.
     """
     from dataclasses import asdict  # noqa: PLC0415
 
@@ -809,6 +815,7 @@ def _serialize_card_runs_summary(
     for r in runs:
         rich = asdict(r)
         rich.pop("folder_id", None)
+        rich.pop("phase_states", None)
         cur_display, cur_ord = phase_meta.get(r.current_phase or "", (None, None))
         rich["current_phase_display"] = cur_display
         rich["current_phase_ordinal"] = cur_ord
@@ -881,9 +888,9 @@ def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
         # current_phase / phases_done / phases_total / last_actor_at /
         # lifecycle_status / latest_phase_done etc.
         rich = asdict(r)
-        # Drop the internal folder_id — frontend doesn't need it and the
-        # legacy RunSummary type doesn't declare it.
-        rich.pop("folder_id", None)
+        # KEEP folder_id: the cross-run strip deep-links each row straight to
+        # its Drive run folder, which needs exactly this id. It was dropped
+        # when nothing rendered it; the TS RunSummary now declares it.
         # Enrich phase / step references with the plugin's display name +
         # ordinal so the OppCardRunsStrip chip can render "P3" instead of
         # "—" and tooltips can show capitalized phase labels.
