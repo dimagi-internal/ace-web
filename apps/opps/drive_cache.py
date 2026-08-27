@@ -182,9 +182,24 @@ class CachedDriveClient(DriveClient):
     # silently takes the slow per-run path and the optimisation is inert.
 
     def find_in_folders(self, parent_ids: list[str], name: str) -> dict:
+        """{parent_id: DriveFile | None}.
+
+        When the inner client cannot batch, this SYNTHESISES the same answer
+        from per-folder listings rather than returning {}. An empty dict here
+        is a legitimate answer — "no folder holds that file" — so a wrapper
+        that returned {} to mean "I can't do this" would be silently
+        indistinguishable from "there are no runs", and callers would render
+        an opp as empty. Slower, never wrong.
+        """
         finder = getattr(self._inner, "find_in_folders", None)
         if not callable(finder):
-            return {}
+            out: dict = {}
+            for pid in parent_ids:
+                match = next(
+                    (f for f in self.list_files(pid) if f.name == name), None
+                )
+                out[pid] = match
+            return out
         key = _find_key(parent_ids, name)
         if not self._bypass:
             hit = cache.get(key)

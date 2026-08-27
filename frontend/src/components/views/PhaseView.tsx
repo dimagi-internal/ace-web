@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useReducer, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ChevronRight, GitFork, Workflow } from "lucide-react";
 import { toast } from "sonner";
 
@@ -249,7 +250,18 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
   // open-decision → first-with-steps), but that hijacked the entry
   // experience and made it hard to scan the full list before drilling
   // in. Start everything collapsed.
-  const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
+  // Lives in `?phase=` so a phase is ADDRESSABLE: the Runs tab links each
+  // segment of its per-phase track straight here, and the URL a reader copies
+  // reopens on the same phase instead of a collapsed list. Local state alone
+  // made every such link land on "which one did you mean?".
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedPhase = searchParams.get("phase");
+  const setSelectedPhase = (name: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (name) next.set("phase", name);
+    else next.delete("phase");
+    setSearchParams(next, { replace: true });
+  };
 
   const selectedPhaseInfo = selectedPhase
     ? (phases.find((p) => p.name === selectedPhase) ?? null)

@@ -178,19 +178,72 @@ def _run_folders_and_states(
     client: DriveClient, runs_folder: DriveFile
 ) -> tuple[dict[str, str], dict[str, dict]]:
     """Walk ``runs/`` once and return ``({run_id: folder_id}, {run_id: state})``
-    for every run folder that carries a ``run_state.yaml`` (the framework's run
-    definition + the legacy reader's, in agreement)."""
+    for every run folder that carries a ``run_state.yaml``.
+
+    Uses the client's bulk fast paths when offered — one query for every
+    run_state.yaml, then the bodies concurrently — falling back to the
+    per-run walk otherwise.
+
+    This loop is why the first round of batching produced NO measured
+    improvement: ``store.list_runs`` had been optimised, but this function
+    then repeated the identical 1+2N sequential walk on top of it, so the
+    endpoint paid the cost twice and only one half had been fixed. The
+    content reads did at least hit the cache the store had just warmed; the
+    per-run ``list_folder`` calls did not, and N sequential round-trips was
+    the whole remaining bill.
+    """
     folder_by_run: dict[str, str] = {}
     state_by_run: dict[str, dict] = {}
-    for child in client.list_folder(runs_folder.id):
-        if child.mime_type != FOLDER_MIME:
-            continue
+
+    run_folders = [
+        c for c in client.list_folder(runs_folder.id) if c.mime_type == FOLDER_MIME
+    ]
+    if not run_folders:
+        return folder_by_run, state_by_run
+
+    finder = getattr(client, "find_in_folders", None)
+    bulk = getattr(client, "get_contents", None)
+
+    if callable(finder) and callable(bulk):
+        found = finder([f.id for f in run_folders], "run_state.yaml")
+        by_folder = {f.id: f for f in run_folders}
+        specs, file_to_run = [], {}
+        for folder_id, state_file in found.items():
+            if state_file is None:
+                continue  # half-initialised run folder
+            folder = by_folder.get(folder_id)
+            if folder is None:
+                continue
+            folder_by_run[folder.name] = folder.id
+            specs.append((state_file.id, state_file.mime_type))
+            file_to_run[state_file.id] = folder.name
+        for file_id, text in bulk(specs).items():
+            run_name = file_to_run.get(file_id)
+            if run_name is None:
+                continue
+            state_by_run[run_name] = _parse_state_text(text)
+        # A run whose body failed to read still has a folder; drop it so a
+        # caller never sees a run with an empty state and calls it "queued".
+        for run_name in list(folder_by_run):
+            if run_name not in state_by_run:
+                folder_by_run.pop(run_name, None)
+        return folder_by_run, state_by_run
+
+    for child in run_folders:
         run_children = client.list_folder(child.id)
         if _find_child(run_children, "run_state.yaml") is None:
             continue
         folder_by_run[child.name] = child.id
         state_by_run[child.name] = _read_state(client, run_children)
     return folder_by_run, state_by_run
+
+
+def _parse_state_text(text: str) -> dict:
+    try:
+        data = yaml.safe_load(text) or {}
+    except yaml.YAMLError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 # --------------------------------------------------------------------------- #

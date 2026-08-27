@@ -127,4 +127,29 @@ def test_it_degrades_when_the_inner_client_has_no_fast_paths():
     c = _wrap(inner)
     assert c.get_contents([("f1", "text/yaml")]) == {"f1": "body-of-f1"}
     assert inner.single_calls == 1
-    assert c.find_in_folders(["p1"], "run_state.yaml") == {}
+
+
+def test_find_in_folders_synthesises_rather_than_returning_empty():
+    """An empty dict is a LEGITIMATE answer — "no folder holds that file". A
+    wrapper that returned {} to mean "I can't batch" would be silently
+    indistinguishable from "this opp has no runs"."""
+
+    class _Plain:
+        def __init__(self):
+            self.listed = []
+
+        def list_files(self, folder_id, recursive=False, page_size=100):
+            self.listed.append(folder_id)
+            return [
+                DriveFile(
+                    id=f"state-{folder_id}", name="run_state.yaml",
+                    mime_type="text/yaml", web_view_link="", path="run_state.yaml",
+                )
+            ]
+
+    inner = _Plain()
+    c = _wrap(inner)
+    got = c.find_in_folders(["p1", "p2"], "run_state.yaml")
+    assert set(got) == {"p1", "p2"}
+    assert got["p1"] is not None and got["p1"].id == "state-p1"
+    assert inner.listed == ["p1", "p2"], "it must actually go and look"
