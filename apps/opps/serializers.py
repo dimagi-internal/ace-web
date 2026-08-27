@@ -269,6 +269,53 @@ def serialize_opp_card(opp: OppManifest, current_run: RunDetail | None) -> dict:
     }
 
 
+def serialize_run_summary(r) -> dict:
+    """One entry in ``snapshot.runs`` — the FULL RunSummary shape.
+
+    This used to hand-write six fields (run_id / current_phase / current_step /
+    mode / last_actor / last_actor_at), which was fine while the only consumer
+    was a dropdown rendering run ids. It is not fine now: the workbench's Runs
+    tab draws a per-phase track and a "last step completed" column off
+    ``phase_states`` / ``phases_done`` / ``latest_phase_done``, and with those
+    absent every run rendered as an empty bar labelled "queued" over a
+    "PHASE 1 -> 1" axis. The data was being computed and then dropped one
+    serializer short of the UI.
+
+    Read field-by-field rather than via ``asdict()``: this list is served from
+    a Redis snapshot cache, so an entry written before a field existed
+    deserialises into the current dataclass without it and ``asdict()`` raises
+    (that is what took /opps to a 500 — see snapshot_cache._KEY_VERSION v9).
+    ``folder_id`` is kept: the Runs tab deep-links each row to its Drive folder.
+    """
+    from dataclasses import fields as dataclass_fields  # noqa: PLC0415
+
+    from apps.opps.api import (  # noqa: PLC0415
+        _phase_display_index,
+        _skill_display_index,
+    )
+
+    out = {f.name: getattr(r, f.name, None) for f in dataclass_fields(r)}
+    # PyYAML may parse ISO timestamps as datetime objects; normalise to str.
+    ts = out.get("last_actor_at")
+    if isinstance(ts, datetime.datetime):
+        out["last_actor_at"] = ts.isoformat().replace("+00:00", "Z")
+
+    # Same display enrichment /opps/<slug>/runs applies, so a row reads
+    # "Commcare setup" rather than "commcare-setup". Both indexes degrade to
+    # {} when the plugin can't be read, and every consumer falls back to the
+    # bare slug, so this can soften but never break the row.
+    phase_meta = _phase_display_index()
+    skills = _skill_display_index()
+    cur_display, cur_ord = phase_meta.get(out.get("current_phase") or "", (None, None))
+    out["current_phase_display"] = cur_display
+    out["current_phase_ordinal"] = cur_ord
+    done_display, done_ord = phase_meta.get(out.get("latest_phase_done") or "", (None, None))
+    out["latest_phase_done_display"] = done_display
+    out["latest_phase_done_ordinal"] = done_ord
+    out["current_step_display"] = skills.get(out.get("current_step") or "")
+    return out
+
+
 def serialize_opp_snapshot(snap: OppSnapshot) -> dict:
     overview = _system_overview()
     out = {
@@ -278,20 +325,7 @@ def serialize_opp_snapshot(snap: OppSnapshot) -> dict:
         "phases": list(overview.get("phases") or []),
     }
     out["runs"] = [
-        {
-            "run_id": r.run_id,
-            "current_phase": r.current_phase,
-            "current_step": r.current_step,
-            "mode": r.mode,
-            "last_actor": r.last_actor,
-            # PyYAML may parse ISO timestamps as datetime objects; normalise to str.
-            "last_actor_at": (
-                r.last_actor_at.isoformat().replace("+00:00", "Z")
-                if isinstance(r.last_actor_at, datetime.datetime)
-                else r.last_actor_at
-            ),
-        }
-        for r in (getattr(snap, "runs_summary", None) or [])
+        serialize_run_summary(r) for r in (getattr(snap, "runs_summary", None) or [])
     ]
     out["selected_run_id"] = (
         snap.current_run.run_id if snap.current_run is not None else None
