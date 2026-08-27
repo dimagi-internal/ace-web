@@ -11,7 +11,6 @@ from apps.opps.schemas import (
     OppCompareOut,
     OppForkOut,
     OppHealthOut,
-    OppRunOut,
     OppSnapshotOut,
     ScorecardOut,
     SeedChatOut,
@@ -729,6 +728,11 @@ def test_delete_opp_404_unknown_slug(member_client, monkeypatch):
 # Shared fake runs data
 # ---------------------------------------------------------------------------
 
+# Mirrors the real shape `list_opp_runs_for_workspace` produces: the thin
+# OppRunOut fields PLUS the enriched RunSummary fields (lifecycle_status,
+# phases_done, *_display, …). The enriched keys are load-bearing for the
+# get_run regression test — `OppRunOut` is a StrictModel (extra="forbid"),
+# so routing this dict through it 500s. See test_get_run_returns_enriched_dict.
 _FAKE_RUNS = [
     {
         "run_id": "run-001",
@@ -737,6 +741,16 @@ _FAKE_RUNS = [
         "finished_at": None,
         "is_active": True,
         "scorecard": None,
+        # enriched fields OppRunOut does not declare:
+        "lifecycle_status": "complete",
+        "phases_done": 8,
+        "phases_total": 8,
+        "current_phase": None,
+        "latest_phase_done": "solicitation-management",
+        "latest_phase_done_display": "Solicitation Management",
+        "last_actor": "solicitation-management",
+        "last_actor_at": "2026-05-14T09:00:00Z",
+        "mode": "default",
     },
     {
         "run_id": "run-002",
@@ -745,6 +759,15 @@ _FAKE_RUNS = [
         "finished_at": None,
         "is_active": False,
         "scorecard": None,
+        "lifecycle_status": "complete",
+        "phases_done": 8,
+        "phases_total": 8,
+        "current_phase": None,
+        "latest_phase_done": "closeout",
+        "latest_phase_done_display": "Closeout",
+        "last_actor": "closeout",
+        "last_actor_at": "2026-05-13T09:00:00Z",
+        "mode": "default",
     },
 ]
 
@@ -822,7 +845,13 @@ def test_list_runs_happy_path(member_client, monkeypatch):
     body = response.json()
     assert "items" in body
     assert body["total"] == 2
-    [OppRunOut.model_validate(item) for item in body["items"]]
+    # list_runs returns the FULL enriched RunSummary dict (it deliberately
+    # bypasses the thin OppRunOut StrictModel) — assert the enriched fields
+    # survive rather than re-validating through OppRunOut.
+    first = body["items"][0]
+    assert first["run_id"] == "run-001"
+    assert first["lifecycle_status"] == "complete"
+    assert first["phases_done"] == 8
 
 
 @pytest.mark.django_db
@@ -928,8 +957,29 @@ def test_get_run_happy_path(member_client, monkeypatch):
     )
     response = client.get("/api/w/ws1/opps/opp-1/runs/run-001")
     assert response.status_code == 200
-    OppRunOut.model_validate(response.json())
     assert response.json()["run_id"] == "run-001"
+
+
+@pytest.mark.django_db
+def test_get_run_returns_enriched_dict(member_client, monkeypatch):
+    """Regression: get_run must return the FULL enriched RunSummary dict,
+    not route it through the thin `OppRunOut` StrictModel. The enriched
+    dict carries fields OppRunOut doesn't declare (lifecycle_status,
+    phases_done, *_display, …); validating it through OppRunOut
+    (extra="forbid") raised a ValidationError → HTTP 500 on every
+    run-detail fetch. Mirrors the bypass `list_runs` already uses."""
+    client, _, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api.list_opp_runs_for_workspace",
+        lambda workspace, slug: _FAKE_RUNS,
+    )
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001")
+    assert response.status_code == 200
+    body = response.json()
+    # The enriched, OppRunOut-undeclared fields survive to the client.
+    assert body["lifecycle_status"] == "complete"
+    assert body["phases_done"] == 8
+    assert body["latest_phase_done_display"] == "Solicitation Management"
 
 
 @pytest.mark.django_db
