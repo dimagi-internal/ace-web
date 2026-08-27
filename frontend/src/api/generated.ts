@@ -375,7 +375,15 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** List sessions in workspace */
+        /**
+         * List sessions in workspace
+         * @description List sessions, newest-updated first.
+         *
+         *     `since` / `source` / `opp_run_id` / `status` / `halted` let a recurring
+         *     reviewer sweep only what changed instead of pulling the whole corpus —
+         *     see `list_sessions_in_workspace` for the exact semantics of each, and
+         *     for why `since` is inclusive and the ordering carries an id tiebreaker.
+         */
         readonly get: operations["apps_sessions_api_list_sessions"];
         readonly put?: never;
         /** Create session */
@@ -2754,6 +2762,11 @@ export interface components {
              * @default
              */
             readonly opp_step_skill_display: string;
+            /**
+             * Is Interrupted
+             * @default false
+             */
+            readonly is_interrupted: boolean;
         };
         /**
          * SessionCreateIn
@@ -5619,6 +5632,11 @@ export interface operations {
                 readonly limit?: number;
                 readonly opp_slug?: string | null;
                 readonly archived?: boolean;
+                readonly since?: string | null;
+                readonly source?: string | null;
+                readonly opp_run_id?: string | null;
+                readonly status?: string | null;
+                readonly halted?: boolean | null;
             };
             readonly header?: never;
             readonly path: {

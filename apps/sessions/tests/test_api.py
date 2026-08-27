@@ -126,14 +126,38 @@ def test_list_sessions_opp_filter_passed_through(member_client, monkeypatch):
     client, workspace, _ = member_client
     captured: dict = {}
 
-    def _fake(ws, *, opp_slug, archived):
-        captured["opp_slug"] = opp_slug
+    def _fake(ws, **kwargs):
+        captured.update(kwargs)
         return []
 
     monkeypatch.setattr("apps.sessions.api.list_sessions_in_workspace", _fake)
     resp = client.get(f"/api/w/{workspace.slug}/sessions?opp_slug=some-opp")
     assert resp.status_code == 200
     assert captured["opp_slug"] == "some-opp"
+
+
+@pytest.mark.django_db
+def test_list_sessions_review_filters_passed_through(member_client, monkeypatch):
+    """Every #706 review filter reaches the queryset builder, not just opp_slug."""
+    client, workspace, _ = member_client
+    captured: dict = {}
+
+    def _fake(ws, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr("apps.sessions.api.list_sessions_in_workspace", _fake)
+    resp = client.get(
+        f"/api/w/{workspace.slug}/sessions"
+        "?since=2026-08-01T00:00:00Z&source=upload&opp_run_id=20260801-1200"
+        "&status=imported&halted=true"
+    )
+    assert resp.status_code == 200
+    assert captured["since"] == "2026-08-01T00:00:00Z"
+    assert captured["source"] == "upload"
+    assert captured["opp_run_id"] == "20260801-1200"
+    assert captured["status"] == "imported"
+    assert captured["halted"] is True
 
 
 # ---------------------------------------------------------------------------

@@ -111,6 +111,12 @@ class SessionListOut(StrictModel):
     opp_display_name: str = ""
     opp_step_skill_display: str = ""
 
+    # True when this run died mid-flight — the same predicate
+    # GET /sessions/interrupted uses. Carried on the row so a reviewer can
+    # spot the interesting sessions without opening each transcript
+    # (dimagi-internal/ace-web#706).
+    is_interrupted: bool = False
+
 
 class SessionOut(SessionListOut):
     """Full session detail — includes inline message list.
