@@ -61,7 +61,15 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        from a July snapshot while a cold load — and every opp cached
 #        since — yields ``[idea-to-pdd-eval_verdict.yaml, idea-to-pdd.md]``.
 #        Same code, different cache age, different artifact list.
-_KEY_VERSION = "v8"
+#   v9 — RunSummary gained ``phase_states`` + ``has_error_phase`` (#727,
+#        #731). v8 entries deserialise into the NEW dataclass without those
+#        attributes, and ``asdict()`` in _serialize_card_runs_summary then
+#        raises AttributeError — which took /opps to a hard 500 in prod for
+#        every workspace with a warm cache. Shipped 2026-08-27; the bump is
+#        the fix, and `_serialize_card_runs_summary` was additionally made
+#        unable to 500 on a stale object, because a missed bump should
+#        degrade a card, not the page.
+_KEY_VERSION = "v9"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

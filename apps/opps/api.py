@@ -808,11 +808,21 @@ def _serialize_card_runs_summary(
     Carrying ~10 objects per run per opp here would be a few hundred KB of
     payload nothing renders. The workbench runs endpoint keeps the field.
     """
-    from dataclasses import asdict  # noqa: PLC0415
+    from dataclasses import fields as dataclass_fields  # noqa: PLC0415
 
     out: list[dict] = []
     for r in runs:
-        rich = asdict(r)
+        # NOT asdict(): this list is served from a Redis snapshot cache, so a
+        # RunSummary unpickled from an entry written before a field existed
+        # has no such attribute and asdict() raises AttributeError — which is
+        # exactly how adding `phase_states` took /opps to a hard 500 for every
+        # workspace with a warm cache. The cache version guards correctness;
+        # this guards AVAILABILITY, so a future missed bump degrades one card
+        # instead of the whole page.
+        rich = {
+            f.name: getattr(r, f.name, None)
+            for f in dataclass_fields(r)
+        }
         rich.pop("folder_id", None)
         rich.pop("phase_states", None)
         cur_display, cur_ord = phase_meta.get(r.current_phase or "", (None, None))
@@ -879,14 +889,15 @@ def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
 
     runs = list_opp_runs(drive, ace_root_folder_id=ace_folder_id, opp_slug=slug)
     out: list[dict] = []
-    from dataclasses import asdict
+    from dataclasses import fields as dataclass_fields
     phase_meta = _phase_display_index()
     skill_phase_index = _skill_display_index()
     for r in runs:
         # Dump the FULL RunSummary dataclass so the frontend gets
         # current_phase / phases_done / phases_total / last_actor_at /
-        # lifecycle_status / latest_phase_done etc.
-        rich = asdict(r)
+        # lifecycle_status / latest_phase_done etc. Read defensively rather
+        # than via asdict() — same reason as the card serializer above.
+        rich = {f.name: getattr(r, f.name, None) for f in dataclass_fields(r)}
         # KEEP folder_id: the cross-run strip deep-links each row straight to
         # its Drive run folder, which needs exactly this id. It was dropped
         # when nothing rendered it; the TS RunSummary now declares it.
