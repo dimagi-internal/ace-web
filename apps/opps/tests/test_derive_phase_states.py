@@ -44,18 +44,19 @@ def test_preserves_non_terminal_statuses_verbatim():
     ]
 
 
-def test_an_errored_phase_is_invisible_in_the_counts_but_visible_in_the_states():
-    """The exact reason this field exists.
+def test_an_errored_run_no_longer_claims_to_be_complete():
+    """An errored phase used to be indistinguishable from a clean run.
 
     `_PENDING_STATUSES` is {"pending", "", None}, so an `error` phase counts
     as NON-pending and lands in `phases_done`. A run that errored in phase 3
-    therefore reports 4/4 done and `lifecycle_status: complete` — indis-
-    tinguishable from a clean run by the counts alone. `phase_states` is the
-    only place the error survives.
+    of 4 therefore reported 4/4 done AND `lifecycle_status: complete` — the
+    badge said "complete" on a run that broke.
 
-    (Not changing the count semantics here: other callers read `phases_done`
-    and `lifecycle_status`, and re-classifying `error` as pending would flip
-    completed-looking historical runs. Worth a separate decision.)
+    The counts are deliberately unchanged (other callers read `phases_done`
+    as "how many phases got through", and reclassifying would flip
+    completed-looking historical runs). What changed: a run carrying a broken
+    phase may no longer CLAIM completion, and `has_error_phase` +
+    `phase_states` say exactly what happened and where.
     """
     prog = _derive_phase_progress({"phases": {
         "p1": {"status": "done"},
@@ -63,10 +64,39 @@ def test_an_errored_phase_is_invisible_in_the_counts_but_visible_in_the_states()
         "p3": {"status": "error"},
         "p4": {"status": "done"},
     }}, None)
-    assert prog["phases_done"] == 4
-    assert prog["status"] == "complete"
-    # ...yet the strip can still show exactly where it broke:
+    assert prog["phases_done"] == 4          # count semantics unchanged
+    assert prog["status"] != "complete"      # ...but the claim is gone
+    assert prog["has_error_phase"] is True
     assert prog["phase_states"][2] == {"ordinal": 3, "name": "p3", "status": "error"}
+
+
+def test_a_clean_run_still_reads_complete():
+    prog = _derive_phase_progress({"phases": {
+        "p1": {"status": "done"},
+        "p2": {"status": "complete"},
+    }}, None)
+    assert prog["status"] == "complete"
+    assert prog["has_error_phase"] is False
+
+
+def test_error_status_variants_are_recognised():
+    """The plugin emits variants, not a fixed set — `fail-avd-contended`,
+    `blocked-on-stale-mcp`. A prefix match catches them; a whitelist did not."""
+    for bad in ("error", "blocked", "failed", "fail-avd-contended", "blocked-on-stale-mcp"):
+        prog = _derive_phase_progress({"phases": {"p1": {"status": bad}}}, None)
+        assert prog["has_error_phase"] is True, bad
+        assert prog["status"] != "complete", bad
+
+
+def test_a_skipped_phase_is_not_an_error():
+    """`skipped` and `skipped-by-design` are deliberate, not broken."""
+    prog = _derive_phase_progress({"phases": {
+        "p1": {"status": "done"},
+        "p2": {"status": "skipped"},
+        "p3": {"status": "skipped-by-design"},
+    }}, None)
+    assert prog["has_error_phase"] is False
+    assert prog["status"] == "complete"
 
 
 def test_bare_step_map_phase_shape_b():

@@ -171,6 +171,10 @@ class RunSummary:
     # the cross-run strip's per-phase segments; a count alone cannot show a
     # run that errored mid-way and then recovered.
     phase_states: list[dict] = field(default_factory=list)
+    # True when any phase status reads as broken. Kept separate from the
+    # counts so `phases_done` semantics are unchanged for existing callers,
+    # while `lifecycle_status` stops claiming a broken run is complete.
+    has_error_phase: bool = False
 
 
 def list_opp_runs(
@@ -229,6 +233,25 @@ def list_opp_runs(
 # completed older run as "queued".
 _PENDING_STATUSES = frozenset({"pending", "", None})
 
+# Statuses that mean the phase BROKE. These are not pending (the phase did
+# run) and they were therefore counted as done — so a run that errored in
+# phase 3 of 4 reported 4/4 and `lifecycle_status: complete`, visually
+# identical to a clean run. The counts are left alone (other callers read
+# `phases_done` as "how many phases got through", and reclassifying would
+# flip completed-looking historical runs); what changes is that a run
+# carrying one of these may no longer CLAIM to be complete.
+_ERROR_STATUSES = frozenset({"error", "blocked", "failed", "fail"})
+
+
+def _is_error_status(value) -> bool:
+    """True iff a phase status reads as broken. Prefix-matched because the
+    plugin emits variants (`fail-avd-contended`, `blocked-on-stale-mcp`,
+    `partial-structural-blocker`) rather than a fixed set."""
+    if not isinstance(value, str):
+        return False
+    v = value.strip().lower()
+    return any(v == e or v.startswith(f"{e}-") or v.startswith(f"{e} ") for e in _ERROR_STATUSES)
+
 
 def _derive_phase_progress(
     state: dict, current_phase: str | None,
@@ -255,6 +278,7 @@ def _derive_phase_progress(
         # one segment per phase off this list. Derived inside the existing loop
         # below, so it costs no extra Drive read and no extra parse.
         "phase_states": [],
+        "has_error_phase": False,
     }
 
     phases = state.get("phases")
@@ -272,6 +296,7 @@ def _derive_phase_progress(
     latest_phase_done: str | None = None
     has_pending = False
     phase_states: list[dict] = []
+    has_error = False
 
     def _record(name: str, status: str) -> None:
         phase_states.append({
@@ -306,6 +331,8 @@ def _derive_phase_progress(
             # Keep the AUTHORED status verbatim rather than collapsing to
             # done/pending — `error`, `blocked`, `skipped` and `in_progress`
             # are the whole point of the per-phase strip.
+            if _is_error_status(explicit_status):
+                has_error = True
             _record(phase_name, str(explicit_status))
             continue
 
@@ -341,7 +368,14 @@ def _derive_phase_progress(
     result["latest_phase_done"] = latest_phase_done
     result["phase_states"] = phase_states
 
-    if phases_total > 0 and not has_pending:
+    result["has_error_phase"] = has_error
+
+    # A run carrying a broken phase is NOT complete, whatever the counts say.
+    # It is also not really "in progress" — it stopped — but the two-state
+    # model is deliberate and widening the enum would break every consumer
+    # switching on it. `has_error_phase` carries the distinction instead, and
+    # `phase_states` says exactly which phase broke.
+    if phases_total > 0 and not has_pending and not has_error:
         result["status"] = "complete"
     else:
         result["status"] = "in_progress"

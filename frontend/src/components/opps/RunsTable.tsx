@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronRight, ExternalLink } from "lucide-react";
 
 import type { RunSummary } from "@/api/types.ws";
+import { RunExecutionBadge } from "@/components/opps/RunExecutionBadge";
 import { relativeTime } from "@/lib/relativeTime";
 
 /** Terminal-ish phase statuses, mapped to the four colours the track uses.
@@ -86,8 +87,6 @@ export function RunsTable({
         const states = r.phase_states ?? [];
         const isOpen = expanded === r.run_id;
         const isSel = selectedRunId === r.run_id;
-        const stepLabel = r.current_step_display ?? r.current_step;
-        const doneLabel = r.latest_phase_done_display ?? r.latest_phase_done;
         const href = `/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}?run_id=${encodeURIComponent(r.run_id)}`;
 
         return (
@@ -133,21 +132,18 @@ export function RunsTable({
               </div>
 
               <div className="truncate font-mono text-[10px] text-muted-foreground">
-                {stepLabel ? (
-                  <span className="text-foreground">{stepLabel}</span>
-                ) : doneLabel ? (
-                  <span className="text-foreground">{doneLabel}</span>
-                ) : (
-                  <span>no step recorded</span>
-                )}
-                {r.phases_total ? (
-                  <span className="text-muted-foreground/70">
-                    {" "}· {r.phases_done ?? 0}/{r.phases_total}
-                  </span>
-                ) : null}
+                <LastStep run={r} />
               </div>
 
               <div className="truncate text-[10px] text-muted-foreground">
+                {r.has_error_phase && (
+                  <span
+                    className="mr-1 font-medium text-destructive"
+                    title="A phase in this run recorded an error — it is not a clean completion"
+                  >
+                    ⚠
+                  </span>
+                )}
                 {r.last_actor_at ? relativeTime(r.last_actor_at) : "—"}
               </div>
 
@@ -224,4 +220,53 @@ export function RunsTable({
       })}
     </div>
   );
+}
+
+/**
+ * What the run last did — cursor, else last completed phase, else the reason
+ * it has done nothing.
+ *
+ * The final branch is load-bearing and easy to lose in a refactor: a run
+ * whose canopy turn NO RUNNER CAN CLAIM used to render identically to one
+ * about to start. With no session-capable runner online that is the normal
+ * day-one state, not an error, and "queued" is a lie about it.
+ */
+function LastStep({ run }: { run: RunSummary }) {
+  // A live cursor wins: phase, then step. Showing the step alone loses the
+  // phase name, which is what a reader scans for.
+  const phaseLabel = run.current_phase_display ?? run.current_phase;
+  const stepLabel = run.current_step_display ?? run.current_step;
+  if (phaseLabel || stepLabel) {
+    return (
+      <span
+        title={`current_phase: ${run.current_phase ?? "—"}\ncurrent_step: ${run.current_step ?? "—"}`}
+      >
+        <span className="text-foreground">{phaseLabel ?? stepLabel}</span>
+        {phaseLabel && stepLabel && (
+          <span className="text-muted-foreground/70"> · {stepLabel}</span>
+        )}
+      </span>
+    );
+  }
+
+  const done = run.phases_done ?? 0;
+  const total = run.phases_total ?? 0;
+  const doneLabel = run.latest_phase_done_display ?? run.latest_phase_done;
+  if (done > 0 && doneLabel) {
+    return (
+      <span title={`Last completed phase: ${run.latest_phase_done}`}>
+        <span className="text-foreground">{doneLabel}</span>
+        {total > 0 && (
+          <span className="text-muted-foreground/70">
+            {" "}· {done}/{total}
+          </span>
+        )}
+      </span>
+    );
+  }
+
+  if (run.execution && run.execution.state !== "not_dispatched") {
+    return <RunExecutionBadge state={run.execution.state} detail={run.execution.detail} />;
+  }
+  return <span>queued</span>;
 }

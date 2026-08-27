@@ -63,7 +63,10 @@ describe("RunsTable", () => {
     );
     // 4 phases_total -> 4 segments, all 'not recorded'
     expect(container.querySelectorAll('[title="phase 1 — not recorded"]').length).toBe(1);
-    expect(screen.getByText(/no step recorded/)).toBeInTheDocument();
+    // No cursor, nothing done, never dispatched -> "queued", which is the
+    // honest label. (A run no runner can CLAIM says so instead; see
+    // OppRunsList's execution-state tests.)
+    expect(screen.getByText(/queued/)).toBeInTheDocument();
   });
 
   it("prefers the live step label over the last-done phase", () => {

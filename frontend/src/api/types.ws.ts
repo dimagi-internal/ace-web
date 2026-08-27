@@ -356,6 +356,10 @@ export interface RunSummary {
   phase_states?: { ordinal: number; name: string; status: string }[];
   /** Drive folder id for this run. Lets a row deep-link to the run folder. */
   folder_id?: string | null;
+  /** True when any phase status reads as broken. An errored phase counts as
+   * non-pending server-side and so lands in `phases_done` — this is what
+   * stops such a run rendering as a clean completion. */
+  has_error_phase?: boolean;
   /** Where this run's execution stands on canopy's harness, or null when the
    * run was never dispatched there (legacy/local execution). See
    * `src/canopy/runState.ts`. */
