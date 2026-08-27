@@ -22,7 +22,7 @@ from apps.opps import snapshot_cache
 
 def test_key_version_is_pinned():
     """Change this deliberately, and add a ledger line saying why."""
-    assert snapshot_cache._KEY_VERSION == "v8"
+    assert snapshot_cache._KEY_VERSION == "v9"
 
 
 def test_every_cache_key_carries_the_version():
