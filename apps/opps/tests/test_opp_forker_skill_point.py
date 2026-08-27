@@ -286,7 +286,7 @@ def test_count_matches_copy_on_a_skill_fork(monkeypatch):
         now=dt.datetime(2026, 6, 1, 12, 0, tzinfo=dt.UTC),
     )
     done = [e for e in seen if e.get("status") == "done"][-1]
-    assert done["total"] == done["copied"] == len(copied)
+    assert done["files_total"] == done["files_copied"] == len(copied)
 
 
 def test_forkpoint_is_hashable_and_frozen():

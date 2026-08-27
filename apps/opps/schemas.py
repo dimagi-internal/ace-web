@@ -244,10 +244,28 @@ ForkStatus = Literal["unknown", "counting", "copying", "finalizing", "done", "er
 
 
 class ForkProgress(StrictModel):
+    """Progress for an in-flight fork, as ``GET .../fork/status`` serves it.
+
+    This is the ONLY shape ``apps.opps.opp_forker`` may emit through its
+    ``progress_cb``. Before ace-web#734 the forker emitted ``copied`` /
+    ``total`` / ``current`` / ``opp_slug`` instead, which this strict
+    model rejects — so the status endpoint could never report anything
+    but ``unknown`` while a fork was actively copying, and a caller whose
+    POST hung had no way to learn which run had been created. Keep the
+    producer and this model in lockstep; ``test_fork_run_state_first.py``
+    validates every emitted payload against it.
+
+    ``new_run_id`` is populated from the moment the run folder is minted,
+    not just on ``done`` — recovering it is the whole point of polling.
+    """
+
     status: ForkStatus
     progress: Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
     files_total: int | None = None
     files_copied: int | None = None
+    #: Path of the artifact currently being copied, for the UI's
+    #: under-the-bar caption. Purely cosmetic.
+    current: str | None = None
     error: str | None = None
     new_slug: str | None = None
     new_run_id: RunId | None = None
