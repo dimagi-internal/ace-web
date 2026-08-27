@@ -125,13 +125,27 @@ def _ts_to_json_array(text: str) -> str:
     # Strip multi-line comments
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
 
-    # Convert single-quoted TS string literals to JSON double-quoted strings.
-    # The previous implementation did a global ``"'".replace`` which silently
-    # broke entries whose single-quoted descriptions contained literal
-    # double-quotes used as English quotation (e.g. `description: 'The "what
-    # shipped" doc.'`) — after the swap, the internal `"` terminated the
-    # string mid-flight and the entire array failed to JSON-parse.
-    text = re.sub(r"'((?:\\.|[^'\\])*)'", _ts_single_quoted_to_json, text)
+    # Normalize TS string literals to JSON double-quoted strings.
+    #
+    # BOTH quote styles are matched in ONE left-to-right pass, and that is
+    # load-bearing rather than tidiness. TypeScript allows either, and manifest
+    # authors switch to double quotes exactly when the text contains an
+    # apostrophe (`description: "... Phase 6\'s pre-flight ..."`). A pass that
+    # only knew single quotes would not consume that literal, so the apostrophe
+    # inside it opened a bogus string that ran on to the next `\'` somewhere
+    # further down the file — swallowing the real `"` delimiters in between and
+    # corrupting every entry after it. One double-quoted description with an
+    # apostrophe took the whole 155-entry manifest to zero
+    # (dimagi-internal/ace-web#732).
+    #
+    # An alternation consumes each literal atomically, so quotes of one style
+    # sitting inside a literal of the other are just characters.
+    #
+    # An earlier implementation did a global ``"'".replace`` which broke the
+    # mirror-image case: single-quoted descriptions containing literal
+    # double-quotes used as English quotation (`description: 'The "what
+    # shipped" doc.'`). Both directions are covered by tests.
+    text = _TS_STRING_RE.sub(_ts_string_to_json, text)
 
     # Add quotes to bare keys: `  skillSlug:` → `  "skillSlug":`
     # Only match keys right after `{` or `,` (object-property syntax) so that
@@ -147,13 +161,19 @@ def _ts_to_json_array(text: str) -> str:
     return text
 
 
-def _ts_single_quoted_to_json(m: re.Match[str]) -> str:
-    """Re-escape the body of a TS single-quoted string literal as JSON.
+# A TS string literal of either style, matched atomically. Order inside the
+# alternation doesn't matter (the styles can't overlap); what matters is that
+# both are in the SAME pass — see _ts_to_json_array.
+_TS_STRING_RE = re.compile(r"'((?:\\.|[^'\\])*)'" r'|"((?:\\.|[^"\\])*)"')
+
+
+def _ts_string_to_json(m: re.Match[str]) -> str:
+    """Re-escape the body of a TS string literal (either quote style) as JSON.
 
     Resolves TS-source escape sequences first (`\\'` → `'`, `\\"` → `"`),
     then escapes JSON-unsafe chars in the body (`\\`, `"`, control chars).
     """
-    inner = m.group(1)
+    inner = m.group(1) if m.group(1) is not None else m.group(2)
     # TS escapes inside the captured body
     inner = inner.replace("\\'", "'").replace('\\"', '"')
     # JSON escapes — order matters; backslash first

@@ -199,6 +199,102 @@ class TestParseArtifactManifest:
         assert result[0]["produced_by"] == "closeout"
         assert '"what shipped"' in result[0]["description"]
 
+    def test_double_quoted_description_with_apostrophe(self):
+        """Regression (ace-web#732): a DOUBLE-quoted TS description containing
+        an apostrophe must not corrupt the entries that follow it.
+
+        Manifest authors switch to double quotes exactly when the text has an
+        apostrophe. A parser that only pairs single quotes doesn't consume that
+        literal, so the apostrophe opens a bogus string that runs on to the
+        next `'` further down — swallowing the real `"` delimiters in between.
+        One such entry took the real 155-entry manifest to ZERO parsed entries.
+
+        Hermetic on purpose: the real-manifest test below skips wherever the
+        plugin checkout is absent, which is every CI runner, which is why this
+        shipped unnoticed.
+        """
+        ts = '''
+export const ARTIFACT_MANIFEST: readonly ArtifactEntry[] = [
+  {
+    path: "3-commcare/recipes/journey-learn.yaml",
+    producedBy: 'app-test-cases',
+    consumedBy: ['app-screenshot-capture'],
+    phase: 'commcare',
+    required: true,
+    description: "Learn-app smoke recipe. Phase 6's pre-flight hard-halts without it.",
+  },
+  {
+    path: 'run_state.yaml',
+    producedBy: 'ace-orchestrator',
+    consumedBy: ['ace-orchestrator'],
+    phase: 'design',
+    required: true,
+    description: 'Canonical run state.',
+  },
+] as const;
+'''
+        result = parse_artifact_manifest(ts)
+        # The entry AFTER the apostrophe one is what regressed.
+        assert len(result) == 2
+        assert result[0]["path"] == "3-commcare/recipes/journey-learn.yaml"
+        assert "Phase 6's pre-flight" in result[0]["description"]
+        assert result[1]["path"] == "run_state.yaml"
+
+    def test_mixed_quote_styles_in_one_array(self):
+        """Both directions in the same array: a single-quoted value carrying
+        double-quotes, and a double-quoted value carrying an apostrophe."""
+        ts = '''
+export const ARTIFACT_MANIFEST: readonly ArtifactEntry[] = [
+  {
+    path: 'a.md',
+    producedBy: 'skill-a',
+    consumedBy: [],
+    phase: 'design',
+    required: true,
+    description: 'The "what shipped" doc.',
+  },
+  {
+    path: "b.md",
+    producedBy: "skill-b",
+    consumedBy: [],
+    phase: 'design',
+    required: false,
+    description: "Skill B's output.",
+  },
+  {
+    path: 'c.md',
+    producedBy: 'skill-c',
+    consumedBy: [],
+    phase: 'design',
+    required: true,
+    description: 'Plain.',
+  },
+] as const;
+'''
+        result = parse_artifact_manifest(ts)
+        assert [e["path"] for e in result] == ["a.md", "b.md", "c.md"]
+        assert '"what shipped"' in result[0]["description"]
+        assert "Skill B's output." == result[1]["description"]
+
+    def test_escaped_apostrophe_in_single_quoted_value(self):
+        """A TS-escaped apostrophe inside a single-quoted literal resolves to a
+        bare apostrophe, not to a quote character."""
+        ts = '''
+export const ARTIFACT_MANIFEST: readonly ArtifactEntry[] = [
+  {
+    path: 'a.md',
+    producedBy: 'skill-a',
+    consumedBy: [],
+    phase: 'design',
+    required: true,
+    description: 'Phase 6\\'s pre-flight.',
+  },
+] as const;
+'''
+        result = parse_artifact_manifest(ts)
+        assert len(result) == 1
+        assert result[0]["description"] == "Phase 6's pre-flight."
+
     def test_real_ace_plugin_manifest_parses(self):
         """Regression: the real artifact-manifest.ts from the ACE plugin must parse."""
         import os
@@ -218,7 +314,7 @@ class TestParseArtifactManifest:
         # Internal-quote regression: the closeout entry's description embeds
         # double-quote characters used as English quotation marks. The naive
         # 0.12 parser silently dropped the entire array on this; current
-        # parser handles it via _ts_single_quoted_to_json.
+        # parser handles it via _ts_string_to_json.
         closeout = next(
             (
                 e for e in result
