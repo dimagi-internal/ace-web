@@ -1301,6 +1301,86 @@
               "type": "boolean"
             },
             "required": false
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "opp_run_id",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Opp Run Id"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "halted",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Halted"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -1315,6 +1395,7 @@
             }
           }
         },
+        "description": "List sessions, newest-updated first.\n\n`since` / `source` / `opp_run_id` / `status` / `halted` let a recurring\nreviewer sweep only what changed instead of pulling the whole corpus \u2014\nsee `list_sessions_in_workspace` for the exact semantics of each, and\nfor why `since` is inclusive and the ordering carries an id tiebreaker.",
         "tags": [
           "sessions"
         ],
@@ -6851,6 +6932,11 @@
             "default": "",
             "title": "Opp Step Skill Display",
             "type": "string"
+          },
+          "is_interrupted": {
+            "default": false,
+            "title": "Is Interrupted",
+            "type": "boolean"
           }
         },
         "required": [

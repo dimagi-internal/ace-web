@@ -1,6 +1,7 @@
 """Django Ninja v2 router for the sessions surface."""
 from __future__ import annotations
 
+import datetime as dt
 import logging
 from typing import Annotated
 
@@ -29,11 +30,15 @@ router = Router(auth=session_auth, tags=["sessions"])
 # ---------------------------------------------------------------------------
 
 
-def _session_to_list_dict(session) -> dict:
+def _session_to_list_dict(session, *, interrupted_ids: set | None = None) -> dict:
     """Map a Session ORM instance to a SessionListOut-compatible dict.
 
     Respects the ``first_user_plaintext`` and ``opp_display_name_annotated``
     annotations added by the list queryset.
+
+    ``interrupted_ids`` lets the list path resolve ``is_interrupted`` for a
+    whole page with one query instead of one per row; single-session callers
+    omit it and pay for a targeted existence check.
     """
     from apps.sessions.serializers import _truncate_preview
 
@@ -96,7 +101,25 @@ def _session_to_list_dict(session) -> dict:
         "opp_step_skill": session.opp_step_skill or "",
         "opp_display_name": opp_display_name,
         "opp_step_skill_display": opp_step_skill_display,
+        "is_interrupted": _is_interrupted(session, interrupted_ids),
     }
+
+
+def _is_interrupted(session, interrupted_ids: set | None) -> bool:
+    """Whether this run died mid-flight (see ``Session.interrupted``).
+
+    This is the one "why is this row interesting?" signal ace-web can compute
+    from its OWN data. It is deliberately not a `halt_cause` read out of
+    `run_state.yaml`: that file carries no halt-reason field (ace-web models
+    a run as in_progress | complete — see `apps/opps/sync.py:150-163`), and
+    mirroring Drive state into Postgres is not how this codebase reads opp
+    state.
+    """
+    from apps.sessions.models import Session
+
+    if interrupted_ids is not None:
+        return session.pk in interrupted_ids
+    return Session.interrupted().filter(pk=session.pk).exists()
 
 
 def _session_to_detail_dict(session) -> dict:
@@ -142,10 +165,72 @@ def _load_session_in_workspace(slug: str, workspace) -> object | None:
 # ---------------------------------------------------------------------------
 
 
+def _parse_since(raw: str) -> dt.datetime:
+    """Parse the `since` cursor value, or raise a 422 problem.
+
+    Accepts anything `datetime.fromisoformat` takes, including a trailing
+    `Z`. A naive value is interpreted in the current timezone so a caller
+    that omits the offset still gets a sane window rather than a silent
+    UTC-vs-local skew.
+    """
+    from django.utils import timezone
+
+    try:
+        parsed = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as e:
+        raise ProblemError(
+            422,
+            f"`since` must be an ISO 8601 datetime, got {raw!r}",
+            type_=TYPE_VALIDATION,
+        ) from e
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed)
+    return parsed
+
+
+def _validate_choice(value: str, field: str, allowed: tuple[str, ...]) -> str:
+    if value not in allowed:
+        raise ProblemError(
+            422,
+            f"`{field}` must be one of {', '.join(allowed)}; got {value!r}",
+            type_=TYPE_VALIDATION,
+        )
+    return value
+
+
 def list_sessions_in_workspace(
-    workspace, *, opp_slug: str | None, archived: bool
+    workspace,
+    *,
+    opp_slug: str | None,
+    archived: bool,
+    since: str | None = None,
+    source: str | None = None,
+    opp_run_id: str | None = None,
+    status: str | None = None,
+    halted: bool | None = None,
 ) -> list[dict]:
     """Return session dicts for this workspace, optionally filtered.
+
+    Filters exist so a recurring reviewer can sweep the corpus server-side
+    instead of pulling every session and filtering in the client
+    (dimagi-internal/ace-web#706):
+
+    * ``since``      — ISO 8601; keeps rows with ``updated_at >= since``.
+      INCLUSIVE on purpose: a caller advancing a cursor to the newest
+      ``updated_at`` it saw re-reads the boundary rows rather than risking
+      a row that shares that timestamp being skipped. Re-reading is cheap;
+      a silently missed session is not.
+    * ``source``     — ``web`` | ``upload``.
+    * ``opp_run_id`` — exact match, to scope a sweep to one run.
+    * ``status``     — exact match. When given it REPLACES the ``archived``
+      toggle, so `?status=archived` and `?archived=true` mean the same
+      thing and `?status=active` isn't silently intersected.
+    * ``halted``     — ``true`` keeps only runs that died mid-flight
+      (``Session.interrupted``), ``false`` keeps only those that didn't.
+
+    Ordering is ``(-updated_at, -id)``. The id tiebreaker is what makes the
+    cursor stable: without it, rows sharing an ``updated_at`` can reorder
+    between requests and a paging reviewer both repeats and skips rows.
 
     The monkeypatch target in contract tests is this module-level function.
     """
@@ -157,10 +242,29 @@ def list_sessions_in_workspace(
     qs = Session.objects.filter(workspace=workspace)
     if opp_slug:
         qs = qs.filter(opp_slug=opp_slug)
-    if archived:
+    if status is not None:
+        qs = qs.filter(
+            status=_validate_choice(
+                status, "status", tuple(c[0] for c in Session.STATUS_CHOICES)
+            )
+        )
+    elif archived:
         qs = qs.filter(status="archived")
     else:
         qs = qs.exclude(status="archived")
+    if since is not None:
+        qs = qs.filter(updated_at__gte=_parse_since(since))
+    if source is not None:
+        qs = qs.filter(
+            source=_validate_choice(
+                source, "source", tuple(c[0] for c in Session.SOURCE_CHOICES)
+            )
+        )
+    if opp_run_id:
+        qs = qs.filter(opp_run_id=opp_run_id)
+    if halted is not None:
+        halted_pks = Session.interrupted().values("pk")
+        qs = qs.filter(pk__in=halted_pks) if halted else qs.exclude(pk__in=halted_pks)
 
     first_user_msg = (
         Message.objects.filter(session=OuterRef("pk"), role="user")
@@ -177,9 +281,16 @@ def list_sessions_in_workspace(
     qs = qs.annotate(
         first_user_plaintext=Subquery(first_user_msg),
         opp_display_name_annotated=Subquery(matching_opp),
-    ).order_by("-updated_at")
+    ).order_by("-updated_at", "-id")
 
-    return [_session_to_list_dict(s) for s in qs]
+    rows = list(qs)
+    # One query for the whole page instead of one per row.
+    interrupted_ids = set(
+        Session.interrupted()
+        .filter(pk__in=[s.pk for s in rows])
+        .values_list("pk", flat=True)
+    )
+    return [_session_to_list_dict(s, interrupted_ids=interrupted_ids) for s in rows]
 
 
 @router.get(
@@ -195,9 +306,30 @@ def list_sessions(
     limit: int = 50,
     opp_slug: str | None = None,
     archived: bool = False,
+    since: str | None = None,
+    source: str | None = None,
+    opp_run_id: str | None = None,
+    status: str | None = None,
+    halted: bool | None = None,
 ) -> Page[SessionListOut]:
+    """List sessions, newest-updated first.
+
+    `since` / `source` / `opp_run_id` / `status` / `halted` let a recurring
+    reviewer sweep only what changed instead of pulling the whole corpus —
+    see `list_sessions_in_workspace` for the exact semantics of each, and
+    for why `since` is inclusive and the ordering carries an id tiebreaker.
+    """
     workspace = resolve_workspace_for_member(request, workspace_slug)
-    sessions = list_sessions_in_workspace(workspace, opp_slug=opp_slug, archived=archived)
+    sessions = list_sessions_in_workspace(
+        workspace,
+        opp_slug=opp_slug,
+        archived=archived,
+        since=since,
+        source=source,
+        opp_run_id=opp_run_id,
+        status=status,
+        halted=halted,
+    )
     return paginate(
         [SessionListOut.model_validate(s) for s in sessions],
         offset=offset,
