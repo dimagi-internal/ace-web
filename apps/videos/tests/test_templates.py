@@ -175,6 +175,93 @@ def test_seed_templates_is_idempotent(fake_drive_ws):
     assert templates.seed_templates(fake_drive_ws.workspace) == 0
 
 
+def _drop_template_file(fake_ws, template_id: str, name: str) -> None:
+    """Delete one file out of a seeded Drive kit, leaving the kit folder.
+
+    Reproduces the ace-web#679 state: the kit exists, one of its three files
+    does not.
+    """
+    path = f"workspace-root/videos/_templates/{template_id}/{name}"
+    fake_ws.client.trash_folder(fake_ws.client.file_id(path))
+
+
+def test_seed_templates_backfills_a_missing_file_in_an_existing_kit(fake_drive_ws):
+    """Regression (ace-web#679): a kit whose folder exists but is missing
+    example.spec.yaml gets that one file restored.
+
+    The old per-kit skip made this unrepairable — the folder was present, so
+    seeding skipped the kit and the missing file 404'd forever.
+    """
+    from apps.videos import service
+
+    templates.seed_templates(fake_drive_ws.workspace)
+    layout, client = service.layout_for(fake_drive_ws.workspace)
+
+    _drop_template_file(fake_drive_ws, "120s-program-demo", "example.spec.yaml")
+    assert drive.read_template_file(
+        layout, client, "120s-program-demo", "example.spec.yaml"
+    ) is None
+
+    assert templates.seed_templates(fake_drive_ws.workspace) == 1
+
+    restored = drive.read_template_file(
+        layout, client, "120s-program-demo", "example.spec.yaml"
+    )
+    assert restored is not None
+    assert restored.strip()
+
+
+def test_seed_templates_backfill_leaves_edited_files_alone(fake_drive_ws):
+    """Backfill must not overwrite a kit file that was edited through the UI —
+    Drive is the source of truth for an existing file."""
+    from apps.videos import service
+
+    templates.seed_templates(fake_drive_ws.workspace)
+    layout, client = service.layout_for(fake_drive_ws.workspace)
+
+    drive.write_template_file(
+        layout, client, "120s-program-demo", "prompt.md", "EDITED BY A HUMAN"
+    )
+    _drop_template_file(fake_drive_ws, "120s-program-demo", "example.spec.yaml")
+
+    templates.seed_templates(fake_drive_ws.workspace)
+
+    assert drive.read_template_file(
+        layout, client, "120s-program-demo", "prompt.md"
+    ) == "EDITED BY A HUMAN"
+    assert drive.read_template_file(
+        layout, client, "120s-program-demo", "example.spec.yaml"
+    ) is not None
+
+
+def test_seed_templates_backfill_counts_only_repaired_kits(fake_drive_ws):
+    """The return value counts kits created or repaired — untouched kits
+    don't inflate it."""
+    templates.seed_templates(fake_drive_ws.workspace)
+    _drop_template_file(fake_drive_ws, "120s-program-demo", "example.spec.yaml")
+    _drop_template_file(fake_drive_ws, "60s-campaign-overview", "example.spec.yaml")
+
+    assert templates.seed_templates(fake_drive_ws.workspace) == 2
+    assert templates.seed_templates(fake_drive_ws.workspace) == 0
+
+
+def test_template_file_exists_is_metadata_only(fake_drive_ws):
+    """drive.template_file_exists reports presence without reading a body."""
+    from apps.videos import service
+
+    templates.seed_templates(fake_drive_ws.workspace)
+    layout, client = service.layout_for(fake_drive_ws.workspace)
+
+    assert drive.template_file_exists(
+        layout, client, "120s-program-demo", "example.spec.yaml"
+    )
+    _drop_template_file(fake_drive_ws, "120s-program-demo", "example.spec.yaml")
+    assert not drive.template_file_exists(
+        layout, client, "120s-program-demo", "example.spec.yaml"
+    )
+    assert not drive.template_file_exists(layout, client, "no-such-kit", "meta.yaml")
+
+
 # ---------------------------------------------------------------------------
 # T3: Drive-backed read-through + cache + lazy auto-seed
 # ---------------------------------------------------------------------------

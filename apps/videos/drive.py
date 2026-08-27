@@ -292,6 +292,20 @@ def read_template_file(
     return client.get_content(meta.id, "text/plain").content
 
 
+def template_file_exists(
+    layout: DriveLayout, client: DriveClient, template_id: str, name: str
+) -> bool:
+    """True when `videos/_templates/<template_id>/<name>` exists in Drive.
+
+    Metadata-only — unlike ``read_template_file`` this never downloads the
+    file body, so a seeder can check a whole kit cheaply.
+    """
+    folder = _template_folder_id(layout, client, template_id)
+    if folder is None:
+        return False
+    return _find_child(client, folder, name) is not None
+
+
 def write_template_file(
     layout: DriveLayout, client: DriveClient, template_id: str, name: str, content: str,
 ) -> str:

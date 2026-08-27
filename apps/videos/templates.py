@@ -297,8 +297,20 @@ _FILE_MAP: dict[str, str] = {
 
 def seed_templates(workspace) -> int:
     """Upload the repo template tree to this workspace's Drive _templates/,
-    renaming files per _FILE_MAP. Idempotent: skip template ids already
-    present in Drive. Returns the number of templates seeded.
+    renaming files per _FILE_MAP.
+
+    Idempotent, and **per file rather than per kit**: a template folder that
+    already exists in Drive but is missing one of its three files gets the
+    missing file backfilled. The old per-kit skip meant a partially-seeded kit
+    could never be repaired — the kit folder existed, so seeding skipped it
+    forever, and every read of the absent file 404'd (dimagi-internal/ace-web#679:
+    `120s-program-demo` and `60s-campaign-overview` were missing
+    example.spec.yaml, so the template editor could not mount a BeatEditor for
+    them). Existing files are never overwritten: Drive is the source of truth
+    for a kit that has been edited through the UI.
+
+    Returns the number of templates that were created *or repaired*; a fully
+    seeded workspace returns 0.
     """
     from apps.videos import drive, service  # lazy to avoid circular imports
 
@@ -313,17 +325,25 @@ def seed_templates(workspace) -> int:
     for entry in sorted(root.iterdir()):
         if not entry.is_dir() or not is_valid_template_id(entry.name):
             continue
-        if entry.name in existing_ids:
-            continue
-        # Upload each file in the _FILE_MAP that is present on disk.
+        is_new = entry.name not in existing_ids
+        wrote = False
+        # Upload each file in the _FILE_MAP that is present on disk and
+        # absent from Drive.
         for repo_name, drive_name in _FILE_MAP.items():
             src = entry / repo_name
             if not src.exists():
                 continue
+            # A brand-new kit has no folder yet, so skip the existence probe.
+            if not is_new and drive.template_file_exists(
+                layout, client, entry.name, drive_name
+            ):
+                continue
             drive.write_template_file(
                 layout, client, entry.name, drive_name, src.read_text(encoding="utf-8")
             )
-        seeded += 1
+            wrote = True
+        if wrote:
+            seeded += 1
 
     return seeded
 
