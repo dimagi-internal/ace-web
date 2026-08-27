@@ -1256,6 +1256,38 @@ def download_artifact(
 # ---------------------------------------------------------------------------
 
 
+def _write_fork_progress(workspace, slug: str, source_run_id: str):
+    """Build the ``progress_cb`` the forker reports through.
+
+    Writes each payload under TWO keys: the fork's own
+    ``(slug, source_run_id)`` key and the per-opp ``_latest`` alias.
+    A poll that omits ``?source_run_id=`` reads the alias, and before
+    ace-web#734 that meant a fork started WITH a source run-id was
+    invisible to it — seven consecutive polls returned ``status:
+    unknown`` while folders were visibly landing in Drive, which is
+    exactly the signal that invites a retry and a second partial fork.
+
+    The alias is per-opp, so a second fork of the same opp overwrites
+    it. That's the intended reading of "latest": one fork per opp is
+    in flight at a time, and the alias answers "what is happening to
+    this opp right now?".
+    """
+    from django.core.cache import cache
+
+    from apps.opps.views_write import _FORK_PROGRESS_TTL, _fork_progress_key
+
+    keys = {
+        _fork_progress_key(workspace, slug, source_run_id),
+        _fork_progress_key(workspace, slug, ""),
+    }
+
+    def _write(payload: dict) -> None:
+        for key in keys:
+            cache.set(key, payload, timeout=_FORK_PROGRESS_TTL)
+
+    return _write
+
+
 def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
     """Fork a run in this opp. Returns OppForkOut-compatible dict.
 
@@ -1263,12 +1295,9 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
     expected error cases (callers map to 400/404/409).
     The monkeypatch target in contract tests is this module-level function.
     """
-    from django.core.cache import cache
-
     from apps.opps import access
     from apps.opps.drive_client import get_drive_client
     from apps.opps.opp_forker import fork_opp
-    from apps.opps.views_write import _FORK_PROGRESS_TTL, _fork_progress_key
     from apps.service_accounts.exceptions import ServiceAccountNotFound
 
     ace_folder_id = access.resolve_ace_root_folder_id(workspace)
@@ -1283,10 +1312,7 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
         ) from exc
 
     source_run_id = body.source_run_id or None
-    progress_key = _fork_progress_key(workspace, slug, source_run_id or "")
-
-    def _write_progress(payload: dict) -> None:
-        cache.set(progress_key, payload, timeout=_FORK_PROGRESS_TTL)
+    write_progress = _write_fork_progress(workspace, slug, source_run_id or "")
 
     result = fork_opp(
         drive=drive,
@@ -1297,7 +1323,7 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
         fork_at_skill=body.fork_at_skill,
         source_run_id=source_run_id,
         workspace=workspace,
-        progress_cb=_write_progress,
+        progress_cb=write_progress,
         edits=[e.model_dump() for e in body.edits] if body.edits else None,
         mode=body.mode,
         feedback=body.feedback,
@@ -1316,13 +1342,30 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/{slug}/fork", summary="Fork opp run")
+@router.post("/{slug}/fork", summary="Fork opp run (blocking)")
 def fork_opp_endpoint(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
     body: OppForkIn,
 ) -> HttpResponse:
+    """Mint a new run seeded from a prior run's upstream artifacts.
+
+    **This endpoint BLOCKS for the whole Drive copy** — one
+    ``copy_file`` per artifact at ~150 ms each, so a large run takes
+    minutes and can exceed a client or proxy read timeout. It is not
+    fire-and-forget, and the 201 is the only place the new run-id
+    appears in the response.
+
+    A caller that can't hold the connection (or whose POST times out)
+    must NOT retry — a retry mints a *second* run and copies everything
+    again. Poll ``GET .../fork/status`` instead: it reports
+    ``new_run_id`` from the moment the run folder is created, then
+    ``done`` or ``error`` when the fork settles. The run folder carries
+    a valid ``run_state.yaml`` before the first artifact is copied, so
+    even an interrupted fork yields a run that ``/ace:run
+    <opp>/<run-id>`` can resume (ace-web#734).
+    """
     from apps.opps.opp_forker import ForkOppError
 
     workspace = resolve_workspace_for_member(request, workspace_slug)
@@ -1425,6 +1468,15 @@ def fork_status(
     slug: Annotated[str, Path()],
     source_run_id: str = "",
 ) -> ForkProgress:
+    """Progress of the in-flight fork on this opp.
+
+    ``source_run_id`` is optional: omit it and you get whichever fork of
+    this opp reported most recently, which is what a caller recovering
+    from a hung POST wants. ``status: unknown`` means genuinely nothing
+    has reported (no fork started, or its 10-minute cache entry expired)
+    — it is NOT the answer while a fork is copying. See
+    ``_write_fork_progress`` and ace-web#734.
+    """
     from django.core.cache import cache
 
     from apps.opps.views_write import _fork_progress_key

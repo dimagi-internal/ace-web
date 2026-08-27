@@ -237,14 +237,11 @@ function ForkProgressView({
   progress: ForkProgress | null;
   slow: boolean;
 }) {
-  const copied =
-    progress && (progress.status === "copying" || progress.status === "done")
-      ? progress.copied
-      : 0;
-  const total =
-    progress && (progress.status === "copying" || progress.status === "done")
-      ? progress.total
-      : 0;
+  // ForkProgress is a flat record now (it mirrors the backend schema —
+  // see ace-web#734), so the counts are read the same way whatever the
+  // status is; only the LABEL branches.
+  const copied = progress?.files_copied ?? 0;
+  const total = progress?.files_total ?? 0;
   const pct = total > 0 ? Math.min(100, Math.round((copied / total) * 100)) : 0;
   const current =
     progress && progress.status === "copying" ? progress.current : "";
@@ -260,6 +257,14 @@ function ForkProgressView({
     label = "Finalizing fork…";
   } else if (progress.status === "done") {
     label = `Copied ${copied} of ${total} files. Opening run ${progress.new_run_id}…`;
+  } else if (progress.status === "error") {
+    // The fork left a run folder behind. It carries a valid
+    // run_state.yaml (written before the copy starts), so naming it is
+    // actionable: the operator can resume or trash that run instead of
+    // re-forking and minting a second partial one.
+    label = progress.new_run_id
+      ? `Fork failed after creating run ${progress.new_run_id}: ${progress.error ?? "unknown error"}`
+      : `Fork failed: ${progress.error ?? "unknown error"}`;
   } else {
     label = "Working…";
   }

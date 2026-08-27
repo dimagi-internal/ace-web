@@ -658,7 +658,7 @@
     "/api/w/{workspace_slug}/opps/{slug}/fork": {
       "post": {
         "operationId": "apps_opps_api_fork_opp_endpoint",
-        "summary": "Fork opp run",
+        "summary": "Fork opp run (blocking)",
         "parameters": [
           {
             "in": "path",
@@ -684,6 +684,7 @@
             "description": "OK"
           }
         },
+        "description": "Mint a new run seeded from a prior run's upstream artifacts.\n\n**This endpoint BLOCKS for the whole Drive copy** \u2014 one\n``copy_file`` per artifact at ~150 ms each, so a large run takes\nminutes and can exceed a client or proxy read timeout. It is not\nfire-and-forget, and the 201 is the only place the new run-id\nappears in the response.\n\nA caller that can't hold the connection (or whose POST times out)\nmust NOT retry \u2014 a retry mints a *second* run and copies everything\nagain. Poll ``GET .../fork/status`` instead: it reports\n``new_run_id`` from the moment the run folder is created, then\n``done`` or ``error`` when the fork settles. The run folder carries\na valid ``run_state.yaml`` before the first artifact is copied, so\neven an interrupted fork yields a run that ``/ace:run\n<opp>/<run-id>`` can resume (ace-web#734).",
         "tags": [
           "opps"
         ],
@@ -808,6 +809,7 @@
             }
           }
         },
+        "description": "Progress of the in-flight fork on this opp.\n\n``source_run_id`` is optional: omit it and you get whichever fork of\nthis opp reported most recently, which is what a caller recovering\nfrom a hung POST wants. ``status: unknown`` means genuinely nothing\nhas reported (no fork started, or its 10-minute cache entry expired)\n\u2014 it is NOT the answer while a fork is copying. See\n``_write_fork_progress`` and ace-web#734.",
         "tags": [
           "opps"
         ],
@@ -6408,6 +6410,7 @@
       },
       "ForkProgress": {
         "additionalProperties": false,
+        "description": "Progress for an in-flight fork, as ``GET .../fork/status`` serves it.\n\nThis is the ONLY shape ``apps.opps.opp_forker`` may emit through its\n``progress_cb``. Before ace-web#734 the forker emitted ``copied`` /\n``total`` / ``current`` / ``opp_slug`` instead, which this strict\nmodel rejects \u2014 so the status endpoint could never report anything\nbut ``unknown`` while a fork was actively copying, and a caller whose\nPOST hung had no way to learn which run had been created. Keep the\nproducer and this model in lockstep; ``test_fork_run_state_first.py``\nvalidates every emitted payload against it.\n\n``new_run_id`` is populated from the moment the run folder is minted,\nnot just on ``done`` \u2014 recovering it is the whole point of polling.",
         "properties": {
           "status": {
             "enum": [
@@ -6449,6 +6452,17 @@
               }
             ],
             "title": "Files Copied"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
           },
           "error": {
             "anyOf": [
