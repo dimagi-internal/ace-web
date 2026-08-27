@@ -18,6 +18,7 @@ import base64
 import functools
 import logging
 import random
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -237,6 +238,129 @@ class GoogleDriveClient(DriveClient):
     def __init__(self, credentials):
         from googleapiclient.discovery import build
         self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+        self._credentials = credentials
+        # Per-thread transports. googleapiclient's service object is shared
+        # safely across threads ONLY if each request carries its own http —
+        # the underlying httplib2.Http holds a single connection and reusing
+        # it concurrently corrupts responses (it surfaces as
+        # ConnectionResetError, not as anything that says "threading").
+        self._local = threading.local()
+
+    def _thread_http(self):
+        """An authorized http bound to the calling thread."""
+        http = getattr(self._local, "http", None)
+        if http is None:
+            import google_auth_httplib2
+            import httplib2
+
+            http = google_auth_httplib2.AuthorizedHttp(
+                self._credentials, http=httplib2.Http(timeout=60)
+            )
+            self._local.http = http
+        return http
+
+    # ── Fast paths for bulk run listing ──────────────────────────────────
+    # `canopy_agent_runs`'s DriveRunStore negotiates these off the client and
+    # falls back to per-run calls when absent. They exist because the
+    # fallback costs 1 + 2N sequential round-trips: on a 12-run opp that
+    # measured ~25 calls and 30-50s of wall clock, behind a 30s content cache
+    # a 50s load can never populate — so every page view paid full price.
+
+    @_drive_retry
+    def find_in_folders(self, parent_ids: list[str], name: str) -> dict:
+        """{parent_id: DriveFile | None} for `name` under each parent.
+
+        One query per chunk of parents instead of one listing per parent.
+        Chunked because the `q` string is bounded and a long OR-list is
+        rejected whole — a 400 here would look like "the opp has no runs".
+        """
+        out: dict[str, DriveFile | None] = {pid: None for pid in parent_ids}
+        if not parent_ids:
+            return out
+        escaped = name.replace("'", "\\'")
+        CHUNK = 25
+        for i in range(0, len(parent_ids), CHUNK):
+            chunk = parent_ids[i:i + CHUNK]
+            parents = " or ".join(f"'{pid}' in parents" for pid in chunk)
+            page_token = None
+            while True:
+                resp = self._service.files().list(
+                    q=f"({parents}) and name = '{escaped}' and trashed = false",
+                    fields=(
+                        "nextPageToken, "
+                        "files(id, name, mimeType, webViewLink, size, "
+                        "modifiedTime, driveId, parents)"
+                    ),
+                    pageSize=100,
+                    pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                ).execute()
+                for f in resp.get("files", []):
+                    for parent in f.get("parents", []) or []:
+                        if parent in out:
+                            out[parent] = DriveFile(
+                                id=f["id"],
+                                name=f["name"],
+                                mime_type=f["mimeType"],
+                                web_view_link=f.get("webViewLink", ""),
+                                path=f["name"],
+                                size_bytes=int(f["size"]) if f.get("size") else None,
+                                modified_time=f.get("modifiedTime"),
+                                parent_id=parent,
+                                drive_id=f.get("driveId"),
+                            )
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+        return out
+
+    def get_contents(self, specs: list) -> dict:
+        """{file_id: text} for many files, concurrently.
+
+        One failed read must not sink the batch — a single unreadable
+        run_state should cost that row, not the whole page — so failures are
+        logged and omitted rather than raised.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        out: dict[str, str] = {}
+        if not specs:
+            return out
+
+        def _one(spec):
+            file_id, mime_type = spec
+            try:
+                return file_id, self._get_content_threadsafe(file_id, mime_type)
+            except Exception:  # noqa: BLE001
+                log.warning("bulk read failed for %s", file_id, exc_info=True)
+                return file_id, None
+
+        # Bounded: Drive rate-limits per user, and the win is already ~10x by
+        # 8 workers. More would trade throughput for 403 rateLimitExceeded.
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for file_id, text in pool.map(_one, specs):
+                if text is not None:
+                    out[file_id] = text
+        return out
+
+    def _get_content_threadsafe(self, file_id: str, mime_type: str) -> str:
+        """get_content's read path, but with a per-thread transport."""
+        http = self._thread_http()
+        if mime_type.startswith("application/vnd.google-apps."):
+            export_mime = "text/csv" if mime_type.endswith(".spreadsheet") else "text/plain"
+            content = self._service.files().export(
+                fileId=file_id, mimeType=export_mime
+            ).execute(http=http)
+        else:
+            content = self._service.files().get_media(fileId=file_id).execute(http=http)
+        if isinstance(content, bytes):
+            try:
+                return content.decode("utf-8")
+            except UnicodeDecodeError:
+                import base64
+                return base64.b64encode(content).decode("ascii")
+        return content
 
     @_drive_retry
     def list_files(
