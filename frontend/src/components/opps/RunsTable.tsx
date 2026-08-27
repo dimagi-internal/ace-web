@@ -31,6 +31,11 @@ interface Props {
   /** When given, a row click calls this instead of navigating — lets the
    * workbench switch runs in place rather than reloading the page. */
   onSelect?: (runId: string) => void;
+  /** Clicking a phase segment opens that phase, for that run, in the Phases
+   * view. Without it the segments stay inert tooltips — which is the whole
+   * reason the track is worth drawing: you see WHERE a run stopped, so the
+   * next thing you want is to be standing there. */
+  onOpenPhase?: (runId: string, phaseName: string) => void;
   /** Total phases to draw when a run predates `phase_states` (older payloads
    * carry only counts). Falls back to the run's own phases_total. */
   phaseCount?: number;
@@ -56,6 +61,7 @@ export function RunsTable({
   oppSlug,
   selectedRunId,
   onSelect,
+  onOpenPhase,
   phaseCount,
   dense = false,
 }: Props) {
@@ -117,15 +123,27 @@ export function RunsTable({
               >
                 {Array.from({ length: maxPhases }, (_, i) => {
                   const ps = states[i];
+                  const cls = "rounded-[1px] " + segClass(ps?.status);
+                  const label = ps
+                    ? `${ps.ordinal} · ${ps.name} — ${ps.status}`
+                    : `phase ${i + 1} — not recorded`;
+                  // Only a recorded phase is navigable: sending someone to a
+                  // phase this run never reached lands them on an empty panel
+                  // with no way to tell whether that is the data or a bug.
+                  if (!ps || !onOpenPhase) {
+                    return <div key={i} className={cls} title={label} />;
+                  }
                   return (
-                    <div
+                    <button
                       key={i}
-                      className={"rounded-[1px] " + segClass(ps?.status)}
-                      title={
-                        ps
-                          ? `${ps.ordinal} · ${ps.name} — ${ps.status}`
-                          : `phase ${i + 1} — not recorded`
-                      }
+                      type="button"
+                      className={cls + " cursor-pointer hover:opacity-80 focus-visible:ring-1 focus-visible:ring-ring"}
+                      title={`${label} — open this phase`}
+                      aria-label={`Open ${ps.name} for run ${r.run_id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenPhase(r.run_id, ps.name);
+                      }}
                     />
                   );
                 })}

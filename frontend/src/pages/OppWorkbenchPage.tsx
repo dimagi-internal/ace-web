@@ -272,6 +272,12 @@ export default function OppWorkbenchPage() {
             // Switch the workbench's run in place rather than navigating —
             // same handler the run dropdown already uses.
             onSelect={(id) => setSearchParams({ run_id: id, view: "runs" })}
+            // Jump to that phase, for that run, in the Phases view. Both the
+            // run and the phase go in the URL so the destination is a real
+            // address someone can share, not transient component state.
+            onOpenPhase={(id, phaseName) =>
+              setSearchParams({ run_id: id, view: "phase", phase: phaseName })
+            }
           />
         </div>
       )}
