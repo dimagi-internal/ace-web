@@ -1,0 +1,274 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  ace-web on the connect-labs platform (labs.connect.dimagi.com/ace). PHASE 1 —
+  IMPORT ONLY: adopts resources that already exist, created by
+  deploy/aws/one-time-setup.sh before there was any IaC.
+
+# WHY EVERY VALUE HERE IS TRANSCRIBED, NOT CHOSEN
+# ------------------------------------------------
+# These resources ALREADY EXIST. They come into the stack via
+# `create-change-set --change-set-type IMPORT`, which adopts them without
+# recreating anything — but ONLY if the template agrees with reality. A mismatch
+# either fails the import or, worse, makes CloudFormation decide a resource needs
+# REPLACING: replacing the ECS service means downtime, replacing the target group
+# leaves the listener rule dangling. So nothing below is aspirational. Every
+# property was read off the live resource on 2026-07-26. Change things AFTER the
+# import lands, one ordinary stack update at a time.
+#
+# DELIBERATELY NOT IMPORTED IN THIS PHASE
+#   * TaskDefinition — immutable revisions; CFN creates a fresh one in phase 2
+#     rather than adopting revision 456.
+#   * The 13 secrets and 2 ECR repos — stable, and importing them adds 15
+#     resources' worth of exact-match risk for no deploy benefit. Referenced by
+#     ARN instead; importable later if wanted.
+#
+# ace-web is a TWO-container task (api on :8000, nginx/web on :3000 — the one the
+# load balancer targets), unlike canopy-web's single-container monolith.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-024df4c7bcc30cb01
+  HttpsListenerArn:
+    Type: String
+    Default: arn:aws:elasticloadbalancing:us-east-1:858923557655:listener/app/labs-jj-alb/ffecbe258260c7ee/95873265402e7831
+  ClusterName:
+    Type: String
+    Default: labs-jj-cluster
+  ExecutionRoleArn:
+    Type: String
+    Default: arn:aws:iam::858923557655:role/labs-jj-ecs-task-execution-role
+  TaskRoleArn:
+    Type: String
+    Default: arn:aws:iam::858923557655:role/labs-jj-ecs-task-role
+  # The one input a deploy changes. Both container images are tagged with the
+  # same commit SHA, so one parameter drives the whole release.
+  ImageTag:
+    Type: String
+    Default: latest
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: /ecs/labs-jj-ace-web
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: labs-jj-ace-web-tg
+      VpcId: !Ref VpcId
+      # Port 3000 = the nginx/web container, NOT the api container. The ALB talks
+      # to nginx, which proxies to the api on 8000 inside the task.
+      Port: 3000
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /ace/api/health
+      HealthCheckPort: traffic-port
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: "200"
+      # Declared here so CloudFormation is the ONLY writer. The deploy workflow
+      # used to re-assert these on every run — self-healing, but a second writer,
+      # which is exactly the pattern this migration removed everywhere else.
+      TargetGroupAttributes:
+        # Default 300s drain is the long pole in a rolling cutover. Labs has no
+        # long-poll requests beyond SSE/WebSocket, which the app handles by
+        # reconnecting.
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
+        # LOAD-BEARING, not a preference: pins each browser to one ECS task via
+        # the AWSALB cookie so a Session's long-lived `claude` subprocess pool is
+        # reused across turns. Without it a 2-task service re-rolls task affinity
+        # on every WebSocket (~50% reuse).
+        - Key: stickiness.enabled
+          Value: "true"
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: "3600"
+
+  ListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ListenerArn: !Ref HttpsListenerArn
+      # 20 — canopy sits at 29/30, umami at 40. Priorities are unique per
+      # listener, so this value is load-bearing, not cosmetic.
+      Priority: 20
+      Conditions:
+        - Field: path-pattern
+          Values: ["/ace/*"]
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: labs-jj-ace-web
+      Cpu: "1024"
+      Memory: "4096"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !Ref ExecutionRoleArn
+      TaskRoleArn: !Ref TaskRoleArn
+      ContainerDefinitions:
+        - Name: api
+          # The ONLY thing a deploy changes. Everything else is declarative.
+          Image: !Sub "858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-ace-web:${ImageTag}"
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          HealthCheck:
+            Command: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+          Environment:
+            - Name: ACE_ALLOWED_EMAIL_DOMAINS
+              Value: "dimagi.com,dimagi-ai.com,dimagi-associate.com"
+            - Name: ACE_MOBILE_AMI_VERSION
+              Value: "2026-05-25-1857"
+            - Name: ACE_MOBILE_AWS_REGION
+              Value: "us-east-1"
+            - Name: ACE_MOBILE_INSTANCE_ID
+              Value: "i-0c447ed51374a4871"
+            - Name: ACE_MOBILE_S3_BUCKET
+              Value: "ace-mobile-artifacts-labs"
+            - Name: ACE_WEB_BASE_URL
+              Value: "https://labs.connect.dimagi.com/ace"
+            - Name: AWS_REGION
+              Value: "us-east-1"
+            - Name: CANOPY_AGENT_SLUG
+              Value: "ace"
+            - Name: CANOPY_BASE_URL
+              Value: "https://labs.connect.dimagi.com/canopy"
+            - Name: CANOPY_PUBLIC_BASE_URL
+              Value: "/canopy"
+            # Programmatic runs enqueue a session-targeted canopy Turn instead of
+            # spawning `claude -p` in this container. Safe as of 2026-07-28: a
+            # session-capable cloud runner exists and carries the full ACE
+            # toolchain (canopy-web #499/#503/#504, ace #1005). The ace_web
+            # source rule is non-strict, so a dead cloud runner degrades to the
+            # laptop rather than wedging the queue.
+            - Name: CANOPY_RUN_EXECUTION
+              Value: "true"
+            - Name: CANOPY_WORKSPACE
+              Value: "connect"
+            - Name: CONNECT_PRODUCTION_URL
+              Value: "https://connect.dimagi.com"
+            - Name: CSRF_TRUSTED_ORIGINS
+              Value: "https://labs.connect.dimagi.com"
+            - Name: DJANGO_ALLOWED_HOSTS
+              Value: "labs.connect.dimagi.com,localhost"
+            - Name: DJANGO_DEBUG
+              Value: "False"
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: "config.settings.connectlabs"
+            - Name: FORCE_SCRIPT_NAME
+              Value: "/ace"
+            - Name: SECURE_SSL_REDIRECT
+              Value: "False"
+          Secrets:
+            - Name: ACE_DRIVE_SA_KEY_JSON
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-drive-sa-key-json-lIHSY8"
+            - Name: ACE_FIELD_ENCRYPTION_KEY
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/field-encryption-key-D40eTj"
+            - Name: ANTHROPIC_API_KEY
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-anthropic-api-key-x6p0ij"
+            - Name: CANOPY_APP_CREDENTIAL
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/canopy-app-credential-cbuXNb"
+            - Name: CONNECT_OAUTH_CLIENT_ID
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-id-jzsNCM"
+            - Name: CONNECT_OAUTH_CLIENT_SECRET
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-secret-kXQI9s"
+            - Name: DATABASE_URL
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-database-url-5KLKYs"
+            - Name: DJANGO_SECRET_KEY
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-django-secret-key-2XSt10"
+            - Name: OP_SERVICE_ACCOUNT_TOKEN
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-op-service-account-token-aW4N8Y"
+            - Name: REDIS_URL
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-redis-url-H4HN9I"
+            - Name: SLACK_CLIENT_ID
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-client-id-tNVN7G"
+            - Name: SLACK_CLIENT_SECRET
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-client-secret-KaEozS"
+            - Name: SLACK_SIGNING_SECRET
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-slack-signing-secret-9CmCYh"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-create-group: "true"
+              awslogs-group: "/ecs/labs-jj-ace-web"
+              awslogs-region: "us-east-1"
+              awslogs-stream-prefix: "api"
+        - Name: web
+          # The ONLY thing a deploy changes. Everything else is declarative.
+          Image: !Sub "858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-ace-web-frontend:${ImageTag}"
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          # nginx must not accept traffic before the api is healthy.
+          DependsOn:
+            - ContainerName: api
+              Condition: HEALTHY
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-create-group: "true"
+              awslogs-group: "/ecs/labs-jj-ace-web"
+              awslogs-region: "us-east-1"
+              awslogs-stream-prefix: "web"
+
+  Service:
+    Type: AWS::ECS::Service
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ServiceName: labs-jj-ace-web
+      Cluster: !Ref ClusterName
+      LaunchType: FARGATE
+      DesiredCount: 2
+      TaskDefinition: !Ref TaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - subnet-06646effb09be2f42
+            - subnet-08a18eb47b48aff54
+          SecurityGroups: [sg-0666a5ed512c97d9d]
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - TargetGroupArn: !Ref TargetGroup
+          ContainerName: web
+          ContainerPort: 3000
+      HealthCheckGracePeriodSeconds: 120
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        # Matches what the deploy workflow now asserts on every cutover
+        # (dimagi-internal/ace-web#689) so the two cannot disagree.
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+
+Outputs:
+  ServiceName:
+    Value: !Ref Service
+  TargetGroupArn:
+    Value: !Ref TargetGroup
+  Url:
+    Value: https://labs.connect.dimagi.com/ace/

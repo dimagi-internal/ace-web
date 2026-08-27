@@ -1,8 +1,20 @@
 import { type ReactNode } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, ChevronDown as ChevronDownIcon, Trash2 } from "lucide-react";
 import { useBeatEditor } from "./BeatEditorContext";
 import { sectionLabel } from "./sectionLabels";
 import { opCoalesceKey, type PendingChange } from "./types";
+
+// Structural controls — present only in the template editor (fullEdit),
+// where a template owns its own beat timeline. Reorder is available on every
+// beat; remove only on the optional beats (ai_build/problem/impact).
+interface StructuralControls {
+  removable: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onRemove: () => void;
+}
 
 interface Props {
   beatId: string;
@@ -15,6 +27,7 @@ interface Props {
   // of the video).
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  structural?: StructuralControls;
 }
 
 function fmt(sec: number): string {
@@ -35,7 +48,7 @@ function beatIsDirty(beatId: string, kind: string, buffer: PendingChange[]): boo
   });
 }
 
-export function BeatCard({ beatId, kind, startSec, endSec, children, collapsed, onToggleCollapsed }: Props) {
+export function BeatCard({ beatId, kind, startSec, endSec, children, collapsed, onToggleCollapsed, structural }: Props) {
   const { state } = useBeatEditor();
   const label = sectionLabel(beatId);
   const dirty = beatIsDirty(beatId, kind, state.buffer);
@@ -74,11 +87,48 @@ export function BeatCard({ beatId, kind, startSec, endSec, children, collapsed, 
         <span className="font-mono text-xs text-muted-foreground">
           {fmt(startSec)} → {fmt(endSec)} · {(endSec - startSec).toFixed(1)}s
         </span>
-        {dirty && (
-          <span className="ml-auto rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-            edited
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {dirty && (
+            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+              edited
+            </span>
+          )}
+          {structural && (
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); structural.onMoveUp(); }}
+                disabled={!structural.canMoveUp}
+                title="Move beat up"
+                aria-label={`Move ${label.name} up`}
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+              >
+                <ChevronUp className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); structural.onMoveDown(); }}
+                disabled={!structural.canMoveDown}
+                title="Move beat down"
+                aria-label={`Move ${label.name} down`}
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+              >
+                <ChevronDownIcon className="h-4 w-4" />
+              </button>
+              {structural.removable && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); structural.onRemove(); }}
+                  title="Remove beat"
+                  aria-label={`Remove ${label.name} beat`}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </header>
       {!collapsed && (
         <div id={`beat-body-${beatId}`}>

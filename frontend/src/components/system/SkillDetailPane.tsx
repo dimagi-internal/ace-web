@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 
 import { getSkillDetail } from "../../api/system";
-import { Button } from "@/components/ui/button";
+import { Button } from "canopy-ui/ui";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "canopy-ui/ui";
 import type { SkillDetail, SkillSummary } from "./types";
 import { ArtifactList } from "./ArtifactList";
 import { MarkdownRenderer } from "../MarkdownRenderer";

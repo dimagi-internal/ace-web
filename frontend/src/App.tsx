@@ -2,7 +2,7 @@ import { Outlet } from "react-router-dom";
 
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { TopNav } from "@/components/TopNav";
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "canopy-ui/ui";
 
 export function App() {
   return (

@@ -67,7 +67,7 @@ qa-results/
 # ACE_VIDEOS_ROOT is render scratch only"). Anything under runs/<id>/
 # is re-derivable from a fresh hydrate + render OR a Drive fetch via
 # the lazy-pull path. Keeping it untracked stops every render +
-# every Drive edit from showing up in `git status`. `_defaults.yaml`
+# every Drive edit from showing up in `git status`. `global_style.yaml`
 # at programs/ root stays tracked — that's the global template.
 video-production/connect-videos/programs/*/runs/
 

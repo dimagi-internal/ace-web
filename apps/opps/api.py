@@ -6,6 +6,7 @@ import logging
 from typing import Annotated
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.urls import reverse
 from ninja import Path, Router
 
 from apps.api.auth import session_auth
@@ -19,7 +20,11 @@ from apps.api.errors import (
 from apps.api.etag import compute_etag, maybe_not_modified
 
 from .schemas import (
-    ArtifactOut,
+    DecisionEditIn,
+    DecisionEditOut,
+    DecisionOverridesSaveIn,
+    DecisionReactionIn,
+    DecisionReactionOut,
     ForkProgress,
     GateDecisionIn,
     GateOut,
@@ -30,10 +35,12 @@ from .schemas import (
     OppForkOut,
     OppHealthOut,
     OppPatchIn,
-    OppRunOut,
     ScorecardOut,
     SeedChatIn,
     SeedChatOut,
+    SeededRunIn,
+    SeededRunOut,
+    StepArtifactOut,
     StepSnapshotOut,
 )
 
@@ -261,11 +268,26 @@ def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -
         from apps.opps.decisions_buffer import get_edits
         run_id_for_edits = run_id or (result.get("current_run") or {}).get("run_id", "")
         result["pending_edits"] = get_edits(slug, run_id_for_edits)
+        # Durable overrides from inputs/decision-overrides.yaml — kept
+        # fresh by the saved_overrides overlay above (#673 PR 2).
+        result["saved_overrides"] = getattr(cached, "saved_overrides", {}) or {}
         return result
     bypass_client = snapshot_cache.cold_load_client(client)
     try:
         with TouchedFileTracker() as tracker:
             snap = load_opp(bypass_client, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
+            # Read inputs/decision-overrides.yaml inside the tracker so
+            # the file id lands in the snapshot's tracked set — content
+            # edits to it then invalidate this cache entry normally.
+            # First-creation freshness is the overlay's job (#673 PR 2).
+            from apps.opps.decision_overrides import fetch_saved_overrides
+            try:
+                snap.saved_overrides = fetch_saved_overrides(
+                    bypass_client, opp_folder_id=snap.opp_folder_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("load_rich_opp_snapshot: saved-overrides read failed: %s", exc)
+                snap.saved_overrides = {}
     except FileNotFoundError:
         return None
     access.overlay_workspace_display_name(snap.opp, slug, workspace=workspace)
@@ -278,6 +300,7 @@ def load_rich_opp_snapshot(workspace, slug: str, *, run_id: str | None = None) -
     from apps.opps.decisions_buffer import get_edits
     run_id_for_edits = run_id or (result.get("current_run") or {}).get("run_id", "")
     result["pending_edits"] = get_edits(slug, run_id_for_edits)
+    result["saved_overrides"] = snap.saved_overrides or {}
     return result
 
 
@@ -400,6 +423,8 @@ def _snapshot_to_dict(snap) -> dict:
     active_run_id = snap.current_run.run_id if snap.current_run else None
 
     # Build steps list from current_run.steps (StepSnapshot dataclass).
+    from apps.opps.serializers import serialize_judge
+
     steps: list[dict] = []
     if snap.current_run is not None:
         for s in snap.current_run.steps:
@@ -423,7 +448,13 @@ def _snapshot_to_dict(snap) -> dict:
                     }
                     for a in s.artifacts
                 ],
-                "verdicts": [],  # verdicts are per-skill; omit in v2 snapshot summary
+                # `verdicts` stays empty here: VerdictOut has no home for a
+                # judge's per-criterion breakdown, and the verdict files
+                # don't declare the `kind` it requires. The eval data the UI
+                # actually renders rides on `judge` below — same shape the
+                # legacy opp-detail payload has always carried.
+                "verdicts": [],
+                "judge": serialize_judge(s.judge),
                 "gate": None,
                 "preview": None,
             })
@@ -770,6 +801,12 @@ def _serialize_card_runs_summary(
 
     Drops the internal ``folder_id`` field — the frontend doesn't need
     it and the legacy RunSummary type doesn't declare it.
+
+    Also drops ``phase_states``. This payload is rendered for EVERY opp on
+    the list page (#512 exists to keep it a single call), and the card only
+    draws a "P{ordinal}" chip per run — it never draws per-phase segments.
+    Carrying ~10 objects per run per opp here would be a few hundred KB of
+    payload nothing renders. The workbench runs endpoint keeps the field.
     """
     from dataclasses import asdict  # noqa: PLC0415
 
@@ -777,6 +814,7 @@ def _serialize_card_runs_summary(
     for r in runs:
         rich = asdict(r)
         rich.pop("folder_id", None)
+        rich.pop("phase_states", None)
         cur_display, cur_ord = phase_meta.get(r.current_phase or "", (None, None))
         rich["current_phase_display"] = cur_display
         rich["current_phase_ordinal"] = cur_ord
@@ -791,6 +829,30 @@ def _serialize_card_runs_summary(
             rich["last_actor_at"] = raw_ts.isoformat().replace("+00:00", "Z")
         out.append(rich)
     return out
+
+
+def _run_execution_for(workspace, slug: str, run_id: str) -> dict | None:
+    """The canopy execution state for one run, or None if it never went to canopy.
+
+    Never raises: the runs list is the opp workbench's primary read and must not
+    fail because canopy is having a bad minute.
+    """
+    from apps.sessions.models import Session
+
+    session = (
+        Session.objects.filter(workspace=workspace, opp_slug=slug, opp_run_id=run_id)
+        .exclude(canopy_session_id="")
+        .order_by("-created_at")
+        .first()
+    )
+    if session is None:
+        return None
+    try:
+        from apps.canopy.run_state import execution_state
+
+        return execution_state(session)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
@@ -825,9 +887,9 @@ def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
         # current_phase / phases_done / phases_total / last_actor_at /
         # lifecycle_status / latest_phase_done etc.
         rich = asdict(r)
-        # Drop the internal folder_id — frontend doesn't need it and the
-        # legacy RunSummary type doesn't declare it.
-        rich.pop("folder_id", None)
+        # KEEP folder_id: the cross-run strip deep-links each row straight to
+        # its Drive run folder, which needs exactly this id. It was dropped
+        # when nothing rendered it; the TS RunSummary now declares it.
         # Enrich phase / step references with the plugin's display name +
         # ordinal so the OppCardRunsStrip chip can render "P3" instead of
         # "—" and tooltips can show capitalized phase labels.
@@ -855,6 +917,13 @@ def list_opp_runs_for_workspace(workspace, slug: str) -> list[dict]:
         rich["finished_at"] = None
         rich["is_active"] = (r.lifecycle_status != "complete")
         rich["scorecard"] = None
+        # Execution state (spec 2026-07-26, item 6). A run whose canopy turn no
+        # runner can claim must not render as "queued" — that is exactly the
+        # "looks like it is working" failure this exists to remove. None when the
+        # run was never dispatched to canopy (legacy/local execution).
+        # Read-only (`execution_state`, not `reconcile_session`): a list read
+        # must not write.
+        rich["execution"] = _run_execution_for(workspace, slug, r.run_id)
         out.append(rich)
     return out
 
@@ -1040,7 +1109,7 @@ def load_artifact_meta(
 ) -> dict | None:
     """Find an artifact by Drive file_id across all steps of an OppSnapshot.
 
-    Returns an ArtifactOut-compatible dict, or None if not found.
+    Returns a StepArtifactOut-compatible dict, or None if not found.
     The monkeypatch target in contract tests is this module-level function.
     """
     snap = load_opp_snapshot(workspace, slug, run_id=run_id)
@@ -1060,7 +1129,7 @@ def load_artifact_meta(
 
 @router.get(
     "/{slug}/artifacts/{artifact_id}",
-    response=ArtifactOut,
+    response=StepArtifactOut,
     summary="Artifact metadata",
     openapi_extra={"x-mcp-expose": True},
 )
@@ -1070,7 +1139,7 @@ def get_artifact(
     slug: Annotated[str, Path()],
     artifact_id: Annotated[str, Path()],
     run_id: str | None = None,
-) -> ArtifactOut:
+) -> StepArtifactOut:
     workspace = resolve_workspace_for_member(request, workspace_slug)
     artifact = load_artifact_meta(workspace, slug, artifact_id, run_id=run_id)
     if artifact is None:
@@ -1079,7 +1148,7 @@ def get_artifact(
         raise ProblemError(
             404, f"Artifact {artifact_id!r} not found", type_=TYPE_NOT_FOUND,
         )
-    return ArtifactOut.model_validate(artifact)
+    return StepArtifactOut.model_validate(artifact)
 
 
 # ---------------------------------------------------------------------------
@@ -1087,8 +1156,15 @@ def get_artifact(
 # ---------------------------------------------------------------------------
 
 
-def download_artifact_bytes(workspace, slug: str, artifact_id: str) -> tuple[bytes, str]:
+def download_artifact_bytes(
+    workspace, slug: str, artifact_id: str, *, run_id: str | None = None
+) -> tuple[bytes, str]:
     """Download Drive binary for a given artifact_id.
+
+    ``run_id`` selects which run to search; omitting it keeps the previous
+    behaviour of using the opp's current run. The frontend has always sent
+    it, so without this an artifact on any non-current run 404'd even
+    though the step listing beside it resolved fine.
 
     Returns (content_bytes, mime_type). Raises FileNotFoundError when the
     opp or artifact doesn't exist. The monkeypatch target for contract tests.
@@ -1108,18 +1184,41 @@ def download_artifact_bytes(workspace, slug: str, artifact_id: str) -> tuple[byt
         raise FileNotFoundError(f"Drive not configured: {exc}") from exc
 
     try:
-        snap = load_opp(drive, ace_folder_id=ace_folder_id, slug=slug)
+        snap = load_opp(drive, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
     except FileNotFoundError:
         raise
+
+    def _fetch(file_id: str, mime_type: str | None) -> tuple[bytes, str]:
+        content = drive.get_content(file_id, mime_type)
+        body = content.content
+        return (
+            body.encode() if isinstance(body, str) else body,
+            mime_type or "application/octet-stream",
+        )
 
     # Search all steps for the artifact by id.
     for step_snap in snap.current_run.steps:
         for artifact in step_snap.artifacts:
             if artifact.drive_file_id == artifact_id:
-                content = drive.get_content(artifact.drive_file_id, artifact.mime_type)
-                return content.content.encode() if isinstance(
-                    content.content, str
-                ) else content.content, artifact.mime_type or "application/octet-stream"
+                return _fetch(artifact.drive_file_id, artifact.mime_type)
+
+    # Not every artifact belongs to a STEP. `decisions.yaml` and
+    # `open-questions.md` live at the run root, and a cold load_opp
+    # attributes them to no step — so a step-only scan 404s them while the
+    # step listing beside them lists them happily (that listing is served
+    # from a cached snapshot which still attributes them). Fall back to the
+    # run folder itself.
+    #
+    # Scoped deliberately: we resolve the id WITHIN this run's folder rather
+    # than fetching whatever id we were handed. The scan is the
+    # authorization boundary — without it any workspace member could read
+    # any Drive file the service account can see.
+    run_folder_id = getattr(snap.current_run, "folder_id", "") or ""
+    if run_folder_id:
+        lister = getattr(drive, "list_folder", None) or getattr(drive, "list_files", None)
+        for f in (lister(run_folder_id) if lister else []):
+            if getattr(f, "id", None) == artifact_id:
+                return _fetch(f.id, getattr(f, "mime_type", None))
 
     raise FileNotFoundError(f"artifact {artifact_id!r} not found")
 
@@ -1138,10 +1237,13 @@ def download_artifact(
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
     artifact_id: Annotated[str, Path()],
+    run_id: str | None = None,
 ) -> HttpResponse:
     workspace = resolve_workspace_for_member(request, workspace_slug)
     try:
-        data, mime_type = download_artifact_bytes(workspace, slug, artifact_id)
+        data, mime_type = download_artifact_bytes(
+            workspace, slug, artifact_id, run_id=run_id
+        )
     except FileNotFoundError as exc:
         raise ProblemError(
             404, "Artifact not found", type_=TYPE_NOT_FOUND, detail=str(exc),
@@ -1192,11 +1294,13 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
         owner=user,
         source_slug=slug,
         fork_at_phase=body.fork_at_phase,
+        fork_at_skill=body.fork_at_skill,
         source_run_id=source_run_id,
         workspace=workspace,
         progress_cb=_write_progress,
         edits=[e.model_dump() for e in body.edits] if body.edits else None,
         mode=body.mode,
+        feedback=body.feedback,
     )
     from apps.opps.decisions_buffer import clear_edits
     clear_edits(slug, source_run_id or "")
@@ -1238,6 +1342,75 @@ def fork_opp_endpoint(
         ) from exc
     payload = OppForkOut.model_validate(result).model_dump(mode="json")
     return JsonResponse(payload, status=201)
+
+
+# ---------------------------------------------------------------------------
+# Decision overrides — POST /w/{workspace_slug}/opps/{slug}/decision-overrides
+# (issue #673 PR 2, spec docs/specs/2026-07-24-decision-review-save-design.md)
+# ---------------------------------------------------------------------------
+
+
+def save_decision_overrides_and_return(workspace, slug: str, body) -> dict:
+    """Persist the source run's buffered decision edits to
+    ``<opp>/inputs/decision-overrides.yaml``. No run is created.
+
+    The body carries no edits — the Redis buffer is the authoritative
+    set. The monkeypatch target in contract tests is this module-level
+    function.
+    """
+    from apps.opps import access
+    from apps.opps.decision_overrides import save_decision_overrides
+    from apps.opps.drive_cache import CachedDriveClient
+    from apps.opps.drive_client import get_drive_client
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+
+    ace_folder_id = access.resolve_ace_root_folder_id(workspace)
+    if ace_folder_id is None:
+        raise ProblemError(404, "ACE root folder not found", type_=TYPE_NOT_FOUND)
+    try:
+        inner = get_drive_client(workspace=workspace)
+    except ServiceAccountNotFound as exc:
+        raise ProblemError(
+            404, "Drive not configured", type_=TYPE_NOT_FOUND, detail=str(exc),
+        ) from exc
+    # bypass=True: reads go straight to Drive (we're about to write based
+    # on them, so a 30s-stale listing risks clobbering a concurrent save),
+    # while writes still invalidate the shared drive cache so the
+    # read-side saved_overrides overlay sees the new file immediately.
+    drive = CachedDriveClient(inner, bypass=True)
+    return save_decision_overrides(
+        drive=drive,
+        ace_root_folder_id=ace_folder_id,
+        opp_slug=slug,
+        source_run_id=body.source_run_id,
+    )
+
+
+@router.post(
+    "/{slug}/decision-overrides",
+    response={200: dict},
+    summary="Save buffered decision edits to Drive (inputs/decision-overrides.yaml)",
+)
+def save_decision_overrides_endpoint(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    body: DecisionOverridesSaveIn,
+) -> HttpResponse:
+    from apps.opps.decision_overrides import DecisionOverridesError
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    try:
+        result = save_decision_overrides_and_return(workspace, slug, body)
+    except DecisionOverridesError as exc:
+        if exc.code in ("opp-not-found", "run-not-found"):
+            raise ProblemError(
+                404, str(exc), type_=TYPE_NOT_FOUND, detail=exc.code,
+            ) from exc
+        raise ProblemError(
+            409, str(exc), type_=TYPE_CONFLICT, detail=exc.code,
+        ) from exc
+    return JsonResponse(result)
 
 
 # ---------------------------------------------------------------------------
@@ -1613,6 +1786,228 @@ def seed_chat(
 
 
 # ---------------------------------------------------------------------------
+# Seeded run — POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run
+# ---------------------------------------------------------------------------
+
+
+class NovaAuthInvalid(Exception):
+    """Nova auth can't produce a working token — a seeded run including the
+    Nova-dependent phase would halt at Phase 3 (ace-web#636)."""
+
+
+# The phase whose skills need a live Nova MCP bearer.
+NOVA_PHASE = "commcare-setup"
+
+
+def nova_preflight(run_phases: list[int], phases: list[str]) -> None:
+    """Raise NovaAuthInvalid when the run includes the Nova-dependent phase
+    but NEITHER Nova auth path yields a working bearer (ace-web#636).
+
+    Subprocess sessions authenticate via the user-scope PAT override
+    (preferred) or the OAuth-blob fallback, so the gate accepts either.
+    Skips silently when the plugin registry doesn't declare the phase (unit
+    tests, degraded plugin install) — the preflight must never block a run
+    the halt wouldn't have hit. The monkeypatch target in tests is this
+    module-level function.
+    """
+    from apps.common import nova_auth_flow
+
+    if NOVA_PHASE not in phases:
+        return
+    if (phases.index(NOVA_PHASE) + 1) not in run_phases:
+        return
+    if not nova_auth_flow.validate_any_token():
+        raise NovaAuthInvalid(
+            "Nova auth is not valid on either path (PAT override or OAuth "
+            "blob) — the run would halt at Phase 3. Fix the rendered .env's "
+            "NOVA_API_KEY or reconnect via /auth/nova/initiate/ (see "
+            "docs/learnings/nova-mcp-oauth.md § Recovery)."
+        )
+
+
+def seed_run_for_opp(workspace, slug: str, user, body: SeededRunIn) -> dict:
+    """Fork the golden run into a fresh, pre-shaped run, then create a CLI
+    session whose first USER turn is a **plain resume** command.
+
+    Run shape is **structural**, not flag-driven (ace#672). We fork the golden
+    into a new run whose ``run_state.yaml`` already encodes the shape — seed
+    prefix (phases below ``min(only)``) ``done``/``verdict: seeded``, the listed
+    ordinals ``pending``, every other phase from the fork point onward
+    ``skipped`` — and the user turn is the literal ``/ace:run <slug>/<new_run_id>``
+    resume. The CLI backend's resume path runs the ``pending`` phases in order,
+    steps over ``skipped``, and ends when none remain, so "only 3,4,6 then stop"
+    needs no flag interpretation (the headless runner ignored the old
+    ``--seed-from``/``--only`` flags — that's the bug this replaces).
+
+    The run is loop-blind; the ``/ace:iterate`` client observes its run_state.
+    The golden run is validated to exist by the fork (missing → 404).
+
+    Returns ``{session_slug, assistant_message_id, run_id}`` — ``run_id`` is the
+    new forked run the action minted. The route spawns the headless turn driver
+    against ``assistant_message_id`` to actually execute the run (no WebSocket
+    client needed). Raises FileNotFoundError when the opp or golden run can't be
+    resolved, ValueError for a bad ``only`` allowlist. The monkeypatch target in
+    contract tests is this module-level function.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+
+    from apps.opps import access
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.opp_forker import ForkOppError, fork_opp
+    from apps.opps.skills import all_phases
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+    from apps.sessions.models import Message, Session
+
+    ace_folder_id = access.resolve_ace_root_folder_id(workspace)
+    if ace_folder_id is None:
+        raise FileNotFoundError("ACE root folder not configured")
+
+    try:
+        drive = get_drive_client(workspace=workspace)
+    except ServiceAccountNotFound as exc:
+        raise FileNotFoundError(f"Drive not configured: {exc}") from exc
+
+    # Resolve the target ordinals and the phase to fork at (= the lowest one).
+    run_phases = sorted({int(p) for p in body.only.split(",")})
+    phases = all_phases()
+    min_ordinal = run_phases[0]
+    if min_ordinal < 1 or min_ordinal > len(phases):
+        raise ValueError(
+            f"--only ordinal {min_ordinal} out of range 1..{len(phases)}"
+        )
+    fork_at_phase = phases[min_ordinal - 1]
+
+    # Preflight: refuse to mint a run that will halt at Phase 3 because
+    # Nova auth is dead (ace-web#636) — a month of seeded runs died that
+    # way before anyone noticed. Only gates when the Nova-dependent phase
+    # is actually selected.
+    nova_preflight(run_phases, phases)
+
+    # Fork the golden into a fresh run, shaped for a structural resume. No
+    # session here — we drive our own headless seeded-run session below.
+    try:
+        fork = fork_opp(
+            drive=drive,
+            ace_root_folder_id=ace_folder_id,
+            owner=user,
+            source_slug=slug,
+            fork_at_phase=fork_at_phase,
+            source_run_id=body.golden_run_id,
+            workspace=workspace,
+            mode="keep-all",
+            run_phases=run_phases,
+            create_session=False,
+        )
+    except ForkOppError as exc:
+        if exc.code in ("source-not-found", "no-runs", "source-run-not-found"):
+            raise FileNotFoundError(str(exc)) from exc
+        raise ValueError(str(exc)) from exc
+
+    new_run_id = fork.new_run_id
+    # Plain resume — the orchestrator reads the shaped run_state.yaml. Only flag
+    # is --no-evals (default on for seeded/test runs): the per-step evals don't
+    # gate the run, so skipping them saves ~7 min/run of LLM grading nobody
+    # reads mid-test. Pass skip_evals=false to force inline grading.
+    command = f"/ace:run {slug}/{new_run_id}"
+    if body.skip_evals:
+        command += " --no-evals"
+
+    with transaction.atomic():
+        session = Session.create_with_owner(
+            owner=user,
+            title=f"seeded-run: {slug}/{new_run_id} (--only {body.only})",
+            backend_kind="cli",
+            status="active",
+            source="web",
+            opp_slug=slug,
+            opp_run_id=new_run_id,
+            workspace=workspace,
+        )
+        # The command goes in as a completed USER turn (turn_driver loads the
+        # last user text to feed the backend), with an assistant placeholder
+        # the headless driver fills in. Mirrors drafts.commit_active_draft.
+        Message.objects.create(
+            session=session,
+            turn_index=0,
+            role="user",
+            sender_user=user,
+            content={"text": command},
+            plaintext=command,
+            status="complete",
+            completed_at=timezone.now(),
+        )
+        assistant_msg = Message.objects.create(
+            session=session,
+            turn_index=1,
+            role="assistant",
+            content={"text": ""},
+            plaintext="",
+            status="pending",
+        )
+    return {
+        "session_slug": session.slug,
+        "assistant_message_id": assistant_msg.id,
+        "run_id": new_run_id,
+    }
+
+
+@router.post(
+    "/{slug}/actions/seeded-run",
+    summary="Launch a first-class seeded run (headless)",
+    openapi_extra={"x-mcp-expose": True},
+)
+def seeded_run(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    body: SeededRunIn,
+) -> HttpResponse:
+    """Fork the golden into a fresh, pre-shaped run and start a plain resume —
+    by launching ``manage.py drive_turn`` as a detached process that drives the
+    turn through the SAME turn-driver + channel-layer broadcast path as a human
+    typing into the workbench chat. Run shape is structural (ace#672): the
+    forked run's ``run_state.yaml`` already encodes seed-prefix/target/skipped,
+    so the seeded turn is a plain ``/ace:run <slug>/<run_id>`` resume, not a
+    ``--seed-from``/``--only`` flag command. The session is a normal, openable,
+    live session; the run is decoupled from this request's event loop (which is
+    why an in-request ``create_task`` didn't work — ace-web#585). Exposed as an
+    MCP tool (``x-mcp-expose``). Returns 202 (the run executes asynchronously).
+    """
+    from apps.canopy.run_dispatch import start_turn
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    try:
+        result = seed_run_for_opp(workspace, slug, request.user, body)
+    except NovaAuthInvalid as exc:
+        raise ProblemError(
+            409,
+            "Nova authentication invalid",
+            type_=TYPE_CONFLICT,
+            detail=str(exc),
+            extras={
+                "code": "nova_auth_invalid",
+                "reconnect_url": reverse("auth:nova_initiate"),
+            },
+        ) from exc
+    except FileNotFoundError as exc:
+        raise ProblemError(
+            404, "Opp or golden run not found", type_=TYPE_NOT_FOUND, detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise ProblemError(
+            404, str(exc), type_=TYPE_NOT_FOUND,
+        ) from exc
+    # Execute the turn. With CANOPY_RUN_EXECUTION on this enqueues a
+    # session-targeted canopy Turn; with it off it spawns the legacy detached
+    # `manage.py drive_turn` process (ace-web#585). Either way the run is
+    # decoupled from this request's event loop.
+    start_turn(result["assistant_message_id"])
+    payload = SeededRunOut.model_validate(result).model_dump(mode="json")
+    return JsonResponse(payload, status=202)
+
+
+# ---------------------------------------------------------------------------
 # Task 2.1.19 helpers — health probe
 # ---------------------------------------------------------------------------
 
@@ -1701,6 +2096,29 @@ def invalidate_snapshot(
 public_summary_router = Router(auth=None, tags=["opps-public"])
 
 
+def _summary_cache_key(
+    workspace: str, slug: str, run_id: str, *, is_member: bool
+) -> str:
+    """Cache key for one variant of the public summary payload.
+
+    Member and public payloads are cached separately (they differ in
+    whether the page draws ``admin only`` tags). Shared by the read path
+    and by every write that must invalidate it — a reaction that doesn't
+    show up for 60 seconds reads as a lost comment.
+    """
+    return (
+        f"opp-summary:v2:{'member' if is_member else 'public'}"
+        f":{workspace}:{slug}:{run_id}"
+    )
+
+
+def _invalidate_summary_cache(workspace: str, slug: str, run_id: str) -> None:
+    from django.core.cache import cache as _cache
+
+    for member in (True, False):
+        _cache.delete(_summary_cache_key(workspace, slug, run_id, is_member=member))
+
+
 @public_summary_router.get(
     "/public/{workspace}/{slug}/runs/{run_id}/summary",
     response={200: dict},
@@ -1716,6 +2134,13 @@ def public_opp_summary(
     are meant to circulate. Workspace + slug + run_id all in the URL —
     no leak-prevention 404 differentiation here, the URL is the secret.
 
+    Every link is served to everyone, each one declaring its own
+    ``access`` (``public`` / ``admin``). The requester's workspace
+    membership is echoed back as ``viewer.is_member`` and decides only
+    whether the page draws the ``admin only`` tag next to a gated link.
+    The two variants are cached under their own keys so the 60s cache
+    can't serve one to the other.
+
     Cached 60 seconds in the Django cache to absorb refresh storms.
     """
     from django.core.cache import cache as _cache
@@ -1724,9 +2149,15 @@ def public_opp_summary(
     from apps.opps.drive_client import get_drive_client
     from apps.opps.summary import build_summary_payload
     from apps.service_accounts.exceptions import ServiceAccountNotFound
-    from apps.workspaces.models import Workspace
+    from apps.workspaces.models import Workspace, WorkspaceMembership
 
-    cache_key = f"opp-summary:v1:{workspace}:{slug}:{run_id}"
+    is_member = bool(
+        getattr(request.user, "is_authenticated", False)
+        and WorkspaceMembership.objects.filter(
+            workspace__slug=workspace, user=request.user
+        ).exists()
+    )
+    cache_key = _summary_cache_key(workspace, slug, run_id, is_member=is_member)
     cached = _cache.get(cache_key)
     if cached is not None:
         return JsonResponse(cached)
@@ -1748,12 +2179,276 @@ def public_opp_summary(
 
     payload = build_summary_payload(
         client, workspace=ws, opp_slug=slug, run_id=run_id,
+        viewer_is_member=is_member,
     )
     if payload is None:
         raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
 
     _cache.set(cache_key, payload, timeout=60)
     return JsonResponse(payload)
+
+
+# ---------------------------------------------------------------------------
+# Public decision reactions — the write half of the public review surface.
+# ---------------------------------------------------------------------------
+
+#: Per-IP ceilings, shared across EVERY public write on this page
+#: (comments and decision edits draw on one budget — two endpoints with
+#: separate budgets is just double the budget). Raised from the
+#: comments-only 8/10min when editing landed: a reviewer working through
+#: the flagged rows plus a pass over the 42-row log plausibly makes
+#: 10-20 writes in one sitting, and a limit that stops a real reviewer
+#: mid-review is the barrier this surface exists to remove. Still
+#: bounded, and still only one of four ceilings.
+PUBLIC_WRITE_BURST_LIMIT = 20
+PUBLIC_WRITE_BURST_WINDOW = 10 * 60
+PUBLIC_WRITE_DAILY_LIMIT = 100
+PUBLIC_WRITE_DAILY_WINDOW = 24 * 60 * 60
+
+
+def _enforce_public_write_budget(request: HttpRequest) -> None:
+    """Per-IP burst + per-day ceiling on the public write surfaces.
+
+    Fail-open (see ``apps.common.rate_limit.allow``) — a Redis blip must
+    not lock a real reviewer out of a page whose entire purpose is being
+    easy to respond on. ``X-Forwarded-For``'s first entry is spoofable,
+    which is why the per-record and per-run ceilings exist too.
+    """
+    from apps.common.rate_limit import allow, client_ip
+
+    ip = client_ip(request)
+    if not allow(
+        f"public-write:burst:{ip}",
+        limit=PUBLIC_WRITE_BURST_LIMIT,
+        window_seconds=PUBLIC_WRITE_BURST_WINDOW,
+    ) or not allow(
+        f"public-write:day:{ip}",
+        limit=PUBLIC_WRITE_DAILY_LIMIT,
+        window_seconds=PUBLIC_WRITE_DAILY_WINDOW,
+    ):
+        raise ProblemError(
+            429,
+            "Too many changes",
+            detail="Give it a few minutes before sending another change.",
+        )
+
+
+def _public_run_folders(drive, ws, slug: str, run_id: str):
+    """``(opp_folder, run_folder)`` for a public write, or a 404.
+
+    Same posture as the summary read: workspace + slug + run_id are all
+    in the URL and the URL is the secret, so there is no leak-prevention
+    differentiation to make here.
+    """
+    from apps.opps.sync import _find_child_folder
+
+    opp_folder = _find_child_folder(drive.list_files(ws.drive_root_folder_id), slug)
+    if opp_folder is None:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    runs_folder = _find_child_folder(drive.list_files(opp_folder.id), "runs")
+    run_folder = (
+        _find_child_folder(drive.list_files(runs_folder.id), run_id)
+        if runs_folder is not None
+        else None
+    )
+    if run_folder is None:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    return opp_folder, run_folder
+
+
+def _public_write_drive(ws):
+    """Drive client for a public write.
+
+    ``bypass=True``: reads skip the 30s Drive TTL cache (a write must not
+    decide against a stale folder listing) while writes still invalidate
+    it — otherwise the summary read that follows would serve a cached
+    listing without what we just wrote, and the change would look lost
+    for half a minute.
+    """
+    from apps.opps.drive_cache import CachedDriveClient
+    from apps.opps.drive_client import get_drive_client
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+
+    try:
+        return CachedDriveClient(get_drive_client(workspace=ws), bypass=True)
+    except ServiceAccountNotFound as exc:
+        raise ProblemError(500, "Drive not configured", detail=str(exc)) from exc
+
+
+def _public_workspace(workspace: str):
+    from apps.workspaces.models import Workspace
+
+    try:
+        ws = Workspace.objects.get(slug=workspace)
+    except Workspace.DoesNotExist as exc:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND) from exc
+    if not ws.drive_root_folder_id:
+        raise ProblemError(404, "Not found", type_=TYPE_NOT_FOUND)
+    return ws
+
+
+@public_summary_router.post(
+    "/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/edit",
+    response={200: DecisionEditOut},
+    summary="Change one decision's answer from the public run summary",
+)
+def public_decision_edit(
+    request: HttpRequest,
+    workspace: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+    decision_id: Annotated[str, Path()],
+    body: DecisionEditIn,
+) -> HttpResponse:
+    """Change a decision's value in place. Anyone with the link may.
+
+    This deliberately does NOT gate on membership, and deliberately has no
+    proposal/promotion state. Jonathan, 2026-08-14: "we definitely want
+    the decisions UI to be editable by users … reviewer 2 can change /
+    update reviewer 1 anyway in the UI, and that should just be the same
+    as Dimagi going in and updating things on top of the anonymous input
+    (also if you are logged in, obviously should not be anonymous)."
+    The bar to start engaging with ACE has to be very low because it is
+    speculative AI work — an account requirement is a barrier, a name
+    field is not. And the PDD these rows summarize is already
+    world-editable via anyone-with-link and already seeds the next run,
+    so gating this more tightly than the design document was backwards.
+
+    It writes the SAME store the Workbench's authenticated editor writes
+    (``<opp>/inputs/decision-overrides.yaml``, read by the plugin's
+    ``decisions_append_rows`` at the decisions write boundary), through
+    the same merge and the same serializer. The only thing that differs
+    between the two surfaces is how the identity on the row was resolved.
+
+    Refusals: a ``decision_id`` the run's ``decisions.yaml`` does not
+    carry is refused, not stored (the override would be unroutable). HTML
+    is refused rather than mangled. Lengths are capped before any Drive
+    round-trip. An anonymous caller with no name is refused; a signed-in
+    caller's typed name is ignored in favour of their session identity.
+    """
+    from apps.opps.decision_overrides import (
+        DecisionOverridesError,
+        apply_decision_edit,
+    )
+    from apps.opps.public_input import (
+        PublicInputRejected,
+        resolve_reviewer,
+        session_identity_is_trustworthy,
+    )
+
+    _enforce_public_write_budget(request)
+    ws = _public_workspace(workspace)
+    drive = _public_write_drive(ws)
+    _public_run_folders(drive, ws, slug, run_id)
+
+    try:
+        reviewer = resolve_reviewer(
+            getattr(request, "user", None)
+            if session_identity_is_trustworthy(request)
+            else None,
+            reviewer=body.reviewer,
+            reviewer_email=body.reviewer_email,
+        )
+        result = apply_decision_edit(
+            drive,
+            ace_root_folder_id=ws.drive_root_folder_id,
+            opp_slug=slug,
+            source_run_id=run_id,
+            decision_id=decision_id,
+            value=body.value,
+            reasoning=body.reasoning or "",
+            reviewer=reviewer,
+        )
+    except PublicInputRejected as exc:
+        raise ProblemError(
+            400, "Change not recorded", type_=TYPE_VALIDATION, detail=str(exc),
+        ) from exc
+    except DecisionOverridesError as exc:
+        status = 404 if exc.code in ("decision-not-found", "opp-not-found",
+                                     "run-not-found") else 400
+        raise ProblemError(
+            status,
+            "Change not recorded",
+            type_=TYPE_NOT_FOUND if status == 404 else TYPE_VALIDATION,
+            detail=str(exc),
+        ) from exc
+
+    _invalidate_summary_cache(workspace, slug, run_id)
+    projected = dict(result["row"] or {})
+    payload = DecisionEditOut.model_validate({
+        "decision_id": decision_id, **projected,
+    }).model_dump(mode="json")
+    return JsonResponse(payload)
+
+
+
+
+@public_summary_router.post(
+    "/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/reactions",
+    response={201: DecisionReactionOut},
+    summary="React to one decision on the public run summary (no auth)",
+)
+def public_decision_reaction(
+    request: HttpRequest,
+    workspace: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+    decision_id: Annotated[str, Path()],
+    body: DecisionReactionIn,
+) -> HttpResponse:
+    """Record a partner's reaction to ONE decision row.
+
+    Same URL family and same no-auth posture as the summary itself: the
+    page a partner is handed has no login, and sending them elsewhere to
+    respond is how a response never happens.
+
+    The reaction lands as a feedback-ledger record in Drive
+    (``ACE/<opp>/feedback/<YYYYMMDD>-public-<reviewer>.yaml``), which is
+    the store the ACE plugin's ``skills/feedback-ledger`` already reads —
+    see ``apps.opps.reactions`` for why this is neither the gates
+    endpoint nor ``decision-overrides.yaml``.
+
+    Writes are bounded on four axes: a per-IP burst window, a per-IP day,
+    a per-record item ceiling, and a per-run item ceiling. Body length
+    caps are enforced twice — by the schema before any Drive call, and by
+    the writer.
+    """
+    from apps.opps.reactions import ReactionRejected, submit_decision_reaction
+
+    _enforce_public_write_budget(request)
+    ws = _public_workspace(workspace)
+    drive = _public_write_drive(ws)
+    opp_folder, run_folder = _public_run_folders(drive, ws, slug, run_id)
+
+    summary_url = request.build_absolute_uri(
+        f"/ace/opps/{workspace}/{slug}/runs/{run_id}/summary?tab=decisions"
+    )
+    try:
+        result = submit_decision_reaction(
+            drive=drive,
+            opp_folder_id=opp_folder.id,
+            run_folder_id=run_folder.id,
+            run_id=run_id,
+            decision_id=decision_id,
+            reviewer=body.reviewer,
+            reviewer_email=body.reviewer_email,
+            comment=body.comment,
+            artifact_url=summary_url,
+        )
+    except ReactionRejected as exc:
+        status = {"not-found": 404, "too-many": 429}.get(exc.code, 400)
+        raise ProblemError(
+            status,
+            "Comment not recorded",
+            type_=TYPE_NOT_FOUND if status == 404 else TYPE_VALIDATION,
+            detail=str(exc),
+        ) from exc
+
+    _invalidate_summary_cache(workspace, slug, run_id)
+    payload = DecisionReactionOut.model_validate(
+        {**result, "decision_id": decision_id}
+    ).model_dump(mode="json")
+    return JsonResponse(payload, status=201)
 
 
 # ---------------------------------------------------------------------------

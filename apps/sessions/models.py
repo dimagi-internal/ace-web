@@ -1,17 +1,27 @@
-"""Data models for the ACE web harness sessions, messages, and drafts.
+"""Data models for ACE's Session/Message execution engine.
+
+Session + Message are NOT chat-only: they're the record of every assistant
+turn ACE drives, whether from a human typing (retired — see canopy-web) or a
+programmatic run (``apps.opps.api::seeded_run``, the ``drive_turn`` mgmt
+command, Slack-triggered runs). turn_driver.py is the shared execution path
+for both. See the PR that retired the interactive chat UI (apps/sessions/
+consumers.py, drafts.py, presence.py, routing.py, and the Draft/ShareToken
+models) for why this app is not a "legacy chat app" in the narrow sense.
 
 These models are designed to be:
-- Append-only for messages: the consumer in Plan 1B/1C is the sole writer
-  and never edits a row after status='complete'. Enforcement lives in the
-  consumer/serializer layer, not at the DB level.
+- Append-only for messages: the turn driver is the sole writer and never
+  edits a row after status='complete'.
 - Multi-player native (many-to-many user-session via SessionParticipant)
 - Extensible to future modules via nullable opportunity_id, ocs_agent_id, idd_ref
 """
 import gzip
 import secrets
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import IntegrityError, models, transaction
+from django.db.models import Q
+from django.utils import timezone
 
 
 def generate_slug() -> str:
@@ -20,7 +30,20 @@ def generate_slug() -> str:
 
 
 def generate_share_token() -> str:
-    """24-byte URL-safe random token for share URLs (~32 chars)."""
+    """24-byte URL-safe random token.
+
+    The ``ShareToken`` model that used this as a field default is gone (the
+    session-sharing feature retired with ace-web's own chat UI), but this
+    function must stay: ``apps/sessions/migrations/0001_initial.py`` (an
+    already-applied, already-shipped migration) references it by dotted path
+    (``apps.sessions.models.generate_share_token``) as that historical
+    field's ``default=``, and Django resolves that reference by importing
+    this module every time the migration graph loads — including on a
+    fresh/test database replaying history from migration 0001 forward, long
+    after the field itself was dropped by a later migration. Removing this
+    function breaks `manage.py migrate`/`makemigrations` with an
+    AttributeError. Do not remove without first squashing migrations.
+    """
     return secrets.token_urlsafe(24)
 
 
@@ -64,6 +87,15 @@ class Session(models.Model):
     opp_run_id = models.CharField(max_length=64, blank=True, default="")
     opp_step_skill = models.CharField(max_length=64, blank=True, default="")
 
+    # The canopy Session this opp-run executes in (spec 2026-07-26). One
+    # canopy Session per ace-web Session, which is already 1:1 with an
+    # opp-run. Targeting the SESSION and not the agent is load-bearing:
+    # canopy's one_executing_turn_per_agent constraint would serialize every
+    # ACE run in the fleet to one at a time; one_executing_turn_per_session
+    # matches ace's real shape (one turn per run, many runs at once).
+    # Empty = this run has never been dispatched to canopy.
+    canopy_session_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
     workspace = models.ForeignKey(
         "ace_workspaces.Workspace",
         on_delete=models.SET_NULL,
@@ -74,6 +106,12 @@ class Session(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     cost_breakdown = models.JSONField(default=dict, blank=True)
+    # Liveness beacon: the turn driver stamps this when a turn starts and the
+    # subprocess heartbeat refreshes it every HEARTBEAT_INTERVAL_SECONDS while
+    # alive. A non-terminal turn (assistant message streaming/pending) whose
+    # heartbeat has gone stale = the driving subprocess died without finishing
+    # (e.g. an ECS task replaced mid-run by a deploy). See `interrupted()`.
+    driver_heartbeat_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "sessions"
@@ -126,6 +164,79 @@ class Session(models.Model):
                 session=session, user=owner, role="owner",
             )
         return session
+
+    # Default staleness window: 3x the 30s subprocess heartbeat. A driver that
+    # hasn't beaten in this long is gone, not merely quiet.
+    DRIVER_STALE_SECONDS = 90
+
+    # How far back the post-deploy resume scope reaches. A deploy drains its
+    # tasks within minutes; anything killed longer ago than this is not "this
+    # deploy" — it's an ancient corpse or an old user-stop, which must NOT be
+    # revived on every subsequent deploy.
+    RESUME_MAX_AGE_SECONDS = 1800  # 30 min
+
+    @classmethod
+    def resumable_after_deploy(
+        cls, max_age_seconds: int | None = None, grace_seconds: int | None = None
+    ):
+        """The post-deploy hook's resume scope — runs killed mid-flight
+        RECENTLY, covering BOTH kill modes an ECS deploy produces:
+
+          (A) hard kill (SIGKILL / task vanishes) → the assistant turn is left
+              non-terminal (streaming/pending) with a recent-but-stale beat;
+          (B) graceful cancel (SIGTERM — the COMMON drain path, 30s grace) →
+              the driver's signal handler marks the turn
+              ``error: 'cancelled (partial: N chars)'`` before exiting.
+
+        ``interrupted()`` only sees (A); (B) was discovered by live validation
+        (ECS sends SIGTERM first, so most deploy-kills are gracefully cancelled,
+        not left streaming). Both are resumable from run_state.yaml; a genuine
+        logic error (``CLIBackendError: ...``) is not (its detail doesn't start
+        with ``cancelled``).
+
+        Age-bounded by ``max_age_seconds`` so undateable null-heartbeat corpses
+        and day-old user-stops aren't revived on every deploy. The single
+        ``/{slug}/resume`` endpoint bypasses this gate (explicit operator
+        intent); only the bulk post-deploy sweep uses it."""
+        grace = cls.DRIVER_STALE_SECONDS if grace_seconds is None else grace_seconds
+        max_age = cls.RESUME_MAX_AGE_SECONDS if max_age_seconds is None else max_age_seconds
+        now = timezone.now()
+        stale = now - timedelta(seconds=grace)
+        floor = now - timedelta(seconds=max_age)
+        hard_kill = Q(
+            messages__role="assistant",
+            messages__status__in=("streaming", "pending"),
+            driver_heartbeat_at__lt=stale,
+            driver_heartbeat_at__gte=floor,
+        )
+        graceful_cancel = Q(
+            messages__role="assistant",
+            messages__status="error",
+            messages__error_detail__startswith="cancelled",
+            messages__completed_at__gte=floor,
+        )
+        return cls.objects.filter(hard_kill | graceful_cancel).distinct()
+
+    @classmethod
+    def interrupted(cls, grace_seconds: int | None = None):
+        """Sessions whose run died mid-flight: a non-terminal assistant turn
+        (status streaming/pending) with no live driver (heartbeat null or
+        older than `grace_seconds`). Deterministic — survives the task that
+        was driving the run being replaced, since it reads only the DB.
+
+        This is the resume candidate set: each is a run that should still be
+        running but isn't. A cleanly-finished run has status='complete'
+        (excluded); a still-live run has a fresh heartbeat (excluded)."""
+        grace = cls.DRIVER_STALE_SECONDS if grace_seconds is None else grace_seconds
+        cutoff = timezone.now() - timedelta(seconds=grace)
+        return (
+            cls.objects.filter(
+                messages__role="assistant",
+                messages__status__in=("streaming", "pending"),
+            )
+            .filter(Q(driver_heartbeat_at__isnull=True) | Q(driver_heartbeat_at__lt=cutoff))
+            .distinct()
+        )
 
 
 class SessionParticipant(models.Model):
@@ -184,6 +295,10 @@ class Message(models.Model):
     content = models.JSONField()
     plaintext = models.TextField(blank=True, default="")
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
+    # The canopy Turn this assistant message is executed by (spec 2026-07-26).
+    # ace-web owns this mapping because canopy's send route builds its own
+    # origin_ref and takes none from the caller — see run_dispatch.py.
+    canopy_turn_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
     error_detail = models.TextField(null=True, blank=True)
     # Set explicitly by the consumer when streaming begins (Plan 1B/1C).
     # Distinct from `created_at`, which is set on row insert.
@@ -203,73 +318,6 @@ class Message(models.Model):
             ),
         ]
         ordering = ["session_id", "turn_index"]
-
-
-class Draft(models.Model):
-    SLOT_CHOICES = [
-        ("next", "Next"),
-        ("queued", "Queued"),
-    ]
-    STATUS_CHOICES = [
-        ("open", "Open"),
-        ("sent", "Sent"),
-        ("discarded", "Discarded"),
-    ]
-
-    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="drafts")
-    creator_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_drafts"
-    )
-    slot = models.CharField(max_length=8, choices=SLOT_CHOICES, default="queued")
-    queue_position = models.IntegerField(null=True, blank=True)
-    body = models.TextField(blank=True, default="")
-    version = models.IntegerField(default=0)
-    last_editor = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="edited_drafts"
-    )
-    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="open")
-    sent_at = models.DateTimeField(null=True, blank=True)
-    sent_message = models.ForeignKey(
-        Message, on_delete=models.SET_NULL, null=True, blank=True, related_name="from_draft"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Draft {self.id} ({self.slot}/{self.status})"
-
-    class Meta:
-        db_table = "drafts"
-        constraints = [
-            # Only one open "next" draft per session.
-            models.UniqueConstraint(
-                fields=["session"],
-                condition=models.Q(slot="next", status="open"),
-                name="one_next_per_session",
-            ),
-        ]
-
-
-class ShareToken(models.Model):
-    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name="share_tokens")
-    token = models.CharField(max_length=64, unique=True, default=generate_share_token)
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="share_tokens"
-    )
-    revoked_at = models.DateTimeField(null=True, blank=True)
-    workspace = models.ForeignKey(
-        "ace_workspaces.Workspace",
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name="share_tokens",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Token {self.token[:8]}... for session {self.session_id}"  # pyright: ignore[reportIndexIssue]
-
-    class Meta:
-        db_table = "share_tokens"
 
 
 class IngestUpload(models.Model):
@@ -293,6 +341,19 @@ class IngestUpload(models.Model):
     # (pre-this-PR) and tests that don't care can omit it. Postgres TOAST
     # transparently out-of-lines large values.
     raw_jsonl_gz = models.BinaryField(null=True, blank=True)
+    # Where these bytes came from (spec 2026-07-26, item 5).
+    #   "local"  — SOURCE OF RECORD. An uploaded transcript (POST /api/ingest/
+    #              upload) or a pre-canopy live capture. Never refetched.
+    #   "canopy" — a CACHE of canopy's per-turn retained transcripts, keyed by
+    #              `canopy_turn_ids`. canopy is the source of record; this row
+    #              exists so /structure does not pull up to 100 MB per turn over
+    #              HTTP on every page view. Safe to delete; it rebuilds.
+    SOURCE_LOCAL, SOURCE_CANOPY = "local", "canopy"
+    SOURCE_CHOICES = [(SOURCE_LOCAL, "Local"), (SOURCE_CANOPY, "Canopy")]
+    source = models.CharField(max_length=16, choices=SOURCE_CHOICES, default=SOURCE_LOCAL)
+    # The canopy Turn ids this cache was built from, in turn order. Cache key:
+    # a differing list means refetch. Always empty for source="local".
+    canopy_turn_ids = models.JSONField(default=list, blank=True)
     workspace = models.ForeignKey(
         "ace_workspaces.Workspace",
         on_delete=models.SET_NULL,

@@ -1,0 +1,31 @@
+# Template metadata. The generator service reads this to surface the
+# template in the picker and to know which prompt + skeleton to use.
+id: connect-explainer
+name: How Connect works (generic explainer)
+description: |
+  Generic "how Connect works" explainer in explainer mode —
+  the Learn → Deliver → Verify → Pay loop, including Connect's AI
+  features (AI training coach, AI-assisted verification review). No
+  prospect branding, no program-specific identity beyond a generic
+  name, and NO stat-card beats (problem + impact are omitted). Six
+  rendered beats: opening hook, four-step cycle animation, handoff,
+  field b-roll, a four-clip app walkthrough, end card. Renders ~42s.
+intent: >-
+  Explain how Connect works in one breath — the Learn → Deliver → Verify → Pay loop,
+  naming Connect's AI features (AI training coach, AI-assisted verification review) as the
+  differentiator. Generic, no prospect branding, no program stats; the mechanism end-to-end
+  using real library footage and real app screencasts.
+intended_audience: |
+  Anyone meeting Connect for the first time — a top-of-funnel
+  prospect, a teammate, a conference booth loop. Not tailored to one
+  org and not citing one program's outcomes; it explains the
+  mechanism, end to end, using real library footage and real app
+  screencasts.
+when_to_use: |
+  - You want one evergreen "this is what Connect is" video with no
+    program-specific stats or partner branding to keep current.
+  - You have the standard library clips (field b-roll + mobile/web
+    screencasts) and don't need (or don't have) reportable outcome
+    numbers. For a program-specific cut with stats, use
+    60s-campaign-overview; for a branded prospect pitch, use
+    partnership-pitch.

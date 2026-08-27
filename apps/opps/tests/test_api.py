@@ -1,20 +1,22 @@
 import datetime as dt
+import json
 
 import pytest
 from django.contrib.auth import get_user_model
 
 from apps.opps.schemas import (
-    ArtifactOut,
     ForkProgress,
     GateOut,
     OppCardOut,
     OppCompareOut,
     OppForkOut,
     OppHealthOut,
-    OppRunOut,
     OppSnapshotOut,
     ScorecardOut,
     SeedChatOut,
+    SeededRunIn,
+    SeededRunOut,
+    StepArtifactOut,
     StepSnapshotOut,
 )
 from apps.workspaces.models import Workspace, WorkspaceMembership
@@ -1138,7 +1140,7 @@ def test_get_artifact_happy_path(member_client, monkeypatch):
     )
     response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc")
     assert response.status_code == 200
-    ArtifactOut.model_validate(response.json())
+    StepArtifactOut.model_validate(response.json())
     assert response.json()["id"] == "file-abc"
 
 
@@ -1181,7 +1183,7 @@ def test_download_artifact_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
         "apps.opps.api.download_artifact_bytes",
-        lambda workspace, slug, artifact_id: (b"hello world", "text/plain"),
+        lambda workspace, slug, artifact_id, run_id=None: (b"hello world", "text/plain"),
     )
     response = client.get("/api/w/ws1/opps/opp-1/artifacts/file-abc/download")
     assert response.status_code == 200
@@ -1203,7 +1205,7 @@ def test_download_artifact_401_anonymous(db, client):
 def test_download_artifact_404_unknown(member_client, monkeypatch):
     client, _, _ = member_client
 
-    def _raise(workspace, slug, artifact_id):
+    def _raise(workspace, slug, artifact_id, run_id=None):
         raise FileNotFoundError("artifact not found")
 
     monkeypatch.setattr("apps.opps.api.download_artifact_bytes", _raise)
@@ -1702,6 +1704,362 @@ def test_seed_chat_404_opp_not_found(member_client, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# POST /w/{ws}/opps/{slug}/actions/seeded-run
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_seeded_run_happy_path(member_client, monkeypatch):
+    client, _, _ = member_client
+    captured = {}
+
+    def _fake(workspace, slug, user, body):
+        captured["only"] = body.only
+        captured["golden"] = body.golden_run_id
+        return {
+            "session_slug": "sess-seeded",
+            "assistant_message_id": 4242,
+            "run_id": "20260601-1200",
+        }
+
+    driven = {}
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
+    monkeypatch.setattr(
+        "apps.sessions.turn_driver.start_turn_subprocess",
+        lambda mid: driven.update(mid=mid),
+    )
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258", "only": "3,4,6"},
+        content_type="application/json",
+    )
+    assert response.status_code == 202
+    SeededRunOut.model_validate(response.json())
+    assert response.json()["session_slug"] == "sess-seeded"
+    assert response.json()["assistant_message_id"] == 4242
+    assert response.json()["run_id"] == "20260601-1200"
+    assert captured == {"only": "3,4,6", "golden": "20260531-2258"}
+    # The turn driver was launched (detached) against the assistant placeholder.
+    assert driven == {"mid": 4242}
+
+
+@pytest.mark.django_db
+def test_seeded_run_routes_through_the_canopy_dispatch_seam(member_client, monkeypatch):
+    """The route must call run_dispatch.start_turn, not the subprocess directly —
+    otherwise flipping CANOPY_RUN_EXECUTION has no effect on the seeded run."""
+    client, _, _ = member_client
+    called = []
+    monkeypatch.setattr("apps.canopy.run_dispatch.start_turn", lambda mid: called.append(mid))
+    # Belt and braces: if the route ever regresses to calling the subprocess
+    # directly, patching only the seam would let it spawn a REAL detached
+    # `manage.py drive_turn` in CI before the assertion below fired.
+    spawned = []
+    monkeypatch.setattr(
+        "apps.sessions.turn_driver.start_turn_subprocess", lambda mid: spawned.append(mid)
+    )
+    monkeypatch.setattr(
+        "apps.opps.api.seed_run_for_opp",
+        lambda *a, **k: {"session_slug": "s", "assistant_message_id": 4242, "run_id": "r"},
+    )
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 202
+    assert called == [4242]
+    assert spawned == []  # the route went through the seam, not around it
+
+
+@pytest.mark.django_db
+def test_seeded_run_defaults_only_to_3_4_6(member_client, monkeypatch):
+    client, _, _ = member_client
+    captured = {}
+
+    def _fake(workspace, slug, user, body):
+        captured["only"] = body.only
+        return {"session_slug": "s", "assistant_message_id": 1, "run_id": "r"}
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
+    monkeypatch.setattr("apps.sessions.turn_driver.start_turn_subprocess", lambda mid: None)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 202
+    assert captured["only"] == "3,4,6"
+
+
+@pytest.mark.django_db
+def test_seeded_run_skip_evals_defaults_true(member_client, monkeypatch):
+    """Seeded runs are the test harness; evals don't gate, so they default off."""
+    client, _, _ = member_client
+    captured = {}
+
+    def _fake(workspace, slug, user, body):
+        captured["skip_evals"] = body.skip_evals
+        return {"session_slug": "s", "assistant_message_id": 1, "run_id": "r"}
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
+    monkeypatch.setattr("apps.sessions.turn_driver.start_turn_subprocess", lambda mid: None)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 202
+    assert captured["skip_evals"] is True
+
+
+@pytest.mark.django_db
+def test_seeded_run_skip_evals_can_be_disabled(member_client, monkeypatch):
+    client, _, _ = member_client
+    captured = {}
+
+    def _fake(workspace, slug, user, body):
+        captured["skip_evals"] = body.skip_evals
+        return {"session_slug": "s", "assistant_message_id": 1, "run_id": "r"}
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _fake)
+    monkeypatch.setattr("apps.sessions.turn_driver.start_turn_subprocess", lambda mid: None)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258", "skip_evals": False},
+        content_type="application/json",
+    )
+    assert response.status_code == 202
+    assert captured["skip_evals"] is False
+
+
+@pytest.mark.django_db
+def test_seeded_run_422_bad_only_shape(member_client):
+    client, _, _ = member_client
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258", "only": "three,4"},
+        content_type="application/json",
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.django_db
+def test_seeded_run_422_empty_golden(member_client):
+    client, _, _ = member_client
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": ""},
+        content_type="application/json",
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.django_db
+def test_seeded_run_404_non_member(non_member_client):
+    client, _, _ = non_member_client
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_seeded_run_401_anonymous(db, client):
+    Workspace.objects.create(
+        slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
+        created_by=User.objects.create_user(email="creator-seeded1@example.com"),
+    )
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.django_db
+def test_seeded_run_404_golden_not_found(member_client, monkeypatch):
+    client, _, _ = member_client
+
+    def _raise(workspace, slug, user, body):
+        raise FileNotFoundError("run 20260101-0000 not found")
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _raise)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260101-0000"},
+        content_type="application/json",
+    )
+    assert response.status_code == 404
+    assert response["Content-Type"].startswith("application/problem+json")
+
+
+@pytest.mark.django_db
+def test_seed_run_for_opp_forks_then_plain_resume(member_client, monkeypatch):
+    """The real seed_run_for_opp forks the golden with the structural shape
+    (run_phases + no session), then seeds a PLAIN resume command — no
+    --seed-from/--only flags — and returns the new run_id (ace#672)."""
+    from apps.opps import api as opps_api
+    from apps.opps.opp_forker import ForkOppResult
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+    captured: dict = {}
+
+    def _fake_fork(**kwargs):
+        captured.update(kwargs)
+        return ForkOppResult(
+            opp_slug=kwargs["source_slug"],
+            new_run_id="20260601-0900",
+            new_run_folder_id="folder-new",
+            working_session=None,
+        )
+
+    monkeypatch.setattr("apps.opps.access.resolve_ace_root_folder_id", lambda ws: "ace-root")
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client", lambda workspace: object())
+    monkeypatch.setattr("apps.opps.opp_forker.fork_opp", _fake_fork)
+    monkeypatch.setattr(
+        "apps.opps.skills.all_phases",
+        lambda: ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"],
+    )
+
+    body = SeededRunIn(golden_run_id="20260531-2258", only="3,4,6", skip_evals=False)
+    result = opps_api.seed_run_for_opp(workspace, "opp-1", user, body)
+
+    # Fork was asked for the structural shape: target ordinals pending, no
+    # session, fork at the lowest ordinal's phase (p3).
+    assert captured["run_phases"] == [3, 4, 6]
+    assert captured["create_session"] is False
+    assert captured["fork_at_phase"] == "p3"
+    assert captured["source_run_id"] == "20260531-2258"
+    assert captured["mode"] == "keep-all"
+
+    # Returns the NEW forked run-id.
+    assert result["run_id"] == "20260601-0900"
+
+    # The seeded turn is a PLAIN resume — no flag interpretation.
+    session = Session.objects.get(slug=result["session_slug"])
+    turn0 = session.messages.get(turn_index=0)
+    assert turn0.plaintext == "/ace:run opp-1/20260601-0900"
+    assert "--seed-from" not in turn0.plaintext
+    assert "--only" not in turn0.plaintext
+    # Assistant placeholder is pending for the headless driver.
+    assert session.messages.get(turn_index=1).status == "pending"
+
+
+@pytest.mark.django_db
+def test_seed_run_for_opp_default_skips_evals(member_client, monkeypatch):
+    """With the default skip_evals=True, the seeded resume appends --no-evals
+    (seeded runs are the test harness; evals don't gate)."""
+    from apps.opps import api as opps_api
+    from apps.opps.opp_forker import ForkOppResult
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+
+    monkeypatch.setattr("apps.opps.access.resolve_ace_root_folder_id", lambda ws: "ace-root")
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client", lambda workspace: object())
+    monkeypatch.setattr(
+        "apps.opps.opp_forker.fork_opp",
+        lambda **kw: ForkOppResult(
+            opp_slug=kw["source_slug"], new_run_id="20260601-0900",
+            new_run_folder_id="folder-new", working_session=None,
+        ),
+    )
+    monkeypatch.setattr(
+        "apps.opps.skills.all_phases",
+        lambda: ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"],
+    )
+
+    body = SeededRunIn(golden_run_id="20260531-2258", only="3,4,6")  # skip_evals defaults True
+    result = opps_api.seed_run_for_opp(workspace, "opp-1", user, body)
+
+    session = Session.objects.get(slug=result["session_slug"])
+    assert session.messages.get(turn_index=0).plaintext == "/ace:run opp-1/20260601-0900 --no-evals"
+
+
+# ---------------------------------------------------------------------------
+# Nova preflight — ace-web#636
+# ---------------------------------------------------------------------------
+
+
+def test_nova_preflight_raises_when_nova_phase_selected_and_auth_dead(monkeypatch):
+    from apps.opps import api as opps_api
+
+    monkeypatch.setattr("apps.common.nova_auth_flow.validate_any_token", lambda: False)
+    phases = ["p1", "p2", "commcare-setup", "p4"]
+    with pytest.raises(opps_api.NovaAuthInvalid):
+        opps_api.nova_preflight([3, 4], phases)
+
+
+def test_nova_preflight_skips_when_nova_phase_not_selected(monkeypatch):
+    from apps.opps import api as opps_api
+
+    probed = []
+    monkeypatch.setattr(
+        "apps.common.nova_auth_flow.validate_any_token",
+        lambda: probed.append(1) is None and False,
+    )
+    opps_api.nova_preflight([4], ["p1", "p2", "commcare-setup", "p4"])
+    assert probed == []  # no live probe when the Nova phase isn't in the run
+
+
+def test_nova_preflight_skips_when_registry_lacks_nova_phase(monkeypatch):
+    from apps.opps import api as opps_api
+
+    monkeypatch.setattr("apps.common.nova_auth_flow.validate_any_token", lambda: False)
+    opps_api.nova_preflight([3], ["p1", "p2", "p3"])  # must not raise
+
+
+def test_nova_preflight_passes_when_auth_valid(monkeypatch):
+    from apps.opps import api as opps_api
+
+    monkeypatch.setattr("apps.common.nova_auth_flow.validate_any_token", lambda: True)
+    opps_api.nova_preflight([3], ["p1", "p2", "commcare-setup"])  # must not raise
+
+
+@pytest.mark.django_db
+def test_seeded_run_409_nova_auth_invalid(member_client, monkeypatch):
+    """A dead Nova auth turns the seeded-run action into 409 nova_auth_invalid
+    instead of minting a run doomed to halt at Phase 3 (ace-web#636)."""
+    from apps.opps import api as opps_api
+
+    client, _, _ = member_client
+
+    def _raise(workspace, slug, user, body):
+        raise opps_api.NovaAuthInvalid("Nova auth is not valid")
+
+    monkeypatch.setattr("apps.opps.api.seed_run_for_opp", _raise)
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/actions/seeded-run",
+        data={"golden_run_id": "20260531-2258"},
+        content_type="application/json",
+    )
+    assert response.status_code == 409
+    assert response["Content-Type"].startswith("application/problem+json")
+    body = response.json()
+    assert body["extras"]["code"] == "nova_auth_invalid"
+    assert "nova/initiate" in body["extras"]["reconnect_url"]
+
+
+@pytest.mark.django_db
+def test_seed_run_for_opp_rejects_out_of_range_only(member_client, monkeypatch):
+    """An --only ordinal past the phase count raises ValueError (→ 404 at the route)."""
+    from apps.opps import api as opps_api
+
+    _, workspace, user = member_client
+    monkeypatch.setattr("apps.opps.access.resolve_ace_root_folder_id", lambda ws: "ace-root")
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client", lambda workspace: object())
+    monkeypatch.setattr("apps.opps.skills.all_phases", lambda: ["p1", "p2", "p3"])
+
+    body = SeededRunIn(golden_run_id="20260531-2258", only="9")
+    with pytest.raises(ValueError, match="out of range"):
+        opps_api.seed_run_for_opp(workspace, "opp-1", user, body)
+
+
+# ---------------------------------------------------------------------------
 # Task 2.1.19 — GET /w/{ws}/opps/{slug}/health
 # ---------------------------------------------------------------------------
 
@@ -1801,3 +2159,532 @@ def test_invalidate_snapshot_401_anonymous(db, client):
     )
     response = client.post("/api/w/ws1/opps/opp-1/snapshot/invalidate")
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Run execution state on the runs list (spec 2026-07-26, item 6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_run_execution_for_is_none_when_the_run_never_went_to_canopy(member_client):
+    from apps.opps.api import _run_execution_for
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+    Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="opp-a", opp_run_id="run-1",  # no canopy_session_id
+    )
+    assert _run_execution_for(workspace, "opp-a", "run-1") is None
+
+
+@pytest.mark.django_db
+def test_run_execution_for_reports_the_canopy_state(member_client, monkeypatch):
+    from apps.opps.api import _run_execution_for
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+    Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="opp-a", opp_run_id="run-1", canopy_session_id="sess-1",
+    )
+    monkeypatch.setattr(
+        "apps.canopy.run_state.execution_state",
+        lambda s: {"state": "no_runner_configured", "detail": "no runner",
+                   "canopy_turn_id": "turn-1", "canopy_session_id": "sess-1"},
+    )
+    assert _run_execution_for(workspace, "opp-a", "run-1")["state"] == "no_runner_configured"
+
+
+@pytest.mark.django_db
+def test_run_execution_for_never_raises(member_client, monkeypatch):
+    """The runs list is the opp workbench's primary read. A bad minute on
+    canopy must degrade the badge, not 500 the whole page."""
+    from apps.opps.api import _run_execution_for
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+    Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="opp-a", opp_run_id="run-1", canopy_session_id="sess-1",
+    )
+    monkeypatch.setattr(
+        "apps.canopy.run_state.execution_state",
+        lambda s: (_ for _ in ()).throw(RuntimeError("kaboom")),
+    )
+    assert _run_execution_for(workspace, "opp-a", "run-1") is None
+
+
+@pytest.mark.django_db
+def test_run_execution_for_does_not_write(member_client, monkeypatch):
+    """A list read must not reconcile — `reconcile_session` writes rows, and a
+    GET of the opp page is not permission to mutate every run under it."""
+    from apps.opps.api import _run_execution_for
+    from apps.sessions.models import Session
+
+    _, workspace, user = member_client
+    Session.create_with_owner(
+        owner=user, workspace=workspace, source="web",
+        opp_slug="opp-a", opp_run_id="run-1", canopy_session_id="sess-1",
+    )
+    monkeypatch.setattr(
+        "apps.canopy.run_state.execution_state",
+        lambda s: {"state": "queued", "detail": "", "canopy_turn_id": "t",
+                   "canopy_session_id": "sess-1"},
+    )
+    import apps.canopy.run_state as _rs
+    monkeypatch.setattr(
+        _rs, "reconcile_session",
+        lambda s: (_ for _ in ()).throw(AssertionError("the list read reconciled")),
+    )
+    assert _run_execution_for(workspace, "opp-a", "run-1")["state"] == "queued"
+
+
+@pytest.mark.django_db
+def test_runs_list_carries_the_execution_state(member_client, monkeypatch):
+    """The enrichment must actually reach the payload, or the frontend badge is
+    dead code: `RunSummary.execution` would always be undefined."""
+    from apps.opps import api as opps_api
+    from apps.opps.sync import RunSummary
+
+    _, workspace, _user = member_client
+    monkeypatch.setattr(
+        "apps.opps.access.resolve_ace_root_folder_id", lambda ws: "root-1",
+    )
+    monkeypatch.setattr("apps.opps.drive_client.get_drive_client", lambda workspace: object())
+    monkeypatch.setattr(
+        "apps.opps.sync.list_opp_runs",
+        lambda drive, *, ace_root_folder_id, opp_slug: [
+            RunSummary(
+                run_id="run-1", folder_id="f", current_phase=None, current_step=None,
+                mode=None, last_actor=None, last_actor_at=None,
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        opps_api, "_run_execution_for",
+        lambda ws, slug, run_id: {"state": "no_runner_configured", "detail": "no runner",
+                                  "canopy_turn_id": "t", "canopy_session_id": "s"},
+    )
+    runs = opps_api.list_opp_runs_for_workspace(workspace, "opp-a")
+    assert runs[0]["execution"]["state"] == "no_runner_configured"
+
+
+# ---------------------------------------------------------------------------
+# Public per-run summary — internal links are member-only
+#
+# The footer's "See the full build process" pointed at the Workbench,
+# which 404s (not "sign in") for anyone who isn't a signed-in member —
+# and ace-web rejects non-@dimagi.com sign-ins at the OAuth callback, so
+# for an external reviewer it can never work. Indistinguishable from
+# "this run doesn't exist".
+# ---------------------------------------------------------------------------
+
+
+def _summary_drive():
+    from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
+
+    return FakeDriveClient.from_tree({
+        "ACE": {
+            "turmeric": {
+                "opp.yaml": "display_name: Turmeric\nslug: turmeric\n",
+                "runs": {"20260503-0835": {"run_state.yaml": "phases: {}\n"}},
+            },
+        },
+    })
+
+
+@pytest.fixture
+def summary_workspace(db, monkeypatch):
+    from django.core.cache import cache
+
+    cache.clear()
+    drive = _summary_drive()
+    creator = User.objects.create_user(email="summary-creator@example.com")
+    workspace = Workspace.objects.create(
+        slug="summary-ws", display_name="Summary WS",
+        drive_root_folder_id=drive.folder_id("ACE"), created_by=creator,
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client", lambda workspace=None: drive,
+    )
+    return workspace
+
+
+_SUMMARY_URL = "/api/opps/public/summary-ws/turmeric/runs/20260503-0835/summary"
+
+
+@pytest.mark.django_db
+def test_public_summary_serves_the_workbench_link_to_anonymous_visitors(
+    client, summary_workspace
+):
+    """Gated links are shown and tagged, not hidden — an outsider who is
+    shown nothing can't tell a gated link from a run that doesn't exist."""
+    body = client.get(_SUMMARY_URL).json()
+    assert body["opp"]["slug"] == "turmeric"
+    assert body["workbench"]["url"] == "/w/summary-ws/opps/turmeric/runs/20260503-0835"
+    assert body["workbench"]["access"] == "admin"
+    assert body["viewer"] == {"is_member": False}
+
+
+@pytest.mark.django_db
+def test_public_summary_marks_a_member_so_the_page_drops_the_tags(
+    client, summary_workspace
+):
+    user = User.objects.create_user(email="summary-member@example.com")
+    WorkspaceMembership.objects.create(
+        workspace=summary_workspace, user=user, role="editor",
+    )
+    client.force_login(user)
+    body = client.get(_SUMMARY_URL).json()
+    assert body["workbench"]["url"] == "/w/summary-ws/opps/turmeric/runs/20260503-0835"
+    assert body["viewer"] == {"is_member": True}
+
+
+@pytest.mark.django_db
+def test_public_summary_cache_does_not_leak_the_member_variant(
+    client, summary_workspace
+):
+    """Both variants are cached; the anonymous one must not be served a
+    payload built for a member (or vice versa)."""
+    user = User.objects.create_user(email="summary-member2@example.com")
+    WorkspaceMembership.objects.create(
+        workspace=summary_workspace, user=user, role="editor",
+    )
+    client.force_login(user)
+    assert client.get(_SUMMARY_URL).json()["viewer"]["is_member"] is True
+    client.logout()
+    assert client.get(_SUMMARY_URL).json()["viewer"]["is_member"] is False
+
+
+# ---------------------------------------------------------------------------
+# Public decision reactions — the write half of the review surface
+#
+# #708 shipped 42 decision rows on the public summary with no way to say
+# anything about any of them. These cover the endpoint: it writes where
+# skills/feedback-ledger reads, it refuses what it can't route, it
+# invalidates the cache it shares with the read path, and it is bounded.
+# ---------------------------------------------------------------------------
+
+
+_REACTION_DECISIONS = """\
+schema_version: 4
+opp: turmeric
+run_id: '20260503-0835'
+decisions:
+  - id: visit-window
+    phase: 1-design
+    question: How long is the visit window?
+    ai-default: 30 days
+    evidence_basis: inferred
+"""
+
+
+@pytest.fixture
+def reaction_workspace(db, monkeypatch):
+    from django.core.cache import cache
+
+    from apps.opps.tests.fixtures.fake_drive import FakeDriveClient
+
+    cache.clear()
+    drive = FakeDriveClient.from_tree({
+        "ACE": {
+            "turmeric": {
+                "opp.yaml": "display_name: Turmeric\nslug: turmeric\n",
+                "runs": {
+                    "20260503-0835": {
+                        "run_state.yaml": "phases: {}\n",
+                        "decisions.yaml": _REACTION_DECISIONS,
+                    },
+                },
+            },
+        },
+    })
+    creator = User.objects.create_user(email="reaction-creator@example.com")
+    Workspace.objects.create(
+        slug="summary-ws", display_name="Summary WS",
+        drive_root_folder_id=drive.folder_id("ACE"), created_by=creator,
+    )
+    monkeypatch.setattr(
+        "apps.opps.drive_client.get_drive_client", lambda workspace=None: drive,
+    )
+    return drive
+
+
+_REACTION_URL = (
+    "/api/opps/public/summary-ws/turmeric/runs/20260503-0835"
+    "/decisions/visit-window/reactions"
+)
+
+
+def _react(client, **body):
+    payload = {"reviewer": "Anne Kuhlmann", "comment": "30 days is too long here."}
+    payload.update(body)
+    return client.post(_REACTION_URL, payload, content_type="application/json")
+
+
+@pytest.mark.django_db
+def test_anonymous_visitor_can_react_to_a_decision(client, reaction_workspace):
+    """No auth, by design: the page a partner is handed has no login, and
+    sending them somewhere else to respond is how a response never happens."""
+    resp = _react(client)
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["decision_id"] == "visit-window"
+    assert body["feedback_ref"].endswith("/visit-window")
+    assert body["reviewer"] == "Anne Kuhlmann"
+
+    names = [f.name for f in reaction_workspace.list_files(
+        reaction_workspace.folder_id("ACE/turmeric/feedback"),
+    )]
+    assert names and names[0].endswith(".yaml") and "-public-" in names[0]
+
+
+@pytest.mark.django_db
+def test_reaction_shows_up_on_the_next_summary_read(client, reaction_workspace):
+    """The read path caches for 60s. A comment that takes a minute to
+    appear reads as a comment that was lost."""
+    summary_url = "/api/opps/public/summary-ws/turmeric/runs/20260503-0835/summary"
+    assert client.get(summary_url).json()["reactions"]["total"] == 0
+    _react(client)
+    reactions = client.get(summary_url).json()["reactions"]
+    assert reactions["total"] == 1
+    assert reactions["by_decision"]["visit-window"][0]["reviewer"] == "Anne Kuhlmann"
+
+    # …and again on the update path, which touches an existing record
+    # rather than creating the folder (a different cache key).
+    _react(client, comment="One more thought on the same row.")
+    assert client.get(summary_url).json()["reactions"]["total"] == 2
+
+
+@pytest.mark.django_db
+def test_reaction_requires_a_name(client, reaction_workspace):
+    assert _react(client, reviewer="").status_code == 422
+    assert _react(client, reviewer=" a ").status_code == 400
+
+
+@pytest.mark.django_db
+def test_reaction_rejects_html(client, reaction_workspace):
+    resp = _react(client, comment="<script>alert(1)</script> and also this")
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_reaction_to_an_unknown_decision_404s(client, reaction_workspace):
+    resp = client.post(
+        "/api/opps/public/summary-ws/turmeric/runs/20260503-0835"
+        "/decisions/no-such-row/reactions",
+        {"reviewer": "Anne Kuhlmann", "comment": "this row does not exist"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_reaction_to_an_unknown_run_404s(client, reaction_workspace):
+    resp = client.post(
+        "/api/opps/public/summary-ws/turmeric/runs/no-such-run"
+        "/decisions/visit-window/reactions",
+        {"reviewer": "Anne Kuhlmann", "comment": "no such run"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_reaction_rate_limit_kicks_in(client, reaction_workspace):
+    from apps.opps.api import PUBLIC_WRITE_BURST_LIMIT as REACTION_BURST_LIMIT
+
+    for i in range(REACTION_BURST_LIMIT):
+        assert _react(client, comment=f"comment number {i}").status_code == 201
+    assert _react(client, comment="one over the line").status_code == 429
+
+
+@pytest.mark.django_db
+def test_oversized_comment_is_refused_before_any_drive_write(client, reaction_workspace):
+    resp = _react(client, comment="x" * 5000)
+    assert resp.status_code == 422
+    root = reaction_workspace.folder_id("ACE/turmeric")
+    assert "feedback" not in [f.name for f in reaction_workspace.list_files(root)]
+
+
+# ---------------------------------------------------------------------------
+# Public decision EDIT — anyone with the link may change an answer.
+#
+# The bar to start engaging with ACE has to be very low because it is
+# speculative AI work, so this surface deliberately has no account
+# requirement, no proposal state, and no promotion gate. What makes that
+# safe is not permission — it is that every change is attributed,
+# reversible, and lands in the same store a member's edit lands in.
+# ---------------------------------------------------------------------------
+
+_EDIT_URL = (
+    "/api/opps/public/summary-ws/turmeric/runs/20260503-0835"
+    "/decisions/visit-window/edit"
+)
+_SUMMARY_URL = "/api/opps/public/summary-ws/turmeric/runs/20260503-0835/summary"
+
+
+def _edit(client, **body):
+    payload = {"value": "14 days", "reviewer": "Anne Kuhlmann"}
+    payload.update(body)
+    return client.post(_EDIT_URL, payload, content_type="application/json")
+
+
+def _overrides_rows(drive):
+    import yaml as _yaml
+    inputs = drive.folder_id("ACE/turmeric/inputs")
+    f = next(x for x in drive.list_files(inputs) if x.name == "decision-overrides.yaml")
+    return _yaml.safe_load(drive.get_content(f.id, f.mime_type).content)["overrides"]
+
+
+@pytest.mark.django_db
+def test_anonymous_visitor_can_change_a_decision(client, reaction_workspace):
+    resp = _edit(client, reasoning="Two weeks matches the payment cycle.")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["override"] == "14 days"
+    assert body["decided_by_name"] == "Anne Kuhlmann"
+    assert body["decided_by_verified"] is False
+
+    rows = _overrides_rows(reaction_workspace)
+    assert [r["id"] for r in rows] == ["visit-window"]
+    assert rows[0]["override"] == "14 days"
+    assert rows[0]["ai_default"] == "30 days"
+    assert rows[0]["decided_by_verified"] is False
+
+
+@pytest.mark.django_db
+def test_the_public_edit_lands_in_the_store_the_workbench_writes(
+    client, reaction_workspace,
+):
+    """Not a parallel store: `inputs/decision-overrides.yaml` is exactly
+    what the Workbench's authenticated editor saves and what the plugin's
+    `decisions_append_rows` binds on the next run."""
+    from apps.opps.decision_overrides import OVERRIDES_FILENAME, fetch_saved_overrides
+
+    _edit(client)
+    inputs = reaction_workspace.folder_id("ACE/turmeric/inputs")
+    assert OVERRIDES_FILENAME in [f.name for f in reaction_workspace.list_files(inputs)]
+
+    saved = fetch_saved_overrides(
+        reaction_workspace, opp_folder_id=reaction_workspace.folder_id("ACE/turmeric"),
+    )
+    assert saved["visit-window"]["override"] == "14 days"
+
+
+@pytest.mark.django_db
+def test_a_signed_in_member_is_never_anonymous(client, reaction_workspace):
+    """Logged in ⇒ the session identity wins and the typed name is
+    discarded. Two names on one change is worse than one."""
+    user = User.objects.create_user(email="ada@dimagi.com", display_name="Ada Member")
+    client.force_login(user)
+    resp = _edit(client, reviewer="Somebody Else")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["decided_by_name"] == "Ada Member"
+    assert body["decided_by_verified"] is True
+    assert _overrides_rows(reaction_workspace)[0]["decided_by"] == "ada@dimagi.com"
+
+
+@pytest.mark.django_db
+def test_reviewer_two_can_change_reviewer_one_and_the_first_answer_survives(
+    client, reaction_workspace,
+):
+    """The whole model: last-writer-wins is acceptable only because the
+    loser is recoverable."""
+    _edit(client, value="14 days", reviewer="Anne Kuhlmann")
+    resp = _edit(client, value="21 days", reviewer="Ben Okoro")
+    assert resp.status_code == 200
+
+    row = _overrides_rows(reaction_workspace)[0]
+    assert row["override"] == "21 days"
+    assert row["decided_by_name"] == "Ben Okoro"
+    assert [h["override"] for h in row["history"]] == ["14 days"]
+    assert row["history"][0]["decided_by_name"] == "Anne Kuhlmann"
+
+    served = client.get(_SUMMARY_URL).json()["decision_edits"]["visit-window"]
+    assert served["override"] == "21 days"
+    assert [h["override"] for h in served["history"]] == ["14 days"]
+
+
+@pytest.mark.django_db
+def test_an_edit_is_reversible_from_the_ui(client, reaction_workspace):
+    """Restoring the AI default is a normal edit, and leaves the trail
+    rather than erasing it."""
+    _edit(client, value="14 days", reviewer="Anne Kuhlmann")
+    resp = _edit(client, value="30 days", reviewer="Anne Kuhlmann")
+    assert resp.status_code == 200
+    assert resp.json()["is_revert"] is True
+
+    row = _overrides_rows(reaction_workspace)[0]
+    assert row["override"] == "30 days"
+    assert [h["override"] for h in row["history"]] == ["14 days"]
+
+
+@pytest.mark.django_db
+def test_an_edit_naming_an_unknown_decision_is_refused_not_stored(
+    client, reaction_workspace,
+):
+    resp = client.post(
+        "/api/opps/public/summary-ws/turmeric/runs/20260503-0835"
+        "/decisions/no-such-row/edit",
+        {"value": "whatever", "reviewer": "Anne Kuhlmann"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 404
+    root = reaction_workspace.folder_id("ACE/turmeric")
+    assert "inputs" not in [f.name for f in reaction_workspace.list_files(root)]
+
+
+@pytest.mark.django_db
+def test_an_anonymous_edit_requires_a_name(client, reaction_workspace):
+    assert _edit(client, reviewer=None).status_code == 400
+    assert _edit(client, reviewer=" a ").status_code == 400
+
+
+@pytest.mark.django_db
+def test_edit_rejects_html_rather_than_mangling_it(client, reaction_workspace):
+    assert _edit(client, value="<b>14 days</b>").status_code == 400
+    assert _edit(client, reasoning="<script>alert(1)</script>").status_code == 400
+
+
+@pytest.mark.django_db
+def test_oversized_edit_is_refused_before_any_drive_write(client, reaction_workspace):
+    assert _edit(client, value="x" * 900).status_code == 422
+    root = reaction_workspace.folder_id("ACE/turmeric")
+    assert "inputs" not in [f.name for f in reaction_workspace.list_files(root)]
+
+
+@pytest.mark.django_db
+def test_edit_shows_up_on_the_next_summary_read(client, reaction_workspace):
+    """The read path caches for 60s. A change that takes a minute to
+    appear reads as a change that was lost."""
+    assert client.get(_SUMMARY_URL).json()["decision_edits"] == {}
+    _edit(client)
+    assert client.get(_SUMMARY_URL).json()["decision_edits"]["visit-window"][
+        "override"
+    ] == "14 days"
+
+
+@pytest.mark.django_db
+def test_public_payload_never_carries_a_reviewer_email(client, reaction_workspace):
+    user = User.objects.create_user(email="ada@dimagi.com", display_name="Ada Member")
+    client.force_login(user)
+    _edit(client)
+    client.logout()
+    served = client.get(_SUMMARY_URL).json()["decision_edits"]["visit-window"]
+    assert "decided_by" not in served
+    assert "ada@dimagi.com" not in json.dumps(served)
+
+
+@pytest.mark.django_db
+def test_edits_and_comments_share_one_per_ip_budget(client, reaction_workspace):
+    """Two public write endpoints with separate budgets is just double
+    the budget."""
+    from apps.opps.api import PUBLIC_WRITE_BURST_LIMIT
+
+    for i in range(PUBLIC_WRITE_BURST_LIMIT):
+        assert _edit(client, value=f"{i} days").status_code == 200
+    assert _react(client).status_code == 429

@@ -9,6 +9,8 @@
  * PersonalTokenOut, etc.) should be imported from generated.ts instead.
  */
 
+import type { RunExecution } from "@/canopy/runState";
+
 // ---------------------------------------------------------------------------
 // Core enum aliases — exported for backward compat with consumer files
 // ---------------------------------------------------------------------------
@@ -302,6 +304,19 @@ export interface Decision {
   notes: string;
   /** Human's rationale when status=overridden (read from YAML `override_reasoning`). */
   override_reasoning: string;
+  /**
+   * v4 (ACE PRs #554/#555/#556). How the AI grounded its default:
+   * `stated` (directly in the source), `inferred` (extrapolated beyond it),
+   * or `conflicting` (resolves disagreeing source signals). Legacy v3 logs
+   * default to `stated` server-side.
+   */
+  evidence_basis: "stated" | "inferred" | "conflicting";
+  /**
+   * Competing source readings — populated (≥2) only when
+   * `evidence_basis === "conflicting"`. Each entry is one source signal that
+   * disagreed with the others.
+   */
+  conflict_signals: string[];
 }
 
 export interface Run {
@@ -334,6 +349,43 @@ export interface RunSummary {
   latest_phase_done?: string | null;
   latest_phase_done_display?: string | null;
   latest_phase_done_ordinal?: number | null;
+  /** Per-phase status in authored order — [{ordinal, name, status}].
+   * Served on the workbench snapshot and /opps/{slug}/runs, but NOT on the
+   * opps-list card payload (it would be a few hundred KB nothing renders
+   * there — see _serialize_card_runs_summary). Absent on older payloads. */
+  phase_states?: { ordinal: number; name: string; status: string }[];
+  /** Drive folder id for this run. Lets a row deep-link to the run folder. */
+  folder_id?: string | null;
+  /** Where this run's execution stands on canopy's harness, or null when the
+   * run was never dispatched there (legacy/local execution). See
+   * `src/canopy/runState.ts`. */
+  execution?: RunExecution | null;
+}
+
+/** One row from <opp>/inputs/decision-overrides.yaml, keyed by row id in
+ * OppSnapshot.saved_overrides. Durable (survives the 24h Redis buffer);
+ * inert until the ACE plugin learns to read the file. */
+export interface SavedDecisionOverride {
+  override: string;
+  reasoning?: string;
+  /** Email — member-only payloads. Never served on the public summary. */
+  decided_by?: string;
+  /** Display name, always served: attribution is the safety mechanism. */
+  decided_by_name?: string;
+  /** True for a signed-in editor, false for a self-reported name. */
+  decided_by_verified?: boolean;
+  decided_at?: string;
+  source_run_id?: string;
+  /** Row restored to the AI default — inert for the next run, kept visible. */
+  is_revert?: boolean;
+  /** Prior states, newest first. What makes any change undoable. */
+  history?: {
+    override: string;
+    reasoning?: string;
+    decided_by_name?: string;
+    decided_by_verified?: boolean;
+    decided_at?: string;
+  }[];
 }
 
 export interface OppSnapshot {
@@ -343,10 +395,61 @@ export interface OppSnapshot {
   selected_run_id: string | null;
   current_run: Run;
   phases: PhaseInfo[];
+  /** Injected server-side from inputs/decision-overrides.yaml (#673 PR 2). */
+  saved_overrides?: Record<string, SavedDecisionOverride>;
 }
 
-export interface StepDetail extends Step {
-  primary_body: string;
+/**
+ * One artifact as the STEP-DETAIL endpoint returns it (``ArtifactOut`` in
+ * apps/opps/schemas.py). Deliberately NOT the ``Artifact`` above: that one
+ * is the opp-detail/``Step.artifacts`` shape (``drive_file_id`` /
+ * ``drive_web_link`` / ``path``), and the two endpoints genuinely differ.
+ * Conflating them is what broke the artifact pane — the pane read
+ * ``drive_file_id`` off a payload that only carries ``id``, so it bailed
+ * before ever fetching and offered no Drive fallback link.
+ */
+export interface StepArtifact {
+  id: string;
+  name: string;
+  mime_type: string;
+  size_bytes: number | null;
+  url: string | null;
+  is_text: boolean;
+  preview: string | null;
+}
+
+/**
+ * GET /api/w/{ws}/opps/{slug}/steps/{skill} — ``StepSnapshotOut``.
+ *
+ * This does NOT extend ``Step``: the v2 endpoint returns a different
+ * object, and declaring otherwise made ``skill_name`` / ``display_name`` /
+ * ``phase_display`` / ``judge`` silently undefined at runtime.
+ *
+ * ``judge`` is not on this endpoint (it returns ``verdicts``, which are
+ * currently empty for every step — restoring the eval panel needs a
+ * backend change and is tracked separately). It stays optional so the
+ * pane keeps its existing "no eval for this step" rendering.
+ */
+export interface StepDetail {
+  skill: string;
+  phase: string;
+  status: string;
+  artifact_count: number;
+  artifacts: StepArtifact[];
+  verdicts: StepVerdict[];
+  gate: unknown | null;
+  preview: string | null;
+  judge?: Judge | null;
+}
+
+export interface StepVerdict {
+  skill: string;
+  phase: string;
+  kind: "quick" | "deep" | "monitor";
+  score: number;
+  verdict: "pass" | "warn" | "fail";
+  rationale: string;
+  decided_at: string;
 }
 
 export interface LinkedChat {
@@ -559,7 +662,10 @@ export interface StructureTree {
   computed_at?: string;
   session: StructureSession | null;
   phases: StructurePhase[];
-  unavailable_reason?: "no-raw-jsonl" | "parse-failed";
+  // "canopy-unreachable": the run executed on canopy and its transcript could
+  // not be fetched. Distinct from "no-raw-jsonl" (nothing was ever recorded) —
+  // nothing is lost, so the UI must not tell the user to re-upload.
+  unavailable_reason?: "no-raw-jsonl" | "parse-failed" | "canopy-unreachable";
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,57 @@
+name: Videos
+
+# Gates the Remotion video toolchain (video-production/connect-videos), which
+# is otherwise unchecked: the "Type check" + "CI" workflows only cover the
+# Python backend, and the frontend image build doesn't bundle the renderer.
+# Without this, render-code regressions ship silently — e.g. the explainer
+# black-tail duration bug and the dangling `chc` spec import both reached main
+# uncaught. tsc + vitest + a Remotion bundle catch type errors, behavioural
+# regressions (the example-spec duration guard), and dangling imports.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "video-production/connect-videos/**"
+      - ".github/workflows/videos.yml"
+  push:
+    branches: [main]
+    paths:
+      - "video-production/connect-videos/**"
+      - ".github/workflows/videos.yml"
+
+concurrency:
+  group: videos-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: video-production/connect-videos
+
+jobs:
+  check:
+    name: tsc + vitest + bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: video-production/connect-videos/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Bundle (webpack compile — catches dangling imports)
+        run: npx remotion bundle src/Root.tsx

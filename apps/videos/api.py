@@ -26,7 +26,7 @@ from typing import Annotated
 from django.conf import settings
 from django.http import FileResponse, HttpRequest, HttpResponse, StreamingHttpResponse
 from ninja import Path as PathParam
-from ninja import Router
+from ninja import Query, Router
 
 from apps.api.auth import session_auth
 from apps.api.deps import resolve_workspace_for_member
@@ -61,7 +61,12 @@ from .schemas import (
     RunDetailOut,
     RunSummaryOut,
     TemplateBundleOut,
+    TemplateExampleOut,
+    TemplateExampleSpecOut,
     TemplateMetaOut,
+    TemplatePatchIn,
+    VideoSnippetListOut,
+    VideoSnippetOut,
 )
 
 log = logging.getLogger(__name__)
@@ -152,9 +157,9 @@ def _has_output_anywhere(workspace, slug: str, run_id: str, local_truth: bool) -
 
 # ---------------------------------------------------------------------------
 # Templates — MCP-callable, used by an agent (Claude session) to discover
-# what templates exist and pull the skeleton + skill prompt for one.
-# The agent generates the spec.yaml itself (fetching source content,
-# applying the prompt, filling placeholders) and POSTs it back to
+# what templates exist and pull the generation prompt + example spec for
+# one. The agent generates the spec.yaml itself (fetching source content,
+# applying the prompt, adapting the example) and POSTs it back to
 # /programs below.
 # ---------------------------------------------------------------------------
 
@@ -169,14 +174,14 @@ def list_video_templates(
     request: HttpRequest,
     workspace_slug: Annotated[str, PathParam()],
 ) -> list[TemplateMetaOut]:
-    resolve_workspace_for_member(request, workspace_slug)
-    return [TemplateMetaOut.model_validate(t.__dict__) for t in templates.list_templates()]
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    return [TemplateMetaOut.model_validate(t.__dict__) for t in templates.list_templates(workspace)]
 
 
 @router.get(
     "/templates/{template_id}",
     response=TemplateBundleOut,
-    summary="Get the full template bundle (meta + skeleton + skill prompt)",
+    summary="Get the full template bundle (meta + skill prompt + example spec)",
     openapi_extra={"x-mcp-expose": True},
 )
 def get_video_template(
@@ -184,15 +189,92 @@ def get_video_template(
     workspace_slug: Annotated[str, PathParam()],
     template_id: Annotated[str, PathParam()],
 ) -> TemplateBundleOut:
-    resolve_workspace_for_member(request, workspace_slug)
-    bundle = templates.load_template(template_id)
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    bundle = templates.load_template(workspace, template_id)
     if bundle is None:
         raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
     return TemplateBundleOut(
         meta=TemplateMetaOut.model_validate(bundle.meta.__dict__),
-        skeleton_yaml=bundle.skeleton_yaml,
         prompt_md=bundle.prompt_md,
+        example_yaml=bundle.example_yaml,
     )
+
+
+@router.patch(
+    "/templates/{template_id}",
+    response=TemplateBundleOut,
+    summary="Update one or more fields of a template (meta, prompt, example)",
+)
+def patch_video_template(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    template_id: Annotated[str, PathParam()],
+    body: TemplatePatchIn,
+) -> TemplateBundleOut:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    if not templates.is_valid_template_id(template_id):
+        raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
+    # 404 guard: check the template exists before attempting writes.
+    if templates.load_template(workspace, template_id) is None:
+        raise ProblemError(404, "Template not found", type_=TYPE_NOT_FOUND)
+    try:
+        bundle = templates.save_template(
+            workspace,
+            template_id,
+            meta=body.meta.model_dump(exclude_none=True) if body.meta else None,
+            prompt_md=body.prompt_md,
+            example_yaml=body.example_yaml,
+            example_spec=body.example_spec,
+        )
+    except ValueError as e:
+        raise ProblemError(400, "Invalid template edit", type_=TYPE_VALIDATION, detail=str(e))
+    return TemplateBundleOut(
+        meta=TemplateMetaOut.model_validate(bundle.meta.__dict__),
+        prompt_md=bundle.prompt_md,
+        example_yaml=bundle.example_yaml,
+    )
+
+
+@router.get(
+    "/templates/{template_id}/example",
+    response=TemplateExampleOut,
+    summary="Get the example spec.yaml for a template",
+    openapi_extra={"x-mcp-expose": True},
+)
+def get_template_example(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    template_id: Annotated[str, PathParam()],
+) -> TemplateExampleOut:
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    ex = templates.load_example(workspace, template_id)
+    if ex is None:
+        raise ProblemError(404, "Example not found", type_=TYPE_NOT_FOUND)
+    return TemplateExampleOut(template_id=template_id, example_yaml=ex)
+
+
+@router.get(
+    "/templates/{template_id}/example-spec",
+    response=TemplateExampleSpecOut,
+    summary="Get the example spec.yaml for a template as a parsed object",
+    openapi_extra={"x-mcp-expose": True},
+)
+def get_template_example_spec(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    template_id: Annotated[str, PathParam()],
+) -> TemplateExampleSpecOut:
+    """Return the template's example.spec.yaml as a parsed dict.
+
+    The BeatEditor mounts on this endpoint's response directly — it
+    needs a parsed spec object, not raw YAML text.  Returns 404 when
+    no example.spec.yaml exists for this template.
+    """
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    spec = templates.load_example_spec(workspace, template_id)
+    if spec is None:
+        raise ProblemError(404, "Example spec not found", type_=TYPE_NOT_FOUND)
+    return TemplateExampleSpecOut(template_id=template_id, spec=spec)
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +331,61 @@ def list_media_library_audio(
         )
         for i in raw.items
     ])
+
+
+@router.get(
+    "/snippets",
+    response=VideoSnippetListOut,
+    summary="List video snippets (labeled ranges into master clips)",
+    openapi_extra={"x-mcp-expose": True},
+)
+def list_video_snippets(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, PathParam()],
+    source_run: Annotated[str | None, Query()] = None,
+    narrative_slug: Annotated[str | None, Query()] = None,
+    tag: Annotated[str | None, Query()] = None,
+) -> VideoSnippetListOut:
+    """List the workspace's ingested snippets. Optional filters narrow
+    by manifest run id (``source_run``), ``narrative_slug``, or a single
+    ``tag`` (membership in the snippet's tags list)."""
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+
+    from apps.videos.models import VideoSnippet
+
+    qs = VideoSnippet.objects.filter(workspace=workspace).select_related("clip")
+    if source_run:
+        qs = qs.filter(source_run=source_run)
+    if narrative_slug:
+        qs = qs.filter(narrative_slug=narrative_slug)
+    rows = list(qs)
+    if tag:
+        # JSONField `contains` isn't supported on SQLite (the test DB),
+        # so membership is checked in Python — N is small (a handful of
+        # snippets per manifest), same pattern the library sync uses.
+        rows = [r for r in rows if tag in (r.tags or [])]
+
+    snippets = [
+        VideoSnippetOut(
+            snippet_key=row.snippet_key,
+            title=row.title or None,
+            narration_sentence=row.narration_sentence or None,
+            in_seconds=row.in_seconds,
+            out_seconds=row.out_seconds,
+            duration_seconds=row.duration_seconds,
+            tags=list(row.tags or []),
+            provenance=row.provenance or None,
+            source_run=row.source_run or None,
+            narrative_slug=row.narrative_slug or None,
+            scene_index=row.scene_index,
+            clip_ref=row.clip.ref if row.clip_id is not None else None,
+            source_clip_ref=row.source_clip_ref or None,
+            source_clip_url=row.source_clip_url or None,
+            status=row.status,
+        )
+        for row in rows
+    ]
+    return VideoSnippetListOut(snippets=snippets)
 
 
 @router.get(

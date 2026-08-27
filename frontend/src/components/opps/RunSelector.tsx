@@ -7,7 +7,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "canopy-ui/ui";
 import { DeleteRunDialog } from "./DeleteRunDialog";
 
 interface RunSelectorProps {

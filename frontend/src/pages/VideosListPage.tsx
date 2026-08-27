@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, Plus, Video } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "canopy-ui/ui";
+import { Skeleton } from "canopy-ui/ui";
 import { NewProgramDialog } from "@/components/videos/NewProgramDialog";
 import { listVideoPrograms, type VideoProgramCard } from "@/api/videos";
 
@@ -35,6 +35,12 @@ export default function VideosListPage() {
         <Video className="h-5 w-5 text-muted-foreground" />
         <h1 className="text-2xl font-semibold">Videos</h1>
         <div className="ml-auto flex items-center gap-3">
+          <Link
+            to={`/w/${workspaceSlug}/videos/templates`}
+            className="text-sm text-muted-foreground underline hover:text-foreground"
+          >
+            Templates →
+          </Link>
           <Link
             to={`/w/${workspaceSlug}/videos/library`}
             className="text-sm text-muted-foreground underline hover:text-foreground"

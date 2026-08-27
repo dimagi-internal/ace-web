@@ -11,7 +11,24 @@ run_id is "run-001" (hardcoded by opp_creator).
 
 For existing-slug input, mints a new run_id (YYYYMMDD-HHMM), creates a
 Session bound to (slug, run_id), and injects `Run /ace:run <slug>/<run_id>.`
-as a user chat message — the turn_driver picks this up and spawns the CLI.
+as a completed user turn.
+
+Both branches then create a PENDING ASSISTANT TURN and dispatch it through
+``apps.canopy.run_dispatch.start_turn`` — the same seam
+``apps.opps.api::seeded_run`` uses, so a Slack run inherits
+``CANOPY_RUN_EXECUTION`` (off: the legacy detached ``manage.py drive_turn``
+subprocess; on: a session-targeted canopy Turn).
+
+Until 2026-07-26 neither branch did any of that. This module created the
+user turn and returned; nothing read it. There are no signals, no Celery,
+no custom ``Message.save()`` and the WebSocket consumer that once spawned
+turns was deleted in 3a996df, so ``/ace run <slug>`` posted "Kicking off…"
+and then did nothing, forever — and the post-deploy resume sweep could not
+rescue it either, because ``Session.interrupted`` /
+``Session.resumable_after_deploy`` both require an assistant row. The old
+docstring's claim that "the turn_driver picks this up and spawns the CLI"
+was never true at any commit; it was transcribed from a design doc. See
+docs/plans/2026-07-26-run-convergence-ace-side.md.
 """
 from __future__ import annotations
 
@@ -54,6 +71,40 @@ def _next_turn_index(session: Session) -> int:
     return (last.turn_index + 1) if last else 0
 
 
+def _dispatch_assistant_turn(session: Session) -> Message:
+    """Create the pending assistant turn and execute it.
+
+    This is the whole point of a triggered run, and it is what this module
+    never did. The placeholder is load-bearing twice over: it is what
+    ``run_dispatch`` executes, and it is what makes the run visible to the
+    post-deploy resume sweep (``Session.interrupted`` /
+    ``resumable_after_deploy`` both filter on ``messages__role="assistant"``).
+
+    A dispatch failure is surfaced as ``RunStartError`` so Slack renders the
+    real reason. Letting it escape as a bare exception instead would hit
+    ``verbs_run``'s ``except Exception`` and be reported as the useless
+    "Internal error starting run."
+    """
+    from apps.canopy.run_dispatch import DispatchError, start_turn
+
+    assistant = Message.objects.create(
+        session=session,
+        turn_index=_next_turn_index(session),
+        role="assistant",
+        content={"text": ""},
+        plaintext="",
+        status="pending",
+    )
+    try:
+        start_turn(assistant.id)
+    except DispatchError as exc:
+        # start_turn has already marked the assistant message errored with a
+        # `canopy-dispatch:` detail, so the run is diagnosable in the DB too.
+        logger.exception("dispatch failed for slack run session %s", session.slug)
+        raise RunStartError(f"could not start the run: {exc.detail}") from exc
+    return assistant
+
+
 def start_run_from_slack(*, slug_or_link: str, user, workspace) -> tuple[str, str]:
     """Returns (slug, run_id). Raises RunStartError on misuse.
 
@@ -63,6 +114,9 @@ def start_run_from_slack(*, slug_or_link: str, user, workspace) -> tuple[str, st
 
     For existing-slug input: mints a new run_id, creates a Session
     bound to it, and injects `Run /ace:run <slug>/<run_id>.`.
+
+    Either way the run then gets a pending assistant turn, dispatched
+    through ``apps.canopy.run_dispatch.start_turn``.
     """
     if not slug_or_link:
         raise RunStartError("missing opp slug or PDD link")
@@ -86,11 +140,21 @@ def start_run_from_slack(*, slug_or_link: str, user, workspace) -> tuple[str, st
 
         # We need a DriveClient to create the opp folder. In v1 the Slack
         # path reuses the workspace's Drive root. Import drive_client lazily.
-        from django.conf import settings
+        #
+        # NOT GoogleDriveClient(settings.ACE_DRIVE_SA_KEY_JSON): that passes a
+        # raw JSON *string* where googleapiclient wants a credentials *object*,
+        # which raises `AttributeError: 'str' object has no attribute
+        # 'authorize'` — swallowed by verbs_run/verbs_new's bare except and
+        # reported as "Internal error starting run", with nothing created. It
+        # was the only hand-constructed GoogleDriveClient in the repo; every
+        # other caller goes through the service-account registry.
+        from apps.opps.drive_client import get_drive_client
+        from apps.service_accounts.exceptions import ServiceAccountNotFound
 
-        from apps.opps.drive_client import GoogleDriveClient
-
-        drive = GoogleDriveClient(settings.ACE_DRIVE_SA_KEY_JSON)
+        try:
+            drive = get_drive_client(workspace=workspace)
+        except ServiceAccountNotFound as exc:
+            raise RunStartError(f"Drive is not configured: {exc}") from exc
         ace_folder_id = workspace.drive_root_folder_id
 
         try:
@@ -106,7 +170,11 @@ def start_run_from_slack(*, slug_or_link: str, user, workspace) -> tuple[str, st
             )
         except CreateOppError as e:
             raise RunStartError(str(e)) from e
-        # create_opp seeds the session + kickoff message internally.
+        # create_opp seeds the session + kickoff USER message internally, but
+        # no assistant turn and no execution — so, exactly like the slug branch
+        # below, `/ace new` and `/ace run <pdd-link>` would have created an opp
+        # and then sat there. Dispatch the kickoff.
+        _dispatch_assistant_turn(result.working_session)
         return result.slug, "run-001"
 
     # Existing-slug path: verify opp exists, mint a new run_id.
@@ -142,4 +210,5 @@ def start_run_from_slack(*, slug_or_link: str, user, workspace) -> tuple[str, st
         plaintext=f"Run /ace:run {slug}/{run_id}.",
         status="complete",
     )
+    _dispatch_assistant_turn(session)
     return slug, run_id

@@ -110,7 +110,9 @@ class FakeDrive:
         walk(node, "")
         return out
 
-    def get_content(self, file_id: str, mime_type: str) -> FileContent:
+    def get_content(
+        self, file_id: str, mime_type: str, *, export_as: str | None = None
+    ) -> FileContent:
         node = self._index_by_id.get(file_id)
         body = getattr(node, "body", "") if node else ""
         return FileContent(content=body)
@@ -586,54 +588,12 @@ def test_parse_verdict_falls_back_to_heuristic_without_scale():
     assert v.score == 8.5  # Untouched at parse time.
 
 
-def test_attribute_files_rescues_orphans_via_filename_prefix():
-    """Regression: the plugin sometimes writes files under
-    ``<N>-<phase>/`` that aren't declared in artifact-manifest.ts —
-    ``app-release_summary.md`` was the live offender. Without a
-    fallback, the manifest matcher drops them and the workbench shows
-    ``art=0`` even though the file is right there. The filename-prefix
-    fallback attributes ``<skill>_<role>.<ext>`` files to ``<skill>``
-    when ``<skill>`` is in the registered set."""
-    from apps.opps.drive_client import DriveFile
-    from apps.opps.sync import _attribute_files_to_skills
-
-    files = [
-        DriveFile(
-            id="orphan", name="app-release_summary.md",
-            mime_type="text/markdown",
-            path="2-commcare/app-release_summary.md",
-            web_view_link="",
-        ),
-    ]
-    # No manifest matcher entries → falls back to filename prefix.
-    out = _attribute_files_to_skills(
-        files, matchers=[], registered_skills={"app-release"},
-    )
-    assert "app-release" in out
-    assert out["app-release"][0].name == "app-release_summary.md"
-
-
-def test_attribute_files_filename_fallback_skips_unknown_skill():
-    """Filename-prefix attribution must only fire when the prefix
-    matches a registered skill — otherwise it'd hallucinate skill rows
-    from arbitrary files."""
-    from apps.opps.drive_client import DriveFile
-    from apps.opps.sync import _attribute_files_to_skills
-
-    files = [
-        DriveFile(
-            id="weird", name="totally-unknown_thing.md",
-            mime_type="text/markdown",
-            path="2-commcare/totally-unknown_thing.md",
-            web_view_link="",
-        ),
-    ]
-    out = _attribute_files_to_skills(
-        files, matchers=[], registered_skills={"app-release"},
-    )
-    # File is unattributed (key is ""), not invented under a phantom skill.
-    assert "totally-unknown" not in out
-    assert files[0] in out.get("", [])
+# NOTE: the unit tests for ace's own ``_attribute_files_to_skills`` (manifest
+# matcher + filename-prefix fallback) were removed in the wave-4 single-reader
+# swap — that attribution now lives in (and is tested by) the framework lib
+# ``canopy_agent_runs.drive.store``. The public chokepoints exercised below
+# (``list_opp_runs`` / ``load_opp_card`` / ``load_opp``) remain the ace-side
+# parity gate over the framework-sourced read model.
 
 
 def test_load_opp_attaches_verdicts_at_phase_prefixed_paths():

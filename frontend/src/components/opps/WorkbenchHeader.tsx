@@ -10,7 +10,7 @@ import type {
   Run,
   RunSummary,
 } from "../../api/types.ws";
-import { Button } from "@/components/ui/button";
+import { Button } from "canopy-ui/ui";
 import { cn } from "@/lib/utils";
 import { CostRollupCard } from "./CostRollupCard";
 import { DeleteOppDialog } from "./DeleteOppDialog";

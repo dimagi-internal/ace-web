@@ -18,6 +18,13 @@ const BACKEND_PORT = process.env.VITE_BACKEND_PORT ?? "8001"
 const BACKEND = `http://127.0.0.1:${BACKEND_PORT}`
 const BACKEND_WS = `ws://127.0.0.1:${BACKEND_PORT}`
 
+// canopy-web's local dev server, for the hosted-chat cutover. Serves at the
+// root (no FORCE_SCRIPT_NAME), so the /canopy prefix — which mirrors the
+// labs ALB tenant path (https://labs.connect.dimagi.com/canopy/) — is
+// stripped before forwarding, same idea as the /ace rewrite above.
+const CANOPY_BACKEND_PORT = process.env.CANOPY_BACKEND_PORT ?? "8000"
+const CANOPY_BACKEND = `http://127.0.0.1:${CANOPY_BACKEND_PORT}`
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -53,6 +60,15 @@ export default defineConfig({
       "/api": BACKEND,
       "/auth": BACKEND,
       "/ws": {target: BACKEND_WS, ws: true},
+      // canopy-web (hosted chat cutover). Local canopy-web serves at the
+      // root, so the /canopy prefix is stripped before forwarding — one
+      // entry covers both HTTP and the ws/canopy-sessions/<id>/ WebSocket.
+      "/canopy": {
+        target: CANOPY_BACKEND,
+        changeOrigin: true,
+        ws: true,
+        rewrite: (p) => p.replace(/^\/canopy/, ""),
+      },
     },
   },
 })

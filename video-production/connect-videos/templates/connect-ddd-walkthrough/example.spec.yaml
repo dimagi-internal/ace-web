@@ -1,0 +1,105 @@
+# connect-ddd-walkthrough — worked example.
+#
+# A real DDD verified-monitoring walkthrough narrated as a semi-gloss
+# explainer: one title card, five walkthrough sections (each plays a
+# RANGE of ONE master clip full-bleed with a lower-third + per-beat VO),
+# one outro card. Validates through ProgramSpecSchema (src/lib/spec.ts).
+#
+# The arc is carried by the `beats:` list below — that's the switch that
+# selects the walkthrough arc over the shared global_style.yaml marketing
+# arc. The per-beat narration is tightened to ~2.5 words/second so each
+# sentence fits its clip range.
+
+provenance:
+  generator: video-from-walkthrough
+  template: connect-ddd-walkthrough
+  generated_from: "verified-monitoring DDD run verified-monitoring-2026-06-16-001"
+  generated_at: "2026-06-17T00:00:00Z"
+
+slug: verified-monitoring-walkthrough
+workspace: dimagi-team
+name: Verified Monitoring
+country_focus: Nigeria
+status: DDD walkthrough
+tagline: "How an independent survey confirms what the program reports."
+program_url: https://labs.connect.dimagi.com/
+
+# One master clip — the full screen recording of the walkthrough. Each
+# body_walkthrough beat plays a RANGE of it (start_seconds + the beat's
+# seconds), so the whole video is narration over one continuous take.
+manifest:
+  master: "file:assets/programs/verified-monitoring-walkthrough/walkthrough.mp4"
+
+# Template-supplied beats list. Present → THIS is the timeline (overrides
+# the shared programs/global_style.yaml marketing arc). Each
+# body_walkthrough beat's `seconds` is its on-screen duration; its clip
+# in-point lives in `walkthrough.<id>.start_seconds`.
+beats:
+  - { id: title, kind: intro_title,      seconds: 4 }
+  - { id: s1,    kind: body_walkthrough, seconds: 9.3 }
+  - { id: s2,    kind: body_walkthrough, seconds: 12.9 }
+  - { id: s3,    kind: body_walkthrough, seconds: 12.3 }
+  - { id: s4,    kind: body_walkthrough, seconds: 10.7 }
+  - { id: s5,    kind: body_walkthrough, seconds: 12.7 }
+  - { id: outro, kind: outro_card,       seconds: 5 }
+
+# Per-walkthrough clip range (into @master) + lower-third, keyed by beat id.
+walkthrough:
+  s1:
+    asset: "@master"
+    start_seconds: 0.0
+    duration_seconds: 9.276
+    lower_third: "Six bi-monthly rounds over time — the gap holds"
+  s2:
+    asset: "@master"
+    start_seconds: 9.277
+    duration_seconds: 12.903
+    lower_third: "Where delivery happened vs where the survey checked"
+  s3:
+    asset: "@master"
+    start_seconds: 22.18
+    duration_seconds: 12.252
+    lower_third: "The per-surveyor quality scorecard"
+  s4:
+    asset: "@master"
+    start_seconds: 34.432
+    duration_seconds: 10.697
+    lower_third: "GPS is clean — the Distributions screen catches the fabrication"
+  s5:
+    asset: "@master"
+    start_seconds: 45.129
+    duration_seconds: 12.716
+    lower_third: "The independent back-check confirms it"
+
+# Per-beat voiceover. Keys match the beat ids above. by_beat is an open
+# map so any beat id works; walkthrough beats read their VO from here.
+# Each line is tightened to fit its clip range at ~2.5 words/second.
+narration:
+  generator: manual
+  prompt_version: v1
+  start_seconds: 0
+  by_beat:
+    title: "Verified Monitoring: how an independent survey confirms what the program reports."
+    s1: "The program's self-reported delivery sits above what the independent survey confirms each round, while the control arm stays low — the gap holds over time."
+    s2: "Delivery is concentrated in the intervention ward and absent in the control ward, while the independent survey covered both — the coverage gap tracks the program."
+    s3: "Quality is computed per surveyor from each surveyor's own records, so one under-performing surveyor is flagged rather than averaged away."
+    s4: "GPS is clean for everyone, but a fabricator can't fake the shape of their data — the flagged surveyor's interviews run impossibly fast and their answers collapse."
+    s5: "An independent re-survey by a different enumerator disagrees on identity, location, and outcome — the strongest evidence yet that this data needs review."
+    outro: ""
+  script: |
+    Verified Monitoring: how an independent survey confirms what the program reports.
+    The program's self-reported delivery sits above what the independent survey
+    confirms each round, while the control arm stays low — the gap holds over time.
+    Delivery is concentrated in the intervention ward and absent in the control ward,
+    while the independent survey covered both — the coverage gap tracks the program.
+    Quality is computed per surveyor from each surveyor's own records, so one
+    under-performing surveyor is flagged rather than averaged away. GPS is clean for
+    everyone, but a fabricator can't fake the shape of their data — the flagged
+    surveyor's interviews run impossibly fast and their answers collapse. An
+    independent re-survey by a different enumerator disagrees on identity, location,
+    and outcome — the strongest evidence yet that this data needs review.
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

@@ -26,9 +26,13 @@ interface Props {
     verify?: number;
     pay?: number;
   };
+  // Optional prospect name for a branded partnership cut. When present,
+  // the hook adds a "A partnership proposal for <name>" line so the open
+  // frames the whole video as made-for-them. Absent = generic explainer.
+  prospectName?: string;
 }
 
-const Hook: React.FC<{ tagline: string }> = ({ tagline }) => {
+const Hook: React.FC<{ tagline: string; prospectName?: string }> = ({ tagline, prospectName }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const enter = spring({ frame, fps, config: { damping: 14 } });
@@ -41,12 +45,18 @@ const Hook: React.FC<{ tagline: string }> = ({ tagline }) => {
         fontFamily: theme.fonts.display,
         color: theme.colors.foreground,
         padding: 96,
-        gap: 56,
+        gap: 40,
         textAlign: "center",
         opacity: enter,
       }}
     >
       <Logo height={96} variant="dark" />
+      {prospectName && (
+        <div style={{ fontSize: 38, fontWeight: 500, color: theme.colors.muted }}>
+          A partnership proposal for{" "}
+          <span style={{ color: theme.colors.accent, fontWeight: 700 }}>{prospectName}</span>
+        </div>
+      )}
       <div
         style={{
           fontSize: 80,
@@ -213,16 +223,70 @@ const Handoff: React.FC<{ programName: string }> = ({ programName }) => (
   </AbsoluteFill>
 );
 
+/**
+ * Title card for the connect-ddd-walkthrough explainer arc (intro_title beat).
+ * A simple logo + program name + subtitle with a spring fade — NO cycle
+ * ring or stat cards (that machinery belongs to the marketing arc's
+ * Intro/Cycle/Handoff). Exported so Root.tsx can render it directly for
+ * the intro_title beat without pulling the full marketing Intro.
+ */
+export const TitleCard: React.FC<{ title: string; subtitle?: string }> = ({
+  title,
+  subtitle,
+}) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const enter = spring({ frame, fps, config: { damping: 14 } });
+  return (
+    <AbsoluteFill
+      style={{
+        background: theme.colors.background,
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: theme.fonts.display,
+        color: theme.colors.foreground,
+        padding: 96,
+        gap: 40,
+        textAlign: "center",
+        opacity: enter,
+      }}
+    >
+      <Logo height={84} variant="dark" />
+      <div
+        style={{
+          fontSize: 76,
+          fontWeight: 700,
+          lineHeight: 1.1,
+          maxWidth: 1500,
+          background: theme.gradients.text,
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          backgroundClip: "text",
+          color: "transparent",
+        }}
+      >
+        {title}
+      </div>
+      {subtitle && (
+        <div style={{ fontSize: 34, fontWeight: 400, color: theme.colors.muted, maxWidth: 1300 }}>
+          {subtitle}
+        </div>
+      )}
+    </AbsoluteFill>
+  );
+};
+
 export const Intro: React.FC<Props> = ({
   programName,
   brand,
   beatFrames,
   cycleNarration,
   cycleStepStartSeconds,
+  prospectName,
 }) => (
   <>
     <Sequence durationInFrames={beatFrames.hook}>
-      <Hook tagline={brand.tagline} />
+      <Hook tagline={brand.tagline} prospectName={prospectName} />
     </Sequence>
     <Sequence from={beatFrames.hook} durationInFrames={beatFrames.cycle}>
       <Cycle

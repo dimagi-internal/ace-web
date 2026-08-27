@@ -361,15 +361,18 @@ def test_load_rich_opp_snapshot_cache_hit_applies_registry(monkeypatch, db):
 
 
 def test_apply_freshness_overlays_drive_call_count_matches_overlays(monkeypatch):
-    """Total Drive folder-listing calls per cache-hit equals
-    ``len(SNAPSHOT_OVERLAYS)``. If a future overlay accidentally walks
-    deeper and lists more folders, this test fails and forces the author
-    to either justify the extra call or factor it out.
+    """Per-overlay Drive listing budget guard — no n+1 drift.
 
-    We count Drive calls by counting invocations of
-    ``apps.opps.sync.list_opp_runs`` — the only Drive entry point any
-    listing-derived overlay uses today. Each overlay calls list_opp_runs
-    exactly once.
+    * ``runs_summary`` calls ``apps.opps.sync.list_opp_runs`` exactly once
+      (bypass client, one folder listing).
+    * ``saved_overrides`` (#673 PR 2) does at most two ``list_files``
+      calls (opp folder → find ``inputs/``, then ``inputs/`` itself) plus
+      one content read — through the request's 30s-TTL caching client, so
+      the steady-state per-request cost is usually zero fresh Drive calls.
+
+    If a future overlay accidentally walks deeper and lists more folders,
+    this test fails and forces the author to either justify the extra
+    call or factor it out.
     """
     from apps.opps.freshness_overlays import (
         SNAPSHOT_OVERLAYS,
@@ -378,8 +381,9 @@ def test_apply_freshness_overlays_drive_call_count_matches_overlays(monkeypatch)
     )
 
     snap = _make_snapshot()
+    snap.opp_folder_id = "opp-folder-1"
 
-    calls = {"list_opp_runs": 0}
+    calls = {"list_opp_runs": 0, "list_files": 0}
 
     def _counting_list(*args, **kwargs):
         calls["list_opp_runs"] += 1
@@ -390,16 +394,25 @@ def test_apply_freshness_overlays_drive_call_count_matches_overlays(monkeypatch)
     class _StubClient:
         _inner = None
 
+        def list_files(self, folder_id, recursive=False, page_size=100):
+            calls["list_files"] += 1
+            return []
+
     apply_freshness_overlays(
         snap, _StubClient(),
         context=OverlayContext(ace_folder_id="ace-root", slug="opp-1"),
         overlays=SNAPSHOT_OVERLAYS,
     )
 
-    assert calls["list_opp_runs"] == len(SNAPSHOT_OVERLAYS), (
-        f"Drive calls ({calls['list_opp_runs']}) exceeded the overlay "
-        f"count ({len(SNAPSHOT_OVERLAYS)}). Either factor the extra call "
-        f"out or update this perf guard with a justification."
+    assert calls["list_opp_runs"] == 1, (
+        f"runs_summary listing calls ({calls['list_opp_runs']}) exceeded "
+        f"its budget of 1. Either factor the extra call out or update "
+        f"this perf guard with a justification."
+    )
+    assert calls["list_files"] <= 2, (
+        f"saved_overrides listing calls ({calls['list_files']}) exceeded "
+        f"its budget of 2. Either factor the extra call out or update "
+        f"this perf guard with a justification."
     )
 
 

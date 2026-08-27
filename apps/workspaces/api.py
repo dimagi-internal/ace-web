@@ -32,7 +32,11 @@ router = Router(auth=session_auth, tags=["workspaces"])
 # accept requires session auth but we handle it inline).
 invites_router = Router(tags=["workspaces"])  # mounted at /invites
 
-SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+# `\Z`, not `$`: Python's `re` special-cases `$` to also match immediately
+# before a single trailing `\n`, so a slug like "acme\n" would otherwise pass
+# this "looks fully anchored" pattern. `\Z` matches only the true end of the
+# string, with no such exception. See tests/test_trailing_newline_slug.py.
+SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*\Z")
 
 
 # ---------------------------------------------------------------------------

@@ -165,7 +165,7 @@ class ClipEditIn(StrictModel):
     source: str | None = None      # explicit "" clears; absence is no-op
     # set-global-template: per-program override of the global brand template.
     # Writes under spec.brand (creates the section if missing). Renderer
-    # already prefers spec.brand over programs/_defaults.yaml > brand.
+    # already prefers spec.brand over programs/global_style.yaml > brand.
     # Either field is optional — absent means "no change to that field".
     tagline: str | None = None
     cycle_steps: list[str] | None = None  # exactly 4 entries when set
@@ -233,20 +233,48 @@ class TemplateMetaOut(StrictModel):
     id: str
     name: str
     description: str
-    expected_duration_seconds: int
+    intent: str = ""
     intended_audience: str
     when_to_use: str
 
 
 class TemplateBundleOut(StrictModel):
-    """Full template payload — agent reads `prompt_md` and follows it,
-    fills the `skeleton_yaml` placeholders, and posts the result back
-    via POST /programs.
+    """Full template payload — the agent reads `prompt_md`, adapts the
+    `example_yaml` (the canonical example spec) to the new program per
+    those instructions, and posts the result back via POST /programs.
+
+    `example_yaml` is null only for a malformed template whose
+    example.spec.yaml is missing from Drive.
     """
 
     meta: TemplateMetaOut
-    skeleton_yaml: str
     prompt_md: str
+    example_yaml: str | None
+
+
+class TemplateMetaPatch(StrictModel):
+    name: str | None = None
+    description: str | None = None
+    intent: str | None = None
+    intended_audience: str | None = None
+    when_to_use: str | None = None
+
+
+class TemplatePatchIn(StrictModel):
+    meta: TemplateMetaPatch | None = None
+    prompt_md: str | None = None
+    example_yaml: str | None = None
+    example_spec: dict | None = None
+
+
+class TemplateExampleOut(StrictModel):
+    template_id: str
+    example_yaml: str
+
+
+class TemplateExampleSpecOut(StrictModel):
+    template_id: str
+    spec: dict
 
 
 class CreateProgramIn(StrictModel):
@@ -309,3 +337,34 @@ class MediaLibraryAudioItemOut(StrictModel):
 
 class MediaLibraryAudioOut(StrictModel):
     items: list[MediaLibraryAudioItemOut]
+
+
+# ---------------------------------------------------------------------------
+# Video snippets — labeled logical ranges into a master clip, ingested from
+# a canopy snippet manifest. Mirrors MediaLibraryVideoItemOut style.
+# ---------------------------------------------------------------------------
+
+
+class VideoSnippetOut(StrictModel):
+    snippet_key: str
+    title: str | None = None
+    # The caption / source sentence — also the spoken line (the narrative
+    # IS the VO).
+    narration_sentence: str | None = None
+    in_seconds: float
+    out_seconds: float
+    duration_seconds: float
+    tags: list[str] = Field(default_factory=list)
+    provenance: str | None = None
+    source_run: str | None = None
+    narrative_slug: str | None = None
+    scene_index: int | None = None
+    # Resolved master-clip ref when the clip FK is linked, else null.
+    clip_ref: str | None = None
+    source_clip_ref: str | None = None
+    source_clip_url: str | None = None
+    status: str
+
+
+class VideoSnippetListOut(StrictModel):
+    snippets: list[VideoSnippetOut]

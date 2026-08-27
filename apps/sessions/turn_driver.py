@@ -4,8 +4,10 @@ child rows, and propagate DONE / ERROR / CANCELLED terminal states.
 
 This module is the Phase 3 replacement for the SSE generator in
 apps.sessions.streaming. The SSE framing (`event: delta\\ndata: {...}`)
-is gone; instead we yield raw StreamEvent objects so the consumer can
-broadcast them to the Channels group however it wants.
+is gone; instead we yield raw StreamEvent objects so the caller can
+broadcast them to a Channels group however it wants (``drive_and_broadcast``
+below is the one remaining broadcaster — the interactive WebSocket consumer
+that used to be the other one was retired with ace-web's own chat UI).
 
 Cancellation: the caller passes an asyncio.Event. The driver checks it
 before each backend yield. When set, the backend's async generator is
@@ -102,6 +104,24 @@ async def _iter_until_stop(
                     await t
 
 
+def _persist_session_cost(session, raw_sink: list[str]) -> None:
+    """Compute + persist the session's cost breakdown from captured raw JSONL.
+
+    Best-effort: a failure here must never surface to the user mid-turn, so we
+    swallow + log. No-op when nothing was captured (e.g. the API backend).
+    """
+    if not raw_sink:
+        return
+    try:
+        from apps.ingest.live_ingest import store_session_transcript
+
+        store_session_transcript(session, "".join(raw_sink))
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "failed to persist cost breakdown for session %s", session.slug
+        )
+
+
 async def drive_assistant_turn(
     *, assistant_message_id: int, stop_event: asyncio.Event
 ) -> AsyncIterator[StreamEvent]:
@@ -140,11 +160,25 @@ async def drive_assistant_turn(
     await sync_to_async(_mark_streaming)(message)
 
     accumulated: list[str] = []
+    # Raw JSONL lines streamed from the subprocess, captured so we can compute
+    # this (web-source) session's cost breakdown at turn end — the live
+    # equivalent of the upload path. Empty for backends that don't fill it
+    # (e.g. ApiBackend), in which case the persist step is a no-op.
+    raw_sink: list[str] = []
     last_db_write = asyncio.get_running_loop().time()
+    # True once a terminal status (complete/error) has been persisted for this
+    # turn. Guards the CancelledError handler from OVERWRITING a finished turn:
+    # on the headless path the consumer returns the instant it gets DONE,
+    # leaving this generator suspended at the post-DONE `yield`. asyncio.run's
+    # shutdown then cancels the suspended task — and without this flag the
+    # cancel handler re-marks an already-`complete` turn as `cancelled`. That
+    # spurious mislabel (no signal, no real error, variable timing) was the
+    # "runs cancelled mid-flight" symptom after the idle-reaper fix.
+    terminal_persisted = False
 
     try:
         agen = backend.stream_completion(
-            session=message.session, new_user_message=user_text
+            session=message.session, new_user_message=user_text, raw_sink=raw_sink
         )
         try:
             async for event in _iter_until_stop(agen, stop_event):
@@ -188,9 +222,13 @@ async def drive_assistant_turn(
                     await sync_to_async(_mark_complete)(
                         message, "".join(accumulated)
                     )
+                    terminal_persisted = True
                     _schedule_auto_title(message.session)
                     await _broadcast_opp_updated_if_needed(
                         message.session, turn_start_index
+                    )
+                    await sync_to_async(_persist_session_cost)(
+                        message.session, raw_sink
                     )
                     yield event
                     return
@@ -198,6 +236,7 @@ async def drive_assistant_turn(
                     await sync_to_async(_mark_error)(
                         message, event.error or "unknown"
                     )
+                    terminal_persisted = True
                     yield event
                     return
 
@@ -210,12 +249,15 @@ async def drive_assistant_turn(
             await sync_to_async(_mark_error)(
                 message, f"cancelled (partial: {len(partial)} chars)"
             )
+            terminal_persisted = True
             yield StreamEvent.for_error(message="cancelled")
             return
 
         await sync_to_async(_mark_complete)(message, "".join(accumulated))
+        terminal_persisted = True
         _schedule_auto_title(message.session)
         await _broadcast_opp_updated_if_needed(message.session, turn_start_index)
+        await sync_to_async(_persist_session_cost)(message.session, raw_sink)
 
     except CLIBackendError as exc:
         logger.exception("CLIBackend failed during assistant turn")
@@ -242,13 +284,21 @@ async def drive_assistant_turn(
         yield StreamEvent.for_error(message=detail)
 
     except asyncio.CancelledError:
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.shield(
-                sync_to_async(_mark_error)(
-                    message,
-                    f"cancelled (partial: {len(''.join(accumulated))} chars)",
+        # A finished turn (DONE/ERROR already persisted) gets cancelled here
+        # during asyncio.run shutdown on the headless path: the consumer
+        # returns the instant it receives DONE, leaving this generator
+        # suspended at the post-DONE `yield`, and `_cancel_all_tasks` then
+        # cancels it. Do NOT overwrite the real terminal status with
+        # "cancelled" in that case — only mark cancelled for a genuine
+        # mid-flight cancellation (nothing terminal persisted yet).
+        if not terminal_persisted:
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.shield(
+                    sync_to_async(_mark_error)(
+                        message,
+                        f"cancelled (partial: {len(''.join(accumulated))} chars)",
+                    )
                 )
-            )
         raise
 
 
@@ -273,6 +323,155 @@ def _schedule_auto_title(session: Session) -> None:
     task = asyncio.create_task(_runner())
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
+
+
+def _group_name(slug: str) -> str:
+    return f"session.{slug}"
+
+
+def _slug_and_turn_for_message(message_id: int):
+    """Return (session_slug, turn_index) for an assistant message, or None."""
+    m = (
+        Message.objects.select_related("session")
+        .filter(pk=message_id)
+        .first()
+    )
+    if m is None:
+        return None
+    return (m.session.slug, m.turn_index)
+
+
+def _load_plaintext(message_id: int) -> str:
+    return (
+        Message.objects.filter(pk=message_id)
+        .values_list("plaintext", flat=True)
+        .first()
+        or ""
+    )
+
+
+def _most_recent_tool_row_id(slug: str, role: str) -> int:
+    return (
+        Message.objects.filter(session__slug=slug, role=role)
+        .order_by("-turn_index")
+        .values_list("pk", flat=True)
+        .first()
+    ) or 0
+
+
+async def drive_and_broadcast(assistant_message_id: int) -> None:
+    """Drive a single assistant turn WITHOUT a WebSocket consumer, broadcasting
+    every event to the session's channel-layer group.
+
+    This is the programmatic/headless equivalent of the retired interactive
+    chat UI's turn loop: the turn runs through the identical
+    ``drive_assistant_turn`` state machine, and because it broadcasts to
+    ``session.<slug>``, any listener on that Channels group (there is none in
+    production today — the browser-facing consumer was retired alongside
+    ace-web's own chat UI in favor of canopy-hosted chat) would see it live.
+    The DB is persisted regardless of whether anyone is listening. Invoked by
+    the ``drive_turn`` management command, which the seeded-run action
+    launches as a detached process so the run is decoupled from the request
+    lifecycle. See ace-web#585.
+
+    Moved here (from the retired apps/sessions/consumers.py) because this is
+    the ONLY caller left once the interactive WebSocket consumer was deleted:
+    the ``drive_turn`` mgmt command, which the MCP-exposed
+    ``apps.opps.api::seeded_run`` action launches to execute a headless ACE
+    run — a non-chat consumer this app must keep serving.
+    """
+    from channels.layers import get_channel_layer
+
+    channel_layer = get_channel_layer()
+    info = await sync_to_async(_slug_and_turn_for_message)(assistant_message_id)
+    if info is None:
+        logger.warning("drive_and_broadcast: message %s not found", assistant_message_id)
+        return
+    slug, turn_index = info
+    group = _group_name(slug)
+    stop_event = asyncio.Event()
+
+    await channel_layer.group_send(
+        group,
+        {"type": "chat.stream_start",
+         "data": {"message_id": assistant_message_id, "turn_index": turn_index}},
+    )
+    try:
+        async for event in drive_assistant_turn(
+            assistant_message_id=assistant_message_id, stop_event=stop_event
+        ):
+            if event.type is StreamEventType.DELTA:
+                await channel_layer.group_send(
+                    group,
+                    {"type": "chat.delta",
+                     "data": {"message_id": assistant_message_id, "text": event.text}},
+                )
+            elif event.type is StreamEventType.TOOL_USE:
+                tid = await sync_to_async(_most_recent_tool_row_id)(slug, "tool_use")
+                await channel_layer.group_send(
+                    group,
+                    {"type": "chat.tool_use",
+                     "data": {"parent_message_id": assistant_message_id,
+                              "tool_message_id": tid, "block": event.tool_block}},
+                )
+            elif event.type is StreamEventType.TOOL_RESULT:
+                tid = await sync_to_async(_most_recent_tool_row_id)(slug, "tool_result")
+                await channel_layer.group_send(
+                    group,
+                    {"type": "chat.tool_result",
+                     "data": {"parent_message_id": assistant_message_id,
+                              "tool_message_id": tid, "block": event.tool_block}},
+                )
+            elif event.type is StreamEventType.DONE:
+                plaintext = await sync_to_async(_load_plaintext)(assistant_message_id)
+                await channel_layer.group_send(
+                    group,
+                    {"type": "chat.stream_complete",
+                     "data": {"message_id": assistant_message_id,
+                              "plaintext": plaintext}},
+                )
+                return
+            elif event.type is StreamEventType.ERROR:
+                await channel_layer.group_send(
+                    group,
+                    {"type": "chat.stream_error",
+                     "data": {"message_id": assistant_message_id,
+                              "detail": event.error or "unknown"}},
+                )
+                return
+    except Exception:
+        logger.exception(
+            "drive_and_broadcast failed for assistant message %s", assistant_message_id
+        )
+
+
+def start_turn_subprocess(assistant_message_id: int) -> None:
+    """Launch ``manage.py drive_turn <id>`` as a detached OS process to drive an
+    assistant turn out-of-band.
+
+    This is how a programmatically-created run (the seeded-run action) is
+    executed: a separate process runs the SAME turn-driver + channel-layer
+    broadcast path (``drive_and_broadcast`` above), so the run is fully
+    decoupled from the web request's event loop. A fire-and-forget
+    ``asyncio.create_task`` spawned inside a Django async request does NOT
+    reliably run to completion (request-scoped loop); a detached process
+    does, and ``claude -p`` spawns cleanly as its own child. See ace-web#585.
+    """
+    import subprocess
+    import sys
+
+    from django.conf import settings
+
+    subprocess.Popen(
+        [
+            sys.executable,
+            str(settings.BASE_DIR / "manage.py"),
+            "drive_turn",
+            str(assistant_message_id),
+        ],
+        cwd=str(settings.BASE_DIR),
+        start_new_session=True,
+    )
 
 
 def _load_message(message_id: int) -> Message | None:
@@ -303,6 +502,10 @@ def _mark_streaming(message: Message) -> None:
     Message.objects.filter(pk=message.pk).update(
         status="streaming", started_at=timezone.now()
     )
+    # Stamp the driver liveness beacon at turn start so a just-started run
+    # isn't seen as stale before the subprocess heartbeat's first tick. The
+    # heartbeat loop refreshes it every HEARTBEAT_INTERVAL_SECONDS thereafter.
+    Session.objects.filter(pk=message.session_id).update(driver_heartbeat_at=timezone.now())
 
 
 def _update_plaintext(message: Message, text: str) -> None:

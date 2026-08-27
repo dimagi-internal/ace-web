@@ -37,8 +37,31 @@ class FakeCLIBackend:
         session,
         new_user_message: str,
         force_fresh_session: bool = False,
+        raw_sink: list[str] | None = None,
     ) -> AsyncIterator[StreamEvent]:
         response = f"Echo: {new_user_message}"
+        # When the caller wants the raw transcript (web-source cost breakdown),
+        # emit the same stream-json envelopes the real CLI would, so the parser
+        # + aggregator see a system/init line and an assistant turn with usage.
+        if raw_sink is not None:
+            import json
+
+            raw_sink.append(json.dumps({
+                "type": "system", "subtype": "init",
+                "session_id": session.cli_session_id or "fake-session",
+            }) + "\n")
+            raw_sink.append(json.dumps({
+                "type": "assistant",
+                "timestamp": "2026-01-01T00:00:00.000Z",
+                "message": {
+                    "role": "assistant",
+                    "model": "claude-sonnet-4-6",
+                    "content": [{"type": "text", "text": response}],
+                    "usage": {"input_tokens": 10, "output_tokens": 5,
+                              "cache_creation_input_tokens": 0,
+                              "cache_read_input_tokens": 0},
+                },
+            }) + "\n")
         # Break the response into small chunks so each yield is a
         # deterministic delta that the Playwright assertion can wait on.
         for i in range(0, len(response), CHUNK_SIZE):

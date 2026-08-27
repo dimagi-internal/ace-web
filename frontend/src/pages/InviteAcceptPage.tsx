@@ -6,7 +6,7 @@ import {
   getInvitePreview,
   type InvitePreview,
 } from "../api/workspaces";
-import { Button } from "@/components/ui/button";
+import { Button } from "canopy-ui/ui";
 
 export default function InviteAcceptPage() {
   const { token } = useParams<{ token: string }>();

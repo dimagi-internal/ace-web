@@ -1,0 +1,24 @@
+# Template metadata. The generator service reads this to surface the
+# template in the picker and to know which prompt + skeleton to use.
+id: partnership-pitch
+name: Partnership pitch (prospect org)
+description: |
+  90-second pitch tailored to a prospect organization that runs a real
+  program today but is not yet on Connect. Carries three selectable
+  narrative angles (one per reusable narrative template), prospect
+  branding, and a real micro-demo proof clip. Drop the prospect block
+  and the same template produces the unbranded "how Connect works"
+  explainer.
+intent: >-
+  Pitch a specific prospect org on Connect as a credible upgrade path for their existing
+  program — mirroring their reality in the handoff beat, showing the mechanism once via a
+  real micro-demo clip, and closing on two research-grounded impact numbers they can cite.
+  Three selectable narrative angles let the generator pick the framing that best maps to the
+  prospect's current program; every factual claim must trace to provided research inputs.
+intended_audience: |
+  A prospect org's decision-makers in active partnership discussions —
+  e.g. an NGO expanding to a new country. Quiet documentary pacing.
+when_to_use: |
+  - You are in discussions with an org not yet on Connect.
+  - You have research-grounded narrative angles + at least one micro-demo clip.
+  - For the generic explainer, omit prospect and use generic narration.

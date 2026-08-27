@@ -1,17 +1,41 @@
-import { GitFork, Undo2 } from "lucide-react";
+import { GitFork, Save, Undo2 } from "lucide-react";
 
 interface Props {
   count: number;
   onDiscardAll: () => void;
   onForkAndRerun: () => void;
+  /**
+   * Persist the buffered edits to `<opp>/inputs/decision-overrides.yaml`
+   * without creating a run. Omit to hide the button (legacy usage).
+   * The label deliberately says "Save to Drive", NOT "Apply to next
+   * run" — the file is inert until the ACE plugin learns to read it.
+   */
+  onSaveToDrive?: () => void;
+  /** True while a save round-trip is in flight — disables the button. */
+  saving?: boolean;
+  /**
+   * Escape hatch: download the staged edits as a local JSON file
+   * (mirrors the decision-overrides.yaml row shape). Pure client-side —
+   * works even when the WebSocket or save endpoint is broken. Rendered
+   * deliberately understated.
+   */
+  onExportLocal?: () => void;
 }
 
 /**
  * Sticky action bar at the bottom of the Phases view when the user has
- * buffered one or more decision edits. The "Fork & re-run" button opens
- * the ForkWithEditsDialog; nothing happens to the current run.
+ * buffered one or more decision edits. "Save to Drive" is the primary
+ * action (durable, no run created); "Fork & re-run" opens the
+ * ForkWithEditsDialog. Nothing happens to the current run either way.
  */
-export function PendingEditsBar({ count, onDiscardAll, onForkAndRerun }: Props) {
+export function PendingEditsBar({
+  count,
+  onDiscardAll,
+  onForkAndRerun,
+  onSaveToDrive,
+  saving,
+  onExportLocal,
+}: Props) {
   if (count <= 0) return null;
   const noun = count === 1 ? "pending edit" : "pending edits";
   return (
@@ -23,6 +47,16 @@ export function PendingEditsBar({ count, onDiscardAll, onForkAndRerun }: Props) 
       <span className="text-sm font-medium text-foreground">
         {count} {noun}
       </span>
+      {onExportLocal && (
+        <button
+          type="button"
+          onClick={onExportLocal}
+          title="Download your staged edits as a file on this computer — works even if saving to the server is failing"
+          className="text-[11px] text-muted-foreground/70 underline decoration-dotted underline-offset-2 hover:text-muted-foreground"
+        >
+          Export local copy
+        </button>
+      )}
       <div className="ml-auto flex gap-2">
         <button
           type="button"
@@ -40,6 +74,17 @@ export function PendingEditsBar({ count, onDiscardAll, onForkAndRerun }: Props) 
           <GitFork className="h-3.5 w-3.5" />
           Fork & re-run
         </button>
+        {onSaveToDrive && (
+          <button
+            type="button"
+            onClick={onSaveToDrive}
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Save className="h-3.5 w-3.5" />
+            {saving ? "Saving…" : "Save to Drive"}
+          </button>
+        )}
       </div>
     </div>
   );

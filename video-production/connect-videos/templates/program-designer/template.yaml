@@ -1,0 +1,42 @@
+# Template metadata. The generator service reads this to surface the
+# template in the picker and to know which prompt + skeleton to use.
+id: program-designer
+name: Program designer — bring your program onto Connect (generic)
+description: |
+  Generic, unbranded explainer aimed at a PROGRAM DESIGNER: an org that
+  owns a frontline program/protocol and is weighing bringing it onto
+  Connect — how the program comes onto Connect, plus the business
+  case for scaling through Connect's network of local delivery
+  organizations (LLOs). Carries TWO cuts from one spec: an AI cut
+  (active_cut: ai) that includes a dedicated "AI builds your program" beat,
+  and a standard cut (active_cut: standard) that drops it. Eight beats in
+  the AI cut (~57s): hook, cycle, handoff, ai_build, scene, product (4 app
+  clips), why (benefit cards), end card. This is the unbranded backbone
+  that partnership-pitch skins with prospect branding. For the audience on
+  the other side of the marketplace — a local org deciding whether to
+  DELIVER on Connect — use llo-deliver.
+intent: >-
+  Show an org that owns a real frontline program what it looks like to bring that program
+  onto Connect — how it comes onto Connect plus the business case for scaling
+  through Connect's LLO network — with no prospect branding and no program-specific stats.
+  The AI cut also names how Connect's AI tooling builds the program's components; flip
+  active_cut for the non-AI version from the same spec.
+intended_audience: |
+  A program designer / program-owning org that already runs (or is
+  designing) a real frontline program and is weighing how to scale it —
+  in addition to, or instead of, scaling their own delivery directly.
+  They care that a network of local delivery organizations will actually
+  WANT to deliver their program. Also a teammate or conference-booth loop
+  that needs "this is what it looks like to put a program on Connect" in
+  one breath. Not tailored to one org and citing no program's outcomes.
+when_to_use: |
+  - You want the evergreen "how you bring a program onto Connect" story,
+    with the business case for scaling through Connect, and no
+    program-specific stats or partner branding to keep current.
+  - You want to show the AI/ACE build story (AI cut) OR a non-AI version
+    (standard cut) from the same spec — flip active_cut.
+  - For the DELIVERY side — a local org looking at delivering on Connect
+    (how the work is split, and how verification and payment happen), use
+    llo-deliver. For a product-mechanism-only explainer (what Connect
+    IS, the L/D/V/P loop, no build/why beats), use connect-explainer. For
+    a branded prospect pitch, use partnership-pitch.

@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "canopy-ui/ui";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "canopy-ui/ui";
 
 interface ConfirmDialogProps {
   open: boolean;

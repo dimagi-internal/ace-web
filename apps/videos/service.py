@@ -278,7 +278,7 @@ def read_parsed_spec(workspace: Workspace, slug: str, run_id: str) -> dict | Non
 
     The per-run spec.yaml only carries `beat_overrides` (seconds tweaks) —
     the canonical beat list (id/kind/seconds for the 8 narrative units)
-    lives in `programs/_defaults.yaml`. The React beat editor needs the
+    lives in `programs/global_style.yaml`. The React beat editor needs the
     resolved list to render. We merge here so the frontend stays simple.
     """
     if not is_valid_slug(slug) or not is_valid_run_id(run_id):
@@ -324,22 +324,40 @@ def _scrub_ruamel(node: Any) -> Any:
     return node
 
 
-def _resolved_beats(overrides: dict) -> list[dict]:
-    """Read `programs/_defaults.yaml` and apply per-run beat_overrides.
+def _resolved_beats(overrides: dict, spec: dict | None = None) -> list[dict]:
+    """Read `programs/global_style.yaml` and apply per-run beat_overrides.
 
     Returns a list of {id, kind, seconds} dicts in declaration order.
     Empty list if defaults can't be read (the editor falls back to a no-
     beats view rather than 500).
+
+    When ``spec`` is given, the three OPTIONAL beats are dropped if the spec
+    lacks their content block — mirroring beats.ts::filterDefaultsForSpec so
+    the editor shows exactly the beats that render (not the full global
+    timeline). This is the default starter timeline a spec inherits ONLY
+    when it doesn't carry its own ``beats:`` (structure-belongs-to-the-spec).
     """
     from django.conf import settings
 
-    defaults_path = Path(settings.ACE_VIDEOS_ROOT) / "programs" / "_defaults.yaml"
+    defaults_path = Path(settings.ACE_VIDEOS_ROOT) / "programs" / "global_style.yaml"
     if not defaults_path.is_file():
         return []
     try:
         doc = _yaml().load(defaults_path.read_text())
     except Exception:
         return []
+
+    def _keep(kind: str) -> bool:
+        if spec is None:
+            return True
+        if kind == "body_problem_stat":
+            return spec.get("problem") is not None
+        if kind == "body_impact_stats":
+            return spec.get("impact") is not None
+        if kind == "body_ai_build":
+            return spec.get("ai_build") is not None and spec.get("active_cut") == "ai"
+        return True
+
     out: list[dict] = []
     for b in (doc.get("beats") or []):
         if not isinstance(b, dict):
@@ -347,10 +365,13 @@ def _resolved_beats(overrides: dict) -> list[dict]:
         beat_id = b.get("id")
         if not beat_id:
             continue
+        kind = b.get("kind", "")
+        if not _keep(kind):
+            continue
         override = overrides.get(beat_id) if isinstance(overrides, dict) else None
         out.append({
             "id": beat_id,
-            "kind": b.get("kind", ""),
+            "kind": kind,
             "seconds": float((override or {}).get("seconds", b.get("seconds", 0))),
         })
     return out
@@ -406,6 +427,29 @@ def list_programs_for_workspace(workspace: Workspace) -> list[ProgramRecord]:
 # ---------------------------------------------------------------------------
 
 
+def validate_spec_structure(spec_yaml: str) -> dict:
+    """Parse spec_yaml and verify it is a YAML mapping with slug + workspace.
+
+    Returns the parsed dict on success.  Raises ``ValueError`` with a
+    human-readable message on any structural failure.  Used by both
+    ``create_program_from_spec`` (which then adds slug/workspace match
+    checks) and ``apps.videos.templates.save_template`` (which validates
+    an example spec before persisting it to Drive so saved examples always
+    render without further edits).
+    """
+    try:
+        doc = _yaml().load(spec_yaml)
+    except Exception as e:
+        raise ValueError(f"spec_yaml is not valid YAML: {e}") from e
+    if not isinstance(doc, dict):
+        raise ValueError("spec_yaml must parse to a YAML mapping at the top level")
+    if not doc.get("slug"):
+        raise ValueError("spec_yaml must contain a non-empty 'slug' field")
+    if not doc.get("workspace"):
+        raise ValueError("spec_yaml must contain a non-empty 'workspace' field")
+    return doc
+
+
 def create_program_from_spec(workspace: Workspace, slug: str, spec_yaml: str) -> str:
     """Create programs/<slug>/runs/run-001/spec.yaml in Drive.
 
@@ -418,12 +462,7 @@ def create_program_from_spec(workspace: Workspace, slug: str, spec_yaml: str) ->
     if not is_valid_slug(slug):
         raise ValueError(f"Invalid program slug: {slug!r}")
 
-    try:
-        doc = _yaml().load(spec_yaml)
-    except Exception as e:
-        raise ValueError(f"spec_yaml is not valid YAML: {e}") from e
-    if not isinstance(doc, dict):
-        raise ValueError("spec_yaml must parse to a YAML mapping at the top level")
+    doc = validate_spec_structure(spec_yaml)
     if doc.get("slug") != slug:
         raise ValueError(
             f"spec_yaml.slug ({doc.get('slug')!r}) must match the URL slug ({slug!r})"
@@ -707,7 +746,7 @@ def _apply_single_op(
         # Per-program override of the global template. Writes under
         # spec.global_template; the renderer's resolveGlobalTemplate()
         # in Root.tsx prefers spec.global_template over
-        # programs/_defaults.yaml > global_template at render time.
+        # programs/global_style.yaml > global_template at render time.
         # Absent fields mean "no change to that field". Pass empty
         # string to tagline OR an empty list to cycle_steps to clear
         # that override (falls back to global default).

@@ -1,0 +1,113 @@
+# program-designer — fully-filled demo spec (AI cut).
+#
+# Ready to POST to /videos/programs to render immediately. No
+# {{placeholder}} tokens. This is the AI-CENTRIC cut: active_cut is "ai"
+# and an `ai_build` block is present, so the renderer includes the
+# body_ai_build beat ("AI builds your program"). Flip active_cut to
+# "standard" (one field) to render the non-AI cut from this same spec —
+# the ai_build beat drops out and nothing else changes.
+#
+# No problem block (explainer mode drops the problem stat beat); the
+# impact block is three plain "what you get" cards explaining how delivery
+# works (verified / paid-on-proof / full visibility) — mechanism, not a sell.
+#
+# Beats (AI cut, ~57s): hook, cycle, handoff, ai_build, scene, product,
+# impact (why), cta. Standard cut (~50s) is the same minus ai_build.
+
+provenance:
+  generator: program-designer
+  template: program-designer
+  generated_from: https://connect.dimagi.com/
+  generated_at: "2026-06-07T00:00:00Z"
+
+slug: program-designer
+workspace: dimagi-team
+name: Connect
+country_focus: Global
+status: Live
+tagline: "Bring your program to the last mile — paid for what's verified, not what's planned."
+program_url: https://connect.dimagi.com/
+
+# AI cut: include the body_ai_build beat. Set to "standard" to drop it.
+active_cut: ai
+
+# Stable workspace media-library refs (`@alias` clip references resolve
+# against these). The render-prep staging step rewrites each library:<path>
+# to gdrive:<id>.<ext> server-side (apps/videos service._stage_spec) before
+# the renderer runs, so this template example stays workspace-portable.
+manifest:
+  field-walking-towards-house: library:video/field-broll/field-walking-towards-house.mp4
+  field-group-around-woman: library:video/field-broll/field-group-around-woman.mp4
+  mobile-learn: library:video/mobile-screencast/mobile-learn.mp4
+  mobile-mapping: library:video/mobile-screencast/mobile-mapping.mp4
+  web-microplan: library:video/web-screencast/web-microplan.mp4
+  mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
+
+# "What Connect provides" card (AI cut only). Pure motion graphic — no
+# clip. The chips are the pieces Connect sets up around your program.
+ai_build:
+  headline: "What Connect provides"
+  components:
+    - "Training"
+    - "Delivery app"
+    - "Verification"
+    - "Payments"
+  subhead: "Set up around your program; you bring the protocol."
+
+scene:
+  clips:
+    - "@field-walking-towards-house"
+    - "@field-group-around-woman"
+  lower_third: "Your program, in the field"
+
+product:
+  beats:
+    - asset: "@mobile-learn"
+      caption: "Learn — with an AI coach"
+      is_demo_clip: true
+    - asset: "@mobile-mapping"
+      caption: "Deliver — in their own communities"
+      is_demo_clip: true
+    - asset: "@web-microplan"
+      caption: "Verify — the moment it happens"
+      is_demo_clip: true
+    - asset: "@mobile-pay"
+      caption: "Pay — for every verified service"
+      is_demo_clip: true
+
+# The "what you get" beat — three cards explaining how delivery works on
+# Connect (mechanism, not a sell).
+impact:
+  - big: "Verified"
+    caption: "every visit — biometric, GPS, photo"
+  - big: "Paid on proof"
+    caption: "funds follow verified delivery"
+  - big: "Full visibility"
+    caption: "what was delivered, where, and at what cost"
+
+narration:
+  generator: manual
+  prompt_version: v1-program-designer
+  start_seconds: 0
+  by_beat:
+    hook: "Here's how a program runs on Connect — and what bringing yours over looks like."
+    cycle: "Every program runs the same loop: Learn, Deliver, Verify, and Pay."
+    handoff: "Here's how your program comes onto Connect."
+    ai_build: "Connect provides the pieces — training, the delivery app, verification, and payments — set up around your program."
+    scene: "Frontline workers deliver in their own communities, and every visit is recorded as it happens."
+    product: "Workers learn on their phones with an AI coach, deliver guided visits, and each one is verified — biometric, GPS, and photo. Then payment follows."
+    impact: "Once a visit is verified, payment follows automatically — and you can see exactly what was delivered, where, and at what cost."
+    cta: ""
+  script: |
+    Here's how a program runs on Connect — and what bringing yours over looks like.
+    Every program runs the same loop: Learn, Deliver, Verify, and Pay.
+    Here's how your program comes onto Connect.
+    Connect provides the pieces — training, the delivery app, verification, and payments — set up around your program.
+    Frontline workers deliver in their own communities, and every visit is recorded as it happens.
+    Workers learn on their phones with an AI coach, deliver guided visits, and each one is verified — biometric, GPS, and photo. Then payment follows.
+    Once a visit is verified, payment follows automatically — and you can see exactly what was delivered, where, and at what cost.
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

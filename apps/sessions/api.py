@@ -9,7 +9,12 @@ from ninja import Path, Router
 
 from apps.api.auth import session_auth
 from apps.api.deps import resolve_workspace_for_member
-from apps.api.errors import TYPE_NOT_FOUND, TYPE_VALIDATION, ProblemError
+from apps.api.errors import (
+    TYPE_NOT_FOUND,
+    TYPE_UPSTREAM,
+    TYPE_VALIDATION,
+    ProblemError,
+)
 from apps.api.pagination import Page, paginate
 
 from .schemas import SessionCreateIn, SessionListOut, SessionPatchIn
@@ -198,6 +203,240 @@ def list_sessions(
         offset=offset,
         limit=limit,
     )
+
+
+# ---------------------------------------------------------------------------
+# Interrupted runs — resume candidates (deterministic deploy-kill detection)
+# Registered BEFORE /{slug} so the literal path isn't matched as a slug.
+# ---------------------------------------------------------------------------
+
+
+def interrupted_runs_in_workspace(workspace) -> list[dict]:
+    """Runs killed mid-flight (e.g. ECS task replaced by a deploy): a
+    non-terminal assistant turn with a stale/absent driver heartbeat. The
+    monkeypatch target in contract tests is this module-level function."""
+    from apps.sessions.models import Session
+
+    out = []
+    for s in Session.interrupted().filter(workspace=workspace).order_by("-updated_at"):
+        out.append({
+            "slug": s.slug,
+            "opp_slug": s.opp_slug or None,
+            "opp_run_id": s.opp_run_id or None,
+            "title": s.title,
+            "driver_heartbeat_at": (
+                s.driver_heartbeat_at.isoformat() if s.driver_heartbeat_at else None
+            ),
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+        })
+    return out
+
+
+@router.get("/interrupted", summary="Runs interrupted mid-flight (resume candidates)")
+def interrupted_runs(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+) -> HttpResponse:
+    from django.http import JsonResponse
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    return JsonResponse({"items": interrupted_runs_in_workspace(workspace)})
+
+
+def resume_session_run(session) -> dict | None:
+    """Re-launch an interrupted ACE opp run on its EXISTING session + run_id by
+    appending a fresh ``/ace:run <slug>/<run_id>`` resume turn (the orchestrator
+    picks up from run_state.yaml where it died). Returns
+    {assistant_message_id, command, slug} or None if the session isn't a
+    resumable ACE opp run (ad-hoc chats have no run_state to resume from).
+
+    The caller spawns the driver for assistant_message_id. Monkeypatch target
+    in contract tests."""
+    from django.db import models, transaction
+    from django.utils import timezone
+
+    from apps.sessions.models import Message
+
+    if not session.opp_run_id or not session.opp_slug:
+        return None  # ACE opp runs only
+    command = f"/ace:run {session.opp_slug}/{session.opp_run_id} --no-evals"
+    with transaction.atomic():
+        # Retire the dead turn so the resume scope stops flagging it — BOTH kill
+        # modes: a hard-killed turn left streaming/pending, AND a gracefully
+        # cancelled turn already marked error:'cancelled (partial:...)'. Rewriting
+        # the detail off the 'cancelled' prefix is what stops resumable_after_deploy
+        # re-matching it on the next sweep (no double-resume).
+        Message.objects.filter(
+            models.Q(status__in=("streaming", "pending"))
+            | models.Q(status="error", error_detail__startswith="cancelled"),
+            session=session,
+            role="assistant",
+        ).update(
+            status="error",
+            error_detail="superseded by auto-resume",
+            completed_at=timezone.now(),
+        )
+        next_idx = (
+            Message.objects.filter(session=session).aggregate(m=models.Max("turn_index"))["m"] or 0
+        ) + 1
+        Message.objects.create(
+            session=session, turn_index=next_idx, role="user", sender_user=session.owner,
+            content={"text": command}, plaintext=command, status="complete",
+            completed_at=timezone.now(),
+        )
+        assistant_msg = Message.objects.create(
+            session=session, turn_index=next_idx + 1, role="assistant",
+            content={"text": ""}, plaintext="", status="pending",
+        )
+        # Stamp the beacon fresh NOW (before the driver's first heartbeat ~30s
+        # out) so a concurrent detector / second post-deploy hook can't see the
+        # just-created pending turn as interrupted and double-resume it.
+        from apps.sessions.models import Session as _S
+        _S.objects.filter(pk=session.pk).update(driver_heartbeat_at=timezone.now())
+    return {"assistant_message_id": assistant_msg.id, "command": command, "slug": session.slug}
+
+
+@router.post(
+    "/resume-interrupted",
+    summary="Resume all interrupted ACE opp runs (post-deploy self-heal)",
+)
+def resume_interrupted(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+) -> HttpResponse:
+    """Bulk-resume every interrupted ACE opp run in the workspace. Intended for
+    the post-deploy hook: after a rollout drains the tasks driving live runs,
+    this relaunches them from run_state.yaml. Single serial call → no
+    double-spawn race.
+
+    Best-effort per session, never all-or-nothing: a session that cannot be
+    restarted is reported in ``failed`` and the sweep carries on. Anything that
+    raises here is a *self-heal* failing, and aborting the whole sweep on the
+    first one leaves every later run unresumed AND unreported."""
+    from django.http import JsonResponse
+
+    from apps.canopy import run_dispatch
+    from apps.sessions.models import Session
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    resumed: list[dict] = []
+    failed: list[dict] = []
+    skipped: list[dict] = []
+    # ACE opp runs only (have an opp_run_id → resumable from run_state.yaml).
+    # resumable_after_deploy (NOT interrupted) so the sweep catches the common
+    # graceful-SIGTERM kill mode (turn marked error:'cancelled (partial:...)'),
+    # not just hard kills — and is age-bounded so ancient corpses aren't revived.
+    # Materialised up front: the canopy reconcile below writes the very rows the
+    # queryset selects on.
+    candidates = list(
+        Session.resumable_after_deploy().filter(workspace=workspace).exclude(opp_run_id="")
+    )
+    for s in candidates:
+        state = _canopy_state_for_sweep(s)
+        if state is not None:
+            # canopy still owns this run — it is queued (however hopelessly),
+            # executing, or we could not reach canopy to find out. Resuming any
+            # of those double-executes it. This is what stops the sweep from
+            # re-dispatching, on every deploy forever, the very runs it
+            # dispatched: a dispatched turn sits `pending` behind a beat that
+            # goes stale in 90s, which is precisely resumable_after_deploy's
+            # hard_kill shape. Reconciling refreshes that beat as a side effect.
+            skipped.append({"slug": s.slug, "opp_run_id": s.opp_run_id, "state": state})
+            continue
+        res = resume_session_run(s)
+        if res is None:
+            continue
+        try:
+            run_dispatch.start_turn(res["assistant_message_id"])
+        except run_dispatch.DispatchError as exc:
+            log.warning("resume dispatch failed for %s: %s", s.slug, exc.detail)
+            failed.append({"slug": s.slug, "opp_run_id": s.opp_run_id, "error": exc.detail})
+            continue
+        resumed.append({"slug": s.slug, "opp_run_id": s.opp_run_id})
+    return JsonResponse(
+        {"resumed": resumed, "count": len(resumed), "failed": failed, "skipped": skipped},
+    )
+
+
+def _canopy_state_for_sweep(session) -> str | None:
+    """The canopy execution state of a run the sweep is about to resume, or
+    None when the sweep should go ahead and resume it.
+
+    Returns a state ONLY when canopy still owns the run. A canopy turn that
+    failed/was lost/was missed is exactly what the self-heal exists for, so
+    those return None and the resume proceeds.
+
+    Inert unless run execution is on: with the flag off nothing ever writes a
+    ``canopy_session_id``, so gating on ``enabled()`` makes "flag off ⇒ the
+    sweep behaves exactly as it did before" structural rather than incidental.
+    """
+    from apps.canopy import run_dispatch, run_state
+
+    if not (run_dispatch.enabled() and session.canopy_session_id):
+        return None
+    try:
+        state = run_state.reconcile_session(session)["state"]
+    except Exception as exc:  # noqa: BLE001 — reconcile must never abort the sweep
+        log.warning("canopy reconcile failed for %s: %s", session.slug, exc)
+        return run_state.UNKNOWN
+    if run_state.is_alive(state) or state == run_state.UNKNOWN:
+        return state
+    return None
+
+
+@router.post("/{slug}/resume", summary="Resume one interrupted run")
+def resume_run(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+) -> HttpResponse:
+    from django.http import JsonResponse
+
+    from apps.canopy import run_dispatch
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    session = _load_session_in_workspace(slug, workspace)
+    if session is None:
+        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
+    res = resume_session_run(session)
+    if res is None:
+        raise ProblemError(
+            422, "Not a resumable ACE opp run (no opp_run_id)", type_=TYPE_VALIDATION,
+        )
+    try:
+        run_dispatch.start_turn(res["assistant_message_id"])
+    except run_dispatch.DispatchError as exc:
+        # The turn is already marked errored by the dispatcher. Say so in
+        # problem+json rather than as a bare 500 with no machine-readable cause.
+        raise ProblemError(
+            502, "Could not start the run on canopy", type_=TYPE_UPSTREAM, detail=exc.detail,
+        ) from exc
+    return JsonResponse(res, status=202)
+
+
+@router.get("/{slug}/execution", summary="Where this run's execution actually stands")
+def session_execution(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+) -> HttpResponse:
+    """The run's canopy execution state — including the two states that say, in
+    plain words, that nothing can run it: `no_runner_configured` and
+    `waiting_for_runner`. Reconciles on read (ace-web has no worker; this is the
+    same compute-on-read shape `/structure` uses).
+
+    The monkeypatch target in contract tests is
+    `apps.canopy.run_state.reconcile_session`.
+    """
+    from django.http import JsonResponse
+
+    from apps.canopy import run_state
+
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    session = _load_session_in_workspace(slug, workspace)
+    if session is None:
+        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
+    return JsonResponse(run_state.reconcile_session(session))
 
 
 # ---------------------------------------------------------------------------
@@ -442,62 +681,6 @@ def list_participants(
 
 
 # ---------------------------------------------------------------------------
-# 2.2.9 — GET /{slug}/turn-state — cheap polling endpoint
-# ---------------------------------------------------------------------------
-
-
-def get_turn_state(workspace, slug: str) -> dict | None:
-    """Return turn-state dict or None if the session doesn't exist.
-
-    The monkeypatch target in contract tests is this module-level function.
-    """
-    from apps.common.backend_selector import _cli_instance
-    from apps.sessions.consumers import turn_task_for_slug
-    from apps.sessions.models import Message, Session
-
-    session = Session.objects.filter(slug=slug, workspace=workspace).first()
-    if session is None:
-        return None
-
-    task = turn_task_for_slug(slug)
-    running = task is not None and not task.done()
-
-    cli_state = None
-    if _cli_instance is not None:
-        cli_state = _cli_instance.session_state(slug)
-
-    last = (
-        Message.objects.filter(session=session)
-        .order_by("-created_at")
-        .values_list("created_at", flat=True)
-        .first()
-    )
-    return {
-        "running": running,
-        "last_message_at": last,
-        "cli": cli_state,
-    }
-
-
-@router.get("/{slug}/turn-state", summary="Turn state (polling)")
-def session_turn_state(
-    request: HttpRequest,
-    workspace_slug: Annotated[str, Path()],
-    slug: Annotated[str, Path()],
-) -> HttpResponse:
-    from django.http import JsonResponse
-
-    from .schemas import TurnStateOut
-
-    workspace = resolve_workspace_for_member(request, workspace_slug)
-    state = get_turn_state(workspace, slug)
-    if state is None:
-        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
-    payload = TurnStateOut.model_validate(state).model_dump(mode="json")
-    return JsonResponse(payload)
-
-
-# ---------------------------------------------------------------------------
 # 2.2.10 — GET /{slug}/cost — cost breakdown rollup
 # ---------------------------------------------------------------------------
 
@@ -553,10 +736,11 @@ def get_structure_tree(
 
     The monkeypatch target in contract tests is this module-level function.
     """
-    import gzip as _gzip
+    import hashlib as _hashlib
     import logging as _logging
 
     from apps.ingest.parser import parse_session_bytes
+    from apps.ingest.sources import read_session_transcript
     from apps.ingest.structure_aggregator import SCHEMA_VERSION, aggregate
     from apps.sessions.models import Session
 
@@ -566,25 +750,38 @@ def get_structure_tree(
     if session is None:
         return None, None, False
 
-    upload = session.ingest_records.order_by("-created_at").first()
-    if upload is None or not upload.raw_jsonl_gz:
+    # Where these bytes live is the SESSION's property, not this view's — see
+    # apps/ingest/sources.py. For a canopy-executed run this seats the cache
+    # row from canopy's per-turn transcripts if the turn set has moved.
+    read = read_session_transcript(session)
+    raw = read.raw
+    if not raw:
+        # The seam says WHY, so an unreadable blob still reads "parse-failed"
+        # (as it did when the gunzip sat inside this function's try) and an
+        # unreachable canopy is not reported as "nothing was ever recorded".
         return (
             {
                 "schema_version": 0,
                 "session": None,
                 "phases": [],
-                "unavailable_reason": "no-raw-jsonl",
+                "unavailable_reason": read.reason or "no-raw-jsonl",
             },
             None,
             False,
         )
 
-    etag = f'"v{SCHEMA_VERSION}:{upload.content_sha256}"' if upload.content_sha256 else None
+    # The ETag is the hash of the bytes we are ABOUT TO SERVE, not of a row we
+    # looked up separately. It used to be `IngestUpload.content_sha256`, which
+    # for every pre-existing row is the same number — but a session can now
+    # have two rows, and the seam can serve the local prefix when the canopy
+    # cache is unreachable, so "the newest row's hash" is no longer guaranteed
+    # to describe what went out.
+    etag = f'"v{SCHEMA_VERSION}:{_hashlib.sha256(raw).hexdigest()}"'
     if etag and if_none_match == etag:
         return {}, etag, True
 
     try:
-        _parsed, events = parse_session_bytes(_gzip.decompress(bytes(upload.raw_jsonl_gz)))
+        _parsed, events = parse_session_bytes(raw)
         tree = aggregate(events)
     except Exception:
         _log.exception("structure aggregation failed for session %s", slug)
@@ -623,181 +820,3 @@ def session_structure(
     return response
 
 
-# ---------------------------------------------------------------------------
-# 2.2.12 — GET /{slug}/share — share-token list
-# ---------------------------------------------------------------------------
-
-
-def list_share_tokens(workspace, slug: str) -> list[dict] | None:
-    """Return active share tokens for a session or None if not found.
-
-    The monkeypatch target in contract tests is this module-level function.
-    """
-    from apps.sessions.models import Session, ShareToken
-
-    session = Session.objects.filter(slug=slug, workspace=workspace).first()
-    if session is None:
-        return None
-    tokens = (
-        ShareToken.objects.filter(session=session, revoked_at__isnull=True)
-        .order_by("-created_at")
-    )
-    return [
-        {"token": t.token, "created_at": t.created_at, "revoked_at": t.revoked_at, "url": None}
-        for t in tokens
-    ]
-
-
-@router.get("/{slug}/share", summary="List share tokens")
-def list_share(
-    request: HttpRequest,
-    workspace_slug: Annotated[str, Path()],
-    slug: Annotated[str, Path()],
-) -> HttpResponse:
-    from django.http import JsonResponse
-
-    from .schemas import ShareTokenOut
-
-    workspace = resolve_workspace_for_member(request, workspace_slug)
-    tokens = list_share_tokens(workspace, slug)
-    if tokens is None:
-        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
-    payload = [ShareTokenOut.model_validate(t).model_dump(mode="json") for t in tokens]
-    return JsonResponse(payload, safe=False)
-
-
-# ---------------------------------------------------------------------------
-# POST /{slug}/share — create share token
-# ---------------------------------------------------------------------------
-
-
-@router.post("/{slug}/share", summary="Create share token")
-def create_share_token(
-    request: HttpRequest,
-    workspace_slug: Annotated[str, Path()],
-    slug: Annotated[str, Path()],
-) -> HttpResponse:
-    from django.conf import settings
-    from django.http import JsonResponse
-
-    from apps.api.errors import TYPE_FORBIDDEN
-
-    from .models import Session, SessionParticipant, ShareToken
-    from .schemas import ShareTokenOut
-
-    workspace = resolve_workspace_for_member(request, workspace_slug)
-    session = Session.objects.filter(slug=slug, workspace=workspace).first()
-    if session is None:
-        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
-
-    # Owner or editor may create share tokens; viewers cannot.
-    try:
-        participant = SessionParticipant.objects.get(session=session, user=request.user)
-    except SessionParticipant.DoesNotExist as exc:
-        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND) from exc
-    if participant.role == "viewer":
-        raise ProblemError(
-            403, "Only owners and editors can manage share tokens", type_=TYPE_FORBIDDEN
-        )
-
-    token = ShareToken.objects.create(session=session, created_by=request.user)
-    base_url = request.build_absolute_uri("/").rstrip("/")
-    prefix = getattr(settings, "FORCE_SCRIPT_NAME", "") or ""
-    share_url = f"{base_url}{prefix}/share/{token.token}"
-
-    payload = ShareTokenOut.model_validate(
-        {
-            "token": token.token,
-            "created_at": token.created_at,
-            "revoked_at": None,
-            "url": share_url,
-        }
-    ).model_dump(mode="json")
-    return JsonResponse(payload, status=201)
-
-
-# ---------------------------------------------------------------------------
-# DELETE /{slug}/share/{token} — revoke share token
-# ---------------------------------------------------------------------------
-
-
-@router.delete("/{slug}/share/{token_key}", summary="Revoke share token")
-def revoke_share_token(
-    request: HttpRequest,
-    workspace_slug: Annotated[str, Path()],
-    slug: Annotated[str, Path()],
-    token_key: Annotated[str, Path()],
-) -> HttpResponse:
-    from django.http import JsonResponse
-    from django.utils import timezone
-
-    from apps.api.errors import TYPE_FORBIDDEN
-
-    from .models import Session, SessionParticipant, ShareToken
-    from .schemas import ShareTokenOut
-
-    workspace = resolve_workspace_for_member(request, workspace_slug)
-    session = Session.objects.filter(slug=slug, workspace=workspace).first()
-    if session is None:
-        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND)
-
-    try:
-        participant = SessionParticipant.objects.get(session=session, user=request.user)
-    except SessionParticipant.DoesNotExist as exc:
-        raise ProblemError(404, "Session not found", type_=TYPE_NOT_FOUND) from exc
-    if participant.role == "viewer":
-        raise ProblemError(
-            403, "Only owners and editors can manage share tokens", type_=TYPE_FORBIDDEN
-        )
-
-    try:
-        share_token = ShareToken.objects.get(
-            session=session, token=token_key, revoked_at__isnull=True
-        )
-    except ShareToken.DoesNotExist as exc:
-        raise ProblemError(404, "Share token not found", type_=TYPE_NOT_FOUND) from exc
-
-    share_token.revoked_at = timezone.now()
-    share_token.save(update_fields=["revoked_at"])
-    payload = ShareTokenOut.model_validate(
-        {
-            "token": share_token.token,
-            "created_at": share_token.created_at,
-            "revoked_at": share_token.revoked_at,
-            "url": None,
-        }
-    ).model_dump(mode="json")
-    return JsonResponse(payload)
-
-
-# ---------------------------------------------------------------------------
-# Public share view — no auth router (mounted at /share in api/api.py)
-# ---------------------------------------------------------------------------
-
-share_public_router = Router(tags=["sessions"])  # mounted at /share
-
-
-@share_public_router.get("/{token}", auth=None, summary="Public shared session view")
-def public_share_view(request: HttpRequest, token: str) -> HttpResponse:
-    """Return a shared session's messages.  No auth required."""
-    from django.http import JsonResponse
-
-    from .models import ShareToken
-
-    try:
-        share_token = ShareToken.objects.select_related("session").get(token=token)
-    except ShareToken.DoesNotExist as exc:
-        raise ProblemError(404, "Share link not found", type_=TYPE_NOT_FOUND) from exc
-
-    if share_token.revoked_at is not None:
-        raise ProblemError(404, "This share link has been revoked", type_=TYPE_NOT_FOUND)
-
-    session = share_token.session
-    messages = list(session.messages.all().order_by("turn_index").values(
-        "turn_index", "role", "content", "plaintext", "status", "created_at"
-    ))
-    payload = {
-        "title": session.title,
-        "messages": messages,
-    }
-    return JsonResponse(payload)

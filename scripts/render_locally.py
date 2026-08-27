@@ -27,30 +27,75 @@ A proper architectural fix (Redis-queued host worker) would automate
 this — see ``docs/specs/`` if/when that's prioritised. Until then this
 script is the manual path.
 
-Usage::
+Two input modes
+===============
+
+**Drive mode** (default) — the program already lives in ace-web/Drive.
+Stage the spec FROM Drive via the Django container, then render::
 
     python scripts/render_locally.py <program-slug>
     python scripts/render_locally.py <program-slug> <run-id>
     python scripts/render_locally.py <full-editor-URL>
     python scripts/render_locally.py --publish <program-slug>
 
-When ``--publish`` is set the script invokes
+**Local-spec mode** (``--local-spec``) — render a spec that exists only
+on the local filesystem, with NO Drive and NO Django container. The
+caller (e.g. canopy's DDD `connect-ddd-walkthrough` emitter) has already
+produced a ``spec.yaml`` + a master clip; this stages them straight into
+``connect-videos/programs/<slug>/runs/<run>/`` and runs the host npm
+render. This is the path for rendering any DDD narrative locally::
+
+    python scripts/render_locally.py --local-spec /path/to/spec.yaml \
+        --master /path/to/walkthrough.mp4
+
+    # final (1080p) instead of the default --draft preview:
+    python scripts/render_locally.py --local-spec spec.yaml --master clip.mp4 --final
+
+The slug + run come from the spec (``slug:`` / ``--run``); the master is
+copied to whatever path the spec's ``manifest.master: file:…`` ref names.
+``--publish`` is rejected in local-spec mode (there is no Drive program
+to publish to).
+
+When ``--publish`` is set (Drive mode only) the script invokes
 ``manage.py videos_publish_artifacts`` after a successful render so the
 fresh ``output.mp4`` + ``explorer.tar.gz`` land in Drive. Off by
 default — the local file is enough for iteration; only publish when
 you want labs to see it.
+
+The connect-videos project rendered into defaults to this repo's
+vendored copy (``video-production/connect-videos``); override with
+``$CONNECT_VIDEOS_ROOT`` / ``--connect-videos-root`` to render against a
+different checkout's installed toolchain.
 """
 from __future__ import annotations
 
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 WORKSPACE = "dimagi-team"
+
+# Framing-beat seconds the connect-walkthrough template adds around the
+# body clips, used by the timing report to separate "clip footage" from
+# "VO overrun hold". Kept in sync with the emitter's intro/outro defaults.
+_INTRO_SECONDS = 4
+_OUTRO_SECONDS = 5
+
+
+def connect_videos_root() -> Path:
+    """The connect-videos project to render into.
+
+    Defaults to this repo's vendored ``video-production/connect-videos``.
+    ``$CONNECT_VIDEOS_ROOT`` overrides it so a caller can target a
+    canonical install regardless of which checkout this script lives in.
+    """
+    env = os.environ.get("CONNECT_VIDEOS_ROOT")
+    return Path(env).expanduser().resolve() if env else REPO / "video-production" / "connect-videos"
 
 
 def load_dotenv_into_env() -> None:
@@ -103,41 +148,184 @@ def run_in_container(script: str) -> None:
     )
 
 
-def host_npm(slug: str, run_id: str) -> None:
-    """Run the hydrate + render + build-clip-explorer chain on the host.
+def host_npm(cv: Path, slug: str, run_id: str, *, draft: bool = True,
+             hydrate: bool = True, explorer: bool = True, captions: bool = True) -> None:
+    """Run the npm render chain on the host (bare-metal Mac).
 
     Uses the host's Node / Chromium / esbuild (which match the macOS
     arch). Stdout/stderr streams directly so the user sees progress.
     ``--draft`` keeps render at preview quality (faster, smaller).
+
+    ``hydrate`` (pull assets from the Drive cache) and ``explorer``
+    (build the clip-explorer UI) are skipped in local-spec mode: the
+    assets are already local files and the explorer isn't needed to get
+    the mp4.
+
+    ``captions`` burns the per-beat caption timeline into the video.
+    DDD connect-ddd-walkthrough renders default this OFF (the dashboard
+    self-labels and the VO narrates — captions just cover the content);
+    opt in per render. Drive-mode renders keep captions on.
     """
-    videos = REPO / "video-production" / "connect-videos"
-    for step in (
-        ["npm", "run", "hydrate", "--", f"--program={slug}"],
-        ["npm", "run", "render", "--", f"--program={slug}", f"--run={run_id}", "--draft"],
-        ["npm", "run", "build-clip-explorer", "--", f"--program={slug}", f"--run={run_id}"],
-    ):
+    steps: list[list[str]] = []
+    if hydrate:
+        steps.append(["npm", "run", "hydrate", "--", f"--program={slug}"])
+    render = ["npm", "run", "render", "--", f"--program={slug}", f"--run={run_id}"]
+    if draft:
+        render.append("--draft")
+    if not captions:
+        render.append("--no-captions")
+    steps.append(render)
+    if explorer:
+        steps.append(
+            ["npm", "run", "build-clip-explorer", "--", f"--program={slug}", f"--run={run_id}"]
+        )
+    for step in steps:
         print(f"\n==> {' '.join(step)}")
-        subprocess.run(step, cwd=videos, check=True)
+        subprocess.run(step, cwd=cv, check=True)
+
+
+def _load_spec(spec_path: Path) -> dict:
+    """Parse a connect-videos program spec. Prefers PyYAML; falls back to
+    a tiny regex reader so the script stays runnable in a bare stdlib
+    interpreter (only the two fields we need: top-level ``slug`` and
+    ``manifest.master``)."""
+    text = spec_path.read_text()
+    try:
+        import yaml  # type: ignore
+
+        doc = yaml.safe_load(text)
+        if isinstance(doc, dict):
+            return doc
+    except Exception:
+        pass
+    slug_m = re.search(r"^slug:\s*[\"']?([A-Za-z0-9._-]+)", text, re.M)
+    master_m = re.search(r"^\s*master:\s*[\"']?(\S+?)[\"']?\s*$", text, re.M)
+    return {
+        "slug": slug_m.group(1) if slug_m else None,
+        "manifest": {"master": master_m.group(1) if master_m else None},
+    }
+
+
+def _copy_into_place(src: Path, dest: Path) -> None:
+    """Copy src → dest, but no-op when they're already the same file (the
+    caller may pass a spec/clip that already lives in the staging tree —
+    e.g. a re-render in place)."""
+    if dest.exists() and src.resolve() == dest.resolve():
+        return
+    shutil.copyfile(src, dest)
+
+
+def stage_local_spec(cv: Path, spec_path: Path, run_id: str, master_path: Path | None) -> str:
+    """Stage a local spec + master clip into connect-videos (no Drive).
+
+    Writes ``programs/<slug>/runs/<run>/spec.yaml`` and copies the master
+    clip to the path the spec's ``manifest.master: file:…`` ref names.
+    Returns the resolved slug.
+    """
+    doc = _load_spec(spec_path)
+    slug = doc.get("slug")
+    if not slug:
+        raise SystemExit(f"Could not read `slug` from {spec_path}")
+
+    dest_spec = cv / "programs" / slug / "runs" / run_id / "spec.yaml"
+    dest_spec.parent.mkdir(parents=True, exist_ok=True)
+    _copy_into_place(spec_path, dest_spec)
+    print(f"==> staged spec → {dest_spec}")
+
+    if master_path:
+        master_ref = (doc.get("manifest") or {}).get("master") or ""
+        if not master_ref.startswith("file:"):
+            raise SystemExit(
+                f"--master given but spec manifest.master is not a file: ref ({master_ref!r}).\n"
+                "Local-spec mode copies the master to the file: path the spec names; "
+                "emit the spec with a file: master ref (the DDD emitter does this)."
+            )
+        dest_master = cv / master_ref[len("file:"):]
+        dest_master.parent.mkdir(parents=True, exist_ok=True)
+        _copy_into_place(master_path, dest_master)
+        print(f"==> staged master → {dest_master}")
+
+    return slug
+
+
+def timing_report(cv: Path, slug: str, run_id: str) -> None:
+    """Print clip-footage vs actual-duration so the author can see how much
+    the render held a last frame waiting for VO to finish (the overrun).
+
+    Expected = sum of every beat's ``seconds`` in the spec (intro + body
+    clip ranges + outro). Actual = the rendered mp4's real duration. The
+    delta is held-frame time: trim narration to shrink it toward the
+    target. Best-effort — never fatal.
+    """
+    try:
+        import json
+
+        run_dir = cv / "programs" / slug / "runs" / run_id
+        spec_text = (run_dir / "spec.yaml").read_text()
+        beat_secs = [float(s) for s in re.findall(r"^\s*seconds:\s*([0-9.]+)\s*$", spec_text, re.M)]
+        expected = sum(beat_secs)
+        out = run_dir / "output.mp4"
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "json", str(out)],
+            capture_output=True, text=True, check=True,
+        )
+        actual = float(json.loads(probe.stdout)["format"]["duration"])
+        overrun = actual - expected
+        print("\n==> Timing report")
+        print(f"    clip footage (spec beats): {expected:6.1f}s")
+        print(f"    rendered duration:         {actual:6.1f}s")
+        flag = "  ⚠ VO overruns clips — trim narration to play continuously" if overrun > 3 else ""
+        print(f"    held-frame overrun:        {overrun:+6.1f}s{flag}")
+    except Exception as e:  # noqa: BLE001 — report is advisory
+        print(f"\n==> Timing report skipped ({e})")
 
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("target", help="program slug, slug/run-id, or full /videos/... URL")
+    p.add_argument("target", nargs="?", default=None,
+                   help="Drive mode: program slug, slug/run-id, or full /videos/... URL")
     p.add_argument("run_id", nargs="?", default=None)
     p.add_argument("--workspace", default=WORKSPACE)
     p.add_argument("--publish", action="store_true",
-                   help="After render, push output.mp4 + explorer.tar.gz to Drive.")
+                   help="Drive mode only: push output.mp4 + explorer.tar.gz to Drive after render.")
+    p.add_argument("--local-spec", default=None,
+                   help="Local-spec mode: path to a connect-videos spec.yaml to render "
+                        "(no Drive, no container). Slug + run come from the spec.")
+    p.add_argument("--master", default=None,
+                   help="Local-spec mode: master clip copied to the spec's "
+                        "manifest.master file: path.")
+    p.add_argument("--run", default=None,
+                   help="Local-spec mode: run id (default run-001).")
+    p.add_argument("--final", action="store_true",
+                   help="Render at final quality (skip the default --draft preview).")
+    p.add_argument("--captions", action="store_true",
+                   help="Local-spec mode: burn captions in (default OFF for "
+                        "connect-ddd-walkthrough — the dashboard self-labels + VO narrates). "
+                        "Drive-mode renders keep captions on regardless.")
+    p.add_argument("--connect-videos-root", default=None,
+                   help="Override the connect-videos project to render into "
+                        "(also honored via $CONNECT_VIDEOS_ROOT).")
     args = p.parse_args()
 
-    if args.run_id:
-        slug, run_id = args.target, args.run_id
-    else:
-        slug, run_id = parse_target(args.target)
+    if args.connect_videos_root:
+        os.environ["CONNECT_VIDEOS_ROOT"] = args.connect_videos_root
+    cv = connect_videos_root()
+    if not (cv / "package.json").is_file():
+        print(f"ERROR: no connect-videos project at {cv}.\n"
+              "       Point at a checkout via --connect-videos-root / $CONNECT_VIDEOS_ROOT.",
+              file=sys.stderr)
+        return 2
 
     load_dotenv_into_env()
     have_eleven = bool(os.environ.get("ELEVENLABS_API_KEY"))
-    print(f"==> workspace={args.workspace} program={slug} run={run_id} "
-          f"publish={args.publish} voice={'on' if have_eleven else 'MISSING KEY'}")
+
+    local_mode = bool(args.local_spec)
+    if not local_mode and not args.target:
+        p.error("provide a program slug/URL (Drive mode) or --local-spec <spec> (local mode)")
+    if local_mode and args.publish:
+        p.error("--publish is Drive-only; local-spec renders have no Drive program to publish to")
+
     if not have_eleven:
         # The renderer (post-2026-05-18) hard-fails when the spec asks
         # for elevenlabs voice and the key isn't set. We pre-check here
@@ -154,8 +342,26 @@ def main() -> int:
         )
         return 2
 
-    print("\n==> [1/3] Stage spec + shared content from Drive (container)")
-    run_in_container(f"""
+    if local_mode:
+        run_id = args.run or "run-001"
+        print(f"==> local-spec mode: spec={args.local_spec} program=(from spec) run={run_id} "
+              f"voice={'on' if have_eleven else 'MISSING KEY'} root={cv}")
+        master = Path(args.master) if args.master else None
+        slug = stage_local_spec(cv, Path(args.local_spec), run_id, master)
+
+        print("\n==> Run npm render on host (bare-metal Mac)")
+        host_npm(cv, slug, run_id, draft=not args.final, hydrate=False, explorer=False,
+                 captions=args.captions)
+    else:
+        if args.run_id:
+            slug, run_id = args.target, args.run_id
+        else:
+            slug, run_id = parse_target(args.target)
+        print(f"==> workspace={args.workspace} program={slug} run={run_id} "
+              f"publish={args.publish} voice={'on' if have_eleven else 'MISSING KEY'} root={cv}")
+
+        print("\n==> [1/3] Stage spec + shared content from Drive (container)")
+        run_in_container(f"""
 import django; django.setup()
 from apps.workspaces.models import Workspace
 from apps.videos.service import (
@@ -167,33 +373,33 @@ stage_existing_content_locally(ws)
 print('prefetch:', prefetch_manifest_to_cache(ws, {slug!r}, {run_id!r}))
 """)
 
-    print("\n==> [2/3] Run npm chain on host (bare-metal Mac)")
-    host_npm(slug, run_id)
+        print("\n==> [2/3] Run npm chain on host (bare-metal Mac)")
+        host_npm(cv, slug, run_id, draft=not args.final)
 
-    print("\n==> [3/4] Level-1 QA probe")
+    print("\n==> Level-1 QA probe")
     # Run the smoke probe in-process so its output streams to the same
     # terminal. Don't `check=True` — a WARN (exit 1) should print but
     # not abort the render; a FAIL (exit 2) prints a clear "FAILED"
-    # banner at the end so the user notices.
+    # banner at the end so the user notices. It honors CONNECT_VIDEOS_ROOT
+    # (inherited via os.environ) so it probes the same project we rendered.
     qa_rc = subprocess.run(
         [sys.executable, str(REPO / "scripts" / "qa_render.py"), slug, run_id],
         cwd=REPO,
     ).returncode
 
-    if args.publish:
-        print("\n==> [4/4] Publish artifacts to Drive (container)")
+    timing_report(cv, slug, run_id)
+
+    if not local_mode and args.publish:
+        print("\n==> Publish artifacts to Drive (container)")
         subprocess.run([
             "docker", "compose", "exec", "-T", "app",
             "python", "manage.py", "videos_publish_artifacts",
             f"--workspace={args.workspace}", f"--program={slug}", f"--run={run_id}",
         ], cwd=REPO, check=True)
-    else:
-        print("\n==> [4/4] Skipping publish (pass --publish to push to Drive)")
+    elif not local_mode:
+        print("\n==> Skipping publish (pass --publish to push to Drive)")
 
-    out = (
-        REPO / "video-production" / "connect-videos"
-        / "programs" / slug / "runs" / run_id / "output.mp4"
-    )
+    out = cv / "programs" / slug / "runs" / run_id / "output.mp4"
     print(f"\n==> Done. Output: {out}")
     if qa_rc == 2:
         print("==> ⚠ QA probe reported FAIL — see checks above before shipping.")

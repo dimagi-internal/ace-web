@@ -60,14 +60,14 @@ Plus three review docs in the same Video Edits folder:
 
 ### Production paperwork
 
-- `Revised Dimagi's CommCare Connect Video Project Production Quote 24 th Nov 2025.pdf`
+- `Revised Dimagi's Connect Video Project Production Quote 24 th Nov 2025.pdf`
   (`1vfbzhMoEm91zE0GBv3jgBNRr9Skin4Jx`) — Vendor quote/SoW. Reference only.
 
 ## Other marketing-hub videos
 
 | Asset | URL / ID | Access | Notes |
 |---|---|---|---|
-| CommCare Connect Demo: Pay for Outcomes, Not Effort (Aug 2025) | YouTube `VRbvUj9LTUg` | ✅ | 4:30. Generic product demo; FLW journey end-to-end. Mapped in `assets/ingest/mbw-ref/`. |
+| Connect Demo: Pay for Outcomes, Not Effort (Aug 2025) | YouTube `VRbvUj9LTUg` | ✅ | 4:30. Generic product demo; FLW journey end-to-end. Mapped in `assets/ingest/mbw-ref/`. |
 | Mwasuze Mutya — Kateregga Bazilio (PIPNU) | YouTube `o1nHOWhInbY` | ✅ but mostly unusable | 49:39 Luganda. TV station bug burned into every frame. |
 | Inside the Child Health Campaign in Kenya | YouTube `oiUuT5v6ir0` | ❌ Private | Likely a public-facing cut of the Long Version film above. Same content; switch privacy if you want a YouTube-embeddable version. |
 

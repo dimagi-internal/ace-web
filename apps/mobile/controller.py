@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import shlex
 import time
 import uuid
@@ -36,6 +37,8 @@ from .exceptions import (
     SSMFailure,
     SSMTimeout,
 )
+
+logger = logging.getLogger(__name__)
 
 # How long to wait for the EC2 instance + SSM agent to come ready
 # after a cold ``StartInstances`` call.
@@ -133,6 +136,14 @@ class Diagnostics:
     # ``/api/mobile/diagnose`` started returning ``adb_visible_count:
     # null`` despite a populated ``adb_devices`` list).
     adb_visible_count: int = 0
+    # Hardware-acceleration signals for the emulator host, from the KVM probe.
+    # ``accel`` is the derived verdict: "kvm" (hardware-accelerated, fast),
+    # "tcg" (software fallback, ~10x slower — the leading explanation for
+    # multi-minute cold boots), or "unknown". All None on AMIs predating the
+    # probe so a missing section never reads as a confident "kvm".
+    kvm_dev_present: bool | None = None
+    kvm_nested: str | None = None
+    accel: str | None = None
 
     def __post_init__(self) -> None:
         # Always recompute from the device list so callers that pass
@@ -152,6 +163,11 @@ class RunningState:
     public_dns: str | None
     started_at: str
     diagnostics: Diagnostics | None = None
+    # Per-phase wall seconds for this ensure_running call (ec2_start_s,
+    # emulator_wait_s, switch_state_s, diagnostics_s, recover_s). Lets callers
+    # see whether a slow cold boot is EC2 provisioning vs the in-VM emulator
+    # boot + registration recipes, instead of one opaque number.
+    timings: dict[str, float] | None = None
 
 
 @dataclass
@@ -344,12 +360,19 @@ class EmulatorController:
         """
         info = self._describe_instance()
         ec2_state = info["state"]
+        timings: dict[str, float] = {}
 
         if ec2_state == "running":
+            _t = time.monotonic()
             self._wait_for_emulator()
+            timings["emulator_wait_s"] = round(time.monotonic() - _t, 1)
             if state_name and state_name != self._read_active_state():
+                _t = time.monotonic()
                 self._switch_state(state_name)
+                timings["switch_state_s"] = round(time.monotonic() - _t, 1)
+            _t = time.monotonic()
             diag = self._collect_diagnostics()
+            timings["diagnostics_s"] = round(time.monotonic() - _t, 1)
             if diag.adb_visible_count == 0:
                 # Marker probe returned READY but adb sees nothing — the
                 # canonical "stale marker, dead emulator" state we hit
@@ -360,17 +383,22 @@ class EmulatorController:
                 # alternatives — manual operator intervention or "stop
                 # the EC2 and let next call cold-start" — aren't worth
                 # the friction.
+                _t = time.monotonic()
                 self._recover_emulator()
                 diag = self._collect_diagnostics()
+                timings["recover_s"] = round(time.monotonic() - _t, 1)
             self._assert_adb_visible(diag)
+            logger.info("ensure_running timings (already-running) %s", timings)
             return RunningState(
                 instance_id=self.instance_id,
                 state="running",
                 public_dns=info.get("public_dns"),
                 started_at=_iso_now(),
                 diagnostics=diag,
+                timings=timings,
             )
 
+        _t = time.monotonic()
         if ec2_state in ("pending", "stopping"):
             # Caller raced us; treat it like a cold start.
             self._wait_for_ec2_ok(_BOOT_HARD_TIMEOUT_SEC)
@@ -407,19 +435,28 @@ class EmulatorController:
             raise MobileError(
                 f"instance {self.instance_id} is in unexpected state {ec2_state!r}"
             )
+        timings["ec2_start_s"] = round(time.monotonic() - _t, 1)
 
+        _t = time.monotonic()
         self._wait_for_emulator()
+        timings["emulator_wait_s"] = round(time.monotonic() - _t, 1)
         if state_name and state_name != self._read_active_state():
+            _t = time.monotonic()
             self._switch_state(state_name)
+            timings["switch_state_s"] = round(time.monotonic() - _t, 1)
         info = self._describe_instance()
+        _t = time.monotonic()
         diag = self._collect_diagnostics()
+        timings["diagnostics_s"] = round(time.monotonic() - _t, 1)
         self._assert_adb_visible(diag)
+        logger.info("ensure_running timings (cold-start) %s", timings)
         return RunningState(
             instance_id=self.instance_id,
             state=info["state"],
             public_dns=info.get("public_dns"),
             started_at=_iso_now(),
             diagnostics=diag,
+            timings=timings,
         )
 
     def diagnose(self) -> Diagnostics:
@@ -1544,6 +1581,14 @@ fi
             "tail -n 30 /var/log/ace-mobile/runner.log 2>/dev/null || echo '(no runner.log)'",
             "echo '---EMULATOR_LOG_TAIL---'",
             "tail -n 30 /var/log/ace-mobile/emulator.log 2>/dev/null || echo '(no emulator.log)'",
+            # Hardware-acceleration signals — a TCG (software) fallback makes
+            # the emulator ~10x slower and is the prime suspect for slow cold
+            # boots. /dev/kvm presence + the nested-virt flag tell us whether
+            # KVM is even available to the emulator.
+            "echo '---KVM---'",
+            "[ -e /dev/kvm ] && echo dev_kvm=present || echo dev_kvm=absent",
+            "echo nested=$(cat /sys/module/kvm_intel/parameters/nested 2>/dev/null "
+            "|| cat /sys/module/kvm_amd/parameters/nested 2>/dev/null || echo unknown)",
             "echo '---END---'",
         ]
         try:
@@ -1784,6 +1829,25 @@ def _parse_diagnostics(stdout: str) -> Diagnostics:
 
     diag.runner_log_tail = "\n".join(sections.get("RUNNER_LOG_TAIL", [])).rstrip()
     diag.emulator_log_tail = "\n".join(sections.get("EMULATOR_LOG_TAIL", [])).rstrip()
+
+    kvm_lines = sections.get("KVM", [])
+    if kvm_lines:
+        kvm_text = "\n".join(kvm_lines)
+        dev = _grep_kv(kvm_text, "dev_kvm")
+        if dev is not None:
+            diag.kvm_dev_present = dev == "present"
+        nested = _grep_kv(kvm_text, "nested")
+        if nested is not None:
+            diag.kvm_nested = nested
+    # Derive the acceleration verdict. The emulator's own fallback error is the
+    # strongest signal (it can fall back even with /dev/kvm present if nested
+    # virt is misconfigured); otherwise infer from /dev/kvm presence.
+    if "requires hardware acceleration" in diag.emulator_log_tail.lower():
+        diag.accel = "tcg"
+    elif diag.kvm_dev_present is True:
+        diag.accel = "kvm"
+    elif diag.kvm_dev_present is False:
+        diag.accel = "tcg"
     # adb_visible_count is derived from adb_devices in __post_init__,
     # which ran with the empty default list. Recompute now that we've
     # populated the real device list.

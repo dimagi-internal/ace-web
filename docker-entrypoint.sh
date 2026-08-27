@@ -14,6 +14,17 @@ set -e
 PLUGIN_DATA_DIR="${CLAUDE_PLUGIN_DATA:-/home/app/.claude/plugin-data/ace}"
 SA_KEY_PATH="${PLUGIN_DATA_DIR}/gws-sa-key.json"
 
+# Refresh the vendored ACE plugin to the latest dimagi-internal/ace main BEFORE
+# anything reads the plugin tree (op-inject below reads $ACE_PLUGIN_PATH's
+# .env.tpl; the chat backend's `claude -p` loads the cache dir). The plugin
+# bumps several times a day but the image only rebuilds on ace-web's own
+# merges — without this a plain deploy would keep shipping a stale plugin.
+# Fully fail-safe: the script always exits 0 and leaves the baked plugin in
+# place on any error, and `|| true` guards against `set -e` regardless.
+if [ -f /app/scripts/refresh-ace-plugin.sh ]; then
+    bash /app/scripts/refresh-ace-plugin.sh || true
+fi
+
 if [ -n "${ACE_DRIVE_SA_KEY_JSON:-}" ]; then
     mkdir -p "$PLUGIN_DATA_DIR"
     printf '%s' "$ACE_DRIVE_SA_KEY_JSON" > "$SA_KEY_PATH"
@@ -50,11 +61,27 @@ ACE_ENV_TPL="${ACE_PLUGIN_PATH:-/app/vendor/ace}/.env.tpl"
 ACE_ENV_PATH="${PLUGIN_DATA_DIR}/.env"
 if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -f "$ACE_ENV_TPL" ]; then
     mkdir -p "$PLUGIN_DATA_DIR"
+    # Log WHICH 1Password identity we authenticated as, and what it can see.
+    # ace#986: the runner spent 19 days injecting nothing because its token
+    # belonged to a legacy service account scoped to the old `AI-Agents` vault,
+    # while `.env.tpl` had moved to `Agent-Ace`. The only clue in the log was
+    # op's own `"Agent-Ace" isn't a vault in this account` — which names the
+    # vault it wanted and never the account it asked as, so it read as "the
+    # grant is missing" rather than "wrong identity". Two cheap calls make that
+    # a single glance. Neither prints the token; `op whoami` reports the
+    # integration id, not the credential.
+    OP_WHO="$(op whoami 2>&1 | tr '\n' ' ' || true)"
+    OP_VAULTS="$(op vault list --format=json 2>/dev/null \
+        | python3 -c 'import json,sys; print(", ".join(v["name"] for v in json.load(sys.stdin)))' 2>/dev/null || true)"
+    echo "[entrypoint] 1Password identity: ${OP_WHO:-<op whoami failed>}"
+    echo "[entrypoint] 1Password vaults visible: ${OP_VAULTS:-<none — this token can read NO vaults>}"
     # Service-account auth (OP_SERVICE_ACCOUNT_TOKEN) doesn't accept --account;
     # the token's tied to a single sign-in URL already. Verified via
     # `op whoami` returning the integration without the flag.
     if op inject -i "$ACE_ENV_TPL" -o "$ACE_ENV_PATH" 2>/tmp/op-inject.err; then
         chmod 600 "$ACE_ENV_PATH"
+        # Status file read by /api/system/version's env_inject block (ace-web#636).
+        printf 'ok\n' > /tmp/op-inject.status
         echo "[entrypoint] op inject succeeded → $ACE_ENV_PATH ($(grep -c '^[A-Z]' "$ACE_ENV_PATH") env keys)"
         # Mirror to the plugin's vendor dir as well. When Claude Code launches
         # the ACE MCP servers, it does NOT pass `${CLAUDE_PLUGIN_DATA}`
@@ -89,11 +116,21 @@ if [ -n "${OP_SERVICE_ACCOUNT_TOKEN:-}" ] && [ -f "$ACE_ENV_TPL" ]; then
         echo "[entrypoint] op inject FAILED — see /tmp/op-inject.err"
         head -c 500 /tmp/op-inject.err >&2
         echo "" >&2
+        # Repeat the identity next to the error, so the two facts that have to
+        # be read TOGETHER are together (ace#986).
+        echo "[entrypoint] ...as identity: ${OP_WHO:-unknown}" >&2
+        echo "[entrypoint] ...which can read vaults: ${OP_VAULTS:-<none>}" >&2
+        echo "[entrypoint] If the error names a vault this identity cannot see, the token is for the WRONG service account — check the AWS secret behind OP_SERVICE_ACCOUNT_TOKEN, not the vault ACL." >&2
+        # Status file read by /api/system/version's env_inject block (ace-web#636):
+        # a failed inject must flunk a health check, not just stderr.
+        { printf 'failed\n'; head -c 500 /tmp/op-inject.err; } > /tmp/op-inject.status
         echo "[entrypoint] continuing without rendered .env; downstream ACE MCPs may fail to find OCS/HQ/Gmail creds"
     fi
 elif [ -z "${OP_SERVICE_ACCOUNT_TOKEN:-}" ]; then
+    printf 'skipped\nOP_SERVICE_ACCOUNT_TOKEN not set\n' > /tmp/op-inject.status
     echo "[entrypoint] OP_SERVICE_ACCOUNT_TOKEN not set — skipping op inject. ACE plugin MCPs that need 1Password-backed creds (OCS, Connect, Gmail, HQ) will fail."
 elif [ ! -f "$ACE_ENV_TPL" ]; then
+    printf 'skipped\nno .env.tpl found\n' > /tmp/op-inject.status
     echo "[entrypoint] No .env.tpl found at $ACE_ENV_TPL — skipping op inject. Did the ACE plugin clone succeed?"
 fi
 

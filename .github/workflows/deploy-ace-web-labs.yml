@@ -13,6 +13,11 @@ on:
         required: true
         default: false
 
+# Deploys are serialized (one at a time, never cancelled mid-flight). That makes a
+# hung job everyone's problem: it holds this lock and every later deploy queues
+# behind it, so the per-job timeout-minutes below are what keep the queue live —
+# GitHub's default is 6 HOURS. Seen in canopy-web: configure-aws-credentials
+# wedged for ~55min and blocked the queue until it was cancelled by hand.
 concurrency:
   group: deploy-labs-ace-web
   cancel-in-progress: false
@@ -21,6 +26,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: 858923557655.dkr.ecr.us-east-1.amazonaws.com
   ECS_CLUSTER: labs-jj-cluster
+  CFN_STACK: ace-web
   ECS_SERVICE: labs-jj-ace-web
   ECR_REPO_BACKEND: labs-jj-ace-web
   ECR_REPO_FRONTEND: labs-jj-ace-web-frontend
@@ -34,6 +40,7 @@ jobs:
   guard:
     name: Enforce main-only deploys
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check ref is refs/heads/main
         run: |
@@ -42,30 +49,47 @@ jobs:
             exit 1
           fi
 
+      # workflow_dispatch pins github.sha to main's tip AT DISPATCH TIME, and the
+      # image is tagged with it — so "merge a PR and kick a deploy" in one breath
+      # can build the PRE-merge commit, deploy green, and ship code that isn't
+      # there. (Seen in canopy-web: a management command missing from a
+      # successful deploy.) It is also how a queued deploy rolls prod BACKWARDS
+      # past anything merged while it waited.
+      - name: Refuse to deploy a stale commit
+        run: |
+          TIP=$(git ls-remote https://github.com/${{ github.repository }} refs/heads/main | cut -f1)
+          if [ "$TIP" != "${{ github.sha }}" ]; then
+            echo "::error::Stale deploy: this run builds ${{ github.sha }} but main is now $TIP."
+            echo "::error::Re-dispatch the deploy so it picks up main's current tip."
+            exit 1
+          fi
+          echo "Deploying main tip $TIP."
+
   build-backend:
     name: Build Backend
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: guard
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Resolve ACE plugin HEAD SHA
         id: ace-ref
         run: |
-          SHA=$(git ls-remote https://github.com/jjackson/ace.git main | awk '{print $1}')
+          SHA=$(git ls-remote https://github.com/dimagi-internal/ace.git main | awk '{print $1}')
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
@@ -82,21 +106,22 @@ jobs:
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: guard
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.frontend
@@ -114,30 +139,47 @@ jobs:
     name: Deploy to Fargate
     needs: [build-backend, build-frontend]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Register new task definition revision
+      - name: Register migration task definition (image swap only)
         id: register-task
         run: |
-          jq --arg backend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:latest" \
-             --arg frontend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:latest" \
-             '(.containerDefinitions[] | select(.name=="api") | .image) = $backend |
+          # A THROWAWAY task def used ONLY to run migrations. The real one is
+          # registered by CloudFormation in the deploy step below, which owns it.
+          #
+          # It exists because CFN's Service references its TaskDefinition, so a
+          # stack update rolls both atomically — leaving no seam to migrate in.
+          # This gives us one: new code against the current schema, before any
+          # traffic moves.
+          #
+          # Built from the LIVE task def: CloudFormation is the source of truth for
+          # the real definition (deploy/aws/ace-web.cfn.yaml), and this throwaway
+          # revision exists only to run migrations against the new image before the
+          # stack rolls the service.
+          aws ecs describe-task-definition --task-definition "${{ env.ECS_SERVICE }}" \
+            --query 'taskDefinition' --output json > /tmp/live.json
+
+          jq --arg backend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_BACKEND }}:${{ github.sha }}" \
+             --arg frontend "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_FRONTEND }}:${{ github.sha }}" \
+             'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy) |
+              (.containerDefinitions[] | select(.name=="api") | .image) = $backend |
               (.containerDefinitions[] | select(.name=="web") | .image) = $frontend' \
-             deploy/aws/task-definition.json > /tmp/task-def.json
+             /tmp/live.json > /tmp/task-def.json
 
           NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
             --cli-input-json file:///tmp/task-def.json \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
+            --query 'taskDefinition.taskDefinitionArn' --output text)
 
           echo "task-def-arn=$NEW_TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
-          echo "::notice::Registered task definition: $NEW_TASK_DEF_ARN"
+          echo "::notice::Migration task def: $NEW_TASK_DEF_ARN"
 
       - name: Run database migrations
         if: ${{ inputs.run_migrations == true }}
@@ -177,79 +219,64 @@ jobs:
             exit 1
           fi
 
-      - name: Configure ALB target-group attributes (dereg + stickiness)
+      - name: Deploy (CloudFormation owns the task definition + service)
         run: |
-          # Self-healing target-group config. Both attributes are
-          # idempotent — re-applying the same value is a no-op — so it's
-          # safe to run on every deploy. The reason this lives in the
-          # deploy workflow rather than a one-time setup script: if the
-          # target group is ever recreated (one-time-setup.sh re-run,
-          # IaC drift, manual ops), the next deploy restores both
-          # settings automatically.
+          # CloudFormation registers the real task definition and rolls the
+          # service. It is the ONLY writer of both, so the stack cannot drift
+          # from what is running.
           #
-          # Requires elasticloadbalancing:ModifyTargetGroupAttributes on
-          # the github-actions-labs-deploy role (added 2026-04-18).
+          # This also PINS the images to the commit SHA. The previous flow
+          # registered `:latest`, so the task definition never recorded what was
+          # actually deployed and a task restart could silently pull different
+          # code. Both tags are already pushed by the build jobs.
           #
-          # 1. deregistration_delay.timeout_seconds=30
-          #    Default 300s drain is the long pole in rolling cutover.
-          #    Labs has no long-poll requests beyond SSE/WebSocket, which
-          #    the app already handles via reconnect.
-          #
-          # 2. stickiness (lb_cookie, 1h)
-          #    LOAD-BEARING for Phase 1B — pins each browser to one ECS
-          #    task via the AWSALB cookie so the per-Session long-lived
-          #    `claude` subprocess pool gets reused across turns instead
-          #    of every WebSocket re-rolling task affinity (~50% reuse on
-          #    a 2-task service without it). Originally set up manually
-          #    for the auth-flow PTY (see docs/deploy.md "ALB target-
-          #    group stickiness"); promoted into IaC so a recreated TG
-          #    can't silently regress chat reuse.
-          TG_ARN=$(aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].loadBalancers[0].targetGroupArn' \
-            --output text)
-          if [ -n "$TG_ARN" ] && [ "$TG_ARN" != "None" ]; then
-            aws elbv2 modify-target-group-attributes \
-              --target-group-arn "$TG_ARN" \
-              --attributes \
-                Key=deregistration_delay.timeout_seconds,Value=30 \
-                Key=stickiness.enabled,Value=true \
-                Key=stickiness.type,Value=lb_cookie \
-                Key=stickiness.lb_cookie.duration_seconds,Value=3600 \
-              --output text > /dev/null
-            echo "TG attrs applied: dereg=30s, stickiness=lb_cookie/3600s on $TG_ARN"
-          fi
-
-      - name: Deploy (hard cutover)
-        run: |
-          # Stop existing tasks for instant cutover (~10s downtime).
-          # Acceptable for internal tool; avoids 2-3 min rolling-update wait.
-          echo "Stopping old tasks..."
-          TASK_ARNS=$(aws ecs list-tasks \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service-name ${{ env.ECS_SERVICE }} \
-            --query 'taskArns[]' \
-            --output text 2>/dev/null) || true
-          if [ -n "$TASK_ARNS" ] && [ "$TASK_ARNS" != "None" ]; then
-            for TASK in $TASK_ARNS; do
-              aws ecs stop-task --cluster ${{ env.ECS_CLUSTER }} --task "$TASK" --output text > /dev/null 2>&1 || true
-            done
-          fi
-
-          echo "Forcing new deployment..."
-          aws ecs update-service \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service ${{ env.ECS_SERVICE }} \
-            --task-definition ${{ steps.register-task.outputs.task-def-arn }} \
-            --force-new-deployment \
-            --output text > /dev/null
-
-          echo "Waiting for rollout to complete (so 'deploy done' actually means serving new code)..."
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }}
+          # No more hard cutover: the service now has a deployment circuit
+          # breaker, and CFN performs a normal rolling replace, so the ~10s
+          # deliberate downtime is no longer the price of a fast deploy.
+          aws cloudformation deploy \
+            --stack-name "${{ env.CFN_STACK }}" \
+            --template-file deploy/aws/ace-web.cfn.yaml \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides ImageTag="${{ github.sha }}"
           echo "Rollout complete — new tasks running and healthy."
+
+      - name: Auto-resume runs killed by this deploy (self-heal)
+        # The hard cutover above drains the tasks driving live ACE opp runs,
+        # leaving their assistant turns stuck mid-stream. Now that the new
+        # tasks are healthy, POST to the live service to relaunch every
+        # interrupted run from run_state.yaml (detected via the stale
+        # driver_heartbeat beacon). Must hit the LIVE service over HTTP, not a
+        # one-off ECS task: the resume spawns a detached `drive_turn` child of
+        # the serving container, which a run-task container would kill on exit.
+        #
+        # Guarded so a deploy never fails on this: if the PAT/URL aren't
+        # configured yet it logs a warning and moves on. To arm it, set:
+        #   secret ACE_WEB_DEPLOY_PAT  — a PAT (mint via /ace:ace-web-pat-mint)
+        #                                whose owner is a member of the target
+        #                                workspace
+        #   var    ACE_WEB_RESUME_URL  — full URL of the bulk endpoint, e.g.
+        #     https://<host>/ace/api/w/<workspace-slug>/sessions/resume-interrupted
+        env:
+          DEPLOY_PAT: ${{ secrets.ACE_WEB_DEPLOY_PAT }}
+          RESUME_URL: ${{ vars.ACE_WEB_RESUME_URL }}
+        run: |
+          if [ -z "$DEPLOY_PAT" ] || [ -z "$RESUME_URL" ]; then
+            echo "::warning::ACE_WEB_DEPLOY_PAT secret / ACE_WEB_RESUME_URL var not set — skipping auto-resume. Runs interrupted by this deploy must be resumed manually (POST .../sessions/resume-interrupted)."
+            exit 0
+          fi
+          echo "Resuming interrupted ACE opp runs via $RESUME_URL ..."
+          HTTP=$(curl -sS -o /tmp/resume.json -w '%{http_code}' \
+            -X POST "$RESUME_URL" \
+            -H "Authorization: Bearer $DEPLOY_PAT" \
+            -H "Content-Type: application/json" \
+            --max-time 60 || echo "000")
+          echo "Response (HTTP $HTTP):"; cat /tmp/resume.json 2>/dev/null || true; echo
+          if [ "$HTTP" = "200" ]; then
+            echo "Auto-resume OK."
+          else
+            echo "::warning::Auto-resume returned HTTP $HTTP (deploy still succeeded — new code is live). Check service logs / resume manually."
+          fi
 
       - name: Deployment summary
         run: |

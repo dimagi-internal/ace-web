@@ -1,0 +1,44 @@
+# Template metadata. The generator service reads this to surface the
+# template in the picker and to know which prompt + skeleton to use.
+id: llo-deliver
+name: Deliver on Connect — the LLO offer (generic)
+description: |
+  Generic, unbranded explainer aimed at a LOCAL DELIVERY ORGANIZATION
+  (LLO): a local org weighing whether to DELIVER programs on Connect. This
+  is the other side of the marketplace from program-designer — instead of
+  "bring your program onto Connect," it answers "what does it look like to
+  deliver on Connect, and why would I want to?" Language is aligned to
+  connect.dimagi.com: the two-sided verified-service-delivery marketplace,
+  "you bring the relationships, Connect brings funding and technology",
+  airtight-and-fair verification, and pay-only-for-verified-delivery. Nine
+  beats (~67s): hook, cycle, handoff, the deal (ai_build card), field scene,
+  a hero traction stat, the product loop (learn / deliver / verify / pay),
+  two traction stat cards, and the delivery-partner CTA. Carries real,
+  cited connect.dimagi.com numbers (an LLO needs proof it's real and
+  paying) — never invented.
+intent: >-
+  Calmly explain to a local delivery organization HOW delivering on Connect works (they
+  already know and like Connect from an intro call) — the Learn/Deliver/Verify/Pay loop, who
+  does what ("you bring the frontline workers and relationships; Connect provides the app,
+  verification, and payments"), and how verification and payment happen. An explainer, not a
+  pitch — uses plain connect.dimagi.com terminology, no persuasion or stat barrages.
+intended_audience: |
+  A local delivery organization (LLO) — a locally led org that recruits
+  and manages frontline workers and could deliver high-impact programs
+  under contract. They care about: how the deal works (do I get paid, for
+  what, and when), proof the platform is real and already paying partners,
+  how delivery is verified (and that honest work is protected), and what
+  they earn. Also a teammate or booth loop that needs the "deliver on
+  Connect" pitch in one breath.
+when_to_use: |
+  - You want the evergreen, calm "here's how delivering on Connect works"
+    explainer for a local delivery org — the loop, who does what, and how
+    verification and payment happen — with no prospect branding, for an
+    audience that's already interested.
+  - You want a plain how-it-works walkthrough (not a pitch), with at most a
+    light scale fact for context.
+  - For the OTHER side — a program-owning org looking at bringing its
+    program onto Connect — use program-designer. For a product-mechanism-only
+    explainer (the L/D/V/P loop, no deal/traction beats), use
+    connect-explainer. For a branded prospect pitch, use
+    partnership-pitch.

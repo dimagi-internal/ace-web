@@ -22,11 +22,8 @@ from apps.sessions.schemas import (
     SessionListOut,
     SessionOut,
     SessionPatchIn,
-    ShareTokenOut,
     StructureNodeOut,
     TokensOut,
-    TurnStateCliOut,
-    TurnStateOut,
 )
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -231,57 +228,6 @@ def test_session_patch_in_invalid_status():
 
     with pytest.raises(ValidationError):
         SessionPatchIn.model_validate({"status": "deleted"})
-
-
-# ── TurnStateOut ─────────────────────────────────────────────────────────────
-
-
-def test_turn_state_out_running():
-    data = {
-        "running": True,
-        "last_message_at": NOW_ISO,
-        "cli": {
-            "alive": True,
-            "pid": 1234,
-            "elapsed_s": 42.5,
-            "last_active_age_s": 1.2,
-            "credential_source": "user",
-            "cli_session_id": "sess-abc",
-            "spawned_with_resume": False,
-        },
-    }
-    obj = TurnStateOut.model_validate(data)
-    assert obj.running is True
-    assert obj.last_message_at == NOW
-    assert obj.cli is not None
-    assert obj.cli.pid == 1234
-    assert obj.cli.alive is True
-
-
-def test_turn_state_out_idle_no_cli():
-    data = {
-        "running": False,
-        "last_message_at": None,
-        "cli": None,
-    }
-    obj = TurnStateOut.model_validate(data)
-    assert obj.running is False
-    assert obj.cli is None
-
-
-def test_turn_state_cli_out_minimal_nulls():
-    data = {
-        "alive": False,
-        "pid": None,
-        "elapsed_s": 0.0,
-        "last_active_age_s": 99.9,
-        "credential_source": None,
-        "cli_session_id": None,
-        "spawned_with_resume": False,
-    }
-    obj = TurnStateCliOut.model_validate(data)
-    assert obj.pid is None
-    assert obj.credential_source is None
 
 
 # ── TokensOut ────────────────────────────────────────────────────────────────
@@ -570,40 +516,3 @@ def test_structure_node_phase_with_deep_nesting():
     assert inner.is_subagent is True
     assert len(inner.children) == 1  # inner_tool
     assert inner.children[0].kind == "tool"
-
-
-# ── ShareTokenOut ─────────────────────────────────────────────────────────────
-
-
-def test_share_token_out_active():
-    data = {
-        "token": "abc123xyz" * 3,
-        "created_at": NOW_ISO,
-        "revoked_at": None,
-    }
-    obj = ShareTokenOut.model_validate(data)
-    assert obj.token == "abc123xyz" * 3
-    assert obj.revoked_at is None
-
-
-def test_share_token_out_revoked():
-    data = {
-        "token": "revoked-tok" * 2,
-        "created_at": NOW_ISO,
-        "revoked_at": NOW_ISO,
-    }
-    obj = ShareTokenOut.model_validate(data)
-    assert obj.revoked_at == NOW
-
-
-def test_share_token_out_with_url():
-    """ShareTokenOut with optional url field (POST response shape)."""
-    data = {
-        "token": "abc123xyz" * 3,
-        "created_at": NOW_ISO,
-        "revoked_at": None,
-        "url": "https://labs.connect.dimagi.com/ace/share/abc123xyz",
-    }
-    obj = ShareTokenOut.model_validate(data)
-    assert obj.url is not None
-    assert "share" in obj.url

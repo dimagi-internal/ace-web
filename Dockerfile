@@ -228,6 +228,10 @@ RUN useradd -m -u 1000 app \
 # Manager) to $CLAUDE_PLUGIN_DATA/gws-sa-key.json at container start, so
 # the ACE plugin's MCP servers can authenticate to Drive.
 COPY --chown=app:app docker-entrypoint.sh /app/docker-entrypoint.sh
+# Refreshes the vendored ACE plugin to latest jjackson/ace main on container
+# start (see scripts/refresh-ace-plugin.sh) so a plain deploy picks up plugin
+# releases without an image rebuild. Invoked from docker-entrypoint.sh.
+COPY --chown=app:app scripts/refresh-ace-plugin.sh /app/scripts/refresh-ace-plugin.sh
 
 USER app
 

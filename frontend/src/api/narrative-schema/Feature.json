@@ -1,0 +1,24 @@
+{
+  "description": "A single buildable, verifiable capability within a scene (DDD v3).",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "verify": {
+      "title": "Verify",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "description",
+    "verify"
+  ],
+  "title": "Feature",
+  "type": "object"
+}

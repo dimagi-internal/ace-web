@@ -37,6 +37,7 @@ import datetime as _dt
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import yaml
 
@@ -91,7 +92,7 @@ class ForkOppResult:
     opp_slug: str            # unchanged — fork stays within the same opp
     new_run_id: str          # YYYYMMDD-HHMM, the new run folder name
     new_run_folder_id: str   # Drive folder id of the new run
-    working_session: Session
+    working_session: Session | None  # None when create_session=False (seeded-run drives its own)
 
 
 ProgressCb = Callable[[dict], None]
@@ -103,13 +104,17 @@ def fork_opp(
     ace_root_folder_id: str,
     owner,
     source_slug: str,
-    fork_at_phase: str,
+    fork_at_phase: str | None = None,
+    fork_at_skill: str | None = None,
     source_run_id: str | None = None,
     workspace=None,
     progress_cb: ProgressCb | None = None,
     edits: list[dict[str, str]] | None = None,
     mode: str = DEFAULT_FORK_MODE,
+    feedback: str | None = None,
     now: _dt.datetime | None = None,
+    run_phases: list[int] | None = None,
+    create_session: bool = True,
 ) -> ForkOppResult:
     """Fork the source opp's named run (or its latest if ``source_run_id``
     is None) into a new run under the same opp.
@@ -118,6 +123,18 @@ def fork_opp(
     ``keep-overrides-only`` keeps only ``status: overridden`` rows from
     phases strictly before the fork point; ``keep-all`` keeps every
     upstream row regardless of status. See ``FORK_MODES`` at module top.
+
+    ``run_phases`` (seeded-run path, ace#672): when given, the synthesized
+    ``run_state.yaml`` is written in the plugin's **phase-level contract shape**
+    (``phases.<phase>.{status, ...}``) and shaped for a structural resume —
+    phases below the fork point ``done``/``verdict: seeded``, the listed
+    ordinals ``pending``, and every other phase from the fork point onward
+    ``skipped`` — plus a ``seeded_from`` root key. When ``None`` (the plain
+    fork-run endpoint) the legacy per-skill phases map is written unchanged.
+
+    ``create_session=False`` skips the fork's working-session creation (the
+    seeded-run action drives its own headless session); ``working_session`` is
+    ``None`` in that case.
 
     Raises ``ForkOppError`` for caller-friendly validation failures
     (source not found, no runs to fork from, run-id collision, unknown
@@ -131,19 +148,35 @@ def fork_opp(
             f"mode {mode!r} is not valid; expected one of {FORK_MODES}",
         )
 
-    fork_ordinal = _resolve_phase_ordinal(fork_at_phase)
-    if fork_ordinal is None:
+    from apps.opps.skills import resolve_fork_point
+
+    if (fork_at_phase is None) == (fork_at_skill is None):
+        raise ForkOppError(
+            "invalid-fork-point",
+            "provide exactly one of fork_at_phase / fork_at_skill",
+        )
+
+    try:
+        point = resolve_fork_point(phase=fork_at_phase, skill=fork_at_skill)
+    except KeyError as exc:
         # Fail fast rather than degenerate to "copy everything." A fork
-        # against an unknown phase silently producing a no-op trim (i.e.
+        # against an unknown point silently producing a no-op trim (i.e.
         # cloning the source run wholesale) is the bug the per-run fork
         # contract exists to prevent — the next /ace:run would see every
         # phase already done. The most likely cause is ACE_PLUGIN_PATH
         # pointing at a missing/stale plugin checkout.
+        kind = "phase" if fork_at_phase else "skill"
         raise ForkOppError(
-            "unknown-phase",
-            f"phase {fork_at_phase!r} is not in the skill registry — "
+            f"unknown-{kind}",
+            f"{kind} {exc.args[0]!r} is not in the skill registry — "
             "check ACE_PLUGIN_PATH",
-        )
+        ) from exc
+
+    fork_ordinal = point.phase_ordinal
+    # Everything downstream reports the fork point by phase name; a skill
+    # fork resolves to its owning phase, so run_state / decisions trimming
+    # is identical either way.
+    fork_at_phase = point.phase
 
     source_folder = _find_child_folder(
         drive.list_files(ace_root_folder_id), source_slug
@@ -185,7 +218,7 @@ def fork_opp(
     # copy_file), so the UX win — accurate "X of Y" — is worth it.
     _emit(progress_cb, {"status": "counting", "copied": 0, "total": 0})
     total_files = _count_files_to_copy(
-        drive, source_run.id, fork_ordinal=fork_ordinal,
+        drive, source_run.id, point=point,
     )
     counter = _Counter(total=total_files)
     _emit(progress_cb, {
@@ -197,7 +230,7 @@ def fork_opp(
         drive=drive,
         source_run_folder_id=source_run.id,
         dest_run_folder_id=new_run_folder_id,
-        fork_ordinal=fork_ordinal,
+        point=point,
         counter=counter,
         progress_cb=progress_cb,
     )
@@ -218,6 +251,7 @@ def fork_opp(
         fork_ordinal=fork_ordinal,
         forked_from_run_id=source_run.name,
         now_utc=now_utc,
+        run_phases=run_phases,
     )
     drive.upload_file(
         new_run_folder_id, "run_state.yaml", new_state, "text/yaml",
@@ -234,35 +268,54 @@ def fork_opp(
         )
         drive.update_file(decisions_dest_id, trimmed, "text/yaml")
 
-    session = Session.create_with_owner(
-        owner=owner,
-        title=f"{source_slug} — new run {new_run_id} (fork @ {fork_at_phase})",
-        backend_kind="cli",
-        status="active",
-        source="web",
-        opp_slug=source_slug,
-        opp_run_id=new_run_id,
-        workspace=workspace,
-    )
-    Message.objects.create(
-        session=session,
-        turn_index=0,
-        role="system",
-        sender_user=owner,
-        content={
-            "type": "system",
-            "source": "opps-fork",
-            "opp_slug": source_slug,
-            "fork_at_phase": fork_at_phase,
-            "source_run_id": source_run.name,
-            "new_run_id": new_run_id,
-        },
-        plaintext=(
-            f"Forked run `{new_run_id}` from `{source_run.name}` at phase "
-            f"`{fork_at_phase}`. Re-run /ace:run to continue from there."
-        ),
-        status="complete",
-    )
+    session: Session | None = None
+    if create_session:
+        session = Session.create_with_owner(
+            owner=owner,
+            title=f"{source_slug} — new run {new_run_id} (fork @ {point.label()})",
+            backend_kind="cli",
+            status="active",
+            source="web",
+            opp_slug=source_slug,
+            opp_run_id=new_run_id,
+            workspace=workspace,
+        )
+        Message.objects.create(
+            session=session,
+            turn_index=0,
+            role="system",
+            sender_user=owner,
+            content={
+                "type": "system",
+                "source": "opps-fork",
+                "opp_slug": source_slug,
+                "fork_at_phase": fork_at_phase,
+                "fork_at_skill": point.skill,
+                "source_run_id": source_run.name,
+                "new_run_id": new_run_id,
+            },
+            plaintext=(
+                f"Forked run `{new_run_id}` from `{source_run.name}` at "
+                f"{'skill' if point.is_skill_fork else 'phase'} "
+                f"`{point.label()}`. Re-run /ace:run to continue from there."
+            ),
+            status="complete",
+        )
+        if feedback:
+            # Seed the operator's reason as the first USER turn, so the
+            # agent picking up the fork reads the intent instead of
+            # inferring it from artifacts. This restored a capability lost
+            # when apps/opps/fork.py was deleted (2026-04-20), where it was
+            # the whole point of the `with-feedback` mode.
+            Message.objects.create(
+                session=session,
+                turn_index=1,
+                role="user",
+                sender_user=owner,
+                content={"type": "text", "text": feedback},
+                plaintext=feedback,
+                status="complete",
+            )
 
     _emit(progress_cb, {
         "status": "done",
@@ -328,50 +381,125 @@ class _Counter:
 
 
 def _count_files_to_copy(
-    drive: DriveClient, source_run_folder_id: str, *, fork_ordinal: int | None,
+    drive: DriveClient, source_run_folder_id: str, *, point: ForkPoint | None,
 ) -> int:
     """Count files we'll actually copy from the source run folder.
 
     Mirrors the filter applied by ``_copy_run_subtree`` — files at the
     run root that aren't in ``_RUN_ROOT_FILES_TO_COPY`` aren't counted,
-    and phase folders past the fork point aren't recursed into.
+    phase folders past the fork point aren't recursed into, and on a skill
+    fork the fork-point phase is counted through the SAME predicate the
+    copy uses. If the two ever diverge the progress bar lies, so they are
+    deliberately written against one shared helper.
     """
     n = 0
     for child in drive.list_files(source_run_folder_id):
         if child.mime_type == _FOLDER_MIME:
-            if _should_skip_phase_folder(child.name, fork_ordinal):
-                continue
             if not _PHASE_FOLDER_RE.match(child.name):
                 # Run-root folders other than `<N>-phase/` aren't part
                 # of the canonical per-run layout; skip them rather than
                 # blindly copying unknown content.
                 continue
-            n += _count_files_recursive(drive, child.id)
+            disposition = _phase_folder_disposition(child.name, point)
+            if disposition == "skip":
+                continue
+            n += _count_files_recursive(
+                drive,
+                child.id,
+                keep_file=(
+                    (lambda name: _keep_artifact_for_skill_fork(name, point))
+                    if disposition == "partial"
+                    else None
+                ),
+            )
         else:
             if child.name in _RUN_ROOT_FILES_TO_COPY:
                 n += 1
     return n
 
 
-def _count_files_recursive(drive: DriveClient, folder_id: str) -> int:
+def _count_files_recursive(
+    drive: DriveClient,
+    folder_id: str,
+    keep_file: Callable[[str], bool] | None = None,
+) -> int:
+    """Count files under ``folder_id``, honouring the same ``keep_file``
+    predicate ``_copy_subtree_verbatim`` applies, so counts and copies
+    cannot disagree."""
     n = 0
     for child in drive.list_files(folder_id):
         if child.mime_type == _FOLDER_MIME:
-            n += _count_files_recursive(drive, child.id)
-        else:
+            n += _count_files_recursive(drive, child.id, keep_file)
+        elif keep_file is None or keep_file(child.name):
             n += 1
     return n
 
 
 def _should_skip_phase_folder(folder_name: str, fork_ordinal: int | None) -> bool:
     """True iff ``folder_name`` is a phase folder for a phase at or after
-    the fork point. Folders not matching ``<N>-…`` are never skipped here."""
+    the fork point. Folders not matching ``<N>-…`` are never skipped here.
+
+    Phase-granularity only. For skill forks the fork-point phase is copied
+    PARTIALLY, which this predicate can't express — see
+    :func:`_phase_folder_disposition`.
+    """
     if fork_ordinal is None:
         return False
     m = _PHASE_FOLDER_RE.match(folder_name)
     if not m:
         return False
     return int(m.group(1)) >= fork_ordinal
+
+
+def _phase_folder_disposition(folder_name: str, point: ForkPoint | None) -> str:
+    """How to treat one ``<N>-<phase>/`` folder: keep | partial | skip.
+
+    - ``keep``    — phase strictly before the fork point; copy verbatim.
+    - ``partial`` — the fork-point phase on a SKILL fork; copy only the
+      artifacts produced by skills with a lower ordinal than the fork skill.
+    - ``skip``    — at/after the fork point; leave empty so it re-runs.
+
+    A phase fork never yields ``partial``: naming a phase means re-running
+    all of it.
+    """
+    if point is None:
+        return "keep"
+    m = _PHASE_FOLDER_RE.match(folder_name)
+    if not m:
+        return "keep"
+    ordinal = int(m.group(1))
+    if ordinal < point.phase_ordinal:
+        return "keep"
+    if ordinal > point.phase_ordinal:
+        return "skip"
+    return "partial" if point.is_skill_fork else "skip"
+
+
+def _keep_artifact_for_skill_fork(basename: str, point: ForkPoint) -> bool:
+    """True iff ``basename`` should survive a skill fork of its phase.
+
+    Attribution comes from the artifact manifest's ``produced_by`` map, not
+    from filename parsing — the 0.13.0+ convention is
+    ``<skill>[_<role>].<ext>``, but real runs also contain files that don't
+    follow it (e.g. ``deliver-connect-coverage.md``), and guessing a producer
+    by string-splitting would silently drop them.
+
+    Unattributed files are KEPT. Copying one needlessly costs a Drive call;
+    dropping one loses an artifact the fork was meant to preserve.
+    """
+    # Deferred, like every other skills import here: opp_forker loads during
+    # view import and the registry pulls in the heavier system reader.
+    from apps.opps.skills import skill_ordinal_for_artifact
+
+    ordinal = skill_ordinal_for_artifact(basename)
+    if ordinal is None:
+        return True
+    assert point.skill_ordinal is not None  # guaranteed by is_skill_fork
+    return ordinal < point.skill_ordinal
+
+
+if TYPE_CHECKING:  # annotations only — the runtime import stays deferred
+    from apps.opps.skills import ForkPoint
 
 
 # ── Copy ───────────────────────────────────────────────────────────
@@ -382,7 +510,7 @@ def _copy_run_subtree(
     drive: DriveClient,
     source_run_folder_id: str,
     dest_run_folder_id: str,
-    fork_ordinal: int | None,
+    point: ForkPoint | None,
     counter: _Counter,
     progress_cb: ProgressCb | None,
 ) -> tuple[str | None, str | None]:
@@ -396,12 +524,13 @@ def _copy_run_subtree(
     decisions_source_body: str | None = None
     for child in drive.list_files(source_run_folder_id):
         if child.mime_type == _FOLDER_MIME:
-            if _should_skip_phase_folder(child.name, fork_ordinal):
-                continue
             if not _PHASE_FOLDER_RE.match(child.name):
                 # Per the canonical layout, run-root subfolders are all
                 # `<N>-phase/`. Anything else is unrecognized; leave it
                 # in the source and don't propagate to the new run.
+                continue
+            disposition = _phase_folder_disposition(child.name, point)
+            if disposition == "skip":
                 continue
             sub_id = drive.create_folder(dest_run_folder_id, child.name)
             _copy_subtree_verbatim(
@@ -411,6 +540,13 @@ def _copy_run_subtree(
                 rel_path=child.name,
                 counter=counter,
                 progress_cb=progress_cb,
+                # On a skill fork the fork-point phase is kept only up to
+                # the fork skill; every other kept phase copies whole.
+                keep_file=(
+                    (lambda name: _keep_artifact_for_skill_fork(name, point))
+                    if disposition == "partial"
+                    else None
+                ),
             )
         else:
             if child.name not in _RUN_ROOT_FILES_TO_COPY:
@@ -437,8 +573,15 @@ def _copy_subtree_verbatim(
     rel_path: str,
     counter: _Counter,
     progress_cb: ProgressCb | None,
+    keep_file: Callable[[str], bool] | None = None,
 ) -> None:
-    """Copy every child of a kept phase folder, no filtering."""
+    """Copy the children of a kept phase folder.
+
+    ``keep_file`` is None for a whole-phase copy. On a skill fork it's a
+    per-basename predicate that keeps only artifacts produced by skills
+    before the fork point. Nested folders inherit the predicate — a phase's
+    sub-folders (``screenshots/``, ``recipes/``) are still skill-owned.
+    """
     for child in drive.list_files(source_folder_id):
         new_path = f"{rel_path}/{child.name}"
         if child.mime_type == _FOLDER_MIME:
@@ -450,8 +593,11 @@ def _copy_subtree_verbatim(
                 rel_path=new_path,
                 counter=counter,
                 progress_cb=progress_cb,
+                keep_file=keep_file,
             )
         else:
+            if keep_file is not None and not keep_file(child.name):
+                continue
             drive.copy_file(child.id, dest_folder_id, child.name)
             counter.copied += 1
             _emit(progress_cb, {
@@ -499,32 +645,74 @@ def _resolve_phase_ordinal(phase_name: str) -> int | None:
         return None
 
 
-def _build_phases_map(fork_ordinal: int | None) -> dict[str, dict[str, str]]:
-    """Build the ``phases`` map for a fresh run_state.yaml.
+def _phase_block(phase: str, status: str, iso_now: str) -> dict:
+    """One phase block in the plugin's **canonical run_state shape** (ace#673):
+    a phase-level ``status`` (what the orchestrator's resume path reads off
+    ``phases.<phase>.status``) PLUS a ``steps`` sub-map ``{skill: {status}}``
+    (what ace-web's ``_extract_step_statuses`` renders as Workbench step rows).
 
-    Skills in phases ``< fork_ordinal`` are seeded ``done`` (we just
-    carried their artifacts forward); skills in phases ``>= fork``
-    start ``pending`` for the new run to overwrite.
+    Done phases also carry ``verdict: seeded`` (the forked prefix is a copy of a
+    prior run) and a ``completed_at`` seed timestamp so ``status: done`` doesn't
+    warn for a missing one. The ``steps`` wrapper is always present so a phase
+    block with a bare ``status`` key never leaks ``status`` as a fake skill into
+    ``_extract_step_statuses``. Recurring skills are excluded — they aren't
+    phase steps.
     """
-    from apps.opps.skills import SKILL_REGISTRY, all_phases
+    from apps.opps.skills import skills_in_phase
 
-    phases_map: dict[str, dict[str, str]] = {}
-    phase_order = all_phases()
-    for skill in SKILL_REGISTRY:
-        if skill.is_recurring:
-            # Recurring skills aren't tracked in the per-phase map.
-            continue
-        try:
-            phase_idx = phase_order.index(skill.phase) + 1
-        except ValueError:
-            continue
+    block: dict = {"status": status}
+    if status == "done":
+        block["verdict"] = "seeded"
+        block["completed_at"] = iso_now
+    block["steps"] = {
+        s.name: {"status": status}
+        for s in skills_in_phase(phase)
+        if not s.is_recurring
+    }
+    return block
+
+
+def _build_phases_map(
+    fork_ordinal: int | None,
+    iso_now: str,
+    run_phases: list[int] | None = None,
+) -> dict[str, dict]:
+    """Build the ``phases`` map for a forked run in the plugin's **canonical
+    phase-level shape** ``phases.<phase>.{status, steps, ...}`` (ace#672/#673).
+
+    Per phase ordinal (position in ``all_phases()``, the convention
+    ``_resolve_phase_ordinal`` relies on):
+
+    * ``< fork_ordinal`` (the copied prefix) → ``done``/``verdict: seeded``.
+    * ``>= fork_ordinal``:
+        - plain fork (``run_phases is None``) → ``pending`` (re-run from the
+          fork point onward, the historical fork-run behavior).
+        - seeded run (``run_phases`` given) → ``pending`` if the ordinal is a
+          target, else ``skipped`` (the orchestrator steps over these and ends
+          when no ``pending`` phase remains — the "only 3,4,6 then stop").
+    * ``fork_ordinal is None`` (unknown fork phase) → all ``pending``.
+
+    Emitting the canonical shape — phase-level ``status`` + a ``steps`` wrapper —
+    is the ace#673 fix: it's what lets the plugin's resume read
+    ``phases.<phase>.status`` AND ace-web's ``_extract_step_statuses`` render the
+    seeded step rows. The previous per-skill map (``phases.<phase>.<skill>:
+    status``) had neither a phase-level status (so the plugin's structural resume
+    couldn't classify it) nor a ``steps`` wrapper.
+    """
+    from apps.opps.skills import all_phases
+
+    targets = set(run_phases) if run_phases is not None else None
+    phases_map: dict[str, dict] = {}
+    for idx, phase in enumerate(all_phases(), start=1):
         if fork_ordinal is None:
             status = "pending"
-        elif phase_idx < fork_ordinal:
+        elif idx < fork_ordinal:
             status = "done"
-        else:
+        elif targets is None or idx in targets:
             status = "pending"
-        phases_map.setdefault(skill.phase, {})[skill.name] = status
+        else:
+            status = "skipped"
+        phases_map[phase] = _phase_block(phase, status, iso_now)
     return phases_map
 
 
@@ -537,14 +725,24 @@ def _build_run_state_yaml(
     fork_ordinal: int | None,
     forked_from_run_id: str,
     now_utc: _dt.datetime,
+    run_phases: list[int] | None = None,
 ) -> str:
     """Synthesize a fresh ``run_state.yaml`` per the State Schema in the
     plugin's orchestrator-reference (§ State Schema, defensive init).
 
-    Adds a ``forked_from`` block so lineage is visible without diving
-    into Drive — the plugin doesn't read this field but humans will.
+    Adds ``forked_from`` (the source run id, as a STRING — see the inline
+    note below) plus ``forked_from_phase`` / ``forked_at`` so lineage is
+    visible without diving into Drive.
+
+    The ``phases`` map is always built in the plugin's canonical phase-level
+    shape (``phases.<phase>.{status, steps, ...}`` — see ``_build_phases_map``).
+    When ``run_phases`` is given (seeded-run path, ace#672) the non-target
+    phases from the fork point onward are ``skipped`` and a ``seeded_from`` root
+    key is added; otherwise (plain fork-run) everything from the fork point
+    onward is ``pending``.
     """
     iso_now = now_utc.isoformat()
+    phases_map = _build_phases_map(fork_ordinal, iso_now, run_phases=run_phases)
     data: dict = {
         "opportunity": opp_slug,
         "run_id": run_id,
@@ -554,13 +752,23 @@ def _build_run_state_yaml(
         "last_actor": owner_email,
         "last_actor_at": iso_now,
         "current_phase": fork_at_phase,
-        "phases": _build_phases_map(fork_ordinal),
-        "forked_from": {
-            "run_id": forked_from_run_id,
-            "phase": fork_at_phase,
-            "forked_at": iso_now,
-        },
+        "phases": phases_map,
+        # A top-level STRING, not a block. ``canopy_agent_runs`` reads this
+        # field (``RunSummary.forked_from: str | None``) and its Drive store
+        # documents the contract explicitly; a dict raises pydantic
+        # ValidationError inside ``store.list_runs``, which 500s every
+        # uncached ``load_opp`` for the opp — killing artifact download and,
+        # once the snapshot cache expires, the whole workbench.
+        # The lineage detail a dict used to carry lives in the sibling keys.
+        "forked_from": forked_from_run_id,
+        "forked_from_phase": fork_at_phase,
+        "forked_at": iso_now,
     }
+    if run_phases is not None:
+        # Informational lineage for a seeded run (not read by any skill; the
+        # plugin's resume drives off phases.*.status). Mirrors the plugin's
+        # § Step 4b seeded_from root key.
+        data["seeded_from"] = forked_from_run_id
     return yaml.safe_dump(data, sort_keys=False)
 
 

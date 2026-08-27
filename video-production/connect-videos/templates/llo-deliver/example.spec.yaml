@@ -1,0 +1,123 @@
+# llo-deliver — fully-filled demo spec (~67s).
+#
+# Ready to POST to /videos/programs to render after the server-side
+# staging step rewrites the library: refs. This is the LLO-facing cut:
+# the audience is a local delivery organization deciding whether to
+# deliver on Connect. Carries real Connect platform stats (an LLO needs
+# proof it's real and paying) — grounded in cited facts, never invented.
+#
+# Beats (~67s): hook, cycle, handoff, deal (ai_build card), scene,
+# problem (hero traction stat), product (train/deliver/audit/pay),
+# impact (3 traction cards), cta. active_cut: ai keeps the deal card;
+# flip to "standard" to drop it.
+#
+# NOTE: this template repurposes the ai_build beat as "the deal" card
+# (headline + chips + subhead is content-generic). A dedicated DealCard
+# component is a possible follow-up; for now the deal renders through the
+# existing AiBuildCard with zero renderer changes.
+
+provenance:
+  generator: llo-deliver
+  template: llo-deliver
+  generated_from: https://connect.dimagi.com/
+  generated_at: "2026-06-12T00:00:00Z"
+
+slug: llo-deliver
+workspace: dimagi-team
+name: Connect
+country_focus: Global
+status: Live
+tagline: "Deliver high-impact work in your community — paid for every verified visit."
+program_url: https://connect.dimagi.com/
+
+# Include the "deal" card (rendered via the ai_build beat). Set to
+# "standard" to drop it.
+active_cut: ai
+
+# Stable workspace media-library refs. The render-prep staging step
+# (apps/videos service._stage_spec) rewrites each library:<path> to
+# gdrive:<id>.<ext> server-side before the renderer runs, so this example
+# stays workspace-portable.
+manifest:
+  field-walking-towards-house: library:video/field-broll/field-walking-towards-house.mp4
+  field-group-around-woman: library:video/field-broll/field-group-around-woman.mp4
+  mobile-learn: library:video/mobile-screencast/mobile-learn.mp4
+  mobile-mapping: library:video/mobile-screencast/mobile-mapping.mp4
+  web-superset-graphs: library:video/web-screencast/web-superset-graphs.mp4
+  mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
+
+# "How the work is split" card (rendered via the ai_build beat). The chips
+# explain who does what — an explainer device, not a pitch.
+ai_build:
+  headline: "How the work is split"
+  components:
+    - "You: workers + relationships"
+    - "Connect: the app & training"
+    - "Connect: verification"
+    - "Connect: payments"
+  subhead: "You focus on delivery; Connect runs the rest."
+
+scene:
+  clips:
+    - "@field-walking-towards-house"
+    - "@field-group-around-woman"
+  lower_third: "Your teams, in the field"
+
+# A light scale fact for context (not a hard sell) — Connect already runs
+# this way at scale.
+problem:
+  big: "1.5M+"
+  caption: "verified services, across 13 countries"
+  source: "connect.dimagi.com"
+
+product:
+  beats:
+    - asset: "@mobile-learn"
+      caption: "Learn — with an AI coach"
+      is_demo_clip: true
+    - asset: "@mobile-mapping"
+      caption: "Deliver — in their own communities"
+      is_demo_clip: true
+    - asset: "@web-superset-graphs"
+      caption: "Verify — and automatic data checks"
+      is_demo_clip: true
+    - asset: "@mobile-pay"
+      caption: "Pay — straight to the worker's phone"
+      is_demo_clip: true
+
+# Two cards that explain how verification and payment work (mechanism, not
+# a sell).
+impact:
+  - big: "Verified"
+    caption: "biometric, GPS, photo — as it happens"
+  - big: "Paid on proof"
+    caption: "straight to the worker's phone"
+
+narration:
+  generator: manual
+  prompt_version: v1-llo-deliver
+  start_seconds: 0
+  by_beat:
+    hook: "Here's what it looks like to deliver a program on Connect."
+    cycle: "Your teams run one loop: Learn, Deliver, Verify, and Pay."
+    handoff: "Here's how it works, step by step."
+    ai_build: "You bring the frontline workers and the local relationships; Connect provides the app, the verification, and the payments."
+    scene: "Your workers deliver in their own communities, and each visit is recorded as it happens."
+    problem: "Connect already runs this way — over a million verified services, across thirteen countries."
+    product: "Workers learn on their phones with an AI coach, deliver guided visits, and each service is verified — biometric, GPS, and photo, the moment it happens."
+    impact: "Once a service is verified, the worker is paid — directly, to their phone."
+    cta: ""
+  script: |
+    Here's what it looks like to deliver a program on Connect.
+    Your teams run one loop: Learn, Deliver, Verify, and Pay.
+    Here's how it works, step by step.
+    You bring the frontline workers and the local relationships; Connect provides the app, the verification, and the payments.
+    Your workers deliver in their own communities, and each visit is recorded as it happens.
+    Connect already runs this way — over a million verified services, across thirteen countries.
+    Workers learn on their phones with an AI coach, deliver guided visits, and each service is verified — biometric, GPS, and photo, the moment it happens.
+    Once a service is verified, the worker is paid — directly, to their phone.
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

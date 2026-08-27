@@ -1,6 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { parseTs, v2ToOppCard } from "../opps";
+import { artifactBodyUrl, parseTs, v2ToOppCard } from "../opps";
+
+/**
+ * Regression for the Workbench artifact-preview 404.
+ *
+ * The ninja backend exposes raw artifact content ONLY at
+ * `/api/w/{ws}/opps/{slug}/artifacts/{artifact_id}/download`. An earlier
+ * (DRF-era) helper built `/steps/{skill}/artifacts/{name}`, a route the
+ * backend never registered — so every step's artifact pane rendered a 404
+ * (Django route miss). This locks the URL to the id-keyed download endpoint.
+ */
+describe("artifactBodyUrl (Workbench artifact preview)", () => {
+  it("targets the id-keyed /artifacts/{id}/download endpoint, not /steps/*", () => {
+    const url = artifactBodyUrl("dimagi-team", "hh-poverty-targeting", "20260722-1341", "drive-file-abc");
+    expect(url).toContain("/api/w/dimagi-team/opps/hh-poverty-targeting/artifacts/drive-file-abc/download");
+    expect(url).toContain("run_id=20260722-1341");
+    expect(url).not.toContain("/steps/");
+  });
+
+  it("url-encodes the workspace, slug, and artifact id", () => {
+    const url = artifactBodyUrl("ws space", "a/b", "r 1", "id/x");
+    expect(url).toContain("/api/w/ws%20space/opps/a%2Fb/artifacts/id%2Fx/download");
+    expect(url).toContain("run_id=r%201");
+  });
+});
 
 /**
  * Regression for #466.

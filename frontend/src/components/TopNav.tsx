@@ -1,9 +1,13 @@
 import { Link, useLocation } from "react-router-dom";
+import { PresenceBadge, pageKeyFor, usePresence } from "canopy-ui/presence";
 
 import { UserMenu } from "@/components/UserMenu";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { cn } from "@/lib/utils";
+import { wsUrl } from "@/lib/wsUrl";
+import { acePresenceRules } from "@/presence/routes";
+import { usePresenceReconnectNonce } from "@/presence/usePresenceReconnectNonce";
 
 const WORKSPACE_NAV = [
   { label: "Activity", subPath: "activity" },
@@ -13,14 +17,48 @@ const WORKSPACE_NAV = [
   { label: "Videos", subPath: "videos" },
 ];
 
-// "System" sounded operational and was the only entry into the
-// "what is ACE?" surface for new users. "Overview" reads as a
-// destination instead of an admin-tools tab.
-const GLOBAL_NAV = [{ label: "Overview", path: "/system" }];
+// One presence socket per tab, mounted here (TopNav persists across
+// navigation via App.tsx's Outlet, so it's the right layout-level home for
+// it) so the socket persists across route changes rather than churning a
+// new handshake on every click — `usePresence` re-keys the existing
+// connection on pathname change instead of reconnecting.
+//
+// Split into its own component and keyed by `presenceReconnectNonce` below:
+// the `PresenceConsumer` only re-reads the user's visibility preference on
+// `presence.enter` (i.e. the next navigation) — see
+// `apps/presence/consumers.py`. A user who just opted out in Settings would
+// otherwise stay visible in every already-open tab until it happened to
+// navigate. Bumping the key forces React to unmount this subtree (closing
+// the socket in `usePresence`'s cleanup) and mount a fresh one, which
+// reconnects and sends a brand-new `presence.enter` under the just-saved
+// preference. See `usePresenceReconnectNonce` for the mechanism.
+// Belt and braces around route resolution. `pageKeyFor` runs during
+// render, and this component is mounted ABOVE the router's `<Outlet/>` in
+// an SPA with no `errorElement` anywhere — so ANY throw from a route rule
+// (a malformed percent-escape reaching a decode, a future rule with a bad
+// assumption) blanks the entire app with no navigation left to escape it,
+// instead of letting the page render its own not-found. `safeDecode` in
+// `presence/routes.ts` fixes the one known instance; this makes the whole
+// class of failure non-fatal: no badge is always better than no app.
+function resolvePresenceLocation(pathname: string) {
+  try {
+    return pageKeyFor("ace", pathname, acePresenceRules);
+  } catch {
+    return null;
+  }
+}
+
+function PresenceHeaderBadge() {
+  const { pathname } = useLocation();
+  const location = resolvePresenceLocation(pathname);
+  const { viewers } = usePresence({ url: wsUrl("ws/presence/"), location });
+  return <PresenceBadge viewers={viewers} />;
+}
 
 export function TopNav() {
   const { pathname } = useLocation();
   const { current, all } = useWorkspace();
+  const presenceReconnectNonce = usePresenceReconnectNonce();
 
   // Prefer the URL's workspace; fall back to the user's first one for
   // legacy paths (so the nav links remain useful even on /settings etc.).
@@ -58,25 +96,11 @@ export function TopNav() {
         })}
       </div>
 
-      {/* Global nav + utility, right-aligned and separated by a divider
-          so global pages aren't visually confused with workspace pages. */}
+      {/* Utility cluster, right-aligned. System Overview lives in the
+          account menu (UserMenu) now — it's a global destination, not a
+          workspace page, so it doesn't belong inline with the nav. */}
       <div className="ml-auto flex items-center gap-4">
-        {GLOBAL_NAV.map((item) => {
-          const isActive = pathname.startsWith(item.path);
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                "text-muted-foreground hover:text-foreground",
-                isActive && "text-foreground font-medium",
-              )}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-        <span aria-hidden className="h-5 w-px bg-border" />
+        <PresenceHeaderBadge key={presenceReconnectNonce} />
         <WorkspaceSwitcher />
         <UserMenu />
       </div>

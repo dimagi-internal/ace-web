@@ -133,9 +133,19 @@ class DriveClient(ABC):
         """Fetch metadata for a single file or folder."""
 
     @abstractmethod
-    def get_content(self, file_id: str, mime_type: str) -> FileContent:
+    def get_content(
+        self, file_id: str, mime_type: str, *, export_as: str | None = None
+    ) -> FileContent:
         """Fetch the body of a file. Google Docs types are exported to text/plain
-        or text/csv; binary types are returned base64-encoded."""
+        or text/csv; binary types are returned base64-encoded.
+
+        ``export_as`` overrides the export MIME for a Google-native type on
+        THIS read only (e.g. ``text/markdown`` for an ACE-authored prose doc).
+        It is deliberately per-call, never a global default: `run_state.yaml`,
+        `decisions.yaml` and every verdict are also Google Docs, and exporting
+        those as markdown escapes the YAML (``\\---``, ``run\\_id``) and breaks
+        the parse. Use `apps.opps.drive_export.prose_export_mime` to decide.
+        Ignored for non-Google-native files."""
 
     @abstractmethod
     def create_folder(self, parent_id: str, name: str) -> str:
@@ -292,7 +302,9 @@ class GoogleDriveClient(DriveClient):
         return self._to_drive_file(f, path=f["name"])
 
     @_drive_retry
-    def get_content(self, file_id: str, mime_type: str) -> FileContent:
+    def get_content(
+        self, file_id: str, mime_type: str, *, export_as: str | None = None
+    ) -> FileContent:
         export_map = {
             "application/vnd.google-apps.document": ("text/plain", "text/plain"),
             "application/vnd.google-apps.spreadsheet": ("text/csv", "text/csv"),
@@ -300,6 +312,8 @@ class GoogleDriveClient(DriveClient):
         }
         if mime_type in export_map:
             export_mime, content_type = export_map[mime_type]
+            if export_as:
+                export_mime = content_type = export_as
             content = self._service.files().export(
                 fileId=file_id, mimeType=export_mime
             ).execute()

@@ -8,7 +8,11 @@ description: |
   measured." Eight beats: opening tagline, four-step cycle intro,
   program handoff, field footage, one big headline stat,
   three-shot app walkthrough, two impact stats, end card.
-expected_duration_seconds: 60
+intent: >-
+  Leave a funder or partner org with one lodged stat, one named mechanism (Learn → Deliver →
+  Verify → Pay), and one real place — all within 60 seconds. The problem and impact numbers
+  are load-bearing: the video's job is to make those figures memorable, not merely
+  informative.
 intended_audience: |
   Funders, partner organizations, and internal stakeholders being
   introduced to a specific Connect program for the first time. Not

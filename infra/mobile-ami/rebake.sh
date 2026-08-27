@@ -8,13 +8,13 @@
 #   3.  Create a new launch-template version pointing at the new AMI.
 #   4.  Set the new version as the launch template's default.
 #   5.  Terminate the currently-running EC2 instance (id pulled from the
-#       committed deploy/aws/task-definition.json — that's the source of
+#       committed deploy/aws/ace-web.cfn.yaml — that's the source of
 #       truth on which instance ace-web believes it owns).
 #   6.  Launch a fresh instance from the launch template into the same
 #       subnet, wait until it's `running`, then stop it (ace-web starts
 #       it on demand via /api/mobile/ensure-running).
 #   7.  Re-apply the standard tags so the new instance matches the old.
-#   8.  Rewrite deploy/aws/task-definition.json with the new
+#   8.  Rewrite deploy/aws/ace-web.cfn.yaml with the new
 #       ACE_MOBILE_INSTANCE_ID and ACE_MOBILE_AMI_VERSION.
 #   9.  Commit, push, open a PR, merge it.
 #  10.  Trigger the deploy workflow (no migrations) so ace-web picks
@@ -59,16 +59,24 @@ LT_NAME="${LT_NAME:-ace-mobile-emulator-labs}"
 SUBNET_ID="${SUBNET_ID:-subnet-0d744956f8178d950}"
 DEPLOY_WORKFLOW="${DEPLOY_WORKFLOW:-deploy-ace-web-labs.yml}"
 
-# Path to the task-definition.json (relative to repo root). The script
-# parses + rewrites it as the source of truth on which instance is in
-# service.
-TASK_DEF_REL="deploy/aws/task-definition.json"
+# The CloudFormation template (relative to repo root). The script rewrites the
+# ACE_MOBILE_* env values in it — this is the source of truth for which instance
+# is in service.
+#
+# This used to point at deploy/aws/task-definition.json. That file stopped
+# feeding the service when ace-web came under CloudFormation: the deploy runs
+# `aws cloudformation deploy --template-file deploy/aws/ace-web.cfn.yaml`, and
+# CFN is the only writer of the task definition. So a rebake would have written
+# the new instance id into a file nothing reads, merged it, deployed green — and
+# left the app pointed at the instance this script had just TERMINATED. Worse
+# than a no-op, and invisible until mobile broke.
+CFN_TEMPLATE_REL="deploy/aws/ace-web.cfn.yaml"
 
 # Working dir is this script's dir (infra/mobile-ami). Packer is invoked
 # from here; repo root is two levels up for git/gh operations.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TASK_DEF="$REPO_ROOT/$TASK_DEF_REL"
+CFN_TEMPLATE="$REPO_ROOT/$CFN_TEMPLATE_REL"
 
 # ───────────────────────────────────────────────────────────────────────
 # CLI parsing.
@@ -187,10 +195,14 @@ run aws ec2 modify-launch-template \
 # ───────────────────────────────────────────────────────────────────────
 # Step 6: terminate the current instance.
 # ───────────────────────────────────────────────────────────────────────
-OLD_INSTANCE_ID="$(jq -r '.containerDefinitions[0].environment[]
-  | select(.name=="ACE_MOBILE_INSTANCE_ID") | .value' "$TASK_DEF")"
+# Read from the CFN template — the same file step 10 rewrites, so "which instance
+# do we terminate" and "which instance do we install" can never disagree.
+OLD_INSTANCE_ID="$(awk '
+  /^[[:space:]]*-[[:space:]]+Name:[[:space:]]*ACE_MOBILE_INSTANCE_ID[[:space:]]*$/ { want=1; next }
+  want && /^[[:space:]]*Value:/ { gsub(/^[[:space:]]*Value:[[:space:]]*"?|"?[[:space:]]*$/, ""); print; exit }
+' "$CFN_TEMPLATE")"
 [[ "$OLD_INSTANCE_ID" =~ ^i-[0-9a-f]+$ ]] || \
-  fail "couldn't read ACE_MOBILE_INSTANCE_ID from $TASK_DEF (got: $OLD_INSTANCE_ID)"
+  fail "couldn't read ACE_MOBILE_INSTANCE_ID from $CFN_TEMPLATE (got: $OLD_INSTANCE_ID)"
 note "Step 6: terminate old instance $OLD_INSTANCE_ID"
 run aws ec2 terminate-instances --instance-ids "$OLD_INSTANCE_ID" '>/dev/null'
 
@@ -243,18 +255,45 @@ run aws ec2 create-tags --resources "$NEW_INSTANCE_ID" --tags \
 # ───────────────────────────────────────────────────────────────────────
 # Step 10: rewrite task-def.
 # ───────────────────────────────────────────────────────────────────────
-note "Step 10: update $TASK_DEF_REL with new instance id + AMI version"
+note "Step 10: update $CFN_TEMPLATE_REL with new instance id + AMI version"
 if [[ -n "$DRY_RUN" ]]; then
-  echo "  [dry-run] jq inplace edits → $TASK_DEF"
+  echo "  [dry-run] rewrite ACE_MOBILE_INSTANCE_ID=$NEW_INSTANCE_ID, ACE_MOBILE_AMI_VERSION=$AMI_VERSION → $CFN_TEMPLATE"
 else
-  tmp="$(mktemp)"
-  jq --arg id "$NEW_INSTANCE_ID" --arg ver "$AMI_VERSION" '
-    .containerDefinitions[0].environment |= map(
-      if .name == "ACE_MOBILE_INSTANCE_ID" then .value = $id
-      elif .name == "ACE_MOBILE_AMI_VERSION" then .value = $ver
-      else . end
-    )
-  ' "$TASK_DEF" > "$tmp" && mv "$tmp" "$TASK_DEF"
+  # A targeted rewrite of the `Value:` line that follows each `- Name: <KEY>`,
+  # rather than a YAML round-trip: re-emitting this template with a YAML dumper
+  # would reflow every block and mangle the `!Ref`/`!Sub` short tags CFN needs.
+  python3 - "$CFN_TEMPLATE" "$NEW_INSTANCE_ID" "$AMI_VERSION" <<'PY'
+import re, sys
+
+path, instance_id, ami_version = sys.argv[1], sys.argv[2], sys.argv[3]
+wanted = {"ACE_MOBILE_INSTANCE_ID": instance_id, "ACE_MOBILE_AMI_VERSION": ami_version}
+
+lines = open(path).readlines()
+pending = None
+seen = set()
+for i, line in enumerate(lines):
+    if pending is not None:
+        m = re.match(r'^(\s*)Value:\s*.*$', line)
+        if not m:
+            sys.exit(f"{path}: expected a Value: line after `- Name: {pending}`, got: {line.strip()!r}")
+        lines[i] = f'{m.group(1)}Value: "{wanted[pending]}"\n'
+        seen.add(pending)
+        pending = None
+        continue
+    m = re.match(r'^\s*-\s+Name:\s*([A-Z0-9_]+)\s*$', line)
+    if m and m.group(1) in wanted:
+        pending = m.group(1)
+
+missing = set(wanted) - seen
+if missing:
+    # Loud, not silent: the whole point of this step is that the running service
+    # learns the new instance id. Half-applying it is how mobile ends up pointed
+    # at a terminated box.
+    sys.exit(f"{path}: never found env entries for {sorted(missing)} — refusing to continue")
+
+open(path, "w").writelines(lines)
+print(f"  rewrote ACE_MOBILE_INSTANCE_ID + ACE_MOBILE_AMI_VERSION in {path}")
+PY
 fi
 
 # ───────────────────────────────────────────────────────────────────────
@@ -265,7 +304,7 @@ note "Step 11: commit + push on $BRANCH"
 cd "$REPO_ROOT"
 run git fetch origin --quiet
 run git checkout -B "$BRANCH" origin/main
-run git add "$TASK_DEF_REL"
+run git add "$CFN_TEMPLATE_REL"
 COMMIT_MSG="deploy(mobile): pin task-def to AMI $AMI_VERSION ($NEW_INSTANCE_ID)
 
 Rebake + roll executed by infra/mobile-ami/rebake.sh.
@@ -310,7 +349,7 @@ echo "✓ Rebake + roll complete."
 echo "    AMI:       $AMI_ID ($AMI_VERSION)"
 echo "    LT ver:    $NEW_LT_VER"
 echo "    Instance:  $NEW_INSTANCE_ID (stopped)"
-echo "    Deploy:    https://github.com/jjackson/ace-web/actions/workflows/$DEPLOY_WORKFLOW"
+echo "    Deploy:    https://github.com/dimagi-internal/ace-web/actions/workflows/$DEPLOY_WORKFLOW"
 echo
 echo "Next:"
 echo "  • Watch the deploy: gh run watch"

@@ -3,8 +3,8 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { execSync } from "node:child_process";
-import { loadProgramSpec } from "../src/lib/spec.node";
-import { loadDefaults, resolveBeats, type ResolvedTimeline, type ResolvedBeat } from "../src/lib/beats.node";
+import { loadProgramSpec, resolveActiveByBeat } from "../src/lib/spec.node";
+import { loadDefaults, resolveBeats, effectiveBeatsForSpec, type ResolvedTimeline, type ResolvedBeat } from "../src/lib/beats.node";
 import { resolveRun, specPath, outputPath } from "../src/lib/runs.node";
 import { synthesize, synthesizePerBeat, readAlignment, wordStartSeconds, type PerBeatNarration } from "../src/lib/voiceover";
 import { estimateCaptionTimeline, captionsFromBeats } from "../src/lib/captions";
@@ -114,7 +114,7 @@ async function main() {
   const cli = parseArgs();
   const root = process.cwd();
   const runId = resolveRun(cli.program, cli.run, root);
-  const defaults = loadDefaults(path.join(root, "programs/_defaults.yaml"));
+  const defaults = loadDefaults(path.join(root, "programs/global_style.yaml"));
   const rawSpec = loadProgramSpec(specPath(cli.program, runId, root));
 
   // Resolve @manifest aliases -> concrete asset paths and materialize cache
@@ -129,7 +129,18 @@ async function main() {
     process.exit(1);
   }
 
-  let timeline = resolveBeats(defaults, spec.beat_overrides ?? {});
+  // Beats are template/spec-driven, exactly as Root.tsx does for the
+  // visuals (effectiveBeatsForSpec): a spec carrying its own `beats:` list
+  // (the connect-ddd-walkthrough arc) IS the timeline; otherwise the spec
+  // rides the shared global_style.yaml marketing arc with explainer-mode
+  // stat-beat filtering. The dropped marketing stat beats sit mid-timeline
+  // (problem after scene, impact before outro), so without this the
+  // post-scene captions + per-beat voiceover would key off the UNFILTERED
+  // offsets and land later than the visuals they narrate. Keeping render's
+  // timeline source identical to Root.tsx's keeps audio and visuals in lock
+  // step for both arcs.
+  let timeline = resolveBeats(effectiveBeatsForSpec(defaults, spec), spec.beat_overrides ?? {});
+  const activeByBeat = resolveActiveByBeat(spec);
 
   if (!spec.narration.script.trim()) {
     console.error(
@@ -160,10 +171,10 @@ async function main() {
         "ELEVENLABS_API_KEY not set in environment, but spec.voice.provider=elevenlabs. " +
           "Set ELEVENLABS_API_KEY to render with voice, or pass --no-voice to render silent on purpose."
       );
-    } else if (spec.narration.by_beat) {
+    } else if (Object.keys(activeByBeat).length > 0) {
       console.log("Synthesizing per-beat voiceover…");
       perBeat = await synthesizePerBeat({
-        byBeat: spec.narration.by_beat,
+        byBeat: activeByBeat,
         voiceId: spec.voice.voice_id,
         model: spec.voice.model,
         cacheDir: path.join(root, "assets/audio"),
@@ -189,20 +200,22 @@ async function main() {
 
   // Narration window — defaults to the full pre-outro span so the VO can
   // start at frame 1 if narration.start_seconds is 0.
-  const outroBeat = timeline.beats.find((b) => b.kind === "outro_cta");
+  const outroBeat = timeline.beats.find(
+    (b) => b.kind === "outro_cta" || b.kind === "outro_card",
+  );
   const outroSeconds = outroBeat ? outroBeat.durationFrames / timeline.fps : 0;
   const totalSeconds = timeline.totalFrames / timeline.fps;
   const narrationStartSec = spec.narration.start_seconds;
   const narrationDurationSec =
     spec.narration.duration_seconds ?? Math.max(1, totalSeconds - outroSeconds - narrationStartSec);
   const narrationStartFrame = Math.round(narrationStartSec * timeline.fps);
-  // Captions: prefer per-beat text when provided (narration.by_beat) for
+  // Captions: prefer per-beat text when provided (via resolveActiveByBeat) for
   // tight visual-caption sync. Otherwise fall back to the older
   // sentence-proportional estimator over the full narration window.
   const captions = cli.noCaptions
     ? []
-    : spec.narration.by_beat
-      ? captionsFromBeats(timeline.beats, spec.narration.by_beat)
+    : Object.keys(activeByBeat).length > 0
+      ? captionsFromBeats(timeline.beats, activeByBeat)
       : estimateCaptionTimeline({
           script: spec.narration.script,
           durationSeconds: narrationDurationSec,
@@ -340,11 +353,19 @@ async function main() {
           `music_bed asset not found at ${musicAbs}; skipping music bed.`
         );
       } else {
-        inputs.push(`-i ${JSON.stringify(musicAbs)}`);
+        // Loop the bed (-stream_loop -1) so it covers the FULL audio-aligned
+        // video length, not just one pass of the source track. Before this,
+        // a bed shorter than the cut (e.g. the 60s default track under a 76s
+        // cut) left the tail playing dry. `mb.duration_seconds` is now only a
+        // cap on how much of one source pass to use as the loop unit — the
+        // output is always trimmed to `totalSeconds`. A short afade-out keeps
+        // the loop seam / ending from hard-cutting.
+        inputs.push(`-stream_loop -1 -i ${JSON.stringify(musicAbs)}`);
         const mIdx = inputs.length - 1;
-        const dur = mb.duration_seconds ?? totalSeconds;
+        const dur = totalSeconds;
+        const fadeStart = Math.max(0, dur - 1.5);
         filterParts.push(
-          `[${mIdx}:a]atrim=start=${mb.start_seconds}:duration=${dur},asetpts=PTS-STARTPTS,volume=${mb.volume_db}dB[bg]`
+          `[${mIdx}:a]atrim=start=${mb.start_seconds}:duration=${dur},asetpts=PTS-STARTPTS,volume=${mb.volume_db}dB,afade=t=out:st=${fadeStart}:d=1.5[bg]`
         );
         mixLabels.push("[bg]");
       }

@@ -19,6 +19,13 @@ interface Props {
  * page-load time. Caches at the component level — the parent
  * unmounting on collapse drops the cache, which is fine; the typical
  * interaction is expand-and-stay.
+ *
+ * These are ace-web-native `Session` rows (mostly seeded by programmatic
+ * ACE runs, not human chat — see apps/sessions/models.py's docstring), so
+ * `listSessions` still has real data to show even after the interactive
+ * chat UI's retirement. Each row links to the read-only structure/detail
+ * view (`/chat/:slug/structure`) rather than `/chat/:slug`, which now just
+ * redirects to canopy chat home.
  */
 export function OppChatChildren({ oppSlug, workspaceSlug }: Props) {
   const [chats, setChats] = useState<Session[] | null>(null);
@@ -67,7 +74,7 @@ export function OppChatChildren({ oppSlug, workspaceSlug }: Props) {
         <li key={c.slug} className="flex items-center gap-2 px-4 py-1.5 text-xs">
           <MessageSquare className="h-3 w-3 shrink-0 text-muted-foreground/70" />
           <Link
-            to={`/w/${workspaceSlug}/chat/${c.slug}`}
+            to={`/w/${workspaceSlug}/chat/${c.slug}/structure`}
             className="min-w-0 flex-1 truncate text-foreground hover:text-primary hover:underline"
             onClick={(e) => e.stopPropagation()}
           >

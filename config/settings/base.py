@@ -55,6 +55,8 @@ INSTALLED_APPS = [
     "apps.mobile.apps.MobileConfig",
     "apps.videos.apps.VideosConfig",
     "apps.slack.apps.SlackConfig",
+    "apps.canopy",
+    "apps.presence.apps.PresenceConfig",
 ]
 
 AUTH_USER_MODEL = "ace_auth.User"
@@ -163,7 +165,7 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-# --- CommCare Connect OAuth (labs / AWS deployment) ---
+# --- Connect OAuth (labs / AWS deployment) ---
 CONNECT_PRODUCTION_URL = env("CONNECT_PRODUCTION_URL", default="https://connect.dimagi.com")
 CONNECT_OAUTH_CLIENT_ID = env("CONNECT_OAUTH_CLIENT_ID", default="")
 CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
@@ -243,7 +245,7 @@ ACE_DRIVE_SA_KEY_JSON = env("ACE_DRIVE_SA_KEY_JSON", default="")
 # deploy without these env vars 503s with a clear "not-configured" error
 # rather than failing mid-call.
 #
-# Set in deploy/aws/task-definition.json after `terraform apply` emits
+# Set in deploy/aws/ace-web.cfn.yaml after `terraform apply` emits
 # the values from infra/mobile/outputs.tf.
 ACE_MOBILE_AWS_REGION = env("ACE_MOBILE_AWS_REGION", default="us-east-1")
 ACE_MOBILE_INSTANCE_ID = env("ACE_MOBILE_INSTANCE_ID", default="")
@@ -257,7 +259,7 @@ ACE_MOBILE_AMI_VERSION = env("ACE_MOBILE_AMI_VERSION", default="")
 # ACE plugin can POST back for upload-transcript and call /api/mobile/
 # for cloud-emulator-driven flows. Empty disables the staging — the
 # plugin's smart-default then silently skips back-channel calls. Set
-# in deploy/aws/task-definition.json for labs; defaults to the local
+# in deploy/aws/ace-web.cfn.yaml for labs; defaults to the local
 # docker-compose port for dev.
 ACE_WEB_BASE_URL = env("ACE_WEB_BASE_URL", default="")
 
@@ -283,6 +285,32 @@ SLACK_SIGNING_SECRET = env("SLACK_SIGNING_SECRET", default="")
 SLACK_DEFAULT_INSTALLATION_ID = env("SLACK_DEFAULT_INSTALLATION_ID", default="")
 ACE_PUBLIC_BASE_URL = env("ACE_PUBLIC_BASE_URL",
                           default="https://labs.connect.dimagi.com/ace")
+
+# --- canopy-web hosted chat (Part 2 cutover; spec lives in canopy-web) -------
+# Server-side base for outbound calls (token exchange, session create).
+CANOPY_BASE_URL = env("CANOPY_BASE_URL", default="")
+# Registered AppCredential raw value (canopy: manage.py create_app_credential).
+CANOPY_APP_CREDENTIAL = env("CANOPY_APP_CREDENTIAL", default="")
+# Browser-facing base: same-origin path prefix on labs, vite proxy path in dev.
+CANOPY_PUBLIC_BASE_URL = env("CANOPY_PUBLIC_BASE_URL", default="/canopy")
+CANOPY_WORKSPACE = env("CANOPY_WORKSPACE", default="connect")
+CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
+
+# Run execution on canopy's harness (spec: canopy-web
+# docs/superpowers/specs/2026-07-26-run-execution-convergence-design.md).
+# OFF by default and it must stay off until a SESSION-CAPABLE canopy runner
+# exists: with none online, every enqueued turn sits QUEUED forever, so
+# flipping this on takes ACE runs from "works" to "nothing runs".
+CANOPY_RUN_EXECUTION = env.bool("CANOPY_RUN_EXECUTION", default=False)
+# Whose canopy identity a run acts as when the owning ace-web user's email is
+# not delegable (canopy's token-exchange 403s a domain outside the app
+# credential's allowed_delegation_domains). Empty = no fallback: dispatch
+# fails loudly rather than silently attributing one human's run to another.
+CANOPY_RUN_ACTOR_FALLBACK_EMAIL = env("CANOPY_RUN_ACTOR_FALLBACK_EMAIL", default="")
+# Ceiling on a single turn transcript fetched from canopy. canopy's own per-turn
+# cap is 100 MB; this is ace-web's defensive limit on what it will pull into a
+# web worker's memory to re-derive cost/structure from.
+CANOPY_TRANSCRIPT_MAX_BYTES = env.int("CANOPY_TRANSCRIPT_MAX_BYTES", default=64 * 1024 * 1024)
 
 # --- Allowed email domains ---
 # Empty list = allow any Connect-authenticated user. Workspace memberships

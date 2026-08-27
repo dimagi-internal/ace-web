@@ -186,6 +186,42 @@ def _apply_runs_summary(snapshot: Any, fresh: list[Any]) -> None:
     snapshot.runs_summary = fresh
 
 
+def _fetch_fresh_saved_overrides(
+    client: Any, snapshot: Any, context: OverlayContext,
+) -> Any:
+    """Re-read ``<opp>/inputs/decision-overrides.yaml`` (issue #673 PR 2).
+
+    The overrides file lives under ``inputs/`` — a listing the Changes
+    API doesn't reliably invalidate when the file first appears — so a
+    plain cached field would render freshly-saved overrides as
+    AI-DEFAULT, which looks exactly like data loss.
+
+    Uses the request's caching client as-is (NOT ``bypass=True`` like
+    runs_summary): the 30s drive-cache TTL is acceptable staleness here,
+    and ace-web's own save path writes through ``CachedDriveClient`` so
+    its mutations invalidate these keys immediately.
+
+    Returns a ``{"saved_overrides": {...}}`` wrapper so a legitimately
+    empty result (file absent / all rows reverted) stays truthy and
+    overwrites the cached value; transport failures raise and the
+    overlay machinery preserves the cached value instead.
+    """
+    from apps.opps.decision_overrides import fetch_saved_overrides
+
+    opp_folder_id = getattr(snapshot, "opp_folder_id", "")
+    if not opp_folder_id:
+        return None
+    return {
+        "saved_overrides": fetch_saved_overrides(
+            client, opp_folder_id=opp_folder_id,
+        ),
+    }
+
+
+def _apply_saved_overrides(snapshot: Any, fresh: dict[str, Any]) -> None:
+    snapshot.saved_overrides = fresh["saved_overrides"]
+
+
 # ---------------------------------------------------------------------------
 # Registries
 # ---------------------------------------------------------------------------
@@ -198,6 +234,11 @@ SNAPSHOT_OVERLAYS: list[FreshnessOverlay] = [
         name="runs_summary",
         fetch_fn=_fetch_fresh_runs_summary,
         apply_fn=_apply_runs_summary,
+    ),
+    FreshnessOverlay(
+        name="saved_overrides",
+        fetch_fn=_fetch_fresh_saved_overrides,
+        apply_fn=_apply_saved_overrides,
     ),
 ]
 

@@ -221,7 +221,11 @@ export async function getStepDetail(
     },
   });
   if (!response.ok) throw new Error(`getStepDetail: ${response.status}`);
-  return data as unknown as StepDetail;
+  // No `as unknown as` here: StepDetail is structurally compatible with the
+  // generated StepSnapshotOut. The double cast is what let this endpoint's
+  // real shape (id/url) drift from what the pane read (drive_file_id/
+  // drive_web_link) without the compiler noticing.
+  return data as StepDetail;
 }
 
 /** getLinkedChats has no v2 endpoint — will be addressed in a future PR. */
@@ -301,6 +305,47 @@ export async function forkOpp(
   return data as unknown as { slug: string; run_id: string; working_session_slug: string };
 }
 
+export interface SavedOverrideRow {
+  id: string;
+  phase: string;
+  question: string;
+  ai_default: string;
+  override: string;
+  override_reasoning?: string;
+  decided_by: string;
+  decided_at: string;
+  source_run_id: string;
+}
+
+export interface SaveDecisionOverridesResult {
+  file_id: string | null;
+  override_count: number;
+  /** The complete merged file content after this save. */
+  overrides: SavedOverrideRow[];
+}
+
+/**
+ * Persist the run's buffered decision edits to
+ * `<opp>/inputs/decision-overrides.yaml`. The body carries no edits — the
+ * server reads the shared Redis buffer as the authoritative set. No run
+ * is created; the buffer clears on success.
+ */
+export async function saveDecisionOverrides(
+  workspaceSlug: string,
+  slug: string,
+  sourceRunId: string,
+): Promise<SaveDecisionOverridesResult> {
+  const { data, response } = await apiClient.POST(
+    "/api/w/{workspace_slug}/opps/{slug}/decision-overrides",
+    {
+      params: { path: { workspace_slug: workspaceSlug, slug } },
+      body: { source_run_id: sourceRunId },
+    },
+  );
+  if (!response.ok) throw new Error(`saveDecisionOverrides: ${response.status}`);
+  return data as unknown as SaveDecisionOverridesResult;
+}
+
 export type ForkProgress =
   | { status: "unknown" | "counting" | "finalizing" }
   | { status: "copying"; copied: number; total: number; current?: string }
@@ -339,18 +384,19 @@ export function artifactBodyUrl(
   workspaceSlug: string,
   slug: string,
   runId: string,
-  skill: string,
-  artifactName: string,
+  artifactId: string,
 ): string {
-  // Prepend Vite's BASE_URL so this raw-fetch helper lands on the same
-  // /ace/ prefix the rest of the API uses via apiClient. Without this,
-  // prod fetches went to labs.connect.dimagi.com/api/... instead of
-  // /ace/api/..., which nginx refuses to route and the artifact body
-  // preview showed "Error: 404".
+  // Raw artifact content comes from the ninja backend's canonical
+  // id-keyed endpoint: GET /artifacts/{artifact_id}/download (raw bytes).
+  // The backend does NOT expose /steps/{skill}/artifacts/{name}, so the
+  // old skill+name path 404'd for EVERY step's preview (the artifact pane
+  // rendered "404"). Key by the artifact's Drive file id instead — it's
+  // present on every step-detail artifact. BASE_URL keeps the raw fetch on
+  // the /ace/ prefix nginx routes (a bare /api/... 404s in prod).
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   return (
     `${base}/api/w/${encodeURIComponent(workspaceSlug)}/opps/${encodeURIComponent(slug)}` +
-    `/steps/${encodeURIComponent(skill)}/artifacts/${encodeURIComponent(artifactName)}` +
+    `/artifacts/${encodeURIComponent(artifactId)}/download` +
     `?run_id=${encodeURIComponent(runId)}`
   );
 }

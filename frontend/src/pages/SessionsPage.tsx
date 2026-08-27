@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { Archive, ArchiveRestore, MoreHorizontal, Plus, Trash2, Upload, X } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
+import { Archive, ArchiveRestore, MoreHorizontal, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "canopy-ui/ui";
+import { Input } from "canopy-ui/ui";
+import { Badge } from "canopy-ui/ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "canopy-ui/ui";
 import {
   Dialog,
   DialogContent,
@@ -20,10 +20,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "canopy-ui/ui";
+import { Skeleton } from "canopy-ui/ui";
 import {
-  createSession,
   deleteSession,
   listSessions,
   updateSession,
@@ -43,7 +42,6 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
 ];
 
 export default function SessionsPage() {
-  const navigate = useNavigate();
   const { workspaceSlug } = useParams<{ workspaceSlug?: string }>();
   const [data, setData] = useState<SessionListPage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,11 +88,6 @@ export default function SessionsPage() {
     const timer = setTimeout(load, 300);
     return () => clearTimeout(timer);
   }, [load]);
-
-  const handleNewChat = async () => {
-    const s = await createSession(workspaceSlug ?? "");
-    navigate(workspaceSlug ? `/w/${workspaceSlug}/chat/${s.slug}` : `/chat/${s.slug}`);
-  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -157,10 +150,6 @@ export default function SessionsPage() {
               Upload .jsonl
             </Button>
           </>
-          <Button size="sm" onClick={handleNewChat}>
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            New chat
-          </Button>
         </div>
       </header>
 
@@ -272,10 +261,12 @@ export default function SessionsPage() {
                 <p className="mt-1 text-sm text-muted-foreground">
                   Start a chat with Claude — or upload an existing CLI transcript.
                 </p>
-                <Button size="sm" className="mt-4" onClick={handleNewChat}>
-                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                <Link
+                  to={workspaceSlug ? `/w/${workspaceSlug}/chat` : "/chat"}
+                  className="mt-4 inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
                   Start a chat
-                </Button>
+                </Link>
               </>
             )}
           </div>
@@ -284,7 +275,14 @@ export default function SessionsPage() {
           <div className="divide-y divide-border">
             {data.items.map((s) => (
               <div key={s.slug} className="group flex items-start gap-3 px-6 py-2.5 hover:bg-muted/50">
-                <Link to={`/chat/${s.slug}`} className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <Link
+                  to={
+                    workspaceSlug
+                      ? `/w/${workspaceSlug}/chat/${s.slug}/structure`
+                      : `/chat/${s.slug}/structure`
+                  }
+                  className="flex min-w-0 flex-1 flex-col gap-0.5"
+                >
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="truncate font-medium text-foreground">{s.title || "Untitled"}</span>
                     {s.opp_slug && (() => {
@@ -336,7 +334,17 @@ export default function SessionsPage() {
                     <MoreHorizontal className="h-4 w-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
-                    <DropdownMenuItem render={<Link to={`/chat/${s.slug}`} />}>
+                    <DropdownMenuItem
+                      render={
+                        <Link
+                          to={
+                            workspaceSlug
+                              ? `/w/${workspaceSlug}/chat/${s.slug}/structure`
+                              : `/chat/${s.slug}/structure`
+                          }
+                        />
+                      }
+                    >
                       Open
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleArchiveToggle(s)}>

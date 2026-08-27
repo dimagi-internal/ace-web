@@ -1,3 +1,4 @@
+import { getCsrfToken } from "./csrf";
 import { type ApiEnvelope } from "./types.ws";
 
 export class ApiError extends Error {
@@ -16,29 +17,6 @@ function buildUrl(path: string): string {
   // (starts with a slash). Prefix with BASE_URL so it becomes
   // "/ace/api/sessions" in prod or "/api/sessions" in dev.
   return API_PREFIX + path;
-}
-
-/**
- * Read the CSRF token from the browser's cookies. Django's CsrfViewMiddleware
- * (and DRF's SessionAuthentication) require unsafe-method requests to carry
- * this as the X-CSRFToken header.
- *
- * ace-web's prod deployment uses a tenant-specific cookie name
- * (`csrftoken_ace`, set in connectlabs.py) to avoid colliding with other
- * tenants on labs.connect.dimagi.com. Local dev uses the Django default
- * (`csrftoken`). Check the tenant-specific name first, fall back to the
- * default, return empty string if neither is present (an empty header is
- * harmless for safe methods).
- */
-function getCsrfToken(): string {
-  const cookies = document.cookie.split(";");
-  for (const raw of cookies) {
-    const [rawName, ...rawValue] = raw.trim().split("=");
-    if (rawName === "csrftoken_ace" || rawName === "csrftoken") {
-      return decodeURIComponent(rawValue.join("="));
-    }
-  }
-  return "";
 }
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);

@@ -135,14 +135,16 @@ def _auth_smoke(request: HttpRequest) -> dict:
 
 from apps.activity.api import router as activity_router  # noqa: E402
 from apps.auth.api import router as auth_router  # noqa: E402
+from apps.canopy.api import router as canopy_router  # noqa: E402
+from apps.canopy.api import workspace_router as canopy_workspace_router  # noqa: E402, I001
 from apps.common.api import router as common_router  # noqa: E402
 from apps.ingest.api import router as ingest_router  # noqa: E402
 from apps.mobile.api import router as mobile_router  # noqa: E402
 from apps.opps.api import public_summary_router as opps_public_router  # noqa: E402, I001
 from apps.opps.api import router as opps_router  # noqa: E402
+from apps.presence.api import router as presence_router  # noqa: E402
 from apps.service_accounts.api import router as tokens_router  # noqa: E402
 from apps.sessions.api import router as sessions_router  # noqa: E402
-from apps.sessions.api import share_public_router  # noqa: E402, I001
 from apps.sessions.sweep_api import router as sessions_sweep_router  # noqa: E402
 from apps.slack.api import router as slack_router  # noqa: E402
 from apps.system.api import router as system_router  # noqa: E402
@@ -156,10 +158,10 @@ api.add_router("/w/{workspace_slug}/sessions", sessions_router)
 api.add_router("/w/{workspace_slug}/activity", activity_router)
 api.add_router("/w/{workspace_slug}/videos", videos_router)
 api.add_router("/w/{workspace_slug}/slack", slack_router)
+api.add_router("/w/{workspace_slug}/canopy", canopy_workspace_router)
 
 # Top-level resources
 api.add_router("/opps", opps_public_router)  # public per-run summary share links
-api.add_router("/share", share_public_router)
 api.add_router("/workspaces", workspaces_router)
 api.add_router("/invites", invites_router)
 api.add_router("/ingest", ingest_router)
@@ -168,4 +170,6 @@ api.add_router("/system", system_router)
 api.add_router("/tokens", tokens_router)
 api.add_router("/auth", auth_router)
 api.add_router("/sessions/sweep", sessions_sweep_router)
+api.add_router("/canopy", canopy_router)
 api.add_router("", common_router)
+api.add_router("", presence_router)

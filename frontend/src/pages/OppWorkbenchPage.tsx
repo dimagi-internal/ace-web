@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 import { getOpp } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
@@ -13,8 +13,9 @@ import { SkillList } from "../components/opps/SkillList";
 import { StepDetailPane } from "../components/opps/StepDetailPane";
 import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
+import { RunsTable } from "../components/opps/RunsTable";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
-import { useChatPaneCollapsed } from "../hooks/useChatPaneCollapsed";
+import { WorkbenchLayout, usePaneCollapsed } from "../components/workbench";
 import { useOppCostRollup } from "../hooks/useOppCostRollup";
 import { useOppSocket } from "../hooks/useOppSocket";
 import { useViewMode } from "../hooks/useViewMode";
@@ -26,6 +27,11 @@ import { useViewMode } from "../hooks/useViewMode";
 const VIEW_TABS: ViewTab[] = [
   { kind: "phase", label: "Phases" },
   { kind: "workbench", label: "Workbench" },
+  // Cross-run view. Every other tab is scoped to ONE run; this is the only
+  // place the opp's whole run history is comparable side by side. It reads
+  // `snapshot.runs`, which the page already loads for the run selector, so
+  // the tab costs no additional fetch.
+  { kind: "runs", label: "Runs" },
 ];
 
 // Cheap human form for the initial loading label, before the API
@@ -57,7 +63,9 @@ export default function OppWorkbenchPage() {
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
   const costRollup = useOppCostRollup(slug, workspaceSlug);
   const { collapsed: chatCollapsed, toggle: toggleChatCollapsed } =
-    useChatPaneCollapsed();
+    usePaneCollapsed("ace.workbench.chatPaneCollapsed");
+  const { collapsed: navCollapsed, toggle: toggleNavCollapsed } =
+    usePaneCollapsed("ace.workbench.navPaneCollapsed");
 
   // ?fork=<phase> — auto-open ForkOppDialog when a Slack deep-link lands here.
   const forkPhaseQuery = searchParams.get("fork");
@@ -202,32 +210,26 @@ export default function OppWorkbenchPage() {
         </a>
       </div>
       {view === "workbench" && (
-        <>
-          <div className="flex flex-1 overflow-hidden">
-            <main
-              className={
-                chatCollapsed
-                  ? "w-[440px] shrink-0 overflow-y-auto"
-                  : "flex-1 overflow-y-auto"
-              }
-            >
-              <SkillList
-                steps={snapshot.current_run.steps}
-                priorRunSteps={[]}
-                phases={snapshot.phases}
-                selectedSkill={selectedSkill}
-                onSelect={setSelectedSkill}
-                costRollup={costRollup}
-              />
-            </main>
-            <section
-              className={
-                chatCollapsed
-                  ? "flex-1 overflow-y-auto border-l border-border bg-background"
-                  : "w-[560px] shrink-0 overflow-y-auto border-l border-border bg-background"
-              }
-            >
-              {selectedStep ? (
+        <div className="min-h-0 flex-1">
+          <WorkbenchLayout
+            left={{
+              title: "Lifecycle",
+              collapsed: navCollapsed,
+              onToggle: toggleNavCollapsed,
+              expandedWidth: 440,
+              content: (
+                <SkillList
+                  steps={snapshot.current_run.steps}
+                  priorRunSteps={[]}
+                  phases={snapshot.phases}
+                  selectedSkill={selectedSkill}
+                  onSelect={setSelectedSkill}
+                  costRollup={costRollup}
+                />
+              ),
+            }}
+            center={
+              selectedStep ? (
                 <StepDetailPane
                   workspaceSlug={workspaceSlug ?? ""}
                   slug={slug}
@@ -237,54 +239,41 @@ export default function OppWorkbenchPage() {
                 />
               ) : (
                 <EmptyState title="Select a step" description="Click a row in the lifecycle to see its details." />
-              )}
-            </section>
-            {chatCollapsed ? (
-              <aside className="flex w-8 shrink-0 flex-col items-center border-l border-border bg-card">
-                <button
-                  type="button"
-                  onClick={toggleChatCollapsed}
-                  className="mt-2 flex h-8 w-8 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
-                  title="Show chat pane"
-                  aria-label="Show chat pane"
-                  aria-expanded="false"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-              </aside>
-            ) : (
-              <aside className="flex w-[400px] shrink-0 flex-col border-l border-border bg-card">
-                <div className="flex items-center justify-between border-b border-border px-2 py-1">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Chat
-                  </span>
-                  <button
-                    type="button"
-                    onClick={toggleChatCollapsed}
-                    className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                    title="Hide chat pane"
-                    aria-label="Hide chat pane"
-                    aria-expanded="true"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+              )
+            }
+            right={{
+              title: "Chat",
+              collapsed: chatCollapsed,
+              onToggle: toggleChatCollapsed,
+              expandedWidth: 400,
+              content: selectedStep ? (
+                <WorkbenchChatPane
+                  slug={slug}
+                  runId={snapshot.current_run.run_id}
+                  skill={selectedStep.skill_name}
+                  skillDisplayName={selectedStep.display_name}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
+                  Select a step in the lifecycle to see its chats
                 </div>
-                {selectedStep ? (
-                  <WorkbenchChatPane
-                    slug={slug}
-                    runId={snapshot.current_run.run_id}
-                    skill={selectedStep.skill_name}
-                    skillDisplayName={selectedStep.display_name}
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center px-4 text-center text-xs text-muted-foreground">
-                    Select a step in the lifecycle to see its chats
-                  </div>
-                )}
-              </aside>
-            )}
-          </div>
-        </>
+              ),
+            }}
+          />
+        </div>
+      )}
+      {view === "runs" && (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <RunsTable
+            runs={snapshot.runs ?? []}
+            workspaceSlug={workspaceSlug ?? ""}
+            oppSlug={slug}
+            selectedRunId={snapshot.selected_run_id ?? snapshot.current_run.run_id}
+            // Switch the workbench's run in place rather than navigating —
+            // same handler the run dropdown already uses.
+            onSelect={(id) => setSearchParams({ run_id: id, view: "runs" })}
+          />
+        </div>
       )}
       {view === "phase" && (
         <div className="min-h-0 flex-1">

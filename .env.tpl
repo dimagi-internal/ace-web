@@ -9,7 +9,7 @@
 # Anything that isn't a secret can stay literal; secrets use 1Password
 # references that op resolves at render time.
 
-# CommCare Connect OAuth (optional for local dev)
+# Connect OAuth (optional for local dev)
 CONNECT_PRODUCTION_URL=https://connect.dimagi.com
 CONNECT_OAUTH_CLIENT_ID=
 CONNECT_OAUTH_CLIENT_SECRET=

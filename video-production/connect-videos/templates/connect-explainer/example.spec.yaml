@@ -1,0 +1,80 @@
+# connect-explainer — fully-filled demo spec (explainer mode).
+#
+# Ready to POST to /videos/programs to render immediately. No
+# {{placeholder}} tokens. No problem block, no impact block — the
+# renderer drops the problem/impact stat-card beats from the timeline,
+# leaving six beats (~42s): hook, cycle, handoff, scene, product, cta.
+# Validates against loadProgramSpec (see example-spec.test.ts).
+
+provenance:
+  generator: connect-explainer
+  template: connect-explainer
+  generated_from: https://connect.dimagi.com/
+  generated_at: "2026-06-06T00:00:00Z"
+
+slug: connect-explainer
+workspace: dimagi-team
+name: Connect
+country_focus: Global
+status: Live
+tagline: "Pay for verified service delivery, not planned activity."
+program_url: https://connect.dimagi.com/
+
+# Stable workspace media-library refs (`@alias` clip references resolve
+# against these). The render-prep staging step rewrites each library:<path>
+# to the equivalent gdrive:<id>.<ext> server-side (apps/videos
+# service._stage_spec) before the renderer runs, so this template example
+# stays workspace-portable — no Drive file ids baked in.
+manifest:
+  field-walking-towards-house: library:video/field-broll/field-walking-towards-house.mp4
+  field-group-around-woman: library:video/field-broll/field-group-around-woman.mp4
+  mobile-learn: library:video/mobile-screencast/mobile-learn.mp4
+  mobile-mapping: library:video/mobile-screencast/mobile-mapping.mp4
+  web-microplan: library:video/web-screencast/web-microplan.mp4
+  mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
+
+scene:
+  clips:
+    - "@field-walking-towards-house"
+    - "@field-group-around-woman"
+  lower_third: "Frontline delivery, end to end"
+
+product:
+  beats:
+    - asset: "@mobile-learn"
+      caption: "Learn — with an AI coach"
+      is_demo_clip: true
+    - asset: "@mobile-mapping"
+      caption: "Verify — GPS at the point of care"
+      is_demo_clip: true
+    - asset: "@web-microplan"
+      caption: "Verify — AI-assisted review"
+      is_demo_clip: true
+    - asset: "@mobile-pay"
+      caption: "Pay — automatic, on verified work"
+      is_demo_clip: true
+
+narration:
+  generator: manual
+  prompt_version: v1-connect-explainer
+  start_seconds: 0
+  by_beat:
+    hook: "Reaching the last mile has always been the hard part."
+    cycle: "Connect makes it one connected loop — Learn, Deliver, Verify, Pay."
+    handoff: "Here's how that works in the field."
+    scene: "Frontline workers go where families are — and for the first time the work is visible, end to end."
+    product: "They train on their phone with an AI coach giving personalized feedback. They deliver guided visits. Every delivery is verified — GPS, photo, and an AI review layer flagging anomalies. Then they're paid automatically for quality work."
+    cta: ""
+  script: |
+    Reaching the last mile has always been the hard part.
+    Connect makes it one connected loop — Learn, Deliver, Verify, Pay.
+    Here's how that works in the field.
+    Frontline workers go where families are — and for the first time the work is visible, end to end.
+    They train on their phone with an AI coach giving personalized feedback.
+    They deliver guided visits. Every delivery is verified — GPS, photo, and an AI review layer flagging anomalies.
+    Then they're paid automatically for quality work.
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

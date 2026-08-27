@@ -21,23 +21,30 @@ ALB on AWS ECS Fargate, reusing the shared connect-labs infrastructure
   storage. Sourced via the `REDIS_URL` secret (see below)
 - **Secrets:** AWS Secrets Manager under the `ace-web/` prefix
 - **Logs:** CloudWatch Logs group `/ecs/labs-jj-ace-web`, 30-day retention
-- **Auth:** CommCare Connect OAuth with PKCE, `@dimagi.com` email filter
+- **Auth:** Connect OAuth with PKCE, `@dimagi.com` email filter
 - **Deploy:** GitHub Actions `.github/workflows/deploy-ace-web-labs.yml` (manual
   `workflow_dispatch` trigger)
 
 ## First-time setup
 
-Run `deploy/aws/one-time-setup.sh` from an AWS-authenticated shell in
-account `858923557655`. It creates:
+Two steps, in order.
+
+**1.** Run `deploy/aws/one-time-setup.sh` from an AWS-authenticated shell in
+account `858923557655`. It creates only what CloudFormation does *not* own:
 
 - ECR repos (`labs-jj-ace-web`, `labs-jj-ace-web-frontend`)
-- CloudWatch log group with 30-day retention
 - Secrets Manager entries (prompts for values)
 - IAM execution and task roles
-- Initial ECS task definition revision (from `deploy/aws/task-definition.json`)
-- ALB target group (health check `/ace/api/health`)
-- ALB listener rule routing `/ace/*`
-- ECS service (desired count 1, rolling deploy)
+
+**2.** Create the stack, which owns everything else — task definition, ECS
+service, ALB target group (health check `/ace/api/health`), listener rule
+routing `/ace/*`, and the CloudWatch log group:
+
+```bash
+aws cloudformation deploy --stack-name ace-web \
+  --template-file deploy/aws/ace-web.cfn.yaml \
+  --capabilities CAPABILITY_IAM --parameter-overrides ImageTag=<sha>
+```
 
 You will be prompted for:
 
@@ -77,7 +84,7 @@ SecretString and delivered to ECS as env var `ACE_DRIVE_SA_KEY_JSON`.
      --secret-string file:///path/to/sa-key.json \
      --region us-east-1
    ```
-3. Update `deploy/aws/task-definition.json` — the `valueFrom` ARN for
+3. Update `deploy/aws/ace-web.cfn.yaml` — the `ValueFrom` ARN for
    `ACE_DRIVE_SA_KEY_JSON` needs the 6-character suffix that Secrets
    Manager generates on create (e.g.
    `...-drive-sa-key-json-AbCdEf`). Grab it with:
@@ -189,11 +196,11 @@ Triggered manually from GitHub Actions:
    - Builds and pushes backend + frontend images to ECR in parallel
    - Runs `manage.py migrate --noinput` as a one-off FARGATE task (if
      `run_migrations=true`)
-   - Patches `deploy/aws/task-definition.json` with the new image SHA tags
-     via `jq`, registers a new task definition revision
-   - Calls `ecs update-service --task-definition <new-arn>` to trigger a
-     rolling deploy
-   - Waits for `services-stable`
+   - Runs `aws cloudformation deploy` with `ImageTag=<sha>`; CloudFormation
+     registers the task definition and rolls the service atomically, with a
+     deployment circuit breaker
+   - POSTs `/api/w/<ws>/sessions/resume-interrupted` to relaunch ACE opp runs
+     the rollout killed
 
 ## Local development
 
@@ -270,7 +277,7 @@ aws secretsmanager create-secret \
   --secret-string "redis://<elasticache-primary-endpoint>:6379/0"
 ```
 
-Then update `deploy/aws/task-definition.json` — the `REDIS_URL` entry in
+Then update `deploy/aws/ace-web.cfn.yaml` — the `REDIS_URL` entry in
 the `secrets` array uses a placeholder ARN without the AWS-appended random
 suffix. Replace it with the real ARN from `aws secretsmanager describe-secret
 --secret-id labs-jj-ace-web-redis-url --query ARN`.
@@ -323,19 +330,23 @@ mirrors this with a matching `/ace/ws` entry + `rewrite`.
 
 ## Rollback
 
-ECS keeps all prior task definition revisions. To roll back:
+CloudFormation owns the task definition and service, so roll back by
+redeploying the previous commit — re-run "Deploy to Labs (AWS)" against it, or
+apply the template directly with the older image tag:
 
 ```bash
-# List revisions
-aws ecs list-task-definitions --family-prefix labs-jj-ace-web --region us-east-1
-
-# Update the service to a previous revision
-aws ecs update-service \
-  --cluster labs-jj-cluster \
-  --service labs-jj-ace-web \
-  --task-definition labs-jj-ace-web:<previous-revision-number> \
-  --region us-east-1
+aws cloudformation deploy --stack-name ace-web \
+  --template-file deploy/aws/ace-web.cfn.yaml \
+  --capabilities CAPABILITY_IAM --parameter-overrides ImageTag=<previous-sha>
 ```
+
+Do **not** roll back with `aws ecs update-service --task-definition <old-rev>`.
+It works for about a minute and then reads as stack drift: the next
+`cloudformation deploy` — including an unrelated one by someone else — silently
+puts the service back on the template's definition.
+
+If the schema also changed, roll the code back first and only then decide about
+the migration; a reverse migration is a separate, deliberate step.
 
 ## Cost
 
@@ -354,7 +365,7 @@ the nginx container on port 3000. Verify nginx is proxying correctly
 (reproduce locally with `docker compose --profile prod-parity up`) and
 that the Django `/api/health` endpoint is still reachable without auth.
 
-**OAuth callback loop** — verify the CommCare Connect OAuth application's
+**OAuth callback loop** — verify the Connect OAuth application's
 callback URL is exactly `https://labs.connect.dimagi.com/ace/auth/callback/`
 and the `CONNECT_OAUTH_CLIENT_ID` / `CONNECT_OAUTH_CLIENT_SECRET` secrets
 in AWS Secrets Manager match what's in the Connect admin.

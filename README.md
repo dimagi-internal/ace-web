@@ -115,7 +115,7 @@ The dev container ships with two escape hatches enabled
 set automatically by `config/settings/development.py`):
 
 1. On the sign-in page, use the **"Sign in as test user"** form at the
-   bottom — type any email, get logged in. No CommCare Connect OAuth
+   bottom — type any email, get logged in. No Connect OAuth
    credentials required.
 2. Land on `/welcome` and create a workspace. You'll need a Google Drive
    folder shared with the configured service account if you want Drive
@@ -125,7 +125,7 @@ set automatically by `config/settings/development.py`):
    `docs/architecture/cli-credentials.md`).
 
 That's enough to click around and understand the surface area. To use
-ACE for real, configure CommCare Connect OAuth (`CONNECT_OAUTH_CLIENT_ID`
+ACE for real, configure Connect OAuth (`CONNECT_OAUTH_CLIENT_ID`
 + `CONNECT_OAUTH_CLIENT_SECRET` in `.env`), point a workspace at a real
 Drive folder shared with the service account, and upload claude CLI
 credentials via `/ace-web:create-cli-credentials`.

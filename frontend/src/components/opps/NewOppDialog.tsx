@@ -2,15 +2,15 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { createOpp } from "@/api/opps";
-import { Button } from "@/components/ui/button";
+import { Button } from "canopy-ui/ui";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+} from "canopy-ui/ui";
+import { Input } from "canopy-ui/ui";
 import { cn } from "@/lib/utils";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;

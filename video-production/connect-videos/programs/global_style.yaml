@@ -1,0 +1,73 @@
+# GLOBAL STYLE — shared across every video, of every template type.
+# (Renamed from _defaults.yaml 2026-06: the name now says what it is.)
+#
+# This file is primarily STYLE / brand: the `global_template` block (tagline,
+# the Learn/Deliver/Verify/Pay labels, CTA), plus `voice` and `music_bed`.
+# Those are global on purpose — brand consistency across all videos.
+#
+# The `beats:` list below is a *default starter timeline*, NOT global
+# structure. STRUCTURE BELONGS TO THE TEMPLATE: a spec/template that carries
+# its own top-level `beats:` is authoritative (beats.ts::effectiveBeatsForSpec
+# uses it verbatim), and the template editor's add/remove/reorder edits
+# persist there. A spec inherits the list below ONLY when it doesn't define
+# its own — at which point the three optional beats (ai_build/problem/impact)
+# are filtered to the spec's content. So: edit STYLE here; edit a video's
+# STRUCTURE in its template.
+
+# ── Style / brand (truly global) ──
+# global_template: hero tagline, cycle labels, CTA. Mirrors the messaging on
+# connect.dimagi.com. Per-spec override is possible (the editor's "On screen"
+# / global-template widget). Renamed from `brand:` 2026-05-21; renderer still
+# falls back to legacy `brand:` reads for un-migrated specs.
+global_template:
+  # Hero tagline rendered on screen during the opening hook beat.
+  tagline: "Pay for verified service delivery, not planned activity."
+  # Connect's differentiator one-liner (used in voiceover defaults).
+  differentiator: "Verified delivery, one service at a time."
+  # Four-step cycle shown during the intro_cycle beat. Same labels as
+  # the marketing site.
+  cycle_steps: ["Learn", "Deliver", "Verify", "Pay"]
+  # CTA copy for the outro_cta beat.
+  cta: "Request a demo"
+
+fps: 30
+total_seconds: 67
+# ── Default STARTER timeline (NOT global structure) ──
+# A spec inherits this only when it doesn't carry its own `beats:`. Templates
+# define their own structure; the editor's add/remove/reorder persists to the
+# template, not here. Don't add a new beat here expecting one template to get
+# it — that would change every un-migrated video.
+beats:
+  - { id: hook,     kind: intro_hook,         seconds: 4 }
+  - { id: cycle,    kind: intro_cycle,        seconds: 8 }
+  - { id: handoff,  kind: intro_handoff,      seconds: 3 }
+  # Optional "how the program is built" beat. Only renders when a spec
+  # carries an `ai_build:` block AND `active_cut: ai` (the connectify-program
+  # AI cut). filterDefaultsForSpec drops it for every other spec — including
+  # the full mbw timeline and the connect-explainer cut — so their rendered
+  # output is byte-for-byte unchanged. See beats.ts::filterDefaultsForSpec.
+  - { id: ai_build, kind: body_ai_build,      seconds: 7 }
+  - { id: scene,    kind: body_scene,         seconds: 7 }
+  - { id: problem,  kind: body_problem_stat,  seconds: 10 }
+  - { id: product,  kind: body_product_beats, seconds: 12 }
+  - { id: impact,   kind: body_impact_stats,  seconds: 8 }
+  - { id: cta,      kind: outro_cta,          seconds: 8 }
+voice:
+  provider: elevenlabs
+  voice_id: "21m00Tcm4TlvDq8ikWAM"
+  model: eleven_turbo_v2
+
+# Music bed mixed under the FULL cut. render.ts loops the track
+# (-stream_loop) so it covers the whole audio-aligned video length — a cut
+# longer than the 60s source (e.g. the ~76s llo-deliver cut) no longer
+# plays dry at the tail — and fades out over the last 1.5s.
+# Track: "Water — Afro Pop Music" by Kontraa via Pixabay (Pixabay Content
+# License: free for commercial use, no attribution required). Vocals-free.
+# Per-program override: copy this block into a program YAML to swap.
+# duration_seconds is retained for reference (source track length); the
+# rendered bed length now follows the cut, not this value.
+music_bed:
+  asset: assets/shared/connect-music-bed-pixabay.mp3
+  start_seconds: 0
+  duration_seconds: 60
+  volume_db: -28

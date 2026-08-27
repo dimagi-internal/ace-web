@@ -86,4 +86,5 @@ class ChatBackend(Protocol):
         session: Session,
         new_user_message: str,
         force_fresh_session: bool = False,
+        raw_sink: list[str] | None = None,
     ) -> AsyncIterator[StreamEvent]: ...

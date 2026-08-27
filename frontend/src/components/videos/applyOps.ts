@@ -1,4 +1,5 @@
 import type { ProgramSpec, PendingChange, ClipObject } from "./types";
+import { BEAT_ORDER, optionalBeatById } from "./beatCatalog";
 
 // Pure function: returns a NEW spec with ops applied in order. Does not
 // mutate input. Structural sharing where possible; deep-clones only the
@@ -98,6 +99,64 @@ function applyOne(spec: ProgramSpec, op: PendingChange): void {
         if (op.source === "") delete node.source;
         else node.source = op.source;
       }
+      return;
+    }
+    case "set-ai-build": {
+      spec.ai_build ??= { headline: "", components: [] };
+      if (op.headline !== undefined) spec.ai_build.headline = op.headline;
+      if (op.components !== undefined) spec.ai_build.components = op.components;
+      if (op.subhead !== undefined) {
+        if (op.subhead === "") delete spec.ai_build.subhead;
+        else spec.ai_build.subhead = op.subhead;
+      }
+      return;
+    }
+    case "set-caption": {
+      // Captions live on product beats (per clip). ensureClipObject promotes
+      // a bare "@alias" string slot into an object so the caption can attach.
+      const slot = spec.product?.beats[op.index];
+      if (slot === undefined) return;
+      const obj = ensureClipObject(spec, "product-beat", op.index, slot);
+      if (op.caption === "") delete obj.caption;
+      else obj.caption = op.caption;
+      return;
+    }
+    case "set-lower-third": {
+      if (!spec.scene) return;
+      if (op.text === "") delete spec.scene.lower_third;
+      else spec.scene.lower_third = op.text;
+      return;
+    }
+    case "add-beat": {
+      const def = optionalBeatById(op.beatId);
+      if (!def) return;
+      def.addBlock(spec);
+      spec.beats ??= [];
+      if (!spec.beats.some((b) => b.id === def.id)) {
+        const entry = { id: def.id, kind: def.kind, seconds: def.seconds };
+        const order = BEAT_ORDER[def.id] ?? 99;
+        const at = spec.beats.findIndex((b) => (BEAT_ORDER[b.id] ?? 99) > order);
+        if (at === -1) spec.beats.push(entry);
+        else spec.beats.splice(at, 0, entry);
+      }
+      return;
+    }
+    case "remove-beat": {
+      const def = optionalBeatById(op.beatId);
+      if (!def) return;
+      def.removeBlock(spec);
+      if (spec.beats) spec.beats = spec.beats.filter((b) => b.id !== def.id);
+      return;
+    }
+    case "set-beat-order": {
+      if (!spec.beats) return;
+      const byId = new Map(spec.beats.map((b) => [b.id, b]));
+      const reordered = op.order.map((id) => byId.get(id)).filter((b): b is NonNullable<typeof b> => b != null);
+      // Defensive: append any current beats not named in `order` so a stale
+      // order list can never silently drop a beat.
+      const named = new Set(op.order);
+      for (const b of spec.beats) if (!named.has(b.id)) reordered.push(b);
+      spec.beats = reordered;
       return;
     }
   }

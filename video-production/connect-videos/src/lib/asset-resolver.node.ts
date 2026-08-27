@@ -192,21 +192,34 @@ export function resolveAssetRefs(spec: ProgramSpec, opts: ResolveOptions): Resol
     checkOnly: opts.checkOnly ?? false,
   };
 
-  const rewriteClipRef = (c: ProgramSpec["scene"]["clips"][number]): ProgramSpec["scene"]["clips"][number] => {
+  type SceneClip = NonNullable<ProgramSpec["scene"]>["clips"][number];
+  const rewriteClipRef = (c: SceneClip): SceneClip => {
     if (typeof c === "string") return rewriteAsset(c, ctx);
     return { ...c, asset: rewriteAsset(c.asset, ctx) };
   };
 
+  // scene/product/walkthrough are optional (walkthrough specs omit
+  // scene+product; marketing/explainer specs omit walkthrough). Rewrite
+  // each only when present so a missing block is left untouched.
   const rewritten: ProgramSpec = {
     ...spec,
-    scene: {
-      ...spec.scene,
-      clips: spec.scene.clips.map(rewriteClipRef),
-    },
-    product: {
-      ...spec.product,
-      beats: spec.product.beats.map((b) => ({ ...b, asset: rewriteAsset(b.asset, ctx) })),
-    },
+    scene: spec.scene
+      ? { ...spec.scene, clips: spec.scene.clips.map(rewriteClipRef) }
+      : undefined,
+    product: spec.product
+      ? {
+          ...spec.product,
+          beats: spec.product.beats.map((b) => ({ ...b, asset: rewriteAsset(b.asset, ctx) })),
+        }
+      : undefined,
+    walkthrough: spec.walkthrough
+      ? Object.fromEntries(
+          Object.entries(spec.walkthrough).map(([id, w]) => [
+            id,
+            { ...w, asset: rewriteAsset(w.asset, ctx) },
+          ]),
+        )
+      : undefined,
   };
 
   return { spec: rewritten, missing: ctx.missing, cacheDir };

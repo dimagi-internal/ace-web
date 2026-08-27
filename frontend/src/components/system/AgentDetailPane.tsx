@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 
 import { getAgentDetail } from "../../api/system";
-import { Button } from "@/components/ui/button";
+import { Button } from "canopy-ui/ui";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "canopy-ui/ui";
 import type { AgentDetail, AgentSummary, PhaseInfo, SkillSummary } from "./types";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 

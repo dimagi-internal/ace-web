@@ -2,12 +2,15 @@
 
 Agent context for the ACE web harness. Read this at the start of every session.
 
-`ace-web` is Module 1 of the ACE initiative: a browser-based chat harness that talks
-to Claude via the local CLI (subscription auth) with multi-player drafts, persistent
-transcripts, and upload support for existing local `.jsonl` sessions. Phases 1–4 of
-the original design spec shipped (foundation, conversation engine, multi-player,
-library/ingest); Phase 5 (Polish) is deferred indefinitely. Active surfaces in 2026-05
-are the opp Workbench, the cloud mobile emulator, and the videos app.
+`ace-web` is Module 1 of the ACE initiative: the opp Workbench that runs and observes
+ACE's own agent work (via Claude, driven through the local CLI or API), with
+persistent transcripts and upload support for existing local `.jsonl` sessions.
+Phases 1–4 of the original design spec shipped (foundation, conversation engine,
+multi-player, library/ingest); Phase 5 (Polish) is deferred indefinitely. Interactive
+chat moved out to canopy-hosted chat (canopy-web) — ace-web's own multi-player
+WebSocket chat UI was retired; see "Chat is canopy-hosted, full stop" below. Active
+surfaces in 2026-07 are the opp Workbench, the cloud mobile emulator, and the videos
+app.
 
 ## Where things live
 
@@ -53,8 +56,21 @@ by `docker-entrypoint.sh` from the `ACE_DRIVE_SA_KEY_JSON` env var. The `.env` f
 plugin MCPs is rendered via `op inject` at container start (see
 `mcp-bootstrap-container-traps.md` for traps).
 
-To pick up a new ACE plugin release: rebuild the image (any push to main triggers
-`build-backend.yml`), then run `deploy-ace-web-labs.yml`.
+**Plugin auto-update on boot:** the image bakes the plugin at build time, but
+`dimagi-internal/ace` bumps several times a day while ace-web only rebuilds on its own
+merges. So `docker-entrypoint.sh` runs `scripts/refresh-ace-plugin.sh` at
+container start: it shallow-clones the latest `main`, and if its `VERSION`
+differs from the baked one, swaps the fresh tree into the plugin cache
+(reusing baked `node_modules` when the lockfile is unchanged, else `npm install`)
+and repoints `/app/vendor/ace`. Net effect — **a plain `deploy-ace-web-labs.yml`
+run picks up the latest plugin on every task** (each task refreshes its own
+ephemeral layer; no shared volume, scales to >1 task), no image rebuild needed.
+Fully fail-safe: any error leaves the baked plugin in place. Kill-switch:
+`ACE_PLUGIN_AUTO_UPDATE=false`. The System Overview tab's "update available"
+banner (`apps/system/version.py`) compares the baked `VERSION` against
+`raw .../ace/main/VERSION` — the same source the refresh clones, so the banner
+clears once a refreshed task is serving. A faster image rebuild is still any
+push to ace-web `main` (triggers `build-backend.yml`) followed by a deploy.
 
 ## Stack
 
@@ -88,13 +104,16 @@ ace-web/
 ├── apps/
 │   ├── activity/        # Workspace Timeline aggregator
 │   ├── api/             # API root (Ninja registry, MCP bridge, OpenAPI/Scalar/Redoc)
-│   ├── auth/            # Custom User model + CommCare Connect OAuth + Nova OAuth
+│   ├── auth/            # Custom User model + Connect OAuth + Nova OAuth
 │   ├── common/          # CLI backend, channels auth, Nova auth flow, problem+json
 │   ├── ingest/          # JSONL upload + cost/timing + structure aggregators + pricing
 │   ├── mobile/          # Cloud emulator controller + jobs
 │   ├── opps/            # ACE opp Workbench (Drive-backed) + summary page + cache
-│   ├── service_accounts/ # Personal tokens + share tokens
-│   ├── sessions/        # Sessions + WebSocket consumer + presence + structure
+│   ├── service_accounts/ # Personal tokens
+│   ├── sessions/        # Session/Message execution engine for programmatic
+│   │                     # ACE runs (seeded-run, drive_turn) + structure view;
+│   │                     # NOT chat — see "ace-web's own interactive chat UI
+│   │                     # is retired" below
 │   ├── slack/           # /ace activity slash command + async dispatcher + run threads
 │   ├── system/          # System Overview tab — reads bundled plugin metadata
 │   ├── videos/          # Video program editor (Drive-backed) + render orchestration
@@ -108,22 +127,25 @@ ace-web/
 ├── docs/                # specs/, plans/, learnings/, architecture/, qa/, deploy.md
 ├── scripts/qa/          # Re-runnable Playwright probe of the deployed UI
 ├── infra/mobile-ami/    # Packer bake for the mobile EC2 AMI + rebake.sh
-├── deploy/aws/          # task-definition.json + one-time-setup.sh
+├── deploy/aws/          # ace-web.cfn.yaml (CFN owns the task def + service)
 ├── .github/workflows/   # build-backend, build-frontend, deploy-ace-web-labs, ci,
 │                        # contract-tests, regen-openapi, typecheck,
 │                        # sync-video-library-labs
 └── pyproject.toml
 ```
 
-The sessions data model has 7 core tables: `users`, `sessions`,
-`session_participants`, `messages`, `drafts`, `share_tokens`, `ingest_uploads`.
-`apps/workspaces/` adds `Workspace`, `WorkspaceMembership`, `WorkspaceInvite`,
-and audit-log tables. The `opps` and `videos` modules add **no ORM tables** —
-they read through to Google Drive.
+The sessions data model has 5 core tables: `users`, `sessions`,
+`session_participants`, `messages`, `ingest_uploads` — `drafts` and
+`share_tokens` were dropped when ace-web's own interactive chat UI (co-edited
+drafts, session share links) was retired in favor of canopy-hosted chat; see
+"ace-web's own interactive chat UI is retired" below. `apps/workspaces/` adds
+`Workspace`, `WorkspaceMembership`, `WorkspaceInvite`, and audit-log tables.
+The `opps` and `videos` modules add **no ORM tables** — they read through to
+Google Drive.
 
 ## Key architectural decisions
 
-- **Auth**: CommCare Connect OAuth with PKCE, hand-rolled session-based flow ported
+- **Auth**: Connect OAuth with PKCE, hand-rolled session-based flow ported
   from connect-labs (NOT django-allauth). Implementation in
   `apps/auth/oauth_views.py` + `apps/auth/oauth.py`. Tenant-unique session cookies
   (`sessionid_ace`, `csrftoken_ace`) and path-scoped (`/ace/`) to avoid collisions
@@ -144,9 +166,14 @@ they read through to Google Drive.
   `Workspace.auto_join_domains` (JSONField, lowercased) — on every OAuth callback,
   users whose email domain matches a workspace's list are added
   as Editor (idempotent; never downgrades). `dimagi-team` is seeded with
-  `[dimagi.com, dimagi-ai.com]` so Dimagi sign-ins land inside the workspace
-  instead of the empty `/welcome` wizard. Owners can edit the list via
-  `PATCH /api/workspaces/{slug}` or the Workspace Settings page. Spec:
+  `[dimagi.com, dimagi-ai.com]` (migration 0004) plus `dimagi-associate.com`
+  (migration 0006, append-only) so Dimagi staff and associate sign-ins land
+  inside the workspace instead of the empty `/welcome` wizard. Owners can edit
+  the list via `PATCH /api/workspaces/{slug}` or the Workspace Settings page —
+  so **new auto-join migrations must APPEND, never overwrite** (0004's
+  wholesale-set style predates the editable UI and would clobber operator
+  edits). The auto-join role is hard-coded `editor` in
+  `apps/workspaces/auto_join.py`; it is not per-domain. Spec:
   `docs/specs/2026-04-27-multi-tenant-workspaces-design.md`.
 - **Automation auth on labs — Bearer PAT**: scripted tools authenticate with
   `Authorization: Bearer $ACE_WEB_PAT_TOKEN`. Per-human tokens are minted via
@@ -157,8 +184,20 @@ they read through to Google Drive.
   (`apps/common/channels_auth.py`) handles WebSocket Bearer auth so PAT-only
   callers can connect to Channels. For browser contexts that can't set
   custom WS headers, `POST /api/auth/pat-to-session` trades a Bearer for a
-  session cookie. Reference walkthrough: `tools/walkthrough/run_chat.py`
-  uses Bearer PAT end-to-end.
+  session cookie. `tools/walkthrough/run_chat.py` (a Bearer-PAT-end-to-end
+  reference walkthrough that drove a turn over ace-web's own interactive
+  chat WebSocket) was **deleted** by the chat-retirement PR along with that
+  WebSocket (`ws/sessions/<slug>/`, `apps/sessions/{consumers,drafts,
+  presence,routing}.py`) — it had no other callers (not CI, not a Makefile,
+  not the canopy plugin). The capability it smoke-tested — "does the
+  deployed `claude -p` subprocess survive a long turn on ECS?" — is still
+  real (`apps.sessions.turn_driver` + `apps.common.cli_backend.CLIBackend`
+  are unaffected; they back the MCP-exposed `apps.opps.api::seeded_run` and
+  the `drive_turn` management command), but re-verifying it needs a new
+  non-WebSocket harness (e.g. driving `seeded_run` or `POST .../resume` and
+  polling `GET .../messages`) — not a repoint onto canopy-web's chat
+  WebSocket, which drives a different service's subprocess entirely and
+  would test the wrong thing.
 - **Nova MCP integration**: ace-web runs Nova's OAuth 2.1 + PKCE dance server-side
   and injects a fresh access_token into every `claude -p` subprocess so the
   bundled Nova plugin's HTTP MCP can authenticate without prompting. Auth flow in
@@ -168,11 +207,87 @@ they read through to Google Drive.
   refreshes from sibling tasks would both fail). Bot-identity write permission
   gates on `_can_write_global`, not Django's `is_staff`. See `nova-mcp-oauth.md`
   before touching this.
-- **Chat transport is WebSocket-only**: All realtime chat traffic (send, stream
-  deltas, drafts, presence, stop) flows through the `SessionConsumer` WebSocket.
-  See `channels-ws-proxy-path.md` for the `/ace/ws/` proxy detail,
-  `channels-websocket-auth.md` for the handshake auth pattern, and
-  `stream-resume-vercel-open-agents.md` for resume hazards.
+- **The opp-workbench live socket (`OppConsumer`, `apps/opps/{consumers,
+  routing}.py`) is the one WebSocket surface left** now that chat's own
+  `SessionConsumer` is retired (see below). `channels-ws-proxy-path.md` (the
+  `/ace/ws/` proxy detail) and `channels-websocket-auth.md` (the handshake
+  auth pattern) still apply to it.
+- **Chat is canopy-hosted, full stop** — not a flag. Session state, messages,
+  drafts, presence, and turn execution for interactive chat all live in
+  canopy-web; the browser talks to canopy **directly** (same-origin
+  `/canopy/*` on labs; a vite proxy in dev), using the shared `canopy-ui/chat`
+  kit. ace-web's own backend (`apps/canopy`) keeps exactly one
+  responsibility: identity brokering. Token-exchange flow: (1) ace-web holds
+  a registered canopy `AppCredential`; (2) server-side,
+  `apps/canopy/client.exchange_token` trades that credential + the signed-in
+  user's email for a short-lived canopy `DelegatedToken` via
+  `POST {canopy}/api/auth/token-exchange`; (3) the SPA uses that token as
+  `Authorization: Bearer` on canopy REST and `?token=` on the canopy chat
+  WebSocket — never the app credential itself. `POST
+  /api/w/{workspace_slug}/canopy/sessions` (workspace-scoped, not the flat
+  `/api/canopy/sessions` an earlier draft used) additionally bakes in opp
+  linkage (`opp_slug`/`opp_run_id`/`opp_step_skill` metadata) AND stamps
+  `metadata.origin_key = f"ace-web:{workspace_slug}"` server-side, derived
+  from the membership-checked path parameter — never from the request body —
+  so canopy's session LIST (`?origin_key=`) can be scoped to one ace
+  workspace instead of every ace workspace sharing the same `CANOPY_WORKSPACE`
+  tenant; every ace workspace maps to one canopy workspace today, so without
+  this a `team-b` member could list, and open, `team-a`'s chats).
+  **Residual, not fully closed:** this scopes the LIST only — canopy's own
+  tenancy still lets any member of the canopy workspace open a session
+  directly by id (`GET /api/canopy-sessions/{id}`). Hard isolation requires
+  mapping each ace workspace onto its own canopy workspace.
+  Ops + deploy prerequisites (undocumented failure modes if any is
+  missed): (1) a registered prod `AppCredential` on canopy-web (name
+  `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`), its raw
+  value in AWS Secrets Manager (`ace-web/canopy-app-credential`), and
+  `CANOPY_APP_CREDENTIAL`'s `ValueFrom` in `deploy/aws/ace-web.cfn.yaml`
+  pointed at that secret's ARN — without it `GET /api/canopy/status` reports
+  `enabled: false` and chat is unreachable (see below); (2) a canopy `Agent`
+  with slug matching `CANOPY_AGENT_SLUG` (default `ace`) must exist in the
+  canopy workspace named by `CANOPY_WORKSPACE` — `createCanopySession` 404s
+  otherwise; (3) ~~every ace user who uses chat must actually be a member of
+  that canopy workspace~~ — **no longer a prerequisite.** canopy's
+  token-exchange now provisions membership itself: an `AppCredential` carries
+  `provision_workspace` + `provision_role`, and the exchange creates the
+  membership (and the user, JIT) inside one atomic block, create-only so an
+  existing member's role is never changed. The prod `ace-web` credential is
+  provisioned onto `connect`, which is why an exchange returns
+  `{"workspace": "connect"}`. Do NOT re-add a manual invite step; (4) the
+  signed-in user's email domain must be in the `AppCredential`'s allowed
+  domains — otherwise `token-exchange` 403s and every canopy call fails.
+  None of these 404/403s are silent in the UI: `useCanopyStatus()` gates
+  every chat surface (`ChatPage.tsx`'s `CanopyChatRoutePage`,
+  `ChatRedirectPage`, `RecentSessionsSidebar`, `WorkbenchChatPane`) and
+  degrades to a visible "chat is unreachable" message rather than rendering
+  a dead page; every user-triggered canopy call (new chat, discuss-this-step)
+  surfaces its error rather than swallowing it — see
+  `RecentSessionsSidebar.handleNew`'s try/catch.
+- **ace-web's own interactive chat UI is retired.** `apps/sessions/
+  {consumers,drafts,presence,routing}.py`, the `Draft`/`ShareToken` models
+  and their tables, and the frontend's `useSessionSocket`/`sessionReducer`/
+  local `ChatPanel`/`MessageList`/`MessageItem`/`SendBox`/`PresenceChips`/
+  `SharePopover` are all gone — canopy chat is the only interactive chat
+  surface now. Old `/chat/:slug` links redirect to chat home rather than
+  404ing; `/chat/:slug/structure` (the read-only structure/cost breakdown
+  view, `SessionStructurePage` → `StructureTab`) is a **different, still-live
+  route** that survived unchanged. `apps/sessions` itself is **not** a
+  "legacy chat app" you can delete wholesale, though: `Session`/`Message`/
+  `SessionParticipant`/`IngestUpload` and `turn_driver.py` (+ the CLI/API
+  backend selection machinery in `apps/common`) are live production
+  infrastructure for **programmatic** ACE runs — the MCP-exposed
+  `apps.opps.api::seeded_run`, the `drive_turn` management command,
+  Slack-triggered runs (which, until 2026-07-26, depended on the *models*
+  only — `apps/slack/run_starter.py` created a Session and a completed user
+  turn and never called the driver at all, so `/ace run` executed nothing;
+  it now creates a pending assistant turn and dispatches it through
+  `apps.canopy.run_dispatch.start_turn`, see
+  `docs/plans/2026-07-26-run-convergence-ace-side.md`),
+  the post-deploy `resume-interrupted` self-heal, and
+  `apps.ingest`/`apps.activity`/`apps.slack` all depend on them regardless of
+  whether any human is chatting interactively. See
+  `apps/sessions/models.py`'s module docstring and the chat-retirement PR's
+  description for the full dependency map.
 - **Response envelope removed**: API errors return RFC 7807 `application/problem+json`;
   success responses return bare typed payloads. The legacy `{data, error}` envelope
   was retired in PR #352 along with DRF.
@@ -271,6 +386,25 @@ they read through to Google Drive.
   same hash the renderer uses (`sha256("voiceId::model::script")[:16]`,
   see `video-production/connect-videos/src/lib/voiceover.ts`); changing
   voice_id or model in spec.yaml invalidates the existing audio.
+- **Video-spec templates** (`apps/videos/templates.py`): Drive-backed, editable
+  template kits surfaced at `videos/templates` (gallery) and
+  `videos/templates/:id` (editor with meta + example panels, batched save via
+  `PATCH /api/w/<slug>/videos/templates/<id>`). A template is a **3-file kit**:
+  Drive stores `<workspace-drive-root>/videos/_templates/<id>/{meta.yaml,
+  prompt.md, example.spec.yaml}` (repo seed names: `template.yaml`,
+  `generate.prompt.md`, `example.spec.yaml`). The **example.spec.yaml is the
+  single source of truth** for the spec's shape — it's both what the BeatEditor
+  edits (read-only raw-YAML view alongside) AND what the generation agent adapts
+  for a new program. (The old `skeleton.yaml` — a blank spec with
+  `{{placeholders}}` — was removed in the templates-drop-skeleton refactor: it
+  duplicated the example's structure and drifted; an agent adapts a complete
+  example more reliably than it fills a blank form. `NewProgramDialog` and the
+  generate prompts now start from the example.) The `repo templates/` directory
+  (in `video-production/connect-videos/`) is the canonical seed source and the
+  CI fixture set for connect-videos tests — never edit those files here. Seed
+  on-demand or at container start via the `videos_seed_templates` management
+  command (lazy auto-seed fires on the first `GET /templates` call against an
+  empty Drive folder).
 - **Cloud mobile emulator (`apps/mobile/`)**: ace-web orchestrates a single EC2
   instance (`m8i.xlarge` with nested virtualization) running an Android AVD via
   SSM. Packer bake in `infra/mobile-ami/`; runtime API at `/api/mobile/*`
@@ -295,7 +429,14 @@ they read through to Google Drive.
 `apps/opps/` is a read-through UI on top of Google Drive showing every skill of
 an ACE run, per-step artifact previews, judge verdicts, gate history, a
 run-level opp-eval scorecard + trend, a pending-gates banner, and a "Discuss in
-chat" CTA that seeds a new ace-web `Session` from a step's context.
+chat" CTA (`WorkbenchChatPane`) that seeds a canopy-hosted chat session
+(`createCanopySession`, title + `opp_slug`/`opp_run_id`/`opp_step_skill`
+metadata) from a step's context — see "Chat is canopy-hosted, full stop"
+above. The older `apps/opps/api.py::seed_chat_for_step` (`POST
+.../actions/seed-chat`) still exists and still seeds an ace-web `Session` the
+same way it always did, but is no longer wired to any frontend button; it's
+out of scope for the chat-retirement PR (not touched, not deleted) and is
+effectively dead code reachable only by a direct API/MCP call.
 
 Drive is the source of truth — **no ORM tables** for opps / runs / steps /
 artifacts. The data lives as files under `<workspace.drive_root_folder_id>/<opp-slug>/`
@@ -322,7 +463,7 @@ and the artifact manifest from `ACE_PLUGIN_PATH` at first access. Adding or
 renaming a skill in the plugin is a one-file edit there; ace-web picks it up on
 next process start.
 
-**Identity + Drive access:** identity via the hand-rolled CommCare Connect OAuth
+**Identity + Drive access:** identity via the hand-rolled Connect OAuth
 flow. Drive access via a single shared Google service account (the same one the
 `ace` CLI uses), delivered through `ACE_DRIVE_SA_KEY_JSON` in AWS Secrets
 Manager. No per-user Drive consent. See `drive-service-account.md`.
@@ -363,6 +504,11 @@ Opp Workbench (`apps/opps/`):
 - [opp-cache-architecture](docs/learnings/opp-cache-architecture.md) — Drive Changes API per-request poll + long-lived `OppSnapshot` / `OppCard` cache + ETag round-trip. `workspace.pk` is a slug not an int; cold-load needs `bypass=True`; ETag is `sha256` of the serialized payload; 410 on `pageToken` clears the workspace cache; `_KEY_VERSION` must bump when `OppSnapshot` shape changes.
 - [opps-access-module](docs/learnings/opps-access-module.md) — patch on `apps.opps.access.X`, not on per-view modules. Views call `access.X(...)` via attribute lookup so a single patch intercepts every caller.
 - [drive-changes-api-parent-folder-blind-spot](docs/learnings/drive-changes-api-parent-folder-blind-spot.md) — Drive Changes API reports new file_ids but does NOT consistently report their parent folder as modified, so cached folder LISTINGS (`runs_summary`, `OppCard.run_count`) never invalidate when children are added externally. `apps/opps/freshness_overlays.py` is a registry of listing-derived fields that get re-listed on every cache hit (one Drive call per overlay). Add an overlay when a new cached field is listing-derived + externally-appendable; never clobber the cached value on a Drive blip.
+- [public-summary-embed-key](docs/learnings/public-summary-embed-key.md) — the public per-run summary serves the OCS `embed_key` anonymously. Accepted, documented exposure: the widget authenticates client-side, so any key it can use is readable by the page's reader; dropping it deletes the "Need help?" assistant. Real fixes are OCS-side (server-minted session token, or origin-locked keys + rate limits).
+- [public-summary-link-access](docs/learnings/public-summary-link-access.md) — gated links on the public run summary are SHOWN and tagged `admin only`, never hidden (Jonathan, 2026-08-14: "nothing is 'Dimagi only' at scale for ACE"). Access is a property of the payload — each reader in `apps/opps/summary.py` declares `access` for the link it produced; `viewer.is_member` only decides whether the page draws the tag. Don't reintroduce a flag that changes WHICH links are served. The public summary also carries the CONTENT of `decisions.yaml` + `open-questions.md` (the review surface), because those two docs are never shared.
+- [public-summary-reactions](docs/learnings/public-summary-reactions.md) — a partner can react to ONE decision row on the public summary. Reactions are written as `skills/feedback-ledger` records (`ACE/<opp>/feedback/<YYYYMMDD>-public-<reviewer>.yaml`), NOT as gate decisions and NOT as `decision-overrides.yaml` — an anonymous self-asserted name must not rewrite the next run's inputs. The `public` slug marker is load-bearing: it keeps privately-captured reviews in the same folder off a page anyone can open. Public write endpoint ⇒ rate limits, length caps, HTML rejected.
+- [public-summary-editing](docs/learnings/public-summary-editing.md) — decision rows on the public summary are EDITABLE by anyone with the link (Jonathan, 2026-08-14: "reviewer 2 can change / update reviewer 1 anyways in the UI, and that should just be the same as Dimagi going in and updating things on top of the anonymous input"). This reverses #710's guard. Edits write the SAME `inputs/decision-overrides.yaml` the Workbench writes, through the same merge/serializer/editor component — the surfaces differ only in identity resolution (signed in ⇒ never anonymous; else a required self-reported name) and in staging (Workbench buffers, public writes through). Safety is attribution + history + undo, NOT permission; keep `schema_version: 1` and add fields only. **Commit mode follows IDENTITY, not surface** — `confirm` only while we don't yet know who is editing; a returning or signed-in reviewer edits click-and-done like the Workbench (copy is a separate `voice` axis). **Phase is the organising structure of the decisions tab**, matching the Workbench; the flagged rows are surfaced by a jump list, never by a second rendering.
+- [drive-prose-export](docs/learnings/drive-prose-export.md) — everything ACE writes to Drive is a GOOGLE DOC, and the default `text/plain` export drops `**bold**`/`#` and turns `-` bullets into `*`. Read prose (`*.md`) with `export_as="text/markdown"` via `apps/opps/drive_export.read_prose` (which also unescapes markdown's `\+`). **Name-gated, never global** — `run_state.yaml` / `decisions.yaml` / verdicts are Google Docs too and a markdown export escapes their YAML.
 - [run-state-vs-artifact-presence](docs/learnings/run-state-vs-artifact-presence.md) — Read step status from `run_state.yaml` content (one existing file_id, Changes API reliably reports edits), not artifact-file presence in subfolders (new child files, Changes API blind spot). PR #575 switched `_build_steps` to use `phases.<phase>.steps.<skill>.status` as the primary source; artifact-presence stays as the legacy fallback. Multi-viewer falls out for free: shared `OppSnapshot` invalidates once per agent write, every viewer hits the same fresh cache.
 
 Slack:
@@ -388,14 +534,26 @@ Repo / merge process:
 
 - **Local dev**: `docker compose up`. App at `http://localhost:8000`, Postgres at
   `localhost:5434`. Backend hot-reload + working Vite dev server.
-- **Tests**: `pytest -v` from repo root (in-memory SQLite; fast hashers).
-  Frontend: `bun run test` from `frontend/`.
+- **Local Python env (one-time per worktree, REQUIRED before tests/lint).** The
+  `.venv` is gitignored, so a fresh checkout/worktree has none — bare `pytest` /
+  `ruff` then silently resolve to a global interpreter that's missing project
+  deps (`orjson`, `django-environ`, `email-validator`, …) and fail with
+  confusing `ModuleNotFoundError`s. Provision it exactly as CI does, then always
+  invoke the venv binaries:
+  ```bash
+  uv venv --python=3.11 .venv
+  uv pip install --python .venv/bin/python -e ".[dev]"
+  ```
+- **Tests**: `.venv/bin/pytest -v` from repo root (in-memory SQLite; fast
+  hashers; ~20s for the full unit suite — no Postgres needed). Frontend:
+  `bun run test` from `frontend/`. **Run this before arming auto-merge —
+  `pytest + ruff` is NOT a required check, so a red suite can still auto-merge.**
 - **Post-deploy probe**: `LABS_TOKEN=... uv run --extra walkthrough python
   scripts/qa/labs_probe.py` — walks every UI surface on labs + cross-checks the
   OpenAPI schema for orphan endpoints. ~90s for ~40 steps. Writes
   `qa-results/<UTC-iso>/report.{json,md}` + per-step PNGs. See
   `docs/qa/e2e-probe.md`.
-- **Lint**: `ruff check .` — `line-length=100`, `target=py311`, rules `E,F,W,I,UP,B`.
+- **Lint**: `.venv/bin/ruff check .` — `line-length=100`, `target=py311`, rules `E,F,W,I,UP,B`.
 - **Typecheck**: `basedpyright` (CI-gated). Frontend: `bunx tsc -b` (stricter
   than `tsc --noEmit`; Docker build uses this).
 - **Deploy**: GitHub Actions workflow `.github/workflows/deploy-ace-web-labs.yml`.

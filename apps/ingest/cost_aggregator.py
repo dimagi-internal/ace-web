@@ -20,6 +20,7 @@ from apps.ingest._common import (
     empty_tokens,
     registry_lookup,
     skill_phase_index,
+    union_seconds,
     wall_time_seconds,
 )
 from apps.ingest.parser import CostEvent
@@ -109,6 +110,12 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
 
     open_segments: list[_OpenSegment] = []
 
+    # Per (phase, skill) list of (start_ts, last_ts) datetime intervals.
+    # Wall time is rolled up as the UNION of these intervals, not the sum of
+    # their spans — summing double-counts wall-clock windows covered by both a
+    # skill segment and the orchestration span that brackets it.
+    intervals_by_skill: dict[tuple[str, str], list[tuple]] = defaultdict(list)
+
     # Build ancestry index: every event uuid → its parent_uuid.
     # Used by _resolve_segment_for_sidechain to walk the parentUuid chain.
     parent_of: dict[str, str | None] = {
@@ -193,6 +200,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
                 else:
                     phase_name = "_other"
                 invocations_by_skill[(phase_name, seg.skill_name)].append(_finalize(seg))
+                intervals_by_skill[(phase_name, seg.skill_name)].append((seg.start_ts, seg.last_ts))
             continue
 
         if event.kind == "assistant_turn":
@@ -267,6 +275,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
         else:
             incomplete_phase = "_other"
         invocations_by_skill[(incomplete_phase, seg.skill_name)].append(finalized)
+        intervals_by_skill[(incomplete_phase, seg.skill_name)].append((seg.start_ts, seg.last_ts))
 
     # Build per-skill summaries grouped by phase.
     phase_skills: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -275,17 +284,35 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
     phase_cost_partial: dict[str, bool] = defaultdict(bool)
     phase_wall: dict[str, int] = defaultdict(int)
 
+    # All skill-segment intervals per phase, for the union-based phase wall and
+    # the residual orchestration wall (phase wall minus the skill-covered union).
+    phase_skill_intervals: dict[str, list[tuple]] = defaultdict(list)
+    for (phase_name, _skill_name), ivs in intervals_by_skill.items():
+        phase_skill_intervals[phase_name].extend(ivs)
+
+    # Phases that get a synthetic "(orchestration)" row: those with orchestration
+    # token usage. The same set decides whether the orchestration span counts
+    # toward the phase wall, keeping phase wall == sum of its skill rows.
+    orch_phases = {p for p, tk in phase_orch_tokens.items() if any(tk.values())}
+
+    def _phase_intervals(name: str) -> list[tuple]:
+        ivs = list(phase_skill_intervals.get(name, []))
+        if name in orch_phases:
+            ivs.append((phase_orch_first_ts.get(name), phase_orch_last_ts.get(name)))
+        return ivs
+
     for (phase_name, skill_name), invocations in invocations_by_skill.items():
         merged = empty_tokens()
         cost_sum = 0.0
         cost_partial = False
-        wall_sum = 0
         for inv in invocations:
             for k in merged:
                 merged[k] += inv["tokens"][k]
             cost_sum += inv["estimated_cost_usd"]
             cost_partial = cost_partial or inv.get("cost_is_partial", False)
-            wall_sum += inv["wall_time_seconds"]
+        # Wall = union of this skill's invocation intervals. Summing raw spans
+        # would double-count any overlap between retried/nested segments.
+        wall_sum = union_seconds(intervals_by_skill[(phase_name, skill_name)])
         # Canonical display name from the registry — same label the System
         # tab uses (e.g. "Idea to PDD" instead of the raw "ace:idea-to-pdd").
         # Falls back to the raw name for unknown / non-ACE skills.
@@ -307,18 +334,16 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             phase_tokens[phase_name][k] += merged[k]
         phase_cost[phase_name] += cost_sum
         phase_cost_partial[phase_name] = phase_cost_partial[phase_name] or cost_partial
-        phase_wall[phase_name] += wall_sum
 
     # Inject phase-orchestration as a synthetic skill row in each phase that
-    # has any. Surfaces orchestrator thinking ("(orchestration)") alongside
-    # the real skills so the phase totals add up to skills + orchestration.
-    for phase_name, tokens in phase_orch_tokens.items():
-        if not any(tokens.values()):
-            continue
-        wall = wall_time_seconds(
-            phase_orch_first_ts.get(phase_name),
-            phase_orch_last_ts.get(phase_name),
-        )
+    # has any. The orchestration wall is the RESIDUAL — the phase's union wall
+    # minus the wall already covered by skill segments — so the phase total
+    # equals skills + orchestration with no double-counting.
+    for phase_name in orch_phases:
+        tokens = phase_orch_tokens[phase_name]
+        phase_union = union_seconds(_phase_intervals(phase_name))
+        skills_union = union_seconds(phase_skill_intervals.get(phase_name, []))
+        wall = max(0, phase_union - skills_union)
         cost = phase_orch_cost[phase_name]
         partial = phase_orch_cost_partial[phase_name]
         phase_skills[phase_name].append({
@@ -335,7 +360,23 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             phase_tokens[phase_name][k] += tokens[k]
         phase_cost[phase_name] += cost
         phase_cost_partial[phase_name] = phase_cost_partial[phase_name] or partial
-        phase_wall[phase_name] += wall
+
+    # Phase wall = union of all its skill segments + the orchestration span.
+    for phase_name in set(phase_skills) | set(phase_skill_intervals) | orch_phases:
+        phase_wall[phase_name] = union_seconds(_phase_intervals(phase_name))
+
+    # Global _orchestration wall is a RESIDUAL too: the global orchestration
+    # span minus any skill-segment wall that falls inside it. Skills dispatched
+    # before the first phase is entered (current_phase still None → "_other")
+    # run *within* the global orchestration span; counting both double-counts
+    # that window. Subtract the skill union from the span.
+    all_skill_intervals = [iv for ivs in intervals_by_skill.values() for iv in ivs]
+    global_orch_span = (orchestration_first_ts, orchestration_last_ts)
+    global_orch_wall = max(
+        0,
+        union_seconds([global_orch_span, *all_skill_intervals])
+        - union_seconds(all_skill_intervals),
+    )
 
     # Build a phase meta index from the registry for display/ordinal lookups.
     # {phase_name: (phase_display, phase_ordinal)}
@@ -351,7 +392,7 @@ def aggregate(events: list[CostEvent]) -> dict[str, Any]:
             "phase_name": "_orchestration",
             "phase_display": "Orchestration",
             "phase_ordinal": 0,
-            "wall_time_seconds": wall_time_seconds(orchestration_first_ts, orchestration_last_ts),
+            "wall_time_seconds": global_orch_wall,
             "estimated_cost_usd": round(orchestration_cost, 6),
             "cost_is_partial": orchestration_cost_partial,
             "tokens": orchestration_tokens,

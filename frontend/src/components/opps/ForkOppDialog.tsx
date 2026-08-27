@@ -10,7 +10,7 @@ import {
   type ForkProgress,
 } from "@/api/opps";
 import { ApiError } from "@/api/client";
-import { Button } from "@/components/ui/button";
+import { Button } from "canopy-ui/ui";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +18,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "canopy-ui/ui";
 
 // After this many ms of "Forking…", show a "still copying" hint so the
 // user knows the dialog hasn't frozen on a Drive copy.

@@ -1,23 +1,30 @@
-"""Unit tests for the FastMCP server bridge.
+"""Unit tests for the FastMCP server bridge (FastMCP 3.x, in-process).
 
 Tests:
 1. ``build_mcp`` registers exactly the opted-in endpoints as tools.
 2. ``_stringify_response_codes`` coerces integer response codes to strings.
 3. ``_route_map_fn`` includes opted-in routes and excludes others.
-4. The httpx loopback call is made with the correct method, path, and
-   Authorization header (httpx.AsyncClient mocked).
+4. ``_BearerPassthrough`` forwards the current request's Bearer token (and is
+   a no-op when there is no active request).
+5. ``build_http_app`` builds a Streamable-HTTP ASGI app with a lifespan.
+6. End-to-end through the in-process ASGITransport: an unauthenticated tool
+   call is rejected (401) while a forwarded Bearer token authenticates as the
+   token's user.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from apps.api.mcp_server import (
     MCPType,
     _BearerPassthrough,
+    _build_inprocess_client,
     _route_map_fn,
     _stringify_response_codes,
+    build_http_app,
     build_mcp,
 )
 
@@ -33,6 +40,7 @@ _EXPECTED_TOOL_NAMES = {
     "apps_opps_api_get_step",
     "apps_opps_api_get_artifact",
     "apps_opps_api_get_scorecard",
+    "apps_opps_api_seeded_run",
     "apps_sessions_api_list_sessions",
     "apps_sessions_api_get_session",
     "apps_videos_api_list_programs",
@@ -44,8 +52,11 @@ _EXPECTED_TOOL_NAMES = {
     "apps_videos_api_get_feedback",
     "apps_videos_api_list_video_templates",
     "apps_videos_api_get_video_template",
+    "apps_videos_api_get_template_example",
+    "apps_videos_api_get_template_example_spec",
     "apps_videos_api_list_media_library_video",
     "apps_videos_api_list_media_library_audio",
+    "apps_videos_api_list_video_snippets",
 }
 
 
@@ -163,31 +174,123 @@ def test_route_map_fn_excludes_falsy_expose_flag():
 
 
 # ---------------------------------------------------------------------------
-# 4. BearerPassthrough injects Authorization header
+# 4. _BearerPassthrough forwards the current request's token
 # ---------------------------------------------------------------------------
 
 
+def test_bearer_passthrough_no_active_request_is_noop():
+    """Outside a live HTTP request, no Authorization header is injected.
+
+    ``get_http_request()`` has no active request here, so the passthrough must
+    leave the outgoing request unauthenticated (Django then answers 401).
+    """
+    auth = _BearerPassthrough()
+    request = httpx.Request("GET", "http://ace-web.internal/api/test")
+    sent = next(auth.auth_flow(request))
+    assert "Authorization" not in sent.headers
+
+
+def test_bearer_passthrough_forwards_current_request_token():
+    """When an MCP request carries a Bearer token, it is re-injected."""
+    fake_request = MagicMock()
+    fake_request.headers = {"authorization": "Bearer my-secret-token"}
+
+    with patch(
+        "apps.api.mcp_server.get_http_request", return_value=fake_request
+    ):
+        auth = _BearerPassthrough()
+        request = httpx.Request("GET", "http://ace-web.internal/api/test")
+        sent = next(auth.auth_flow(request))
+        assert sent.headers["Authorization"] == "Bearer my-secret-token"
+
+
+def test_bearer_passthrough_ignores_non_bearer_scheme():
+    """A non-Bearer Authorization header is not forwarded."""
+    fake_request = MagicMock()
+    fake_request.headers = {"authorization": "Basic abc123"}
+
+    with patch(
+        "apps.api.mcp_server.get_http_request", return_value=fake_request
+    ):
+        auth = _BearerPassthrough()
+        request = httpx.Request("GET", "http://ace-web.internal/api/test")
+        sent = next(auth.auth_flow(request))
+        assert "Authorization" not in sent.headers
+
+
+# ---------------------------------------------------------------------------
+# 5. Streamable-HTTP app builds with a lifespan
+# ---------------------------------------------------------------------------
+
+
+def test_build_http_app_has_lifespan():
+    """build_http_app() returns a Streamable-HTTP ASGI app with a lifespan."""
+    app = build_http_app()
+    assert hasattr(app, "lifespan"), "MCP app must expose a lifespan for Streamable-HTTP"
+    # Starlette ASGI app is callable.
+    assert callable(app)
+
+
+# ---------------------------------------------------------------------------
+# 6. In-process transport: auth enforced per-user
+# ---------------------------------------------------------------------------
+
+
+# transaction=True: the in-process ASGITransport call runs through Django on a
+# separate DB connection, so rows it commits escape the default rollback. Flush
+# semantics clean them up and prevent leaking users into order-dependent tests
+# (apps/auth, apps/workspaces).
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_bearer_passthrough_injects_header():
-    """_BearerPassthrough inserts the Authorization header on every request."""
-    import httpx
+async def test_inprocess_unauthenticated_call_rejected():
+    """An in-process call with no forwarded Bearer is rejected by Django (401).
 
-    auth = _BearerPassthrough("my-secret-token")
+    With no active MCP request, ``_BearerPassthrough`` injects nothing, so the
+    request reaches an ``auth=session_auth`` endpoint anonymously and gets the
+    problem+json 401.
+    """
+    client = _build_inprocess_client()
+    try:
+        resp = await client.get("/api/_auth_smoke/")
+    finally:
+        await client.aclose()
+    assert resp.status_code == 401
+    assert resp.json()["title"] == "Authentication required"
 
-    request = httpx.Request("GET", "http://localhost:8000/api/test")
-    # auth_flow is a generator
-    gen = auth.auth_flow(request)
-    sent_request = next(gen)
-    assert sent_request.headers["Authorization"] == "Bearer my-secret-token"
 
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_inprocess_forwarded_bearer_authenticates():
+    """A forwarded Bearer token authenticates the in-process call as its user.
 
-def test_bearer_passthrough_formats_different_tokens():
-    """Each token value produces the correct header value."""
-    import httpx
+    Mints a real PersonalToken, fakes the active MCP request so
+    ``_BearerPassthrough`` forwards that token, then hits an auth-gated
+    endpoint and asserts a 200 (i.e. ``DjangoSessionAuth`` validated the
+    forwarded bearer).
+    """
+    from asgiref.sync import sync_to_async
+    from django.contrib.auth import get_user_model
 
-    for token in ["abc123", "tok_xyz_789", "very-long-token-value"]:
-        auth = _BearerPassthrough(token)
-        request = httpx.Request("GET", "http://localhost:8000/")
-        gen = auth.auth_flow(request)
-        sent = next(gen)
-        assert sent.headers["Authorization"] == f"Bearer {token}"
+    from apps.auth.models import PersonalToken
+
+    User = get_user_model()
+    user = await sync_to_async(User.objects.create_user)(
+        email="mcp@example.com", display_name="MCP Test User"
+    )
+    raw, _token = await sync_to_async(PersonalToken.create_for_user)(
+        user=user, label="mcp-test"
+    )
+
+    fake_request = MagicMock()
+    fake_request.headers = {"authorization": f"Bearer {raw}"}
+
+    client = _build_inprocess_client()
+    try:
+        with patch(
+            "apps.api.mcp_server.get_http_request", return_value=fake_request
+        ):
+            resp = await client.get("/api/_auth_smoke/")
+    finally:
+        await client.aclose()
+
+    assert resp.status_code == 200, resp.text

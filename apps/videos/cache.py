@@ -111,6 +111,56 @@ def invalidate_all_for_workspace(ws_slug: str) -> None:
     _cache.delete(_slugs_key(ws_slug))
 
 
+# ---------------------------------------------------------------------------
+# Templates cache
+# ---------------------------------------------------------------------------
+#
+# videos:tpl-list:<ws-slug>          → JSON-serialised list[dict] of TemplateMeta
+# videos:tpl-bundle:<ws-slug>:<tid>  → JSON-serialised dict (TemplateBundle fields)
+
+
+# Bump this when the parsed TemplateMeta/Bundle shape changes so stale cached
+# payloads from an older deploy aren't served. v2: prose meta fields reflowed.
+# v3: intent field added to TemplateMeta.
+# v4: dropped expected_duration_seconds from TemplateMeta.
+_TPL_KEY_VERSION = "v4"
+
+
+def _tpl_list_key(ws_slug: str) -> str:
+    return f"videos:tpl-list:{_TPL_KEY_VERSION}:{ws_slug}"
+
+
+def _tpl_bundle_key(ws_slug: str, tid: str) -> str:
+    return f"videos:tpl-bundle:{_TPL_KEY_VERSION}:{ws_slug}:{tid}"
+
+
+def get_tpl_list(ws_slug: str):
+    return _cache.get(_tpl_list_key(ws_slug))
+
+
+def set_tpl_list(ws_slug: str, metas_serialized) -> None:
+    _cache.set(_tpl_list_key(ws_slug), metas_serialized, _TTL_SECONDS)
+
+
+def get_tpl_bundle(ws_slug: str, tid: str):
+    return _cache.get(_tpl_bundle_key(ws_slug, tid))
+
+
+def set_tpl_bundle(ws_slug: str, tid: str, bundle_serialized) -> None:
+    _cache.set(_tpl_bundle_key(ws_slug, tid), bundle_serialized, _TTL_SECONDS)
+
+
+def invalidate_tpl(ws_slug: str, tid: str | None = None) -> None:
+    """Drop the bundle for tid (if given) AND the list; or all tpl keys if tid is None."""
+    _cache.delete(_tpl_list_key(ws_slug))
+    if tid is not None:
+        _cache.delete(_tpl_bundle_key(ws_slug, tid))
+    else:
+        delete_pattern = getattr(_cache, "delete_pattern", None)
+        if callable(delete_pattern):
+            delete_pattern(f"videos:tpl-bundle:{_TPL_KEY_VERSION}:{ws_slug}:*")
+
+
 # Media library — no cache layer. The library reader now hits Postgres
 # directly (see apps.videos.library.reader), which is fast enough that
 # a TTL cache adds complexity without measurable benefit.

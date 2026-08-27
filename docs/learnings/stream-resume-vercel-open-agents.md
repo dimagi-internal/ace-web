@@ -42,7 +42,7 @@ Their lessons-learned has ~50 items; most don't map to us:
 
 - **Sandbox lifecycle** (~25 items): we have no sandbox — `claude -p` runs as a subprocess on the same Django host. The whole "snapshot/hibernate/restore/reconnect" matrix is irrelevant.
 - **Vercel Workflow SDK lease tokens / `lifecycleRunId`**: we have no durable workflow runtime; turn tasks are plain `asyncio.create_task` with strong-ref pinning in `_turn_tasks`. The lease-token pattern is elegant but presumes Workflow SDK or Celery beat — not justified for our scale.
-- **GitHub App install / OAuth callback flows**: irrelevant — we use CommCare Connect OAuth, see `apps/auth/oauth_views.py` and `docs/learnings/connect-oauth-openid-email.md`.
+- **GitHub App install / OAuth callback flows**: irrelevant — we use Connect OAuth, see `apps/auth/oauth_views.py` and `docs/learnings/connect-oauth-openid-email.md`.
 - **AI SDK `UIMessage` chunks / `Streamdown`**: we have our own `StreamEvent` discriminated union (`apps/common/chat_backend.py`) and the frontend renders messages via custom React components. No port path.
 - **Next.js `after()` semantics**: irrelevant — Django views + Channels consumers handle their own teardown via `finally` and `asyncio.shield`.
 - **Auto-commit / auto-PR from server completion path**: already correct on our side. `turn_driver` runs auto-title server-side via `_schedule_auto_title`, not via a client-side `status === "ready"` effect.

@@ -27,7 +27,7 @@ interface BeatDescriptor {
 
 const BEATS: Record<string, BeatDescriptor> = {
   intro_hook: {
-    description: "Animated tagline (from global template).",
+    description: "Animated tagline shown on screen.",
     overridableFields: ["tagline"],
   },
   intro_cycle: {
@@ -49,18 +49,21 @@ interface Props {
 }
 
 /**
- * Per-beat indicator for content that ships with the brand template.
+ * Per-beat indicator for the text rendered ON the video during a beat —
+ * the on-screen layer, distinct from the voiceover narration. The hook /
+ * end-card render the animated tagline; the cycle beat renders the four
+ * step labels.
  *
  * Two visual states:
- *   - GLOBAL TEMPLATE (amber lock): the beat is using values from
- *     programs/_defaults.yaml > brand. No per-program override.
- *   - PROGRAM OVERRIDE (emerald): the spec defines its own brand.tagline
- *     or brand.cycle_steps. The renderer prefers these.
+ *   - ON SCREEN (amber lock): the beat renders the shared brand default
+ *     from programs/global_style.yaml > global_template.
+ *   - ON SCREEN · CUSTOMIZED (emerald): the spec defines its own
+ *     global_template.tagline or global_template.cycle_steps. The
+ *     renderer prefers these.
  *
- * The whole widget is now clickable — opens the BrandTemplatePanel
- * drawer where the user can set or clear the override. The drawer
- * shows the global value as a placeholder and lets the user fall back
- * by clearing.
+ * The whole widget is clickable — opens the GlobalTemplatePanel drawer
+ * scoped to this beat's field, showing the default as a placeholder and
+ * letting the user fall back by clearing.
  */
 export function GlobalTemplateWidget({ beatId, kind }: Props) {
   const { effectiveSpec, dispatch, workspaceSlug, programSlug, runId } = useBeatEditor();
@@ -108,14 +111,14 @@ export function GlobalTemplateWidget({ beatId, kind }: Props) {
         bg: "bg-emerald-950/5",
         iconColor: "text-emerald-600/70",
         labelColor: "text-emerald-700/80 dark:text-emerald-500/80",
-        label: "Global template · overridden",
+        label: "On screen · customized",
       }
     : {
         border: "border-amber-700/40",
         bg: "bg-amber-950/5",
         iconColor: "text-amber-600/70",
         labelColor: "text-amber-700/80 dark:text-amber-500/80",
-        label: "Global template",
+        label: "On screen",
       };
 
   const openEditor = () =>
@@ -208,7 +211,7 @@ export function GlobalTemplateWidget({ beatId, kind }: Props) {
         </span>
         {!readOnly && (
           <span className="ml-auto text-xs text-muted-foreground transition-colors group-hover:text-foreground">
-            ✏ Edit override
+            ✏ Edit
           </span>
         )}
       </div>
@@ -217,10 +220,10 @@ export function GlobalTemplateWidget({ beatId, kind }: Props) {
       </p>
       <p className="mt-1 text-xs text-muted-foreground/70">
         {readOnly
-          ? beat.readOnlyReason ?? "Not configurable from the global template."
+          ? beat.readOnlyReason ?? "Not editable on this beat."
           : overridden
-            ? "This program overrides the global default."
-            : "Click to set a program-specific override."}
+            ? "Customized for this program. Click to edit."
+            : "Click to edit the on-screen text."}
       </p>
       </div>
     </Tag>

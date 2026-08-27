@@ -382,7 +382,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OppRunOut"
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
                 }
               }
             }
@@ -572,7 +574,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ArtifactOut"
+                  "$ref": "#/components/schemas/StepArtifactOut"
                 }
               }
             }
@@ -620,6 +622,22 @@
               "type": "string"
             },
             "required": true
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -674,6 +692,64 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/OppForkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/opps/{slug}/decision-overrides": {
+      "post": {
+        "operationId": "apps_opps_api_save_decision_overrides_endpoint",
+        "summary": "Save buffered decision edits to Drive (inputs/decision-overrides.yaml)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionOverridesSaveIn"
               }
             }
           },
@@ -972,6 +1048,57 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/opps/{slug}/actions/seeded-run": {
+      "post": {
+        "operationId": "apps_opps_api_seeded_run",
+        "summary": "Launch a first-class seeded run (headless)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Fork the golden into a fresh, pre-shaped run and start a plain resume \u2014\nby launching ``manage.py drive_turn`` as a detached process that drives the\nturn through the SAME turn-driver + channel-layer broadcast path as a human\ntyping into the workbench chat. Run shape is structural (ace#672): the\nforked run's ``run_state.yaml`` already encodes seed-prefix/target/skipped,\nso the seeded turn is a plain ``/ace:run <slug>/<run_id>`` resume, not a\n``--seed-from``/``--only`` flag command. The session is a normal, openable,\nlive session; the run is decoupled from this request's event loop (which is\nwhy an in-request ``create_task`` didn't work \u2014 ace-web#585). Exposed as an\nMCP tool (``x-mcp-expose``). Returns 202 (the run executes asynchronously).",
+        "tags": [
+          "opps"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeededRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
     "/api/w/{workspace_slug}/opps/{slug}/health": {
       "get": {
         "operationId": "apps_opps_api_opp_health",
@@ -1237,6 +1364,146 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/sessions/interrupted": {
+      "get": {
+        "operationId": "apps_sessions_api_interrupted_runs",
+        "summary": "Runs interrupted mid-flight (resume candidates)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/sessions/resume-interrupted": {
+      "post": {
+        "operationId": "apps_sessions_api_resume_interrupted",
+        "summary": "Resume all interrupted ACE opp runs (post-deploy self-heal)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "Bulk-resume every interrupted ACE opp run in the workspace. Intended for\nthe post-deploy hook: after a rollout drains the tasks driving live runs,\nthis relaunches them from run_state.yaml. Single serial call \u2192 no\ndouble-spawn race.\n\nBest-effort per session, never all-or-nothing: a session that cannot be\nrestarted is reported in ``failed`` and the sweep carries on. Anything that\nraises here is a *self-heal* failing, and aborting the whole sweep on the\nfirst one leaves every later run unresumed AND unreported.",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/sessions/{slug}/resume": {
+      "post": {
+        "operationId": "apps_sessions_api_resume_run",
+        "summary": "Resume one interrupted run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/sessions/{slug}/execution": {
+      "get": {
+        "operationId": "apps_sessions_api_session_execution",
+        "summary": "Where this run's execution actually stands",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "description": "The run's canopy execution state \u2014 including the two states that say, in\nplain words, that nothing can run it: `no_runner_configured` and\n`waiting_for_runner`. Reconciles on read (ace-web has no worker; this is the\nsame compute-on-read shape `/structure` uses).\n\nThe monkeypatch target in contract tests is\n`apps.canopy.run_state.reconcile_session`.",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/sessions/{slug}": {
       "get": {
         "operationId": "apps_sessions_api_get_session",
@@ -1459,45 +1726,6 @@
         ]
       }
     },
-    "/api/w/{workspace_slug}/sessions/{slug}/turn-state": {
-      "get": {
-        "operationId": "apps_sessions_api_session_turn_state",
-        "summary": "Turn state (polling)",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_slug",
-            "schema": {
-              "title": "Workspace Slug",
-              "type": "string"
-            },
-            "required": true
-          },
-          {
-            "in": "path",
-            "name": "slug",
-            "schema": {
-              "title": "Slug",
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "sessions"
-        ],
-        "security": [
-          {
-            "DjangoSessionAuth": []
-          }
-        ]
-      }
-    },
     "/api/w/{workspace_slug}/sessions/{slug}/cost": {
       "get": {
         "operationId": "apps_sessions_api_session_cost",
@@ -1556,130 +1784,6 @@
             "name": "slug",
             "schema": {
               "title": "Slug",
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "sessions"
-        ],
-        "security": [
-          {
-            "DjangoSessionAuth": []
-          }
-        ]
-      }
-    },
-    "/api/w/{workspace_slug}/sessions/{slug}/share": {
-      "get": {
-        "operationId": "apps_sessions_api_list_share",
-        "summary": "List share tokens",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_slug",
-            "schema": {
-              "title": "Workspace Slug",
-              "type": "string"
-            },
-            "required": true
-          },
-          {
-            "in": "path",
-            "name": "slug",
-            "schema": {
-              "title": "Slug",
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "sessions"
-        ],
-        "security": [
-          {
-            "DjangoSessionAuth": []
-          }
-        ]
-      },
-      "post": {
-        "operationId": "apps_sessions_api_create_share_token",
-        "summary": "Create share token",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_slug",
-            "schema": {
-              "title": "Workspace Slug",
-              "type": "string"
-            },
-            "required": true
-          },
-          {
-            "in": "path",
-            "name": "slug",
-            "schema": {
-              "title": "Slug",
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "sessions"
-        ],
-        "security": [
-          {
-            "DjangoSessionAuth": []
-          }
-        ]
-      }
-    },
-    "/api/w/{workspace_slug}/sessions/{slug}/share/{token_key}": {
-      "delete": {
-        "operationId": "apps_sessions_api_revoke_share_token",
-        "summary": "Revoke share token",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_slug",
-            "schema": {
-              "title": "Workspace Slug",
-              "type": "string"
-            },
-            "required": true
-          },
-          {
-            "in": "path",
-            "name": "slug",
-            "schema": {
-              "title": "Slug",
-              "type": "string"
-            },
-            "required": true
-          },
-          {
-            "in": "path",
-            "name": "token_key",
-            "schema": {
-              "title": "Token Key",
               "type": "string"
             },
             "required": true
@@ -1875,7 +1979,7 @@
     "/api/w/{workspace_slug}/videos/templates/{template_id}": {
       "get": {
         "operationId": "apps_videos_api_get_video_template",
-        "summary": "Get the full template bundle (meta + skeleton + skill prompt)",
+        "summary": "Get the full template bundle (meta + skill prompt + example spec)",
         "parameters": [
           {
             "in": "path",
@@ -1908,6 +2012,155 @@
             }
           }
         },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      },
+      "patch": {
+        "operationId": "apps_videos_api_patch_video_template",
+        "summary": "Update one or more fields of a template (meta, prompt, example)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateBundleOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplatePatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/w/{workspace_slug}/videos/templates/{template_id}/example": {
+      "get": {
+        "operationId": "apps_videos_api_get_template_example",
+        "summary": "Get the example spec.yaml for a template",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateExampleOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/templates/{template_id}/example-spec": {
+      "get": {
+        "operationId": "apps_videos_api_get_template_example_spec",
+        "summary": "Get the example spec.yaml for a template as a parsed object",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateExampleSpecOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "Return the template's example.spec.yaml as a parsed dict.\n\nThe BeatEditor mounts on this endpoint's response directly \u2014 it\nneeds a parsed spec object, not raw YAML text.  Returns 404 when\nno example.spec.yaml exists for this template.",
         "tags": [
           "videos"
         ],
@@ -1984,6 +2237,93 @@
             }
           }
         },
+        "tags": [
+          "videos"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ],
+        "x-mcp-expose": true
+      }
+    },
+    "/api/w/{workspace_slug}/videos/snippets": {
+      "get": {
+        "operationId": "apps_videos_api_list_video_snippets",
+        "summary": "List video snippets (labeled ranges into master clips)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "source_run",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Run"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "narrative_slug",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Narrative Slug"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoSnippetListOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "List the workspace's ingested snippets. Optional filters narrow\nby manifest run id (``source_run``), ``narrative_slug``, or a single\n``tag`` (membership in the snippet's tags list).",
         "tags": [
           "videos"
         ],
@@ -3192,6 +3532,53 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/canopy/sessions": {
+      "post": {
+        "operationId": "apps_canopy_api_sessions",
+        "summary": "Sessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanopySessionCreateOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "canopy"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanopySessionCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/opps/public/{workspace}/{slug}/runs/{run_id}/summary": {
       "get": {
         "operationId": "apps_opps_api_public_opp_summary",
@@ -3239,22 +3626,49 @@
             }
           }
         },
-        "description": "Stakeholder-facing per-run summary. AllowAny because share links\nare meant to circulate. Workspace + slug + run_id all in the URL \u2014\nno leak-prevention 404 differentiation here, the URL is the secret.\n\nCached 60 seconds in the Django cache to absorb refresh storms.",
+        "description": "Stakeholder-facing per-run summary. AllowAny because share links\nare meant to circulate. Workspace + slug + run_id all in the URL \u2014\nno leak-prevention 404 differentiation here, the URL is the secret.\n\nEvery link is served to everyone, each one declaring its own\n``access`` (``public`` / ``admin``). The requester's workspace\nmembership is echoed back as ``viewer.is_member`` and decides only\nwhether the page draws the ``admin only`` tag next to a gated link.\nThe two variants are cached under their own keys so the 60s cache\ncan't serve one to the other.\n\nCached 60 seconds in the Django cache to absorb refresh storms.",
         "tags": [
           "opps-public"
         ]
       }
     },
-    "/api/share/{token}": {
-      "get": {
-        "operationId": "apps_sessions_api_public_share_view",
-        "summary": "Public shared session view",
+    "/api/opps/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/edit": {
+      "post": {
+        "operationId": "apps_opps_api_public_decision_edit",
+        "summary": "Change one decision's answer from the public run summary",
         "parameters": [
           {
             "in": "path",
-            "name": "token",
+            "name": "workspace",
             "schema": {
-              "title": "Token",
+              "title": "Workspace",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "decision_id",
+            "schema": {
+              "title": "Decision Id",
               "type": "string"
             },
             "required": true
@@ -3262,13 +3676,100 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionEditOut"
+                }
+              }
+            }
           }
         },
-        "description": "Return a shared session's messages.  No auth required.",
+        "description": "Change a decision's value in place. Anyone with the link may.\n\nThis deliberately does NOT gate on membership, and deliberately has no\nproposal/promotion state. Jonathan, 2026-08-14: \"we definitely want\nthe decisions UI to be editable by users \u2026 reviewer 2 can change /\nupdate reviewer 1 anyway in the UI, and that should just be the same\nas Dimagi going in and updating things on top of the anonymous input\n(also if you are logged in, obviously should not be anonymous).\"\nThe bar to start engaging with ACE has to be very low because it is\nspeculative AI work \u2014 an account requirement is a barrier, a name\nfield is not. And the PDD these rows summarize is already\nworld-editable via anyone-with-link and already seeds the next run,\nso gating this more tightly than the design document was backwards.\n\nIt writes the SAME store the Workbench's authenticated editor writes\n(``<opp>/inputs/decision-overrides.yaml``, read by the plugin's\n``decisions_append_rows`` at the decisions write boundary), through\nthe same merge and the same serializer. The only thing that differs\nbetween the two surfaces is how the identity on the row was resolved.\n\nRefusals: a ``decision_id`` the run's ``decisions.yaml`` does not\ncarry is refused, not stored (the override would be unroutable). HTML\nis refused rather than mangled. Lengths are capped before any Drive\nround-trip. An anonymous caller with no name is refused; a signed-in\ncaller's typed name is ignored in favour of their session identity.",
         "tags": [
-          "sessions"
-        ]
+          "opps-public"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionEditIn"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/opps/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/reactions": {
+      "post": {
+        "operationId": "apps_opps_api_public_decision_reaction",
+        "summary": "React to one decision on the public run summary (no auth)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "decision_id",
+            "schema": {
+              "title": "Decision Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionReactionOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "Record a partner's reaction to ONE decision row.\n\nSame URL family and same no-auth posture as the summary itself: the\npage a partner is handed has no login, and sending them elsewhere to\nrespond is how a response never happens.\n\nThe reaction lands as a feedback-ledger record in Drive\n(``ACE/<opp>/feedback/<YYYYMMDD>-public-<reviewer>.yaml``), which is\nthe store the ACE plugin's ``skills/feedback-ledger`` already reads \u2014\nsee ``apps.opps.reactions`` for why this is neither the gates\nendpoint nor ``decision-overrides.yaml``.\n\nWrites are bounded on four axes: a per-IP burst window, a per-IP day,\na per-record item ceiling, and a per-run item ceiling. Body length\ncaps are enforced twice \u2014 by the schema before any Drive call, and by\nthe writer.",
+        "tags": [
+          "opps-public"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionReactionIn"
+              }
+            }
+          },
+          "required": true
+        }
       }
     },
     "/api/workspaces": {
@@ -4676,6 +5177,33 @@
         ]
       }
     },
+    "/api/system/refresh-plugin": {
+      "post": {
+        "operationId": "apps_system_api_refresh_plugin",
+        "summary": "Refresh the vendored ACE plugin to latest main (no image rebuild)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshPluginOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "system"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/system/skill-products": {
       "get": {
         "operationId": "apps_system_api_skill_products",
@@ -5076,6 +5604,128 @@
         ]
       }
     },
+    "/api/sessions/sweep": {
+      "get": {
+        "operationId": "apps_sessions_sweep_api_list_sweep_sessions",
+        "summary": "List sessions across workspaces (sweep)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SweepListOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "Returns every Session in workspaces where the calling user is Owner or Editor. Used by `/ace:sweep ace-web`. Not paginated \u2014 the rows are summary-sized and a single request is the expected shape for the sweep skill.",
+        "tags": [
+          "sessions"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/sessions/sweep/delete": {
+      "post": {
+        "operationId": "apps_sessions_sweep_api_bulk_delete_sweep_sessions",
+        "summary": "Bulk-delete sessions (sweep)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete every Session id in the body that the calling user has Owner or Editor access to. Sessions in workspaces the user can't write to are reported as 'forbidden' in `failed[]` rather than deleted. DELETE-with-body is awkward in some HTTP clients, so the atom is POST /sessions/sweep/delete.",
+        "tags": [
+          "sessions"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SweepDeleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/canopy/status": {
+      "get": {
+        "operationId": "apps_canopy_api_status",
+        "summary": "Status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanopyStatusOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "canopy"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
+    "/api/canopy/token": {
+      "post": {
+        "operationId": "apps_canopy_api_token",
+        "summary": "Token",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanopyTokenOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "canopy"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "apps_common_api_health",
@@ -5105,6 +5755,68 @@
         },
         "tags": [
           "common"
+        ]
+      }
+    },
+    "/api/me/presence-preference": {
+      "get": {
+        "operationId": "apps_presence_api_get_presence_preference",
+        "summary": "Get Presence Preference",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresencePreferenceOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "presence"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "apps_presence_api_set_presence_preference",
+        "summary": "Set Presence Preference",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresencePreferenceOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "presence"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresencePreferenceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
         ]
       }
     }
@@ -5176,147 +5888,6 @@
         "title": "OppPatchIn",
         "type": "object"
       },
-      "OppRunOut": {
-        "additionalProperties": false,
-        "properties": {
-          "run_id": {
-            "title": "Run Id",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "started_at": {
-            "format": "date-time",
-            "title": "Started At",
-            "type": "string"
-          },
-          "finished_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Finished At"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "scorecard": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ScorecardOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "run_id",
-          "label",
-          "started_at",
-          "is_active"
-        ],
-        "title": "OppRunOut",
-        "type": "object"
-      },
-      "ScorecardOut": {
-        "additionalProperties": false,
-        "properties": {
-          "score": {
-            "maximum": 100,
-            "minimum": 0,
-            "title": "Score",
-            "type": "integer"
-          },
-          "verdict": {
-            "enum": [
-              "pass",
-              "warn",
-              "fail"
-            ],
-            "title": "Verdict",
-            "type": "string"
-          },
-          "rationale": {
-            "title": "Rationale",
-            "type": "string"
-          },
-          "trend": {
-            "items": {
-              "type": "integer"
-            },
-            "title": "Trend",
-            "type": "array"
-          },
-          "decided_at": {
-            "format": "date-time",
-            "title": "Decided At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "score",
-          "verdict",
-          "rationale",
-          "trend",
-          "decided_at"
-        ],
-        "title": "ScorecardOut",
-        "type": "object"
-      },
-      "ArtifactOut": {
-        "additionalProperties": true,
-        "description": "One entry in the plugin's artifact-manifest.ts.\n\nUses ``extra=\"allow\"`` because the artifact manifest evolves with the\nplugin (new fields like ``phase``, ``role``, etc. appear over time);\npinning the schema causes the System Overview to 500 every time the\nplugin adds a metadata field. Tradeoff: drift not caught at schema\nvalidation, but the System Overview is a read-through display and\nnew fields just get passed through to the frontend.",
-        "properties": {
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "description": {
-            "default": "",
-            "title": "Description",
-            "type": "string"
-          },
-          "required": {
-            "default": false,
-            "title": "Required",
-            "type": "boolean"
-          },
-          "produced_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Produced By"
-          },
-          "consumed_by": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Consumed By",
-            "type": "array"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "title": "ArtifactOut",
-        "type": "object"
-      },
       "GateOut": {
         "additionalProperties": false,
         "properties": {
@@ -5375,6 +5946,131 @@
         "title": "GateOut",
         "type": "object"
       },
+      "JudgeOut": {
+        "additionalProperties": true,
+        "description": "A step's eval verdict, in the shape the Workbench eval panel renders.\n\nMirrors ``apps.opps.serializers.serialize_judge`` (the legacy\nopp-detail payload has carried exactly this for a long time) so both\nsurfaces agree. ``criteria`` is free-form: rubrics differ per skill\nand grow over time, and the panel renders whatever rows it finds.\n\nDeliberately not ``VerdictOut``: that has nowhere to put ``criteria``\nand would force us to invent a ``kind`` the verdict file doesn't\ndeclare.",
+        "properties": {
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "score_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score Pct"
+          },
+          "passed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passed"
+          },
+          "evaluated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluated At"
+          },
+          "criteria": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Criteria",
+            "type": "object"
+          },
+          "rationale": {
+            "default": "",
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "title": "JudgeOut",
+        "type": "object"
+      },
+      "StepArtifactOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "is_text": {
+            "title": "Is Text",
+            "type": "boolean"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mime_type",
+          "is_text"
+        ],
+        "title": "StepArtifactOut",
+        "type": "object"
+      },
       "StepSnapshotOut": {
         "additionalProperties": false,
         "properties": {
@@ -5404,7 +6100,7 @@
           },
           "artifacts": {
             "items": {
-              "$ref": "#/components/schemas/ArtifactOut"
+              "$ref": "#/components/schemas/StepArtifactOut"
             },
             "title": "Artifacts",
             "type": "array"
@@ -5415,6 +6111,16 @@
             },
             "title": "Verdicts",
             "type": "array"
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JudgeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "gate": {
             "anyOf": [
@@ -5508,7 +6214,7 @@
       },
       "OppForkEditIn": {
         "additionalProperties": false,
-        "description": "A single answer override to apply during fork.\n\nThe forker finds the row by ``row_id`` in the source run's\n``decisions.yaml``, sets its ``override`` to ``new_answer``, and\nmarks ``status: overridden`` \u2014 matching the schema-v2 contract that\n``decisions-sync`` uses. The original AI value remains in\n``ai-default`` for audit trail; downstream phases on re-run see the\neffective value (``override`` if present else ``ai-default``).",
+        "description": "A single answer override to apply during fork.\n\nThe forker finds the row by ``row_id`` in the source run's\n``decisions.yaml``, sets its ``override`` to ``new_answer``, and\nmarks ``status: overridden`` \u2014 matching the schema-v2 contract that\n``decisions-sync`` uses. The original AI value remains in\n``ai-default`` for audit trail; downstream phases on re-run see the\neffective value (``override`` if present else ``ai-default``).\n\n``new_answer`` MAY be a string not already present in the row's\n``options`` array; the forker appends it before setting ``override``,\nkeeping the ACE strict-write invariant (``override \u2208 options``)\nintact. ``override_reasoning`` is the human's free-text rationale,\npersisted alongside.",
         "properties": {
           "row_id": {
             "minLength": 1,
@@ -5517,6 +6223,11 @@
           },
           "new_answer": {
             "title": "New Answer",
+            "type": "string"
+          },
+          "override_reasoning": {
+            "default": "",
+            "title": "Override Reasoning",
             "type": "string"
           }
         },
@@ -5529,11 +6240,31 @@
       },
       "OppForkIn": {
         "additionalProperties": false,
+        "description": "Fork request. The fork POINT is one concept with two spellings.\n\nName a **phase** (``fork_at_phase``) to re-run it whole, or a **skill**\n(``fork_at_skill``) to keep that phase's earlier artifacts and re-run\nfrom that skill onward. Exactly one is required.\n\nSkill-granular forking existed on the old run-fork endpoint and was lost\nwhen ``apps/opps/fork.py`` was deleted in the multi-run simplification\n(2026-04-20). It depended on a ``steps/<NN>-<skill>/`` folder layout that\nno longer exists \u2014 the current layout is ``<N>-<phase>/<skill>_<role>.ext``\n\u2014 so it's re-implemented here against the artifact manifest's\n``produced_by`` map rather than against folder names.",
         "properties": {
           "fork_at_phase": {
-            "minLength": 1,
-            "title": "Fork At Phase",
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fork At Phase"
+          },
+          "fork_at_skill": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fork At Skill"
           },
           "source_run_id": {
             "anyOf": [
@@ -5561,12 +6292,37 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "maxLength": 8000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          }
+        },
+        "title": "OppForkIn",
+        "type": "object"
+      },
+      "DecisionOverridesSaveIn": {
+        "additionalProperties": false,
+        "description": "Body for POST /{slug}/decision-overrides. Carries NO edits \u2014 the\nserver reads the Redis shared buffer as the authoritative set, so a\nstale tab can't clobber another reviewer's concurrent edits.",
+        "properties": {
+          "source_run_id": {
+            "minLength": 1,
+            "title": "Source Run Id",
+            "type": "string"
           }
         },
         "required": [
-          "fork_at_phase"
+          "source_run_id"
         ],
-        "title": "OppForkIn",
+        "title": "DecisionOverridesSaveIn",
         "type": "object"
       },
       "ForkProgress": {
@@ -5714,6 +6470,58 @@
         "title": "OppCompareOut",
         "type": "object"
       },
+      "OppRunOut": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "scorecard": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScorecardOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "run_id",
+          "label",
+          "started_at",
+          "is_active"
+        ],
+        "title": "OppRunOut",
+        "type": "object"
+      },
       "OppSnapshotOut": {
         "additionalProperties": false,
         "properties": {
@@ -5784,6 +6592,51 @@
         "title": "OppSnapshotOut",
         "type": "object"
       },
+      "ScorecardOut": {
+        "additionalProperties": false,
+        "properties": {
+          "score": {
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Score",
+            "type": "integer"
+          },
+          "verdict": {
+            "enum": [
+              "pass",
+              "warn",
+              "fail"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "trend": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Trend",
+            "type": "array"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "score",
+          "verdict",
+          "rationale",
+          "trend",
+          "decided_at"
+        ],
+        "title": "ScorecardOut",
+        "type": "object"
+      },
       "SeedChatIn": {
         "additionalProperties": false,
         "description": "Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seed-chat.",
@@ -5809,6 +6662,33 @@
           "step_skill"
         ],
         "title": "SeedChatIn",
+        "type": "object"
+      },
+      "SeededRunIn": {
+        "additionalProperties": false,
+        "description": "Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run.\n\nLaunches a first-class seeded run via **fork-then-resume** (ace#672): the\naction forks ``golden_run_id`` into a fresh run shaped so the phases below\n``min(only)`` are ``done``/``verdict: seeded``, the listed ordinals are\n``pending``, and every other phase from the fork point onward is\n``skipped`` \u2014 then drives a plain ``/ace:run <slug>/<new_run_id>`` resume.\nThe run is loop-blind; the ``/ace:iterate`` client observes its run_state.\n(The old ``--seed-from``/``--only`` flags were dropped \u2014 the headless runner\nignored them.)",
+        "properties": {
+          "golden_run_id": {
+            "minLength": 1,
+            "title": "Golden Run Id",
+            "type": "string"
+          },
+          "only": {
+            "default": "3,4,6",
+            "pattern": "^\\d+(,\\d+)*$",
+            "title": "Only",
+            "type": "string"
+          },
+          "skip_evals": {
+            "default": true,
+            "title": "Skip Evals",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "golden_run_id"
+        ],
+        "title": "SeededRunIn",
         "type": "object"
       },
       "OppHealthOut": {
@@ -6284,9 +7164,10 @@
             "title": "Description",
             "type": "string"
           },
-          "expected_duration_seconds": {
-            "title": "Expected Duration Seconds",
-            "type": "integer"
+          "intent": {
+            "default": "",
+            "title": "Intent",
+            "type": "string"
           },
           "intended_audience": {
             "title": "Intended Audience",
@@ -6301,7 +7182,6 @@
           "id",
           "name",
           "description",
-          "expected_duration_seconds",
           "intended_audience",
           "when_to_use"
         ],
@@ -6310,26 +7190,185 @@
       },
       "TemplateBundleOut": {
         "additionalProperties": false,
-        "description": "Full template payload \u2014 agent reads `prompt_md` and follows it,\nfills the `skeleton_yaml` placeholders, and posts the result back\nvia POST /programs.",
+        "description": "Full template payload \u2014 the agent reads `prompt_md`, adapts the\n`example_yaml` (the canonical example spec) to the new program per\nthose instructions, and posts the result back via POST /programs.\n\n`example_yaml` is null only for a malformed template whose\nexample.spec.yaml is missing from Drive.",
         "properties": {
           "meta": {
             "$ref": "#/components/schemas/TemplateMetaOut"
           },
-          "skeleton_yaml": {
-            "title": "Skeleton Yaml",
-            "type": "string"
-          },
           "prompt_md": {
             "title": "Prompt Md",
             "type": "string"
+          },
+          "example_yaml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Example Yaml"
           }
         },
         "required": [
           "meta",
-          "skeleton_yaml",
-          "prompt_md"
+          "prompt_md",
+          "example_yaml"
         ],
         "title": "TemplateBundleOut",
+        "type": "object"
+      },
+      "TemplateMetaPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "intended_audience": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intended Audience"
+          },
+          "when_to_use": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When To Use"
+          }
+        },
+        "title": "TemplateMetaPatch",
+        "type": "object"
+      },
+      "TemplatePatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemplateMetaPatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prompt_md": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Md"
+          },
+          "example_yaml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Example Yaml"
+          },
+          "example_spec": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Example Spec"
+          }
+        },
+        "title": "TemplatePatchIn",
+        "type": "object"
+      },
+      "TemplateExampleOut": {
+        "additionalProperties": false,
+        "properties": {
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "example_yaml": {
+            "title": "Example Yaml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "example_yaml"
+        ],
+        "title": "TemplateExampleOut",
+        "type": "object"
+      },
+      "TemplateExampleSpecOut": {
+        "additionalProperties": false,
+        "properties": {
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "spec": {
+            "additionalProperties": true,
+            "title": "Spec",
+            "type": "object"
+          }
+        },
+        "required": [
+          "template_id",
+          "spec"
+        ],
+        "title": "TemplateExampleSpecOut",
         "type": "object"
       },
       "MediaLibraryVideoItemOut": {
@@ -6533,6 +7572,163 @@
           "items"
         ],
         "title": "MediaLibraryAudioOut",
+        "type": "object"
+      },
+      "VideoSnippetListOut": {
+        "additionalProperties": false,
+        "properties": {
+          "snippets": {
+            "items": {
+              "$ref": "#/components/schemas/VideoSnippetOut"
+            },
+            "title": "Snippets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "snippets"
+        ],
+        "title": "VideoSnippetListOut",
+        "type": "object"
+      },
+      "VideoSnippetOut": {
+        "additionalProperties": false,
+        "properties": {
+          "snippet_key": {
+            "title": "Snippet Key",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "narration_sentence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narration Sentence"
+          },
+          "in_seconds": {
+            "title": "In Seconds",
+            "type": "number"
+          },
+          "out_seconds": {
+            "title": "Out Seconds",
+            "type": "number"
+          },
+          "duration_seconds": {
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
+          },
+          "source_run": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Run"
+          },
+          "narrative_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narrative Slug"
+          },
+          "scene_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Index"
+          },
+          "clip_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clip Ref"
+          },
+          "source_clip_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Clip Ref"
+          },
+          "source_clip_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Clip Url"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "snippet_key",
+          "in_seconds",
+          "out_seconds",
+          "duration_seconds",
+          "status"
+        ],
+        "title": "VideoSnippetOut",
         "type": "object"
       },
       "ProgramCardOut": {
@@ -7810,6 +9006,276 @@
           "channel_id"
         ],
         "title": "SlackPushPhaseIn",
+        "type": "object"
+      },
+      "CanopySessionCreateOut": {
+        "additionalProperties": false,
+        "description": "POST /api/w/{workspace_slug}/canopy/sessions response.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "CanopySessionCreateOut",
+        "type": "object"
+      },
+      "CanopySessionCreateIn": {
+        "additionalProperties": false,
+        "description": "POST /api/w/{workspace_slug}/canopy/sessions request body.\n\nDeliberately carries no workspace/tenant field \u2014 the ace workspace comes\nfrom the URL path (and is membership-checked there), never from the\nbody, so a caller can't spoof ``origin_key`` for a workspace they don't\nbelong to (see apps/canopy/api.py).",
+        "properties": {
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "opp_slug": {
+            "default": "",
+            "title": "Opp Slug",
+            "type": "string"
+          },
+          "opp_run_id": {
+            "default": "",
+            "title": "Opp Run Id",
+            "type": "string"
+          },
+          "opp_step_skill": {
+            "default": "",
+            "title": "Opp Step Skill",
+            "type": "string"
+          }
+        },
+        "title": "CanopySessionCreateIn",
+        "type": "object"
+      },
+      "DecisionEditHistoryOut": {
+        "additionalProperties": false,
+        "description": "One superseded state of a decision row. Newest first.",
+        "properties": {
+          "override": {
+            "title": "Override",
+            "type": "string"
+          },
+          "reasoning": {
+            "default": "",
+            "title": "Reasoning",
+            "type": "string"
+          },
+          "decided_by_name": {
+            "default": "",
+            "title": "Decided By Name",
+            "type": "string"
+          },
+          "decided_by_verified": {
+            "default": false,
+            "title": "Decided By Verified",
+            "type": "boolean"
+          },
+          "decided_at": {
+            "default": "",
+            "title": "Decided At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "override"
+        ],
+        "title": "DecisionEditHistoryOut",
+        "type": "object"
+      },
+      "DecisionEditOut": {
+        "additionalProperties": false,
+        "description": "A decision's current human-set answer, as any reader sees it.\n\nEmails are not projected on the public payload; the NAME always is \u2014\nattribution is the safety mechanism, so hiding it would defeat the\nmodel.",
+        "properties": {
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "override": {
+            "title": "Override",
+            "type": "string"
+          },
+          "reasoning": {
+            "default": "",
+            "title": "Reasoning",
+            "type": "string"
+          },
+          "decided_by_name": {
+            "default": "",
+            "title": "Decided By Name",
+            "type": "string"
+          },
+          "decided_by_verified": {
+            "default": false,
+            "title": "Decided By Verified",
+            "type": "boolean"
+          },
+          "decided_at": {
+            "default": "",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "source_run_id": {
+            "default": "",
+            "title": "Source Run Id",
+            "type": "string"
+          },
+          "is_revert": {
+            "default": false,
+            "title": "Is Revert",
+            "type": "boolean"
+          },
+          "history": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DecisionEditHistoryOut"
+            },
+            "title": "History",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decision_id",
+          "override"
+        ],
+        "title": "DecisionEditOut",
+        "type": "object"
+      },
+      "DecisionEditIn": {
+        "additionalProperties": false,
+        "description": "Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/edit.\n\nAnyone with the link can change a decision's value in place \u2014 no\nproposal state, no promotion step, no member-only privilege, and\nreviewer 2 changing reviewer 1's answer is the same act as Dimagi\nchanging either. Safety is visibility and reversibility (attribution\non every row, full history, undo from the UI), not permission \u2014 the\nsame way it is in a Google Doc, which is exactly what the PDD these\ndecisions summarize already is.\n\nIdentity resolves per caller and NOT from this body when we already\nknow who it is: **signed in \u21d2 never anonymous**, so ``reviewer`` and\n``reviewer_email`` are ignored for an authenticated request and\nREQUIRED for an anonymous one. See ``apps.opps.public_input``.\n\nLength ceilings are enforced again in ``apps.opps.decision_overrides``\n\u2014 these are the cheap first pass, before any Drive round-trip.",
+        "properties": {
+          "value": {
+            "maxLength": 800,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning"
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer"
+          },
+          "reviewer_email": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Email"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "DecisionEditIn",
+        "type": "object"
+      },
+      "DecisionReactionOut": {
+        "additionalProperties": false,
+        "description": "What the page needs to render the reaction it just submitted.",
+        "properties": {
+          "feedback_ref": {
+            "title": "Feedback Ref",
+            "type": "string"
+          },
+          "record_slug": {
+            "title": "Record Slug",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "decision_id": {
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "reviewer": {
+            "title": "Reviewer",
+            "type": "string"
+          },
+          "comment": {
+            "title": "Comment",
+            "type": "string"
+          },
+          "received_at": {
+            "title": "Received At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "feedback_ref",
+          "record_slug",
+          "item_id",
+          "decision_id",
+          "reviewer",
+          "comment",
+          "received_at"
+        ],
+        "title": "DecisionReactionOut",
+        "type": "object"
+      },
+      "DecisionReactionIn": {
+        "additionalProperties": false,
+        "description": "Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/reactions.\n\n``reviewer`` is REQUIRED and self-reported. The page has no login and\na partner cannot self-serve one, so the only honest options were a\nrequired free-text name or anonymous reactions \u2014 and an anonymous\nreaction defeats the store it lands in: the feedback ledger's whole\nvalue is being able to tell a reviewer where THEIR comment went, and\nto tell a future reader whose judgement drove a change. An unsigned\ncomment is unanswerable and uncreditable. So: required name, optional\nemail (the reply path), and the record says the name is self-reported\nrather than pretending it is verified.\n\nLength ceilings live in ``apps.opps.reactions`` and are enforced\nthere too \u2014 these are the cheap first pass, so an oversized body is\nrejected before any Drive round-trip.",
+        "properties": {
+          "reviewer": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Reviewer",
+            "type": "string"
+          },
+          "comment": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Comment",
+            "type": "string"
+          },
+          "reviewer_email": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Email"
+          }
+        },
+        "required": [
+          "reviewer",
+          "comment"
+        ],
+        "title": "DecisionReactionIn",
         "type": "object"
       },
       "WorkspaceOut": {
@@ -9145,6 +10611,50 @@
         "title": "AgentSummaryOut",
         "type": "object"
       },
+      "ArtifactOut": {
+        "additionalProperties": true,
+        "description": "One entry in the plugin's artifact-manifest.ts.\n\nUses ``extra=\"allow\"`` because the artifact manifest evolves with the\nplugin (new fields like ``phase``, ``role``, etc. appear over time);\npinning the schema causes the System Overview to 500 every time the\nplugin adds a metadata field. Tradeoff: drift not caught at schema\nvalidation, but the System Overview is a read-through display and\nnew fields just get passed through to the frontend.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "produced_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced By"
+          },
+          "consumed_by": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Consumed By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ArtifactOut",
+        "type": "object"
+      },
       "McpServerOut": {
         "additionalProperties": false,
         "description": "One MCP server declared in the plugin's plugin.json.",
@@ -9576,9 +11086,92 @@
         "title": "AgentDetailOut",
         "type": "object"
       },
+      "EnvInjectOut": {
+        "additionalProperties": false,
+        "description": "Outcome of the container's ``op inject`` at boot (ace-web#636).\n\n``status`` is ``ok`` / ``failed`` / ``skipped`` / ``unknown`` (no status\nfile \u2014 local dev or a pre-upgrade task). ``error`` carries the op-inject\nstderr excerpt when status is ``failed``.",
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "EnvInjectOut",
+        "type": "object"
+      },
+      "NovaAuthHealthOut": {
+        "additionalProperties": false,
+        "description": "Nova auth health across both paths (ace-web#636).\n\n``connected``/``valid``/``expires_at`` describe the OAuth blob;\n``pat_present``/``pat_valid`` describe the user-scope PAT override\n(the preferred subprocess path); ``usable`` is the run-preflight\nverdict \u2014 at least one path yields a working bearer. Probes are\ncached ~60s server-side. ``last_refresh_error`` \u2014 most recent\nblob-refresh failure, cleared on the next successful refresh.",
+        "properties": {
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "last_refresh_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refresh Error"
+          },
+          "pat_present": {
+            "default": false,
+            "title": "Pat Present",
+            "type": "boolean"
+          },
+          "pat_valid": {
+            "default": false,
+            "title": "Pat Valid",
+            "type": "boolean"
+          },
+          "usable": {
+            "default": false,
+            "title": "Usable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connected",
+          "valid"
+        ],
+        "title": "NovaAuthHealthOut",
+        "type": "object"
+      },
       "VersionOut": {
         "additionalProperties": false,
-        "description": "Plugin version + remote comparison.\n\nReturned by GET /api/system/version and embedded in SystemOverviewOut.\n``update_available`` is null when the remote check failed (network error\nor rate limit).",
+        "description": "Plugin version + remote comparison.\n\nReturned by GET /api/system/version and embedded in SystemOverviewOut.\n``update_available`` is null when the remote check failed (network error\nor rate limit). ``nova_auth`` / ``env_inject`` are operational health\nblocks (ace-web#636) populated only on the standalone version endpoint.",
         "properties": {
           "plugin_found": {
             "title": "Plugin Found",
@@ -9621,12 +11214,79 @@
             "default": "",
             "title": "Plugin Path",
             "type": "string"
+          },
+          "nova_auth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NovaAuthHealthOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "env_inject": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvInjectOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "plugin_found"
         ],
         "title": "VersionOut",
+        "type": "object"
+      },
+      "RefreshPluginOut": {
+        "additionalProperties": false,
+        "description": "Result of POST /api/system/refresh-plugin.\n\nRe-runs ``scripts/refresh-ace-plugin.sh`` on the receiving task so a merged\nACE plugin fix reaches server-side runs without an image rebuild. The labs\nECS service runs a single task (``--desired-count 1``), so the receiving\ntask IS the runner and polling ``GET /system/version`` for ``version_after``\nconverges deterministically. A future multi-task service would need a\nservice-wide fan-out (force-new-deployment or a shared signal) \u2014 tracked as\na follow-up, not silently assumed here.",
+        "properties": {
+          "ran": {
+            "title": "Ran",
+            "type": "boolean"
+          },
+          "refreshed": {
+            "title": "Refreshed",
+            "type": "boolean"
+          },
+          "version_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Before"
+          },
+          "version_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version After"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ran",
+          "refreshed"
+        ],
+        "title": "RefreshPluginOut",
         "type": "object"
       },
       "CliDiagOut": {
@@ -9985,6 +11645,177 @@
         "title": "CliAuthExpectedShapeOut",
         "type": "object"
       },
+      "SweepListOut": {
+        "additionalProperties": false,
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SweepSessionRow"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "total_raw_bytes": {
+            "minimum": 0,
+            "title": "Total Raw Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sessions",
+          "total_raw_bytes"
+        ],
+        "title": "SweepListOut",
+        "type": "object"
+      },
+      "SweepSessionRow": {
+        "additionalProperties": false,
+        "description": "One row in the sweep listing.\n\nSummary-sized \u2014 no message bodies, no JSONL, no opp display names.\nEnough for the plugin-side report renderer to group by workspace and\nannotate which sessions came from /ace:upload-transcript.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "web",
+              "upload"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived",
+              "imported"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "opp_slug": {
+            "default": "",
+            "title": "Opp Slug",
+            "type": "string"
+          },
+          "opp_run_id": {
+            "default": "",
+            "title": "Opp Run Id",
+            "type": "string"
+          },
+          "workspace_slug": {
+            "title": "Workspace Slug",
+            "type": "string"
+          },
+          "message_count": {
+            "minimum": 0,
+            "title": "Message Count",
+            "type": "integer"
+          },
+          "upload_count": {
+            "minimum": 0,
+            "title": "Upload Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "source",
+          "status",
+          "workspace_slug",
+          "message_count",
+          "upload_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SweepSessionRow",
+        "type": "object"
+      },
+      "SweepDeleteIn": {
+        "additionalProperties": false,
+        "description": "Body of POST /sessions/sweep/delete.",
+        "properties": {
+          "session_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Session Ids",
+            "type": "array"
+          }
+        },
+        "title": "SweepDeleteIn",
+        "type": "object"
+      },
+      "CanopyStatusOut": {
+        "additionalProperties": false,
+        "description": "GET /api/canopy/status response \u2014 drives the frontend feature flag.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "workspace": {
+            "title": "Workspace",
+            "type": "string"
+          },
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "base_url",
+          "workspace",
+          "agent"
+        ],
+        "title": "CanopyStatusOut",
+        "type": "object"
+      },
+      "CanopyTokenOut": {
+        "additionalProperties": false,
+        "description": "POST /api/canopy/token response \u2014 a short-lived delegated token.\n\n``expires_at`` is passed through opaquely from canopy-web (an ISO-8601\nstring in practice); typed as ``str`` rather than ``datetime`` since this\nsurface never parses it, only forwards it to the browser.",
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "title": "CanopyTokenOut",
+        "type": "object"
+      },
       "HealthCheckOut": {
         "additionalProperties": false,
         "description": "One subsystem check result.",
@@ -10037,6 +11868,32 @@
           "checks"
         ],
         "title": "HealthOut",
+        "type": "object"
+      },
+      "PresencePreferenceOut": {
+        "properties": {
+          "show_presence": {
+            "title": "Show Presence",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "show_presence"
+        ],
+        "title": "PresencePreferenceOut",
+        "type": "object"
+      },
+      "PresencePreferenceIn": {
+        "properties": {
+          "show_presence": {
+            "title": "Show Presence",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "show_presence"
+        ],
+        "title": "PresencePreferenceIn",
         "type": "object"
       }
     },

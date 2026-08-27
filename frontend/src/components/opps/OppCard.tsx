@@ -6,7 +6,7 @@ import { OppCardRunsStrip } from "../views/hierarchy/OppCardRunsStrip";
 import { OppChatChildren } from "../views/hierarchy/OppChatChildren";
 import { OppRunsList } from "../views/hierarchy/OppRunsList";
 import { relativeTime } from "../../lib/relativeTime";
-import { Tooltip } from "../ui/tooltip";
+import { Tooltip } from "canopy-ui/ui";
 
 interface OppCardProps {
   opp: OppCardData;

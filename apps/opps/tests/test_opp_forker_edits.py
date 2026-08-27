@@ -39,6 +39,30 @@ def test_rewrite_with_no_edits_matches_legacy_trim():
     assert ids == ["a"]  # 'b' belongs to phase ordinal 2, dropped
 
 
+def test_rewrite_preserves_v4_evidence_basis_and_conflict_signals():
+    """The fork trim copies surviving rows verbatim — the v4 fields
+    (`evidence_basis`, `conflict_signals`) must pass through untouched so
+    a forked run keeps the contested-fork signal."""
+    rows = [
+        {
+            "id": "a",
+            "phase": "design-review",
+            "ai-default": "two linked forms",
+            "options": ["one form", "two linked forms"],
+            "status": "ai-default",
+            "evidence_basis": "conflicting",
+            "conflict_signals": ["visited twice", "one instrument only"],
+        },
+    ]
+    src = _decisions_yaml(rows, schema_version=3)
+
+    out = _rewrite_decisions_yaml(src, fork_ordinal=2)  # keep ordinal < 2
+
+    row = yaml.safe_load(out)["decisions"][0]
+    assert row["evidence_basis"] == "conflicting"
+    assert row["conflict_signals"] == ["visited twice", "one instrument only"]
+
+
 def test_rewrite_with_edits_applies_after_trim():
     rows = [
         {"id": "a", "phase": "design-review", "ai-default": "v1",
@@ -476,3 +500,105 @@ def test_fork_opp_rejects_invalid_mode(monkeypatch):
             now=dt.datetime(2026, 5, 22, 12, 0, tzinfo=dt.UTC),
         )
     assert exc_info.value.code == "invalid-mode"
+
+
+# ---------------------------------------------------------------------------
+# Canonical forked-run phases shape (ace#672/#673): phase-level status + steps
+# ---------------------------------------------------------------------------
+
+
+def _assert_step_statuses_match(phase_block, expected_status):
+    """Every step in a phase block carries the phase's status (canonical shape).
+
+    A non-empty `steps` wrapper is what makes ace-web's _extract_step_statuses
+    render the rows AND what stops a bare `status` key leaking as a fake skill.
+    """
+    steps = phase_block["steps"]
+    assert isinstance(steps, dict) and steps, "phase block must carry a steps map"
+    for step in steps.values():
+        assert step == {"status": expected_status}
+
+
+def test_build_run_state_seeded_shape_marks_pending_and_skipped():
+    """With run_phases, _build_run_state_yaml writes the plugin's canonical
+    phase-level shape: prefix done/seeded, target ordinals pending, gap+tail
+    phases skipped — each with a matching steps map — plus seeded_from (ace#672/#673)."""
+    from apps.opps.opp_forker import _build_run_state_yaml
+    from apps.opps.skills import all_phases
+
+    phases = all_phases()
+    assert len(phases) >= 4, "stub registry needs >=4 phases for the gap case"
+    # Target ordinals 2 and 4 — leaves phase 1 as prefix, 3 as an interior
+    # GAP (skipped), and 5+ as the TAIL (skipped).
+    targets = [2, 4]
+    fork_ord = min(targets)
+    now = dt.datetime(2026, 6, 1, 9, 0, tzinfo=dt.UTC)
+
+    out = yaml.safe_load(
+        _build_run_state_yaml(
+            opp_slug="opp",
+            run_id="20260601-0900",
+            owner_email="x@example.com",
+            fork_at_phase=phases[fork_ord - 1],
+            fork_ordinal=fork_ord,
+            forked_from_run_id="20260531-2258",
+            now_utc=now,
+            run_phases=targets,
+        )
+    )
+
+    pm = out["phases"]
+    for idx, phase in enumerate(phases, start=1):
+        if idx < fork_ord:
+            assert pm[phase]["status"] == "done"
+            assert pm[phase]["verdict"] == "seeded"
+            assert pm[phase]["completed_at"]
+            _assert_step_statuses_match(pm[phase], "done")
+        elif idx in targets:
+            assert pm[phase]["status"] == "pending"
+            assert "verdict" not in pm[phase]
+            _assert_step_statuses_match(pm[phase], "pending")
+        else:  # gap (3) + tail (5+)
+            assert pm[phase]["status"] == "skipped"
+            _assert_step_statuses_match(pm[phase], "skipped")
+    assert out["seeded_from"] == "20260531-2258"
+
+
+def test_build_run_state_plain_fork_is_canonical_phase_level_shape():
+    """ace#673: a plain fork (no run_phases) now emits the canonical phase-level
+    shape — `phases.<phase>.{status, steps}` — NOT the old per-skill map. Prefix
+    phases are done, everything from the fork point onward is pending (no skips),
+    and there is no seeded_from key. This is what makes `/ace:run <opp>/<forked-id>`
+    resume correctly off the plugin's structural phases.<phase>.status rule."""
+    from apps.opps.opp_forker import _build_run_state_yaml
+    from apps.opps.skills import all_phases
+
+    phases = all_phases()
+    now = dt.datetime(2026, 6, 1, 9, 0, tzinfo=dt.UTC)
+    fork_ord = 2
+    out = yaml.safe_load(
+        _build_run_state_yaml(
+            opp_slug="opp",
+            run_id="r",
+            owner_email="x@example.com",
+            fork_at_phase=phases[fork_ord - 1],
+            fork_ordinal=fork_ord,
+            forked_from_run_id="src",
+            now_utc=now,
+        )
+    )
+    pm = out["phases"]
+    for idx, phase in enumerate(phases, start=1):
+        block = pm[phase]
+        # Every phase has a string phase-level status the plugin's resume reads.
+        assert block["status"] in {"done", "pending"}
+        # No per-skill leakage: there is a steps wrapper, not bare skill keys.
+        assert "steps" in block
+        if idx < fork_ord:
+            assert block["status"] == "done"
+            assert block["completed_at"]
+            _assert_step_statuses_match(block, "done")
+        else:
+            assert block["status"] == "pending"  # plain fork: no skips
+            _assert_step_statuses_match(block, "pending")
+    assert "seeded_from" not in out

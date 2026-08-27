@@ -1,0 +1,34 @@
+# Template metadata. The generator service reads this to surface the
+# template in the picker and to know which prompt + skeleton to use.
+id: connect-ddd-walkthrough
+name: Walkthrough explainer
+description: |
+  Semi-gloss explainer that narrates an EXISTING product walkthrough
+  recording. One title card, then N "walkthrough" sections — each plays
+  a RANGE of one master screen-recording full-bleed with a lower-third
+  and a per-beat voiceover — then a brand end card. Unlike the 60s
+  campaign overview (and the connect-explainer cut), this is NOT a
+  composited marketing arc (no cycle ring, no stat cards, no
+  tagline-paraphrase). It is a quiet narrator walking a viewer through a
+  real recorded demo, one beat at a time.
+expected_duration_seconds: 60
+intended_audience: |
+  A teammate, funder, or evaluator who needs the recorded walkthrough
+  explained section by section — "here is what this screen is showing
+  and why it matters". The footage is the product; the narration just
+  points at the right thing at the right moment.
+when_to_use: |
+  - You already have ONE continuous screen recording (or demo capture)
+    of a product flow and want to narrate it.
+  - You can write one plain sentence per section: what the section shows
+    and the single point it makes.
+  - You do NOT want the marketing arc (hook/cycle/handoff/stat cards) —
+    for that use 60s-campaign-overview or connect-explainer.
+needs_program_specific_footage: true
+notes: |
+  The arc is carried by the spec's own `beats:` list (intro_title →
+  body_walkthrough×N → outro_card), which OVERRIDES the shared
+  programs/global_style.yaml marketing beats. A spec without `beats:`
+  still falls back to the 60s marketing arc, so this template is purely
+  additive. See templates/connect-ddd-walkthrough/example.spec.yaml for a
+  worked five-section example.

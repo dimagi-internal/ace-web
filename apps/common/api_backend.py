@@ -48,6 +48,7 @@ class ApiBackend:
         session: Session,
         new_user_message: str,
         force_fresh_session: bool = False,
+        raw_sink: list[str] | None = None,  # noqa: ARG002 — no raw JSONL on the API path
     ) -> AsyncIterator[StreamEvent]:
         """Stream one assistant turn via the Anthropic API."""
         client = self._get_client()

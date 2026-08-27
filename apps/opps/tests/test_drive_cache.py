@@ -66,7 +66,7 @@ class _FakeDriveClient(DriveClient):
         self.counts.list_files += 1
         return list(self._listings.get((folder_id, recursive), []))
 
-    def get_content(self, file_id: str, mime_type: str):
+    def get_content(self, file_id: str, mime_type: str, *, export_as: str | None = None):
         self.counts.get_content += 1
         return self._bodies[(file_id, mime_type)]
 

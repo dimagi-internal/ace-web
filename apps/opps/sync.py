@@ -28,7 +28,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 import yaml
 from django.conf import settings
@@ -38,44 +37,11 @@ from apps.opps.parsers import (
     Decision,
     JudgeVerdict,
     OppManifest,
-    QAFailure,
     QAResult,
     StepManifest,
 )
 
 log = logging.getLogger(__name__)
-
-# Files at the run-folder root that the artifact manifest attributes to
-# a specific skill (e.g. decisions.yaml → producedBy: idea-to-pdd) but
-# that are actually shared substrates appended to by many skills across
-# the lifecycle. Their presence in the run folder is NOT evidence that
-# the attributed skill ran — after a fork, they're carried verbatim by
-# the run-root copy list even when the producing skill hasn't yet run
-# in the new run. _build_steps excludes these from the artifact-presence
-# completeness check.
-_SHARED_SUBSTRATE_FILES = frozenset({"decisions.yaml", "decisions.yml"})
-
-# Map raw run_state.yaml status strings to the canonical StepManifest
-# status set (pending | running | complete | qa-failed | error | skipped).
-# The plugin writes ``done`` for completed steps; older paths sometimes
-# write ``complete``. ``in_progress`` is an alias for ``running`` used by
-# some atom skills. ``no-op`` / ``noop`` are the smoke-opp variants the
-# orchestrator records when a step has nothing to do (e.g. ``llo-invite``
-# on a Preferred-LLO-less PDD). Unknown strings fall back to artifact
-# presence rather than crashing — defensive against plugin schema drift.
-_RUN_STATE_TO_CANONICAL: dict[str, str] = {
-    "done": "complete",
-    "complete": "complete",
-    "running": "running",
-    "in_progress": "running",
-    "in-progress": "running",
-    "failed": "error",
-    "error": "error",
-    "skipped": "skipped",
-    "no-op": "skipped",
-    "noop": "skipped",
-    "pending": "pending",
-}
 
 # --- Output dataclasses ---
 
@@ -126,6 +92,11 @@ class OppSnapshot:
     opp_folder_id: str
     current_run: RunDetail
     runs_summary: list[RunSummary] = field(default_factory=list)
+    # Durable overrides from <opp>/inputs/decision-overrides.yaml keyed by
+    # row_id (see apps/opps/decision_overrides.py). Kept fresh on cache
+    # hits by the saved_overrides freshness overlay — the file lives in a
+    # listing the Drive Changes API doesn't reliably invalidate.
+    saved_overrides: dict[str, dict] = field(default_factory=dict)
 
 
 # --- Drive helpers ---
@@ -196,6 +167,10 @@ class RunSummary:
     phases_total: int = 0
     phases_done: int = 0
     latest_phase_done: str | None = None
+    # Per-phase status in authored order: [{ordinal, name, status}]. Powers
+    # the cross-run strip's per-phase segments; a count alone cannot show a
+    # run that errored mid-way and then recovered.
+    phase_states: list[dict] = field(default_factory=list)
 
 
 def list_opp_runs(
@@ -215,48 +190,33 @@ def list_opp_runs(
     the result here to avoid a redundant Drive call.  When ``None``, the opp
     folder is re-listed via the ACE-root listing.
     """
+    # Resolve the opp folder (the store is rooted at it). When opp_children was
+    # supplied we still need the opp folder id, which Drive listings don't carry
+    # as a back-pointer — so re-resolve from the ACE root (cheap + cached).
+    opp_folder = _find_child_folder(client.list_folder(ace_root_folder_id), opp_slug)
+    if opp_folder is None:
+        return []
     if opp_children is None:
-        opp_folder = _find_child_folder(client.list_folder(ace_root_folder_id), opp_slug)
-        if opp_folder is None:
-            return []
         opp_children = client.list_folder(opp_folder.id)
     runs_folder = _find_child_folder(opp_children, "runs")
     if runs_folder is None:
         return []
 
-    out: list[RunSummary] = []
-    for child in client.list_folder(runs_folder.id):
-        if not _is_folder(child):
-            continue
-        state_file = _find_state_file(client.list_folder(child.id))
-        if state_file is None:
-            continue
-        try:
-            body = _read_text(client, state_file)
-            state = yaml.safe_load(body) or {}
-        except (yaml.YAMLError, OSError) as exc:
-            log.warning("list_opp_runs: failed to read %s: %s", state_file.id, exc)
-            continue
-        current_phase = state.get("phase") or state.get("current_phase")
-        progress = _derive_phase_progress(state, current_phase)
-        out.append(
-            RunSummary(
-                run_id=child.name,
-                folder_id=child.id,
-                current_phase=current_phase,
-                current_step=state.get("step") or state.get("current_step"),
-                mode=state.get("mode"),
-                last_actor=state.get("last_actor"),
-                last_actor_at=state.get("last_actor_at"),
-                lifecycle_status=progress["status"],
-                phases_total=progress["phases_total"],
-                phases_done=progress["phases_done"],
-                latest_phase_done=progress["latest_phase_done"],
-            )
-        )
+    # Wave-4 reader swap: the per-run summaries are sourced from the framework's
+    # DriveRunStore and mapped back onto ace's RunSummary via framework_map.
+    from apps.opps import framework_reader
+    from apps.opps.skills import SKILL_REGISTRY
+    from apps.system.reader import load_system_overview
 
-    out.sort(key=lambda r: r.run_id, reverse=True)
-    return out
+    overview = load_system_overview(getattr(settings, "ACE_PLUGIN_PATH", "") or "")
+    return framework_reader.runs_summary_via_store(
+        client,
+        opp_folder=opp_folder,
+        runs_folder=runs_folder,
+        slug=opp_slug,
+        overview=overview,
+        skill_registry=list(SKILL_REGISTRY),
+    )
 
 
 # What the plugin considers a "still pending" phase or step. Anything
@@ -289,6 +249,12 @@ def _derive_phase_progress(
         "phases_total": 0,
         "phases_done": 0,
         "latest_phase_done": None,
+        # Per-phase status, in authored order. `phases_done` is a COUNT, which
+        # cannot express a run that cleared phases 1-5, errored in 6 and then
+        # completed 7 — a real shape in the record. The cross-run strip renders
+        # one segment per phase off this list. Derived inside the existing loop
+        # below, so it costs no extra Drive read and no extra parse.
+        "phase_states": [],
     }
 
     phases = state.get("phases")
@@ -305,6 +271,14 @@ def _derive_phase_progress(
     phases_done = 0
     latest_phase_done: str | None = None
     has_pending = False
+    phase_states: list[dict] = []
+
+    def _record(name: str, status: str) -> None:
+        phase_states.append({
+            "ordinal": len(phase_states) + 1,
+            "name": name,
+            "status": status,
+        })
 
     for phase_name, phase_value in phases.items():
         if not isinstance(phase_value, dict):
@@ -313,6 +287,7 @@ def _derive_phase_progress(
             # complete.
             phases_total += 1
             has_pending = True
+            _record(phase_name, "pending")
             continue
 
         phases_total += 1
@@ -328,6 +303,10 @@ def _derive_phase_progress(
             else:
                 phases_done += 1
                 latest_phase_done = phase_name
+            # Keep the AUTHORED status verbatim rather than collapsing to
+            # done/pending — `error`, `blocked`, `skipped` and `in_progress`
+            # are the whole point of the per-phase strip.
+            _record(phase_name, str(explicit_status))
             continue
 
         # Phase shape B — older plugin: bare step-name → status-string
@@ -345,16 +324,22 @@ def _derive_phase_progress(
             )
             if any_pending_step:
                 has_pending = True
+                _record(phase_name, "in_progress" if any(
+                    not _is_pending_step(v) for v in steps_map.values()
+                ) else "pending")
             else:
                 phases_done += 1
                 latest_phase_done = phase_name
+                _record(phase_name, "done")
         else:
             # Empty / unparseable phase block — conservatively pending.
             has_pending = True
+            _record(phase_name, "pending")
 
     result["phases_total"] = phases_total
     result["phases_done"] = phases_done
     result["latest_phase_done"] = latest_phase_done
+    result["phase_states"] = phase_states
 
     if phases_total > 0 and not has_pending:
         result["status"] = "complete"
@@ -381,116 +366,13 @@ def _is_pending_step(step_value) -> bool:
 
 
 # --- Manifest-driven skill attribution ---
-
-
-_DATE_TOKEN = re.compile(r"YYYY-MM-DD")
-_DATE_LITERAL = re.compile(r"\d{4}-\d{2}-\d{2}")
-
-
-def _manifest_path_to_regex(path: str) -> re.Pattern[str]:
-    """Convert a manifest path (possibly with YYYY-MM-DD placeholders) to a regex."""
-    escaped = re.escape(path)
-    escaped = escaped.replace(r"YYYY\-MM\-DD", r"\d{4}-\d{2}-\d{2}")
-    return re.compile(rf"^{escaped}$")
-
-
-def _artifact_matchers(artifacts: list[dict[str, Any]]) -> list[tuple[re.Pattern[str], str]]:
-    """Build (regex, produced_by) pairs from the artifact manifest.
-
-    ``produced_by`` == "external" entries are skipped (those are inputs,
-    not skill outputs — e.g. ``idea.md``).
-    """
-    out: list[tuple[re.Pattern[str], str]] = []
-    for art in artifacts:
-        path = art.get("path") or ""
-        producer = art.get("produced_by") or ""
-        if not path or not producer or producer == "external":
-            continue
-        out.append((_manifest_path_to_regex(path), producer))
-    return out
-
-
-_FILENAME_PREFIX_RE = re.compile(r"^([a-z0-9][a-z0-9-]*?)(?:_|-eval[_.]|\.)")
-
-
-def _attribute_files_to_skills(
-    files: list[DriveFile],
-    matchers: list[tuple[re.Pattern[str], str]],
-    registered_skills: set[str] | None = None,
-) -> dict[str, list[DriveFile]]:
-    """Group Drive files by the skill that produces them.
-
-    Primary path: each file's ``.path`` is matched against the
-    plugin-declared manifest entries. The manifest is the source of
-    truth.
-
-    Fallback: when a file lives under a ``<N>-<phase>/`` folder and has
-    a kebab-cased filename prefix that matches a registered skill (the
-    plugin convention is ``<skill>_<role>.<ext>`` and
-    ``<skill>-eval_verdict.<ext>``), attribute it to that skill anyway.
-    This rescues files that the plugin writes but forgets to declare in
-    the manifest — like ``app-release_summary.md``, observed in the
-    wild — without dropping them silently.
-
-    Files with no manifest match and no recognizable filename prefix
-    are attributed to ``""`` so callers can surface them as
-    "unclassified" if desired.
-    """
-    by_skill: dict[str, list[DriveFile]] = {}
-    for f in files:
-        if _is_folder(f):
-            continue
-        matched: str | None = None
-        for pattern, producer in matchers:
-            if pattern.match(f.path):
-                matched = producer
-                break
-        if matched is None and registered_skills:
-            matched = _filename_prefix_skill(f, registered_skills)
-        key = matched or ""
-        by_skill.setdefault(key, []).append(f)
-    return by_skill
-
-
-def _filename_prefix_skill(
-    f: DriveFile, registered_skills: set[str]
-) -> str | None:
-    """Attribute a file via its ``<skill>_…`` or ``<skill>-eval_…`` prefix.
-
-    Only fires for files under a phase-prefixed folder
-    (``<N>-<phase>/…``) since that's where lifecycle skill outputs live;
-    avoids false positives at the opp root or in shared subdirs.
-    """
-    # f.path looks like "2-commcare/app-release_summary.md" — require the
-    # phase-prefixed parent.
-    parts = f.path.split("/")
-    if len(parts) < 2 or not re.match(r"^\d+-", parts[0]):
-        return None
-    name = parts[-1]
-    m = _FILENAME_PREFIX_RE.match(name)
-    if not m:
-        return None
-    candidate = m.group(1)
-    if candidate in registered_skills:
-        return candidate
-    # Also try stripping `-eval` for verdict-style names like
-    # `idea-to-pdd-eval_verdict.yaml` where the prefix is the eval skill.
-    if candidate.endswith("-eval"):
-        target = candidate[: -len("-eval")]
-        if target in registered_skills:
-            return target
-    return None
-
-
-def _drive_file_to_artifact_ref(f: DriveFile) -> ArtifactRef:
-    return ArtifactRef(
-        name=f.name,
-        drive_file_id=f.id,
-        drive_web_link=f.web_view_link,
-        size_bytes=f.size_bytes,
-        mime_type=f.mime_type,
-        path=f.path,
-    )
+#
+# Artifact attribution (manifest matchers + filename-prefix fallback +
+# DriveFile→ArtifactRef) was removed in the wave-4 single-reader swap. The
+# framework ``canopy_agent_runs.drive.store.DriveRunStore`` now owns attribution and
+# surfaces each Artifact's Drive id (``ref``) + run-relative ``path`` directly,
+# so ace no longer re-attributes files (see ``apps/opps/framework_map`` +
+# ``apps/opps/framework_reader``).
 
 
 # --- Verdict extraction ---
@@ -509,17 +391,6 @@ def _drive_file_to_artifact_ref(f: DriveFile) -> ArtifactRef:
 _OLD_VERDICT_PATH_RE = re.compile(r"^verdicts/(?P<stem>[^/]+)\.ya?ml$")
 _NEW_VERDICT_PATH_RE = re.compile(
     r"^[^/]+/(?P<producer>[^/]+?)_verdict(?P<variant>-[a-z]+)?\.ya?ml$"
-)
-
-# QA result files (added by ACE PR #146 / 0.13.88 — first migration is
-# idea-to-pdd-qa). Filename convention: ``<phase>/<producer>-qa_result.yaml``
-# where ``<producer>`` is the QA skill name (e.g. ``idea-to-pdd-qa``).
-# QA is binary and structurally distinct from eval verdicts:
-#   - No score / dimensions
-#   - Verdict tier is pass | fail | incomplete
-#   - Failures carry auto_fix_hints the orchestrator passes to producer
-_QA_RESULT_PATH_RE = re.compile(
-    r"^[^/]+/(?P<qa_skill>[^/]+?-qa)_result\.ya?ml$"
 )
 
 
@@ -604,233 +475,13 @@ def _detect_score_scale(data: dict) -> float | None:
     return max(candidates)
 
 
-def _parse_qa_result_yaml(body: str, qa_skill: str) -> QAResult | None:
-    """Parse a QA result YAML body into a ``QAResult``.
-
-    Schema canonical at ACE's ``lib/qa-types.ts`` (PR #146). Filename
-    convention: ``<phase>/<producer>-qa_result.yaml`` where ``<producer>``
-    is the QA skill (e.g. ``idea-to-pdd-qa``). The target lifecycle skill
-    (``idea-to-pdd``) is the QA skill name with the ``-qa`` suffix stripped.
-    """
-    try:
-        data = yaml.safe_load(body) or {}
-    except yaml.YAMLError:
-        return None
-    if not isinstance(data, dict):
-        return None
-
-    verdict = str(data.get("verdict") or "").lower()
-    if verdict not in ("pass", "fail", "incomplete"):
-        return None
-
-    target_skill = qa_skill[: -len("-qa")] if qa_skill.endswith("-qa") else qa_skill
-
-    failures: list[QAFailure] = []
-    raw_failures = data.get("failures") or []
-    if isinstance(raw_failures, list):
-        for entry in raw_failures:
-            if not isinstance(entry, dict):
-                continue
-            failures.append(
-                QAFailure(
-                    check=str(entry.get("check") or ""),
-                    type=str(entry.get("type") or "static"),
-                    detail=str(entry.get("detail") or ""),
-                    auto_fix_hint=str(entry.get("auto_fix_hint") or ""),
-                )
-            )
-
-    stats = data.get("stats") or {}
-    auto_fix = data.get("auto_fix") or {}
-
-    return QAResult(
-        skill=qa_skill,
-        target_skill=target_skill,
-        verdict=verdict,
-        ran_at=str(data.get("ran_at")) if data.get("ran_at") else None,
-        capture_path=str(data.get("capture_path")) if data.get("capture_path") else None,
-        checks_run=int(stats.get("checks_run") or 0) if isinstance(stats, dict) else 0,
-        checks_passed=int(stats.get("checks_passed") or 0) if isinstance(stats, dict) else 0,
-        checks_failed=int(stats.get("checks_failed") or 0) if isinstance(stats, dict) else 0,
-        failures=failures,
-        auto_fix_attempted=auto_fix.get("attempted") if isinstance(auto_fix, dict) else None,
-        auto_fix_attempts=auto_fix.get("attempts") if isinstance(auto_fix, dict) else None,
-        auto_fix_succeeded=auto_fix.get("succeeded") if isinstance(auto_fix, dict) else None,
-    )
-
-
-def _load_decisions(
-    client: DriveClient,
-    run_files: list[DriveFile],
-) -> list[Decision]:
-    """Read ``decisions.yaml`` from the run-folder root and return rows.
-
-    Single file at the run root (``ACE/<opp>/runs/<run-id>/decisions.yaml``);
-    no per-phase split — each row carries its own ``phase`` tag. Schema
-    canonical at ACE ``lib/decisions-schema.ts``. Returns an empty list
-    when the file is missing or unparseable; consumers should treat
-    "no decisions log" as a normal state for legacy runs that predate
-    the framework.
-    """
-    file = _find_child(run_files, "decisions.yaml") or _find_child(run_files, "decisions.yml")
-    if file is None or _is_folder(file):
-        return []
-    try:
-        body = _read_text(client, file)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Failed to read decisions.yaml: %s", exc)
-        return []
-    try:
-        data = yaml.safe_load(body) or {}
-    except yaml.YAMLError:
-        return []
-    if not isinstance(data, dict):
-        return []
-    raw_rows = _extract_decision_rows(data)
-    return _parse_decision_rows(raw_rows)
-
-
-def _extract_decision_rows(data: dict) -> list:
-    """Pull the decision-row list out of a parsed decisions.yaml dict.
-
-    Canonical v3 shape uses ``decisions:`` as the top-level key (matches
-    ACE plugin ``lib/decisions-schema.ts:DecisionsLogSchema``).
-
-    Defensive fallback to ``rows:`` — when the ACE ``decisions_append_rows``
-    MCP atom isn't reachable (e.g. 2026-05-27 plugin.json registration gap
-    pre-ace#529), phase subagents fall back to a direct ``drive_create_file``
-    write and copy the SKILL.md example's ``rows:`` parameter name as the
-    YAML key. We accept that shape so legacy malformed files still render
-    in the Workbench (with a warning), instead of silently returning 0
-    rows. Returns ``[]`` when neither key resolves to a list.
-    """
-    canonical = data.get("decisions")
-    if canonical is None and isinstance(data.get("rows"), list):
-        log.warning(
-            "decisions.yaml uses legacy top-level key `rows:` instead of "
-            "canonical `decisions:` — most likely written by a phase subagent "
-            "that fell back from the typed `decisions_append_rows` MCP atom "
-            "to a direct file write. Rendering the rows for back-compat; "
-            "future writes should go through the atom (see ace#529 for the "
-            "registration fix).",
-        )
-        canonical = data["rows"]
-    if not isinstance(canonical, list):
-        return []
-    return canonical
-
-
-def _parse_decision_rows(raw_rows: list) -> list[Decision]:
-    """Convert raw decisions.yaml rows into Decision dataclasses.
-
-    Reads v3 fields first (``options``, ``reasoning``); falls back to
-    v2 (``options_considered``, ``notes``) so older runs still parse.
-    ``ai-default`` (v2/v3) falls back to ``default`` (v1). Old status
-    values (``applied``, ``open``) map to ``ai-default``.
-
-    Emits a single ``warning`` log line per row that has an ``id`` but
-    is missing ``question`` or ``ai-default`` — these are the rows that
-    render as blank cells in the workbench's Decisions Panel. Catches
-    future schema-drift regressions (e.g. ACE 2026-05-25 wrote rows
-    keyed ``decision:`` / ``rationale:`` instead of ``question:`` /
-    ``ai-default:``); without the log they're invisible to anything but
-    a human staring at the UI. The typed ``decisions_append_rows`` MCP
-    atom is the upstream defense — this log catches anything that
-    bypasses it (legacy writers, manual edits, future schema bumps that
-    skill prompts haven't caught up to).
-    """
-    out: list[Decision] = []
-    for row in raw_rows:
-        if not isinstance(row, dict):
-            continue
-        rid = str(row.get("id") or "").strip()
-        if not rid:
-            continue
-        opts_raw = row.get("options")
-        if opts_raw is None:
-            opts_raw = row.get("options_considered") or []
-        ai_default = str(
-            row.get("ai-default") or row.get("default") or ""
-        ).strip()
-        override = str(row.get("override") or "").strip()
-        raw_status = str(row.get("status") or "ai-default").strip().lower()
-        status = raw_status if raw_status == "overridden" else "ai-default"
-        question = str(row.get("question") or "").strip()
-        reasoning = str(row.get("reasoning") or row.get("notes") or "").strip()
-        # Override-reasoning may be written with either underscore (ACE v3)
-        # or hyphen (defensive — some hand-edited files). Both forms parse.
-        override_reasoning = str(
-            row.get("override_reasoning") or row.get("override-reasoning") or ""
-        ).strip()
-
-        if not question or not ai_default:
-            log.warning(
-                "decisions.yaml row %r is missing %s — likely written against a "
-                "stale schema (expected v3 fields: question, ai-default, options, "
-                "reasoning). Row keys present: %s",
-                rid,
-                ", ".join(
-                    name
-                    for name, val in (("question", question), ("ai-default", ai_default))
-                    if not val
-                ),
-                sorted(row.keys()),
-            )
-
-        out.append(
-            Decision(
-                id=rid,
-                phase=str(row.get("phase") or "").strip(),
-                skill=str(row.get("skill") or "").strip(),
-                question=question,
-                ai_default=ai_default,
-                override=override,
-                options_considered=[str(o) for o in opts_raw] if isinstance(opts_raw, list) else [],
-                source=str(row.get("source") or "").strip(),
-                status=status,
-                notes=reasoning,
-                override_reasoning=override_reasoning,
-            )
-        )
-    return out
-
-
-def _load_qa_results(
-    client: DriveClient,
-    opp_files: list[DriveFile],
-) -> dict[str, QAResult]:
-    """Walk the file tree for ``<phase>/<producer>-qa_result.yaml`` and
-    return ``{target_skill: QAResult}``.
-
-    Mirrors ``_load_verdicts`` but for QA results. Keyed on the *target*
-    lifecycle skill (e.g. ``idea-to-pdd``), not the QA skill itself, so
-    consumers can attach the QA result alongside the matching judge
-    verdict on the same StepSnapshot.
-
-    Multiple QA results per skill (re-runs after auto-fix) are coalesced
-    by ``ran_at``: latest wins.
-    """
-    candidates: dict[str, tuple[str, QAResult]] = {}
-    for f in opp_files:
-        if _is_folder(f):
-            continue
-        match = _QA_RESULT_PATH_RE.match(f.path)
-        if match is None:
-            continue
-        qa_skill = match.group("qa_skill")
-        try:
-            body = _read_text(client, f)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("Failed to read QA result %s: %s", f.path, exc)
-            continue
-        result = _parse_qa_result_yaml(body, qa_skill)
-        if result is None:
-            continue
-        ts = result.ran_at or ""
-        existing = candidates.get(result.target_skill)
-        if existing is None or ts > existing[0]:
-            candidates[result.target_skill] = (ts, result)
-    return {skill: r for skill, (_, r) in candidates.items()}
+# decisions.yaml loading/parsing (``_load_decisions`` + ``_extract_decision_rows``
+# + ``_parse_decision_rows``) was removed in the wave-4 single-reader swap. The
+# framework ``canopy_agent_runs.drive.store.DriveRunStore`` ported ACE's full
+# decisions-schema and surfaces each Decision row (id / phase /
+# options_considered / source / override_reasoning / conflict_signals included)
+# directly; ace maps it straight across in ``apps/opps/framework_map`` rather
+# than re-reading decisions.yaml a second time.
 
 
 def _parse_verdict_yaml(body: str) -> JudgeVerdict | None:
@@ -1141,6 +792,17 @@ def load_opp_card(
     """
     slug = opp_folder.name
 
+    # Wave-4 reader swap: the per-run summaries on the card are sourced from the
+    # framework's DriveRunStore (via framework_reader). The card's ace-specific
+    # surface (eval score, last_activity, status, run_count, opp manifest) stays
+    # ace-side — those have no framework read-model source.
+    from apps.opps import framework_reader
+    from apps.opps.skills import SKILL_REGISTRY
+    from apps.system.reader import load_system_overview
+
+    _overview = load_system_overview(getattr(settings, "ACE_PLUGIN_PATH", "") or "")
+    _registry = list(SKILL_REGISTRY)
+
     # opp.yaml at root carries multi-run-layout metadata (display_name,
     # created_at, created_by). Absent in flat-layout opps — safe no-op.
     opp_yaml_data: dict = {}
@@ -1159,56 +821,25 @@ def load_opp_card(
 
     runs_folder = _find_child_folder(opp_children, "runs")
     if runs_folder is not None:
-        run_children = client.list_files(runs_folder.id)
-        run_folders = sorted(
-            (c for c in run_children if _is_folder(c)),
-            key=lambda f: f.name, reverse=True,
+        # The store sources the per-run summaries (newest-first by run-id) and
+        # the run definition (only folders carrying run_state.yaml count) — the
+        # half-initialized / partially-deleted run folders the legacy loop
+        # filtered out are filtered the same way by the store.
+        runs_summary = framework_reader.runs_summary_via_store(
+            client,
+            opp_folder=opp_folder,
+            runs_folder=runs_folder,
+            slug=slug,
+            overview=_overview,
+            skill_registry=_registry,
         )
-        # Count only run folders that contain a run_state.yaml — matches
-        # list_opp_runs' definition of a real run. Half-initialized or
-        # partially-deleted run folders (folder exists, no run_state.yaml)
-        # must not inflate the count, or the card disagrees with the
-        # expanded runs list.
-        valid_runs = 0
-        for rf in run_folders:
-            run_inner = client.list_files(rf.id)
-            sf = _find_state_file(run_inner)
-            if sf is None:
-                continue
-            valid_runs += 1
-            # Read each run's state.yaml so the card payload carries the
-            # full runs_summary used by the Opps-list phase-chip strip.
-            # Pre-#512 the frontend fanned out N parallel /opps/<slug>/runs
-            # calls (one per card) to get this data; now we read it once
-            # during the card's cold load and serve from cache thereafter.
-            try:
-                run_state_body = _read_text(client, sf)
-                run_state = yaml.safe_load(run_state_body) or {}
-            except (yaml.YAMLError, OSError) as exc:
-                log.warning("load_opp_card: failed to read %s: %s", sf.id, exc)
-                run_state = {}
-            run_phase = run_state.get("phase") or run_state.get("current_phase")
-            run_progress = _derive_phase_progress(run_state, run_phase)
-            runs_summary.append(
-                RunSummary(
-                    run_id=rf.name,
-                    folder_id=rf.id,
-                    current_phase=run_phase,
-                    current_step=run_state.get("step") or run_state.get("current_step"),
-                    mode=run_state.get("mode"),
-                    last_actor=run_state.get("last_actor"),
-                    last_actor_at=run_state.get("last_actor_at"),
-                    lifecycle_status=run_progress["status"],
-                    phases_total=run_progress["phases_total"],
-                    phases_done=run_progress["phases_done"],
-                    latest_phase_done=run_progress["latest_phase_done"],
-                )
-            )
-            if state_file is None:
-                state_file = sf
-                state_source_children = run_inner
-                latest_run_name = rf.name
-        run_count = valid_runs
+        run_count = len(runs_summary)
+        if runs_summary:
+            latest = runs_summary[0]
+            latest_run_name = latest.run_id
+            # The latest run's children back the opp-eval read + last_activity.
+            state_source_children = client.list_folder(latest.folder_id)
+            state_file = _find_state_file(state_source_children)
 
     if state_file is None:
         # Flat layout: run_state.yaml at opp root.
@@ -1258,33 +889,17 @@ def load_opp_card(
     eval_score, eval_passed = _load_opp_eval_summary(client, state_source_children)
 
     # Flat-layout fallback: no runs/ subfolder but the opp has its own
-    # run_state.yaml at the root. Synthesise a single RunSummary so the
-    # Opps-list strip can still render a chip on those opps. The plugin's
-    # run_state.yaml key names diverged between layouts (flat uses
-    # ``current_phase`` / ``current_step``; multi-run uses ``phase`` /
-    # ``step``), so accept both — same as the OppCard fields above.
+    # run_state.yaml at the root. Synthesise a single RunSummary (sourced from
+    # the store via the flat synthetic-run adapter) so the Opps-list strip can
+    # still render a chip on those opps.
     if not runs_summary and runs_folder is None and state_data:
-        flat_phase = (
-            state_data.get("phase") or state_data.get("current_phase")
+        runs_summary = framework_reader.flat_runs_summary_via_store(
+            client,
+            opp_folder=opp_folder,
+            slug=slug,
+            overview=_overview,
+            skill_registry=_registry,
         )
-        flat_progress = _derive_phase_progress(state_data, flat_phase)
-        runs_summary = [
-            RunSummary(
-                run_id=current_run_id,
-                folder_id=opp_folder.id,
-                current_phase=flat_phase,
-                current_step=(
-                    state_data.get("step") or state_data.get("current_step")
-                ),
-                mode=state_data.get("mode"),
-                last_actor=state_data.get("last_actor"),
-                last_actor_at=state_data.get("last_actor_at"),
-                lifecycle_status=flat_progress["status"],
-                phases_total=flat_progress["phases_total"],
-                phases_done=flat_progress["phases_done"],
-                latest_phase_done=flat_progress["latest_phase_done"],
-            )
-        ]
 
     return OppCard(
         opp=opp_manifest,
@@ -1415,14 +1030,23 @@ def load_opp(
     opp_children = client.list_folder(opp_folder.id)
     runs_folder = _find_child_folder(opp_children, "runs")
 
+    # Wave-4 reader swap: the read engine is now the framework's DriveRunStore
+    # (via apps.opps.framework_reader), mapped back onto the ace dataclasses by
+    # framework_map. Signatures + return types are unchanged; only the engine
+    # underneath moved. See framework_reader's module docstring.
+    from apps.opps import framework_reader
+
+    registry = list(SKILL_REGISTRY)
+
     if runs_folder is not None:
-        # Multi-run layout: dispatch through list_opp_runs to pick the target.
-        # Pass opp_children to avoid re-listing the opp folder a second time.
-        run_summaries = list_opp_runs(
+        # Multi-run layout: the store sources the run set + per-run summaries.
+        run_summaries = framework_reader.runs_summary_via_store(
             client,
-            ace_root_folder_id=_ace_folder_id,
-            opp_slug=_slug,
-            opp_children=opp_children,
+            opp_folder=opp_folder,
+            runs_folder=runs_folder,
+            slug=_slug,
+            overview=overview,
+            skill_registry=registry,
         )
         if not run_summaries:
             # "Multi-run layout but runs/ is empty" is a valid state — the
@@ -1431,409 +1055,32 @@ def load_opp(
             # we synthesise a placeholder RunDetail from whatever's at the
             # opp root. Result: an empty Workbench with a "no runs yet"
             # affordance instead of a 404 page.
-            opp_children_via_list_files = client.list_files(opp_folder.id)
-            return _load_opp_flat(
+            return framework_reader.load_opp_flat_via_store(
                 client,
                 opp_folder=opp_folder,
-                opp_children=opp_children_via_list_files,
                 slug=_slug,
-                run_id=run_id,
-                skill_registry=SKILL_REGISTRY,
                 overview=overview,
+                skill_registry=registry,
             )
-        if run_id is None:
-            target = run_summaries[0]
-        else:
-            target = next((r for r in run_summaries if r.run_id == run_id), None)
-            if target is None:
-                raise FileNotFoundError(f"run {run_id!r} not found under opp {_slug!r}")
-
-        return _load_opp_run(
+        return framework_reader.load_opp_run_via_store(
             client,
             opp_folder=opp_folder,
-            run_summary=target,
-            run_summaries=run_summaries,
-            skill_registry=SKILL_REGISTRY,
+            run_id=run_id,
+            runs_summary=run_summaries,
+            slug=_slug,
             overview=overview,
+            skill_registry=registry,
         )
 
-    # Flat layout (no runs/ subfolder) — original reader path (uses list_files
-    # for the recursive tree scan, which the real GoogleDriveClient supports).
-    opp_children_via_list_files = client.list_files(opp_folder.id)
-    return _load_opp_flat(
+    # Flat layout (no runs/ subfolder): present the opp folder to the store as
+    # a single synthetic run.
+    return framework_reader.load_opp_flat_via_store(
         client,
         opp_folder=opp_folder,
-        opp_children=opp_children_via_list_files,
         slug=_slug,
-        run_id=run_id,
-        skill_registry=SKILL_REGISTRY,
         overview=overview,
+        skill_registry=registry,
     )
-
-
-def _load_opp_flat(
-    client: DriveClient,
-    *,
-    opp_folder: DriveFile,
-    opp_children: list[DriveFile],
-    slug: str,
-    run_id: str | None,
-    skill_registry,
-    overview: dict,
-) -> OppSnapshot:
-    """Load an OppSnapshot from the flat layout (run_state.yaml at opp root)."""
-    # Single flat recursive listing of the opp folder — one round-trip.
-    opp_tree = client.list_files(opp_folder.id, recursive=True)
-
-    state_file = _find_state_file(opp_children)
-    state_data: dict = {}
-    if state_file is not None:
-        raw = _read_text(client, state_file)
-        try:
-            state_data = yaml.safe_load(raw) or {}
-        except yaml.YAMLError:
-            log.warning("run_state.yaml for %s is not valid YAML", slug)
-            state_data = {}
-
-    # IDD→PDD rename transition: accept either primary-doc filename.
-    pdd_file = _find_child(opp_children, "pdd.md") or _find_child(opp_children, "idd.md")
-    pdd_body = _read_text(client, pdd_file) if pdd_file else ""
-
-    matchers = _artifact_matchers(overview.get("artifacts") or [])
-    files_by_skill = _attribute_files_to_skills(
-        opp_tree, matchers,
-        registered_skills={s.name for s in skill_registry},
-    )
-
-    artifacts_by_skill: dict[str, list[ArtifactRef]] = {
-        skill: [_drive_file_to_artifact_ref(f) for f in files]
-        for skill, files in files_by_skill.items()
-        if skill
-    }
-
-    if pdd_file is not None and not any(
-        a.name == pdd_file.name for a in artifacts_by_skill.get("idea-to-pdd", [])
-    ):
-        artifacts_by_skill.setdefault("idea-to-pdd", []).append(
-            _drive_file_to_artifact_ref(pdd_file)
-        )
-
-    registered_skills = {s.name for s in skill_registry}
-    verdicts_by_skill = _load_verdicts(client, opp_tree, registered_skills)
-    qa_results_by_skill = _load_qa_results(client, opp_tree)
-    decisions = _load_decisions(client, opp_tree)
-
-    steps = _build_steps(
-        skill_registry,
-        artifacts_by_skill,
-        verdicts_by_skill,
-        opp_folder.id,
-        qa_results_by_skill=qa_results_by_skill,
-        step_status_by_skill=_extract_step_statuses(state_data),
-    )
-
-    run_detail = RunDetail(
-        run_id="r1",
-        mode=state_data.get("mode", "review"),
-        status="running",
-        started_at=state_data.get("started_at"),
-        completed_at=None,
-        current_phase=state_data.get("current_phase"),
-        current_step=state_data.get("current_step"),
-        skill_versions={},
-        notes="",
-        steps=steps,
-        folder_id=opp_folder.id,
-        decisions=decisions,
-    )
-
-    opp_manifest = OppManifest(
-        slug=slug,
-        display_name=state_data.get("display_name", slug),
-        created_at=state_data.get("started_at") or state_data.get("created"),
-        created_by=state_data.get("created_by") or state_data.get("initiated_by"),
-        labels=[],
-        current_run_id="r1",
-    )
-
-    return OppSnapshot(
-        opp=opp_manifest,
-        pdd_body=pdd_body,
-        opp_folder_id=opp_folder.id,
-        current_run=run_detail,
-        runs_summary=[],
-    )
-
-
-def _load_opp_run(
-    client: DriveClient,
-    *,
-    opp_folder: DriveFile,
-    run_summary: RunSummary,
-    run_summaries: list[RunSummary],
-    skill_registry,
-    overview: dict,
-) -> OppSnapshot:
-    """Load an OppSnapshot from a specific run in the multi-run layout."""
-    run_folder_id = run_summary.folder_id
-    slug = opp_folder.name
-
-    # List the run folder's immediate children for run_state.yaml lookup.
-    run_children = client.list_folder(run_folder_id)
-
-    # run_state.yaml is already parsed into run_summary — just read for extra fields.
-    state_file = _find_state_file(run_children)
-    state_data: dict = {}
-    if state_file is not None:
-        try:
-            state_data = yaml.safe_load(_read_text(client, state_file)) or {}
-        except yaml.YAMLError:
-            log.warning(
-                "run_state.yaml for run %s/%s is not valid YAML",
-                slug, run_summary.run_id,
-            )
-
-    # pdd.md / idea.md: prefer run folder, fall back to opp root inputs/.
-    opp_folder_children = client.list_folder(opp_folder.id)
-    pdd_file = (
-        _find_child(run_children, "pdd.md")
-        or _find_child(run_children, "idd.md")
-        or _find_child(run_children, "idea.md")
-    )
-    if pdd_file is None:
-        # Try inputs/ subfolder at opp root.
-        inputs_folder = _find_child_folder(opp_folder_children, "inputs")
-        if inputs_folder is not None:
-            inputs_children = client.list_folder(inputs_folder.id)
-            pdd_file = (
-                _find_child(inputs_children, "pdd.md")
-                or _find_child(inputs_children, "idea.md")
-            )
-    pdd_body = _read_text(client, pdd_file) if pdd_file else ""
-
-    # Attribute run-folder files to skills via artifact manifest.
-    # Must use recursive=True so files in skill subfolders (verdicts/, scorecards/,
-    # app-summaries/, etc.) are included — without this every skill would appear
-    # "pending" even after a complete run.
-    run_tree = client.list_files(run_folder_id, recursive=True)
-    matchers = _artifact_matchers(overview.get("artifacts") or [])
-    files_by_skill = _attribute_files_to_skills(
-        run_tree, matchers,
-        registered_skills={s.name for s in skill_registry},
-    )
-
-    artifacts_by_skill: dict[str, list[ArtifactRef]] = {
-        skill: [_drive_file_to_artifact_ref(f) for f in files]
-        for skill, files in files_by_skill.items()
-        if skill
-    }
-
-    if pdd_file is not None and not any(
-        a.name == pdd_file.name for a in artifacts_by_skill.get("idea-to-pdd", [])
-    ):
-        artifacts_by_skill.setdefault("idea-to-pdd", []).append(
-            _drive_file_to_artifact_ref(pdd_file)
-        )
-
-    registered_skills = {s.name for s in skill_registry}
-    verdicts_by_skill = _load_verdicts(client, run_tree, registered_skills)
-    qa_results_by_skill = _load_qa_results(client, run_tree)
-    decisions = _load_decisions(client, run_tree)
-
-    steps = _build_steps(
-        skill_registry,
-        artifacts_by_skill,
-        verdicts_by_skill,
-        run_folder_id,
-        qa_results_by_skill=qa_results_by_skill,
-        step_status_by_skill=_extract_step_statuses(state_data),
-    )
-
-    # Read opp.yaml for display_name; fall back to run_state.yaml then slug.
-    opp_data = _read_opp_yaml(client, opp_folder.id)
-    display_name = opp_data.get("display_name") or state_data.get("display_name") or slug
-
-    run_detail = RunDetail(
-        run_id=run_summary.run_id,
-        mode=run_summary.mode or state_data.get("mode", "review"),
-        status="running",
-        started_at=state_data.get("started_at"),
-        completed_at=None,
-        current_phase=run_summary.current_phase,
-        current_step=run_summary.current_step,
-        skill_versions={},
-        notes="",
-        steps=steps,
-        folder_id=run_folder_id,
-        decisions=decisions,
-    )
-
-    opp_manifest = OppManifest(
-        slug=slug,
-        display_name=display_name,
-        created_at=opp_data.get("created_at") or state_data.get("started_at"),
-        created_by=opp_data.get("created_by") or state_data.get("initiated_by"),
-        labels=[],
-        current_run_id=run_summary.run_id,
-    )
-
-    return OppSnapshot(
-        opp=opp_manifest,
-        pdd_body=pdd_body,
-        opp_folder_id=opp_folder.id,
-        current_run=run_detail,
-        runs_summary=run_summaries,
-    )
-
-
-def _extract_step_statuses(state_data: dict | None) -> dict[str, str]:
-    """Pull per-skill ``status:`` strings out of a parsed run_state.yaml.
-
-    The plugin patches run_state.yaml on every step transition with a
-    declared status (``done``, ``running``, ``skipped``, …). Surfacing
-    that as the primary source of truth for ``_build_steps`` is the
-    only mechanism that scales for live-run monitoring across multiple
-    viewers: the file_id is reliably reported by the Drive Changes API
-    (it's an existing file edit, not a new child file) so the
-    OppSnapshot cache invalidates correctly, and the shared cache then
-    serves the same fresh state to every viewer with no per-viewer
-    Drive cost. See ``docs/learnings/drive-changes-api-parent-folder-blind-spot.md``
-    for why per-phase artifact listings can NOT be trusted for live
-    progress, and ``apps/opps/freshness_overlays.py`` for the design
-    they were the wrong answer to.
-
-    Handles the same three phase shapes ``_derive_phase_progress`` /
-    ``_is_pending_step`` already tolerate:
-
-      Shape A — explicit steps wrapper (current plugin)::
-
-          phases:
-            commcare-setup:
-              status: running
-              steps:
-                pdd-to-learn-app: {status: done, ...}
-
-      Shape B — bare skill→status mapping (older plugin)::
-
-          phases:
-            idea-to-design:
-              idea-to-pdd: done
-
-      Shape C — newer-plugin variant with no ``status:`` field but a
-      ``steps:`` wrapper. Falls out of the same branch as A.
-
-    Unknown / malformed phase entries are skipped silently rather than
-    raised — this is read-side code that runs on every snapshot fetch.
-    """
-    if not isinstance(state_data, dict):
-        return {}
-    phases = state_data.get("phases")
-    if not isinstance(phases, dict):
-        return {}
-    out: dict[str, str] = {}
-    for phase_value in phases.values():
-        if not isinstance(phase_value, dict):
-            continue
-        steps_map = phase_value.get("steps") if "steps" in phase_value else phase_value
-        if not isinstance(steps_map, dict):
-            continue
-        for skill_name, step_value in steps_map.items():
-            if not isinstance(skill_name, str):
-                continue
-            if isinstance(step_value, str):
-                out[skill_name] = step_value
-            elif isinstance(step_value, dict):
-                status = step_value.get("status")
-                if isinstance(status, str):
-                    out[skill_name] = status
-    return out
-
-
-def _build_steps(
-    skill_registry,
-    artifacts_by_skill: dict[str, list[ArtifactRef]],
-    verdicts_by_skill: dict[str, JudgeVerdict],
-    folder_id: str,
-    qa_results_by_skill: dict[str, QAResult] | None = None,
-    step_status_by_skill: dict[str, str] | None = None,
-) -> list[StepSnapshot]:
-    """Synthesize StepSnapshot rows from the skill registry + Drive data.
-
-    Step status precedence (highest → lowest):
-
-      1. ``qa-failed`` — irrecoverable QA verdict. Surfaces the
-         auto-fix loop regardless of what run_state.yaml claims.
-      2. ``step_status_by_skill`` — the declared status in
-         run_state.yaml, normalized via ``_RUN_STATE_TO_CANONICAL``.
-         This is the primary source of truth: the plugin writes it
-         deliberately at each step transition, it carries semantic
-         info artifact-presence can't (``running``, ``skipped`` /
-         ``no-op``), and it's cache-friendly because Drive Changes
-         API reliably reports edits to existing files.
-      3. Artifact presence — fallback for legacy runs that pre-date
-         the decisions-log era, and for tests that don't bother
-         constructing a run_state. Drops a debug log when run_state
-         says ``complete`` but no load-bearing artifacts exist
-         (typically a legitimate no-op step, sometimes a plugin bug).
-    """
-    qa_results_by_skill = qa_results_by_skill or {}
-    step_status_by_skill = step_status_by_skill or {}
-    steps: list[StepSnapshot] = []
-    for skill_meta in skill_registry:
-        artifacts = artifacts_by_skill.get(skill_meta.name, [])
-        qa_result = qa_results_by_skill.get(skill_meta.name)
-        # Shared-substrate files in the run-root (decisions.yaml,
-        # decisions.yml) get attributed to idea-to-pdd in the artifact
-        # manifest because idea-to-pdd is the first writer, but in
-        # practice many phases append to them. After a fork, these
-        # files are carried verbatim by `_RUN_ROOT_FILES_TO_COPY` even
-        # when the producing skill hasn't actually run in the new run —
-        # so their presence is not evidence the skill ran. Exclude them
-        # from the artifact-presence fallback check so a freshly forked
-        # Phase-1 run doesn't show idea-to-pdd as complete just because
-        # decisions.yaml got carried over.
-        load_bearing_artifacts = [
-            a for a in artifacts
-            if getattr(a, "name", None) not in _SHARED_SUBSTRATE_FILES
-        ]
-
-        if qa_result is not None and qa_result.verdict == "fail":
-            # QA failed irrecoverably; eval was skipped.
-            # Surface as a distinct status so the UI can show the
-            # auto-fix attempts + remaining failures.
-            status = "qa-failed"
-        else:
-            declared = step_status_by_skill.get(skill_meta.name)
-            normalized = _RUN_STATE_TO_CANONICAL.get(declared) if declared else None
-            if normalized is not None:
-                status = normalized
-                if status == "complete" and not load_bearing_artifacts:
-                    log.debug(
-                        "step %s/%s declared complete in run_state.yaml but no "
-                        "load-bearing artifacts present (likely a no-op step)",
-                        skill_meta.phase, skill_meta.name,
-                    )
-            elif load_bearing_artifacts:
-                status = "complete"
-            else:
-                status = "pending"
-
-        step_manifest = StepManifest(
-            skill_name=skill_meta.name,
-            phase=skill_meta.phase,
-            ordinal=skill_meta.ordinal,
-            status=status,
-        )
-        steps.append(
-            StepSnapshot(
-                step=step_manifest,
-                judge=verdicts_by_skill.get(skill_meta.name),
-                artifacts=artifacts,
-                folder_id=folder_id,
-                qa_result=qa_result,
-            )
-        )
-    return steps
 
 
 @dataclass

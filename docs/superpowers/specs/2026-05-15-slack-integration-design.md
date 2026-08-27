@@ -83,6 +83,15 @@ its payload is `(slug, phase)`, so it's stateless.
 
 ## Architecture
 
+> **Correction (2026-07-26).** The `run_pdd() / run_new()` box below used to
+> read "→ existing turn_driver spawns claude -p /ace:run …". That was an
+> assumption, never implemented: `apps/slack/run_starter.py` created the
+> Session and a completed *user* turn and returned, so a Slack-triggered run
+> executed nothing at any point between May and 2026-07-26. The assumption was
+> transcribed verbatim into the module docstring, which is how it survived.
+> The box now describes what the code does. See
+> `docs/plans/2026-07-26-run-convergence-ace-side.md`, Task 11.
+
 ```
 Slack workspace
    │  POST /ace/api/slack/{events,commands,interactions}
@@ -92,8 +101,8 @@ apps/slack/views.py            ← signing-secret verify, 3s ack
 apps/slack/handlers.py         ← slash + interactive dispatch
    │
    ├─ run_pdd() / run_new()    → creates Session w/ opp_slug
-   │                              → existing turn_driver spawns
-   │                                 claude -p /ace:run …
+   │                              → creates a pending assistant turn
+   │                              → run_dispatch.start_turn
    │
    └─ status() / list() / link() / fork_redirect()
 

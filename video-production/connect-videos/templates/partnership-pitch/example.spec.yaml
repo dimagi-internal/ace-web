@@ -1,0 +1,141 @@
+# partnership-pitch — fully-filled demo spec (AI cut, prospect-branded).
+#
+# Prospect-branded variant of program-designer: adds a `prospect` block and
+# carries 3 narrative angles (day-in-the-life / the-scale-gap / trust-travels).
+# Demo prospect is the fictional NGO "Living Goods"; active angle is
+# trust-travels, active_cut is "ai". Fully filled — no placeholder tokens.
+
+provenance:
+  generator: partnership-pitch
+  template: partnership-pitch
+  generated_from: https://example.org/living-goods
+  generated_at: "2026-06-17T00:00:00Z"
+
+slug: partnership-pitch
+workspace: dimagi-team
+name: Living Goods
+country_focus: Kenya & Uganda
+status: Prospect
+tagline: "Trusted community health, verified at every door — and paid for what's delivered."
+program_url: https://example.org/living-goods
+
+# Which cut to render. "ai" includes the ai_build beat below; "standard"
+# drops it. The AI cut is the default pitch — it doubles as proof the
+# package was AI-generated.
+active_cut: ai
+
+prospect:
+  name: Living Goods
+  # Real prospect logo goes here as a library:image/... ref; omitted in this
+  # example (fictional prospect) so it renders without a missing-asset 404.
+  # logo_asset: "library:image/prospect-logos/<prospect>.png"
+  region: East Africa
+  sector: Community Health
+
+# The "AI builds your program" card (AI cut only). Shared across angles —
+# the prospect's program decomposed into its Connect components. The
+# per-angle framing lives in each variant's ai_build narration line.
+ai_build:
+  headline: "Living Goods on Connect"
+  components:
+    - "CHW training"
+    - "Door-to-door delivery app"
+    - "Visit verification"
+    - "Performance pay"
+  subhead: "Set up around your community health program — you bring the protocol."
+
+manifest:
+  field-walking-towards-house: library:video/field-broll/field-walking-towards-house.mp4
+  field-group-around-woman: library:video/field-broll/field-group-around-woman.mp4
+  mobile-learn: library:video/mobile-screencast/mobile-learn.mp4
+  mobile-mapping: library:video/mobile-screencast/mobile-mapping.mp4
+  web-microplan: library:video/web-screencast/web-microplan.mp4
+  mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
+
+scene:
+  clips:
+    - "@field-walking-towards-house"
+    - "@field-group-around-woman"
+  lower_third: "Living Goods CHWs, at the door"
+
+problem:
+  big: "65%"
+  caption: "of rural households are more than 5km from the nearest health facility"
+  source: "Living Goods program data, 2025"
+
+product:
+  beats:
+    - asset: "@mobile-learn"
+      caption: "Learn — with an AI coach"
+      is_demo_clip: true
+    - asset: "@mobile-mapping"
+      caption: "Deliver — door to door"
+      is_demo_clip: true
+    - asset: "@web-microplan"
+      caption: "Verify — the moment it happens"
+      is_demo_clip: true
+    - asset: "@mobile-pay"
+      caption: "Pay — for every verified visit"
+      is_demo_clip: true
+
+impact:
+- big: "1.2M"
+  caption: "household visits delivered each year"
+- big: "98%"
+  caption: "of visits verified — biometric, GPS, photo"
+
+narration:
+  generator: manual
+  prompt_version: v1-partnership-angles
+  start_seconds: 0
+  # Joined from the active angle's (trust-travels) by_beat lines — the renderer
+  # requires a non-empty script. Regenerate this when active_angle changes.
+  script: |
+    Living Goods is built on a simple promise: a trusted health worker at every door.
+    Connect makes that promise verifiable — one loop: Learn, Deliver, Verify, and Pay.
+    Here's how that trust travels onto Connect.
+    Connect provides the pieces — training, a door-to-door delivery app, verification, and pay — set up around the Living Goods program, so trust is proven, not assumed.
+    Community health workers deliver where families are, and every visit is recorded as it happens.
+    Most of the families they serve live more than five kilometres from the nearest clinic — trust is the whole program.
+    Workers learn on their phones with an AI coach, deliver guided visits, and each one is verified — biometric, GPS, and photo. Then payment follows.
+    Nearly every visit is verified, and payment follows the proof — so the trust families place in Living Goods is backed by evidence.
+  active_angle: trust-travels
+  variants:
+  - angle_id: day-in-the-life
+    by_beat:
+      hook: "Follow one Living Goods community health worker through a single morning."
+      cycle: "Her day runs one loop: Learn, Deliver, Verify, and Pay."
+      handoff: "Here's what that morning looks like on Connect."
+      ai_build: "Connect provides the pieces — training, a door-to-door delivery app, verification, and pay — set up around the Living Goods program."
+      scene: "She walks to each household, where families are, and every visit is recorded as it happens."
+      problem: "Most of the families she serves live hours from the nearest clinic — she is their first point of care."
+      product: "She learns on her phone with an AI coach, delivers guided visits, and each one is verified by biometric, GPS, and photo. Then payment follows."
+      impact: "By the end of the day, every visit she made is verified and paid — and Living Goods can see exactly what was delivered."
+      cta: ""
+  - angle_id: the-scale-gap
+    by_beat:
+      hook: "Living Goods reaches millions of households — but every new community widens the visibility gap."
+      cycle: "Connect closes it with one loop: Learn, Deliver, Verify, and Pay."
+      handoff: "Here's how that loop scales across every community."
+      ai_build: "Connect provides the pieces — training, a door-to-door delivery app, verification, and pay — so the same standard holds at any scale."
+      scene: "Across thousands of villages, frontline workers deliver where families are, and every visit is recorded as it happens."
+      problem: "Two thirds of the households Living Goods serves are more than five kilometres from a health facility."
+      product: "Workers learn on their phones with an AI coach, deliver guided visits, and each one is verified — biometric, GPS, and photo. Then payment follows."
+      impact: "Over a million visits a year, each one verified — so growth never outruns accountability."
+      cta: ""
+  - angle_id: trust-travels
+    by_beat:
+      hook: "Living Goods is built on a simple promise: a trusted health worker at every door."
+      cycle: "Connect makes that promise verifiable — one loop: Learn, Deliver, Verify, and Pay."
+      handoff: "Here's how that trust travels onto Connect."
+      ai_build: "Connect provides the pieces — training, a door-to-door delivery app, verification, and pay — set up around the Living Goods program, so trust is proven, not assumed."
+      scene: "Community health workers deliver where families are, and every visit is recorded as it happens."
+      problem: "Most of the families they serve live more than five kilometres from the nearest clinic — trust is the whole program."
+      product: "Workers learn on their phones with an AI coach, deliver guided visits, and each one is verified — biometric, GPS, and photo. Then payment follows."
+      impact: "Nearly every visit is verified, and payment follows the proof — so the trust families place in Living Goods is backed by evidence."
+      cta: ""
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2

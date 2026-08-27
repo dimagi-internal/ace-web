@@ -29,7 +29,7 @@ jobs:
         # Dockerfile's ``git clone --depth 1 ace.git /app/vendor/ace``.
         # The resulting ../ace path is what config/settings/base.py's
         # default ACE_PLUGIN_PATH resolves to.
-        run: git clone --depth 1 https://github.com/jjackson/ace.git ../ace
+        run: git clone --depth 1 https://github.com/dimagi-internal/ace.git ../ace
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
@@ -44,6 +44,16 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
+
+      - name: Verify uv.lock is in sync with pyproject
+        # The committed uv.lock drives the Docker image build (the Dockerfile
+        # installs deps via `uv export --frozen` from the lock), while the venv
+        # below installs from pyproject. So a dependency added to pyproject
+        # without re-locking passes every local + CI test yet is ABSENT from
+        # the deployed image — exactly what happened when psycopg[pool] was
+        # added but not locked (failed deploy + long CloudWatch root-cause
+        # hunt). `uv lock --check` fails the build until `uv lock` is re-run.
+        run: uv lock --check
 
       - name: Create venv and install deps
         run: |

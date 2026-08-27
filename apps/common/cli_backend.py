@@ -83,6 +83,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -109,6 +110,30 @@ from .nova_auth_flow import get_fresh_token as get_fresh_nova_token
 NOVA_BEARER_TOKEN_ENV = "NOVA_BEARER_TOKEN"
 
 logger = logging.getLogger(__name__)
+
+
+def _stamp_receipt_time(line: str) -> str:
+    """Add a receipt-time ``timestamp`` to a stream-json line if it lacks one.
+
+    The CLI's stdout envelopes carry no per-event ``timestamp`` (unlike the
+    on-disk transcript), so a cost breakdown computed from captured stdout has
+    a correct total + cost but ZERO per-phase / per-skill wall. Stamping each
+    line as we read it — receipt time ≈ event time, since we drain stdout as
+    the subprocess emits — gives the aggregator the timeline it needs. The
+    enriched line is also a more faithful, replayable transcript.
+
+    Best-effort: a non-JSON or non-object line (or one that already has a
+    timestamp) is returned unchanged.
+    """
+    try:
+        obj = json.loads(line)
+    except (json.JSONDecodeError, ValueError):
+        return line
+    if not isinstance(obj, dict) or "timestamp" in obj:
+        return line
+    obj["timestamp"] = datetime.now(UTC).isoformat()
+    return json.dumps(obj) + "\n"
+
 
 # How many lines of stderr we keep in memory per subprocess. The kernel's
 # stderr pipe buffer is ~64 KB; a long-running run can emit far more than
@@ -339,6 +364,7 @@ class CLIBackend:
         session: Session,
         new_user_message: str,
         force_fresh_session: bool = False,
+        raw_sink: list[str] | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Stream one assistant turn.
 
@@ -372,9 +398,11 @@ class CLIBackend:
         # with ours — which for the long-lived path means evicting the
         # SessionProcess before the consumer's cancel handler returns.
         if force_fresh_session:
+            # One-shot path is the auto-titler — a throwaway session we don't
+            # analyze, so no raw_sink capture there.
             agen = self._stream_one_shot(session, new_user_message)
         else:
-            agen = self._stream_long_lived(session, new_user_message)
+            agen = self._stream_long_lived(session, new_user_message, raw_sink=raw_sink)
         try:
             async for event in agen:
                 yield event
@@ -455,7 +483,7 @@ class CLIBackend:
     # ─────────────────────────── long-lived path ───────────────────────────
 
     async def _stream_long_lived(
-        self, session: Session, new_user_message: str
+        self, session: Session, new_user_message: str, raw_sink: list[str] | None = None
     ) -> AsyncIterator[StreamEvent]:
         """Drive one turn through the per-Session long-lived subprocess.
 
@@ -501,7 +529,7 @@ class CLIBackend:
 
                 try:
                     async for event in self._send_and_drain_persistent(
-                        sp, new_user_message
+                        sp, new_user_message, raw_sink=raw_sink
                     ):
                         had_any_event = True
                         if (
@@ -567,7 +595,7 @@ class CLIBackend:
                             session, new_user_message
                         )
                         async for event in self._send_and_drain_persistent(
-                            sp, history_prompt
+                            sp, history_prompt, raw_sink=raw_sink
                         ):
                             had_any_event = True
                             if (
@@ -728,11 +756,7 @@ class CLIBackend:
                 sp = SessionProcess(slug=session.slug, session_pk=session.pk)
                 self._sessions[session.slug] = sp
                 if len(self._sessions) > self._max_session_pool_size:
-                    lru_slug = min(
-                        (s for s in self._sessions if s != session.slug),
-                        key=lambda s: self._sessions[s].last_active,
-                        default=None,
-                    )
+                    lru_slug = self._lru_evict_candidate(session.slug)
                     if lru_slug is not None:
                         lru_to_evict = self._sessions.pop(lru_slug)
 
@@ -800,7 +824,7 @@ class CLIBackend:
         )
 
     async def _send_and_drain_persistent(
-        self, sp: SessionProcess, message_text: str
+        self, sp: SessionProcess, message_text: str, raw_sink: list[str] | None = None
     ) -> AsyncIterator[StreamEvent]:
         """Write one user-message envelope to the live stdin, drain one turn.
 
@@ -851,7 +875,7 @@ class CLIBackend:
             ) from exc
 
         had_events = False
-        async for event in self._drain_persistent(proc):
+        async for event in self._drain_persistent(proc, raw_sink=raw_sink):
             had_events = True
             yield event
 
@@ -870,12 +894,18 @@ class CLIBackend:
         # is only correct for the very first --resume attempt).
         sp.spawned_with_resume = False
 
-    async def _drain_persistent(self, proc) -> AsyncIterator[StreamEvent]:
+    async def _drain_persistent(
+        self, proc, raw_sink: list[str] | None = None
+    ) -> AsyncIterator[StreamEvent]:
         """Read stdout line by line until DONE, WITHOUT closing stdin.
 
         Mirror of ``_drain`` minus the stdin-close-on-DONE behaviour. The
         subprocess stays open for subsequent turns; only ``_terminate_proc``
         (via ``proc.terminate()``) closes stdin.
+
+        When ``raw_sink`` is provided, every raw stdout line is appended to it
+        verbatim — the turn driver uses this to capture the JSONL transcript
+        of a web-source session and compute its cost breakdown at turn end.
         """
         while True:
             line = await proc.stdout.readline()
@@ -885,6 +915,10 @@ class CLIBackend:
                 # picked up by the outer error path which evicts.
                 return
             text = line.decode("utf-8", errors="replace")
+            if raw_sink is not None:
+                # Enrich with a receipt-time timestamp so the cost aggregator
+                # can derive per-phase wall (stdout envelopes carry none).
+                raw_sink.append(_stamp_receipt_time(text))
             for event in parse_stream_json_lines([text]):
                 yield event
                 if event.type is StreamEventType.DONE:
@@ -1039,6 +1073,48 @@ class CLIBackend:
             self._idle_reaper(), name="cli-backend-idle-reaper"
         )
 
+    def _lru_evict_candidate(self, exclude_slug: str) -> str | None:
+        """Oldest-``last_active`` slug eligible for LRU eviction to admit a new
+        session — excluding the incoming session AND any session with a turn in
+        progress (lock held). Same rationale as ``_evictable_slugs``: an active
+        long turn has a stale ``last_active`` (never refreshed mid-stream) but
+        must never be evicted, or its staged HOME is rmtree'd under the live
+        claude -p and the run dies cancelled. If every other session is
+        mid-turn, returns None — let the pool briefly exceed the cap rather than
+        kill a live run. Caller holds ``_sessions_dict_lock``."""
+        return min(
+            (
+                s
+                for s in self._sessions
+                if s != exclude_slug and not self._sessions[s].lock.locked()
+            ),
+            key=lambda s: self._sessions[s].last_active,
+            default=None,
+        )
+
+    def _evictable_slugs(self, now: float) -> list[str]:
+        """Slugs eligible for idle eviction: idle past the timeout AND not
+        currently mid-turn.
+
+        The lock guard is load-bearing. A turn holds ``sp.lock`` for its full
+        duration (see ``stream_completion``), but ``last_active`` is only
+        refreshed at admission and end-of-turn — never mid-stream. A long ACE
+        run is ONE multi-hour turn, so 30 min in its ``last_active`` is stale
+        and, without this guard, the reaper pops it from the pool and evicts
+        it — terminating claude -p and rmtree-ing the staged HOME out from
+        under the live subprocess. That is the "runs cancelled ~30-60 min in"
+        production kill (claude -p limps on its cached access token until the
+        next refresh, then dies against the deleted HOME). ``lock.locked()``
+        means a turn is in progress → never evict. Idle pooled sessions (warm
+        proc, free lock) are still reaped. Caller holds ``_sessions_dict_lock``.
+        """
+        return [
+            slug
+            for slug, sp in self._sessions.items()
+            if now - sp.last_active > self._idle_timeout_seconds
+            and not sp.lock.locked()
+        ]
+
     async def _idle_reaper(self) -> None:
         """Sweep ``_sessions`` for SessionProcesses idle longer than the
         timeout and evict them. Runs forever (cancelled at worker
@@ -1053,11 +1129,7 @@ class CLIBackend:
             try:
                 now = time.monotonic()
                 async with self._sessions_dict_lock:
-                    stale = [
-                        slug
-                        for slug, sp in self._sessions.items()
-                        if now - sp.last_active > self._idle_timeout_seconds
-                    ]
+                    stale = self._evictable_slugs(now)
                 for slug in stale:
                     try:
                         logger.info(
@@ -1677,8 +1749,29 @@ async def _heartbeat(proc, session_slug: str) -> None:
                 elapsed,
                 stderr_lines,
             )
+            # Persist the liveness beacon to the DB (not just the log) so an
+            # interrupted run is detectable after the task driving it is gone
+            # — e.g. a deploy replaced the ECS task mid-run. See
+            # Session.interrupted(). Best-effort: a transient DB blip must not
+            # kill the heartbeat loop.
+            if session_slug:
+                try:
+                    await _stamp_driver_heartbeat(session_slug)
+                except Exception:
+                    logger.debug(
+                        "heartbeat DB stamp failed for %s", session_slug, exc_info=True
+                    )
     except asyncio.CancelledError:
         return
+
+
+@sync_to_async
+def _stamp_driver_heartbeat(slug: str) -> None:
+    from django.utils import timezone
+
+    from apps.sessions.models import Session
+
+    Session.objects.filter(slug=slug).update(driver_heartbeat_at=timezone.now())
 
 
 def _proc_stderr_tail(proc, *, char_limit: int = 2000) -> str:

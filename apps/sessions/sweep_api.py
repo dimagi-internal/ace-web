@@ -6,8 +6,8 @@ sits at /sessions (no workspace_slug) and returns / deletes sessions across
 all workspaces where the calling user is at least Editor.
 
 Deletes are atomic per row and CASCADE through SessionParticipant, Message,
-Draft, ShareToken, and IngestUpload via the FK on_delete settings already
-declared on those models. There is no soft-delete path — this is the sweep.
+and IngestUpload via the FK on_delete settings already declared on those
+models. There is no soft-delete path — this is the sweep.
 """
 from __future__ import annotations
 

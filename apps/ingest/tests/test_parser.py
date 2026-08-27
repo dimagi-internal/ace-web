@@ -196,3 +196,30 @@ def test_parse_session_bytes_matches_parse_session_file():
         assert ea.kind == eb.kind
         assert ea.tool_use_id == eb.tool_use_id
         assert ea.matched_tool_use_id == eb.matched_tool_use_id
+
+
+def test_nul_bytes_stripped_from_turns():
+    """Postgres jsonb/text reject U+0000 — the parser must strip it so
+    bulk_create can't 500 on a transcript carrying a NUL in tool output."""
+    import json
+
+    from apps.ingest.parser import parse_session_bytes
+
+    rows = [
+        {"type": "system", "subtype": "init", "session_id": "sess_nul_001"},
+        {
+            "type": "assistant",
+            "message": {"id": "m1", "content": [{"type": "text", "text": "a\x00b"}]},
+        },
+        {
+            "type": "user",
+            "message": {"content": [{"type": "tool_result", "content": "x\x00y"}]},
+        },
+    ]
+    raw = ("\n".join(json.dumps(r) for r in rows) + "\n").encode("utf-8")
+    result, _events = parse_session_bytes(raw)
+
+    for turn in result.turns:
+        assert "\x00" not in turn.plaintext
+        assert "\x00" not in json.dumps(turn.content)
+    assert result.turns[0].plaintext == "ab"

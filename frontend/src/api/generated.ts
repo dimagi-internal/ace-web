@@ -182,6 +182,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/decision-overrides": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Save buffered decision edits to Drive (inputs/decision-overrides.yaml) */
+        readonly post: operations["apps_opps_api_save_decision_overrides_endpoint"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/opps/{slug}/fork/status": {
         readonly parameters: {
             readonly query?: never;
@@ -267,6 +284,35 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/actions/seeded-run": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Launch a first-class seeded run (headless)
+         * @description Fork the golden into a fresh, pre-shaped run and start a plain resume —
+         *     by launching ``manage.py drive_turn`` as a detached process that drives the
+         *     turn through the SAME turn-driver + channel-layer broadcast path as a human
+         *     typing into the workbench chat. Run shape is structural (ace#672): the
+         *     forked run's ``run_state.yaml`` already encodes seed-prefix/target/skipped,
+         *     so the seeded turn is a plain ``/ace:run <slug>/<run_id>`` resume, not a
+         *     ``--seed-from``/``--only`` flag command. The session is a normal, openable,
+         *     live session; the run is decoupled from this request's event loop (which is
+         *     why an in-request ``create_task`` didn't work — ace-web#585). Exposed as an
+         *     MCP tool (``x-mcp-expose``). Returns 202 (the run executes asynchronously).
+         */
+        readonly post: operations["apps_opps_api_seeded_run"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/opps/{slug}/health": {
         readonly parameters: {
             readonly query?: never;
@@ -340,6 +386,94 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/sessions/interrupted": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Runs interrupted mid-flight (resume candidates) */
+        readonly get: operations["apps_sessions_api_interrupted_runs"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/sessions/resume-interrupted": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Resume all interrupted ACE opp runs (post-deploy self-heal)
+         * @description Bulk-resume every interrupted ACE opp run in the workspace. Intended for
+         *     the post-deploy hook: after a rollout drains the tasks driving live runs,
+         *     this relaunches them from run_state.yaml. Single serial call → no
+         *     double-spawn race.
+         *
+         *     Best-effort per session, never all-or-nothing: a session that cannot be
+         *     restarted is reported in ``failed`` and the sweep carries on. Anything that
+         *     raises here is a *self-heal* failing, and aborting the whole sweep on the
+         *     first one leaves every later run unresumed AND unreported.
+         */
+        readonly post: operations["apps_sessions_api_resume_interrupted"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/resume": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Resume one interrupted run */
+        readonly post: operations["apps_sessions_api_resume_run"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/sessions/{slug}/execution": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Where this run's execution actually stands
+         * @description The run's canopy execution state — including the two states that say, in
+         *     plain words, that nothing can run it: `no_runner_configured` and
+         *     `waiting_for_runner`. Reconciles on read (ace-web has no worker; this is the
+         *     same compute-on-read shape `/structure` uses).
+         *
+         *     The monkeypatch target in contract tests is
+         *     `apps.canopy.run_state.reconcile_session`.
+         */
+        readonly get: operations["apps_sessions_api_session_execution"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/sessions/{slug}": {
         readonly parameters: {
             readonly query?: never;
@@ -393,23 +527,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/sessions/{slug}/turn-state": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Turn state (polling) */
-        readonly get: operations["apps_sessions_api_session_turn_state"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/api/w/{workspace_slug}/sessions/{slug}/cost": {
         readonly parameters: {
             readonly query?: never;
@@ -439,41 +556,6 @@ export interface paths {
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/api/w/{workspace_slug}/sessions/{slug}/share": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** List share tokens */
-        readonly get: operations["apps_sessions_api_list_share"];
-        readonly put?: never;
-        /** Create share token */
-        readonly post: operations["apps_sessions_api_create_share_token"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/api/w/{workspace_slug}/sessions/{slug}/share/{token_key}": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        readonly post?: never;
-        /** Revoke share token */
-        readonly delete: operations["apps_sessions_api_revoke_share_token"];
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -537,8 +619,50 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Get the full template bundle (meta + skeleton + skill prompt) */
+        /** Get the full template bundle (meta + skill prompt + example spec) */
         readonly get: operations["apps_videos_api_get_video_template"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /** Update one or more fields of a template (meta, prompt, example) */
+        readonly patch: operations["apps_videos_api_patch_video_template"];
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/templates/{template_id}/example": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get the example spec.yaml for a template */
+        readonly get: operations["apps_videos_api_get_template_example"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/templates/{template_id}/example-spec": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get the example spec.yaml for a template as a parsed object
+         * @description Return the template's example.spec.yaml as a parsed dict.
+         *
+         *     The BeatEditor mounts on this endpoint's response directly — it
+         *     needs a parsed spec object, not raw YAML text.  Returns 404 when
+         *     no example.spec.yaml exists for this template.
+         */
+        readonly get: operations["apps_videos_api_get_template_example_spec"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -573,6 +697,28 @@ export interface paths {
         };
         /** List the audio library (TTS clips with voice + text metadata) */
         readonly get: operations["apps_videos_api_list_media_library_audio"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/w/{workspace_slug}/videos/snippets": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List video snippets (labeled ranges into master clips)
+         * @description List the workspace's ingested snippets. Optional filters narrow
+         *     by manifest run id (``source_run``), ``narrative_slug``, or a single
+         *     ``tag`` (membership in the snippet's tags list).
+         */
+        readonly get: operations["apps_videos_api_list_video_snippets"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -983,6 +1129,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/canopy/sessions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Sessions */
+        readonly post: operations["apps_canopy_api_sessions"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/opps/public/{workspace}/{slug}/runs/{run_id}/summary": {
         readonly parameters: {
             readonly query?: never;
@@ -996,6 +1159,13 @@ export interface paths {
          *     are meant to circulate. Workspace + slug + run_id all in the URL —
          *     no leak-prevention 404 differentiation here, the URL is the secret.
          *
+         *     Every link is served to everyone, each one declaring its own
+         *     ``access`` (``public`` / ``admin``). The requester's workspace
+         *     membership is echoed back as ``viewer.is_member`` and decides only
+         *     whether the page draws the ``admin only`` tag next to a gated link.
+         *     The two variants are cached under their own keys so the 60s cache
+         *     can't serve one to the other.
+         *
          *     Cached 60 seconds in the Django cache to absorb refresh storms.
          */
         readonly get: operations["apps_opps_api_public_opp_summary"];
@@ -1007,20 +1177,79 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/share/{token}": {
+    readonly "/api/opps/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/edit": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
             readonly path?: never;
             readonly cookie?: never;
         };
-        /**
-         * Public shared session view
-         * @description Return a shared session's messages.  No auth required.
-         */
-        readonly get: operations["apps_sessions_api_public_share_view"];
+        readonly get?: never;
         readonly put?: never;
-        readonly post?: never;
+        /**
+         * Change one decision's answer from the public run summary
+         * @description Change a decision's value in place. Anyone with the link may.
+         *
+         *     This deliberately does NOT gate on membership, and deliberately has no
+         *     proposal/promotion state. Jonathan, 2026-08-14: "we definitely want
+         *     the decisions UI to be editable by users … reviewer 2 can change /
+         *     update reviewer 1 anyway in the UI, and that should just be the same
+         *     as Dimagi going in and updating things on top of the anonymous input
+         *     (also if you are logged in, obviously should not be anonymous)."
+         *     The bar to start engaging with ACE has to be very low because it is
+         *     speculative AI work — an account requirement is a barrier, a name
+         *     field is not. And the PDD these rows summarize is already
+         *     world-editable via anyone-with-link and already seeds the next run,
+         *     so gating this more tightly than the design document was backwards.
+         *
+         *     It writes the SAME store the Workbench's authenticated editor writes
+         *     (``<opp>/inputs/decision-overrides.yaml``, read by the plugin's
+         *     ``decisions_append_rows`` at the decisions write boundary), through
+         *     the same merge and the same serializer. The only thing that differs
+         *     between the two surfaces is how the identity on the row was resolved.
+         *
+         *     Refusals: a ``decision_id`` the run's ``decisions.yaml`` does not
+         *     carry is refused, not stored (the override would be unroutable). HTML
+         *     is refused rather than mangled. Lengths are capped before any Drive
+         *     round-trip. An anonymous caller with no name is refused; a signed-in
+         *     caller's typed name is ignored in favour of their session identity.
+         */
+        readonly post: operations["apps_opps_api_public_decision_edit"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/opps/public/{workspace}/{slug}/runs/{run_id}/decisions/{decision_id}/reactions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * React to one decision on the public run summary (no auth)
+         * @description Record a partner's reaction to ONE decision row.
+         *
+         *     Same URL family and same no-auth posture as the summary itself: the
+         *     page a partner is handed has no login, and sending them elsewhere to
+         *     respond is how a response never happens.
+         *
+         *     The reaction lands as a feedback-ledger record in Drive
+         *     (``ACE/<opp>/feedback/<YYYYMMDD>-public-<reviewer>.yaml``), which is
+         *     the store the ACE plugin's ``skills/feedback-ledger`` already reads —
+         *     see ``apps.opps.reactions`` for why this is neither the gates
+         *     endpoint nor ``decision-overrides.yaml``.
+         *
+         *     Writes are bounded on four axes: a per-IP burst window, a per-IP day,
+         *     a per-record item ceiling, and a per-run item ceiling. Body length
+         *     caps are enforced twice — by the schema before any Drive call, and by
+         *     the writer.
+         */
+        readonly post: operations["apps_opps_api_public_decision_reaction"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1682,6 +1911,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/system/refresh-plugin": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Refresh the vendored ACE plugin to latest main (no image rebuild) */
+        readonly post: operations["apps_system_api_refresh_plugin"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/system/skill-products": {
         readonly parameters: {
             readonly query?: never;
@@ -1963,6 +2209,40 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/canopy/status": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Status */
+        readonly get: operations["apps_canopy_api_status"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/canopy/token": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Token */
+        readonly post: operations["apps_canopy_api_token"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/health": {
         readonly parameters: {
             readonly query?: never;
@@ -1978,6 +2258,24 @@ export interface paths {
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/me/presence-preference": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Presence Preference */
+        readonly get: operations["apps_presence_api_get_presence_preference"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        /** Set Presence Preference */
+        readonly patch: operations["apps_presence_api_set_presence_preference"];
         readonly trace?: never;
     };
 }
@@ -2028,40 +2326,6 @@ export interface components {
             /** Title */
             readonly title?: string | null;
         };
-        /**
-         * ArtifactOut
-         * @description One entry in the plugin's artifact-manifest.ts.
-         *
-         *     Uses ``extra="allow"`` because the artifact manifest evolves with the
-         *     plugin (new fields like ``phase``, ``role``, etc. appear over time);
-         *     pinning the schema causes the System Overview to 500 every time the
-         *     plugin adds a metadata field. Tradeoff: drift not caught at schema
-         *     validation, but the System Overview is a read-through display and
-         *     new fields just get passed through to the frontend.
-         */
-        readonly ArtifactOut: {
-            /** Path */
-            readonly path: string;
-            /**
-             * Description
-             * @default
-             */
-            readonly description: string;
-            /**
-             * Required
-             * @default false
-             */
-            readonly required: boolean;
-            /** Produced By */
-            readonly produced_by?: string | null;
-            /**
-             * Consumed By
-             * @default []
-             */
-            readonly consumed_by: readonly string[];
-        } & {
-            readonly [key: string]: unknown;
-        };
         /** GateOut */
         readonly GateOut: {
             /** Skill */
@@ -2078,6 +2342,60 @@ export interface components {
             /** Note */
             readonly note?: string | null;
         };
+        /**
+         * JudgeOut
+         * @description A step's eval verdict, in the shape the Workbench eval panel renders.
+         *
+         *     Mirrors ``apps.opps.serializers.serialize_judge`` (the legacy
+         *     opp-detail payload has carried exactly this for a long time) so both
+         *     surfaces agree. ``criteria`` is free-form: rubrics differ per skill
+         *     and grow over time, and the panel renders whatever rows it finds.
+         *
+         *     Deliberately not ``VerdictOut``: that has nowhere to put ``criteria``
+         *     and would force us to invent a ``kind`` the verdict file doesn't
+         *     declare.
+         */
+        readonly JudgeOut: {
+            /** Score */
+            readonly score?: number | null;
+            /** Score Pct */
+            readonly score_pct?: number | null;
+            /** Passed */
+            readonly passed?: boolean | null;
+            /** Evaluated At */
+            readonly evaluated_at?: string | null;
+            /**
+             * Criteria
+             * @default {}
+             */
+            readonly criteria: {
+                readonly [key: string]: unknown;
+            };
+            /**
+             * Rationale
+             * @default
+             */
+            readonly rationale: string;
+        } & {
+            readonly [key: string]: unknown;
+        };
+        /** StepArtifactOut */
+        readonly StepArtifactOut: {
+            /** Id */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+            /** Mime Type */
+            readonly mime_type: string;
+            /** Size Bytes */
+            readonly size_bytes?: number | null;
+            /** Url */
+            readonly url?: string | null;
+            /** Is Text */
+            readonly is_text: boolean;
+            /** Preview */
+            readonly preview?: string | null;
+        };
         /** StepSnapshotOut */
         readonly StepSnapshotOut: {
             /** Skill */
@@ -2092,9 +2410,10 @@ export interface components {
             /** Artifact Count */
             readonly artifact_count: number;
             /** Artifacts */
-            readonly artifacts: readonly components["schemas"]["ArtifactOut"][];
+            readonly artifacts: readonly components["schemas"]["StepArtifactOut"][];
             /** Verdicts */
             readonly verdicts: readonly components["schemas"]["VerdictOut"][];
+            readonly judge?: components["schemas"]["JudgeOut"] | null;
             readonly gate?: components["schemas"]["GateOut"] | null;
             /** Preview */
             readonly preview?: string | null;
@@ -2153,10 +2472,26 @@ export interface components {
              */
             readonly override_reasoning: string;
         };
-        /** OppForkIn */
+        /**
+         * OppForkIn
+         * @description Fork request. The fork POINT is one concept with two spellings.
+         *
+         *     Name a **phase** (``fork_at_phase``) to re-run it whole, or a **skill**
+         *     (``fork_at_skill``) to keep that phase's earlier artifacts and re-run
+         *     from that skill onward. Exactly one is required.
+         *
+         *     Skill-granular forking existed on the old run-fork endpoint and was lost
+         *     when ``apps/opps/fork.py`` was deleted in the multi-run simplification
+         *     (2026-04-20). It depended on a ``steps/<NN>-<skill>/`` folder layout that
+         *     no longer exists — the current layout is ``<N>-<phase>/<skill>_<role>.ext``
+         *     — so it's re-implemented here against the artifact manifest's
+         *     ``produced_by`` map rather than against folder names.
+         */
         readonly OppForkIn: {
             /** Fork At Phase */
-            readonly fork_at_phase: string;
+            readonly fork_at_phase?: string | null;
+            /** Fork At Skill */
+            readonly fork_at_skill?: string | null;
             /** Source Run Id */
             readonly source_run_id?: string | null;
             /** Edits */
@@ -2167,6 +2502,18 @@ export interface components {
              * @enum {string}
              */
             readonly mode: "keep-overrides-only" | "keep-all";
+            /** Feedback */
+            readonly feedback?: string | null;
+        };
+        /**
+         * DecisionOverridesSaveIn
+         * @description Body for POST /{slug}/decision-overrides. Carries NO edits — the
+         *     server reads the Redis shared buffer as the authoritative set, so a
+         *     stale tab can't clobber another reviewer's concurrent edits.
+         */
+        readonly DecisionOverridesSaveIn: {
+            /** Source Run Id */
+            readonly source_run_id: string;
         };
         /** ForkProgress */
         readonly ForkProgress: {
@@ -2282,6 +2629,33 @@ export interface components {
             readonly step_skill: string;
             /** Run Id */
             readonly run_id?: string | null;
+        };
+        /**
+         * SeededRunIn
+         * @description Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seeded-run.
+         *
+         *     Launches a first-class seeded run via **fork-then-resume** (ace#672): the
+         *     action forks ``golden_run_id`` into a fresh run shaped so the phases below
+         *     ``min(only)`` are ``done``/``verdict: seeded``, the listed ordinals are
+         *     ``pending``, and every other phase from the fork point onward is
+         *     ``skipped`` — then drives a plain ``/ace:run <slug>/<new_run_id>`` resume.
+         *     The run is loop-blind; the ``/ace:iterate`` client observes its run_state.
+         *     (The old ``--seed-from``/``--only`` flags were dropped — the headless runner
+         *     ignored them.)
+         */
+        readonly SeededRunIn: {
+            /** Golden Run Id */
+            readonly golden_run_id: string;
+            /**
+             * Only
+             * @default 3,4,6
+             */
+            readonly only: string;
+            /**
+             * Skip Evals
+             * @default true
+             */
+            readonly skip_evals: boolean;
         };
         /**
          * OppHealthOut
@@ -2498,8 +2872,11 @@ export interface components {
             readonly name: string;
             /** Description */
             readonly description: string;
-            /** Expected Duration Seconds */
-            readonly expected_duration_seconds: number;
+            /**
+             * Intent
+             * @default
+             */
+            readonly intent: string;
             /** Intended Audience */
             readonly intended_audience: string;
             /** When To Use */
@@ -2507,16 +2884,60 @@ export interface components {
         };
         /**
          * TemplateBundleOut
-         * @description Full template payload — agent reads `prompt_md` and follows it,
-         *     fills the `skeleton_yaml` placeholders, and posts the result back
-         *     via POST /programs.
+         * @description Full template payload — the agent reads `prompt_md`, adapts the
+         *     `example_yaml` (the canonical example spec) to the new program per
+         *     those instructions, and posts the result back via POST /programs.
+         *
+         *     `example_yaml` is null only for a malformed template whose
+         *     example.spec.yaml is missing from Drive.
          */
         readonly TemplateBundleOut: {
             readonly meta: components["schemas"]["TemplateMetaOut"];
-            /** Skeleton Yaml */
-            readonly skeleton_yaml: string;
             /** Prompt Md */
             readonly prompt_md: string;
+            /** Example Yaml */
+            readonly example_yaml: string | null;
+        };
+        /** TemplateMetaPatch */
+        readonly TemplateMetaPatch: {
+            /** Name */
+            readonly name?: string | null;
+            /** Description */
+            readonly description?: string | null;
+            /** Intent */
+            readonly intent?: string | null;
+            /** Intended Audience */
+            readonly intended_audience?: string | null;
+            /** When To Use */
+            readonly when_to_use?: string | null;
+        };
+        /** TemplatePatchIn */
+        readonly TemplatePatchIn: {
+            readonly meta?: components["schemas"]["TemplateMetaPatch"] | null;
+            /** Prompt Md */
+            readonly prompt_md?: string | null;
+            /** Example Yaml */
+            readonly example_yaml?: string | null;
+            /** Example Spec */
+            readonly example_spec?: {
+                readonly [key: string]: unknown;
+            } | null;
+        };
+        /** TemplateExampleOut */
+        readonly TemplateExampleOut: {
+            /** Template Id */
+            readonly template_id: string;
+            /** Example Yaml */
+            readonly example_yaml: string;
+        };
+        /** TemplateExampleSpecOut */
+        readonly TemplateExampleSpecOut: {
+            /** Template Id */
+            readonly template_id: string;
+            /** Spec */
+            readonly spec: {
+                readonly [key: string]: unknown;
+            };
         };
         /** MediaLibraryVideoItemOut */
         readonly MediaLibraryVideoItemOut: {
@@ -2574,6 +2995,44 @@ export interface components {
         readonly MediaLibraryAudioOut: {
             /** Items */
             readonly items: readonly components["schemas"]["MediaLibraryAudioItemOut"][];
+        };
+        /** VideoSnippetListOut */
+        readonly VideoSnippetListOut: {
+            /** Snippets */
+            readonly snippets: readonly components["schemas"]["VideoSnippetOut"][];
+        };
+        /** VideoSnippetOut */
+        readonly VideoSnippetOut: {
+            /** Snippet Key */
+            readonly snippet_key: string;
+            /** Title */
+            readonly title?: string | null;
+            /** Narration Sentence */
+            readonly narration_sentence?: string | null;
+            /** In Seconds */
+            readonly in_seconds: number;
+            /** Out Seconds */
+            readonly out_seconds: number;
+            /** Duration Seconds */
+            readonly duration_seconds: number;
+            /** Tags */
+            readonly tags?: readonly string[];
+            /** Provenance */
+            readonly provenance?: string | null;
+            /** Source Run */
+            readonly source_run?: string | null;
+            /** Narrative Slug */
+            readonly narrative_slug?: string | null;
+            /** Scene Index */
+            readonly scene_index?: number | null;
+            /** Clip Ref */
+            readonly clip_ref?: string | null;
+            /** Source Clip Ref */
+            readonly source_clip_ref?: string | null;
+            /** Source Clip Url */
+            readonly source_clip_url?: string | null;
+            /** Status */
+            readonly status: string;
         };
         /**
          * ProgramCardOut
@@ -2959,6 +3418,198 @@ export interface components {
             readonly phase: string;
             /** Channel Id */
             readonly channel_id: string;
+        };
+        /**
+         * CanopySessionCreateOut
+         * @description POST /api/w/{workspace_slug}/canopy/sessions response.
+         */
+        readonly CanopySessionCreateOut: {
+            /** Id */
+            readonly id: string;
+        };
+        /**
+         * CanopySessionCreateIn
+         * @description POST /api/w/{workspace_slug}/canopy/sessions request body.
+         *
+         *     Deliberately carries no workspace/tenant field — the ace workspace comes
+         *     from the URL path (and is membership-checked there), never from the
+         *     body, so a caller can't spoof ``origin_key`` for a workspace they don't
+         *     belong to (see apps/canopy/api.py).
+         */
+        readonly CanopySessionCreateIn: {
+            /**
+             * Title
+             * @default
+             */
+            readonly title: string;
+            /**
+             * Opp Slug
+             * @default
+             */
+            readonly opp_slug: string;
+            /**
+             * Opp Run Id
+             * @default
+             */
+            readonly opp_run_id: string;
+            /**
+             * Opp Step Skill
+             * @default
+             */
+            readonly opp_step_skill: string;
+        };
+        /**
+         * DecisionEditHistoryOut
+         * @description One superseded state of a decision row. Newest first.
+         */
+        readonly DecisionEditHistoryOut: {
+            /** Override */
+            readonly override: string;
+            /**
+             * Reasoning
+             * @default
+             */
+            readonly reasoning: string;
+            /**
+             * Decided By Name
+             * @default
+             */
+            readonly decided_by_name: string;
+            /**
+             * Decided By Verified
+             * @default false
+             */
+            readonly decided_by_verified: boolean;
+            /**
+             * Decided At
+             * @default
+             */
+            readonly decided_at: string;
+        };
+        /**
+         * DecisionEditOut
+         * @description A decision's current human-set answer, as any reader sees it.
+         *
+         *     Emails are not projected on the public payload; the NAME always is —
+         *     attribution is the safety mechanism, so hiding it would defeat the
+         *     model.
+         */
+        readonly DecisionEditOut: {
+            /** Decision Id */
+            readonly decision_id: string;
+            /** Override */
+            readonly override: string;
+            /**
+             * Reasoning
+             * @default
+             */
+            readonly reasoning: string;
+            /**
+             * Decided By Name
+             * @default
+             */
+            readonly decided_by_name: string;
+            /**
+             * Decided By Verified
+             * @default false
+             */
+            readonly decided_by_verified: boolean;
+            /**
+             * Decided At
+             * @default
+             */
+            readonly decided_at: string;
+            /**
+             * Source Run Id
+             * @default
+             */
+            readonly source_run_id: string;
+            /**
+             * Is Revert
+             * @default false
+             */
+            readonly is_revert: boolean;
+            /**
+             * History
+             * @default []
+             */
+            readonly history: readonly components["schemas"]["DecisionEditHistoryOut"][];
+        };
+        /**
+         * DecisionEditIn
+         * @description Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/edit.
+         *
+         *     Anyone with the link can change a decision's value in place — no
+         *     proposal state, no promotion step, no member-only privilege, and
+         *     reviewer 2 changing reviewer 1's answer is the same act as Dimagi
+         *     changing either. Safety is visibility and reversibility (attribution
+         *     on every row, full history, undo from the UI), not permission — the
+         *     same way it is in a Google Doc, which is exactly what the PDD these
+         *     decisions summarize already is.
+         *
+         *     Identity resolves per caller and NOT from this body when we already
+         *     know who it is: **signed in ⇒ never anonymous**, so ``reviewer`` and
+         *     ``reviewer_email`` are ignored for an authenticated request and
+         *     REQUIRED for an anonymous one. See ``apps.opps.public_input``.
+         *
+         *     Length ceilings are enforced again in ``apps.opps.decision_overrides``
+         *     — these are the cheap first pass, before any Drive round-trip.
+         */
+        readonly DecisionEditIn: {
+            /** Value */
+            readonly value: string;
+            /** Reasoning */
+            readonly reasoning?: string | null;
+            /** Reviewer */
+            readonly reviewer?: string | null;
+            /** Reviewer Email */
+            readonly reviewer_email?: string | null;
+        };
+        /**
+         * DecisionReactionOut
+         * @description What the page needs to render the reaction it just submitted.
+         */
+        readonly DecisionReactionOut: {
+            /** Feedback Ref */
+            readonly feedback_ref: string;
+            /** Record Slug */
+            readonly record_slug: string;
+            /** Item Id */
+            readonly item_id: string;
+            /** Decision Id */
+            readonly decision_id: string;
+            /** Reviewer */
+            readonly reviewer: string;
+            /** Comment */
+            readonly comment: string;
+            /** Received At */
+            readonly received_at: string;
+        };
+        /**
+         * DecisionReactionIn
+         * @description Body for POST /opps/public/{ws}/{slug}/runs/{run}/decisions/{id}/reactions.
+         *
+         *     ``reviewer`` is REQUIRED and self-reported. The page has no login and
+         *     a partner cannot self-serve one, so the only honest options were a
+         *     required free-text name or anonymous reactions — and an anonymous
+         *     reaction defeats the store it lands in: the feedback ledger's whole
+         *     value is being able to tell a reviewer where THEIR comment went, and
+         *     to tell a future reader whose judgement drove a change. An unsigned
+         *     comment is unanswerable and uncreditable. So: required name, optional
+         *     email (the reply path), and the record says the name is self-reported
+         *     rather than pretending it is verified.
+         *
+         *     Length ceilings live in ``apps.opps.reactions`` and are enforced
+         *     there too — these are the cheap first pass, so an oversized body is
+         *     rejected before any Drive round-trip.
+         */
+        readonly DecisionReactionIn: {
+            /** Reviewer */
+            readonly reviewer: string;
+            /** Comment */
+            readonly comment: string;
+            /** Reviewer Email */
+            readonly reviewer_email?: string | null;
         };
         /** WorkspaceOut */
         readonly WorkspaceOut: {
@@ -3692,6 +4343,40 @@ export interface components {
             readonly model: string;
         };
         /**
+         * ArtifactOut
+         * @description One entry in the plugin's artifact-manifest.ts.
+         *
+         *     Uses ``extra="allow"`` because the artifact manifest evolves with the
+         *     plugin (new fields like ``phase``, ``role``, etc. appear over time);
+         *     pinning the schema causes the System Overview to 500 every time the
+         *     plugin adds a metadata field. Tradeoff: drift not caught at schema
+         *     validation, but the System Overview is a read-through display and
+         *     new fields just get passed through to the frontend.
+         */
+        readonly ArtifactOut: {
+            /** Path */
+            readonly path: string;
+            /**
+             * Description
+             * @default
+             */
+            readonly description: string;
+            /**
+             * Required
+             * @default false
+             */
+            readonly required: boolean;
+            /** Produced By */
+            readonly produced_by?: string | null;
+            /**
+             * Consumed By
+             * @default []
+             */
+            readonly consumed_by: readonly string[];
+        } & {
+            readonly [key: string]: unknown;
+        };
+        /**
          * McpServerOut
          * @description One MCP server declared in the plugin's plugin.json.
          */
@@ -3901,12 +4586,63 @@ export interface components {
             readonly body_markdown: string;
         };
         /**
+         * EnvInjectOut
+         * @description Outcome of the container's ``op inject`` at boot (ace-web#636).
+         *
+         *     ``status`` is ``ok`` / ``failed`` / ``skipped`` / ``unknown`` (no status
+         *     file — local dev or a pre-upgrade task). ``error`` carries the op-inject
+         *     stderr excerpt when status is ``failed``.
+         */
+        readonly EnvInjectOut: {
+            /** Status */
+            readonly status: string;
+            /** Error */
+            readonly error?: string | null;
+        };
+        /**
+         * NovaAuthHealthOut
+         * @description Nova auth health across both paths (ace-web#636).
+         *
+         *     ``connected``/``valid``/``expires_at`` describe the OAuth blob;
+         *     ``pat_present``/``pat_valid`` describe the user-scope PAT override
+         *     (the preferred subprocess path); ``usable`` is the run-preflight
+         *     verdict — at least one path yields a working bearer. Probes are
+         *     cached ~60s server-side. ``last_refresh_error`` — most recent
+         *     blob-refresh failure, cleared on the next successful refresh.
+         */
+        readonly NovaAuthHealthOut: {
+            /** Connected */
+            readonly connected: boolean;
+            /** Valid */
+            readonly valid: boolean;
+            /** Expires At */
+            readonly expires_at?: string | null;
+            /** Last Refresh Error */
+            readonly last_refresh_error?: string | null;
+            /**
+             * Pat Present
+             * @default false
+             */
+            readonly pat_present: boolean;
+            /**
+             * Pat Valid
+             * @default false
+             */
+            readonly pat_valid: boolean;
+            /**
+             * Usable
+             * @default false
+             */
+            readonly usable: boolean;
+        };
+        /**
          * VersionOut
          * @description Plugin version + remote comparison.
          *
          *     Returned by GET /api/system/version and embedded in SystemOverviewOut.
          *     ``update_available`` is null when the remote check failed (network error
-         *     or rate limit).
+         *     or rate limit). ``nova_auth`` / ``env_inject`` are operational health
+         *     blocks (ace-web#636) populated only on the standalone version endpoint.
          */
         readonly VersionOut: {
             /** Plugin Found */
@@ -3922,6 +4658,35 @@ export interface components {
              * @default
              */
             readonly plugin_path: string;
+            readonly nova_auth?: components["schemas"]["NovaAuthHealthOut"] | null;
+            readonly env_inject?: components["schemas"]["EnvInjectOut"] | null;
+        };
+        /**
+         * RefreshPluginOut
+         * @description Result of POST /api/system/refresh-plugin.
+         *
+         *     Re-runs ``scripts/refresh-ace-plugin.sh`` on the receiving task so a merged
+         *     ACE plugin fix reaches server-side runs without an image rebuild. The labs
+         *     ECS service runs a single task (``--desired-count 1``), so the receiving
+         *     task IS the runner and polling ``GET /system/version`` for ``version_after``
+         *     converges deterministically. A future multi-task service would need a
+         *     service-wide fan-out (force-new-deployment or a shared signal) — tracked as
+         *     a follow-up, not silently assumed here.
+         */
+        readonly RefreshPluginOut: {
+            /** Ran */
+            readonly ran: boolean;
+            /** Refreshed */
+            readonly refreshed: boolean;
+            /** Version Before */
+            readonly version_before?: string | null;
+            /** Version After */
+            readonly version_after?: string | null;
+            /**
+             * Detail
+             * @default
+             */
+            readonly detail: string;
         };
         /**
          * CliDiagOut
@@ -4205,6 +4970,34 @@ export interface components {
             readonly session_ids?: readonly number[];
         };
         /**
+         * CanopyStatusOut
+         * @description GET /api/canopy/status response — drives the frontend feature flag.
+         */
+        readonly CanopyStatusOut: {
+            /** Enabled */
+            readonly enabled: boolean;
+            /** Base Url */
+            readonly base_url: string;
+            /** Workspace */
+            readonly workspace: string;
+            /** Agent */
+            readonly agent: string;
+        };
+        /**
+         * CanopyTokenOut
+         * @description POST /api/canopy/token response — a short-lived delegated token.
+         *
+         *     ``expires_at`` is passed through opaquely from canopy-web (an ISO-8601
+         *     string in practice); typed as ``str`` rather than ``datetime`` since this
+         *     surface never parses it, only forwards it to the browser.
+         */
+        readonly CanopyTokenOut: {
+            /** Token */
+            readonly token: string;
+            /** Expires At */
+            readonly expires_at: string;
+        };
+        /**
          * HealthCheckOut
          * @description One subsystem check result.
          */
@@ -4230,6 +5023,16 @@ export interface components {
             readonly checks: {
                 readonly [key: string]: components["schemas"]["HealthCheckOut"];
             };
+        };
+        /** PresencePreferenceOut */
+        readonly PresencePreferenceOut: {
+            /** Show Presence */
+            readonly show_presence: boolean;
+        };
+        /** PresencePreferenceIn */
+        readonly PresencePreferenceIn: {
+            /** Show Presence */
+            readonly show_presence: boolean;
         };
     };
     responses: never;
@@ -4505,14 +5308,16 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["ArtifactOut"];
+                    readonly "application/json": components["schemas"]["StepArtifactOut"];
                 };
             };
         };
     };
     readonly apps_opps_api_download_artifact: {
         readonly parameters: {
-            readonly query?: never;
+            readonly query?: {
+                readonly run_id?: string | null;
+            };
             readonly header?: never;
             readonly path: {
                 readonly workspace_slug: string;
@@ -4554,6 +5359,35 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly apps_opps_api_save_decision_overrides_endpoint: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["DecisionOverridesSaveIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -4671,6 +5505,31 @@ export interface operations {
         readonly requestBody: {
             readonly content: {
                 readonly "application/json": components["schemas"]["SeedChatIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_opps_api_seeded_run: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SeededRunIn"];
             };
         };
         readonly responses: {
@@ -4804,6 +5663,88 @@ export interface operations {
             };
         };
     };
+    readonly apps_sessions_api_interrupted_runs: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_resume_interrupted: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_resume_run: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly apps_sessions_api_session_execution: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     readonly apps_sessions_api_get_session: {
         readonly parameters: {
             readonly query?: never;
@@ -4916,27 +5857,6 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_session_turn_state: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_slug: string;
-                readonly slug: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     readonly apps_sessions_api_session_cost: {
         readonly parameters: {
             readonly query?: never;
@@ -4965,70 +5885,6 @@ export interface operations {
             readonly path: {
                 readonly workspace_slug: string;
                 readonly slug: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    readonly apps_sessions_api_list_share: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_slug: string;
-                readonly slug: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    readonly apps_sessions_api_create_share_token: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_slug: string;
-                readonly slug: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    readonly apps_sessions_api_revoke_share_token: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_slug: string;
-                readonly slug: string;
-                readonly token_key: string;
             };
             readonly cookie?: never;
         };
@@ -5139,6 +5995,79 @@ export interface operations {
             };
         };
     };
+    readonly apps_videos_api_patch_video_template: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly template_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["TemplatePatchIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["TemplateBundleOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_get_template_example: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly template_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["TemplateExampleOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_get_template_example_spec: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly template_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["TemplateExampleSpecOut"];
+                };
+            };
+        };
+    };
     readonly apps_videos_api_list_media_library_video: {
         readonly parameters: {
             readonly query?: never;
@@ -5179,6 +6108,32 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["MediaLibraryAudioOut"];
+                };
+            };
+        };
+    };
+    readonly apps_videos_api_list_video_snippets: {
+        readonly parameters: {
+            readonly query?: {
+                readonly source_run?: string | null;
+                readonly narrative_slug?: string | null;
+                readonly tag?: string | null;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["VideoSnippetListOut"];
                 };
             };
         };
@@ -5737,6 +6692,32 @@ export interface operations {
             };
         };
     };
+    readonly apps_canopy_api_sessions: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CanopySessionCreateIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CanopySessionCreateOut"];
+                };
+            };
+        };
+    };
     readonly apps_opps_api_public_opp_summary: {
         readonly parameters: {
             readonly query?: never;
@@ -5763,23 +6744,61 @@ export interface operations {
             };
         };
     };
-    readonly apps_sessions_api_public_share_view: {
+    readonly apps_opps_api_public_decision_edit: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
             readonly path: {
-                readonly token: string;
+                readonly workspace: string;
+                readonly slug: string;
+                readonly run_id: string;
+                readonly decision_id: string;
             };
             readonly cookie?: never;
         };
-        readonly requestBody?: never;
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["DecisionEditIn"];
+            };
+        };
         readonly responses: {
             /** @description OK */
             readonly 200: {
                 headers: {
                     readonly [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    readonly "application/json": components["schemas"]["DecisionEditOut"];
+                };
+            };
+        };
+    };
+    readonly apps_opps_api_public_decision_reaction: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace: string;
+                readonly slug: string;
+                readonly run_id: string;
+                readonly decision_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["DecisionReactionIn"];
+            };
+        };
+        readonly responses: {
+            /** @description Created */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["DecisionReactionOut"];
+                };
             };
         };
     };
@@ -6670,6 +7689,26 @@ export interface operations {
             };
         };
     };
+    readonly apps_system_api_refresh_plugin: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RefreshPluginOut"];
+                };
+            };
+        };
+    };
     readonly apps_system_api_skill_products: {
         readonly parameters: {
             readonly query?: never;
@@ -6997,6 +8036,46 @@ export interface operations {
             };
         };
     };
+    readonly apps_canopy_api_status: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CanopyStatusOut"];
+                };
+            };
+        };
+    };
+    readonly apps_canopy_api_token: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CanopyTokenOut"];
+                };
+            };
+        };
+    };
     readonly apps_common_api_health: {
         readonly parameters: {
             readonly query?: never;
@@ -7022,6 +8101,50 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["HealthOut"];
+                };
+            };
+        };
+    };
+    readonly apps_presence_api_get_presence_preference: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PresencePreferenceOut"];
+                };
+            };
+        };
+    };
+    readonly apps_presence_api_set_presence_preference: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PresencePreferenceIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["PresencePreferenceOut"];
                 };
             };
         };

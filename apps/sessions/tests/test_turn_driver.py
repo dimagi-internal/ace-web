@@ -270,3 +270,123 @@ def test_get_backend_returns_real_when_setting_disabled(settings):
     settings.ANTHROPIC_API_KEY = ""
     backend = turn_driver._get_backend()
     assert isinstance(backend, CLIBackend)
+
+
+class _StubChannelLayer:
+    """Records group_send calls so a test can assert broadcasts without redis."""
+
+    def __init__(self):
+        self.sent = []
+
+    async def group_send(self, group, message):
+        self.sent.append((group, message))
+
+
+async def test_drive_and_broadcast_drives_to_completion_and_broadcasts(
+    session, user_and_assistant_messages
+):
+    """turn_driver.drive_and_broadcast drives the SAME turn-driver state
+    machine as any other turn (DB → complete) AND broadcasts stream_start +
+    stream_complete to the session group — so a programmatically-launched run
+    is a normal, openable, live session. This is the path the seeded-run
+    action uses via the drive_turn management command (ace-web#585)."""
+    from apps.sessions.turn_driver import drive_and_broadcast
+
+    _user, asst = user_and_assistant_messages
+    events = [StreamEvent.delta(text="done"), StreamEvent.done()]
+    stub = _StubChannelLayer()
+    with patch(
+        "apps.sessions.turn_driver._get_backend", return_value=FakeBackend(events)
+    ), patch("channels.layers.get_channel_layer", return_value=stub):
+        await drive_and_broadcast(asst.id)
+
+    from asgiref.sync import sync_to_async
+
+    refreshed = await sync_to_async(Message.objects.get)(pk=asst.id)
+    assert refreshed.status == "complete"
+    assert refreshed.plaintext == "done"
+    kinds = [m["type"] for _g, m in stub.sent]
+    assert "chat.stream_start" in kinds
+    assert "chat.stream_complete" in kinds
+    assert all(g == f"session.{session.slug}" for g, _m in stub.sent)
+
+
+class RawSinkBackend:
+    """Backend that fills raw_sink with JSONL (like the real CLIBackend), so the
+    turn driver computes a cost breakdown for the web-source session."""
+
+    async def stream_completion(self, *, session, new_user_message, raw_sink=None, **kwargs):
+        if raw_sink is not None:
+            raw_sink.append('{"type":"system","subtype":"init","session_id":"x"}\n')
+            raw_sink.append(
+                '{"type":"assistant","timestamp":"2026-01-01T00:00:00.000Z",'
+                '"message":{"role":"assistant","model":"claude-sonnet-4-6",'
+                '"content":[{"type":"text","text":"hi"}],'
+                '"usage":{"input_tokens":3,"output_tokens":9,'
+                '"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n'
+            )
+        yield StreamEvent.delta(text="hi")
+        yield StreamEvent.done()
+
+
+async def test_persists_cost_breakdown_from_captured_transcript(
+    session, user_and_assistant_messages
+):
+    """End-to-end: a turn through a backend that streams JSONL ends with the
+    session's cost_breakdown populated (web-source analyzer parity)."""
+    _user, asst = user_and_assistant_messages
+    stop_event = asyncio.Event()
+    with patch(
+        "apps.sessions.turn_driver._get_backend", return_value=RawSinkBackend()
+    ):
+        await _drain(
+            turn_driver.drive_assistant_turn(
+                assistant_message_id=asst.id, stop_event=stop_event
+            )
+        )
+
+    from asgiref.sync import sync_to_async
+    refreshed = await sync_to_async(Session.objects.get)(pk=session.pk)
+    assert refreshed.cost_breakdown.get("totals", {}).get("output_tokens") == 9
+
+
+async def test_post_done_cancel_does_not_overwrite_complete(
+    session, user_and_assistant_messages
+):
+    """The headless path's failure mode: the consumer returns the instant it
+    gets DONE, leaving drive_assistant_turn suspended at the post-DONE yield.
+    asyncio.run's shutdown then cancels that suspended generator. The
+    CancelledError handler must NOT overwrite the already-persisted 'complete'
+    status with 'cancelled' — that spurious mislabel was the "runs cancelled
+    mid-flight ~Nmin in" symptom (no signal, no real error, variable timing).
+    """
+    import contextlib
+
+    from asgiref.sync import sync_to_async
+
+    _user, asst = user_and_assistant_messages
+    events = [StreamEvent.delta(text="done-text"), StreamEvent.done()]
+    stop_event = asyncio.Event()
+
+    with patch(
+        "apps.sessions.turn_driver._get_backend", return_value=FakeBackend(events)
+    ):
+        agen = turn_driver.drive_assistant_turn(
+            assistant_message_id=asst.id, stop_event=stop_event
+        )
+        # Pull until DONE, then break — leaving the generator suspended at the
+        # post-DONE yield (it has already marked the message 'complete').
+        async for event in agen:
+            if event.type is StreamEventType.DONE:
+                break
+        mid = await sync_to_async(Message.objects.get)(pk=asst.id)
+        assert mid.status == "complete"  # terminal status persisted
+
+        # Simulate asyncio.run shutdown cancelling the suspended generator.
+        with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+            await agen.athrow(asyncio.CancelledError())
+
+    refreshed = await sync_to_async(Message.objects.get)(pk=asst.id)
+    assert refreshed.status == "complete", (
+        "shutdown cancel overwrote a finished turn's status with 'cancelled'"
+    )

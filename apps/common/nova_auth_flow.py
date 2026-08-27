@@ -51,6 +51,11 @@ NOVA_TOKEN_REFRESH_BUFFER = 300
 # Nova chat 401s. Serialize via a Redis SETNX lock; the loser polls
 # the DB instead of POSTing /token itself.
 NOVA_REFRESH_LOCK_KEY = "nova:refresh-lock"
+
+# Django-cache key recording the most recent refresh failure so operators
+# can see it (surfaced via /api/system/version — ace-web#636). Cleared on
+# the next successful refresh.
+LAST_REFRESH_FAILURE_KEY = "nova:last-refresh-failure"
 NOVA_REFRESH_LOCK_TTL = 30  # seconds — /token RTT is sub-second normally
 NOVA_REFRESH_WAIT_TIMEOUT = 5.0  # max wall-clock to wait for another task
 
@@ -350,29 +355,96 @@ def _refresh(blob: dict) -> dict | None:
         resp.raise_for_status()
     except httpx.HTTPError as e:
         logger.warning("nova: refresh failed — %s", e)
+        _record_refresh_failure(str(e))
         return None
 
     new = resp.json()
     # Some authorization servers omit refresh_token on refresh; preserve
     # the old one so we can still refresh next time.
     new.setdefault("refresh_token", refresh_token)
+    _clear_refresh_failure()
     return new
+
+
+def _record_refresh_failure(error: str) -> None:
+    """Persist the failure where /api/system/version can surface it (#636)."""
+    from django.core.cache import cache
+
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    try:
+        cache.set(LAST_REFRESH_FAILURE_KEY, f"{stamp}: {error}", None)
+    except Exception:
+        logger.debug("nova: could not record refresh failure", exc_info=True)
+
+
+def _clear_refresh_failure() -> None:
+    from django.core.cache import cache
+
+    try:
+        cache.delete(LAST_REFRESH_FAILURE_KEY)
+    except Exception:
+        logger.debug("nova: could not clear refresh-failure marker", exc_info=True)
 
 
 # ── Validation ───────────────────────────────────────────────────
 
 
 def validate_token() -> bool:
-    """Probe the Nova MCP endpoint with the current token.
+    """Probe the Nova MCP endpoint with the current OAuth-blob token."""
+    token = get_fresh_token()
+    if not token:
+        return False
+    return _probe_bearer(token)
+
+
+def get_pat_key() -> str | None:
+    """Read ``NOVA_API_KEY`` from the rendered plugin ``.env``.
+
+    This is the same key ``docker-entrypoint.sh`` uses to register the
+    user-scope Nova MCP bearer override — the documented-preferred auth
+    path for ``claude -p`` subprocesses (see the entrypoint comment and
+    nova-plugin#16). Returns None when the file or key is absent, or the
+    value is an unresolved ``op://`` ref (failed inject).
+    """
+    import os
+
+    data_dir = os.environ.get(
+        "CLAUDE_PLUGIN_DATA", "/home/app/.claude/plugin-data/ace"
+    )
+    try:
+        with open(f"{data_dir}/.env") as f:
+            for line in f:
+                if line.startswith("NOVA_API_KEY="):
+                    value = line.split("=", 1)[1].strip().strip('"')
+                    if value and not value.startswith("op://"):
+                        return value
+                    return None
+    except OSError:
+        return None
+    return None
+
+
+def validate_any_token() -> bool:
+    """True when EITHER Nova auth path yields a working bearer.
+
+    Subprocess sessions get Nova through the user-scope PAT override
+    (preferred) with the plugin's OAuth entry as fallback — so a run
+    preflight must accept either. Probes the PAT first (no refresh
+    machinery involved), then falls back to the OAuth-blob path.
+    """
+    pat = get_pat_key()
+    if pat and _probe_bearer(pat):
+        return True
+    return validate_token()
+
+
+def _probe_bearer(token: str) -> bool:
+    """POST ``initialize`` to the Nova MCP endpoint with the given bearer.
 
     Uses ``stream=True`` so the SSE response body doesn't block waiting for
     the keep-alive connection to close — we only care about the HTTP
     status of the initial response, not the event payload.
     """
-    token = get_fresh_token()
-    if not token:
-        return False
-
     try:
         with httpx.stream(
             "POST",

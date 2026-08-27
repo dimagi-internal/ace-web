@@ -1,0 +1,116 @@
+# 120s-program-demo — fully-filled demo spec (walkthrough arc).
+#
+# A long-form (~2 min) product walkthrough. Unlike the 60s marketing arc,
+# this declares its OWN `beats:` timeline of body_walkthrough sections — one
+# per narration line — so it is NOT limited to the 9-beat global default.
+# Root.tsx auto-selects renderWalkthrough() because the timeline carries
+# intro_title / body_walkthrough / outro_card beats. Add or remove sections
+# freely: each body_walkthrough beat's content lives in `walkthrough.<id>`.
+
+provenance:
+  generator: 120s-program-demo
+  template: 120s-program-demo
+  generated_from: https://connect.dimagi.com/
+  generated_at: "2026-06-17T00:00:00Z"
+
+slug: 120s-program-demo
+workspace: dimagi-team
+name: Healthy Mothers Nigeria
+country_focus: Nigeria
+status: Live
+tagline: "Verified maternal-health visits to the last mile — paid for results, not plans."
+program_url: https://connect.dimagi.com/
+
+# Standard workspace media-library clips (library: refs resolve against the
+# workspace library; the render-prep staging step rewrites each to
+# gdrive:<id>.<ext> before the renderer runs, so this example stays portable).
+# A faithful product walkthrough would attach its own screen recordings for
+# the Learn/Deliver/Network-Manager/audit sections; this demo reuses the
+# standard clips so it renders out of the box.
+manifest:
+  field-walking-towards-house: library:video/field-broll/field-walking-towards-house.mp4
+  field-group-around-woman: library:video/field-broll/field-group-around-woman.mp4
+  mobile-learn: library:video/mobile-screencast/mobile-learn.mp4
+  mobile-mapping: library:video/mobile-screencast/mobile-mapping.mp4
+  web-microplan: library:video/web-screencast/web-microplan.mp4
+  mobile-pay: library:video/mobile-screencast/mobile-pay.mp4
+
+# The template OWNS its structure: an explicit beats list of any length.
+# (Drop `beats:` and a spec falls back to the global 9-beat marketing arc.)
+beats:
+  - { id: title,              kind: intro_title,      seconds: 5 }
+  - { id: set_scene,          kind: body_walkthrough, seconds: 8 }
+  - { id: problem,            kind: body_walkthrough, seconds: 11 }
+  - { id: connect_overview,   kind: body_walkthrough, seconds: 9 }
+  - { id: learn,              kind: body_walkthrough, seconds: 12 }
+  - { id: learn_to_deliver,   kind: body_walkthrough, seconds: 6 }
+  - { id: deliver,            kind: body_walkthrough, seconds: 12 }
+  - { id: payment,            kind: body_walkthrough, seconds: 7 }
+  - { id: verification_intro, kind: body_walkthrough, seconds: 6 }
+  - { id: network_manager,    kind: body_walkthrough, seconds: 11 }
+  - { id: audit_image,        kind: body_walkthrough, seconds: 9 }
+  - { id: audit_gps,          kind: body_walkthrough, seconds: 10 }
+  - { id: flw_lifecycle,      kind: body_walkthrough, seconds: 10 }
+  - { id: program_manager,    kind: body_walkthrough, seconds: 11 }
+  - { id: closing,            kind: body_walkthrough, seconds: 9 }
+  - { id: cta,                kind: outro_card,       seconds: 7 }
+
+# Per-section clip + lower-third, keyed by beat id (body_walkthrough beats).
+# Each plays its asset full-bleed (holding the last frame if the clip is
+# shorter than the beat) with the lower-third pill and that beat's narration.
+walkthrough:
+  set_scene:          { asset: "@field-walking-towards-house", lower_third: "Rural Nigeria — the last mile" }
+  problem:            { asset: "@field-group-around-woman",    lower_third: "The coverage gap" }
+  connect_overview:   { asset: "@field-group-around-woman",    lower_third: "One loop: Learn · Deliver · Verify · Pay" }
+  learn:              { asset: "@mobile-learn",                lower_third: "Learn app — AI coaching" }
+  learn_to_deliver:   { asset: "@mobile-learn",                lower_third: "Certified — Deliver app unlocks" }
+  deliver:            { asset: "@mobile-mapping",              lower_third: "Deliver app — guided home visits" }
+  payment:            { asset: "@mobile-pay",                  lower_third: "Paid on verified work" }
+  verification_intro: { asset: "@web-microplan",              lower_third: "How do you know it happened?" }
+  network_manager:    { asset: "@web-microplan",              lower_third: "Network Manager — verification rules" }
+  audit_image:        { asset: "@web-microplan",              lower_third: "Image audit — ANC cards" }
+  audit_gps:          { asset: "@mobile-mapping",              lower_third: "GPS audit — location checks" }
+  flw_lifecycle:      { asset: "@mobile-learn",                lower_third: "Worker lifecycle — probation & recovery" }
+  program_manager:    { asset: "@web-microplan",              lower_third: "Audit-of-Audits dashboard" }
+  closing:            { asset: "@field-walking-towards-house", lower_third: "The visit reaches the mother" }
+
+narration:
+  generator: manual
+  prompt_version: v1-120s-program-demo
+  start_seconds: 0
+  by_beat:
+    set_scene: "In rural Nigeria, the nearest clinic can be hours away — and for many mothers, the visit that matters never happens."
+    problem: "Coverage gaps are stark: barely a third of mothers complete four antenatal visits, and millions deliver each year with no skilled care nearby. The result is one of the world's highest maternal mortality ratios."
+    connect_overview: "Connect runs the program as one loop — frontline workers learn, deliver guided visits, get verified, and are paid for results."
+    learn: "A new worker starts in the Learn app. Animated modules and an AI coach walk her through antenatal counseling, danger signs, and referral steps, with personalized feedback until she's ready and passes the certification test."
+    learn_to_deliver: "She passes the assessment, and the Deliver app unlocks. She's now eligible to work."
+    deliver: "On each home visit the Deliver app guides her step by step — capturing mother and pregnancy details, danger-sign checks, and an ANC card photo. Every field is structured, and every visit is recorded at the point of care, the moment it happens."
+    payment: "Her visit is verified and approved, and the payment lands on her phone within minutes — funds following the work."
+    verification_intro: "But how do you know the visit really happened, the way it was supposed to?"
+    network_manager: "On the Network Manager platform, every delivery runs through verification rules. Here a payment was rejected automatically because the GPS point fell outside the assigned area — the rule fires before any money moves."
+    audit_image: "Image audit pulls every ANC card side by side for bulk review. Reviewers score against objective criteria — is the card legible, the right form, filled for this mother — approving or flagging in seconds."
+    audit_gps: "The GPS table maps where each visit was recorded. One worker's points cluster suspiciously at a single address — drilling into the flagged case shows ten visits logged from the same spot in an hour."
+    flw_lifecycle: "Flagged workers move to probation, with a chance to relearn and recover. Repeat issues trigger deactivation. The performance bar — visit volume and follow-up rate — keeps the strongest workers active and improving over time."
+    program_manager: "For the program manager, the Audit-of-Audits dashboard rolls it all up — verification pass rates, task volume, and reviewer consistency. The longitudinal view tracks dropoff rate month over month, so quality is visible as a trend, not a guess."
+    closing: "Back where we started, the visit now reaches the mother. Connect: verify delivery, pay for results, and turn the last mile into something you can finally see."
+    cta: ""
+  script: |
+    In rural Nigeria, the nearest clinic can be hours away — and for many mothers, the visit that matters never happens.
+    Coverage gaps are stark: barely a third of mothers complete four antenatal visits, and millions deliver each year with no skilled care nearby. The result is one of the world's highest maternal mortality ratios.
+    Connect runs the program as one loop — frontline workers learn, deliver guided visits, get verified, and are paid for results.
+    A new worker starts in the Learn app. Animated modules and an AI coach walk her through antenatal counseling, danger signs, and referral steps, with personalized feedback until she's ready and passes the certification test.
+    She passes the assessment, and the Deliver app unlocks. She's now eligible to work.
+    On each home visit the Deliver app guides her step by step — capturing mother and pregnancy details, danger-sign checks, and an ANC card photo. Every field is structured, and every visit is recorded at the point of care, the moment it happens.
+    Her visit is verified and approved, and the payment lands on her phone within minutes — funds following the work.
+    But how do you know the visit really happened, the way it was supposed to?
+    On the Network Manager platform, every delivery runs through verification rules. Here a payment was rejected automatically because the GPS point fell outside the assigned area — the rule fires before any money moves.
+    Image audit pulls every ANC card side by side for bulk review. Reviewers score against objective criteria — is the card legible, the right form, filled for this mother — approving or flagging in seconds.
+    The GPS table maps where each visit was recorded. One worker's points cluster suspiciously at a single address — drilling into the flagged case shows ten visits logged from the same spot in an hour.
+    Flagged workers move to probation, with a chance to relearn and recover. Repeat issues trigger deactivation. The performance bar — visit volume and follow-up rate — keeps the strongest workers active and improving over time.
+    For the program manager, the Audit-of-Audits dashboard rolls it all up — verification pass rates, task volume, and reviewer consistency. The longitudinal view tracks dropoff rate month over month, so quality is visible as a trend, not a guess.
+    Back where we started, the visit now reaches the mother. Connect: verify delivery, pay for results, and turn the last mile into something you can finally see.
+
+voice:
+  provider: elevenlabs
+  voice_id: "XB0fDUnXU5powFXDhCwa"
+  model: eleven_turbo_v2
