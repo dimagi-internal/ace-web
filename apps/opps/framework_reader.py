@@ -257,6 +257,7 @@ def _apply_legacy_summary_overrides(rs, state: dict) -> None:
     rs.phases_done = progress["phases_done"]
     rs.latest_phase_done = progress["latest_phase_done"]
     rs.phase_states = progress["phase_states"]
+    rs.has_error_phase = progress["has_error_phase"]
 
 
 def flat_runs_summary_via_store(

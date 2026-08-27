@@ -1,10 +1,7 @@
-import { Link } from "react-router-dom";
 import { Workflow } from "lucide-react";
 
-import type { RunSummary } from "@/api/types.ws";
-import { RunExecutionBadge } from "@/components/opps/RunExecutionBadge";
+import { RunsTable } from "@/components/opps/RunsTable";
 import { useOppRuns } from "@/hooks/useOppRuns";
-import { relativeTime } from "@/lib/relativeTime";
 
 interface Props {
   oppSlug: string;
@@ -12,15 +9,17 @@ interface Props {
 }
 
 /**
- * Inline list of runs under an expanded opp card. Each row shows where
- * the run got to — current_phase + current_step + mode — pulled from a
- * quick scan of each run's state.yaml (no full snapshot load). Click a
- * row to jump to that run's workbench.
+ * Inline list of runs under an expanded opp card.
  *
- * Renders only on user-expand. Fetches via ``useOppRuns`` lazily so
- * the cost is paid per-expanded-opp, not per-rendered-card. The
- * always-rendered phase-chip strip uses ``OppCard.runs_summary``
- * from the main payload instead, to avoid an N-card fan-out (#512).
+ * Presentation is `RunsTable`, shared with the workbench's Runs tab — the
+ * two had drifted into separate row markup for the same data. This file
+ * keeps only what is specific to the card context: the lazy fetch and the
+ * empty-state rule.
+ *
+ * Renders only on user-expand and fetches via ``useOppRuns`` lazily, so the
+ * cost is paid per-expanded-opp rather than per-rendered-card. The
+ * always-rendered phase-chip strip reads ``OppCard.runs_summary`` from the
+ * main payload instead, to avoid an N-card fan-out (#512).
  */
 export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
   const runs = useOppRuns(workspaceSlug, oppSlug);
@@ -32,121 +31,25 @@ export function OppRunsList({ oppSlug, workspaceSlug }: Props) {
       </div>
     );
   }
-  if (runs.length === 0) {
-    // Flat-layout opps don't have a runs/ subfolder. The "current state"
-    // for those lives at the opp root, surfaced via the existing card
-    // chrome (current_phase / current_step on the OppCard itself), so
-    // we don't need to render anything here.
-    return null;
-  }
+  // Flat-layout opps have no runs/ subfolder; their "current state" lives at
+  // the opp root and is already on the card chrome, so render nothing.
+  if (runs.length === 0) return null;
 
   return (
-    <div className="border-t border-border/60 bg-muted/20">
+    <div
+      className="border-t border-border/60 bg-muted/20"
+      onClick={(e) => e.stopPropagation()}
+    >
       <header className="flex items-center gap-2 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         <Workflow className="h-3 w-3" />
         Runs <span className="font-normal text-muted-foreground/70">· {runs.length}</span>
       </header>
-      <ul className="divide-y divide-border/40">
-        {runs.map((r) => (
-          <li key={r.run_id}>
-            <Link
-              to={`/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}?run_id=${encodeURIComponent(r.run_id)}`}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 text-xs hover:bg-accent/40"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <span className="shrink-0 font-mono text-[11px] text-foreground">
-                {r.run_id}
-              </span>
-              <ProgressLabel run={r} />
-              {r.mode && (
-                <span className="shrink-0 rounded border border-border/70 bg-card px-1.5 py-0 text-[10px] text-muted-foreground">
-                  {r.mode}
-                </span>
-              )}
-              <span className="shrink-0 text-[10px] text-muted-foreground">
-                {r.last_actor_at
-                  ? `last activity ${relativeTime(r.last_actor_at)}`
-                  : "no activity recorded"}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <RunsTable
+        runs={runs}
+        workspaceSlug={workspaceSlug}
+        oppSlug={oppSlug}
+        dense
+      />
     </div>
-  );
-}
-
-function ProgressLabel({ run }: { run: RunSummary }) {
-  const isComplete =
-    run.lifecycle_status === "complete" ||
-    (run.lifecycle_status == null && !run.current_phase && !!run.last_actor_at);
-  if (isComplete) {
-    return (
-      <span className="min-w-0 flex-1 truncate text-muted-foreground">
-        complete
-      </span>
-    );
-  }
-
-  // In-progress: show the deepest phase the run reached. No "after"
-  // preamble — that read like a temporal preposition ("we're past it")
-  // and confused readers. The label is now just the phase name + the
-  // proportion done; column position implies "this is what the run
-  // got to."
-  //  1. Live cursor → "<phase> · <step>" (matches the workbench's view).
-  //  2. Some phase done but no cursor → "<last done> · X/N".
-  //  3. Nothing done yet → the run's EXECUTION state if canopy knows one,
-  //     otherwise "queued".
-  if (run.current_phase || run.current_step) {
-    const phaseLabel = run.current_phase_display ?? run.current_phase;
-    const stepLabel = run.current_step_display ?? run.current_step;
-    return (
-      <span
-        className="min-w-0 flex-1 truncate text-foreground"
-        title={`current_phase: ${run.current_phase ?? "—"}\ncurrent_step: ${run.current_step ?? "—"}`}
-      >
-        {phaseLabel ?? "—"}
-        {stepLabel && (
-          <span className="text-muted-foreground"> · {stepLabel}</span>
-        )}
-      </span>
-    );
-  }
-
-  const done = run.phases_done ?? 0;
-  const total = run.phases_total ?? 0;
-  if (done > 0 && run.latest_phase_done) {
-    const lastDone = run.latest_phase_done_display ?? run.latest_phase_done;
-    return (
-      <span
-        className="min-w-0 flex-1 truncate text-foreground"
-        title={`Last completed phase: ${run.latest_phase_done}`}
-      >
-        {lastDone}
-        {total > 0 && (
-          <span className="text-muted-foreground"> · {done}/{total}</span>
-        )}
-      </span>
-    );
-  }
-
-  // A run whose canopy turn no runner can claim used to render identically to
-  // one about to start. That is the defect this closes: with no session-capable
-  // runner online the badge is the NORMAL day-one state, not an error case.
-  if (run.execution && run.execution.state !== "not_dispatched") {
-    return (
-      <span className="min-w-0 flex-1 truncate">
-        <RunExecutionBadge
-          state={run.execution.state}
-          detail={run.execution.detail}
-        />
-      </span>
-    );
-  }
-
-  return (
-    <span className="min-w-0 flex-1 truncate text-muted-foreground">
-      queued
-    </span>
   );
 }
