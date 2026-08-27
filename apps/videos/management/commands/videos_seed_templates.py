@@ -2,8 +2,10 @@
 
 Uploads each template directory under
 ``video-production/connect-videos/templates/<id>/`` into the workspace's
-Drive ``videos/_templates/<id>/`` folder. Idempotent: skips templates
-already present in Drive.
+Drive ``videos/_templates/<id>/`` folder. Idempotent, and per FILE rather
+than per kit: a kit already in Drive but missing one of its three files
+gets that file backfilled, and existing files are never overwritten. Run
+it to repair a partially-seeded kit (see ace-web#679).
 
 Usage::
 
@@ -22,7 +24,7 @@ from apps.workspaces.models import Workspace
 
 
 class Command(BaseCommand):
-    help = "Seed Drive template files from the repo template tree (idempotent)."
+    help = "Seed/repair Drive template files from the repo template tree (idempotent)."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -48,11 +50,11 @@ class Command(BaseCommand):
             count = templates.seed_templates(ws)
             if count:
                 self.stdout.write(self.style.SUCCESS(
-                    f"  {ws.slug}: seeded {count} template(s)."
+                    f"  {ws.slug}: seeded or repaired {count} template(s)."
                 ))
             else:
                 self.stdout.write(
-                    f"  {ws.slug}: 0 templates seeded (all already present)."
+                    f"  {ws.slug}: nothing to do (every kit complete in Drive)."
                 )
 
         self.stdout.write(self.style.SUCCESS("Done."))
