@@ -57,6 +57,8 @@ export function SummaryRow({ label, name, links }: Props) {
           </a>
         ))}
         {links.some((l) => l.access === "admin") && <AdminOnlyTag />}
+        {!links.some((l) => l.access === "admin") &&
+          links.some((l) => l.access === "unknown") && <AccessUnknownTag />}
       </span>
     </div>
   );
@@ -81,6 +83,32 @@ export function AdminOnlyTag({ className }: { className?: string }) {
       title="Needs a Dimagi account today — ask us and we'll walk you through it"
     >
       admin only
+    </span>
+  );
+}
+
+/**
+ * Marks a Drive link whose sharing state the server could not read
+ * (ace-web#740).
+ *
+ * Deliberately NOT silence. Before this, a Drive link with no measured
+ * ACL was tagged `public` — which is how spark-facilitator/20260820-0817
+ * shipped a page saying "Open" beside two documents that answered 401 to
+ * the partner it was sent to. Rendering nothing would restore that
+ * exactly: an untagged link reads as "anyone can open this". Rendering
+ * `admin only` would be the same lie pointed the other way, telling a
+ * reader they cannot open something they can.
+ */
+export function AccessUnknownTag({ className }: { className?: string }) {
+  return (
+    <span
+      className={
+        "shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70 " +
+        (className ?? "")
+      }
+      title="We couldn't check who this document is shared with — if it asks for access, tell us and we'll grant it"
+    >
+      access unverified
     </span>
   );
 }

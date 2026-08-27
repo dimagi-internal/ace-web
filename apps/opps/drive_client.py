@@ -148,6 +148,29 @@ class DriveClient(ABC):
         the parse. Use `apps.opps.drive_export.prose_export_mime` to decide.
         Ignored for non-Google-native files."""
 
+    def link_shared(self, file_ids: list[str]) -> dict[str, bool]:
+        """Which of ``file_ids`` anyone with the link can open.
+
+        MEASURED, never assumed. The public run-summary page tags every
+        link it serves with who can open it, and the only honest source
+        for a Drive link is the file's own ACL: a file carrying an
+        ``anyone`` permission is openable by a partner with no Google
+        account, and one that does not is not. Asserting either without
+        reading it produces a page that tells a reviewer "Open" next to a
+        door that answers "You need access."
+
+        Returns ``{file_id: True|False}`` for every id it could resolve.
+        An id ABSENT from the result means **could not tell** — the read
+        failed, or this client cannot perform it. Callers must render
+        that as unknown; they must NOT default it either way, which is
+        the bug this method exists to remove.
+
+        Not abstract: a DriveClient that cannot read ACLs is a valid
+        client, it simply knows nothing here, and the base answer ("I
+        could resolve none of these") is exactly right for it.
+        """
+        return {}
+
     @abstractmethod
     def create_folder(self, parent_id: str, name: str) -> str:
         """Create a folder under parent_id. Returns new folder ID."""
@@ -313,6 +336,51 @@ class GoogleDriveClient(DriveClient):
                 page_token = resp.get("nextPageToken")
                 if not page_token:
                     break
+        return out
+
+    def link_shared(self, file_ids: list[str]) -> dict[str, bool]:
+        """Concurrent ``permissions.list`` per file — see the base docstring.
+
+        ``files.get(fields="permissions")`` is NOT a substitute and was
+        tried first: on the ACE shared drive it returns an EMPTY list for
+        every file, including ones that are demonstrably anyone-with-link
+        readable, so a reader built on it would have called every
+        deliverable admin-only. ``permissions.list`` returns the real ACL
+        — verified 2026-08-26 against the spark-facilitator run: the
+        training LLO guide (anonymously reachable, 307) carries
+        ``{'id': 'anyoneWithLink', 'type': 'anyone', 'role': 'commenter'}``
+        and the PDD (anonymously 401) carries no ``anyone`` entry at all.
+
+        Any ``anyone`` permission counts regardless of role — reader,
+        commenter and writer all mean the link opens without an account.
+
+        One failure costs that id, not the batch: it is omitted from the
+        result, which the caller renders as unknown.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        out: dict[str, bool] = {}
+        ids = [fid for fid in dict.fromkeys(file_ids) if fid]
+        if not ids:
+            return out
+
+        def _one(file_id: str):
+            try:
+                resp = self._service.permissions().list(
+                    fileId=file_id,
+                    fields="permissions(id,type,role)",
+                    supportsAllDrives=True,
+                ).execute(http=self._thread_http())
+            except Exception:  # noqa: BLE001
+                log.warning("link_shared failed for %s", file_id, exc_info=True)
+                return file_id, None
+            perms = resp.get("permissions") or []
+            return file_id, any(p.get("type") == "anyone" for p in perms)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for file_id, shared in pool.map(_one, ids):
+                if shared is not None:
+                    out[file_id] = shared
         return out
 
     def get_contents(self, specs: list) -> dict:

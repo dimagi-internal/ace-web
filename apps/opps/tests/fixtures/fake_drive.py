@@ -59,6 +59,12 @@ class FakeDriveClient(DriveClient):
         self._seq = count(1)
         # (file_id, export_mime) -> body, for get_content(export_as=...).
         self._export_bodies: dict[tuple[str, str], str] = {}
+        # file_id -> anyone-with-link?, for link_shared. Absent = unknown.
+        self._link_shared: dict[str, bool] = {}
+        self._link_unreadable: set[str] = set()
+        # Every batch link_shared was asked for, so a test can assert the
+        # reader batches rather than fanning out one call per link.
+        self.link_shared_calls: list[list[str]] = []
 
     @classmethod
     def from_tree(cls, tree: dict) -> FakeDriveClient:
@@ -178,6 +184,33 @@ class FakeDriveClient(DriveClient):
     def set_export_body(self, file_id: str, export_as: str, body: str) -> None:
         """Register what `get_content(..., export_as=...)` returns for a file."""
         self._export_bodies[(file_id, export_as)] = body
+
+    # --- Link sharing (ACLs) ---
+    #
+    # Deliberately DEFAULT-UNKNOWN: a file nothing has said anything about
+    # is absent from `link_shared`'s result, exactly as a real Drive read
+    # that failed would be. A fake that defaulted to "shared" would let a
+    # test assert `public` against a fixture that never declared it —
+    # which is the assertion-instead-of-measurement bug this whole
+    # mechanism exists to remove, reintroduced in the test harness.
+
+    def set_link_shared(self, file_id: str, shared: bool) -> None:
+        """Declare whether anyone-with-the-link can open this file."""
+        self._link_shared[file_id] = bool(shared)
+
+    def set_link_unreadable(self, file_id: str) -> None:
+        """Make the ACL read FAIL for this file, as a real Drive error
+        does — the id is then omitted from `link_shared`'s result."""
+        self._link_shared.pop(file_id, None)
+        self._link_unreadable.add(file_id)
+
+    def link_shared(self, file_ids: list[str]) -> dict[str, bool]:
+        self.link_shared_calls.append(list(file_ids))
+        return {
+            fid: self._link_shared[fid]
+            for fid in file_ids
+            if fid in self._link_shared and fid not in self._link_unreadable
+        }
 
     # --- Write surface ---
 
