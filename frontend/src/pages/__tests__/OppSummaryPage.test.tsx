@@ -44,6 +44,19 @@ const BASE: OppSummaryPayload = {
   viewer: { is_member: false },
 };
 
+/**
+ * A walkthrough from a run that recorded no DDD loop state. Every field
+ * null / false — absence must never be dressed up as reassurance, so
+ * this is what "we don't know whether the loop converged" looks like,
+ * not "it converged".
+ */
+const DDD_NONE = {
+  terminal_status: null,
+  iterations_completed: null,
+  measures_pre_fix_artifact: false,
+  note: null,
+};
+
 const DECISION = {
   id: "row",
   phase: "idea-to-design",
@@ -107,12 +120,238 @@ describe("OppSummaryPage", () => {
         eval_score: null,
         availability: "withheld",
         withheld_reason: "Not shown — did not pass quality review",
+        ddd: DDD_NONE,
       }],
     });
     expect(
       await screen.findByText(/did not pass quality review/),
     ).toBeTruthy();
     expect(screen.queryByText("Open deck")).toBeNull();
+  });
+
+  // ─── The walkthrough score and its qualifiers (ace-web#740) ────────
+
+  it("scores a walkthrough out of 5, the rubric's actual scale", async () => {
+    // The canopy DDD concept rubric is anchored 1–5
+    // (skills/ddd-concept-eval/rubric.yaml, anchors "5"…"1"). The page
+    // rendered `/10`, so the audited run's concept 2.0 — 2 of 5 —
+    // showed as 2 of 10: roughly half as good as it actually was.
+    renderWith({
+      ...BASE,
+      walkthroughs: [{
+        persona: "Community progression",
+        url: "https://labs/ddd/x",
+        eval_score: 2,
+        availability: "available",
+        withheld_reason: null,
+        access: "admin",
+        ddd: DDD_NONE,
+      }],
+    });
+    expect(await screen.findByText(/eval 2\/5/)).toBeTruthy();
+    expect(screen.queryByText(/eval 2\/10/)).toBeNull();
+  });
+
+  it("never shows a bare score for a loop that stopped without converging", async () => {
+    // THE regression test for the audited run: the page showed
+    // "eval 2/10" and a video link while the run state recorded
+    // stopped_not_converged, 0 end-to-end iterations, and that the
+    // render measures a PRE-FIX artifact.
+    renderWith({
+      ...BASE,
+      walkthroughs: [{
+        persona: "Community progression",
+        url: "https://labs/ddd/x",
+        eval_score: 2,
+        availability: "available",
+        withheld_reason: null,
+        access: "admin",
+        ddd: {
+          terminal_status: "stopped_not_converged",
+          iterations_completed: 0,
+          measures_pre_fix_artifact: true,
+          note: "READ THIS BEFORE QUOTING THE 2.0.",
+        },
+      }],
+    });
+    expect(
+      await screen.findByText(/stopped before it converged/),
+    ).toBeTruthy();
+    // The pre-fix caveat is the one that makes the LINKED VIDEO
+    // misleading, not just the number.
+    expect(
+      screen.getByText(/measure a version that has since been fixed/),
+    ).toBeTruthy();
+  });
+
+  // No pass/fail collapse. `converged_clean` and
+  // `converged_with_open_questions` are precisely the pair a boolean
+  // would fuse, and precisely the pair a reader needs to tell apart —
+  // so they get one test each, asserting the OTHER one's wording is
+  // absent.
+  const walkthroughWithStatus = (terminal_status: string) => ({
+    persona: "Community progression",
+    url: "https://labs/ddd/x",
+    eval_score: 4,
+    availability: "available" as const,
+    withheld_reason: null,
+    access: "admin" as const,
+    ddd: { ...DDD_NONE, terminal_status },
+  });
+
+  it("renders converged_clean as its own outcome", async () => {
+    renderWith({
+      ...BASE,
+      walkthroughs: [walkthroughWithStatus("converged_clean")],
+    });
+    expect(await screen.findByText(/finished clean/)).toBeTruthy();
+    expect(screen.queryByText(/with open questions/)).toBeNull();
+  });
+
+  it("renders converged_with_open_questions as a different outcome", async () => {
+    renderWith({
+      ...BASE,
+      walkthroughs: [walkthroughWithStatus("converged_with_open_questions")],
+    });
+    expect(await screen.findByText(/with open questions/)).toBeTruthy();
+    expect(screen.queryByText(/finished clean/)).toBeNull();
+  });
+
+  it("surfaces an unrecognised terminal status verbatim rather than dropping it", async () => {
+    renderWith({
+      ...BASE,
+      walkthroughs: [walkthroughWithStatus("stalled_on_a_gate")],
+    });
+    expect(
+      await screen.findByText(/review loop status: stalled_on_a_gate/),
+    ).toBeTruthy();
+  });
+
+  it("says nothing about the loop when the run recorded nothing", async () => {
+    // Absence is not reassurance. A run predating these fields must
+    // render exactly as it did, with no invented "converged".
+    renderWith({
+      ...BASE,
+      walkthroughs: [{
+        persona: "Community progression",
+        url: "https://labs/ddd/x",
+        eval_score: 4,
+        availability: "available",
+        withheld_reason: null,
+        access: "admin",
+        ddd: DDD_NONE,
+      }],
+    });
+    expect(await screen.findByText(/eval 4\/5/)).toBeTruthy();
+    expect(screen.queryByText(/review loop/)).toBeNull();
+    expect(screen.queryByText(/since been fixed/)).toBeNull();
+  });
+
+  // ─── What the assistant claims to know (ace-web#740) ───────────────
+
+  it("makes no training claim when the run recorded no knowledge sources", async () => {
+    // The page carried a constant: "Trained on the design doc, training
+    // pack, and app guides for this opportunity." On the audited run the
+    // opp collection held 16 files and none of the five training-pack
+    // documents this same page links were among them.
+    renderWith({
+      ...BASE,
+      assistant: {
+        ocs_url: "https://ocs/console",
+        access: "admin",
+        public_id: "pid",
+        embed_key: "ek",
+        knowledge_sources: [],
+      },
+    });
+    expect(
+      await screen.findByText("Ask questions about this opportunity."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/training pack/)).toBeNull();
+  });
+
+  it("states what the assistant knows when — and only when — the run says so", async () => {
+    renderWith({
+      ...BASE,
+      assistant: {
+        ocs_url: "https://ocs/console",
+        access: "admin",
+        public_id: "pid",
+        embed_key: "ek",
+        knowledge_sources: ["the design doc", "the app guides"],
+      },
+    });
+    expect(
+      await screen.findByText(/It was given the design doc and the app guides\./),
+    ).toBeTruthy();
+  });
+
+  // ─── One number per population (ace-web#740) ───────────────────────
+
+  it("does not present the open-question count as a subset of the decisions", async () => {
+    // The Overview read "51 calls ACE made building this run, 23 it
+    // couldn't settle" — splicing decisions.total and
+    // open_questions.items.length, two different populations. Nothing in
+    // that run equalled 23 of 51.
+    renderWith({
+      ...BASE,
+      decisions: {
+        total: 51,
+        counts: { stated: 30, inferred: 17, conflicting: 4, overridden: 0 },
+        rows: [],
+      },
+      open_questions: {
+        url: null,
+        access: "unknown",
+        items: [
+          { title: "Rate", detail: "d", owner: null, answered_in: null },
+          { title: "Device", detail: "d", owner: null, answered_in: null },
+        ],
+      },
+    });
+    expect(
+      await screen.findByText(/51 calls ACE made building this run\./),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Separately, 2 open questions the run couldn't settle/),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/51 calls ACE made building this run, 2 it couldn't settle/),
+    ).toBeNull();
+  });
+
+  // ─── An unmeasurable link is not called public (ace-web#740) ───────
+
+  it("tags a Drive link whose sharing state could not be read", async () => {
+    renderWith({
+      ...BASE,
+      design: {
+        docs: [
+          { title: "Program Design Document", url: "https://docs/pdd", access: "unknown" },
+        ],
+      },
+    });
+    expect(await screen.findByText("Program Design Document")).toBeTruthy();
+    expect(screen.getAllByText("access unverified").length).toBe(1);
+    // Not the wrong tag in the other direction either.
+    expect(screen.queryByText("admin only")).toBeNull();
+  });
+
+  it("tags the open-questions source doc too, which renders outside SummaryRow", async () => {
+    // That link is hand-rolled on the Decisions tab, so it does not
+    // inherit the row's tag logic. Leaving it untagged would read as
+    // "anyone can open this" — the ace-web#740 bug in a second place.
+    renderWith({
+      ...BASE,
+      open_questions: {
+        url: "https://docs/open-questions",
+        access: "unknown",
+        items: [{ title: "Rate", detail: "d", owner: null, answered_in: null }],
+      },
+    });
+    await openDecisionsTab();
+    expect(await screen.findByText("Source document")).toBeTruthy();
+    expect(screen.getAllByText("access unverified").length).toBe(1);
   });
 
   it("distinguishes 'not started yet' from 'Not created'", async () => {

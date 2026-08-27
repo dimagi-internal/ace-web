@@ -131,8 +131,9 @@ def test_it_degrades_when_the_inner_client_has_no_fast_paths():
 
 def test_find_in_folders_synthesises_rather_than_returning_empty():
     """An empty dict is a LEGITIMATE answer — "no folder holds that file". A
-    wrapper that returned {} to mean "I can't batch" would be silently
-    indistinguishable from "this opp has no runs"."""
+    wrapper returning {} to mean "I can't batch" would be silently
+    indistinguishable from "this opp has no runs", and the caller would render
+    the opp as empty."""
 
     class _Plain:
         def __init__(self):

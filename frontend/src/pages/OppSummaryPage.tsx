@@ -20,7 +20,11 @@ import {
 import { OcsWidgetMount } from "@/components/opps/summary/OcsWidgetMount";
 import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
 import { SummaryHero } from "@/components/opps/summary/SummaryHero";
-import { AdminOnlyTag, SummaryRow } from "@/components/opps/summary/SummaryRow";
+import {
+  AccessUnknownTag,
+  AdminOnlyTag,
+  SummaryRow,
+} from "@/components/opps/summary/SummaryRow";
 import { SummarySection } from "@/components/opps/summary/SummarySection";
 import { ViewSwitcher, type ViewTab } from "@/components/views/ViewSwitcher";
 import { useUrlTab } from "@/hooks/useViewMode";
@@ -79,6 +83,123 @@ function Placeholder({ label, text }: { label: string; text: string }) {
 
 function NotCreated({ label }: { label: string }) {
   return <Placeholder label={label} text="Not created" />;
+}
+
+/**
+ * The canopy DDD concept rubric is anchored **1–5**, not 1–10 —
+ * `skills/ddd-concept-eval/rubric.yaml` in the canopy plugin, whose
+ * per-dimension `anchors` run "5" down to "1" with 3 as the documented
+ * default.
+ *
+ * The page rendered `{score}/10` (ace-web#740). On
+ * spark-facilitator/20260820-0817 the loop recorded concept 2.0, user
+ * 2.0 and arc 2.0 — 2 out of 5, a failing-but-not-catastrophic score —
+ * and the page showed "eval 2/10", which reads as roughly half as good
+ * as it actually is. A wrong denominator is not a rounding error; it
+ * changes what the number says.
+ */
+const DDD_EVAL_SCORE_MAX = 5;
+
+function formatEvalScore(score: number): string {
+  return `${score}/${DDD_EVAL_SCORE_MAX}`;
+}
+
+/** `["a", "b", "c"]` → `"a, b and c"`. */
+function joinList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * How each DDD terminal status reads to someone who has never heard of
+ * the loop. Four values, four different sentences — never collapsed to
+ * pass/fail, because "converged, good" and "converged, still failing"
+ * are the two the collapse would fuse, and they are the two a reader
+ * most needs to tell apart.
+ */
+const DDD_TERMINAL_STATUS_LABELS: Record<string, string> = {
+  converged_clean: "the review loop finished clean",
+  converged_with_open_questions:
+    "the review loop finished, with open questions",
+  stopped_not_converged: "the review loop stopped before it converged",
+  diverging: "the review loop was getting worse, not better",
+};
+
+/**
+ * The qualifiers that make a walkthrough's score readable — surfaced
+ * beside it, never dropped (ace-web#740).
+ *
+ * On spark-facilitator/20260820-0817 the run state carried
+ * `stopped_not_converged`, zero end-to-end iterations, and
+ * `ddd_render_measures_pre_fix_artifact: true`; the page carried a score
+ * and a video link and none of the three. The pre-fix flag is the one
+ * that makes the LINK misleading rather than just the number: four
+ * accuracy fixes landed during that iteration and appear in no captured
+ * frame, so the published video films a product that no longer exists.
+ * A published video presented bare against a pre-fix artifact is the
+ * specific thing this component exists to prevent.
+ *
+ * An unrecognised status is rendered verbatim rather than swallowed —
+ * same rule as the walkthrough URL keys (ace#1432): a value we don't
+ * know must not become silence.
+ */
+function WalkthroughCaveats({
+  ddd,
+}: {
+  ddd: OppSummaryPayload["walkthroughs"][number]["ddd"];
+}) {
+  if (!ddd) return null;
+  const status = ddd.terminal_status;
+  const statusText = status
+    ? (DDD_TERMINAL_STATUS_LABELS[status] ?? `review loop status: ${status}`)
+    : null;
+  if (!statusText && !ddd.measures_pre_fix_artifact) return null;
+  return (
+    <span className="mt-1 block text-[0.85rem] leading-[1.6] text-muted-foreground">
+      {statusText && (
+        <span>
+          {statusText}
+          {ddd.iterations_completed != null &&
+            ` after ${ddd.iterations_completed} full ${
+              ddd.iterations_completed === 1 ? "pass" : "passes"
+            }`}
+          .{" "}
+        </span>
+      )}
+      {ddd.measures_pre_fix_artifact && (
+        <span className="text-foreground">
+          This score and recording measure a version that has since been
+          fixed — they do not show the current build.
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * What the support assistant knows — stated ONLY when the run recorded
+ * it (ace-web#740).
+ *
+ * This line used to be the constant "Trained on the design doc, training
+ * pack, and app guides for this opportunity." It was derived from
+ * nothing at all, and on spark-facilitator/20260820-0817 it was false:
+ * the opp collection held 16 files (`00-program-contacts.md` …
+ * `15-connect-setup-summary.md`) and none of the five training-pack
+ * documents this same page links were among them. Two-thirds true is
+ * what made it survive — the design doc and the app summaries WERE
+ * indexed — and a reader has no way to tell which third is the lie.
+ *
+ * ACE shipped `ocs-knowledge-refresh` (ace#1715) so future runs do index
+ * the training docs. The fallback must therefore say nothing about
+ * training rather than something weaker-but-still-invented: a run where
+ * it did not happen must not read as one where it did.
+ */
+function assistantBlurb(knowledgeSources: string[] | undefined): string {
+  const sources = (knowledgeSources ?? []).filter((s) => s.trim());
+  if (sources.length === 0) {
+    return "Ask questions about this opportunity.";
+  }
+  return `Ask questions about this opportunity. It was given ${joinList(sources)}.`;
 }
 
 export default function OppSummaryPage() {
@@ -276,15 +397,40 @@ export default function OppSummaryPage() {
           {hasReviewSurface && (
             <SummarySection title="Review">
               <div className="flex flex-wrap items-baseline justify-between gap-3 py-1">
+                {/* Two populations, two sentences (ace-web#740). This
+                    used to read "51 calls ACE made building this run, 23
+                    it couldn't settle" — splicing `decisions.total` and
+                    `open_questions.items.length`, which measure
+                    different things. Nothing in that run equalled 23 of
+                    51: the decisions broke down 30 stated / 17 inferred
+                    / 4 conflicting / 0 changed. A subordinate clause
+                    reads as a subset, so each number now names its own
+                    population and only `needsEye` — a genuine subset of
+                    the decisions — stays attached to them. */}
                 <p className="max-w-md text-[0.975rem] leading-[1.7] text-muted-foreground">
-                  {decisions
-                    ? `${decisions.total} calls ACE made building this run, ${openQuestionCount} it couldn't settle. `
-                    : `${openQuestionCount} questions this run couldn't settle. `}
-                  <span className="text-foreground">
-                    {needsEye > 0
-                      ? `${needsEye} need your eye.`
-                      : "React to any of them."}
-                  </span>
+                  {decisions ? (
+                    <>
+                      {`${decisions.total} ${
+                        decisions.total === 1 ? "call" : "calls"
+                      } ACE made building this run. `}
+                      <span className="text-foreground">
+                        {needsEye > 0
+                          ? `${needsEye} need your eye.`
+                          : "React to any of them."}
+                      </span>
+                      {openQuestionCount > 0 &&
+                        ` Separately, ${openQuestionCount} open ${
+                          openQuestionCount === 1 ? "question" : "questions"
+                        } the run couldn't settle, listed below them.`}
+                    </>
+                  ) : (
+                    <>
+                      {`${openQuestionCount} open ${
+                        openQuestionCount === 1 ? "question" : "questions"
+                      } this run couldn't settle. `}
+                      <span className="text-foreground">React to any of them.</span>
+                    </>
+                  )}
                 </p>
                 <button
                   type="button"
@@ -355,7 +501,7 @@ export default function OppSummaryPage() {
             {assistant ? (
               <SummaryRow
                 label="Bot"
-                name="Trained on the design doc, training pack, and app guides for this opportunity."
+                name={assistantBlurb(assistant.knowledge_sources)}
                 links={
                   assistant.ocs_url
                     ? [link("View in OCS", assistant.ocs_url, assistant.access)]
@@ -411,6 +557,7 @@ export default function OppSummaryPage() {
                           {" · "}
                           {w.withheld_reason ?? "Not shown — did not pass quality review"}
                         </span>
+                        <WalkthroughCaveats ddd={w.ddd} />
                       </>
                     }
                     links={[]}
@@ -424,9 +571,10 @@ export default function OppSummaryPage() {
                         {w.persona}
                         {w.eval_score != null && (
                           <span className="text-muted-foreground">
-                            {" · "}eval {w.eval_score}/10
+                            {" · "}eval {formatEvalScore(w.eval_score)}
                           </span>
                         )}
+                        <WalkthroughCaveats ddd={w.ddd} />
                       </>
                     }
                     links={[link("Open deck", w.url, w.access)]}
@@ -634,7 +782,16 @@ export default function OppSummaryPage() {
                     >
                       Source document
                     </a>
+                    {/* This "Source document" link is rendered outside
+                        `SummaryRow`, so it does not inherit the row's
+                        tag logic and has to carry both cases itself.
+                        `unknown` must not render as silence — an
+                        untagged link reads as "anyone can open this",
+                        which is the ace-web#740 bug exactly. */}
                     {showAccessTags && open_questions.access === "admin" && <AdminOnlyTag />}
+                    {showAccessTags && open_questions.access === "unknown" && (
+                      <AccessUnknownTag />
+                    )}
                   </p>
                 )}
               </>

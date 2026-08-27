@@ -78,6 +78,10 @@ def _file_meta_key(file_id: str) -> str:
     return f"drive:{_KEY_VERSION}:meta:{file_id}"
 
 
+def _link_shared_key(file_id: str) -> str:
+    return f"drive:{_KEY_VERSION}:linkshare:{file_id}"
+
+
 def _invalidate_folder_listings(folder_id: str) -> None:
     cache.delete_many([_list_key(folder_id, False), _list_key(folder_id, True)])
 
@@ -208,6 +212,34 @@ class CachedDriveClient(DriveClient):
         result = finder(parent_ids, name)
         cache.set(key, result, timeout=self._ttl)
         return result
+
+    def link_shared(self, file_ids: list[str]) -> dict[str, bool]:
+        """Per-id cached ACL reads; only the misses reach Drive.
+
+        A file's sharing state changes about as often as its content, so
+        it rides the same TTL. Only resolved answers are cached — an id
+        the inner client could NOT resolve is left out, so a transient
+        Drive failure does not pin "unknown" onto a link for the rest of
+        the TTL.
+        """
+        out: dict[str, bool] = {}
+        misses: list[str] = []
+        for file_id in dict.fromkeys(file_ids):
+            if not file_id:
+                continue
+            if not self._bypass:
+                hit = cache.get(_link_shared_key(file_id))
+                if hit is not None:
+                    out[file_id] = bool(hit)
+                    continue
+            misses.append(file_id)
+
+        if misses:
+            fetched = self._inner.link_shared(misses)
+            for file_id, shared in fetched.items():
+                out[file_id] = bool(shared)
+                cache.set(_link_shared_key(file_id), bool(shared), timeout=self._ttl)
+        return out
 
     def get_contents(self, specs: list) -> dict:
         """Serve what the cache already holds; fetch only the misses in bulk.
