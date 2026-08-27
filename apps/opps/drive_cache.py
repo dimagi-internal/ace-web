@@ -53,6 +53,18 @@ def _list_key(folder_id: str, recursive: bool) -> str:
     return f"drive:{_KEY_VERSION}:list:{folder_id}:{int(bool(recursive))}"
 
 
+def _find_key(parent_ids: list[str], name: str) -> str:
+    """Stable across parent ORDER — the caller builds the list from a folder
+    listing whose order Drive does not guarantee, and an order-sensitive key
+    would miss on every other request."""
+    import hashlib
+
+    digest = hashlib.sha1(
+        ("|".join(sorted(parent_ids)) + "::" + name).encode()
+    ).hexdigest()[:16]
+    return f"drive:{_KEY_VERSION}:find:{digest}"
+
+
 def _content_key(file_id: str, mime_type: str, export_as: str | None = None) -> str:
     # ``export_as`` is part of the key: the same file exported as text/plain
     # and as text/markdown are different bodies, and collapsing them would
@@ -163,6 +175,68 @@ class CachedDriveClient(DriveClient):
         if tracker is not None:
             tracker.record(file_id)
         return result
+
+    # --- Bulk fast paths (see GoogleDriveClient) ---------------------------
+    # Exposed here as well as on the inner client because DriveRunStore
+    # negotiates them with getattr(): if the WRAPPER lacks them, every request
+    # silently takes the slow per-run path and the optimisation is inert.
+
+    def find_in_folders(self, parent_ids: list[str], name: str) -> dict:
+        finder = getattr(self._inner, "find_in_folders", None)
+        if not callable(finder):
+            return {}
+        key = _find_key(parent_ids, name)
+        if not self._bypass:
+            hit = cache.get(key)
+            if hit is not None:
+                return hit
+        result = finder(parent_ids, name)
+        cache.set(key, result, timeout=self._ttl)
+        return result
+
+    def get_contents(self, specs: list) -> dict:
+        """Serve what the cache already holds; fetch only the misses in bulk.
+
+        Keyed identically to ``get_content``, so a bulk read warms the cache
+        for later single reads and vice versa. This is where the repeat-visit
+        win comes from: historical runs never change, so after one load only
+        the active run's state is actually re-fetched.
+        """
+        out: dict[str, str] = {}
+        misses: list = []
+        for file_id, mime_type in specs:
+            if not self._bypass:
+                hit = cache.get(_content_key(file_id, mime_type))
+                if hit is not None:
+                    out[file_id] = hit.content
+                    tracker = current_tracker()
+                    if tracker is not None:
+                        tracker.record(file_id)
+                    continue
+            misses.append((file_id, mime_type))
+
+        bulk = getattr(self._inner, "get_contents", None)
+        if misses and callable(bulk):
+            fetched = bulk(misses)
+        elif misses:
+            fetched = {
+                fid: self._inner.get_content(fid, mt).content for fid, mt in misses
+            }
+        else:
+            fetched = {}
+
+        mime_by_id = dict(specs)
+        for file_id, text in fetched.items():
+            out[file_id] = text
+            cache.set(
+                _content_key(file_id, mime_by_id.get(file_id, "")),
+                FileContent(content=text, content_type=mime_by_id.get(file_id, "text/plain")),
+                timeout=self._ttl,
+            )
+            tracker = current_tracker()
+            if tracker is not None:
+                tracker.record(file_id)
+        return out
 
     # --- Writes (pass-through + invalidate) ---
 
