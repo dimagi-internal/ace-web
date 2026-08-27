@@ -1354,11 +1354,20 @@ def build_summary_payload(
     if run_folder is None:
         return None
 
-    # run_state.yaml — every per-run product.
+    # run_state.yaml — every per-run product. Its ABSENCE means the run
+    # folder is not a run: `/ace:run` derives execution order from
+    # `phases.*.status`, and every section below reads out of `state`.
+    #
+    # Returning a payload built from `{}` (as this did until ace-web#734)
+    # served HTTP 200 with an empty body for a fork that stalled before
+    # writing its state file — making "the fork failed" and "the run has
+    # not started" indistinguishable from the API, and rendering a
+    # summary page with nothing on it. `None` maps to 404 in the caller,
+    # which is the honest answer.
     state_file = _find_in_folder(drive, run_folder.id, "run_state.yaml")
-    state: dict = {}
-    if state_file is not None:
-        state = _read_yaml(drive, state_file.id, state_file.mime_type)
+    if state_file is None:
+        return None
+    state: dict = _read_yaml(drive, state_file.id, state_file.mime_type) or {}
 
     workspace_slug = getattr(workspace, "slug", "")
     # Prefix the deployment mount (dimagi-internal/ace#1329). This link is

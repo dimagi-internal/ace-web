@@ -9,7 +9,13 @@ Per-opp resources stay untouched — ``opp.yaml``, ``inputs/``,
 ``eval-calibration/``, ``open-questions.md``, ``connect-state.yaml``,
 ``current/``. They live above ``runs/`` and every run shares them.
 
-Per-run resources get a fresh home under ``runs/<new-run-id>/``:
+Per-run resources get a fresh home under ``runs/<new-run-id>/``. They
+are written in a deliberate ORDER — ``run_state.yaml`` first, then the
+bulk copy — because ``run_state.yaml`` is what makes the folder a run
+and everything else is optional-but-expensive. A fork interrupted
+partway (Drive stall, ECS task replacement mid-copy) then leaves a
+resumable-but-incomplete run rather than an unrunnable pile of copied
+artifacts. See ace-web#734.
 
 * Phase folders ``<N>-<phase>/`` from the source run, copied only when
   ``N < fork_ordinal``. The plugin lays out per-phase artifacts in
@@ -25,6 +31,8 @@ Per-run resources get a fresh home under ``runs/<new-run-id>/``:
   ``mode``, ``created``, ``initiated_by``, ``last_actor`` +
   ``last_actor_at``, and a ``phases`` map seeded ``done`` for kept
   phases and ``pending`` for everything from ``fork_at_phase`` onward.
+  Written FIRST, ahead of every copy — it depends on nothing the copy
+  produces.
 
 Drive cost: O(N) calls where N is the number of files we end up
 copying — proportional to the *kept* phase count, not the source's
@@ -138,9 +146,17 @@ def fork_opp(
 
     Raises ``ForkOppError`` for caller-friendly validation failures
     (source not found, no runs to fork from, run-id collision, unknown
-    mode). Drive failures during the copy bubble up; partial state may
-    be left behind (the new run folder will exist but be incomplete)
-    and the operator can delete it via the existing run-trash flow.
+    mode). Drive failures during the copy bubble up, after a final
+    ``status: error`` progress payload carrying ``new_run_id``; partial
+    state may be left behind (the run folder exists, carries a valid
+    ``run_state.yaml``, and is missing some artifacts) and the operator
+    can either resume it with ``/ace:run <opp>/<run-id>`` or delete it
+    via the existing run-trash flow.
+
+    **This call is BLOCKING and can run for minutes** — one Drive
+    ``copy_file`` per artifact at ~150 ms each. Callers that can't hold
+    the connection should poll ``GET .../fork/status``, which reports
+    ``new_run_id`` from the moment the run folder is minted.
     """
     if mode not in FORK_MODES:
         raise ForkOppError(
@@ -213,117 +229,129 @@ def fork_opp(
     now_utc = now or _dt.datetime.now(_dt.UTC)
     new_run_id = _mint_run_id(now_utc, run_children)
 
+    progress = _Progress(cb=progress_cb, opp_slug=source_slug)
+
     # Pre-walk to count files we'll actually copy. Cheaper than the
     # copy itself (one list_files per kept folder vs. ~150 ms per
     # copy_file), so the UX win — accurate "X of Y" — is worth it.
-    _emit(progress_cb, {"status": "counting", "copied": 0, "total": 0})
-    total_files = _count_files_to_copy(
-        drive, source_run.id, point=point,
-    )
-    counter = _Counter(total=total_files)
-    _emit(progress_cb, {
-        "status": "copying", "copied": 0, "total": total_files, "current": "",
-    })
+    progress.emit("counting")
+    progress.total = _count_files_to_copy(drive, source_run.id, point=point)
 
     new_run_folder_id = drive.create_folder(runs_folder.id, new_run_id)
-    decisions_dest_id, decisions_source_body = _copy_run_subtree(
-        drive=drive,
-        source_run_folder_id=source_run.id,
-        dest_run_folder_id=new_run_folder_id,
-        point=point,
-        counter=counter,
-        progress_cb=progress_cb,
-    )
+    # From here on every progress payload carries the new run-id. The POST
+    # blocks for the whole copy (minutes on a large run), so this poll is
+    # the only channel a caller has to learn what was created before the
+    # response lands — and a caller who can't learn it retries the POST
+    # and produces a SECOND partial fork (ace-web#734).
+    progress.new_run_id = new_run_id
 
-    _emit(progress_cb, {
-        "status": "finalizing", "copied": counter.copied, "total": total_files,
-    })
-
-    # Synthesize the new run's run_state.yaml. We intentionally DON'T
-    # copy the source run's run_state — its phases map and timestamps
-    # belong to the prior run. Generating fresh keeps the new run's
-    # state honest about what's done vs. pending.
-    new_state = _build_run_state_yaml(
-        opp_slug=source_slug,
-        run_id=new_run_id,
-        owner_email=getattr(owner, "email", "") or "unknown",
-        fork_at_phase=fork_at_phase,
-        fork_ordinal=fork_ordinal,
-        forked_from_run_id=source_run.name,
-        now_utc=now_utc,
-        run_phases=run_phases,
-    )
-    drive.upload_file(
-        new_run_folder_id, "run_state.yaml", new_state, "text/yaml",
-    )
-
-    # Trim decisions.yaml to pre-fork rows (only if the source run had
-    # one — otherwise nothing to trim).
-    if decisions_dest_id is not None:
-        trimmed = _rewrite_decisions_yaml(
-            decisions_source_body or "",
-            fork_ordinal=fork_ordinal,
-            edits=edits,
-            mode=mode,
-        )
-        drive.update_file(decisions_dest_id, trimmed, "text/yaml")
-
-    session: Session | None = None
-    if create_session:
-        session = Session.create_with_owner(
-            owner=owner,
-            title=f"{source_slug} — new run {new_run_id} (fork @ {point.label()})",
-            backend_kind="cli",
-            status="active",
-            source="web",
+    try:
+        # run_state.yaml FIRST, before the bulk copy. It is small, and it
+        # is the file that makes the folder a run: ACE's resume path
+        # derives execution order from `run_state.yaml.phases.*.status`,
+        # so a folder without it cannot be resumed at all. Written last
+        # (as it was until ace-web#734), any stall in the copy left an
+        # expensive pile of copied artifacts that was not a run and had
+        # to be hand-repaired. Written first, the same stall leaves a
+        # resumable-but-incomplete run — `/ace:run <opp>/<run-id>` picks
+        # it up and re-derives what's missing.
+        #
+        # We intentionally DON'T copy the source run's run_state — its
+        # phases map and timestamps belong to the prior run. Generating
+        # fresh keeps the new run's state honest about done vs. pending,
+        # and it depends on nothing the copy produces.
+        new_state = _build_run_state_yaml(
             opp_slug=source_slug,
-            opp_run_id=new_run_id,
-            workspace=workspace,
+            run_id=new_run_id,
+            owner_email=getattr(owner, "email", "") or "unknown",
+            fork_at_phase=fork_at_phase,
+            fork_ordinal=fork_ordinal,
+            forked_from_run_id=source_run.name,
+            now_utc=now_utc,
+            run_phases=run_phases,
         )
-        Message.objects.create(
-            session=session,
-            turn_index=0,
-            role="system",
-            sender_user=owner,
-            content={
-                "type": "system",
-                "source": "opps-fork",
-                "opp_slug": source_slug,
-                "fork_at_phase": fork_at_phase,
-                "fork_at_skill": point.skill,
-                "source_run_id": source_run.name,
-                "new_run_id": new_run_id,
-            },
-            plaintext=(
-                f"Forked run `{new_run_id}` from `{source_run.name}` at "
-                f"{'skill' if point.is_skill_fork else 'phase'} "
-                f"`{point.label()}`. Re-run /ace:run to continue from there."
-            ),
-            status="complete",
+        drive.upload_file(
+            new_run_folder_id, "run_state.yaml", new_state, "text/yaml",
         )
-        if feedback:
-            # Seed the operator's reason as the first USER turn, so the
-            # agent picking up the fork reads the intent instead of
-            # inferring it from artifacts. This restored a capability lost
-            # when apps/opps/fork.py was deleted (2026-04-20), where it was
-            # the whole point of the `with-feedback` mode.
+
+        progress.emit("copying", current="")
+        decisions_dest_id, decisions_source_body = _copy_run_subtree(
+            drive=drive,
+            source_run_folder_id=source_run.id,
+            dest_run_folder_id=new_run_folder_id,
+            point=point,
+            progress=progress,
+        )
+
+        progress.emit("finalizing")
+
+        # Trim decisions.yaml to pre-fork rows (only if the source run had
+        # one — otherwise nothing to trim).
+        if decisions_dest_id is not None:
+            trimmed = _rewrite_decisions_yaml(
+                decisions_source_body or "",
+                fork_ordinal=fork_ordinal,
+                edits=edits,
+                mode=mode,
+            )
+            drive.update_file(decisions_dest_id, trimmed, "text/yaml")
+        session: Session | None = None
+        if create_session:
+            session = Session.create_with_owner(
+                owner=owner,
+                title=f"{source_slug} — new run {new_run_id} (fork @ {point.label()})",
+                backend_kind="cli",
+                status="active",
+                source="web",
+                opp_slug=source_slug,
+                opp_run_id=new_run_id,
+                workspace=workspace,
+            )
             Message.objects.create(
                 session=session,
-                turn_index=1,
-                role="user",
+                turn_index=0,
+                role="system",
                 sender_user=owner,
-                content={"type": "text", "text": feedback},
-                plaintext=feedback,
+                content={
+                    "type": "system",
+                    "source": "opps-fork",
+                    "opp_slug": source_slug,
+                    "fork_at_phase": fork_at_phase,
+                    "fork_at_skill": point.skill,
+                    "source_run_id": source_run.name,
+                    "new_run_id": new_run_id,
+                },
+                plaintext=(
+                    f"Forked run `{new_run_id}` from `{source_run.name}` at "
+                    f"{'skill' if point.is_skill_fork else 'phase'} "
+                    f"`{point.label()}`. Re-run /ace:run to continue from there."
+                ),
                 status="complete",
             )
+            if feedback:
+                # Seed the operator's reason as the first USER turn, so the
+                # agent picking up the fork reads the intent instead of
+                # inferring it from artifacts. This restored a capability lost
+                # when apps/opps/fork.py was deleted (2026-04-20), where it was
+                # the whole point of the `with-feedback` mode.
+                Message.objects.create(
+                    session=session,
+                    turn_index=1,
+                    role="user",
+                    sender_user=owner,
+                    content={"type": "text", "text": feedback},
+                    plaintext=feedback,
+                    status="complete",
+                )
+    except Exception as exc:
+        # Report the failure AND the run folder it left behind. Staying
+        # silent here is what made a slow fork indistinguishable from a
+        # fork that never started; the caller needs to know there's a
+        # partial run to inspect or trash, not to retry blindly.
+        progress.emit("error", error=f"{type(exc).__name__}: {exc}")
+        raise
 
-    _emit(progress_cb, {
-        "status": "done",
-        "copied": counter.copied,
-        "total": total_files,
-        "opp_slug": source_slug,
-        "new_run_id": new_run_id,
-    })
+    progress.emit("done")
     return ForkOppResult(
         opp_slug=source_slug,
         new_run_id=new_run_id,
@@ -375,9 +403,54 @@ def _mint_run_id(
 
 
 @dataclass
-class _Counter:
-    total: int
+class _Progress:
+    """Counts the copy walk and reports it in ``ForkProgress`` shape.
+
+    Counting and reporting live on one object because they were the same
+    bug: ace-web#734 shipped a walk that incremented ``copied`` and an
+    ``_emit`` that published key names (``copied`` / ``total`` /
+    ``current`` / ``opp_slug``) the strict ``ForkProgress`` response
+    schema rejects, so nothing the walk counted ever reached a caller.
+    Every payload now leaves through :meth:`emit`, which builds the
+    schema's field names and nothing else.
+    """
+
+    cb: ProgressCb | None
+    opp_slug: str
+    total: int = 0
     copied: int = 0
+    #: Set the moment the new run folder is minted. Reported on EVERY
+    #: payload from then on: a caller whose blocking POST hung has no
+    #: other way to learn which run was created, and a poll that says
+    #: "unknown" while a fork is mid-copy invites the retry that
+    #: produces a second partial fork.
+    new_run_id: str | None = None
+
+    def emit(
+        self, status: str, *, current: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        if self.cb is None:
+            return
+        payload: dict = {
+            "status": status,
+            "progress": (self.copied / self.total) if self.total else 0.0,
+            "files_total": self.total,
+            "files_copied": self.copied,
+            "current": current,
+            "error": error,
+            "new_slug": self.opp_slug,
+            "new_run_id": self.new_run_id,
+        }
+        try:
+            self.cb(payload)
+        except Exception:  # noqa: BLE001 — reporting must never break the fork
+            pass
+
+    def tick(self, current: str) -> None:
+        """Record one copied file and report it."""
+        self.copied += 1
+        self.emit("copying", current=current)
 
 
 def _count_files_to_copy(
@@ -511,8 +584,7 @@ def _copy_run_subtree(
     source_run_folder_id: str,
     dest_run_folder_id: str,
     point: ForkPoint | None,
-    counter: _Counter,
-    progress_cb: ProgressCb | None,
+    progress: _Progress,
 ) -> tuple[str | None, str | None]:
     """Copy kept phase folders + carried run-root files into the new run.
 
@@ -538,8 +610,7 @@ def _copy_run_subtree(
                 source_folder_id=child.id,
                 dest_folder_id=sub_id,
                 rel_path=child.name,
-                counter=counter,
-                progress_cb=progress_cb,
+                progress=progress,
                 # On a skill fork the fork-point phase is kept only up to
                 # the fork skill; every other kept phase copies whole.
                 keep_file=(
@@ -555,13 +626,7 @@ def _copy_run_subtree(
             if child.name in ("decisions.yaml", "decisions.yml"):
                 decisions_dest_id = new_id
                 decisions_source_body = _read_text_or_empty(drive, child)
-            counter.copied += 1
-            _emit(progress_cb, {
-                "status": "copying",
-                "copied": counter.copied,
-                "total": counter.total,
-                "current": child.name,
-            })
+            progress.tick(child.name)
     return decisions_dest_id, decisions_source_body
 
 
@@ -571,8 +636,7 @@ def _copy_subtree_verbatim(
     source_folder_id: str,
     dest_folder_id: str,
     rel_path: str,
-    counter: _Counter,
-    progress_cb: ProgressCb | None,
+    progress: _Progress,
     keep_file: Callable[[str], bool] | None = None,
 ) -> None:
     """Copy the children of a kept phase folder.
@@ -591,30 +655,14 @@ def _copy_subtree_verbatim(
                 source_folder_id=child.id,
                 dest_folder_id=sub_id,
                 rel_path=new_path,
-                counter=counter,
-                progress_cb=progress_cb,
+                progress=progress,
                 keep_file=keep_file,
             )
         else:
             if keep_file is not None and not keep_file(child.name):
                 continue
             drive.copy_file(child.id, dest_folder_id, child.name)
-            counter.copied += 1
-            _emit(progress_cb, {
-                "status": "copying",
-                "copied": counter.copied,
-                "total": counter.total,
-                "current": new_path,
-            })
-
-
-def _emit(progress_cb: ProgressCb | None, payload: dict) -> None:
-    if progress_cb is None:
-        return
-    try:
-        progress_cb(payload)
-    except Exception:  # noqa: BLE001 — progress reporting must never break the fork
-        pass
+            progress.tick(new_path)
 
 
 def _read_text_or_empty(drive: DriveClient, f: DriveFile) -> str:

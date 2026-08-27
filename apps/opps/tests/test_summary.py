@@ -316,9 +316,19 @@ def test_empty_state_omits_every_section():
     assert p["opp"]["status"] == "in_progress"  # no end_date, no cycle_grade
 
 
-def test_missing_run_state_yaml_returns_payload_with_defaults():
-    """A run folder with no run_state.yaml still produces a payload
-    (sections come from opp.yaml + defaults)."""
+def test_missing_run_state_yaml_returns_none():
+    """A run folder with no run_state.yaml is not a run — no payload.
+
+    This REVERSES the earlier "200 with defaults from opp.yaml"
+    behaviour (ace-web#734). A stalled fork left exactly this shape in
+    Drive — artifact folders, no state file — and serving it a 200 made
+    "the fork failed" and "the run has not started" indistinguishable
+    from the API. The endpoint maps ``None`` to 404.
+
+    Note this is about a specific ``run_id``, not about an opp with an
+    empty ``runs/`` folder — pre-run is still a valid Workbench state
+    (PR #390) and that path is untouched.
+    """
     tree = {
         "ACE": {
             "turmeric": {
@@ -329,13 +339,9 @@ def test_missing_run_state_yaml_returns_payload_with_defaults():
     }
     drive = FakeDriveClient.from_tree(tree)
     ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
-    p = build_summary_payload(
+    assert build_summary_payload(
         drive, workspace=ws, opp_slug="turmeric", run_id="r1",
-    )
-    assert p is not None
-    assert p["opp"]["display_name"] == "turmeric"   # falls back to opp.yaml
-    assert p["apps"] == []
-    assert p["training"] is None
+    ) is None
 
 
 def test_missing_opp_returns_none():

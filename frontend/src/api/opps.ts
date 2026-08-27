@@ -1,5 +1,6 @@
 import { apiClient } from "./apiClient";
 import { getCachedSnapshot, setCachedSnapshot, getCachedList, setCachedList } from "./oppCache";
+import type { components } from "./generated";
 import type {
   CreateOppPayload,
   CreateOppResponse,
@@ -346,17 +347,17 @@ export async function saveDecisionOverrides(
   return data as unknown as SaveDecisionOverridesResult;
 }
 
-export type ForkProgress =
-  | { status: "unknown" | "counting" | "finalizing" }
-  | { status: "copying"; copied: number; total: number; current?: string }
-  | {
-      status: "done";
-      copied: number;
-      total: number;
-      opp_slug: string;
-      new_run_id: string;
-    }
-  | { status: "error"; error: string; code?: string };
+/**
+ * Mirrors the backend's `ForkProgress` schema exactly.
+ *
+ * It used to be a hand-rolled union over `copied` / `total` / `opp_slug`,
+ * which is what the FORKER emitted but not what the endpoint could
+ * serve — the response model is strict, so every real payload failed
+ * validation and the poll reported `unknown` forever (ace-web#734).
+ * Both sides now speak one shape; take it from `generated.ts` so a
+ * schema change breaks the build instead of the progress bar.
+ */
+export type ForkProgress = components["schemas"]["ForkProgress"];
 
 export async function getForkStatus(
   workspaceSlug: string,
