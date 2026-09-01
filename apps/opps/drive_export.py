@@ -39,7 +39,19 @@ PROSE_SUFFIXES = (".md", ".markdown")
 
 # A backslash before an ASCII punctuation char is markdown's escape form.
 # Google's markdown export applies it liberally inside prose.
-_MD_ESCAPE_RE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!>|~])")
+#
+# The class is CommonMark's escapable-punctuation set — what Drive's
+# exporter actually emits — not a shorter hand-picked list. The list this
+# used to carry omitted ``&``, and ``&`` is the one Drive escapes most
+# often in real ACE prose: ``M&E``, ``Q&A`` and ``R&D`` all came back
+# through here still reading ``M\&E``, and the public run-summary page
+# rendered that escape verbatim to an external reader on 9 of the 28
+# open-question rows of ``spark-facilitator/20260828-0703``.
+#
+# The same set is declared plugin-side as ``ESCAPED_PUNCTUATION`` in
+# ACE's ``lib/open-questions-inline.ts``. The two are a matched pair
+# reading the same documents, so they are kept identical deliberately.
+_MD_ESCAPE_RE = re.compile(r"""\\([\\`*_{}\[\]()#+\-.!|~<>&$"'])""")
 
 
 def prose_export_mime(name: str, mime_type: str) -> str | None:

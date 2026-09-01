@@ -1744,6 +1744,10 @@ def test_open_questions_parse_owner_and_where_it_gets_answered():
         ),
         "owner": "responding LLO + partner",
         "answered_in": "solicitation response rate proposal (Phase 8)",
+        # The legacy `Title — detail` convention carries no `blocking:`
+        # field. Null, not absent: the key is on every item so the page
+        # never has to check whether a row has the shape it expects.
+        "blocking": None,
     }
 
 
@@ -1760,6 +1764,7 @@ def test_open_questions_unparseable_bullet_still_renders():
         "detail": "Just a bare sentence with no structure at all",
         "owner": None,
         "answered_in": None,
+        "blocking": None,
     }]
 
 
@@ -2052,3 +2057,265 @@ def test_read_connect_falls_back_to_opportunity_deep_link():
     assert out["opportunity"]["url"] == (
         "https://connect.dimagi.com/a/ai-demo-space/opportunity/bce9150c/"
     )
+
+
+# ─── Open questions: the ## Open / ## Archive split (ace#1867) ──────
+
+
+#: A structural mirror of a real durable ledger — the two-section shape
+#: `skills/idea-to-pdd` writes, with the field-labelled row schema. Row
+#: text is trimmed; the SHAPE is what these tests are about.
+_TWO_SECTION_LEDGER = """\
+# Open Questions — turmeric
+
+Opportunity-level, durable across runs.
+
+## Open
+
+- **id:** rate-confirmation **question:** What does the partner pay vendors \
+today? **raised_by:** 20260503-0835 **owner:** partner \
+**answered_where:** solicitation responses **blocking:** Before Phase 8 \
+**latest:** The single largest unknown. No source addresses it; \
+`vendor_rate` is unset and M&E has not weighed in.
+
+- **id:** device-reality **question:** Does every FLW carry a capable \
+Android device? **raised_by:** 20260503-0835 **owner:** responding LLO \
+**answered_where:** — **blocking:** Go/no-go **latest:** Still unanswered.
+
+## Archive
+
+Questions this opportunity has already ANSWERED. Do not re-ask.
+
+- **id:** payment-anchor-record **question:** Which record anchors a \
+payment? **raised_by:** pre-ledger **owner:** partner \
+**resolved_at:** 2026-07-24T00:00:00Z **resolved_by:** the partner's M&E \
+lead **resolution_note:** The Village Monitoring Form.
+"""
+
+
+def _open_questions(body: str) -> list[dict]:
+    from apps.opps.summary import _open_section, _parse_open_questions
+
+    return _parse_open_questions(_open_section(body))
+
+
+def test_archived_questions_are_not_counted_as_open():
+    """The headline number IS `items.length`, so an archived row rendered
+    in the open list makes the page's own sentence false.
+
+    `spark-facilitator/20260828-0703`: 21 rows under `## Open`, 7 under
+    `## Archive`, headline "28 open questions the run couldn't settle" —
+    7 of which carried `resolved_at` and a `resolution_note`.
+    """
+    items = _open_questions(_TWO_SECTION_LEDGER)
+
+    assert len(items) == 2
+    assert [q["title"] for q in items] == [
+        "What does the partner pay vendors today?",
+        "Does every FLW carry a capable Android device?",
+    ]
+    blob = " ".join(f"{q['title']} {q['detail']}" for q in items)
+    assert "resolved_at" not in blob
+    assert "resolution_note" not in blob
+    assert "payment-anchor-record" not in blob
+
+
+def test_the_archive_instruction_never_reaches_the_reader():
+    """`## Archive`'s lead line is an instruction addressed to ACE.
+
+    It is not a bullet, so the wrapped-line branch glued it onto the LAST
+    open question and an external partner was shown ACE's own directive
+    as part of a question's text.
+    """
+    items = _open_questions(_TWO_SECTION_LEDGER)
+
+    assert all("Do not re-ask" not in q["detail"] for q in items)
+    assert all("already ANSWERED" not in q["detail"] for q in items)
+
+
+def test_field_labelled_rows_get_a_real_title_and_no_scaffolding():
+    """27 of 28 rows rendered `title: ""` and a run-on `id: … question: …`
+    blob, because the parser stripped `**` before it could tell a label
+    from prose (ace-web#743)."""
+    first, second = _open_questions(_TWO_SECTION_LEDGER)
+
+    assert first["title"] == "What does the partner pay vendors today?"
+    assert first["owner"] == "partner"
+    assert first["answered_in"] == "solicitation responses"
+    assert first["blocking"] == "Before Phase 8"
+    assert first["detail"].startswith("The single largest unknown.")
+
+    # None of the schema key names survive into rendered text.
+    for q in (first, second):
+        for field in ("title", "detail"):
+            for key in ("id:", "question:", "raised_by:", "answered_where:"):
+                assert key not in q[field], (field, key, q[field])
+
+    # `answered_where: —` means "no venue yet", not "the venue is —".
+    assert second["answered_in"] is None
+    assert second["blocking"] == "Go/no-go"
+
+
+def test_code_spans_and_drive_escapes_do_not_reach_the_page():
+    """15 of 28 rows leaked literal backticks and 9 leaked `M\\&E`-style
+    markdown escapes to the public page."""
+    from apps.opps.drive_export import unescape_markdown
+
+    items = _open_questions(unescape_markdown(_TWO_SECTION_LEDGER.replace(
+        "M&E", "M\\&E",
+    )))
+
+    rendered = " ".join(f"{q['title']} {q['detail']}" for q in items)
+    assert "`" not in rendered
+    assert "\\" not in rendered
+    assert "vendor_rate is unset and M&E has not weighed in." in rendered
+
+
+def test_a_ledger_with_no_open_heading_still_renders_every_row():
+    """Pre-two-section ledgers have no `## Open`. Every bullet in one is
+    open, so the whole body is kept — older runs must not go blank."""
+    items = _open_questions(_OPEN_QUESTIONS_MD)
+
+    assert [q["title"] for q in items] == ["Rate confirmation", "Device reality"]
+    assert items[0]["owner"] == "responding LLO + partner"
+
+
+# ─── Build status: a partial phase must not read as a clean one ────
+
+
+def _build(phase: dict, *, state_extra: dict | None = None):
+    from apps.opps.summary import _read_build
+
+    state = {"phases": {"commcare-setup": phase}}
+    state.update(state_extra or {})
+    return _read_build(state, "commcare-setup")
+
+
+def test_a_partial_phase_surfaces_its_status_and_failing_gate():
+    """`spark-facilitator/20260828-0703` shipped both apps with
+    `status: partial` and a FAILED `entity_state_fidelity` gate — the
+    payment-key gate — and the COMMCARE APPS section showed no status at
+    all, rendering it identically to a clean run (ace-web#744)."""
+    out = _build({
+        "status": "partial",
+        "verdict": "partial-deliver-eval-blocked-on-phase1-gap",
+        "status_note": "The phase does not claim pass because the deliver\neval returns fail.",
+        "steps": {
+            "pdd-to-learn-app": {"status": "done", "verdict": "pass"},
+            "pdd-to-deliver-app-eval": {
+                "status": "done",
+                "verdict": "fail",
+                "blocker_open_detail": "entity_state_fidelity - PDD declares no taxonomy row.",
+            },
+        },
+    })
+
+    assert out is not None
+    assert out["status"] == "partial"
+    assert out["verdict"] == "partial-deliver-eval-blocked-on-phase1-gap"
+    # The run's own prose, whitespace-collapsed — never re-worded here.
+    assert out["note"] == (
+        "The phase does not claim pass because the deliver eval returns fail."
+    )
+    assert out["failing_checks"] == [{
+        "name": "pdd-to-deliver-app-eval",
+        "verdict": "fail",
+        "detail": "entity_state_fidelity - PDD declares no taxonomy row.",
+    }]
+
+
+def test_a_clean_phase_adds_nothing_to_the_page():
+    """A run that finished clean must render exactly as it did before —
+    no invented reassurance, no empty caveat block."""
+    assert _build({
+        "status": "done",
+        "verdict": "pass",
+        "steps": {"pdd-to-learn-app": {"status": "done", "verdict": "pass"}},
+    }) is None
+    assert _build({}) is None
+
+
+def test_a_carried_blocker_is_surfaced_even_when_the_phase_says_done():
+    """A blocker the operator explicitly waved through is exactly the case
+    where the page most needs to speak up (ace-web#744)."""
+    out = _build(
+        {"status": "done", "verdict": "pass", "steps": {}},
+        state_extra={"blocker_dispositions": {
+            "phase3_entity_state_fidelity": {
+                "phase": "commcare-setup",
+                "gate": "entity_state_fidelity",
+                "disposition": "CARRIED FORWARD - run proceeded to Phase 4",
+                "residual_accepted": "Learn-taught vocabulary was\nNOT machine-verified.",
+            },
+            "phase6_other": {"phase": "qa-and-training", "gate": "x"},
+        }},
+    )
+
+    assert out is not None
+    assert [b["gate"] for b in out["carried_blockers"]] == ["entity_state_fidelity"]
+    assert out["carried_blockers"][0]["residual_accepted"] == (
+        "Learn-taught vocabulary was NOT machine-verified."
+    )
+
+
+# ─── Synthetic provenance: the dashboards are generated data ───────
+
+
+def _synthetic(products: dict):
+    from apps.opps.summary import _read_synthetic
+
+    return _read_synthetic({
+        "phases": {"synthetic-data-and-workflows": {"products": products}},
+    })
+
+
+def test_generated_data_is_labelled_from_the_runs_own_counts():
+    """The DASHBOARDS section carried no qualifier while the run recorded
+    223 generated visit records against 12 invented facilitators
+    (`spark-facilitator/20260828-0703`). Every number here is read from
+    the run — none of it is hardcoded."""
+    out = _synthetic({"synthetic": {"source": {
+        "provider": "ace-run",
+        "labs_synthetic_opp_id": 10054,
+        "record_counts": {"user_visits": 223, "user_data": 12, "completed_works": 0},
+        "data_shape": {
+            "rows": 12,
+            "rows_population": (
+                "user_data — the facilitator cohort, the population both "
+                "dashboards enumerate one line per"
+            ),
+        },
+    }}})
+
+    assert out == {
+        "is_synthetic": True,
+        "provider": "ace-run",
+        "labs_opp_id": 10054,
+        "visits": 223,
+        "completed_works": 0,
+        "cohort_size": 12,
+        # The schema key is machinery; the clause after the dash is English.
+        "cohort_population": (
+            "the facilitator cohort, the population both dashboards "
+            "enumerate one line per"
+        ),
+    }
+
+
+def test_a_run_that_generated_nothing_is_not_labelled():
+    """No synthetic block means no generated data — labelling it anyway
+    would be the same lie pointed the other way."""
+    assert _synthetic({}) is None
+    assert _synthetic({"synthetic": {}}) is None
+
+
+def test_the_label_survives_a_run_that_recorded_no_counts():
+    """A run with a synthetic block but no counts still says the data is
+    generated; it just says it without figures rather than inventing any."""
+    out = _synthetic({"synthetic": {"source": {"provider": "ace-run"}}})
+
+    assert out is not None
+    assert out["is_synthetic"] is True
+    assert out["visits"] is None
+    assert out["cohort_size"] is None
+    assert out["cohort_population"] is None

@@ -107,6 +107,36 @@ export interface OppSummaryPayload {
     hq_url: string | null;
     access: LinkAccess;
   }[];
+  /**
+   * The producing phase's own verdict on the apps above — `null` when
+   * Phase 3 finished clean, so a clean run renders exactly as before.
+   *
+   * `spark-facilitator/20260828-0703` recorded `status: partial` with a
+   * failed `entity_state_fidelity` hard gate — the PAYMENT-KEY gate —
+   * and the apps section showed no status at all, rendering that run
+   * identically to a clean one (ace-web#744). The page already owns the
+   * honest vocabulary for this: the Phase 7 walkthrough prints "the
+   * review loop stopped before it converged" rather than hiding a low
+   * score. Same treatment, applied one section up.
+   */
+  build: {
+    status: string | null;
+    verdict: string | null;
+    /** The run's own prose explanation, when it wrote one. */
+    note: string | null;
+    failing_checks: {
+      name: string;
+      verdict: string;
+      detail: string | null;
+    }[];
+    /** Blockers an operator explicitly waved through, when recorded. */
+    carried_blockers: {
+      id: string;
+      gate: string | null;
+      disposition: string | null;
+      residual_accepted: string | null;
+    }[];
+  } | null;
   connect: {
     // Only the opportunity is surfaced — the program URL 404s publicly.
     opportunity: {
@@ -193,6 +223,32 @@ export interface OppSummaryPayload {
     url: string;
     access: LinkAccess;
   }[];
+  /**
+   * What the dashboards and the demo above are showing numbers OF.
+   *
+   * Phase 7 GENERATES its dataset, and until now nothing on the page
+   * said so: `spark-facilitator/20260828-0703` listed two dashboards
+   * built on 223 generated visit records attributed to 12 invented
+   * facilitators (`labs_synthetic_opp_id: 10054`,
+   * `record_counts.user_visits: 223`, `user_data: 12`,
+   * `completed_works: 0`) with no qualifier at all. Named facilitators,
+   * a coaching task and three planted anomalies all read as
+   * observations of a real programme.
+   *
+   * Every field comes from the run's own `products.synthetic.source`
+   * block — nothing here is hardcoded, and a run that recorded no counts
+   * renders the label without them rather than inventing a figure.
+   * `null` means the run generated nothing, so nothing is labelled.
+   */
+  synthetic: {
+    is_synthetic: boolean;
+    provider: string | null;
+    labs_opp_id: number | null;
+    visits: number | null;
+    completed_works: number | null;
+    cohort_size: number | null;
+    cohort_population: string | null;
+  } | null;
   selected_llo: {
     org_slug: string;
     org_display_name: string;
@@ -236,6 +292,13 @@ export interface OppSummaryPayload {
       detail: string;
       owner: string | null;
       answered_in: string | null;
+      /**
+       * When the question has to be answered by — the ledger's
+       * `blocking:` field. Read but previously discarded, which is the
+       * same class of loss as an untitled row: the reader could see a
+       * question and not that it gates Phase 8.
+       */
+      blocking: string | null;
     }[];
   } | null;
   /**

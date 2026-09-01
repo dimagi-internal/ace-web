@@ -110,6 +110,50 @@ _DDD_KEYS = frozenset({
 
 
 def _maximal_state_yaml() -> str:
+    """Every section populated — including the two that are ``None`` on a
+    healthy run (``build``, ``synthetic``), because
+    ``test_the_maximal_fixture_really_populates_every_section`` is the
+    guard that stops a frozen key set from passing vacuously.
+    """
+    import yaml as _yaml
+
+    state = _yaml.safe_load(_maximal_products_yaml())
+    # Phase-LEVEL keys (not products): the Phase Write-Back Contract's
+    # {status, verdict, steps}. `_state_yaml` only writes `products`.
+    state["phases"]["commcare-setup"].update({
+        "status": "partial",
+        "verdict": "partial-deliver-eval-blocked-on-phase1-gap",
+        "status_note": (
+            "Both apps shipped. The phase does not claim pass because "
+            "pdd-to-deliver-app-eval fails a hard gate owned by Phase 1."
+        ),
+        "steps": {
+            "pdd-to-learn-app": {"status": "done", "verdict": "pass"},
+            "pdd-to-deliver-app-eval": {
+                "status": "done",
+                "verdict": "fail",
+                "blocker_open_detail": (
+                    "entity_state_fidelity - PDD declares no "
+                    "entity_state_taxonomy row."
+                ),
+            },
+        },
+    })
+    state["blocker_dispositions"] = {
+        "phase3_entity_state_fidelity": {
+            "phase": "commcare-setup",
+            "gate": "entity_state_fidelity",
+            "disposition": "CARRIED FORWARD - run proceeded to Phase 4",
+            "residual_accepted": (
+                "Learn-taught vocabulary vs Deliver-shipped vocabulary "
+                "was NOT machine-verified this run."
+            ),
+        },
+    }
+    return _yaml.dump(state)
+
+
+def _maximal_products_yaml() -> str:
     return _state_yaml(
         design={
             "pdd": {
@@ -186,6 +230,24 @@ def _maximal_state_yaml() -> str:
                             "url": "https://labs.connect.dimagi.com/dashboards/d1",
                         },
                     ],
+                    # The provenance of every number the two sections
+                    # above show. Shape verified against
+                    # spark-facilitator/20260828-0703.
+                    "source": {
+                        "provider": "ace-run",
+                        "labs_synthetic_opp_id": 10054,
+                        "record_counts": {
+                            "user_visits": 223,
+                            "user_data": 12,
+                            "completed_works": 0,
+                        },
+                        "data_shape": {
+                            "rows": 12,
+                            "rows_population": (
+                                "user_data \u2014 the facilitator cohort"
+                            ),
+                        },
+                    },
                 },
             },
             "solicitation-management": {
@@ -373,11 +435,21 @@ PUBLIC_PAYLOAD_KEYS = frozenset({
     "opp",
     "design",
     "apps",
+    # The producing phase's verdict on `apps`. Added with ace#1867 /
+    # ace-web#744: a `partial` Phase 3 rendered identically to a clean
+    # one, so the page's only status vocabulary was "done" vs "not
+    # started". `null` on a clean run — the auditor must read absence as
+    # "nothing to flag", not as a missing section.
+    "build",
     "connect",
     "training",
     "assistant",
     "walkthroughs",
     "dashboards",
+    # What `dashboards` and `walkthroughs` are showing numbers OF. Phase
+    # 7 GENERATES its dataset and the page never said so; a reader took
+    # 223 invented visit records for observations (ace#1867).
+    "synthetic",
     "selected_llo",
     "solicitation",
     "launch",
@@ -435,6 +507,15 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     "design": frozenset({"docs"}),
     "design.docs[]": frozenset({"title", "url", "access"}),
     "apps[]": frozenset({"kind", "name", "hq_url", "access"}),
+    # A `partial` phase must be able to SAY it is partial. `note` is the
+    # run's own prose and is preferred over anything the page phrases.
+    "build": frozenset({
+        "status", "verdict", "note", "failing_checks", "carried_blockers",
+    }),
+    "build.failing_checks[]": frozenset({"name", "verdict", "detail"}),
+    "build.carried_blockers[]": frozenset({
+        "id", "gate", "disposition", "residual_accepted",
+    }),
     "connect": frozenset({"opportunity"}),
     "connect.opportunity": frozenset({
         "name", "url", "start_date", "end_date", "access",
@@ -454,6 +535,12 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     # (available / withheld / unavailable), so a single frozen key set
     # would be a lie. All three are frozen below, one test each.
     "dashboards[]": frozenset({"title", "url", "access"}),
+    # Read from the run's own `products.synthetic.source`; nothing here
+    # is hardcoded, so a rename here silently un-labels generated data.
+    "synthetic": frozenset({
+        "is_synthetic", "provider", "labs_opp_id", "visits",
+        "completed_works", "cohort_size", "cohort_population",
+    }),
     "selected_llo": frozenset({
         "org_slug", "org_display_name", "contact_email", "awarded_at",
     }),
@@ -466,7 +553,12 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     }),
     # The list key is `items`. NOT `questions`.
     "open_questions": frozenset({"url", "access", "items"}),
-    "open_questions.items[]": frozenset({"title", "detail", "owner", "answered_in"}),
+    # `blocking` — when the question has to be answered by. The ledger
+    # always carried it; the reader discarded it, so a question gating
+    # Phase 8 looked the same as a post-pilot one (ace#1867).
+    "open_questions.items[]": frozenset({
+        "title", "detail", "owner", "answered_in", "blocking",
+    }),
     "stage": frozenset({"label", "pending_sections"}),
     "feedback[]": frozenset({"title", "url", "access"}),
     "decisions": frozenset({"total", "counts", "rows"}),
