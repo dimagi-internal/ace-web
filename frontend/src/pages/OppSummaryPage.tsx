@@ -177,6 +177,113 @@ function WalkthroughCaveats({
 }
 
 /**
+ * How each phase status reads to someone who has never seen the Phase
+ * Write-Back Contract. Same rule as `DDD_TERMINAL_STATUS_LABELS`: an
+ * unrecognised value is rendered verbatim rather than swallowed, because
+ * a status we do not know must not become silence.
+ */
+const BUILD_STATUS_LABELS: Record<string, string> = {
+  partial: "shipped, but the build checks did not all pass",
+  blocked: "the build stopped on a check it could not clear",
+  failed: "the build did not pass its checks",
+  halted: "the build was halted before it finished",
+  error: "the build ended in an error",
+};
+
+/**
+ * The producing phase's own verdict on the apps, rendered where the apps
+ * are.
+ *
+ * `spark-facilitator/20260828-0703` wrote `status: partial` and a failed
+ * `entity_state_fidelity` gate — the payment-key gate — and this section
+ * showed both apps with no status at all. A reader could not tell it
+ * from a clean run (ace-web#744).
+ *
+ * The wording is deliberately the same move `WalkthroughCaveats` makes
+ * for the Phase 7 demo: name what did not pass, in plain words, beside
+ * the thing it is about. The run's own `status_note` is preferred over
+ * anything phrased here — it is the only text written by whoever
+ * actually knows why.
+ */
+function BuildCaveats({ build }: { build: OppSummaryPayload["build"] }) {
+  if (!build) return null;
+  const status = build.status;
+  const statusText = status
+    ? (BUILD_STATUS_LABELS[status] ?? `build status: ${status}`)
+    : null;
+  const checks = build.failing_checks ?? [];
+  const carried = build.carried_blockers ?? [];
+  if (!statusText && checks.length === 0 && carried.length === 0) return null;
+  return (
+    <div className="mb-3 border-l-2 border-border pl-3 text-[0.85rem] leading-[1.6] text-muted-foreground">
+      {statusText && <p className="text-foreground">These apps {statusText}.</p>}
+      {build.note && <p className="mt-1">{build.note}</p>}
+      {checks.map((c) => (
+        <p key={c.name} className="mt-1">
+          <span className="font-mono text-[0.8rem]">{c.name}</span>
+          {` — ${c.verdict}`}
+          {c.detail ? `. ${c.detail}` : "."}
+        </p>
+      ))}
+      {carried.map((b) => (
+        <p key={b.id} className="mt-1">
+          {b.gate ? `${b.gate}: ` : ""}
+          {b.disposition ?? "carried forward"}
+          {b.residual_accepted ? `. ${b.residual_accepted}` : ""}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * That the dashboards and the demo are built on GENERATED data.
+ *
+ * Phase 7 invents its dataset — facilitators, visits, anomalies, a
+ * coaching task — and nothing on this page said so. Without this line a
+ * reader opens a dashboard of 223 records attributed to 12 named
+ * facilitators and reads every one of them as an observation.
+ *
+ * The numbers come from the run's own `products.synthetic.source` block,
+ * so this is a label on real recorded provenance, not an assertion. A
+ * run that recorded no counts gets the sentence without them.
+ */
+function SyntheticNotice({
+  synthetic,
+}: {
+  synthetic: OppSummaryPayload["synthetic"];
+}) {
+  if (!synthetic?.is_synthetic) return null;
+  const parts: string[] = [];
+  if (synthetic.visits != null) {
+    parts.push(
+      `${synthetic.visits} generated ${
+        synthetic.visits === 1 ? "record" : "records"
+      }`,
+    );
+  }
+  if (synthetic.cohort_size != null) {
+    parts.push(
+      `${synthetic.cohort_size} synthetic ${
+        synthetic.cohort_population ?? "participants"
+      }`,
+    );
+  }
+  return (
+    <p className="mb-3 border-l-2 border-border pl-3 text-[0.85rem] leading-[1.6] text-muted-foreground">
+      <span className="text-foreground">
+        Demonstration data — not real programme activity.
+      </span>{" "}
+      {parts.length > 0 && `${joinList(parts)}. `}
+      {synthetic.completed_works === 0 &&
+        "No payments were made against it. "}
+      Everything below shows how the programme would be reviewed once it
+      runs, not what it has done.
+    </p>
+  );
+}
+
+/**
  * What the support assistant knows — stated ONLY when the run recorded
  * it (ace-web#740).
  *
@@ -295,8 +402,8 @@ export default function OppSummaryPage() {
 
   const { payload } = state;
   const {
-    opp, design, apps, connect, training, assistant, open_questions, feedback, workbench,
-    walkthroughs, dashboards, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
+    opp, design, apps, build, connect, training, assistant, open_questions, feedback, workbench,
+    walkthroughs, dashboards, synthetic, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
     stage, decisions, viewer,
   } = payload;
 
@@ -449,6 +556,7 @@ export default function OppSummaryPage() {
 
           {/* CommCare apps — always show Learn + Deliver slots */}
           <SummarySection title="CommCare apps">
+            <BuildCaveats build={build} />
             {(["Learn", "Deliver"] as const).map((kind) => {
               const app = apps.find((a) => a.kind === kind);
               if (!app) return slot("apps", kind, kind);
@@ -544,6 +652,11 @@ export default function OppSummaryPage() {
               created" would tell a reviewer something doesn't exist when
               it does and we chose not to show it. */}
           <SummarySection title="Persona walkthroughs">
+            {/* The walkthrough films the same generated dataset the
+                dashboards chart, so it carries the same label. A demo
+                that looks like a recording of real fieldwork is the
+                more misleading of the two. */}
+            {walkthroughs.length > 0 && <SyntheticNotice synthetic={synthetic} />}
             {walkthroughs.length > 0 ? (
               walkthroughs.map((w, i) =>
                 w.availability === "withheld" || !w.url ? (
@@ -588,6 +701,7 @@ export default function OppSummaryPage() {
 
           {/* Dashboards */}
           <SummarySection title="Dashboards">
+            <SyntheticNotice synthetic={synthetic} />
             {dashboards.length > 0 ? (
               dashboards.map((d) => (
                 <SummaryRow

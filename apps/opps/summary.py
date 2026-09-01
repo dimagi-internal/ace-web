@@ -383,6 +383,116 @@ def _read_apps(state: dict) -> list[dict]:
     return out
 
 
+#: Phase statuses that mean "this phase did NOT simply finish clean".
+#: `partial` is the one the Phase Write-Back Contract actually produces
+#: for a phase that shipped every artifact but failed a hard gate.
+_INCOMPLETE_PHASE_STATUSES = {"partial", "blocked", "failed", "halted", "error"}
+
+#: Phase verdicts that read as clean. Anything else — including the
+#: compound verdicts ACE writes, like
+#: `partial-deliver-eval-blocked-on-phase1-gap` — is a qualifier a reader
+#: needs, not a value to swallow.
+_CLEAN_PHASE_VERDICTS = {"pass", "passed", "clean", "ok", "done", ""}
+
+
+def _read_build(state: dict, phase_key: str) -> dict | None:
+    """The producing phase's own verdict on what it built, or ``None`` when
+    it finished clean.
+
+    The Phase Write-Back Contract makes every phase record
+    ``{status, verdict, ...}``, and `commcare-setup` on
+    ``spark-facilitator/20260828-0703`` recorded::
+
+        status: partial
+        verdict: partial-deliver-eval-blocked-on-phase1-gap
+        steps.pdd-to-deliver-app-eval.verdict: fail   # entity_state_fidelity
+
+    …and the ``COMMCARE APPS`` section rendered both apps with no
+    qualifier of any kind. A reader could not tell that run apart from
+    one where everything passed, which is ace-web#744's complaint in the
+    section where it is most consequential: ``entity_state_fidelity`` is
+    the payment-key gate.
+
+    The vocabulary for saying this honestly already existed on this page
+    — the Phase 7 walkthrough prints *"eval 2/5 · the review loop stopped
+    before it converged"* rather than hiding a low score. This is that
+    same treatment applied to Phase 3, so the fix is a consistency fix
+    rather than a new idea. As there, a run that says nothing gets
+    nothing invented on its behalf: no phase block, or a clean one, and
+    this returns ``None`` and the section renders exactly as before.
+
+    ``blocker_dispositions`` is read alongside, because a blocker the
+    operator explicitly waved through is the case where the page most
+    needs to say so, and some runs record it only there.
+    """
+    phase = _phase(state, phase_key)
+    if not phase:
+        return None
+
+    status = str(phase.get("status") or "").strip().lower()
+    verdict = str(phase.get("verdict") or "").strip()
+    note = phase.get("status_note") or phase.get("blocked_reason")
+    note = " ".join(note.split()) if isinstance(note, str) and note.strip() else None
+
+    failing: list[dict] = []
+    steps = phase.get("steps")
+    if isinstance(steps, dict):
+        for name, step in steps.items():
+            if not isinstance(step, dict):
+                continue
+            step_verdict = str(step.get("verdict") or "").strip().lower()
+            if step_verdict not in _FAILING_VERDICTS:
+                continue
+            detail = step.get("blocker_open_detail") or step.get("note")
+            failing.append({
+                "name": str(name),
+                "verdict": step_verdict,
+                "detail": (
+                    " ".join(detail.split())
+                    if isinstance(detail, str) and detail.strip()
+                    else None
+                ),
+            })
+
+    carried: list[dict] = []
+    dispositions = state.get("blocker_dispositions")
+    if isinstance(dispositions, dict):
+        for disposition_id, entry in dispositions.items():
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("phase") or "").strip() != phase_key:
+                continue
+            carried.append({
+                # NOT `key`: the contract's secret-shaped-value detector
+                # keys on the NAME, and a public field called `key` is
+                # exactly the shape it exists to catch. This is a
+                # run_state identifier, so it is named as one.
+                "id": str(disposition_id),
+                "gate": entry.get("gate") or entry.get("eval") or None,
+                "disposition": entry.get("disposition") or None,
+                "residual_accepted": (
+                    " ".join(str(entry["residual_accepted"]).split())
+                    if entry.get("residual_accepted")
+                    else None
+                ),
+            })
+
+    incomplete = (
+        status in _INCOMPLETE_PHASE_STATUSES
+        or verdict.strip().lower() not in _CLEAN_PHASE_VERDICTS
+    )
+    if not (incomplete or failing or carried):
+        return None
+
+    return {
+        "status": status or None,
+        "verdict": verdict or None,
+        "note": note,
+        "failing_checks": failing,
+        "carried_blockers": carried,
+    }
+
+
 def _connect_domain(state: dict) -> str | None:
     """Extract the HQ domain from connect-setup products.
 
@@ -975,6 +1085,74 @@ def _read_walkthroughs(state: dict) -> list[dict]:
     return out
 
 
+def _read_synthetic(state: dict) -> dict | None:
+    """Where the numbers on the dashboards and in the demo came from.
+
+    Phase 7 generates a dataset. Nothing on this page said so. On
+    ``spark-facilitator/20260828-0703`` the ``DASHBOARDS`` section listed
+    *Verification* and *Weekly review* with no qualifier at all, while
+    the run state recorded ``provider: ace-run``,
+    ``labs_synthetic_opp_id: 10054``, ``user_visits: 223``,
+    ``user_data: 12`` and ``completed_works: 0`` — 223 generated visit
+    records attributed to 12 invented facilitators, none of them real
+    programme activity. An external reader opening those dashboards had
+    nothing telling them the cohort is fictional, and the named
+    facilitators, the coaching task and the three planted anomalies all
+    read as observations.
+
+    This is the sibling of the walkthrough caveats and the build verdict:
+    a number the page shows must carry what it is a number OF. Every
+    field is read from the run's own ``products.synthetic.source`` block
+    — nothing is hardcoded and nothing is inferred, so a run that
+    recorded no counts renders the label without them rather than
+    inventing a figure.
+
+    Returns ``None`` when the run has no synthetic block at all, so a run
+    that generated nothing is not labelled as if it had.
+    """
+    synthetic = _phase_products(state, _SYNTHETIC_PHASE, "synthetic")
+    if not isinstance(synthetic, dict) or not synthetic:
+        return None
+    source = synthetic.get("source")
+    source = source if isinstance(source, dict) else {}
+
+    counts = source.get("record_counts")
+    counts = counts if isinstance(counts, dict) else {}
+
+    def _count(key: str) -> int | None:
+        value = counts.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    shape = source.get("data_shape")
+    shape = shape if isinstance(shape, dict) else {}
+    cohort = shape.get("rows")
+    if not (isinstance(cohort, int) and not isinstance(cohort, bool)):
+        cohort = _count("user_data")
+
+    population = shape.get("rows_population")
+    # The run writes this as "user_data — the facilitator cohort, …";
+    # the schema key is machinery, the clause after it is the English.
+    if isinstance(population, str) and population.strip():
+        population = population.split("\u2014", 1)[-1].strip().rstrip(".")
+        population = population or None
+    else:
+        population = None
+
+    labs_opp_id = source.get("labs_synthetic_opp_id")
+    if not (isinstance(labs_opp_id, int) and not isinstance(labs_opp_id, bool)):
+        labs_opp_id = None
+
+    return {
+        "is_synthetic": True,
+        "provider": str(source.get("provider") or "").strip() or None,
+        "labs_opp_id": labs_opp_id,
+        "visits": _count("user_visits"),
+        "completed_works": _count("completed_works"),
+        "cohort_size": cohort,
+        "cohort_population": population,
+    }
+
+
 def _read_dashboards(state: dict) -> list[dict]:
     """Demo dashboards for the run — every shape Phase 7 actually writes.
 
@@ -1183,7 +1361,7 @@ def _read_open_questions(
             body = read_prose(drive, f)
         except Exception as exc:  # noqa: BLE001
             log.warning("summary: read open-questions %s failed: %s", f.id, exc)
-        items = _parse_open_questions(body)
+        items = _parse_open_questions(_open_section(body))
         if not (f.web_view_link or items):
             continue
         return {
@@ -1196,12 +1374,68 @@ def _read_open_questions(
     return None
 
 
-def _strip_md_inline(text: str) -> str:
-    """Drop the inline markdown emphasis markers ACE writes into these
-    docs. Deliberately not a markdown renderer — these bodies are one
-    sentence plus two labelled clauses, and the page renders plain text.
+#: ATX heading at H1 or H2 — the only levels that close the ``## Open``
+#: section. A deeper heading inside it stays part of the section.
+_H1_OR_H2 = re.compile(r"^ {0,3}#{1,2}[ \t]+\S")
+_OPEN_HEADING = re.compile(r"^ {0,3}##[ \t]+Open[ \t]*$", re.IGNORECASE)
+
+
+def _open_section(body: str) -> str:
+    """The ``## Open`` section of the durable ledger — ``## Archive`` cut off.
+
+    ``open-questions.md`` has carried a two-section shape since
+    ``skills/idea-to-pdd`` was given one: a resolved question **moves**
+    from ``## Open`` to ``## Archive`` (carrying ``resolved_at`` /
+    ``resolved_by`` / ``resolution_note``) rather than being annotated in
+    place, and ``## Archive`` is closed history the plugin never reads
+    back. ACE enforces that structurally in ``extractOpenSection``
+    (``lib/open-questions-inline.ts``); this page did not enforce it at
+    all — it parsed every bullet in the file.
+
+    Measured on ``spark-facilitator/20260828-0703``: 21 bullets under
+    ``## Open``, 7 under ``## Archive``, and the page's headline read
+    **"28 open questions the run couldn't settle"**. Seven of the
+    twenty-eight carried a ``resolved_at`` and a ``resolution_note``, so
+    the sentence was false on its face — and the count is the number a
+    reader takes away.
+
+    Two more things rode in on the same mistake. ``## Archive``'s own
+    lead line, *"Questions this opportunity has already ANSWERED. Do not
+    re-ask."*, is an instruction addressed to ACE; it is not a bullet, so
+    the wrapped-line branch glued it onto the LAST open question, and an
+    external partner was shown ACE's internal directive as if it were
+    part of a question's text.
+
+    A ledger with no ``## Open`` heading is a pre-two-section document —
+    every bullet in it is open, so the whole body is returned unchanged
+    and older runs keep rendering as they did.
     """
-    return text.replace("**", "").replace("__", "").strip()
+    lines = (body or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    start = next(
+        (i for i, line in enumerate(lines) if _OPEN_HEADING.match(line)), None
+    )
+    if start is None:
+        return body or ""
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if _H1_OR_H2.match(lines[i]):
+            end = i
+            break
+    return "\n".join(lines[start + 1:end])
+
+
+def _strip_md_inline(text: str) -> str:
+    """Drop the inline markdown markers ACE writes into these docs.
+
+    Deliberately not a markdown renderer — the page renders plain text.
+    Backticks are stripped for the same reason ``**`` is: ACE writes
+    identifiers as code spans (``` `meeting_conducted` ```,
+    ``` `modules-0/forms-4.xml` ```), and leaving the delimiter in means
+    the reader sees the character rather than the emphasis it encodes.
+    15 of the 28 rows on ``spark-facilitator/20260828-0703`` shipped
+    literal backticks to the public page.
+    """
+    return text.replace("**", "").replace("__", "").replace("`", "").strip()
 
 
 def _split_labelled(text: str, label: str) -> tuple[str, str | None]:
@@ -1216,19 +1450,117 @@ def _split_labelled(text: str, label: str) -> tuple[str, str | None]:
     return head.strip().rstrip(".").strip(), tail.strip()
 
 
+#: A bolded field label inside a field-labelled row: ``**question:**``.
+#: Captured so one pass over the row yields every ``(key, value)`` pair.
+_OQ_FIELD_RE = re.compile(r"\*\*\s*([A-Za-z][A-Za-z0-9 _-]{0,30}?)\s*:\s*\*\*")
+
+#: Values ACE writes to mean "nothing here" in a field-labelled row.
+_OQ_EMPTY_VALUES = {"", "-", "—", "–", "n/a", "na", "none", "tbd"}
+
+
+def _oq_value(
+    fields: dict, *names: str, strip_trailing_period: bool = True
+) -> str | None:
+    """First non-empty value among ``names``, normalised, else ``None``.
+
+    A row that writes ``**answered_where:** —`` is saying there is no
+    answer venue yet; rendering a lone em dash under an "Answered in"
+    heading is worse than rendering nothing.
+
+    ``strip_trailing_period`` tidies the short labelled clauses ("Spark.",
+    "Before Phase 8.") that read as fragments beside a heading. It is OFF
+    for the detail body, which is prose and keeps its full stop.
+    """
+    for name in names:
+        value = _strip_md_inline(str(fields.get(name) or ""))
+        if strip_trailing_period:
+            value = value.rstrip(".").strip()
+        if value.lower() not in _OQ_EMPTY_VALUES:
+            return value
+    return None
+
+
+def _parse_field_labelled_row(raw: str) -> dict | None:
+    """One ``**key:** value`` row → a typed item, or ``None`` if not that shape.
+
+    This is the shape the durable ledger has actually carried since ACE
+    gave it a stable per-row schema — one bullet, seven bolded labels::
+
+        - **id:** cbf-compensation-baseline **question:** What does Spark
+          pay CBFs today? **raised_by:** 20260817-1610 **owner:** Spark
+          **answered_where:** solicitation responses **blocking:** Before
+          Phase 8 **latest:** The single largest unknown on this …
+
+    The old ``- **Title** — detail`` reader could not see any of that. It
+    stripped the ``**`` markers FIRST, which erased the only thing
+    distinguishing a label from prose, then looked for an em dash to split
+    a title on. On ``spark-facilitator/20260828-0703`` that left **27 of
+    28 rows with an empty title**, each rendering as one run-on line
+    beginning ``id: … question: … raised_by: …`` — the machinery, shown
+    to an external reader instead of the question. The 28th got a title
+    only by splitting on an em dash inside the question text, which cut
+    the question in half.
+
+    So the labels are read BEFORE the markers are stripped. ``question``
+    becomes the title a reader scans; ``latest`` — the current state,
+    which each run replaces rather than appends to — becomes the detail.
+    """
+    labels = list(_OQ_FIELD_RE.finditer(raw))
+    if not labels:
+        return None
+
+    fields: dict[str, str] = {}
+    for n, match in enumerate(labels):
+        key = match.group(1).strip().lower().replace(" ", "_").replace("-", "_")
+        end = labels[n + 1].start() if n + 1 < len(labels) else len(raw)
+        fields[key] = raw[match.end():end].strip()
+
+    if "question" not in fields and "id" not in fields:
+        # Bold text that is not this schema — let the prose reader have it.
+        return None
+
+    title = _oq_value(fields, "question")
+    if not title:
+        # No question text: humanise the slug rather than render a gap.
+        slug = _oq_value(fields, "id")
+        title = _humanize(slug) if slug else ""
+
+    detail = _oq_value(
+        fields, "latest", "status", "note", strip_trailing_period=False
+    ) or ""
+    if not detail:
+        # Nothing carries the current state — fall back to any prose
+        # before the first label, so a row is never rendered empty.
+        detail = _strip_md_inline(raw[: labels[0].start()])
+
+    return {
+        "title": title,
+        "detail": detail,
+        "owner": _oq_value(fields, "owner"),
+        "answered_in": _oq_value(fields, "answered_where", "answered_in"),
+        "blocking": _oq_value(fields, "blocking"),
+    }
+
+
 def _parse_open_questions(body: str) -> list[dict]:
     """Parse ``open-questions.md`` bullets into typed items.
 
-    The convention ACE writes (``skills/idea-to-pdd`` seeds it, later
-    phases append) is one bullet per question::
+    Two row conventions are accepted, newest first:
+
+    1. **Field-labelled** — what ACE writes today; see
+       ``_parse_field_labelled_row``.
+    2. **Title — detail** — the original seed convention::
 
         - **Rate confirmation** — the USD 2-5 band is ACE-inferred; no
           source documents current CBF compensation. Owner: responding
           LLO + Spark. Answered in: solicitation response (Phase 8).
 
-    Anything that doesn't match degrades to ``{title: "", detail: <line>}``
+    Anything matching neither degrades to ``{title: "", detail: <line>}``
     rather than being dropped — a question we can't parse is still a
     question the reviewer should see.
+
+    ``body`` is expected to be the ``## Open`` section only; ``_open_section``
+    is what narrows it.
     """
     items: list[dict] = []
     for raw in (body or "").splitlines():
@@ -1243,6 +1575,10 @@ def _parse_open_questions(body: str) -> list[dict]:
 
     out: list[dict] = []
     for item in items:
+        parsed = _parse_field_labelled_row(item["_raw"])
+        if parsed is not None:
+            out.append(parsed)
+            continue
         text = _strip_md_inline(item["_raw"])
         title = ""
         detail = text
@@ -1263,6 +1599,7 @@ def _parse_open_questions(body: str) -> list[dict]:
             "detail": detail,
             "owner": (owner or "").rstrip(".").strip() or None,
             "answered_in": (answered or "").rstrip(".").strip() or None,
+            "blocking": None,
         })
     return out
 
@@ -1742,11 +2079,17 @@ def build_summary_payload(
         ),
         "design": _read_design(state, access),
         "apps": _read_apps(state),
+        # The producing phase's own verdict on those apps — null when
+        # Phase 3 finished clean, so a clean run renders as before.
+        "build": _read_build(state, "commcare-setup"),
         "connect": _read_connect(state),
         "training": _read_training(state, access),
         "assistant": _read_assistant(state),
         "walkthroughs": _read_walkthroughs(state),
         "dashboards": _read_dashboards(state),
+        # What the dashboards and the demo are showing NUMBERS of. Read
+        # from the run's own synthetic block; null when it generated none.
+        "synthetic": _read_synthetic(state),
         "selected_llo": _read_selected_llo(state),
         "solicitation": _read_solicitation(state),
         "launch": _read_launch(state),

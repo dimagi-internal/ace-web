@@ -23,7 +23,7 @@ export function OpenQuestionsList({
           {q.detail && (
             <p className="mt-1 text-sm leading-[1.6] text-muted-foreground">{q.detail}</p>
           )}
-          {(q.owner || q.answered_in) && (
+          {(q.owner || q.answered_in || q.blocking) && (
             <dl className="mt-2 space-y-1 text-[13px] leading-[1.5]">
               {q.owner && (
                 <div className="flex gap-2">
@@ -39,6 +39,17 @@ export function OpenQuestionsList({
                     Answered in
                   </dt>
                   <dd className="text-muted-foreground">{q.answered_in}</dd>
+                </div>
+              )}
+              {/* When it has to be answered by. The ledger has always
+                  carried this; the reader never saw it, so a question
+                  gating Phase 8 looked the same as a post-pilot one. */}
+              {q.blocking && (
+                <div className="flex gap-2">
+                  <dt className="w-24 shrink-0 text-[11px] uppercase tracking-[0.12em] text-muted-foreground/60">
+                    Needed by
+                  </dt>
+                  <dd className="text-muted-foreground">{q.blocking}</dd>
                 </div>
               )}
             </dl>

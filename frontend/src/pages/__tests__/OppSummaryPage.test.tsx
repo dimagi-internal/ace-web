@@ -23,11 +23,13 @@ const BASE: OppSummaryPayload = {
     ],
   },
   apps: [],
+  build: null,
   connect: null,
   training: null,
   assistant: null,
   walkthroughs: [],
   dashboards: [],
+  synthetic: null,
   selected_llo: null,
   solicitation: null,
   launch: null,
@@ -304,8 +306,8 @@ describe("OppSummaryPage", () => {
         url: null,
         access: "unknown",
         items: [
-          { title: "Rate", detail: "d", owner: null, answered_in: null },
-          { title: "Device", detail: "d", owner: null, answered_in: null },
+          { title: "Rate", detail: "d", owner: null, answered_in: null, blocking: null },
+          { title: "Device", detail: "d", owner: null, answered_in: null, blocking: null },
         ],
       },
     });
@@ -346,7 +348,7 @@ describe("OppSummaryPage", () => {
       open_questions: {
         url: "https://docs/open-questions",
         access: "unknown",
-        items: [{ title: "Rate", detail: "d", owner: null, answered_in: null }],
+        items: [{ title: "Rate", detail: "d", owner: null, answered_in: null, blocking: null }],
       },
     });
     await openDecisionsTab();
@@ -417,6 +419,7 @@ describe("OppSummaryPage", () => {
           detail: "the USD 2-5 band is ACE-inferred",
           owner: "responding LLO + Spark",
           answered_in: "solicitation response (Phase 8)",
+          blocking: null,
         }],
       },
     });
@@ -745,5 +748,99 @@ describe("OppSummaryPage", () => {
     await openDecisionsTab();
     expect(await screen.findByText("We start in October, not September.")).toBeTruthy();
     expect(screen.getByText(/Anne Kuhlmann/)).toBeTruthy();
+  });
+
+  // ── The three MISLEADING defects an anonymous audit found on
+  //    spark-facilitator/20260828-0703 (dimagi-internal/ace#1867,
+  //    ace-web#743, ace-web#744). Each renders a caveat the page had no
+  //    vocabulary for, and each stays silent when the run is clean.
+
+  it("says a partial build is partial, and names the gate that failed", async () => {
+    renderWith({
+      ...BASE,
+      apps: [
+        { kind: "Learn", name: "Learn app", hq_url: "https://hq/l", access: "admin" },
+        { kind: "Deliver", name: "Deliver app", hq_url: "https://hq/d", access: "admin" },
+      ],
+      build: {
+        status: "partial",
+        verdict: "partial-deliver-eval-blocked-on-phase1-gap",
+        note: "Both apps are released and Phase 4 is unblocked.",
+        failing_checks: [{
+          name: "pdd-to-deliver-app-eval",
+          verdict: "fail",
+          detail: "entity_state_fidelity - PDD declares no taxonomy row.",
+        }],
+        carried_blockers: [],
+      },
+    });
+    expect(await screen.findByText(/did not all pass/)).toBeTruthy();
+    expect(screen.getByText(/pdd-to-deliver-app-eval/)).toBeTruthy();
+    expect(screen.getByText(/entity_state_fidelity/)).toBeTruthy();
+    expect(screen.getByText(/Phase 4 is unblocked/)).toBeTruthy();
+  });
+
+  it("adds nothing to a clean build", async () => {
+    renderWith({
+      ...BASE,
+      apps: [{ kind: "Learn", name: "Learn app", hq_url: "https://hq/l", access: "admin" }],
+      build: null,
+    });
+    expect(await screen.findByText("Learn app")).toBeTruthy();
+    expect(screen.queryByText(/did not all pass/)).toBeNull();
+    expect(screen.queryByText(/build status/)).toBeNull();
+  });
+
+  it("labels the dashboards as generated data, with the run's own counts", async () => {
+    renderWith({
+      ...BASE,
+      dashboards: [{ title: "Verification", url: "https://labs/one", access: "admin" }],
+      synthetic: {
+        is_synthetic: true,
+        provider: "ace-run",
+        labs_opp_id: 10054,
+        visits: 223,
+        completed_works: 0,
+        cohort_size: 12,
+        cohort_population: "the facilitator cohort",
+      },
+    });
+    expect(
+      await screen.findByText(/Demonstration data . not real programme activity/),
+    ).toBeTruthy();
+    expect(screen.getByText(/223 generated records/)).toBeTruthy();
+    expect(screen.getByText(/12 synthetic the facilitator cohort/)).toBeTruthy();
+    expect(screen.getByText(/No payments were made against it/)).toBeTruthy();
+  });
+
+  it("does not label a run that generated nothing", async () => {
+    renderWith({
+      ...BASE,
+      dashboards: [{ title: "Verification", url: "https://labs/one", access: "admin" }],
+      synthetic: null,
+    });
+    expect(await screen.findByText("Verification")).toBeTruthy();
+    expect(screen.queryByText(/Demonstration data/)).toBeNull();
+  });
+
+  it("shows an open question's title, and when it has to be answered by", async () => {
+    renderWith({
+      ...BASE,
+      open_questions: {
+        url: "https://drive/oq",
+        access: "admin",
+        items: [{
+          title: "What does Spark pay CBFs today?",
+          detail: "The single largest unknown on this opportunity.",
+          owner: "Spark",
+          answered_in: "solicitation responses",
+          blocking: "Before Phase 8",
+        }],
+      },
+    });
+    await openDecisionsTab();
+    expect(await screen.findByText("What does Spark pay CBFs today?")).toBeTruthy();
+    expect(screen.getByText("Needed by")).toBeTruthy();
+    expect(screen.getByText("Before Phase 8")).toBeTruthy();
   });
 });
