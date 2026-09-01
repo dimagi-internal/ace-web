@@ -139,6 +139,15 @@ def _maximal_state_yaml() -> str:
             },
         },
     })
+    # The other half of every `deep_qa.stages[].freshness` comparison.
+    # `_read_deep_qa` compares the verdict's own identifier against these
+    # EXACT fields and emits nothing when either side is missing, so a
+    # fixture that omitted them would leave the freshness list empty and
+    # the frozen key set below passing vacuously.
+    apps = state["phases"]["commcare-setup"]["products"]["apps"]
+    apps["learn"]["released_build_id"] = "5b403ead83ed410b85b9083fe3835d5c"
+    apps["deliver"]["released_build_id"] = "b08533bdf26a48a295a362ff204fb88d"
+    state["phases"]["ocs-setup"]["products"]["ocs_chatbot"]["published_version"] = 3
     state["blocker_dispositions"] = {
         "phase3_entity_state_fidelity": {
             "phase": "commcare-setup",
@@ -151,6 +160,106 @@ def _maximal_state_yaml() -> str:
         },
     }
     return _yaml.dump(state)
+
+
+#: Stage A of ``/ace:qa-deep``. Shape and values follow
+#: ``spark-facilitator/20260828-0703``, which is the run this section was
+#: built for: **8.03 against a 7.0 threshold, and the gate is still
+#: ``iterate``**, because ``--deep`` requires zero Fail entries and two
+#: prompts fabricated safety-adjacent operational procedure. A fixture
+#: that scored badly would not test the thing worth testing — the whole
+#: point is that a good-looking number and a failing gate coexist.
+_OCS_DEEP_VERDICT = """\
+skill: ocs-chatbot-eval
+target: 13033
+mode: deep
+ran_at: 2026-09-01T15:05:00Z
+capture_path: 5-ocs/ocs-chatbot-qa_transcript-deep.md
+published_version: 3
+overall_score: 8.03
+overall_score_pre_cap: 8.03
+verdict: warn
+dimensions:
+  correctness: {score: 7.23, weight: 0.30}
+  refusal_correctness: {score: 7.78, weight: 0.20}
+per_item:
+  - ref: opp-1
+    prompt: What is this opportunity about?
+    score: 8.7
+    verdict: pass
+    note: Accurate and rule-compliant.
+  - ref: opp-29
+    score: 6.0
+    verdict: warn
+    note: Gives the escalation contact as ace@dimagi.com; the address is wrong.
+  - ref: opp-50
+    score: 3.0
+    verdict: fail
+    note: Improvised a cash-handover pathway the design does not contain.
+  - ref: opp-56
+    score: 3.0
+    verdict: fail
+    note: Invented a PersonalID recovery chain the PDD does not specify.
+auto_surfaced:
+  - severity: BLOCKER
+    message: >-
+      [FABRICATED-OPERATIONAL-SPECIFIC] opp-50 declined the cash request
+      correctly and then improvised the handover procedure. Clamped to 3.0.
+  - severity: WARN
+    message: >-
+      [INFLATION-GUARD] The same factual error appears in two entries.
+gate:
+  threshold: 7.0
+  disposition: iterate
+  rationale: >-
+    8.03 clears the 7.0 threshold, but --deep is "overall >= 7 AND every Fail
+    resolved" and this suite carries two Fails.
+"""
+
+#: Stage B. Deliberately points at a build id that is NOT the one
+#: ``products.apps.deliver.released_build_id`` names, so the maximal
+#: fixture exercises BOTH directions of the freshness comparison at once
+#: — Stage A current, Stage B stale. Phase 9 ``llo-launch`` refuses
+#: activation on a stale verdict, so "which build was this measured
+#: against" is the load-bearing fact, not a detail.
+_APP_DEEP_VERDICT = """\
+skill: app-ux-eval
+target: turmeric
+mode: deep
+ran_at: "2026-09-01T16:40:00-04:00"
+capture_path: 6-qa-and-training/app-screenshot-capture_manifest.yaml
+artifact_refs:
+  deliver_build_id: 0000000000000000000000000000dead
+overall_score: 5.7
+overall_score_pre_cap: 5.9
+verdict: fail
+dimensions:
+  clarity: {score: 8.6, weight: 0.15}
+  capture_robustness: {score: 2.9, weight: 0.30}
+per_item:
+  - ref: journey-deliver-registration
+    journey: journey-deliver-registration
+    is_smoke: false
+    score: 7.8
+    verdict: pass
+    note: The strongest journey in the set.
+  - ref: journey-deliver-followup-preload
+    journey: journey-deliver-followup-preload
+    is_smoke: false
+    score: 2.8
+    verdict: fail
+    note: The community case did not advance after a submitted and synced visit.
+auto_surfaced:
+  - severity: BLOCKER
+    message: >-
+      Case state stale after submit-and-sync; the recipe criterion asserted the
+      row exists, never that the date moved.
+gate:
+  threshold: 7.0
+  disposition: reject
+  rationale: >-
+    5.7 is below the 7.0 threshold and five of seven journeys fail.
+"""
 
 
 def _maximal_products_yaml() -> str:
@@ -337,6 +446,17 @@ def _maximal_tree() -> dict:
                     RUN_ID: {
                         "run_state.yaml": _maximal_state_yaml(),
                         "decisions.yaml": _DECISIONS_YAML,
+                        # `/ace:qa-deep`'s two outputs, at the paths it
+                        # documents. Nothing in `run_state.yaml` points
+                        # at them — their PRESENCE is the signal the
+                        # deep gate ran, and their absence is what makes
+                        # the section vanish on every other run.
+                        "5-ocs": {
+                            "ocs-chatbot-eval_verdict-deep.yaml": _OCS_DEEP_VERDICT,
+                        },
+                        "6-qa-and-training": {
+                            "app-ux-eval_verdict-deep.yaml": _APP_DEEP_VERDICT,
+                        },
                     },
                 },
             },
@@ -441,6 +561,11 @@ PUBLIC_PAYLOAD_KEYS = frozenset({
     # started". `null` on a clean run — the auditor must read absence as
     # "nothing to flag", not as a missing section.
     "build",
+    # The `/ace:qa-deep` gate's own verdicts. `null` on every run that
+    # never took the deep gate — the auditor must read absence as "the
+    # gate was not run", NOT as a missing section, because the two
+    # verdict files ARE the only record that it was.
+    "deep_qa",
     "connect",
     "training",
     "assistant",
@@ -515,6 +640,33 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     "build.failing_checks[]": frozenset({"name", "verdict", "detail"}),
     "build.carried_blockers[]": frozenset({
         "id", "gate", "disposition", "residual_accepted",
+    }),
+    # Both stages are always present when the section is; a stage that
+    # did not run keeps every key and nulls the values, so "Stage B has
+    # not been run" is something the payload SAYS rather than something a
+    # reader infers from a shorter list.
+    "deep_qa": frozenset({"stages"}),
+    "deep_qa.stages[]": frozenset({
+        # `gate` and `counts.fail` are the load-bearing pair, and `score`
+        # is context. Dropping either would put a bare number back on the
+        # page: on spark-facilitator/20260828-0703 Stage A scores 8.03
+        # against a 7.0 bar and its gate is `iterate` anyway, because
+        # --deep requires zero Fails and two prompts fabricated
+        # safety-adjacent procedure. "8.03" beside a tick reads as
+        # ready-to-launch. It is not.
+        "stage", "label", "ran", "ran_at", "gate", "verdict", "score",
+        "threshold", "counts", "dimensions", "findings", "items",
+        # Phase 9 `llo-launch` refuses activation on a MISSING **or
+        # STALE** deep verdict, so what the verdict was measured against
+        # is part of the verdict.
+        "freshness", "is_stale",
+    }),
+    "deep_qa.stages[].counts": frozenset({"total", "pass", "warn", "fail"}),
+    "deep_qa.stages[].dimensions[]": frozenset({"name", "score", "weight"}),
+    "deep_qa.stages[].findings[]": frozenset({"severity", "message"}),
+    "deep_qa.stages[].items[]": frozenset({"ref", "verdict", "score", "note"}),
+    "deep_qa.stages[].freshness[]": frozenset({
+        "basis", "verdict_value", "current_value", "is_current",
     }),
     "connect": frozenset({"opportunity"}),
     "connect.opportunity": frozenset({
@@ -677,6 +829,81 @@ def test_every_produced_walkthrough_reaches_the_page(payload):
     assert {w["availability"] for w in payload["walkthroughs"]} == {
         "available", "withheld", "unavailable",
     }
+
+
+def test_the_deep_qa_gate_is_carried_and_is_not_the_score(payload):
+    """The one thing this section must never do.
+
+    ``spark-facilitator/20260828-0703`` Stage A scores **8.03** against a
+    **7.0** threshold and its gate is **``iterate``**, because ``--deep``
+    is "overall >= 7 AND every Fail resolved" and two prompts fabricated
+    safety-adjacent operational procedure — an invented cash-handover
+    pathway and an invented PersonalID recovery chain. A page that
+    printed 8.03 beside a green tick would tell a partner this
+    opportunity is ready to launch.
+
+    So the gate and the Fail count are carried as their own fields and
+    are NEVER derivable from the score. This asserts the combination
+    directly: a score above threshold, a non-approve gate, and a non-zero
+    Fail count, all present at once. If a future edit made the page
+    compute a verdict from the number, this fixture is the counterexample
+    it would have to survive.
+    """
+    by_stage = {s["stage"]: s for s in payload["deep_qa"]["stages"]}
+    ocs = by_stage["assistant"]
+    assert ocs["score"] > ocs["threshold"], "the fixture must score ABOVE the bar"
+    assert ocs["gate"] == "iterate", "and must still not be approved"
+    assert ocs["counts"]["fail"] == 2, "because of the Fails, which must be counted"
+    assert [i["ref"] for i in ocs["items"] if i["verdict"] == "fail"] == [
+        "opp-50", "opp-56",
+    ], "and named, not just counted"
+
+
+def test_a_deep_qa_stage_that_did_not_run_keeps_the_same_shape():
+    """Half a deep gate is a real state, and it must SAY so.
+
+    ``/ace:qa-deep`` takes ``--ocs-only`` / ``--apps-only``, so a run can
+    carry one verdict and not the other. The stage that did not run keeps
+    every key and nulls the values rather than being dropped — a reader
+    must be told "the app journeys have not been deep-QA'd", not left to
+    notice that a list is one entry shorter than they expected.
+    """
+    tree = _maximal_tree()
+    del tree["ACE"][OPP_SLUG]["runs"][RUN_ID]["6-qa-and-training"]
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    payload = build_summary_payload(
+        drive, workspace=ws, opp_slug=OPP_SLUG, run_id=RUN_ID,
+    )
+    stages = payload["deep_qa"]["stages"]
+    assert [s["stage"] for s in stages] == ["assistant", "apps"]
+    assert [s["ran"] for s in stages] == [True, False]
+    # Identical key sets, so the frozen contract above holds for both.
+    assert set(stages[0]) == set(stages[1])
+    assert stages[1]["gate"] is None and stages[1]["score"] is None
+    assert stages[1]["counts"] == {"total": 0, "pass": 0, "warn": 0, "fail": 0}
+
+
+def test_the_whole_deep_qa_section_is_absent_when_the_gate_never_ran():
+    """The visibility rule, at the contract level.
+
+    There is no flag and nothing to keep in sync: ``/ace:qa-deep`` writes
+    no pointer into ``run_state.yaml``, so the two verdict FILES are the
+    only record that it ran. No files, no section — not an empty shell
+    that a reader would have to interpret.
+    """
+    tree = _maximal_tree()
+    run = tree["ACE"][OPP_SLUG]["runs"][RUN_ID]
+    del run["5-ocs"]
+    del run["6-qa-and-training"]
+    drive = FakeDriveClient.from_tree(tree)
+    ws = _FakeWorkspace(drive_root_folder_id=drive.folder_id("ACE"))
+    payload = build_summary_payload(
+        drive, workspace=ws, opp_slug=OPP_SLUG, run_id=RUN_ID,
+    )
+    assert payload["deep_qa"] is None
+    # …and the rest of the page is unaffected.
+    assert payload["apps"] and payload["decisions"]
 
 
 def test_reaction_and_edit_rows_keep_their_wire_names(payload):

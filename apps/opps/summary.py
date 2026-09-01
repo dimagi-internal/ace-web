@@ -45,12 +45,24 @@ typed pointer for either:
 Both are internal WORKING artifacts that nobody shares, so this loader
 carries their CONTENT rather than a link. Together they are the review
 surface: what we decided and why, and what we could not decide.
+
+A THIRD reads from Drive by path, for a different reason — there is no
+pointer to write:
+
+- ``<run>/5-ocs/ocs-chatbot-eval_verdict-deep.yaml``
+- ``<run>/6-qa-and-training/app-ux-eval_verdict-deep.yaml``
+
+``/ace:qa-deep`` writes nothing into ``run_state.yaml`` on purpose, so a
+later ``/ace:run`` resume is unaffected by the deep gate having been
+taken. The presence of the two files is therefore the only honest signal
+that it ran — which is exactly the signal the ``deep_qa`` section keys
+on. See ``_read_deep_qa``.
 """
 from __future__ import annotations
 
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from urllib.parse import urlparse
 
 import yaml
@@ -1884,6 +1896,325 @@ def _read_decisions(drive: DriveClient, run_folder_id: str) -> dict | None:
     return {"total": len(rows), "counts": counts, "rows": rows}
 
 
+# ─── Deep QA (/ace:qa-deep) ─────────────────────────────────────────
+#
+# The one section on this page that is NOT reachable from `run_state`.
+#
+# `/ace:qa-deep` deliberately writes nothing into `run_state.yaml` —
+# `commands/qa-deep.md` says so in as many words, so that a later
+# `/ace:run` resume is unaffected by a deep gate having been taken. That
+# is a good decision and this reader does not ask for it to change: it
+# means there is no machine-readable pointer to the deep verdicts, so the
+# two files are read from Drive BY PATH, the way `_read_decisions` reads
+# `decisions.yaml`.
+#
+# Which gives the section's visibility rule for free, with no flag to
+# maintain and nothing to keep in sync: the files exist iff the deep gate
+# was actually run, so
+#
+#   * neither present  → `deep_qa` is None and the section is ABSENT;
+#   * one present      → that stage is rendered and the other says, in
+#                        the payload, that it has not run (`ran: False`);
+#   * both present     → both rendered.
+#
+# **Do not key this on `run_state.yaml`.** A top-level `qa_deep:` block
+# exists on `spark-facilitator/20260828-0703` because a human wrote it
+# there by hand while taking the gate. No skill produces it, nothing
+# validates it, and it is not in the Phase Write-Back Contract — keying
+# on it would work for exactly one run in the world.
+
+#: Where each stage's verdict lives inside the run folder, and what the
+#: page calls it. The filenames are the ones `/ace:qa-deep` documents as
+#: its outputs (`commands/qa-deep.md` § Stage A / § Stage B).
+_DEEP_QA_STAGES = (
+    {
+        "stage": "assistant",
+        "label": "Support assistant",
+        "folder": "5-ocs",
+        "filename": "ocs-chatbot-eval_verdict-deep.yaml",
+    },
+    {
+        "stage": "apps",
+        "label": "CommCare apps",
+        "folder": "6-qa-and-training",
+        "filename": "app-ux-eval_verdict-deep.yaml",
+    },
+)
+
+#: `gate.disposition` values `lib/verdict-schema.ts` allows. An
+#: unrecognised one is passed through verbatim rather than dropped — the
+#: same rule `_ddd_honesty` applies to `terminal_status`, and for the same
+#: reason: a disposition we have not heard of must show up as itself, not
+#: as silence.
+_DEEP_QA_DISPOSITIONS = frozenset({"approve", "reject", "iterate"})
+
+_DEEP_QA_ITEM_VERDICTS = ("fail", "warn", "pass")
+
+
+def _num(value: object) -> float | None:
+    """A YAML scalar as a float, or ``None``. ``bool`` is not a number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _clean(value: object) -> str | None:
+    """Collapse a YAML string to one line, or ``None`` when it is empty."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return " ".join(value.split())
+
+
+def _timestamp(value: object) -> str | None:
+    """A verdict's ``ran_at``, as a string, however YAML gave it to us.
+
+    Not cosmetic. An UNQUOTED ISO timestamp is a native YAML type, so
+    ``yaml.safe_load`` returns ``datetime``/``date`` — and the two real
+    verdicts disagree: ``ocs-chatbot-eval`` writes
+    ``ran_at: 2026-09-01T15:05:00Z`` bare while ``app-ux-eval`` quotes
+    its own. Treating this as a string would have shipped a null
+    timestamp on the OCS stage and only the OCS stage, which is exactly
+    the "renders as absence, throws nothing" failure this page keeps
+    being bitten by. When the timestamp is the ONLY staleness signal a
+    reader gets, dropping it silently is the whole bug.
+    """
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return _clean(value)
+
+
+def _deep_qa_freshness(stage: str, verdict: dict, state: dict) -> list[dict]:
+    """What the deep verdict was measured against, versus what is deployed.
+
+    This is the whole reason the section exists. Phase 9 `llo-launch`
+    refuses activation when the deep verdicts are missing **or stale**,
+    because a verdict produced before the current released build or the
+    current published chatbot version is not evidence about what is
+    deployed now — it is evidence about something that no longer exists.
+
+    Both sides are read as EXACTLY-named fields, never inferred:
+
+    * assistant — the verdict's own ``published_version`` against
+      ``products.ocs_chatbot.published_version``;
+    * apps — the verdict's ``artifact_refs.<app>_build_id`` against
+      ``products.apps.<app>.released_build_id``.
+
+    A comparison is emitted only when BOTH sides are present. When a
+    verdict carries no identifier this returns ``[]``, the stage's
+    ``is_stale`` is ``None``, and the page shows the timestamp and leaves
+    the judgement to the reader. That is deliberate: a staleness check
+    that can be wrong is worse than none, because "fresh" is exactly the
+    claim a reader would act on.
+    """
+    out: list[dict] = []
+
+    def compare(basis: str, observed: object, current: object) -> None:
+        if observed in (None, "") or current in (None, ""):
+            return
+        out.append({
+            "basis": basis,
+            "verdict_value": str(observed),
+            "current_value": str(current),
+            "is_current": str(observed) == str(current),
+        })
+
+    if stage == "assistant":
+        chatbot = _phase_products(state, "ocs-setup", "ocs_chatbot")
+        compare(
+            "published chatbot version",
+            verdict.get("published_version"),
+            chatbot.get("published_version"),
+        )
+        return out
+
+    if stage == "apps":
+        refs = verdict.get("artifact_refs")
+        refs = refs if isinstance(refs, dict) else {}
+        apps = _phase_products(state, "commcare-setup", "apps")
+        for kind in ("deliver", "learn"):
+            app = apps.get(kind)
+            compare(
+                f"{kind} build",
+                refs.get(f"{kind}_build_id"),
+                (app or {}).get("released_build_id") if isinstance(app, dict) else None,
+            )
+        return out
+
+    return out
+
+
+def _deep_qa_stage(spec: dict, verdict: dict | None, state: dict) -> dict:
+    """One stage, in the SAME shape whether or not it ran.
+
+    A stage that has not run keeps every key and nulls the values rather
+    than being dropped, so the page can say "the app stage has not been
+    deep-QA'd" instead of leaving a reader to infer it from a section
+    that is one row shorter than they expected. It is the same reasoning
+    that keeps an `unavailable` walkthrough on the page.
+
+    **The gate leads, and the score is context.** On
+    ``spark-facilitator/20260828-0703`` Stage A scored 8.03 against a 7.0
+    threshold and its gate is ``iterate``, because ``--deep`` requires
+    zero Fail entries and two prompts fabricated safety-adjacent
+    operational procedure — an invented cash-handover pathway and an
+    invented PersonalID recovery chain. A page that printed "8.03" beside
+    a tick would tell a reader this opportunity is ready to launch. It is
+    not. So the payload carries `gate`, `verdict` and the Fail count as
+    first-class fields alongside the score, and never derives a
+    pass/fail appearance from the number.
+    """
+    stage = {
+        "stage": spec["stage"],
+        "label": spec["label"],
+        "ran": verdict is not None,
+        "ran_at": None,
+        "gate": None,
+        "verdict": None,
+        "score": None,
+        "threshold": None,
+        "counts": {"total": 0, "pass": 0, "warn": 0, "fail": 0},
+        "dimensions": [],
+        "findings": [],
+        "items": [],
+        "freshness": [],
+        "is_stale": None,
+    }
+    if verdict is None:
+        return stage
+
+    stage["ran_at"] = _timestamp(verdict.get("ran_at"))
+    stage["verdict"] = _clean(verdict.get("verdict"))
+    stage["score"] = _num(verdict.get("overall_score"))
+
+    gate = verdict.get("gate")
+    if isinstance(gate, dict):
+        disposition = _clean(gate.get("disposition"))
+        if disposition and disposition not in _DEEP_QA_DISPOSITIONS:
+            log.warning(
+                "summary: deep-qa stage %s declares gate.disposition=%r, not one "
+                "of %s — surfaced verbatim",
+                spec["stage"], disposition, sorted(_DEEP_QA_DISPOSITIONS),
+            )
+        stage["gate"] = disposition
+        stage["threshold"] = _num(gate.get("threshold"))
+
+    dimensions = verdict.get("dimensions")
+    if isinstance(dimensions, dict):
+        for name, entry in dimensions.items():
+            if not isinstance(entry, dict):
+                continue
+            stage["dimensions"].append({
+                "name": str(name),
+                "score": _num(entry.get("score")),
+                "weight": _num(entry.get("weight")),
+            })
+
+    # Counts over EVERY graded item; rows only for the ones that did not
+    # pass. A deep OCS suite is ~68 prompts and a prompt-by-prompt log is
+    # not what an external reader is here for — but "58 of 68 passed" with
+    # the ten that did not, named, is. The count is what stops the short
+    # list reading as the whole story.
+    per_item = verdict.get("per_item")
+    rows: dict[str, list[dict]] = {v: [] for v in _DEEP_QA_ITEM_VERDICTS}
+    if isinstance(per_item, list):
+        for raw in per_item:
+            if not isinstance(raw, dict):
+                continue
+            item_verdict = _clean(raw.get("verdict")) or ""
+            item_verdict = item_verdict.lower()
+            stage["counts"]["total"] += 1
+            if item_verdict in rows:
+                rows[item_verdict].append({
+                    "ref": str(raw.get("ref") or raw.get("journey") or ""),
+                    "verdict": item_verdict,
+                    "score": _num(raw.get("score")),
+                    "note": _clean(raw.get("note")),
+                })
+                stage["counts"][item_verdict] += 1
+            else:
+                log.warning(
+                    "summary: deep-qa stage %s item %r declares verdict=%r — "
+                    "counted in total, not attributed",
+                    spec["stage"], raw.get("ref"), raw.get("verdict"),
+                )
+    stage["items"] = rows["fail"] + rows["warn"]
+
+    # `auto_surfaced` is carried WHOLE, severity and all. Filtering it
+    # here is how a page ends up rendering a clean-looking absence: the
+    # BLOCKERs are the two fabrications above, and a severity this reader
+    # has not heard of is a reason to show it, not to drop it.
+    surfaced = verdict.get("auto_surfaced")
+    if isinstance(surfaced, list):
+        for raw in surfaced:
+            if not isinstance(raw, dict):
+                continue
+            message = _clean(raw.get("message"))
+            if not message:
+                continue
+            stage["findings"].append({
+                "severity": _clean(raw.get("severity")),
+                "message": message,
+            })
+
+    stage["freshness"] = _deep_qa_freshness(spec["stage"], verdict, state)
+    if stage["freshness"]:
+        stage["is_stale"] = any(not c["is_current"] for c in stage["freshness"])
+
+    return stage
+
+
+def _read_deep_qa(drive: DriveClient, run_folder_id: str, state: dict) -> dict | None:
+    """The `/ace:qa-deep` verdicts, or ``None`` when the gate never ran.
+
+    See the block comment above for why this reads Drive by path instead
+    of taking a pointer out of ``state`` like every other reader here.
+
+    One listing of the run folder is reused for both stages rather than
+    resolving each subfolder from scratch — this endpoint has been
+    through two rounds of Drive-call batching (ace-web#741, #742) and a
+    section that quietly adds a per-stage folder walk would undo part of
+    it.
+    """
+    try:
+        entries = list(drive.list_files(run_folder_id))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("summary: deep-qa list %s failed: %s", run_folder_id, exc)
+        return None
+    folders = {
+        f.name: f for f in entries
+        if f.mime_type == "application/vnd.google-apps.folder"
+    }
+
+    stages: list[dict] = []
+    any_ran = False
+    for spec in _DEEP_QA_STAGES:
+        folder = folders.get(spec["folder"])
+        verdict: dict | None = None
+        if folder is not None:
+            f = _find_in_folder(drive, folder.id, spec["filename"])
+            if f is not None:
+                parsed = _read_yaml(drive, f.id, f.mime_type)
+                # An unreadable or empty verdict file is NOT "the stage
+                # did not run" — the file being there is the evidence it
+                # did. Fall through to the not-ran shape only when the
+                # file is genuinely absent; a present-but-unparseable one
+                # is logged and rendered as not-ran, which is the least
+                # bad of two wrong answers and is loud in the log.
+                if parsed:
+                    verdict = parsed
+                else:
+                    log.warning(
+                        "summary: deep-qa %s/%s is present but unreadable",
+                        spec["folder"], spec["filename"],
+                    )
+        any_ran = any_ran or verdict is not None
+        stages.append(_deep_qa_stage(spec, verdict, state))
+
+    if not any_ran:
+        return None
+    return {"stages": stages}
+
+
 def _read_decision_edits(drive: DriveClient, opp_folder_id: str) -> dict:
     """Saved decision overrides, keyed by row id, emails stripped.
 
@@ -2082,6 +2413,11 @@ def build_summary_payload(
         # The producing phase's own verdict on those apps — null when
         # Phase 3 finished clean, so a clean run renders as before.
         "build": _read_build(state, "commcare-setup"),
+        # The `/ace:qa-deep` gate's verdicts, read from Drive by path
+        # because that command deliberately writes no pointer into
+        # `run_state.yaml`. `None` — and so absent from the page
+        # entirely — on every run that never took the deep gate.
+        "deep_qa": _read_deep_qa(drive, run_folder.id, state),
         "connect": _read_connect(state),
         "training": _read_training(state, access),
         "assistant": _read_assistant(state),

@@ -137,6 +137,73 @@ export interface OppSummaryPayload {
       residual_accepted: string | null;
     }[];
   } | null;
+  /**
+   * The `/ace:qa-deep` gate's verdicts — `null`, and so absent from the
+   * page entirely, on every run that never took the deep gate.
+   *
+   * `/ace:qa-deep` writes NOTHING into `run_state.yaml` on purpose (so a
+   * later `/ace:run` resume is unaffected), which means there is no
+   * pointer to it anywhere in run state. The server reads the two
+   * verdict FILES from Drive by path, and their presence is the only
+   * honest signal that the gate ran — which gives "shows if run,
+   * invisible if not" with no flag to keep in sync.
+   *
+   * **The gate is the headline; the score is context.** On
+   * `spark-facilitator/20260828-0703` Stage A scored 8.03 against a 7.0
+   * threshold and its gate is `iterate` anyway, because `--deep`
+   * requires zero Fail entries and two prompts fabricated
+   * safety-adjacent operational procedure. Rendering 8.03 beside a green
+   * tick would tell a partner this opportunity is ready to launch. It is
+   * not. Never derive an appearance of pass/fail from `score`.
+   */
+  deep_qa: {
+    stages: {
+      stage: "assistant" | "apps";
+      /** What this page calls the thing that was graded. */
+      label: string;
+      /**
+       * `/ace:qa-deep` takes `--ocs-only` / `--apps-only`, so half a
+       * deep gate is a real state. A stage that did not run keeps every
+       * key and nulls the values — the page SAYS it has not run rather
+       * than leaving a reader to notice a shorter list.
+       */
+      ran: boolean;
+      ran_at: string | null;
+      /** `approve` | `iterate` | `reject`, or whatever the run wrote. */
+      gate: string | null;
+      verdict: string | null;
+      score: number | null;
+      threshold: number | null;
+      counts: { total: number; pass: number; warn: number; fail: number };
+      dimensions: { name: string; score: number | null; weight: number | null }[];
+      /** The rubric's `auto_surfaced` entries, whole — severity and all. */
+      findings: { severity: string | null; message: string }[];
+      /** Only the entries that did NOT pass; `counts` carries the rest. */
+      items: {
+        ref: string;
+        verdict: string;
+        score: number | null;
+        note: string | null;
+      }[];
+      /**
+       * What the verdict was measured against, versus what is deployed
+       * now. Phase 9 `llo-launch` refuses activation when a deep verdict
+       * is missing OR STALE, so this is part of the verdict, not a
+       * footnote.
+       *
+       * EMPTY — and `is_stale` null — whenever either side is unknown.
+       * The page then shows the timestamp and leaves the judgement to
+       * the reader rather than asserting freshness it cannot prove.
+       */
+      freshness: {
+        basis: string;
+        verdict_value: string;
+        current_value: string;
+        is_current: boolean;
+      }[];
+      is_stale: boolean | null;
+    }[];
+  } | null;
   connect: {
     // Only the opportunity is surfaced — the program URL 404s publicly.
     opportunity: {

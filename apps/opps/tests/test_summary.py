@@ -2319,3 +2319,174 @@ def test_the_label_survives_a_run_that_recorded_no_counts():
     assert out["visits"] is None
     assert out["cohort_size"] is None
     assert out["cohort_population"] is None
+
+
+# ─── Deep QA (/ace:qa-deep) ─────────────────────────────────────────
+#
+# The only section on this page whose EXISTENCE is a Drive fact rather
+# than a run_state fact — `/ace:qa-deep` deliberately writes no pointer,
+# so the verdict files are the signal. Contract-level shape is frozen in
+# test_public_surface_contract.py; these are the behaviours.
+
+
+def _deep_tree(*, ocs: str | None = None, apps: str | None = None) -> dict:
+    run: dict = {"run_state.yaml": "phases: {}\n"}
+    if ocs is not None:
+        run["5-ocs"] = {"ocs-chatbot-eval_verdict-deep.yaml": ocs}
+    if apps is not None:
+        run["6-qa-and-training"] = {"app-ux-eval_verdict-deep.yaml": apps}
+    return {"run": run}
+
+
+def _read_deep(tree: dict, state: dict | None = None):
+    from apps.opps.summary import _read_deep_qa
+    drive = FakeDriveClient.from_tree(tree)
+    return _read_deep_qa(drive, drive.folder_id("run"), state or {})
+
+
+_OCS_MIN = """\
+skill: ocs-chatbot-eval
+ran_at: 2026-09-01T15:05:00Z
+published_version: 3
+overall_score: 8.03
+verdict: warn
+dimensions:
+  correctness: {score: 7.23, weight: 0.3}
+per_item:
+  - {ref: opp-1, score: 8.7, verdict: pass, note: Fine.}
+  - {ref: opp-50, score: 3.0, verdict: fail, note: Invented a cash pathway.}
+gate: {threshold: 7.0, disposition: iterate}
+"""
+
+
+def test_deep_qa_is_absent_when_neither_verdict_exists():
+    """No files, no section. There is nothing else to key on."""
+    assert _read_deep(_deep_tree()) is None
+
+
+def test_a_deep_verdict_leads_with_the_gate_not_the_score():
+    """8.03 over a 7.0 bar, and the gate is still `iterate`.
+
+    The number and the gate are carried as separate facts because they
+    disagree, and the one that decides whether this opportunity may
+    launch is the gate.
+    """
+    stage = _read_deep(_deep_tree(ocs=_OCS_MIN))["stages"][0]
+    assert stage["stage"] == "assistant" and stage["ran"] is True
+    assert (stage["score"], stage["threshold"]) == (8.03, 7.0)
+    assert stage["gate"] == "iterate"
+    assert stage["verdict"] == "warn"
+    assert stage["counts"] == {"total": 2, "pass": 1, "warn": 0, "fail": 1}
+
+
+def test_an_unquoted_ran_at_survives_as_a_string():
+    """`ran_at: 2026-09-01T15:05:00Z` is a native YAML timestamp, so
+    `safe_load` hands back a `datetime`. The real OCS verdict writes it
+    bare and the real app verdict quotes its own — treating this as a
+    string drops the timestamp on one stage and only one stage, silently.
+    When the timestamp is the only staleness signal a reader gets, that
+    is the whole bug."""
+    stage = _read_deep(_deep_tree(ocs=_OCS_MIN))["stages"][0]
+    assert stage["ran_at"] and stage["ran_at"].startswith("2026-09-01T15:05:00")
+
+
+def test_only_the_non_passing_items_are_carried_and_failures_come_first():
+    """A deep OCS suite is ~68 prompts. The rows an external reader needs
+    are the ones that did not pass; `counts` is what stops that short
+    list reading as the whole suite."""
+    verdict = _OCS_MIN.replace(
+        "gate: {",
+        "  - {ref: opp-29, score: 6.0, verdict: warn, note: Wrong address.}\n"
+        "gate: {",
+    )
+    stage = _read_deep(_deep_tree(ocs=verdict))["stages"][0]
+    assert [i["ref"] for i in stage["items"]] == ["opp-50", "opp-29"]
+    assert stage["counts"]["pass"] == 1
+    assert all(i["verdict"] != "pass" for i in stage["items"])
+
+
+def test_the_other_stage_says_it_did_not_run_rather_than_disappearing():
+    """`/ace:qa-deep --ocs-only` is a supported invocation, so half a
+    deep gate is a real state the page has to be able to describe."""
+    stages = _read_deep(_deep_tree(ocs=_OCS_MIN))["stages"]
+    assert [s["ran"] for s in stages] == [True, False]
+    assert set(stages[0]) == set(stages[1])
+    assert stages[1]["gate"] is None and stages[1]["items"] == []
+
+
+def test_a_verdict_measured_against_the_current_chatbot_is_not_stale():
+    state = {"phases": {"ocs-setup": {"products": {
+        "ocs_chatbot": {"published_version": 3},
+    }}}}
+    stage = _read_deep(_deep_tree(ocs=_OCS_MIN), state)["stages"][0]
+    assert stage["is_stale"] is False
+    assert stage["freshness"] == [{
+        "basis": "published chatbot version",
+        "verdict_value": "3",
+        "current_value": "3",
+        "is_current": True,
+    }]
+
+
+def test_a_verdict_measured_against_a_superseded_version_is_stale():
+    """Phase 9 `llo-launch` refuses activation on a stale deep verdict.
+    A verdict about version 3 says nothing about version 4."""
+    state = {"phases": {"ocs-setup": {"products": {
+        "ocs_chatbot": {"published_version": 4},
+    }}}}
+    stage = _read_deep(_deep_tree(ocs=_OCS_MIN), state)["stages"][0]
+    assert stage["is_stale"] is True
+    assert stage["freshness"][0]["current_value"] == "4"
+
+
+def test_staleness_is_unknown_rather_than_guessed_when_either_side_is_absent():
+    """The rule that keeps this honest. A verdict with no identifier, or
+    a run_state with no released build, produces NO comparison and
+    `is_stale: None` — the page then shows the timestamp and leaves the
+    judgement to the reader. A staleness check that can be wrong is worse
+    than none, because `fresh` is the claim a reader would act on."""
+    # Verdict carries no identifier.
+    no_ref = _OCS_MIN.replace("published_version: 3\n", "")
+    stage = _read_deep(_deep_tree(ocs=no_ref), {"phases": {"ocs-setup": {
+        "products": {"ocs_chatbot": {"published_version": 3}},
+    }}})["stages"][0]
+    assert stage["freshness"] == [] and stage["is_stale"] is None
+    # run_state carries no current value.
+    stage = _read_deep(_deep_tree(ocs=_OCS_MIN), {})["stages"][0]
+    assert stage["freshness"] == [] and stage["is_stale"] is None
+
+
+def test_the_apps_stage_compares_the_released_build_it_was_measured_against():
+    apps_verdict = """\
+skill: app-ux-eval
+ran_at: "2026-09-01T16:40:00-04:00"
+artifact_refs: {deliver_build_id: b085, learn_build_id: 5b40}
+overall_score: 5.7
+verdict: fail
+dimensions:
+  clarity: {score: 8.6, weight: 0.15}
+per_item:
+  - {ref: journey-deliver-followup-preload, score: 2.8, verdict: fail, note: Case stale.}
+gate: {threshold: 7.0, disposition: reject}
+"""
+    state = {"phases": {"commcare-setup": {"products": {"apps": {
+        "deliver": {"released_build_id": "b085"},
+        "learn": {"released_build_id": "OLD"},
+    }}}}}
+    stage = _read_deep(_deep_tree(apps=apps_verdict), state)["stages"][1]
+    assert stage["gate"] == "reject"
+    assert [(f["basis"], f["is_current"]) for f in stage["freshness"]] == [
+        ("deliver build", True), ("learn build", False),
+    ]
+    # One stale half is enough. `is_stale` is not an average.
+    assert stage["is_stale"] is True
+
+
+def test_an_unrecognised_gate_disposition_is_surfaced_verbatim(caplog):
+    """Same rule `_ddd_honesty` applies to a DDD terminal status: a
+    disposition this reader has not heard of must show up as itself, not
+    vanish into silence."""
+    verdict = _OCS_MIN.replace("disposition: iterate", "disposition: quarantine")
+    stage = _read_deep(_deep_tree(ocs=verdict))["stages"][0]
+    assert stage["gate"] == "quarantine"
+    assert "quarantine" in caplog.text
