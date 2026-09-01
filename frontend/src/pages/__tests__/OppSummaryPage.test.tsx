@@ -24,6 +24,8 @@ const BASE: OppSummaryPayload = {
   },
   apps: [],
   build: null,
+  // Null on a run that never took the deep gate — which is most of them.
+  deep_qa: null,
   connect: null,
   training: null,
   assistant: null,
@@ -842,5 +844,150 @@ describe("OppSummaryPage", () => {
     expect(await screen.findByText("What does Spark pay CBFs today?")).toBeTruthy();
     expect(screen.getByText("Needed by")).toBeTruthy();
     expect(screen.getByText("Before Phase 8")).toBeTruthy();
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Deep QA (`/ace:qa-deep`).
+//
+// The section exists so a reader is told what the LAUNCH STEP is told:
+// Phase 9 `llo-launch` refuses activation on a missing or stale deep
+// verdict. Its one hard rule is that a score must never render as a
+// verdict — spark-facilitator/20260828-0703 scores 8.03 against a 7.0
+// bar and its gate is `iterate` anyway.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Stage A of spark-facilitator/20260828-0703, with its real numbers. */
+const OCS_STAGE = {
+  stage: "assistant" as const,
+  label: "Support assistant",
+  ran: true,
+  ran_at: "2026-09-01T15:05:00Z",
+  gate: "iterate",
+  verdict: "warn",
+  score: 8.03,
+  threshold: 7.0,
+  counts: { total: 68, pass: 58, warn: 8, fail: 2 },
+  dimensions: [{ name: "correctness", score: 7.23, weight: 0.3 }],
+  findings: [
+    {
+      severity: "BLOCKER",
+      message: "opp-50 improvised a cash-handover pathway the design does not contain.",
+    },
+  ],
+  items: [
+    {
+      ref: "opp-50",
+      verdict: "fail",
+      score: 3.0,
+      note: "Invented a cash-handover pathway.",
+    },
+  ],
+  freshness: [
+    {
+      basis: "published chatbot version",
+      verdict_value: "3",
+      current_value: "3",
+      is_current: true,
+    },
+  ],
+  is_stale: false,
+};
+
+const APPS_NOT_RUN = {
+  stage: "apps" as const,
+  label: "CommCare apps",
+  ran: false,
+  ran_at: null,
+  gate: null,
+  verdict: null,
+  score: null,
+  threshold: null,
+  counts: { total: 0, pass: 0, warn: 0, fail: 0 },
+  dimensions: [],
+  findings: [],
+  items: [],
+  freshness: [],
+  is_stale: null,
+};
+
+describe("deep QA", () => {
+  it("is completely absent when the gate never ran", async () => {
+    renderWith(BASE);
+    await screen.findByText("Program Design Document");
+    expect(screen.queryByText("Deep QA")).toBeNull();
+    // Not an empty shell either — no stray heading, no "not run" row.
+    expect(screen.queryByText(/deep-tested/i)).toBeNull();
+  });
+
+  it("leads with the gate, and says the score does not settle it", async () => {
+    renderWith({
+      ...BASE,
+      deep_qa: { stages: [OCS_STAGE, APPS_NOT_RUN] },
+    });
+    await screen.findByText("Deep QA");
+    expect(
+      screen.getByText(/has not cleared the deep gate/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/58 passed/)).toBeInTheDocument();
+    expect(screen.getByText(/2 failed/)).toBeInTheDocument();
+    // The reconciliation sentence — without it, 8.03 is the only thing a
+    // reader takes away from a run that is not ready to launch.
+    expect(
+      screen.getByText(/a deep pass\s+needs zero failures/i),
+    ).toBeInTheDocument();
+    // The failing item is NAMED, not just counted.
+    expect(screen.getByText("opp-50")).toBeInTheDocument();
+  });
+
+  it("says plainly when only one stage was run", async () => {
+    renderWith({
+      ...BASE,
+      deep_qa: { stages: [OCS_STAGE, APPS_NOT_RUN] },
+    });
+    await screen.findByText("Deep QA");
+    expect(screen.getByText(/Not deep-tested on this run/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/absence of a finding is not a clean result/i),
+    ).toBeInTheDocument();
+  });
+
+  it("warns when the verdict describes something other than what is deployed", async () => {
+    const stale = {
+      ...OCS_STAGE,
+      is_stale: true,
+      freshness: [
+        {
+          basis: "published chatbot version",
+          verdict_value: "3",
+          current_value: "5",
+          is_current: false,
+        },
+      ],
+    };
+    renderWith({
+      ...BASE,
+      deep_qa: { stages: [stale, APPS_NOT_RUN] },
+    });
+    await screen.findByText("Deep QA");
+    expect(
+      screen.getByText(/does not describe what is running today/i),
+    ).toBeInTheDocument();
+  });
+
+  it("claims nothing about freshness when the server could not compare", async () => {
+    // The honest degrade: no comparison, so the page shows the date and
+    // leaves the judgement to the reader rather than asserting `fresh`.
+    renderWith({
+      ...BASE,
+      deep_qa: {
+        stages: [{ ...OCS_STAGE, freshness: [], is_stale: null }, APPS_NOT_RUN],
+      },
+    });
+    await screen.findByText("Deep QA");
+    expect(screen.getByText(/^Run on /)).toBeInTheDocument();
+    expect(screen.queryByText(/still what is deployed/i)).toBeNull();
+    expect(screen.queryByText(/does not describe what is running today/i)).toBeNull();
   });
 });

@@ -17,6 +17,7 @@ import {
   DecisionsReview,
   type DecisionEditSubmit,
 } from "@/components/opps/summary/DecisionsReview";
+import { DeepQaSection } from "@/components/opps/summary/DeepQaSection";
 import { OcsWidgetMount } from "@/components/opps/summary/OcsWidgetMount";
 import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
 import { SummaryHero } from "@/components/opps/summary/SummaryHero";
@@ -402,7 +403,7 @@ export default function OppSummaryPage() {
 
   const { payload } = state;
   const {
-    opp, design, apps, build, connect, training, assistant, open_questions, feedback, workbench,
+    opp, design, apps, build, deep_qa, connect, training, assistant, open_questions, feedback, workbench,
     walkthroughs, dashboards, synthetic, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
     stage, decisions, viewer,
   } = payload;
@@ -620,6 +621,19 @@ export default function OppSummaryPage() {
               slot("assistant", "Bot")
             )}
           </SummarySection>
+
+          {/* Deep QA — absent entirely unless `/ace:qa-deep` actually ran.
+              It grades the apps AND the assistant, so it sits below both
+              rather than inside either. Leads with the GATE: on
+              spark-facilitator/20260828-0703 the assistant scores 8.03
+              against a 7.0 bar and its gate is `iterate` anyway, because
+              a deep pass needs zero failures and two answers fabricated
+              safety-adjacent procedure. */}
+          {deep_qa && (
+            <SummarySection title="Deep QA">
+              <DeepQaSection deepQa={deep_qa} />
+            </SummarySection>
+          )}
 
           {/* Training pack */}
           <SummarySection title="Training pack">
