@@ -268,10 +268,15 @@ describe("OppSummaryPage", () => {
         knowledge_sources: [],
       },
     });
+    // Matched on the opening sentence rather than the whole string: the blurb
+    // now also tells the reader WHERE to ask (the in-page widget, ace#1839).
+    // The claim this test guards is the absent one — no training pack asserted
+    // when the run recorded no knowledge sources.
     expect(
-      await screen.findByText("Ask questions about this opportunity."),
+      await screen.findByText(/^Ask questions about this opportunity\./),
     ).toBeTruthy();
     expect(screen.queryByText(/training pack/)).toBeNull();
+    expect(screen.queryByText(/It was given/)).toBeNull();
   });
 
   it("states what the assistant knows when — and only when — the run says so", async () => {

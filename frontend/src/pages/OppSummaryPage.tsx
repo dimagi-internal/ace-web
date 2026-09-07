@@ -302,12 +302,29 @@ function SyntheticNotice({
  * training rather than something weaker-but-still-invented: a run where
  * it did not happen must not read as one where it did.
  */
-function assistantBlurb(knowledgeSources: string[] | undefined): string {
+/**
+ * The assistant blurb has to say WHERE to ask, not just that asking is possible.
+ *
+ * The section used to read "Ask questions about this opportunity." above a single
+ * "View in OCS" link — which is the admin console and bounces an outsider to
+ * /accounts/login/. The chat is actually right there: `OcsWidgetMount` puts the
+ * bot in the bottom-right corner of this page whenever the run served embed
+ * credentials. An invitation whose only visible affordance is a login wall reads
+ * as broken even when the answer is one click away (ace#1839).
+ *
+ * `canChatHere` is that condition, and the copy points at the widget rather than
+ * anywhere else: the reader should not be sent off the review surface to do this.
+ */
+function assistantBlurb(
+  knowledgeSources: string[] | undefined,
+  canChatHere: boolean,
+): string {
   const sources = (knowledgeSources ?? []).filter((s) => s.trim());
-  if (sources.length === 0) {
-    return "Ask questions about this opportunity.";
-  }
-  return `Ask questions about this opportunity. It was given ${joinList(sources)}.`;
+  const given = sources.length ? ` It was given ${joinList(sources)}.` : "";
+  const where = canChatHere
+    ? " Use the chat button in the bottom-right of this page — no account needed."
+    : "";
+  return `Ask questions about this opportunity.${given}${where}`;
 }
 
 export default function OppSummaryPage() {
@@ -610,10 +627,15 @@ export default function OppSummaryPage() {
             {assistant ? (
               <SummaryRow
                 label="Bot"
-                name={assistantBlurb(assistant.knowledge_sources)}
+                name={assistantBlurb(
+                  assistant.knowledge_sources,
+                  Boolean(assistant.public_id && assistant.embed_key),
+                )}
                 links={
                   assistant.ocs_url
-                    ? [link("View in OCS", assistant.ocs_url, assistant.access)]
+                    ? // Labelled for what it is. It is the operator's console, not
+                      // the way a reader asks a question — that is the widget.
+                      [link("Open in OCS (operators)", assistant.ocs_url, assistant.access)]
                     : []
                 }
               />
