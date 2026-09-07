@@ -37,14 +37,36 @@ const SCRIPT_ATTR = "data-ocs-widget";
  *
  * Same package Connect uses; Connect bundles via Webpack
  * which handles the lazy chunks differently.
+ *
+ * ## Keep this pin at or above OCS's deprecation floor
+ *
+ * OCS retires old widget rungs on a published schedule
+ * (`apps/channels/widget_versions.py` in dimagi/open-chat-studio):
+ *
+ *     DEPRECATIONS = [WidgetDeprecation(below_version="0.6.0",
+ *                                       sunset_at=datetime(2026, 10, 1, UTC))]
+ *
+ * This mount was pinned to `0.5.3` — BELOW that floor, sunsetting 2026-10-01.
+ * The run-summary page is un-authed and the widget is the one thing on it an
+ * outsider can actually use without being granted anything, so it going dark is
+ * not cosmetic: the page would keep inviting people to ask questions of a bubble
+ * that no longer answers.
+ *
+ * Pinned to OCS's own `LATEST_VERSION` (0.12.0). The attribute API is unchanged
+ * across the bump — OCS's own embed template at HEAD
+ * (`templates/experiments/share/widget.html`) hands out exactly these attributes
+ * against `widget_script_url()`, which resolves to LATEST_VERSION.
+ *
+ * When bumping, re-read that file rather than trusting this comment: the floor
+ * moves, and a pin that sat still is how this one expired.
  */
-export function OcsWidgetMount({ chatbotId, embedKey, version = "0.5.3" }: Props) {
+export function OcsWidgetMount({ chatbotId, embedKey, version = "0.12.0" }: Props) {
   useEffect(() => {
     if (typeof document === "undefined") return;
     if (document.querySelector(`script[${SCRIPT_ATTR}]`)) return;
     const s = document.createElement("script");
     s.type = "module";
-    s.src = `https://www.unpkg.com/open-chat-studio-widget@${version}/dist/open-chat-studio-widget/open-chat-studio-widget.esm.js`;
+    s.src = `https://unpkg.com/open-chat-studio-widget@${version}/dist/open-chat-studio-widget/open-chat-studio-widget.esm.js`;
     s.async = true;
     s.setAttribute(SCRIPT_ATTR, "1");
     document.head.appendChild(s);
