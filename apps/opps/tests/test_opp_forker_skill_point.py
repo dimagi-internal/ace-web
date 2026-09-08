@@ -17,6 +17,7 @@ import pytest
 from django.test import override_settings
 
 from apps.opps.opp_forker import (
+    _MEDIA_SUBTREES_SKIPPED_BEFORE_FORK,
     ForkOppError,
     _keep_artifact_for_skill_fork,
     _phase_folder_disposition,
@@ -296,3 +297,112 @@ def test_forkpoint_is_hashable_and_frozen():
     assert hash(point)  # frozen dataclasses are hashable
     with pytest.raises(dataclasses.FrozenInstanceError):
         point.phase_ordinal = 2  # type: ignore[misc]
+
+
+# ── Device-walk media is not carried into a later-phase fork (ace-web#758) ──
+
+
+def _fake_drive_with_media():
+    """A source run shaped like the one that broke the forker.
+
+    `spark-facilitator/20260907-1120` forked at Phase 7 and died at file 50 of
+    178 on a Drive `userRateLimitExceeded`, copying
+    `journey-deliver-s4-type-community.png` — a Phase 6 device screenshot — into
+    a fork that would never open it. Phase 6's `screenshots/` held 35 files in
+    `journey-deliver/` alone, plus `journey-learn/` and `videos/`.
+    """
+    files = {
+        "ace-root": [_FakeFile("source-opp", "source-opp", FOLDER)],
+        "source-opp": [_FakeFile("runs", "runs", FOLDER)],
+        "runs": [_FakeFile("run-source", "20260101-1000", FOLDER)],
+        "run-source": [
+            _FakeFile("p1", "1-design-review", FOLDER),
+            _FakeFile("p2", "2-commcare", FOLDER),
+        ],
+        "p1": [_FakeFile("a-pdd", "pdd.md", "text/markdown", size=10)],
+        "p2": [
+            _FakeFile("a-learn", "learn-app-summary.md", "text/markdown", size=10),
+            _FakeFile("shots", "screenshots", FOLDER),
+            _FakeFile("vids", "videos", FOLDER),
+            _FakeFile("recipes", "recipes", FOLDER),
+        ],
+        "shots": [_FakeFile("j", "journey-deliver", FOLDER)],
+        "j": [
+            _FakeFile(f"png{i}", f"journey-deliver-s{i}.png", "image/png", size=10)
+            for i in range(6)
+        ],
+        "vids": [_FakeFile("mp4", "journey-deliver.mp4", "video/mp4", size=10)],
+        # NOT media: a phase's other subfolders still copy whole.
+        "recipes": [_FakeFile("r1", "connect-claim-opp.yaml", "text/yaml", size=10)],
+    }
+    copied: list[str] = []
+    ids = iter([f"new-{i}" for i in range(200)])
+    drive = MagicMock()
+    drive.list_files.side_effect = lambda fid: files.get(fid, [])
+    drive.create_folder.side_effect = lambda parent, name: next(ids)
+
+    def _copy(src_id, dest_parent, name):
+        copied.append(name)
+        return next(ids)
+
+    drive.copy_file.side_effect = _copy
+    drive.get_text.side_effect = lambda fid: ""
+    drive.update_file.side_effect = lambda fid, body, mime: fid
+    drive.upload_file.side_effect = lambda parent, name, body, mime: next(ids)
+    drive.create_file.side_effect = lambda parent, name, body, mime: next(ids)
+    return drive, copied
+
+
+def _fork_with_media(monkeypatch, **fork_kwargs):
+    drive, copied = _fake_drive_with_media()
+    _stub_side_effects(monkeypatch, [])
+    seen: list[dict] = []
+    fork_opp(
+        drive=drive,
+        ace_root_folder_id="ace-root",
+        owner=MagicMock(email="dev@example.com"),
+        source_slug="source-opp",
+        source_run_id="20260101-1000",
+        progress_cb=seen.append,
+        now=dt.datetime(2026, 6, 1, 12, 0, tzinfo=dt.UTC),
+        **fork_kwargs,
+    )
+    return copied, seen
+
+
+def test_a_later_phase_fork_leaves_the_device_walk_evidence_behind(monkeypatch):
+    # Forking at a phase AFTER commcare: its screenshots and videos are
+    # evidence of a walk that already happened and that nothing downstream
+    # reads. This is the 178 -> tens that keeps a deep fork under Drive's
+    # per-user quota.
+    copied, _ = _fork_with_media(monkeypatch, fork_at_phase="connect-setup")
+
+    assert "learn-app-summary.md" in copied      # ordinary artifact: kept
+    assert "connect-claim-opp.yaml" in copied    # non-media subfolder: kept
+    assert not [c for c in copied if c.endswith(".png")]
+    assert not [c for c in copied if c.endswith(".mp4")]
+
+
+def test_the_forks_own_phase_keeps_its_media_on_a_skill_fork(monkeypatch):
+    # A skill fork of the commcare phase re-runs only its tail, so the walk
+    # evidence in that phase is NOT stale — the skip applies strictly before
+    # the fork point.
+    copied, _ = _fork_with_media(monkeypatch, fork_at_skill="app-deploy")
+
+    assert [c for c in copied if c.endswith(".png")]
+    assert [c for c in copied if c.endswith(".mp4")]
+
+
+def test_count_matches_copy_when_media_is_skipped(monkeypatch):
+    # The counter and the copy are two separate walks. A files_total that
+    # counts what the copy then skips is a progress bar that never reaches 1.0.
+    copied, seen = _fork_with_media(monkeypatch, fork_at_phase="connect-setup")
+    done = [e for e in seen if e.get("status") == "done"][-1]
+    assert done["files_total"] == done["files_copied"] == len(copied)
+
+
+def test_only_the_named_subtrees_are_treated_as_media():
+    # The rule is two well-known folder names in ACE's own layout, not a
+    # guess at mime types — a `.png` an artifact skill wrote elsewhere in a
+    # phase is still an artifact.
+    assert _MEDIA_SUBTREES_SKIPPED_BEFORE_FORK == frozenset({"screenshots", "videos"})

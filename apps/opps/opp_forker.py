@@ -89,6 +89,41 @@ _RUN_ROOT_FILES_TO_COPY = (
 )
 
 
+# Device-walk EVIDENCE produced by a phase strictly before the fork point.
+#
+# These hold a Phase 6 walk's raw output — one PNG per screen, one mp4 per
+# journey, plus the ui-dump XML beside them. On the run that motivated this
+# they were the MAJORITY of the copy: `6-qa-and-training/screenshots/` carried
+# 35 files in `journey-deliver/` alone, plus `journey-learn/`, plus `videos/`,
+# out of 178 total. The fork that died at file 50 died copying one of them
+# (`journey-deliver-s4-type-community.png`) into a Phase 7 fork that will never
+# open it (ace-web#758).
+#
+# They are skipped only for phases STRICTLY BEFORE the fork point, which means
+# only a fork at Phase 7 or later can skip them at all — a fork AT Phase 6
+# re-runs the walk and the folder is `skip` for the ordinary reason.
+#
+# Three things make this safe, and each is worth stating because "drop an
+# artifact" is the risky direction:
+#
+#   1. Nothing at or after Phase 7 reads them. The manifest's consumers for
+#      Phase 6 screenshot artifacts are `training-flw-guide`,
+#      `training-deck-generate` and `app-ux-eval` — all Phase 6.
+#   2. Drive references survive. The training deck points at these images by
+#      FILE ID, and a fork never deletes from the source run, so a deck copied
+#      into the fork still renders from the originals.
+#   3. They are evidence of a walk that already happened, not an input to one
+#      that hasn't. Re-running Phase 6 produces new ones; re-running Phase 7
+#      does not want the old ones.
+#
+# Deliberately NOT expressed as a manifest `consumed_by` filter. The manifest
+# attributes `app-screenshot-capture_manifest.yaml` but has no entry for the
+# PNGs themselves, so they are unattributed — and the forker's standing rule is
+# to KEEP what it cannot attribute, which is the right default and should stay.
+# Naming the two folders is narrower than weakening that rule.
+_MEDIA_SUBTREES_SKIPPED_BEFORE_FORK = frozenset({"screenshots", "videos"})
+
+
 class ForkOppError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(message)
@@ -484,6 +519,7 @@ def _count_files_to_copy(
                     if disposition == "partial"
                     else None
                 ),
+                skip_media=(disposition == "keep"),
             )
         else:
             if child.name in _RUN_ROOT_FILES_TO_COPY:
@@ -495,14 +531,18 @@ def _count_files_recursive(
     drive: DriveClient,
     folder_id: str,
     keep_file: Callable[[str], bool] | None = None,
+    skip_media: bool = False,
 ) -> int:
-    """Count files under ``folder_id``, honouring the same ``keep_file``
-    predicate ``_copy_subtree_verbatim`` applies, so counts and copies
-    cannot disagree."""
+    """Count files under ``folder_id``, honouring the same ``keep_file`` and
+    ``skip_media`` rules ``_copy_subtree_verbatim`` applies, so counts and
+    copies cannot disagree. A `files_total` that counts what the copy then
+    skips is a progress bar that never reaches 1.0."""
     n = 0
     for child in drive.list_files(folder_id):
         if child.mime_type == _FOLDER_MIME:
-            n += _count_files_recursive(drive, child.id, keep_file)
+            if skip_media and child.name in _MEDIA_SUBTREES_SKIPPED_BEFORE_FORK:
+                continue
+            n += _count_files_recursive(drive, child.id, keep_file, skip_media=False)
         elif keep_file is None or keep_file(child.name):
             n += 1
     return n
@@ -611,6 +651,10 @@ def _copy_run_subtree(
                 dest_folder_id=sub_id,
                 rel_path=child.name,
                 progress=progress,
+                # Only a phase strictly before the fork reaches here with
+                # `keep`; `partial` is the fork-point phase itself, whose walk
+                # evidence a skill fork may still want.
+                skip_media=(disposition == "keep"),
                 # On a skill fork the fork-point phase is kept only up to
                 # the fork skill; every other kept phase copies whole.
                 keep_file=(
@@ -638,6 +682,7 @@ def _copy_subtree_verbatim(
     rel_path: str,
     progress: _Progress,
     keep_file: Callable[[str], bool] | None = None,
+    skip_media: bool = False,
 ) -> None:
     """Copy the children of a kept phase folder.
 
@@ -645,10 +690,18 @@ def _copy_subtree_verbatim(
     per-basename predicate that keeps only artifacts produced by skills
     before the fork point. Nested folders inherit the predicate — a phase's
     sub-folders (``screenshots/``, ``recipes/``) are still skill-owned.
+
+    ``skip_media`` drops the device-walk evidence subtrees entirely; see
+    ``_MEDIA_SUBTREES_SKIPPED_BEFORE_FORK`` for why that is safe and why it is
+    scoped to phases strictly before the fork point. It applies at the TOP
+    level of a phase folder only — a nested folder that happens to be called
+    ``videos`` deeper in a tree is not the Phase 6 walk output.
     """
     for child in drive.list_files(source_folder_id):
         new_path = f"{rel_path}/{child.name}"
         if child.mime_type == _FOLDER_MIME:
+            if skip_media and child.name in _MEDIA_SUBTREES_SKIPPED_BEFORE_FORK:
+                continue
             sub_id = drive.create_folder(dest_folder_id, child.name)
             _copy_subtree_verbatim(
                 drive=drive,
@@ -657,6 +710,7 @@ def _copy_subtree_verbatim(
                 rel_path=new_path,
                 progress=progress,
                 keep_file=keep_file,
+                skip_media=False,
             )
         else:
             if keep_file is not None and not keep_file(child.name):
