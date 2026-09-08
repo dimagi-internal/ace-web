@@ -36,6 +36,21 @@ _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 _RETRY_ATTEMPTS = 3
 _RETRY_BASE_DELAY = 0.5  # seconds; effective delays roughly 0.5s, 1.0s, 2.0s + jitter
 
+# A WRITE may only be retried when the failure proves the write was never
+# applied. A 429 does: Drive rejects the request at the quota gate, before it
+# reaches the operation, so nothing was created and a retry cannot duplicate.
+# A 5xx does NOT — the server may have applied the write and failed to answer,
+# and a retry would then leak a second copy. That asymmetry is the whole reason
+# `_drive_retry` above stays off the write path; it is not a blanket rule about
+# writes, it is a rule about what the status tells you.
+#
+# Without this, one `userRateLimitExceeded` mid-fork aborts a 178-file copy and
+# strands a half-populated run (ace-web#758). Rate limits are per-user and
+# per-100-seconds, so backing off is the correct and sufficient response.
+_RETRYABLE_WRITE_STATUS = {429}
+_WRITE_RETRY_ATTEMPTS = 5
+_WRITE_RETRY_BASE_DELAY = 2.0  # 2s, 4s, 8s, 16s + jitter — a 100s quota window
+
 
 def _drive_retry(method):
     """Decorator: retry the wrapped Drive read on transient HttpError 5xx/429.
@@ -74,6 +89,41 @@ def _drive_retry(method):
         if last_exc is not None:
             raise last_exc
         raise RuntimeError("drive_retry: exhausted attempts without exception")
+
+    return _wrapped
+
+
+def _drive_write_retry(method):
+    """Retry a Drive WRITE, but only on a status that proves it never ran.
+
+    See ``_RETRYABLE_WRITE_STATUS`` for why this is 429-only and not the
+    broader ``_RETRYABLE_STATUS`` — a 5xx may mean the write landed and the
+    response was lost, and retrying that duplicates.
+
+    Longer and slower than the read retry on purpose: the failure this exists
+    for is a per-user, per-100-seconds quota, so the useful move is to wait out
+    the window rather than to fail fast.
+    """
+
+    @functools.wraps(method)
+    def _wrapped(self, *args, **kwargs):
+        from googleapiclient.errors import HttpError  # noqa: PLC0415
+
+        for attempt in range(1, _WRITE_RETRY_ATTEMPTS + 1):
+            try:
+                return method(self, *args, **kwargs)
+            except HttpError as exc:
+                status = getattr(getattr(exc, "resp", None), "status", None)
+                if status not in _RETRYABLE_WRITE_STATUS or attempt == _WRITE_RETRY_ATTEMPTS:
+                    raise
+                delay = _WRITE_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                delay += random.uniform(0, delay * 0.25)
+                log.warning(
+                    "drive_write_retry: %s attempt %d/%d rate-limited; sleeping %.2fs",
+                    method.__name__, attempt, _WRITE_RETRY_ATTEMPTS, delay,
+                )
+                time.sleep(delay)
+        raise RuntimeError("drive_write_retry: exhausted attempts without exception")
 
     return _wrapped
 
@@ -585,6 +635,7 @@ class GoogleDriveClient(DriveClient):
             f"Unexpected Drive get_media return type: {type(content).__name__}"
         )
 
+    @_drive_write_retry
     def copy_file(
         self, file_id: str, new_parent_id: str, new_name: str | None = None
     ) -> str:
