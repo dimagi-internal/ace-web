@@ -17,9 +17,13 @@ export const cliAuthStatus = async (): Promise<CliAuthStatus> => {
 };
 
 export const promoteCliAuthToGlobal = async (): Promise<CliAuthPromoteResult> => {
-  const { response } = await apiClient.POST("/api/auth/cli/promote" as never, {} as never);
-  if (!response.ok) throw new Error(`Promote failed: ${response.status}`);
-  const data = (await response.json()) as CliAuthPromoteResult;
+  // openapi-fetch CONSUMES the body to build `data` (dist/index.mjs) and never
+  // clones, so `response.json()` here throws "body stream already read" on every
+  // call. Use the parsed `data`. Same defect as useCanopyStatus — see #749.
+  const { data: body, error, response } = await apiClient.POST(
+    "/api/auth/cli/promote" as never, {} as never);
+  if (!response.ok || error || !body) throw new Error(`Promote failed: ${response.status}`);
+  const data = body as CliAuthPromoteResult;
   return data;
 };
 
@@ -38,9 +42,14 @@ export const novaAuthStatus = async (): Promise<NovaAuthStatus> => {
 };
 
 export const disconnectNova = async (): Promise<{ disconnected: boolean }> => {
-  const { response } = await apiClient.POST("/api/auth/nova/disconnect", {});
-  if (!response.ok) throw new Error(`Nova disconnect failed: ${response.status}`);
-  return (await response.json()) as { disconnected: boolean };
+  // openapi-fetch CONSUMES the body to build `data` (dist/index.mjs) and never
+  // clones, so `response.json()` here throws "body stream already read" on every
+  // call. Use the parsed `data`. Same defect as useCanopyStatus — see #749.
+  const { data, error, response } = await apiClient.POST("/api/auth/nova/disconnect", {});
+  if (!response.ok || error || !data) {
+    throw new Error(`Nova disconnect failed: ${response.status}`);
+  }
+  return data as { disconnected: boolean };
 };
 
 export interface CurrentUser {
@@ -55,7 +64,9 @@ export const getCurrentUser = async (): Promise<CurrentUser> => {
     const out: MeOut = data as MeOut;
     return { user_id: out.id, email: out.email, display_name: out.display_name };
   }
-  // content?: never path on some schema versions — parse raw
-  const raw = (await response.json()) as MeOut;
-  return { user_id: raw.id, email: raw.email, display_name: raw.display_name };
+  // The `content?: never` fallback for some schema versions. It can no longer
+  // read the body — openapi-fetch already consumed it — so there is nothing to
+  // parse and a second read would throw a confusing TypeError instead of saying
+  // what went wrong. If `data` was empty, that IS the failure.
+  throw new Error(`me: API client parsed no body (status ${response.status})`);
 };
