@@ -21,23 +21,40 @@ vi.mock("../api/apiClient", () => ({
   },
 }));
 
+// These mocks model what openapi-fetch ACTUALLY returns, which is the whole
+// point of them.
+//
+// The previous version returned `{ response: { ok, status, json: async () => body } }`
+// — a response you can read, and no `data`. openapi-fetch returns
+// `{ data, error, response }` and CONSUMES the body to build `data`
+// (dist/index.mjs: `await response.text()` / `response[parseAs]()`, never
+// cloned). So a second `response.json()` throws "body stream already read"
+// — every time, for every caller.
+//
+// The old mock made that impossible to catch: the hook read the body a second
+// time, the fake response allowed it, the suite was green, and ace-web's chat
+// page was broken in production for everyone with the message "Couldn't reach
+// canopy chat. Check your connection and reload the page." A `json()` that
+// throws is what makes this test able to fail.
+const spentBody = () => async () => {
+  throw new TypeError(
+    "Failed to execute 'json' on 'Response': body stream already read",
+  );
+};
+
 function mockStatusResponse(body: Record<string, unknown>) {
   getMock.mockResolvedValueOnce({
-    response: {
-      ok: true,
-      status: 200,
-      json: async () => body,
-    },
+    data: body,
+    error: undefined,
+    response: { ok: true, status: 200, json: spentBody() },
   });
 }
 
 function mockStatusFailure(status = 500) {
   getMock.mockResolvedValueOnce({
-    response: {
-      ok: false,
-      status,
-      json: async () => ({}),
-    },
+    data: undefined,
+    error: { detail: "boom" },
+    response: { ok: false, status, json: spentBody() },
   });
 }
 

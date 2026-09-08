@@ -28,11 +28,23 @@ let cacheFailed = false;
 let inflight: Promise<CanopyStatus> | null = null;
 
 async function fetchStatus(): Promise<CanopyStatus> {
-  const { response } = await apiClient.GET("/api/canopy/status");
-  if (!response.ok) {
+  // Use the body openapi-fetch ALREADY parsed. Reading `response.json()` here
+  // throws "body stream already read" on every single call: openapi-fetch
+  // consumes the stream to build `data` (dist/index.mjs — `await
+  // response.text()` / `response[parseAs]()`, and it never clones), so the
+  // response handed back is spent.
+  //
+  // The failure was total and silent. Every load of the chat page threw here,
+  // `cacheFailed` latched, and the page rendered "Couldn't reach canopy chat.
+  // Check your connection and reload the page." — blaming the network and
+  // canopy, both of which were fine. Measured on labs 2026-09-07: an in-page
+  // fetch returned 200 {"enabled":true} on the very page displaying that error,
+  // and a reload never recovered because nothing about it was transient.
+  const { data, error, response } = await apiClient.GET("/api/canopy/status");
+  if (!response.ok || error || !data) {
     throw new Error(`Failed to fetch canopy status: ${response.status}`);
   }
-  return (await response.json()) as CanopyStatus;
+  return data as CanopyStatus;
 }
 
 interface StatusState {
