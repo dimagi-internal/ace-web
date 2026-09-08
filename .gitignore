@@ -25,6 +25,13 @@ staticfiles/
 
 # Node
 node_modules/
+# ...and as a SYMLINK, which the trailing slash above does not match. A symlinked
+# node_modules is a normal way to borrow a sibling's install for a one-off test
+# run, and `git add -A` will happily commit it as a mode-120000 blob. That then
+# breaks the Docker build at `COPY frontend/ .` with "cannot replace to directory
+# .../cachemounts/.../app/node_modules with file", which names neither the symlink
+# nor the commit that added it. Shipped to main 2026-09-07 and broke the deploy.
+node_modules
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
 .DS_Store
