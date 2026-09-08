@@ -326,6 +326,96 @@ export async function listActiveRuns(base: string): Promise<ActiveRun[]> {
   });
 }
 
+/**
+ * An in-flight TURN — a discrete unit of work a runner claimed.
+ *
+ * The other half of "what is ACE doing right now", and the half the sessions
+ * feed structurally cannot show. `GET /api/harness/sessions` is derived from
+ * emdash's sqlite, so it only ever contains runs on a box that HAS emdash — the
+ * laptops. The cloud runner has none (it spawns `claude -p` headless), reports
+ * `sessions=[]` on every heartbeat, and is therefore invisible there.
+ *
+ * It is not invisible in general: `cloud_runner.py` emits `status` / `assistant`
+ * / `tool_start` / `tool_end` for EVERY turn it runs. An inbound-email turn
+ * measured on 2026-09-08 carried 184 of them. Turns are where a cloud run lives.
+ */
+export interface ActiveTurn {
+  id: string;
+  agent: string | null;
+  project: string;
+  origin: string;
+  status: string;
+  prompt: string;
+  runner_name: string | null;
+  created_at: string;
+  /** The canopy Session this turn drives, when it drives one. Empty for an
+   *  email / scheduled / api turn — which is exactly the case with no session
+   *  row to dedupe against. */
+  session_id: string;
+}
+
+/**
+ * `GET /api/harness/turns/` — recent turns for one agent, newest first.
+ *
+ * Deliberately unfiltered by status on the wire: the endpoint takes a `status`
+ * query, but asking for "running" alone hides a turn that is still `queued`
+ * behind a strict routing rule — which reads as "nothing is happening" at the
+ * exact moment someone is waiting for their email to be picked up.
+ */
+export async function listActiveTurns(base: string, agent = "ace"): Promise<ActiveTurn[]> {
+  const rows = await canopyJson<Record<string, unknown>[]>(
+    base, `/api/harness/turns/?agent=${encodeURIComponent(agent)}&limit=25`,
+  );
+  return rows.map((raw) => ({
+    id: raw.id as string,
+    agent: (raw.agent_slug as string | null | undefined) ?? null,
+    project: (raw.project as string | undefined) ?? "",
+    origin: (raw.origin as string | undefined) ?? "",
+    status: (raw.status as string | undefined) ?? "",
+    prompt: (raw.prompt as string | undefined) ?? "",
+    runner_name: (raw.claimed_by_name as string | null | undefined) ?? null,
+    created_at: (raw.created_at as string | undefined) ?? "",
+    session_id: (raw.session_id as string | undefined) ?? "",
+  }));
+}
+
+/** Turns still in flight, and not already shown as a session.
+ *
+ *  A chat turn on a laptop drives a Session that the sessions feed ALSO lists;
+ *  showing both would double every laptop run. A turn whose `session_id` names
+ *  a listed session is therefore dropped — the session row is the better
+ *  surface for it, because it opens into the full chat view. */
+export function liveTurns(turns: ActiveTurn[], sessionIds: readonly string[] = []): ActiveTurn[] {
+  const seen = new Set(sessionIds);
+  return turns.filter(
+    (t) => (t.status === "running" || t.status === "queued") && !seen.has(t.session_id),
+  );
+}
+
+/** One streamed event from a turn. */
+export interface TurnEvent {
+  seq: number;
+  ts: string;
+  kind: string;
+  payload: Record<string, unknown>;
+}
+
+/**
+ * `GET /api/harness/turns/{id}/events?after=<seq>` — the append-only ledger.
+ *
+ * Incremental by sequence number: the server caps a response at 500 rows, so a
+ * long run must be paged with `after` rather than re-fetched, and polling with
+ * the last seq is what makes this a live view instead of a repeated download.
+ */
+export async function listTurnEvents(
+  base: string, turnId: string, after = 0,
+): Promise<TurnEvent[]> {
+  const body = await canopyJson<{ events: TurnEvent[] }>(
+    base, `/api/harness/turns/${encodeURIComponent(turnId)}/events?after=${after}`,
+  );
+  return body.events ?? [];
+}
+
 /** The runs worth showing on an ACE surface: this agent's, still going.
  *
  *  Prefers the feed's `agent`, which canopy-web #694 made real — a reported
