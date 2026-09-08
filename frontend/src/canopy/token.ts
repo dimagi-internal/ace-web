@@ -42,11 +42,17 @@ interface CanopyTokenResponse {
 }
 
 async function requestToken(): Promise<CanopyTokenResponse> {
-  const { response } = await apiClient.POST("/api/canopy/token", {});
-  if (!response.ok) {
+  // This one mattered most: it fetches the short-lived DelegatedToken the chat
+  // WebSocket rides on `?token=`. It threw on every call, so even with the
+  // status fix in #749 the chat page could not have worked.
+  // openapi-fetch CONSUMES the body to build `data` (dist/index.mjs) and never
+  // clones, so `response.json()` here throws "body stream already read" on every
+  // call. Use the parsed `data`. Same defect as useCanopyStatus — see #749.
+  const { data, error, response } = await apiClient.POST("/api/canopy/token", {});
+  if (!response.ok || error || !data) {
     throw new Error(`Failed to fetch canopy token: ${response.status}`);
   }
-  return (await response.json()) as CanopyTokenResponse;
+  return data as CanopyTokenResponse;
 }
 
 /** A non-parseable `expires_at` is treated as already-expired (M6) rather

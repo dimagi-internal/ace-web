@@ -17,13 +17,23 @@ vi.mock("../api/apiClient", () => ({
   },
 }));
 
+// Models what openapi-fetch actually returns: `{data, error, response}` with the
+// body ALREADY CONSUMED. The previous mock handed back a readable `response` and
+// no `data`, which let `requestToken` do `await response.json()` and pass — while
+// in production that throws "body stream already read" on every call, so the
+// canopy DelegatedToken could never be fetched and chat could not connect.
+// A `json()` that throws is what gives this suite the ability to fail.
+const spentBody = () => async () => {
+  throw new TypeError(
+    "Failed to execute 'json' on 'Response': body stream already read",
+  );
+};
+
 function mockTokenResponse(token: string, expiresAt: string) {
   postMock.mockResolvedValueOnce({
-    response: {
-      ok: true,
-      status: 200,
-      json: async () => ({ token, expires_at: expiresAt }),
-    },
+    data: { token, expires_at: expiresAt },
+    error: undefined,
+    response: { ok: true, status: 200, json: spentBody() },
   });
 }
 
