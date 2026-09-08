@@ -42,6 +42,7 @@ copy roughly 1/8 of the source's run artifacts.
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -76,6 +77,8 @@ _FOLDER_MIME = "application/vnd.google-apps.folder"
 # carry forward without looking up anything skill-side. The trailing
 # ``[a-z]`` is what keeps us from misclassifying run-id folders like
 # ``20260501-1200`` (numeric timestamp) as phase folders.
+log = logging.getLogger(__name__)
+
 _PHASE_FOLDER_RE = re.compile(r"^(\d+)-[a-z]")
 
 # Files inside the source run folder that get carried over verbatim
@@ -295,6 +298,11 @@ def fork_opp(
         # phases map and timestamps belong to the prior run. Generating
         # fresh keeps the new run's state honest about done vs. pending,
         # and it depends on nothing the copy produces.
+        #
+        # We DO carry one thing out of it: each copied phase's `products`
+        # block. See `_source_phase_products` for why a fork without it is
+        # not resumable (ace#1888).
+        source_products = _source_phase_products(drive, source_run.id)
         new_state = _build_run_state_yaml(
             opp_slug=source_slug,
             run_id=new_run_id,
@@ -304,6 +312,7 @@ def fork_opp(
             forked_from_run_id=source_run.name,
             now_utc=now_utc,
             run_phases=run_phases,
+            source_products=source_products,
         )
         drive.upload_file(
             new_run_folder_id, "run_state.yaml", new_state, "text/yaml",
@@ -747,7 +756,55 @@ def _resolve_phase_ordinal(phase_name: str) -> int | None:
         return None
 
 
-def _phase_block(phase: str, status: str, iso_now: str) -> dict:
+def _source_phase_products(
+    drive: DriveClient, source_run_folder_id: str
+) -> dict[str, dict]:
+    """``{phase: products}`` from the SOURCE run's ``run_state.yaml``.
+
+    The fork synthesizes a fresh run_state rather than copying one, which is
+    right for statuses and timestamps and WRONG for one key: ``products``.
+
+    ``phases.<phase>.products.*`` is the typed handoff between phases — the
+    Connect opportunity id, the released Deliver app id, the OCS chatbot, the
+    labs synthetic opp. A phase downstream of the fork reads it to find the
+    live objects the copied artifacts describe. Without it the fork is a
+    convincing shell: every pre-fork phase says ``done``, every artifact is
+    present, and the first phase that actually runs cannot find the
+    opportunity those artifacts are about (ace#1888).
+
+    Only phases the fork marks ``done`` get their products carried; see
+    ``_phase_block``. A phase at or after the fork point re-runs and must
+    produce its own, or it would inherit a handoff pointing at objects the
+    re-run is replacing.
+
+    Best-effort by design: a source run with no readable run_state still forks,
+    just without products, which is exactly today's behaviour. Failing the
+    whole fork over it would be a regression.
+    """
+    try:
+        for child in drive.list_files(source_run_folder_id):
+            if child.name not in ("run_state.yaml", "run_state.yml"):
+                continue
+            body = _read_text_or_empty(drive, child)
+            if not body:
+                break
+            parsed = yaml.safe_load(body) or {}
+            phases = parsed.get("phases") if isinstance(parsed, dict) else None
+            if not isinstance(phases, dict):
+                break
+            return {
+                name: block["products"]
+                for name, block in phases.items()
+                if isinstance(block, dict) and isinstance(block.get("products"), dict)
+            }
+    except Exception as exc:  # noqa: BLE001 — never fail a fork over this
+        log.warning("fork: could not read source run_state products: %s", exc)
+    return {}
+
+
+def _phase_block(
+    phase: str, status: str, iso_now: str, products: dict | None = None
+) -> dict:
     """One phase block in the plugin's **canonical run_state shape** (ace#673):
     a phase-level ``status`` (what the orchestrator's resume path reads off
     ``phases.<phase>.status``) PLUS a ``steps`` sub-map ``{skill: {status}}``
@@ -766,6 +823,11 @@ def _phase_block(phase: str, status: str, iso_now: str) -> dict:
     if status == "done":
         block["verdict"] = "seeded"
         block["completed_at"] = iso_now
+        # Only a copied (done) phase carries its typed handoff forward. A
+        # phase at or after the fork re-runs and must mint its own, or it
+        # would inherit products pointing at objects the re-run replaces.
+        if products:
+            block["products"] = products
     block["steps"] = {
         s.name: {"status": status}
         for s in skills_in_phase(phase)
@@ -778,6 +840,7 @@ def _build_phases_map(
     fork_ordinal: int | None,
     iso_now: str,
     run_phases: list[int] | None = None,
+    source_products: dict[str, dict] | None = None,
 ) -> dict[str, dict]:
     """Build the ``phases`` map for a forked run in the plugin's **canonical
     phase-level shape** ``phases.<phase>.{status, steps, ...}`` (ace#672/#673).
@@ -814,7 +877,9 @@ def _build_phases_map(
             status = "pending"
         else:
             status = "skipped"
-        phases_map[phase] = _phase_block(phase, status, iso_now)
+        phases_map[phase] = _phase_block(
+            phase, status, iso_now, products=(source_products or {}).get(phase),
+        )
     return phases_map
 
 
@@ -828,6 +893,7 @@ def _build_run_state_yaml(
     forked_from_run_id: str,
     now_utc: _dt.datetime,
     run_phases: list[int] | None = None,
+    source_products: dict[str, dict] | None = None,
 ) -> str:
     """Synthesize a fresh ``run_state.yaml`` per the State Schema in the
     plugin's orchestrator-reference (§ State Schema, defensive init).
@@ -844,7 +910,9 @@ def _build_run_state_yaml(
     onward is ``pending``.
     """
     iso_now = now_utc.isoformat()
-    phases_map = _build_phases_map(fork_ordinal, iso_now, run_phases=run_phases)
+    phases_map = _build_phases_map(
+        fork_ordinal, iso_now, run_phases=run_phases, source_products=source_products,
+    )
     data: dict = {
         "opportunity": opp_slug,
         "run_id": run_id,
