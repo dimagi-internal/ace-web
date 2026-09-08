@@ -1,0 +1,27 @@
+# Watch the ONE dependency whose staleness is invisible here.
+#
+# canopy-ui is first-party: canopy-web publishes it, ace-web consumes it at a
+# PINNED version, and canopy-web itself uses the workspace copy ("*") so it is
+# always current. That makes ace-web the only place a canopy-ui release can go
+# unnoticed — and it did, for seven months. ace-web sat on 0.6.1 while 0.7.0
+# shipped multiplayer fixes; the presence row showed you to yourself and a
+# teammate's co-edited draft rendered like placeholder text, on the deployed
+# site, with nothing anywhere reporting a version gap.
+#
+# Deliberately scoped to canopy-ui alone rather than the whole npm tree. A full
+# ecosystem watch on a repo with no dependency automation at all would open a
+# wall of PRs on its first run, and the reliable outcome of that is everyone
+# ignoring the lot — including the one that matters. Widen it when someone
+# actively wants the rest.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: canopy-ui
+    commit-message:
+      prefix: chore
+    labels:
+      - dependencies
