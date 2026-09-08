@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Archive, ArchiveRestore, MoreHorizontal, Trash2, Upload, X } from "lucide-react";
+import { ActiveRuns } from "@/components/ActiveRuns";
 import { toast } from "sonner";
 
 import { Button } from "canopy-ui/ui";
@@ -152,6 +153,8 @@ export default function SessionsPage() {
           </>
         </div>
       </header>
+      {/* What is running NOW, above the archive of what ran before. */}
+      <ActiveRuns workspaceSlug={workspaceSlug ?? ""} />
 
       <div className="flex items-center gap-1 border-b border-border px-6 py-2">
         {STATUS_FILTERS.map((f) => (

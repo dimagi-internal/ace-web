@@ -269,3 +269,76 @@ export async function listCanopyRunners(base: string): Promise<CanopyRunnerSumma
     capabilities: raw.capabilities as Record<string, unknown> | undefined,
   }));
 }
+
+/** One live run a runner is executing right now, from canopy's harness feed. */
+export interface ActiveRun {
+  /** A canopy Session id — openable at /w/:ws/chat/c/:id, the same live,
+   *  interactive view a chat uses. That is the whole reason this is useful:
+   *  discovery is the missing half, the viewer already exists. */
+  id: string;
+  /** The runner's own name for the work — an emdash worktree/task slug. The
+   *  only human-legible label a runner-discovered session has; these sessions
+   *  carry no title, because nobody typed one. */
+  task: string;
+  project: string;
+  /** The agent this run belongs to. Null on rows older than canopy-web #694,
+   *  and on a genuine repo checkout that is nobody's agent. */
+  agent: string | null;
+  runner_name: string | null;
+  status: string;
+  last_interacted_at: string | null;
+  /** Tail of what the run has said. Lets the list show what a run is DOING
+   *  rather than just that it exists. */
+  latest_message: string | null;
+}
+
+/**
+ * `GET /api/harness/sessions` — open sessions on live runners, across the
+ * caller's workspaces, newest first.
+ *
+ * Deliberately NOT `listCanopySessions`: that one filters to
+ * `source=ace-web` + this workspace's `origin_key`, so it shows only sessions
+ * ace-web itself created. A run started any other way — an inbound email
+ * ringing the runner, a local emdash session, a scheduled turn — never appears
+ * there. Those are exactly the runs someone wants to watch, so they need the
+ * harness feed instead.
+ *
+ * User-scoped rather than workspace-scoped on the server (`list_visible_
+ * sessions(request.user)`), so no workspace argument is threaded here.
+ */
+export async function listActiveRuns(base: string): Promise<ActiveRun[]> {
+  const rows = await canopyJson<Record<string, unknown>[]>(base, `/api/harness/sessions`);
+  return rows.map((raw) => {
+    const messages = (raw.recent_messages as { text?: string }[] | undefined) ?? [];
+    // The LAST message is the newest — the feed returns them in order, and the
+    // point of showing one is "what is it doing now".
+    const last = messages.length ? messages[messages.length - 1]?.text : undefined;
+    return {
+      id: raw.id as string,
+      task: (raw.emdash_task as string | undefined) ?? "",
+      project: (raw.project as string | undefined) ?? "",
+      agent: (raw.agent as string | null | undefined) ?? null,
+      runner_name: (raw.runner_name as string | null | undefined) ?? null,
+      status: (raw.status as string | undefined) ?? "",
+      last_interacted_at: (raw.last_interacted_at as string | null | undefined) ?? null,
+      latest_message: last ?? null,
+    };
+  });
+}
+
+/** The runs worth showing on an ACE surface: this agent's, still going.
+ *
+ *  Prefers the feed's `agent`, which canopy-web #694 made real — a reported
+ *  session is now attributed to the agent whose project names it, rather than
+ *  left null and filed under whichever machine happened to run it.
+ *
+ *  `project` stays as a fallback for rows written BEFORE that fix which the
+ *  backfill could not claim (a project matching no agent slug), and for a
+ *  deployment still running older canopy. Both are the same signal — `project`
+ *  IS the agent's repo by convention — so the fallback narrows over time
+ *  rather than competing. */
+export function aceRuns(runs: ActiveRun[], slug = "ace"): ActiveRun[] {
+  return runs.filter(
+    (r) => r.status === "in_progress" && (r.agent === slug || (!r.agent && r.project === slug)),
+  );
+}
