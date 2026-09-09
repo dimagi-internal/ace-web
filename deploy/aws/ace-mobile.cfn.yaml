@@ -69,6 +69,10 @@ Resources:
   # No ingress rules. Period. Access is via SSM Session Manager.
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
+    # Retain on import: adopting a live resource must never make a later
+    # template edit able to delete it. CloudFormation also REQUIRES a
+    # DeletionPolicy on every resource in an import.
+    DeletionPolicy: Retain
     Properties:
       GroupName: !Sub "ace-mobile-emulator-${EnvSuffix}"
       GroupDescription: "Egress-only SG for the ACE mobile emulator. SSM only - no inbound."
@@ -79,7 +83,7 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
-        - Description: "Outbound HTTPS for SSM, S3, package mirrors (IPv6)."
+        - Description: "Outbound HTTPS for SSM, S3, package mirrors."
           IpProtocol: tcp
           FromPort: 443
           ToPort: 443
@@ -95,7 +99,7 @@ Resources:
         - Key: auto-stop
           Value: "true"
         - Key: managed-by
-          Value: terraform
+          Value: cloudformation
         - Key: env
           Value: !Ref EnvSuffix
         - Key: Name
@@ -107,6 +111,10 @@ Resources:
   #    test-user secret for cold-boot registration recipes.
   InstanceRole:
     Type: AWS::IAM::Role
+    # Retain on import: adopting a live resource must never make a later
+    # template edit able to delete it. CloudFormation also REQUIRES a
+    # DeletionPolicy on every resource in an import.
+    DeletionPolicy: Retain
     Properties:
       RoleName: !Sub "ace-mobile-instance-role-${EnvSuffix}"
       Description: "EC2 instance role for the ACE mobile emulator runner."
@@ -153,12 +161,16 @@ Resources:
         - Key: auto-stop
           Value: "true"
         - Key: managed-by
-          Value: terraform
+          Value: cloudformation
         - Key: env
           Value: !Ref EnvSuffix
 
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
+    # Retain on import: adopting a live resource must never make a later
+    # template edit able to delete it. CloudFormation also REQUIRES a
+    # DeletionPolicy on every resource in an import.
+    DeletionPolicy: Retain
     Properties:
       InstanceProfileName: !Sub "ace-mobile-instance-profile-${EnvSuffix}"
       Roles:
@@ -175,6 +187,10 @@ Resources:
   # instantiate exactly one Instance from it.
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
+    # Retain on import: adopting a live resource must never make a later
+    # template edit able to delete it. CloudFormation also REQUIRES a
+    # DeletionPolicy on every resource in an import.
+    DeletionPolicy: Retain
     Properties:
       LaunchTemplateName: !Sub "ace-mobile-emulator-${EnvSuffix}"
       VersionDescription: "Mobile emulator runner - KVM-on-EC2, SSM-only access."
@@ -244,6 +260,10 @@ Resources:
 
   Instance:
     Type: AWS::EC2::Instance
+    # Retain on import: adopting a live resource must never make a later
+    # template edit able to delete it. CloudFormation also REQUIRES a
+    # DeletionPolicy on every resource in an import.
+    DeletionPolicy: Retain
     Properties:
       LaunchTemplate:
         LaunchTemplateId: !Ref LaunchTemplate
@@ -255,7 +275,7 @@ Resources:
         - Key: auto-stop
           Value: "true"
         - Key: managed-by
-          Value: terraform
+          Value: cloudformation
         - Key: env
           Value: !Ref EnvSuffix
         - Key: Name
@@ -316,7 +336,7 @@ Resources:
         - Key: auto-stop
           Value: "true"
         - Key: managed-by
-          Value: terraform
+          Value: cloudformation
         - Key: env
           Value: !Ref EnvSuffix
         - Key: Name
@@ -338,6 +358,10 @@ Resources:
   # auto-stop action — no Lambda or SNS in the loop.
   IdleStopAlarm:
     Type: AWS::CloudWatch::Alarm
+    # Retain on import: adopting a live resource must never make a later
+    # template edit able to delete it. CloudFormation also REQUIRES a
+    # DeletionPolicy on every resource in an import.
+    DeletionPolicy: Retain
     Properties:
       AlarmName: !Sub "ace-mobile-emulator-idle-stop-${EnvSuffix}"
       AlarmDescription: "Stop the ACE mobile emulator after 5 min of <5% CPU."
@@ -360,7 +384,7 @@ Resources:
         - Key: auto-stop
           Value: "true"
         - Key: managed-by
-          Value: terraform
+          Value: cloudformation
         - Key: env
           Value: !Ref EnvSuffix
 
