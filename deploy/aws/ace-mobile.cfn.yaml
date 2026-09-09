@@ -43,10 +43,12 @@ Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id
     Description: >
-      VPC that owns SubnetId below. Not a measured fact carried over from
-      Terraform (infra/mobile/main.tf resolved it dynamically from the
-      account's default VPC via a data source) — supply the parent VPC of
-      SubnetId at deploy time.
+      VPC that owns SubnetId below. Default is the account's default VPC,
+      preserving infra/mobile/main.tf's own fallback (`var.vpc_id != "" ?
+      var.vpc_id : data.aws_vpcs.default.ids[0]`) rather than inventing new
+      behavior — measured directly against the live subnet and security
+      group, both of which live in this VPC.
+    Default: vpc-0049fa5b4a672c950
   SubnetId:
     Type: AWS::EC2::Subnet::Id
     Description: >
