@@ -334,11 +334,18 @@ flow actually run (Task 3 Step 4). All present.
 at a policy is worse than reading the one that exists.
 
 **The risk I am most likely to have got wrong.** Whether CloudFormation supports importing
-every one of these resource types. I did not verify it, and there is no API that lists
-importable types. Task 2 Step 1 handles it the only honest way — attempt the import, and if
-a type is rejected, drop it and record it as unmanaged rather than working around it. The
-import change set is inspectable before execution, so the cost of being wrong is a rejected
-change set, not a damaged resource.
+every one of these resource types. Partially checked since writing this: `describe-type
+--type RESOURCE` returns a CloudFormation Registry entry for all seven
+(`AWS::EC2::Instance`, `::SecurityGroup`, `::LaunchTemplate`, `AWS::IAM::Role`,
+`::InstanceProfile`, `AWS::S3::Bucket`, `AWS::CloudWatch::Alarm`), each `FULLY_MUTABLE`.
+Registry-backed resources implement the read handler that import requires, so that is a
+strong signal — but it is a signal, not proof, and there is no API that answers
+"is this importable" directly.
+
+Task 2 Step 1 therefore still handles it the honest way: attempt the import, and if a type is
+rejected, drop it and record it as unmanaged rather than working around it. The import change
+set is inspectable before execution, so the cost of being wrong is a rejected change set, not
+a damaged resource.
 
 **What this plan does NOT do.** It does not rebuild the AMI, upgrade Android/Maestro/CommCare
 versions, or change the instance type. If Task 3 finds the tooling has rotted, that is a
