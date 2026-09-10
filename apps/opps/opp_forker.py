@@ -51,7 +51,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
@@ -924,6 +924,101 @@ def _phase_block(
     return block
 
 
+def _trim_products_by_attribution(
+    source_products: dict,
+    producers: dict[str, str],
+    *,
+    phase: str,
+    fork_ordinal: int,
+) -> tuple[dict, list[str], list[str], list[str]]:
+    """Trim a phase's ``products`` for a skill fork at DOTTED depth (ace#2354).
+
+    Returns ``(products, carried, dropped, unmapped)`` where the three lists
+    hold dotted paths at which a decision was made. Per path the rule is:
+
+    * resolve the producer (``skills.resolve_product_producer``: exact →
+      nearest attributed ancestor → trailing-``*`` prefix);
+    * producer == the phase agent → DROP (its write-back lands after every
+      skill, so no skill fork inside the phase predates it);
+    * producer is a registry skill → KEEP iff its (global) ordinal is below
+      the fork skill's, else DROP;
+    * producer unknown to the registry, or no producer at all → KEEP and list
+      as unmapped. Carrying costs the re-run an overwrite; dropping could lose
+      a handoff a downstream phase reads (the ace#1888 asymmetry).
+
+    The walk descends only where the map has something to say below the
+    current path: a block with no entry of its own but attributed children
+    (``synthetic``) is rebuilt from its children's decisions, and a KEPT block
+    with a deeper override (``solicitation`` → create, ``solicitation.awarded``
+    → review) has just the overridden subtree re-decided. A dropped block
+    takes its whole subtree with it. Ordering is preserved.
+    """
+    from apps.opps.skills import _match_product_entry, get_skill
+
+    carried: list[str] = []
+    dropped: list[str] = []
+    unmapped: list[str] = []
+
+    def keep_decision(owner: str) -> bool | None:
+        if owner == phase:
+            return False
+        try:
+            return get_skill(owner).ordinal < fork_ordinal
+        except KeyError:
+            return None
+
+    def has_deeper_entries(path: str) -> bool:
+        prefix = path + "."
+        return any(k.startswith(prefix) for k in producers)
+
+    def visit(value: Any, path: str) -> tuple[bool, Any]:
+        depth = path.count(".") + 1
+        match = _match_product_entry(producers, path)
+        if match is None:
+            if isinstance(value, dict) and has_deeper_entries(path):
+                out: dict = {}
+                for k, v in value.items():
+                    kept, nv = visit(v, f"{path}.{k}")
+                    if kept:
+                        out[k] = nv
+                return bool(out), out
+            carried.append(path)
+            unmapped.append(path)
+            return True, value
+        owner, _entry_depth = match
+        decision = keep_decision(owner)
+        if decision is None:
+            carried.append(path)
+            unmapped.append(path)
+            return True, value
+        if decision is False:
+            dropped.append(path)
+            return False, None
+        if isinstance(value, dict) and has_deeper_entries(path):
+            out = {}
+            for k, v in value.items():
+                child = f"{path}.{k}"
+                child_match = _match_product_entry(producers, child)
+                own_entry = child_match is not None and child_match[1] == depth + 1
+                if own_entry or has_deeper_entries(child):
+                    kept, nv = visit(v, child)
+                    if kept:
+                        out[k] = nv
+                else:
+                    out[k] = v
+            carried.append(path)
+            return True, out
+        carried.append(path)
+        return True, value
+
+    products: dict = {}
+    for key, value in source_products.items():
+        kept, nv = visit(value, str(key))
+        if kept:
+            products[key] = nv
+    return products, carried, dropped, unmapped
+
+
 def _skill_fork_phase_block(
     point: ForkPoint,
     source_block: dict | None,
@@ -959,11 +1054,20 @@ def _skill_fork_phase_block(
       because carrying it could skip work that must be redone, while
       dropping it only costs a re-run.
     * ``products``: carried by attribution when the plugin declares product
-      producers for the phase (``skills.product_producers``) — keys owned by
-      a lower-ordinal skill kept, keys owned by the fork skill or later
-      dropped, keys the map does not cover KEPT. It declares none today, so
-      the whole block is carried and the note says UNATTRIBUTED. Never
-      dropped silently, never guessed.
+      producers for the phase (``skills.product_producers``, read from the
+      plugin's ``docs/phase-products-schema.json`` — ace#2354). The map is
+      DOTTED (``synthetic.source``) with a trailing-``*`` prefix wildcard
+      (``synthetic.ddd_*``), and the trim walks INTO a block whose children
+      are attributed: a key owned by a lower-ordinal skill is kept, one owned
+      by the fork skill, a later skill, or the phase agent itself (its
+      write-back lands after every skill) is dropped, and one the map does
+      not cover — or whose producer the registry cannot place — is KEPT and
+      named. So a Phase 7 fork at ``demo-narrative`` carries
+      ``synthetic.source`` / ``.labs_opp_id`` / ``.workflows`` / ``.provider``
+      / ``.render_code_patched_this_run`` and drops ``synthetic.narrative``
+      and every ``synthetic.ddd_*``. See :func:`_trim_products_by_attribution`.
+      With no map (a plugin predating #2354) the whole block is carried and
+      the note says UNATTRIBUTED. Never dropped silently, never guessed.
     * ``status``: ``in_progress`` once anything is carried — a phase with
       some steps done is neither ``pending`` nor ``done`` — and ``pending``
       when nothing is (a fork at a phase's first skill, or no source state).
@@ -1014,6 +1118,7 @@ def _skill_fork_phase_block(
     source_products = source_products if isinstance(source_products, dict) else {}
     producers = product_producers(point.phase)
     products: dict = {}
+    carried_keys: list[str] = []
     dropped_keys: list[str] = []
     unmapped_keys: list[str] = []
     if producers is None:
@@ -1023,19 +1128,13 @@ def _skill_fork_phase_block(
         # with a handoff it is about to replace.
         if carried_steps:
             products = dict(source_products)
+            carried_keys = list(products)
         else:
             dropped_keys = list(source_products)
     else:
-        for key, value in source_products.items():
-            owner = producers.get(key)
-            owner_ordinal = skill_ordinal_for_step(owner, point.phase) if owner else None
-            if owner_ordinal is None:
-                products[key] = value
-                unmapped_keys.append(key)
-            elif owner_ordinal < fork_ordinal:
-                products[key] = value
-            else:
-                dropped_keys.append(key)
+        products, carried_keys, dropped_keys, unmapped_keys = _trim_products_by_attribution(
+            source_products, producers, phase=point.phase, fork_ordinal=fork_ordinal
+        )
 
     status = "in_progress" if carried_steps else "pending"
 
@@ -1073,10 +1172,11 @@ def _skill_fork_phase_block(
             )
         elif producers is not None:
             parts.append(
-                f"; carried products keys {sorted(products)} by attribution"
+                f"; carried products keys {sorted(carried_keys)} by attribution"
                 + (f", dropped {sorted(dropped_keys)}" if dropped_keys else "")
                 + (
-                    f", kept unmapped keys {sorted(unmapped_keys)}"
+                    f", kept unmapped keys {sorted(unmapped_keys)} (no producer the "
+                    "registry can place; the re-run overwrites them)"
                     if unmapped_keys
                     else ""
                 )
@@ -1095,7 +1195,7 @@ def _skill_fork_phase_block(
         steps_carried=tuple(carried_steps),
         steps_reset=tuple(reset_steps),
         steps_dropped=tuple(dropped_steps),
-        products_keys_carried=tuple(products),
+        products_keys_carried=tuple(carried_keys),
         products_keys_dropped=tuple(dropped_keys),
         products_attributed=producers is not None,
         source_state_read=source_state_read,
