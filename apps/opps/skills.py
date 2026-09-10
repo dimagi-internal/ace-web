@@ -10,9 +10,11 @@ Cached per process. Tests that swap ``ACE_PLUGIN_PATH`` must call
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from django.conf import settings
@@ -112,6 +114,7 @@ def reset_cache() -> None:
     is built from ``load_system_overview`` and tests that swap the plugin
     path expect every downstream cache to follow."""
     _load_registry.cache_clear()
+    _load_product_producers_doc.cache_clear()
     from apps.system.reader import clear_caches as _clear_reader_caches  # noqa: PLC0415
 
     _clear_reader_caches()
@@ -304,27 +307,105 @@ def skill_ordinal_for_step(step_name: str, phase: str) -> int | None:
     return None
 
 
-def product_producers(phase: str) -> dict[str, str] | None:  # noqa: ARG001
-    """Map top-level ``phases.<phase>.products.<key>`` → producing skill, or
-    None when the plugin declares no such attribution for ``phase``.
+@lru_cache(maxsize=1)
+def _load_product_producers_doc() -> dict[str, dict[str, str] | None]:
+    """``phase → productProducers`` from the plugin's generated
+    ``docs/phase-products-schema.json`` (ace#2354), keyed for every phase the
+    JSON lists; ``None`` for a phase whose entry is ``null``.
 
-    Today this is None for EVERY phase, and that is a finding, not a stub.
-    The plugin has two candidate sources and neither attributes products:
-
-    * ``lib/artifact-manifest.ts`` — ``producedBy`` attributes FILES (that is
-      what :func:`artifact_producers` reads). No product key appears in it.
-    * ``lib/phase-products-schema.ts`` — types each phase's ``products``
-      block (``SyntheticProducts`` etc.) and names no producer at all.
-
-    Worse, the canonical case cannot be split at the top-level key even in
-    principle: ``products.synthetic`` is ONE block written by three parties —
-    ``demo-data-setup`` (``.source``, ``.labs_opp_id``, ``.workflows``),
-    ``demo-narrative`` (``.narrative``) and the Phase-7 agent (``ddd_*``).
-
-    So a skill fork carries the whole ``products`` block and records that it
-    did so unattributed (ace#2341). This function is the seam: when the
-    plugin grows a ``producedBy`` per product key, return it here and the
-    forker's attributed path (already tested) takes over — nothing else in
-    ace-web needs to change.
+    Empty when the file is absent or unreadable — the shape of a plugin
+    predating the attribution — so :func:`product_producers` answers ``None``
+    and the forker keeps its carry-all fallback. Logged at INFO, not WARNING:
+    an old plugin is a legitimate state, not a misconfiguration.
     """
-    return None
+    plugin_path = getattr(settings, "ACE_PLUGIN_PATH", "") or ""
+    path = Path(plugin_path) / "docs" / "phase-products-schema.json"
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        log.info(
+            "No product-key attribution at %s (%s); skill forks carry products whole", path, exc
+        )
+        return {}
+    phases = doc.get("phases") if isinstance(doc, dict) else None
+    out: dict[str, dict[str, str] | None] = {}
+    for name, block in (phases or {}).items():
+        producers = block.get("productProducers") if isinstance(block, dict) else None
+        out[str(name)] = (
+            {str(k): str(v) for k, v in producers.items()} if isinstance(producers, dict) else None
+        )
+    return out
+
+
+def product_producers(phase: str) -> dict[str, str] | None:
+    """Map DOTTED ``phases.<phase>.products.<path>`` → producing skill, or
+    None when the plugin declares no attribution for ``phase``.
+
+    Read from the plugin's ``docs/phase-products-schema.json``
+    (``phases.<phase>.productProducers``, generated from
+    ``PRODUCT_PRODUCERS`` in ``lib/phase-products-schema.ts`` — ace#2354).
+    Keys are dotted paths relative to ``products`` (``synthetic.source``,
+    ``training.docs.faq``); values are the producing skill's name, or the
+    phase agent's name for a key the agent writes in its own write-back
+    (``synthetic.ddd_*`` → ``synthetic-data-and-workflows``). A trailing
+    ``*`` on the LAST segment is a key-segment prefix. Resolve a run's key
+    against the map with :func:`resolve_product_producer`.
+
+    ``None`` — never ``{}`` — for a phase the plugin attributes nothing for:
+    a ``null`` entry, a phase the JSON does not list, or a plugin old enough
+    to ship no JSON. ``opp_forker._skill_fork_phase_block`` reads ``None`` as
+    "carry the block whole and say UNATTRIBUTED", so an older plugin degrades
+    to the pre-#2354 behaviour rather than dropping anything.
+
+    Returns a fresh dict each call; the cached document is never handed out.
+    """
+    producers = _load_product_producers_doc().get(phase)
+    return dict(producers) if producers is not None else None
+
+
+def _match_product_entry(producers: dict[str, str], dotted: str) -> tuple[str, int] | None:
+    """The best-matching map entry for ``dotted``: ``(producer, entry_depth)``,
+    or None. Mirrors ``productProducer`` in the plugin's
+    ``lib/phase-products-schema.ts``: an entry matches when each of its
+    segments equals the key's segment at that position, except that a
+    trailing ``*`` on the entry's LAST segment matches a key segment with
+    that prefix. Deeper entries win; an exact entry beats a wildcard at the
+    same depth.
+    """
+    if not dotted:
+        return None
+    key_segs = dotted.split(".")
+    best: tuple[str, int, bool] | None = None  # (producer, depth, exact)
+    for entry, producer in producers.items():
+        entry_segs = entry.split(".")
+        if len(entry_segs) > len(key_segs):
+            continue
+        exact = True
+        matched = True
+        for i, e in enumerate(entry_segs):
+            k = key_segs[i]
+            if e == k:
+                continue
+            is_last = i == len(entry_segs) - 1
+            if is_last and e.endswith("*") and k.startswith(e[:-1]):
+                exact = False
+                continue
+            matched = False
+            break
+        if not matched:
+            continue
+        depth = len(entry_segs)
+        if best is None or depth > best[1] or (depth == best[1] and exact and not best[2]):
+            best = (producer, depth, exact)
+    return (best[0], best[1]) if best else None
+
+
+def resolve_product_producer(producers: dict[str, str], dotted: str) -> str | None:
+    """The skill that wrote ``products.<dotted>`` per ``producers``, or None
+    when nothing in the map covers it (exact match, else the nearest
+    attributed ancestor, with trailing-``*`` prefix wildcards). A None here
+    means UNMAPPED — the caller must carry the key and say so, never drop it
+    silently.
+    """
+    match = _match_product_entry(producers, dotted)
+    return match[0] if match else None

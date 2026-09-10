@@ -231,9 +231,12 @@ class ForkCarriedOut(StrictModel):
     (ace#2341). Mirrors ``apps.opps.opp_forker.ForkCarried``; the same
     payload is written to the fork's system audit turn.
 
-    ``products_attributed`` is False while the plugin declares no
-    product-key → skill map (it declares none today), in which case the whole
-    ``products`` block was carried and ``note`` says so.
+    ``products_attributed`` is True when the plugin declared a product-key →
+    skill map for the phase (``docs/phase-products-schema.json``, ace#2354);
+    then ``products_keys_carried`` / ``products_keys_dropped`` are DOTTED
+    paths (``synthetic.source``). It is False against a plugin predating the
+    attribution, in which case the whole ``products`` block was carried and
+    ``note`` says UNATTRIBUTED.
     """
 
     phase: str
