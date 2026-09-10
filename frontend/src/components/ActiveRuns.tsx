@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -39,6 +39,10 @@ export function ActiveRuns({ workspaceSlug }: { workspaceSlug: string }) {
   const [turns, setTurns] = useState<ActiveTurn[]>([]);
   const [watching, setWatching] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  // The poll closure below outlives any single `watching` value, so it reads the
+  // open turn through a ref (ace-web#757).
+  const watchingRef = useRef<string | null>(null);
+  watchingRef.current = watching;
 
   useEffect(() => {
     if (!enabled) return;
@@ -51,8 +55,12 @@ export function ActiveRuns({ workspaceSlug }: { workspaceSlug: string }) {
         .then(([s, t]) => {
           if (cancelled) return;
           const sessions = s.status === "fulfilled" ? aceRuns(s.value) : [];
+          // `watchingRef`, not `watching`: this closure is created once per
+          // [base, enabled] and would otherwise capture the value of `watching`
+          // at mount (null), pinning nothing. The ref is read at poll time.
           const turns = t.status === "fulfilled"
-            ? liveTurns(t.value, sessions.map((r) => r.id))
+            ? liveTurns(t.value, sessions.map((r) => r.id),
+                        watchingRef.current ? [watchingRef.current] : [])
             : [];
           setRuns(sessions);
           setTurns(turns);

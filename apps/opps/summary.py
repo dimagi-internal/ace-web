@@ -505,6 +505,47 @@ def _read_build(state: dict, phase_key: str) -> dict | None:
     }
 
 
+def _read_carried_residuals(state: dict) -> list[str] | None:
+    """Run-level residuals the run itself says still need a human (ace-web#744).
+
+    ``blocker_dispositions`` (read per-phase above) covers a blocker the operator
+    explicitly waved through. This is its RUN-level sibling:
+    ``run_notes.carried_residuals_needing_a_human`` — a list of reviewer-facing
+    prose the run wrote about what it did NOT prove.
+
+    Why it belongs on the public page rather than in the internal record only:
+    on ``bednet-check-2-visit/20260828-0629`` the run finished phases 1-8 carrying
+
+        PAYMENT GATE UNPROVEN END-TO-END … the single most important server-side
+        control in this programme is configured but never exercised.
+
+    and the summary page rendered **identically to a clean run**. A reader could
+    not tell the difference, which is the failure mode this whole section exists
+    to prevent: a partial run that reads as a finished one.
+
+    Phase-scoped, deliberately not: a residual is written when it CARRIES past the
+    phase that found it, so pinning it to one phase would file it under a stage the
+    reader has already scrolled past.
+
+    Degrades to ``None`` — and so to rendering nothing at all — on every run
+    without the key, which is every run before it was introduced. Entries are
+    whitespace-collapsed because the source is wrapped YAML prose; non-string and
+    empty entries are dropped rather than rendered as blanks.
+    """
+    notes = state.get("run_notes")
+    if not isinstance(notes, dict):
+        return None
+    raw = notes.get("carried_residuals_needing_a_human")
+    if not isinstance(raw, list):
+        return None
+    out = [
+        " ".join(str(item).split())
+        for item in raw
+        if isinstance(item, str) and item.strip()
+    ]
+    return out or None
+
+
 def _connect_domain(state: dict) -> str | None:
     """Extract the HQ domain from connect-setup products.
 
@@ -2436,6 +2477,11 @@ def build_summary_payload(
             drive, opp_folder.id, run_folder.id, access=access,
         ),
         "stage": _read_stage(state),
+        # What the run itself says is still unproven and needs a human
+        # (ace-web#744). Null on a run that carried nothing, so a clean run
+        # renders exactly as before — but a partial one can no longer read
+        # as finished.
+        "carried_residuals": _read_carried_residuals(state),
         "feedback": _read_feedback(
             drive, opp_folder.id, viewer_is_member=viewer_is_member, access=access,
         ),

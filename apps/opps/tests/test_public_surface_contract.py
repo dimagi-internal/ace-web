@@ -159,6 +159,21 @@ def _maximal_state_yaml() -> str:
             ),
         },
     }
+    # The RUN-level sibling of `blocker_dispositions` (ace-web#744). Verbatim
+    # from `bednet-check-2-visit/20260828-0629`, which is the run this exists
+    # for: it finished phases 1-8 carrying this, and the summary page rendered
+    # identically to a clean run. Wrapped exactly as the source YAML wraps it,
+    # so the reader's whitespace-collapsing is actually exercised.
+    state["run_notes"] = {
+        "carried_residuals_needing_a_human": [
+            "PAYMENT GATE UNPROVEN END-TO-END. Phase 4 configured the\n"
+            "form_field_rules row (consent_confirmed = yes on DU 6806) and\n"
+            "deferred its verification to Phase 6 showing delivered >= 1.\n"
+            "Phase 6's Deliver leg never ran (ace#1821), so the single most\n"
+            "important server-side control in this programme is configured\n"
+            "but never exercised. Carries into Phase 8/9.",
+        ],
+    }
     return _yaml.dump(state)
 
 
@@ -583,6 +598,14 @@ PUBLIC_PAYLOAD_KEYS = frozenset({
     "learnings",
     "open_questions",
     "stage",
+    # What the run itself says is still unproven and needs a human, read
+    # from `run_notes.carried_residuals_needing_a_human` (ace-web#744). The
+    # run-level sibling of `build`'s per-phase `carried_blockers`: on
+    # `bednet-check-2-visit/20260828-0629` a run carrying "PAYMENT GATE
+    # UNPROVEN END-TO-END" rendered identically to a clean one. `null` when
+    # the run carried nothing — the auditor must read absence as "nothing
+    # outstanding", not as a missing section.
+    "carried_residuals",
     "feedback",
     "decisions",
     "reactions",

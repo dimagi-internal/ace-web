@@ -384,11 +384,29 @@ export async function listActiveTurns(base: string, agent = "ace"): Promise<Acti
  *  A chat turn on a laptop drives a Session that the sessions feed ALSO lists;
  *  showing both would double every laptop run. A turn whose `session_id` names
  *  a listed session is therefore dropped — the session row is the better
- *  surface for it, because it opens into the full chat view. */
-export function liveTurns(turns: ActiveTurn[], sessionIds: readonly string[] = []): ActiveTurn[] {
+ *  surface for it, because it opens into the full chat view.
+ *
+ *  `keepIds` pins turns that must survive the status filter regardless of how
+ *  they ended (ace-web#757). The caller passes the turn the reader currently has
+ *  OPEN: `ActiveRuns` renders `TurnWatch` *inside* the row, and this list is
+ *  replaced wholesale every 15s, so without the pin a turn that finishes while
+ *  someone is reading it takes the output off their screen mid-sentence — and
+ *  nothing else in ace-web links to a finished turn, so it cannot be reopened.
+ *  Pinning only what is open is deliberate: closing it drops the row on the next
+ *  tick, which is the reader's own choice rather than a poll's. The session-dedupe
+ *  above still wins over a pin — a turn whose session is listed belongs on the
+ *  session row, which does not vanish. */
+export function liveTurns(
+  turns: ActiveTurn[],
+  sessionIds: readonly string[] = [],
+  keepIds: readonly string[] = [],
+): ActiveTurn[] {
   const seen = new Set(sessionIds);
+  const keep = new Set(keepIds);
   return turns.filter(
-    (t) => (t.status === "running" || t.status === "queued") && !seen.has(t.session_id),
+    (t) =>
+      (t.status === "running" || t.status === "queued" || keep.has(t.id)) &&
+      !seen.has(t.session_id),
   );
 }
 

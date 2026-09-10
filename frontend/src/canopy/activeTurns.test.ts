@@ -86,6 +86,44 @@ describe("liveTurns", () => {
     // turn too would lose the run from both halves at once.
     expect(liveTurns([turn({ session_id: "not-in-the-list" })], ["other"])).toHaveLength(1);
   });
+
+  // ace-web#757 — the row is replaced wholesale every 15s and TurnWatch renders
+  // INSIDE it, so a turn finishing while someone reads it used to take the output
+  // off the screen. Nothing else in ace-web links to a finished turn, so it could
+  // not be reopened either.
+  it("KEEPS a finished turn while it is the one being watched — THE #757 regression", () => {
+    const t = turn({ status: "done" });
+    expect(liveTurns([t], [], [t.id])).toHaveLength(1);
+  });
+
+  it("keeps a watched turn whatever status it ended on", () => {
+    for (const status of ["done", "failed", "cancelled", "error"]) {
+      const t = turn({ status });
+      expect(liveTurns([t], [], [t.id]), status).toHaveLength(1);
+    }
+  });
+
+  it("still drops a finished turn nobody is watching", () => {
+    // The pin must be scoped to the open row, not a blanket 'keep everything'.
+    const watched = turn({ status: "done" });
+    const other = turn({ status: "done", id: "11111111-2222-3333-4444-555555555555" });
+    const kept = liveTurns([watched, other], [], [watched.id]);
+    expect(kept).toHaveLength(1);
+    expect(kept[0].id).toBe(watched.id);
+  });
+
+  it("drops a watched turn once it is no longer watched — closing it is the reader's call", () => {
+    const t = turn({ status: "done" });
+    expect(liveTurns([t], [], [])).toHaveLength(0);
+  });
+
+  it("session-dedupe still beats the pin: that turn belongs on the session row", () => {
+    // A session row does not vanish, so pinning here would double the run rather
+    // than rescue it.
+    const sid = "809d4900-6fd7-48c8-b370-50594badd489";
+    const t = turn({ status: "done", session_id: sid });
+    expect(liveTurns([t], [sid], [t.id])).toHaveLength(0);
+  });
 });
 
 describe("listTurnEvents", () => {
