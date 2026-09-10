@@ -1345,6 +1345,7 @@ def fork_opp_and_return(workspace, user, slug: str, body: OppForkIn) -> dict:
         "slug": result.opp_slug,
         "run_id": result.new_run_id,
         "working_session_slug": result.working_session.slug,
+        "carried": carried.as_dict() if (carried := getattr(result, "carried", None)) else None,
     }
 
 

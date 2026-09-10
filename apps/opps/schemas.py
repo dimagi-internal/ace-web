@@ -226,10 +226,35 @@ class OppForkIn(StrictModel):
         return self
 
 
+class ForkCarriedOut(StrictModel):
+    """What a SKILL fork carried out of the fork phase's source state
+    (ace#2341). Mirrors ``apps.opps.opp_forker.ForkCarried``; the same
+    payload is written to the fork's system audit turn.
+
+    ``products_attributed`` is False while the plugin declares no
+    product-key → skill map (it declares none today), in which case the whole
+    ``products`` block was carried and ``note`` says so.
+    """
+
+    phase: str
+    fork_skill: str
+    status: Literal["pending", "in_progress"]
+    steps_carried: list[str]
+    steps_reset: list[str]
+    steps_dropped: list[str]
+    products_keys_carried: list[str]
+    products_keys_dropped: list[str]
+    products_attributed: bool
+    source_state_read: bool
+    note: str
+
+
 class OppForkOut(StrictModel):
     slug: str
     run_id: RunId
     working_session_slug: str
+    #: Set on a skill fork only; a phase fork carries no phase state.
+    carried: ForkCarriedOut | None = None
 
 
 class DecisionOverridesSaveIn(StrictModel):

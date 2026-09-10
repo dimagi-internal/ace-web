@@ -2688,3 +2688,34 @@ def test_edits_and_comments_share_one_per_ip_budget(client, reaction_workspace):
     for i in range(PUBLIC_WRITE_BURST_LIMIT):
         assert _edit(client, value=f"{i} days").status_code == 200
     assert _react(client).status_code == 429
+
+
+@pytest.mark.django_db
+def test_fork_opp_echoes_what_a_skill_fork_carried(member_client, monkeypatch):
+    """ace#2341: the response records the kept/reset/dropped phase state."""
+    carried = {
+        "phase": "commcare-setup",
+        "fork_skill": "app-deploy",
+        "status": "in_progress",
+        "steps_carried": ["pdd-to-learn-app"],
+        "steps_reset": ["app-deploy"],
+        "steps_dropped": [],
+        "products_keys_carried": ["apps"],
+        "products_keys_dropped": [],
+        "products_attributed": False,
+        "source_state_read": True,
+        "note": "skill fork at `app-deploy`: carried steps ['pdd-to-learn-app'] verbatim",
+    }
+    client, _, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api.fork_opp_and_return",
+        lambda workspace, user, slug, body: {**_FAKE_FORK_RESULT, "carried": carried},
+    )
+    response = client.post(
+        "/api/w/ws1/opps/opp-1/fork",
+        data={"fork_at_skill": "app-deploy"},
+        content_type="application/json",
+    )
+    assert response.status_code == 201
+    OppForkOut.model_validate(response.json())
+    assert response.json()["carried"] == carried
