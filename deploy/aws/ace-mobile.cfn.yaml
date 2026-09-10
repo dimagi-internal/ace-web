@@ -65,6 +65,13 @@ Parameters:
     AllowedPattern: "^[a-z0-9-]+$"
     ConstraintDescription: must be lowercase letters, digits, or hyphens.
 
+  TaskRoleName:
+    Type: String
+    Default: labs-jj-ecs-task-role
+    Description: >-
+      ace-web's ECS task role. This stack does NOT own it; it only attaches the
+      emulator add-on policy below to it.
+
 Resources:
   # No ingress rules. Period. Access is via SSM Session Manager.
   SecurityGroup:
@@ -387,6 +394,61 @@ Resources:
           Value: cloudformation
         - Key: env
           Value: !Ref EnvSuffix
+
+  # Grants ace-web's ECS TASK role (a role this stack does not own) permission
+  # to drive the emulator: start/stop it, send SSM commands, read artifacts.
+  # It lives here rather than with ace-web because everything it references is
+  # in this stack — the instance and the artifacts bucket — and because the
+  # alternative was leaving a live, attached policy defined nowhere at all once
+  # infra/mobile/ was deleted.
+  #
+  # Every EC2 and SSM statement is scoped by the owner tag rather than by
+  # instance id, so it cannot reach anything but the emulator. Describe* and the
+  # SSM read actions cannot take resource conditions and are read-only.
+  TaskAddonPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ManagedPolicyName: !Sub "ace-mobile-task-addon-${EnvSuffix}"
+      Description: "Add-on permissions for the ace-web ECS task to drive the mobile emulator runner."
+      Roles:
+        - !Ref TaskRoleName
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EC2LifecycleScopedByOwnerTag
+            Effect: Allow
+            Action: [ec2:StartInstances, ec2:StopInstances]
+            Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+            Condition:
+              StringEquals: { "aws:ResourceTag/owner": "ace-web-mobile-poc" }
+          - Sid: EC2DescribeNoTagFilter
+            Effect: Allow
+            Action: [ec2:DescribeInstances, ec2:DescribeInstanceStatus]
+            Resource: "*"
+          - Sid: SSMSendCommandScopedByOwnerTag
+            Effect: Allow
+            Action: [ssm:SendCommand]
+            Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+            Condition:
+              StringEquals: { "aws:ResourceTag/owner": "ace-web-mobile-poc" }
+          - Sid: SSMSendCommandDocuments
+            Effect: Allow
+            Action: [ssm:SendCommand]
+            Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript"
+          - Sid: SSMReadCommandResults
+            Effect: Allow
+            Action: [ssm:GetCommandInvocation, ssm:ListCommandInvocations, ssm:ListCommands]
+            Resource: "*"
+          - Sid: S3ReadArtifacts
+            Effect: Allow
+            Action: [s3:ListBucket, s3:GetBucketLocation]
+            Resource: !GetAtt ArtifactsBucket.Arn
+          - Sid: S3GetObjectArtifacts
+            Effect: Allow
+            Action: [s3:GetObject]
+            Resource: !Sub "${ArtifactsBucket.Arn}/*"
 
 Outputs:
   InstanceId:
