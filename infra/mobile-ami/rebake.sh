@@ -20,21 +20,24 @@
 #  10.  Trigger the deploy workflow (no migrations) so ace-web picks
 #       up the new env vars.
 #
-# WHY THIS EXISTS (and why it bypasses terraform):
+# WHY THIS EXISTS (and why it does not go through CloudFormation):
 #
-# infra/mobile/ ships terraform definitions for these resources, but the
-# state file has only ever lived on individual operator laptops and was
-# functionally lost between machines (no S3 backend configured, no state
-# checked in, none recoverable when the cloud-emulator review surfaced
-# this in May 2026). Continuing to pretend terraform is the source of
-# truth here is a footgun — apply-from-nothing would try to recreate
-# the EC2 instance and the launch template, which already exist and are
-# tagged `managed-by:terraform`. AWS CLI direct keeps the existing
-# resources, threads through cleanly, and is the actual workflow the
-# team has been doing by hand. If you ever need terraform back, the
-# import path is `aws_launch_template.mobile` + `aws_instance.mobile`
-# against the real IDs — but until then, this script is the
-# repeatable form.
+# These resources are DEFINED in the `ace-mobile` CloudFormation stack
+# (deploy/aws/ace-mobile.cfn.yaml). The infra/mobile/ terraform that
+# originally created them was deleted 2026-09-09: its state had only ever
+# lived on individual operator laptops and was functionally lost between
+# machines (no S3 backend configured, no state checked in, none recoverable
+# when the cloud-emulator review surfaced this in May 2026). CloudFormation
+# keeps its state in AWS, so that particular failure mode is gone — the
+# resources were adopted by `resource import`, which changed nothing about
+# them.
+#
+# This script still rolls the AMI AWS-CLI-direct, and that remains right: a
+# rebake replaces the image and rolls the instance, which through a stack
+# update would be slower for no benefit. The stack is the source of truth for
+# what these resources ARE; this script is the operational path for changing
+# the image they run. After a rebake, update the stack's AmiId parameter so
+# the two agree, or the next drift check will say so.
 #
 # Usage:
 #

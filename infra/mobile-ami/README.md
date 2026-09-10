@@ -23,13 +23,16 @@ The AMI is consumed by the `ace-mobile-emulator-labs` launch template in
 AWS. Use `./rebake.sh` (in this directory) to bake + roll the new AMI
 into the running EC2 instance in one step — see the Rebake runbook below.
 
-> **Note on the `infra/mobile/` Terraform stack:** the .tf files in
-> the sibling directory created the original resources (launch template,
-> EC2 instance, IAM, S3 bucket, CloudWatch) but the state file has never
-> been on a shared backend and is functionally lost. Day-to-day rolls
-> are AWS-CLI-direct via `rebake.sh`. If you ever need to recreate the
-> stack, `terraform import` the existing resources first; don't apply
-> from an empty state.
+> **Note on where these resources are defined:** they live in the
+> `ace-mobile` CloudFormation stack (`deploy/aws/ace-mobile.cfn.yaml`) —
+> launch template, EC2 instance, IAM, S3 bucket, CloudWatch alarm, and the
+> ace-web task add-on policy. The `infra/mobile/` Terraform that originally
+> created them was deleted on 2026-09-09: its state had never been on a shared
+> backend and was functionally lost, exactly as this note used to warn. The
+> resources were adopted into CloudFormation by `resource import`, which keeps
+> its state in AWS where there is nothing to lose. Day-to-day rolls are still
+> AWS-CLI-direct via `rebake.sh`; the stack is the source of truth for the
+> resources' definitions.
 
 ---
 
