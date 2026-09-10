@@ -258,3 +258,73 @@ def skill_ordinal_for_artifact(basename: str) -> int | None:
         return get_skill(producer).ordinal
     except KeyError:
         return None
+
+
+# The plugin's documented companion suffixes (skills/README.md § QA vs Eval —
+# "every producer skill has either a `-qa` companion skill OR an inline QA
+# step", same for `-eval`). A companion is a sibling of its producer, so for
+# ordering purposes it takes the producer's ordinal. Checked longest-first so
+# a hypothetical `-qa-eval` resolves through `-eval`.
+_STEP_COMPANION_SUFFIXES = ("-eval", "-qa")
+
+
+def skill_ordinal_for_step(step_name: str, phase: str) -> int | None:
+    """Ordinal of the skill a ``phases.<phase>.steps.<step_name>`` entry
+    belongs to, or None when the registry cannot place it in ``phase``.
+
+    Resolution order:
+
+    1. ``step_name`` IS a registry skill in ``phase`` → its ordinal.
+    2. ``step_name`` is ``<producer>-qa`` / ``<producer>-eval`` for a registry
+       skill in ``phase`` → the producer's ordinal (the plugin's documented
+       companion convention; companions are not Workbench rows so they are
+       not in the registry themselves).
+    3. Otherwise None.
+
+    A skill that exists in the registry but under a DIFFERENT phase is None
+    here on purpose: a step recorded under the wrong phase block is not
+    something the forker should reason about.
+
+    Unlike :func:`skill_ordinal_for_artifact`, callers must DROP a step they
+    cannot place — see ``opp_forker._skill_fork_phase_block`` for why the
+    safe direction flips between files and state.
+    """
+    candidates = [step_name] + [
+        step_name[: -len(sfx)]
+        for sfx in _STEP_COMPANION_SUFFIXES
+        if step_name.endswith(sfx) and len(step_name) > len(sfx)
+    ]
+    for name in candidates:
+        try:
+            skill = get_skill(name)
+        except KeyError:
+            continue
+        if skill.phase == phase:
+            return skill.ordinal
+    return None
+
+
+def product_producers(phase: str) -> dict[str, str] | None:  # noqa: ARG001
+    """Map top-level ``phases.<phase>.products.<key>`` → producing skill, or
+    None when the plugin declares no such attribution for ``phase``.
+
+    Today this is None for EVERY phase, and that is a finding, not a stub.
+    The plugin has two candidate sources and neither attributes products:
+
+    * ``lib/artifact-manifest.ts`` — ``producedBy`` attributes FILES (that is
+      what :func:`artifact_producers` reads). No product key appears in it.
+    * ``lib/phase-products-schema.ts`` — types each phase's ``products``
+      block (``SyntheticProducts`` etc.) and names no producer at all.
+
+    Worse, the canonical case cannot be split at the top-level key even in
+    principle: ``products.synthetic`` is ONE block written by three parties —
+    ``demo-data-setup`` (``.source``, ``.labs_opp_id``, ``.workflows``),
+    ``demo-narrative`` (``.narrative``) and the Phase-7 agent (``ddd_*``).
+
+    So a skill fork carries the whole ``products`` block and records that it
+    did so unattributed (ace#2341). This function is the seam: when the
+    plugin grows a ``producedBy`` per product key, return it here and the
+    forker's attributed path (already tested) takes over — nothing else in
+    ace-web needs to change.
+    """
+    return None

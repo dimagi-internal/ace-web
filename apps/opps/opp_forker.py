@@ -32,7 +32,12 @@ artifacts. See ace-web#734.
   ``last_actor_at``, and a ``phases`` map seeded ``done`` for kept
   phases and ``pending`` for everything from ``fork_at_phase`` onward.
   Written FIRST, ahead of every copy — it depends on nothing the copy
-  produces.
+  produces. Two things ARE carried out of the source run's own
+  ``run_state.yaml`` rather than synthesized: each kept phase's
+  ``products`` handoff (ace#1888), and — on a SKILL fork — the fork
+  phase's earlier ``steps`` and its ``products``, so the artifacts the
+  partial copy keeps are not orphaned by a state that says ``pending``
+  (ace#2341; see ``_skill_fork_phase_block``).
 
 Drive cost: O(N) calls where N is the number of files we end up
 copying — proportional to the *kept* phase count, not the source's
@@ -133,12 +138,51 @@ class ForkOppError(Exception):
         self.code = code
 
 
+@dataclass(frozen=True)
+class ForkCarried:
+    """What a SKILL fork carried out of the fork phase's source state.
+
+    Returned on :class:`ForkOppResult`, echoed in the fork endpoint's
+    response (``OppForkOut.carried``) and written into the fork's system
+    audit turn, so an operator can see which steps were kept, which reset,
+    and whether ``products`` came across attributed or whole (ace#2341).
+    """
+
+    phase: str
+    fork_skill: str
+    status: str                             # the phase status written
+    steps_carried: tuple[str, ...]          # verbatim from the source
+    steps_reset: tuple[str, ...]            # written `{status: pending}`
+    steps_dropped: tuple[str, ...]          # in the source, not carried
+    products_keys_carried: tuple[str, ...]
+    products_keys_dropped: tuple[str, ...]
+    products_attributed: bool               # False → carried whole, unattributed
+    source_state_read: bool                 # False → source run_state unreadable
+    note: str                               # the `fork_note` written on the phase
+
+    def as_dict(self) -> dict:
+        return {
+            "phase": self.phase,
+            "fork_skill": self.fork_skill,
+            "status": self.status,
+            "steps_carried": list(self.steps_carried),
+            "steps_reset": list(self.steps_reset),
+            "steps_dropped": list(self.steps_dropped),
+            "products_keys_carried": list(self.products_keys_carried),
+            "products_keys_dropped": list(self.products_keys_dropped),
+            "products_attributed": self.products_attributed,
+            "source_state_read": self.source_state_read,
+            "note": self.note,
+        }
+
+
 @dataclass
 class ForkOppResult:
     opp_slug: str            # unchanged — fork stays within the same opp
     new_run_id: str          # YYYYMMDD-HHMM, the new run folder name
     new_run_folder_id: str   # Drive folder id of the new run
     working_session: Session | None  # None when create_session=False (seeded-run drives its own)
+    carried: ForkCarried | None = None  # skill forks only (ace#2341)
 
 
 ProgressCb = Callable[[dict], None]
@@ -299,10 +343,22 @@ def fork_opp(
         # fresh keeps the new run's state honest about done vs. pending,
         # and it depends on nothing the copy produces.
         #
-        # We DO carry one thing out of it: each copied phase's `products`
-        # block. See `_source_phase_products` for why a fork without it is
-        # not resumable (ace#1888).
-        source_products = _source_phase_products(drive, source_run.id)
+        # We DO carry two things out of it. Each copied phase's `products`
+        # block — see `_source_phase_products` for why a fork without it is
+        # not resumable (ace#1888). And on a SKILL fork, the fork phase's
+        # earlier steps + products — see `_skill_fork_phase_block` for why a
+        # partial copy with a `pending` state orphans what it kept (ace#2341).
+        source_phases = _source_phase_blocks(drive, source_run.id)
+        source_products = _products_of(source_phases or {})
+        skill_fork_block: dict | None = None
+        carried: ForkCarried | None = None
+        if point.is_skill_fork:
+            skill_fork_block, carried = _skill_fork_phase_block(
+                point,
+                (source_phases or {}).get(point.phase),
+                source_run_id=source_run.name,
+                source_state_read=source_phases is not None,
+            )
         new_state = _build_run_state_yaml(
             opp_slug=source_slug,
             run_id=new_run_id,
@@ -313,6 +369,7 @@ def fork_opp(
             now_utc=now_utc,
             run_phases=run_phases,
             source_products=source_products,
+            skill_fork_block=skill_fork_block,
         )
         drive.upload_file(
             new_run_folder_id, "run_state.yaml", new_state, "text/yaml",
@@ -364,6 +421,9 @@ def fork_opp(
                     "fork_at_skill": point.skill,
                     "source_run_id": source_run.name,
                     "new_run_id": new_run_id,
+                    # Audit record of what a skill fork kept (ace#2341); None
+                    # on a phase fork.
+                    "carried": carried.as_dict() if carried else None,
                 },
                 plaintext=(
                     f"Forked run `{new_run_id}` from `{source_run.name}` at "
@@ -401,6 +461,7 @@ def fork_opp(
         new_run_id=new_run_id,
         new_run_folder_id=new_run_folder_id,
         working_session=session,
+        carried=carried,
     )
 
 
@@ -756,30 +817,27 @@ def _resolve_phase_ordinal(phase_name: str) -> int | None:
         return None
 
 
-def _source_phase_products(
+def _source_phase_blocks(
     drive: DriveClient, source_run_folder_id: str
-) -> dict[str, dict]:
-    """``{phase: products}`` from the SOURCE run's ``run_state.yaml``.
+) -> dict[str, dict] | None:
+    """``{phase: block}`` from the SOURCE run's ``run_state.yaml``, or None
+    when there is no readable one.
 
-    The fork synthesizes a fresh run_state rather than copying one, which is
-    right for statuses and timestamps and WRONG for one key: ``products``.
+    The fork synthesizes a fresh run_state rather than copying one — right
+    for statuses and timestamps, and this read is what lets two things be
+    carried selectively out of the source instead: each kept phase's
+    ``products`` (:func:`_products_of`, ace#1888) and, on a skill fork, the
+    fork phase's earlier ``steps`` + ``products``
+    (:func:`_skill_fork_phase_block`, ace#2341).
 
-    ``phases.<phase>.products.*`` is the typed handoff between phases — the
-    Connect opportunity id, the released Deliver app id, the OCS chatbot, the
-    labs synthetic opp. A phase downstream of the fork reads it to find the
-    live objects the copied artifacts describe. Without it the fork is a
-    convincing shell: every pre-fork phase says ``done``, every artifact is
-    present, and the first phase that actually runs cannot find the
-    opportunity those artifacts are about (ace#1888).
+    Only phase entries that are mappings come back; a phase whose block is a
+    scalar is skipped rather than failing the read.
 
-    Only phases the fork marks ``done`` get their products carried; see
-    ``_phase_block``. A phase at or after the fork point re-runs and must
-    produce its own, or it would inherit a handoff pointing at objects the
-    re-run is replacing.
-
-    Best-effort by design: a source run with no readable run_state still forks,
-    just without products, which is exactly today's behaviour. Failing the
-    whole fork over it would be a regression.
+    Best-effort by design: a source run with no readable run_state still
+    forks, just with nothing carried — which is exactly the pre-ace#1888
+    behaviour. Failing the whole fork over it would be a regression. None
+    (rather than ``{}``) lets the caller tell "unreadable" from "readable but
+    never reached this phase", which the skill fork's note reports.
     """
     try:
         for child in drive.list_files(source_run_folder_id):
@@ -793,13 +851,43 @@ def _source_phase_products(
             if not isinstance(phases, dict):
                 break
             return {
-                name: block["products"]
-                for name, block in phases.items()
-                if isinstance(block, dict) and isinstance(block.get("products"), dict)
+                name: block for name, block in phases.items() if isinstance(block, dict)
             }
     except Exception as exc:  # noqa: BLE001 — never fail a fork over this
-        log.warning("fork: could not read source run_state products: %s", exc)
-    return {}
+        log.warning("fork: could not read source run_state: %s", exc)
+    return None
+
+
+def _products_of(phase_blocks: dict[str, dict]) -> dict[str, dict]:
+    """``{phase: products}`` for every block that carries a mapping there.
+
+    ``phases.<phase>.products.*`` is the typed handoff between phases — the
+    Connect opportunity id, the released Deliver app id, the OCS chatbot, the
+    labs synthetic opp. A phase downstream of the fork reads it to find the
+    live objects the copied artifacts describe. Without it the fork is a
+    convincing shell: every pre-fork phase says ``done``, every artifact is
+    present, and the first phase that actually runs cannot find the
+    opportunity those artifacts are about (ace#1888).
+
+    Only phases the fork marks ``done`` get their products carried; see
+    ``_phase_block``. A phase at or after the fork point re-runs and must
+    produce its own, or it would inherit a handoff pointing at objects the
+    re-run is replacing. (The fork-point phase of a SKILL fork is the
+    exception, handled by ``_skill_fork_phase_block``.)
+    """
+    return {
+        name: block["products"]
+        for name, block in phase_blocks.items()
+        if isinstance(block.get("products"), dict)
+    }
+
+
+def _source_phase_products(
+    drive: DriveClient, source_run_folder_id: str
+) -> dict[str, dict]:
+    """``{phase: products}`` from the SOURCE run's ``run_state.yaml``; ``{}``
+    when it cannot be read. See :func:`_products_of`."""
+    return _products_of(_source_phase_blocks(drive, source_run_folder_id) or {})
 
 
 def _phase_block(
@@ -834,6 +922,186 @@ def _phase_block(
         if not s.is_recurring
     }
     return block
+
+
+def _skill_fork_phase_block(
+    point: ForkPoint,
+    source_block: dict | None,
+    *,
+    source_run_id: str,
+    source_state_read: bool,
+) -> tuple[dict, ForkCarried]:
+    """The fork-point phase's block for a SKILL fork, plus what it carried.
+
+    A skill fork keeps the fork phase's artifacts from skills of lower
+    ordinal (``_keep_artifact_for_skill_fork``). Until ace#2341 the phase's
+    STATE ignored that and reset to ``pending`` / ``products: {}``, so the
+    kept work was orphaned: files present, state unaware. The re-run then
+    redid the kept step (``demo-data-setup`` regenerated a dataset the fork
+    existed to keep), abandoned the live labs workflows named in
+    ``products.synthetic.workflows``, and three QA gates that read
+    ``products.synthetic.*`` went quiet. Measured on
+    ``spark-facilitator/20260909-1211 → 20260909-2242`` and again on
+    ``→ 20260910-0541``.
+
+    The artifact rule now applies to the state:
+
+    * ``steps.<skill>``: a registry step of lower ordinal carries VERBATIM
+      from the source (a legacy bare-string status is normalized to
+      ``{status}``; one the source never recorded is ``pending``). The fork
+      skill and every later step reset to ``{status: pending}``. A source
+      step that is not a registry row is placed through
+      ``skill_ordinal_for_step`` (the plugin's ``-qa`` / ``-eval`` companion
+      convention) and carried iff that places it below the fork skill;
+      otherwise it is DROPPED and named in the note. That is the opposite of
+      the artifact rule on purpose — an unattributed FILE is kept because
+      dropping it loses data, but an unattributed ``done`` STEP is dropped
+      because carrying it could skip work that must be redone, while
+      dropping it only costs a re-run.
+    * ``products``: carried by attribution when the plugin declares product
+      producers for the phase (``skills.product_producers``) — keys owned by
+      a lower-ordinal skill kept, keys owned by the fork skill or later
+      dropped, keys the map does not cover KEPT. It declares none today, so
+      the whole block is carried and the note says UNATTRIBUTED. Never
+      dropped silently, never guessed.
+    * ``status``: ``in_progress`` once anything is carried — a phase with
+      some steps done is neither ``pending`` nor ``done`` — and ``pending``
+      when nothing is (a fork at a phase's first skill, or no source state).
+      ``verdict`` / ``completed_at`` / ``summary_artifact`` are OMITTED, not
+      nulled: the plugin's validator rejects a non-string ``verdict``, and an
+      absent key is the honest "this phase has not completed".
+    * ``fork_note``: one sentence recording all of the above, on the block
+      itself, so a reader of the YAML sees it without the API response.
+    """
+    from apps.opps.skills import product_producers, skill_ordinal_for_step, skills_in_phase
+
+    assert point.skill is not None and point.skill_ordinal is not None
+    fork_ordinal = point.skill_ordinal
+    source = source_block if isinstance(source_block, dict) else {}
+    source_steps = source.get("steps")
+    source_steps = source_steps if isinstance(source_steps, dict) else {}
+
+    steps: dict[str, dict] = {}
+    carried_steps: list[str] = []
+    reset_steps: list[str] = []
+    dropped_steps: list[str] = []
+
+    for skill in skills_in_phase(point.phase):
+        if skill.is_recurring:
+            continue
+        src = source_steps.get(skill.name)
+        if skill.ordinal < fork_ordinal and src is not None:
+            if isinstance(src, dict):
+                steps[skill.name] = dict(src)
+            else:
+                steps[skill.name] = {"status": str(src)}
+            carried_steps.append(skill.name)
+        else:
+            steps[skill.name] = {"status": "pending"}
+            reset_steps.append(skill.name)
+
+    for name, src in source_steps.items():
+        if name in steps:
+            continue
+        ordinal = skill_ordinal_for_step(name, point.phase)
+        if ordinal is not None and ordinal < fork_ordinal and isinstance(src, dict):
+            steps[name] = dict(src)
+            carried_steps.append(name)
+        else:
+            dropped_steps.append(name)
+
+    source_products = source.get("products")
+    source_products = source_products if isinstance(source_products, dict) else {}
+    producers = product_producers(point.phase)
+    products: dict = {}
+    dropped_keys: list[str] = []
+    unmapped_keys: list[str] = []
+    if producers is None:
+        # Whole or nothing. With no step below the fork skill carried, no
+        # value in the block can predate it — that much IS derivable without
+        # a producer map — so the block drops rather than seeding a re-run
+        # with a handoff it is about to replace.
+        if carried_steps:
+            products = dict(source_products)
+        else:
+            dropped_keys = list(source_products)
+    else:
+        for key, value in source_products.items():
+            owner = producers.get(key)
+            owner_ordinal = skill_ordinal_for_step(owner, point.phase) if owner else None
+            if owner_ordinal is None:
+                products[key] = value
+                unmapped_keys.append(key)
+            elif owner_ordinal < fork_ordinal:
+                products[key] = value
+            else:
+                dropped_keys.append(key)
+
+    status = "in_progress" if carried_steps else "pending"
+
+    parts = [f"skill fork at `{point.skill}` from run {source_run_id}:"]
+    if not source_state_read:
+        parts.append(
+            "the source run_state.yaml could not be read, so nothing was carried "
+            "and every step is pending"
+        )
+    elif source_block is None:
+        parts.append(
+            "the source run_state.yaml has no block for this phase, so nothing was "
+            "carried and every step is pending"
+        )
+    else:
+        parts.append(
+            f"carried steps {sorted(carried_steps)} verbatim; reset {reset_steps} to pending"
+        )
+        if dropped_steps:
+            parts.append(
+                f"; dropped source steps {sorted(dropped_steps)} the registry cannot "
+                f"place below `{point.skill}`"
+            )
+        if products and producers is None:
+            parts.append(
+                f"; carried products keys {sorted(products)} UNATTRIBUTED - the plugin "
+                "declares no product-key -> skill map, so values written by "
+                f"`{point.skill}` or a later step may be stale until the re-run "
+                "overwrites them"
+            )
+        elif dropped_keys and producers is None:
+            parts.append(
+                f"; dropped products keys {sorted(dropped_keys)} - no step below "
+                f"`{point.skill}` was carried, so nothing in the block predates it"
+            )
+        elif producers is not None:
+            parts.append(
+                f"; carried products keys {sorted(products)} by attribution"
+                + (f", dropped {sorted(dropped_keys)}" if dropped_keys else "")
+                + (
+                    f", kept unmapped keys {sorted(unmapped_keys)}"
+                    if unmapped_keys
+                    else ""
+                )
+            )
+    note = " ".join(parts).replace(" ;", ";")
+
+    block: dict = {"status": status, "steps": steps}
+    if products:
+        block["products"] = products
+    block["fork_note"] = note
+
+    carried = ForkCarried(
+        phase=point.phase,
+        fork_skill=point.skill,
+        status=status,
+        steps_carried=tuple(carried_steps),
+        steps_reset=tuple(reset_steps),
+        steps_dropped=tuple(dropped_steps),
+        products_keys_carried=tuple(products),
+        products_keys_dropped=tuple(dropped_keys),
+        products_attributed=producers is not None,
+        source_state_read=source_state_read,
+        note=note,
+    )
+    return block, carried
 
 
 def _build_phases_map(
@@ -894,6 +1162,7 @@ def _build_run_state_yaml(
     now_utc: _dt.datetime,
     run_phases: list[int] | None = None,
     source_products: dict[str, dict] | None = None,
+    skill_fork_block: dict | None = None,
 ) -> str:
     """Synthesize a fresh ``run_state.yaml`` per the State Schema in the
     plugin's orchestrator-reference (§ State Schema, defensive init).
@@ -908,11 +1177,18 @@ def _build_run_state_yaml(
     phases from the fork point onward are ``skipped`` and a ``seeded_from`` root
     key is added; otherwise (plain fork-run) everything from the fork point
     onward is ``pending``.
+
+    ``skill_fork_block`` (a SKILL fork only, ace#2341) replaces the
+    ``fork_at_phase`` entry with the block ``_skill_fork_phase_block`` built —
+    the one phase whose state is partly carried rather than reset. A phase
+    fork passes None and the map is untouched.
     """
     iso_now = now_utc.isoformat()
     phases_map = _build_phases_map(
         fork_ordinal, iso_now, run_phases=run_phases, source_products=source_products,
     )
+    if skill_fork_block is not None:
+        phases_map[fork_at_phase] = skill_fork_block
     data: dict = {
         "opportunity": opp_slug,
         "run_id": run_id,
