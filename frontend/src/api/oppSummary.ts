@@ -93,6 +93,28 @@ export interface OppSummaryPayload {
     status: "active" | "closed" | "in_progress";
     end_date: string | null;
   };
+  /**
+   * The run's build memo, carried as CONTENT (ace-web#767) — the review
+   * artifact the PDD names: "humans review the memo and spot-check the
+   * apps, rather than reviewing every screen." `null` on every run
+   * before ace#2371, and then the page draws nothing for it.
+   */
+  build_memo: {
+    title: string;
+    url: string;
+    access: LinkAccess;
+    /** `null` when the run did not say — the page then claims neither. */
+    complete: boolean | null;
+    /** What the memo itself says it is missing. */
+    gaps: string[];
+    /**
+     * The memo as markdown — Drive's `text/markdown` export, VERBATIM,
+     * backslash escapes and all (`\[ACE\]`, `1\.`). The CommonMark
+     * renderer resolves them; unescaping first would break tables.
+     * `null` when the pointer exists but the text could not be read.
+     */
+    body: string | null;
+  } | null;
   // The PDD (and Work Order when present) — what a reviewer actually
   // comments on. Absent before: the page linked the training pack but not
   // the design it came from.

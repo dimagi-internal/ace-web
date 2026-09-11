@@ -17,6 +17,8 @@ const BASE: OppSummaryPayload = {
     status: "active",
     end_date: "2027-03-14",
   },
+  // Null on every run before ace#2371 — the page must draw nothing for it.
+  build_memo: null,
   design: {
     docs: [
       { title: "Program Design Document", url: "https://docs/pdd", access: "public" },
@@ -113,6 +115,39 @@ describe("OppSummaryPage", () => {
   it("links the design docs a reviewer is meant to comment on", async () => {
     renderWith(BASE);
     expect(await screen.findByText("Program Design Document")).toBeTruthy();
+  });
+
+  it("draws nothing for a build memo on a run that has none", async () => {
+    // Every run before ace#2371. No section, no "Not created" row.
+    renderWith(BASE);
+    await screen.findByText("Program Design Document");
+    expect(screen.queryByText("Build memo")).toBeNull();
+    expect(screen.queryByText("Open in Google Docs")).toBeNull();
+  });
+
+  it("renders the build memo's content first, ahead of the design docs", async () => {
+    renderWith({
+      ...BASE,
+      build_memo: {
+        title: "Build memo",
+        url: "https://docs.google.com/document/d/memo/edit",
+        access: "public",
+        complete: false,
+        gaps: ["Learn memo absent"],
+        body:
+          "# Build memo — Spark · run 20260813-2126\n\nIntro.\n\n" +
+          "## 1\\. Every \\[ACE\\] latitude\n\n" +
+          "| # | Where to spot-check |\n| :---- | :---- |\n| 1 | Deliver → Visit |\n",
+      },
+    });
+    const heading = await screen.findByText("Build memo");
+    const design = screen.getByText("Design");
+    expect(
+      heading.compareDocumentPosition(design) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByRole("table")).toBeTruthy();
+    expect(screen.getByText("Deliver → Visit")).toBeTruthy();
+    expect(screen.getByText("Learn memo absent")).toBeTruthy();
   });
 
   it("says a withheld walkthrough was withheld, not that it doesn't exist", async () => {

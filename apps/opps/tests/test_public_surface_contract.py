@@ -148,6 +148,16 @@ def _maximal_state_yaml() -> str:
     apps["learn"]["released_build_id"] = "5b403ead83ed410b85b9083fe3835d5c"
     apps["deliver"]["released_build_id"] = "b08533bdf26a48a295a362ff204fb88d"
     state["phases"]["ocs-setup"]["products"]["ocs_chatbot"]["published_version"] = 3
+    # The run's build memo (ace#2371 / ace-web#767), in the exact shape
+    # `skills/build-memo` step 6 writes. Incomplete on purpose, so the
+    # frozen key set covers a populated `gaps[]`.
+    state["phases"]["connect-setup"]["products"]["connect"]["build_memo"] = {
+        "file_id": "fake-memo",
+        "title": "Build memo",
+        "web_view_link": "https://docs.google.com/document/d/fake-memo/edit",
+        "complete": False,
+        "gaps": ["4-connect/connect-opp-setup.md: section missing"],
+    }
     state["blocker_dispositions"] = {
         "phase3_entity_state_fidelity": {
             "phase": "commcare-setup",
@@ -486,6 +496,7 @@ def _maximal_tree() -> dict:
 #: are not. Encoded here rather than defaulted in the fake so that
 #: "maximal" means "every fact declared", not "every fact assumed".
 _MAXIMAL_LINK_SHARING = {
+    "fake-memo": True,
     "fake-pdd": False,
     "fake-wo": False,
     "fake-learnings": False,
@@ -568,6 +579,12 @@ def _dicts(payload: dict):
 
 PUBLIC_PAYLOAD_KEYS = frozenset({
     "opp",
+    # The run's build memo, carried as CONTENT (ace-web#767) — the review
+    # artifact the PDD names: "humans review the memo and spot-check the
+    # apps, rather than reviewing every screen." `null` on every run
+    # before ace#2371 — the auditor must read absence as "this run has no
+    # memo", not as a missing section.
+    "build_memo",
     "design",
     "apps",
     # The producing phase's verdict on `apps`. Added with ace#1867 /
@@ -652,6 +669,11 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
         "workspace_slug", "slug", "run_id", "display_name",
         "description", "status", "end_date",
     }),
+    # `body` is the memo's markdown (Drive's `text/markdown` export,
+    # verbatim); `null` when the pointer exists but the text could not be
+    # read. `complete` is null when the run did not say. `gaps` is what
+    # the memo itself says it is missing — never presented as complete.
+    "build_memo": frozenset({"title", "url", "access", "complete", "gaps", "body"}),
     "design": frozenset({"docs"}),
     "design.docs[]": frozenset({"title", "url", "access"}),
     "apps[]": frozenset({"kind", "name", "hq_url", "access"}),
