@@ -17,6 +17,7 @@ import {
   DecisionsReview,
   type DecisionEditSubmit,
 } from "@/components/opps/summary/DecisionsReview";
+import { BuildMemo } from "@/components/opps/summary/BuildMemo";
 import { DeepQaSection } from "@/components/opps/summary/DeepQaSection";
 import { OcsWidgetMount } from "@/components/opps/summary/OcsWidgetMount";
 import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
@@ -420,7 +421,7 @@ export default function OppSummaryPage() {
 
   const { payload } = state;
   const {
-    opp, design, apps, build, deep_qa, connect, training, assistant, open_questions, feedback, workbench,
+    opp, build_memo, design, apps, build, deep_qa, connect, training, assistant, open_questions, feedback, workbench,
     walkthroughs, dashboards, synthetic, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
     stage, decisions, viewer,
   } = payload;
@@ -498,8 +499,20 @@ export default function OppSummaryPage() {
       <main className="mx-auto max-w-3xl space-y-14 px-6 py-14">
         {showOverview && (
           <>
-          {/* Design — first, because it is what everything below was built
-              from and what a reviewer comments on. */}
+          {/* Build memo — the FIRST thing in the design/review area, as
+              content, because the PDD makes it the review artifact:
+              "humans review the memo and spot-check the apps, rather than
+              reviewing every screen" (ace-web#767). Absent entirely on a
+              run without one — every run before ace#2371 — so those pages
+              render exactly as before, with no placeholder. */}
+          {build_memo && (
+            <SummarySection title="Build memo">
+              <BuildMemo memo={build_memo} showAccessTags={showAccessTags} />
+            </SummarySection>
+          )}
+
+          {/* Design — what everything below was built from and what a
+              reviewer comments on. */}
           <SummarySection title="Design">
             {design && design.docs.length > 0 ? (
               design.docs.map((doc) => (
