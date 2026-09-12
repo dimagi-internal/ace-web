@@ -7,9 +7,12 @@ gives a Dimagi team or third-party LLO a place to:
 
 - See every ACE opportunity in their workspace, with per-skill artifacts,
   judge verdicts, gates, and run-level scorecards (the **Workbench**).
-- Talk to Claude in a multi-player chat that's wired to the same context
-  (multi-player drafts, persistent transcripts, transcript ingest from
-  local `.jsonl` files).
+- Talk to Claude in a multi-player chat that's wired to the same context.
+  Interactive chat itself is **canopy-hosted** (session state, messages,
+  drafts, presence, and turn execution all live in canopy-web; the browser
+  talks to canopy directly) — ace-web's own backend just brokers identity.
+  ace-web still owns transcript ingest from local `.jsonl` files and the
+  read-only structure/cost breakdown view for programmatic runs.
 - Onboard a new workspace by pointing at a Google Drive folder — no CLI
   required for the day-to-day inspection loop.
 
@@ -120,27 +123,39 @@ set automatically by `config/settings/development.py`):
 2. Land on `/welcome` and create a workspace. You'll need a Google Drive
    folder shared with the configured service account if you want Drive
    features to work; otherwise opps will be empty.
-3. Try chat — it'll respond with deterministic test text via the
-   `FakeCLIBackend` until you wire up real claude CLI credentials (see
-   `docs/architecture/cli-credentials.md`).
+3. Chat is canopy-hosted, so trying it locally needs a local canopy-web
+   checkout running plus a `CANOPY_APP_CREDENTIAL` (see `CLAUDE.md`'s
+   "Chat is canopy-hosted, full stop" section) — without one,
+   `GET /api/canopy/status` reports `enabled: false` and the chat surfaces
+   show "chat is unreachable" rather than a dead page. `FakeCLIBackend`
+   instead governs the **programmatic** run path (`seeded_run`,
+   `drive_turn`), which still runs through `apps/common/CLIBackend`.
 
 That's enough to click around and understand the surface area. To use
 ACE for real, configure Connect OAuth (`CONNECT_OAUTH_CLIENT_ID`
 + `CONNECT_OAUTH_CLIENT_SECRET` in `.env`), point a workspace at a real
-Drive folder shared with the service account, and upload claude CLI
-credentials via `/ace-web:create-cli-credentials`.
+Drive folder shared with the service account, wire up the canopy
+credential for chat, and upload claude CLI credentials via
+`/ace-web:create-cli-credentials` for programmatic runs.
 
 ## Stack
 
 - **Backend**: Django 5 + Channels 4 + DRF, ASGI via uvicorn
 - **Frontend**: React 19 + Vite + TypeScript + Tailwind + shadcn/ui
 - **Data**: PostgreSQL (AWS RDS in prod, local Postgres via docker compose)
-- **Realtime**: WebSocket-only (`SessionConsumer`), channels-redis backed
-  by ElastiCache in prod
+- **Realtime**: interactive chat's realtime path is canopy-web's WebSocket
+  (browser connects directly, delegated-token authed). ace-web's own
+  Channels WS (`OppConsumer`, channels-redis backed by ElastiCache in prod)
+  is the one surface left server-side, for opp-workbench live updates —
+  `SessionConsumer` (chat) was retired along with ace-web's own chat UI.
 - **Drive access**: shared Google service account, key in AWS Secrets
   Manager (`ACE_DRIVE_SA_KEY_JSON`)
-- **Claude**: local Claude CLI subprocess (`apps/common/CLIBackend`),
-  subscription credential blob in `SystemConfig`
+- **Claude**: interactive chat executes on canopy-web's runner fleet, not
+  in this repo. `apps/common/CLIBackend` (local Claude CLI subprocess,
+  subscription credential blob in `SystemConfig`) still backs
+  **programmatic** ACE runs (`seeded_run`, `drive_turn`), with a
+  canopy-harness dispatch path (`apps/canopy/run_dispatch.py`) migrating
+  those too, gated behind `CANOPY_RUN_EXECUTION` (off by default).
 
 ## Deploy
 
