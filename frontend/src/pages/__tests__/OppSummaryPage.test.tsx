@@ -553,6 +553,79 @@ describe("OppSummaryPage", () => {
     },
   };
 
+  it("counts a reviewer's own edit in the Overview's 'need your eye' tally", async () => {
+    // ace-web#771. The row itself has always rendered an edit correctly
+    // (DecisionItem prefers edit.override and badges it "changed by
+    // <name>"), and the Decisions tab's per-phase tallies count it. The
+    // Overview headline did not: it read `counts.conflicting +
+    // counts.overridden` straight off the API, and `counts` is built
+    // from the RUN's decisions.yaml — a human edit lives in
+    // `decision_edits`, so it could never reach that number.
+    //
+    // The visible cost is two numbers on one page disagreeing: the
+    // headline said "1 need your eye" while the tab below it flagged 2.
+    // A reviewer who has just changed a call and is told the page still
+    // counts only ACE's own conflicts reasonably concludes the edit was
+    // dropped.
+    renderWith({
+      ...BASE,
+      decisions: {
+        total: 2,
+        counts: { stated: 1, inferred: 0, conflicting: 1, overridden: 0 },
+        rows: [
+          {
+            ...DECISION,
+            id: "loud-one",
+            question: "A contested call",
+            evidence_basis: "conflicting",
+            conflict_signals: ["source A says X"],
+          },
+          { ...DECISION, id: "edited-one", question: "A call a reviewer changed" },
+        ],
+      },
+      decision_edits: {
+        "edited-one": {
+          override: "Per-component rates, not a single band",
+          reasoning: "each component sets its own rate",
+          decided_by_name: "Sophie Feintuch",
+          decided_by_verified: false,
+          decided_at: "2026-09-14T17:34:03+00:00",
+          source_run_id: "20260813-2126",
+          is_revert: false,
+          history: [],
+        },
+      },
+    });
+    expect(await screen.findByText(/2 need your eye\./)).toBeTruthy();
+  });
+
+  it("does not count a REVERT as something needing an eye", async () => {
+    // Putting the AI's answer back is the one edit that resolves rather
+    // than raises — `is_revert` rows are excluded, matching the
+    // per-phase tally's own rule.
+    renderWith({
+      ...BASE,
+      decisions: {
+        total: 1,
+        counts: { stated: 1, inferred: 0, conflicting: 0, overridden: 0 },
+        rows: [{ ...DECISION, id: "reverted-one" }],
+      },
+      decision_edits: {
+        "reverted-one": {
+          override: "the pick",
+          reasoning: "put it back",
+          decided_by_name: "Sophie Feintuch",
+          decided_by_verified: false,
+          decided_at: "2026-09-14T17:34:03+00:00",
+          source_run_id: "20260813-2126",
+          is_revert: true,
+          history: [],
+        },
+      },
+    });
+    expect(await screen.findByText(/React to any of them\./)).toBeTruthy();
+  });
+
   it("keeps the review surface one URL away, not one link away", async () => {
     // A partner gets ONE link. The decisions live on a tab of the same
     // page, so pointing someone at them is still that link + ?tab=.
