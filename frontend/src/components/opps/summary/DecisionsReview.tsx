@@ -74,8 +74,17 @@ interface PhaseGroup {
   rows: ReviewDecision[];
 }
 
-/** Rows a reader is best placed to correct — contested, or already changed. */
-function isFlagged(d: ReviewDecision, edit?: PublicDecisionEdit): boolean {
+/**
+ * Rows a reader is best placed to correct — contested, or already changed.
+ *
+ * Exported because the Overview headline ("N need your eye") counts the
+ * same population. It used to add `counts.conflicting + counts.overridden`
+ * off the API instead, and those counts are built from the RUN's
+ * decisions.yaml — a human edit lives in `decision_edits` and could never
+ * reach them, so the headline and this tab disagreed on the same page
+ * (ace-web#771). One predicate, both surfaces.
+ */
+export function isFlagged(d: ReviewDecision, edit?: PublicDecisionEdit): boolean {
   return (
     d.evidence_basis === "conflicting" ||
     d.status === "overridden" ||

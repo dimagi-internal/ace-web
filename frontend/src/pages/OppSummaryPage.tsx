@@ -15,6 +15,7 @@ import {
 import type { ReactionSubmit } from "@/components/opps/summary/DecisionReactions";
 import {
   DecisionsReview,
+  isFlagged,
   type DecisionEditSubmit,
 } from "@/components/opps/summary/DecisionsReview";
 import { BuildMemo } from "@/components/opps/summary/BuildMemo";
@@ -457,8 +458,13 @@ export default function OppSummaryPage() {
   const openQuestionCount = open_questions?.items.length ?? 0;
   const hasReviewSurface = Boolean(decisions) || openQuestionCount > 0;
   const showOverview = !hasReviewSurface || tab === "overview";
+  // Counted from the ROWS, through the same predicate the Decisions tab
+  // uses — not from `decisions.counts`. Those counts come from the run's
+  // own decisions.yaml, so a reviewer's edit (which lives in
+  // `decision_edits`) never reached them and the headline under-reported
+  // against the tab directly below it (ace-web#771).
   const needsEye = decisions
-    ? decisions.counts.conflicting + decisions.counts.overridden
+    ? decisions.rows.filter((d) => isFlagged(d, edits[d.id])).length
     : 0;
   const tabs: ViewTab<SummaryTab>[] = [
     { kind: "overview", label: "Overview", icon: FileText },
