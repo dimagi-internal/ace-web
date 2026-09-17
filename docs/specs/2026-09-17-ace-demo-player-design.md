@@ -54,6 +54,29 @@ plausible clock. When an act's data is missing the act is marked unavailable
 with a reason, rather than filled in. This rule outranks every aesthetic
 consideration in this document.
 
+## No token or cost readout, anywhere in the player
+
+The player shows **elapsed wall time and nothing else** as its measure of
+effort. It does not show token counts, and it does not show dollars.
+
+This is a deliberate omission, not an oversight, and it should not be "fixed":
+
+- **Audiences don't read tokens.** A token count is not a unit anyone outside
+  the field converts into meaning, so it costs comprehension and buys nothing.
+  Elapsed time is legible to everyone in the room.
+- **It discloses our own cost structure.** The funder audience frequently *is*
+  an AI company. A per-phase token ledger exposes how ACE is run against
+  subscription versus API pricing, which is not something a demo should be
+  volunteering to that room.
+
+Wall time is also the stronger argument on its own terms: "six hours and
+fourteen minutes, unattended" lands against a human process measured in weeks,
+without requiring the listener to price a token first.
+
+Note that this constrains the player only. The Workbench's existing per-run cost
+rollup chip is unchanged — worth remembering before screen-sharing *that*
+surface to the same audience.
+
 ## Architecture
 
 ### The act model
@@ -67,7 +90,7 @@ Capability tiers:
 | Tier | Availability | Source |
 |---|---|---|
 | **1** | Every run | `run_state.yaml` → phases, steps, statuses, judge verdicts, QA results, artifacts, decisions, timestamps |
-| **2** | Runs with an ingested transcript | `IngestUpload.raw_jsonl_gz` → tokens, wall time, tool-level structure, subagent recursion |
+| **2** | Runs with an ingested transcript | `IngestUpload.raw_jsonl_gz` → tool-level structure, subagent recursion |
 | **3** | Runs that got that far | feedback ledger, a genuinely failed gate, live Connect/OCS/emulator targets, email threads |
 
 This mirrors the pattern the structure view already uses: report
@@ -78,7 +101,7 @@ This mirrors the pattern the structure view already uses: report
 | Act | Tier | Source |
 |---|---|---|
 | **Time Machine** — phases light up, skills complete, artifacts appear, gates fire; dual clock (`T+04:12:33` / `0:47`) | 1 | `RunDetail.steps` |
-| **Effort ledger** — tokens spent per phase, drill to skill; wall time secondary; dollars optional per cut | 2 | `apps/ingest/cost_aggregator.py` |
+| **Time ledger** — wall time per phase, drill to skill; elapsed run time against the human process it replaced | 1 | per-step timestamps in `run_state.yaml` |
 | **Anatomy** — subagent tree, tool calls, parallel clusters | 2 | `apps/ingest/structure_aggregator.py` |
 | **The gate that failed** — a real failing verdict and what it forced | 1 | `JudgeVerdict` / `QAResult` |
 | **Decisions** — what ACE chose, and what a human overrode | 1 | `decisions` + `decision-overrides.yaml` |
@@ -94,12 +117,12 @@ entry and a component, not a change to the player.
 
 A **cut** is an ordered subset of acts plus a density setting. Three ship:
 
-- **`funder`** — outcome first, then Time Machine as story, effort ledger with
-  dollars shown, reviewer loop, touchables, takeaway. Anatomy omitted.
+- **`funder`** — outcome first, then Time Machine as story, time ledger,
+  reviewer loop, touchables, takeaway. Anatomy omitted.
 - **`internal`** — promotes the failed gate and the decisions/override trail to
   the centre; this audience's real question is "what breaks and who catches it."
-- **`technical`** — Anatomy at full density, token ledger without dollars, the
-  fork mechanic and the counterpart-tier model.
+- **`technical`** — Anatomy at full density, the fork mechanic and the
+  counterpart-tier model.
 
 Cuts are data. The presenter can switch mid-demo when the room turns out to be
 different than advertised.
@@ -181,7 +204,7 @@ unactioned item renders as UNROUTED rather than vanishing.
 
 1. **Time Machine + act framework + capability gating**, including the per-step
    timestamp fix. Standalone-valuable as a run review surface.
-2. **Effort ledger, failed gate, decisions acts** — views over existing data.
+2. **Time ledger, failed gate, decisions acts** — views over existing data.
 3. **Run-complete email + reviewer-loop act.**
 4. **Touchables, multi-player, takeaway** — staging and deep links.
 5. **Cuts and presenter controls.**
@@ -194,7 +217,7 @@ one into the ACE plugin.
 - Backend: unit tests over `apps/opps/demo.py` capability computation and
   timeline derivation, including a run with no per-step timestamps (asserting
   `timing_source: "ordinal"`) and a run with no ingest upload (asserting the
-  effort and anatomy acts are unavailable with reasons).
+  anatomy act is unavailable with a reason).
 - Frontend: vitest over the act registry, cut filtering, and the playback clock.
 - `scripts/qa/labs_probe.py` gains the demo route after phase 1 deploys.
 
@@ -204,8 +227,9 @@ one into the ACE plugin.
   mail fast enough to land inside a 20-minute demo. If not, the email act is
   presenter-triggered — honest, but a weaker closer. Verify before phase 3.
 - **Tier 2 coverage.** How many existing runs have a linked `IngestUpload` with
-  `raw_jsonl_gz`. This decides whether the effort ledger is a headline act or a
-  bonus, and is worth measuring before phase 2 starts.
+  `raw_jsonl_gz`. This now affects only the Anatomy act (technical cut), so it
+  no longer gates phase 2 — but it decides whether Anatomy is worth building in
+  phase 4 or is effectively dead for most runs.
 - **Fallbacks for live acts.** Touchables are the demo's only real failure
   surface. Recorded fallbacks should live inside the player rather than as
   separate files a presenter has to find under pressure. Scope in phase 4.
