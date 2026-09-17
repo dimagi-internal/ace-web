@@ -19,6 +19,7 @@ import {
   type DecisionEditSubmit,
 } from "@/components/opps/summary/DecisionsReview";
 import { BuildMemo } from "@/components/opps/summary/BuildMemo";
+import { ClaimsSection } from "@/components/opps/summary/ClaimsSection";
 import { DeepQaSection } from "@/components/opps/summary/DeepQaSection";
 import { OcsWidgetMount } from "@/components/opps/summary/OcsWidgetMount";
 import { OpenQuestionsList } from "@/components/opps/summary/OpenQuestionsList";
@@ -422,7 +423,7 @@ export default function OppSummaryPage() {
 
   const { payload } = state;
   const {
-    opp, build_memo, design, apps, build, deep_qa, connect, training, assistant, open_questions, feedback, workbench,
+    opp, claims, build_memo, design, apps, build, deep_qa, connect, training, assistant, open_questions, feedback, workbench,
     walkthroughs, dashboards, synthetic, selected_llo, solicitation, launch, cycle_grade, opp_eval, learnings,
     stage, decisions, viewer,
   } = payload;
@@ -505,6 +506,19 @@ export default function OppSummaryPage() {
       <main className="mx-auto max-w-3xl space-y-14 px-6 py-14">
         {showOverview && (
           <>
+          {/* "What changed because you asked" — ABOVE the memo, because
+              it answers a returning reviewer's first question: did the
+              thing I asked for happen. Before this the page showed 105
+              decisions and zero claims, which is the inverse of the
+              priority the design sets (ace#2420). Absent entirely on a
+              run that authored no claims — most of them — so those pages
+              render exactly as before, with no placeholder. */}
+          {claims && (
+            <SummarySection title="What changed because you asked">
+              <ClaimsSection claims={claims} />
+            </SummarySection>
+          )}
+
           {/* Build memo — the FIRST thing in the design/review area, as
               content, because the PDD makes it the review artifact:
               "humans review the memo and spot-check the apps, rather than
