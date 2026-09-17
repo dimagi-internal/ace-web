@@ -298,6 +298,23 @@ Google Drive.
   `apps_opps_api_get_step`, the operationId FastMCP derives from
   `GET /api/w/{ws}/opps/{slug}/steps/{skill}`; a name that resolves to nothing
   is worse than sending none, because the agent will try it.
+- **`page.invalidate` is NOT wired, and that is a finding rather than a gap.**
+  canopy's page contract has a third limb beside state and actions: a
+  `page.invalidate` WS frame telling a page its data moved, which canopy's own
+  `/insights` consumes through `useResource`. It does not apply to ace-web, and
+  checking why is cheaper than discovering it half-built. canopy raises these at
+  the MODEL layer — `invalidation.mark_dirty` is called from Django `post_save`/
+  `post_delete` receivers on canopy's OWN rows, and `sessions_showing` matches
+  `page_state__resource` EXACTLY. Grep it: the only producer in canopy is
+  `apps/projects/signals.py` raising `insight://`. **ace-web's opp data is in
+  Google Drive**, written by agents through Drive, which canopy has no model,
+  no signal and no knowledge of — so nothing can ever publish `opp://…` and a
+  handler for it would be dead code that reads as live. ace-web already has the
+  right mechanism for this anyway: the Drive Changes API poll behind the opp
+  cache (`opp-cache-architecture.md`). Making the two meet would mean ace-web
+  becoming a *producer* of canopy invalidations, which needs an API surface
+  canopy does not expose (`mark_dirty` is internal) plus an answer to "who may
+  tell whom to refresh" — a design question, not a wiring job.
 - **ace-web's own interactive chat UI is retired.** `apps/sessions/
   {consumers,drafts,presence,routing}.py`, the `Draft`/`ShareToken` models
   and their tables, and the frontend's `useSessionSocket`/`sessionReducer`/
