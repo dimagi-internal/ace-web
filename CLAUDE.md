@@ -233,10 +233,21 @@ Google Drive.
   workspace instead of every ace workspace sharing the same `CANOPY_WORKSPACE`
   tenant; every ace workspace maps to one canopy workspace today, so without
   this a `team-b` member could list, and open, `team-a`'s chats).
-  **Residual, not fully closed:** this scopes the LIST only — canopy's own
-  tenancy still lets any member of the canopy workspace open a session
-  directly by id (`GET /api/canopy-sessions/{id}`). Hard isolation requires
-  mapping each ace workspace onto its own canopy workspace.
+  **The by-id hole this used to name is CLOSED upstream (2026-09-17).** It
+  read: "canopy's own tenancy still lets any member of the canopy workspace
+  open a session directly by id (`GET /api/canopy-sessions/{id}`); hard
+  isolation requires mapping each ace workspace onto its own canopy
+  workspace." That was true and is not any more, and leaving it written down
+  was the more expensive half — it is an instruction to go build per-workspace
+  canopy tenancy that nothing now needs. canopy-web#749 gave the list and the
+  by-id read ONE predicate (`apps/canopy_sessions/access.py::visible_session_q`
+  — you created it, or you are a participant, or it is a runner-discovered
+  session with a binding), gated inside the tenant check rather than instead of
+  it, with `tests/test_session_by_id_access.py` asserting the two agree;
+  canopy-web#795 added the disjoint contact predicate. A co-tenant holding a
+  session UUID can no longer read that chat. The `origin_key` scoping below is
+  still ours and still required — it is what keeps one ace workspace's chats
+  out of another's LIST — but it is no longer papering over a by-id gap.
   Ops + deploy prerequisites (undocumented failure modes if any is
   missed): (1) a registered prod `AppCredential` on canopy-web (name
   `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`), its raw
@@ -263,6 +274,30 @@ Google Drive.
   a dead page; every user-triggered canopy call (new chat, discuss-this-step)
   surfaces its error rather than swallowing it — see
   `RecentSessionsSidebar.handleNew`'s try/catch.
+- **The Workbench tells the agent what is on screen (page state).** A canopy
+  session's `metadata` (`opp_slug`/`opp_run_id`/`opp_step_skill`) is stamped
+  once at create and then FROZEN, so before this the agent kept answering about
+  the step a chat was opened on — pick another step or another run and it was
+  confidently discussing a screen the reader had left. canopy's page contract
+  (2026-09-16) replaces that: `PUT /api/canopy-sessions/{id}/page-state` holds
+  a live declaration the agent re-reads on demand via its own `current_page`
+  MCP tool, plus a copy folded into the first message so turn one does not race
+  the MCP connection. ace-web's half is `canopy/usePageState.ts`
+  (`useCanopyPageState`) + `declareCanopyPageState` in `canopy/api.ts`, wired
+  into `WorkbenchChatPane`. **This is plain REST on the session with the
+  delegated token ace-web already mints — it needs no iframe, no widget, and no
+  change to `CanopyChatPanel`.** Three rules it must keep: it declares the
+  SELECTION (ids + `backing_tool`, the MCP tool that resolves them), never the
+  rows — canopy refuses a declaration over 8 KiB with `too_large` precisely to
+  enforce that, and sending rows would duplicate our own API, go stale between
+  render and send, and add a second place to get access control wrong; a failed
+  declaration is non-fatal (the agent knows less, the chat still works); and
+  only one PUT is ever in flight, because canopy replaces wholesale and a slow
+  PUT for the previous step landing last restores the exact staleness this
+  exists to remove. `backing_tool` must name a REAL MCP tool — today
+  `apps_opps_api_get_step`, the operationId FastMCP derives from
+  `GET /api/w/{ws}/opps/{slug}/steps/{skill}`; a name that resolves to nothing
+  is worse than sending none, because the agent will try it.
 - **ace-web's own interactive chat UI is retired.** `apps/sessions/
   {consumers,drafts,presence,routing}.py`, the `Draft`/`ShareToken` models
   and their tables, and the frontend's `useSessionSocket`/`sessionReducer`/
