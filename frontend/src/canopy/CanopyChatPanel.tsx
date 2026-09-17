@@ -3,9 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChatPanel,
   PlacementBanner,
+  restToKitMessage as kitRestToKitMessage,
   useSessionSocket,
   type Message,
   type PlacementRunner,
+  type RestMessage,
 } from "canopy-ui/chat";
 
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
@@ -33,34 +35,20 @@ function renderMarkdown(text: string) {
 }
 
 /**
- * A REST `MessageOut` row (`turn_index`/`role`/`plaintext`/`content`/
- * `created_at` — canopy's `apps/canopy_sessions/schemas.py::MessageOut`) ->
- * the kit's `Message` shape. Synthetic id (`t<turn_index>`) + `status:
- * "complete"` — `prependMessages`'s dedupe (the kit's `prependHistory`)
- * keys on `turn_index`, so a synthetic-id row never collides with a live
- * WS row of the same index. Mirrors canopy-web's own
- * `pages/chatPageLogic.ts::restToKitMessage`.
+ * Re-exported from `canopy-ui/chat`, which owns it as of 0.8.0.
+ *
+ * It used to be written out here, with a comment saying it "mirrors
+ * canopy-web's own `pages/chatPageLogic.ts::restToKitMessage`" — an accurate
+ * description of two copies of one function drifting in slow motion. It is a
+ * pure map from canopy's `MessageOut` onto the KIT's `Message`, so the kit was
+ * always its right owner (canopy-web#824).
+ *
+ * Kept as a re-export because ace-web's callers pass an `unknown` row: the kit
+ * types its input structurally as `RestMessage`, and this is the one place that
+ * cast belongs.
  */
 export function restToKitMessage(raw: unknown): Message {
-  const m = raw as {
-    turn_index: number;
-    role: string;
-    content: Record<string, unknown>;
-    plaintext: string;
-    created_at: string;
-  };
-  return {
-    id: `t${m.turn_index}`,
-    turn_index: m.turn_index,
-    role: m.role as Message["role"],
-    content: m.content,
-    plaintext: m.plaintext,
-    status: "complete",
-    error_detail: null,
-    started_at: null,
-    completed_at: m.created_at,
-    created_at: m.created_at,
-  };
+  return kitRestToKitMessage(raw as RestMessage);
 }
 
 /** Only a session-CAPABLE runner (capabilities.sessions === true) can
