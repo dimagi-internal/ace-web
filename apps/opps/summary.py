@@ -1797,6 +1797,214 @@ def _read_build_memo_body(drive: DriveClient, file_id: str) -> str | None:
     return body if body.strip() else None
 
 
+# ---------------------------------------------------------------------------
+# "What changed because you asked" — the run's frozen claim set.
+# ---------------------------------------------------------------------------
+
+#: The verdict vocabulary, from ``lib/run-claims.ts`` in the ACE plugin. A
+#: value outside it is carried as "no verdict" rather than coerced onto a
+#: known one: a page that quietly mapped an unrecognised verdict onto MET
+#: would render an unanswered claim as an answered one, which is the exact
+#: silence the claims mechanism exists to kill.
+_CLAIM_VERDICTS = ("MET", "UNMET", "NOT REACHED", "INDETERMINATE")
+
+
+def _claim_summary_line(counts: dict[str, int], total: int) -> str:
+    """The tally, word for word as ``summarizeClaims`` composes it.
+
+    Mirrored rather than imported — the plugin is TypeScript and what the
+    two share is the CONTRACT, not code. Kept in this shape so the page
+    and the reply lead with the same sentence.
+    """
+    parts = [f"{counts['met']}/{total} met"]
+    if counts["unmet"]:
+        parts.append(f"{counts['unmet']} not met")
+    if counts["not_reached"]:
+        parts.append(f"{counts['not_reached']} never reached")
+    if counts["indeterminate"]:
+        parts.append(f"{counts['indeterminate']} indeterminate")
+    if counts["unanswered"]:
+        parts.append(f"{counts['unanswered']} still open")
+    return ", ".join(parts)
+
+
+def _read_claims(
+    drive: DriveClient, run_folder_id: str, *, viewer_is_member: bool,
+) -> dict | None:
+    """The run's claim set — "what changed because you asked" (ace#2420).
+
+    A CLAIM is a falsifiable statement about what THIS run's output must
+    look like, authored because a named counterpart decided something
+    between runs. The design
+    (``docs/superpowers/specs/2026-09-15-pre-run-claims-post-run-validation-design.md``
+    § Rendering) puts it on two surfaces — this page and the reply — and
+    it existed on neither, so a verdict reached the person who made the
+    decision only if somebody remembered to write her an email. That
+    dependency on a human remembering is what the mechanism was built to
+    remove.
+
+    Three properties carry the design's weight, and this reader exists to
+    serve them rather than to list claims:
+
+    * **Every claim is carried, whichever way it went.** The claim set is
+      the DENOMINATOR, so an UNMET one appears as an accusation rather
+      than as an absence — the same completeness property that makes
+      ``UNROUTED`` work in the feedback ledger. Nothing here filters.
+    * **A claim the counterpart authored is marked as theirs**
+      (``authored_by``). ACE writes its own exam here, and the design's
+      only mitigation is that the reviewer can see which bar was hers and
+      say so when ACE's is too low. A page that did not distinguish them
+      would remove the mitigation while looking complete.
+    * **``evidence_kind`` is carried** so a ``judged`` verdict renders as
+      weaker than a ``probed`` one instead of borrowing its authority.
+
+    ``says`` vs ``evidence``: ``says`` is the counterpart-facing sentence
+    and is served to everyone. ``evidence`` is the AUDIT record — Drive
+    file ids, MCP atom signatures, internal field names, read-path
+    reliability caveats — and is served to workspace MEMBERS only, the
+    same confidentiality-shaped exception ``_read_feedback`` makes to this
+    module's "every link is served to everyone" rule. For everyone else it
+    is ``None`` rather than absent, so both variants of the payload carry
+    one shape.
+
+    Returns ``None`` when the run has no ``claims.yaml``, and the section
+    then does not render at all: most opportunities have none, and a "no
+    claims" heading on every other run teaches reviewers to skip it. An
+    UNREADABLE file sets ``error`` and still returns a section, matching
+    ``classifyRunClaims``'s ``ok: false`` posture — failing silently would
+    put the reviewer back in front of a page that renders an omission as
+    an absence.
+    """
+    f = _find_in_folder(drive, run_folder_id, "claims.yaml")
+    if f is None:
+        return None
+
+    def _broken(message: str) -> dict:
+        return {
+            "summary": "the claims recorded for this run could not be read",
+            "total": 0,
+            "all_met": False,
+            "counts": {
+                "met": 0, "unmet": 0, "not_reached": 0,
+                "indeterminate": 0, "unanswered": 0,
+            },
+            "error": message,
+            "people": [],
+        }
+
+    try:
+        content = drive.get_content(f.id, f.mime_type)
+        body = content.content or ""
+    except Exception as exc:  # noqa: BLE001
+        log.warning("summary: read claims %s failed: %s", f.id, exc)
+        return _broken("The claims recorded for this run could not be read from Drive.")
+    try:
+        data = yaml.safe_load(body)
+    except yaml.YAMLError as exc:
+        log.warning("summary: parse claims %s failed: %s", f.id, exc)
+        return _broken("The claims file for this run is not valid YAML.")
+
+    if not isinstance(data, dict):
+        return _broken("The claims file for this run is not a claim set.")
+    raw_claims = data.get("claims")
+    if not isinstance(raw_claims, list):
+        return _broken("The claims file for this run records no list of claims.")
+
+    # Phase order, for "ordered by `checkable_at`". Empty when the plugin
+    # registry is unreadable, and the claims then keep FILE order — which
+    # is authoring order, so it degrades to something sensible rather than
+    # to alphabetical.
+    ordinals = {name: ordinal for name, (_label, ordinal) in _plugin_phase_index().items()}
+
+    rows: list[dict] = []
+    malformed = 0
+    for raw in raw_claims:
+        if not isinstance(raw, dict):
+            malformed += 1
+            continue
+        claim_id = str(raw.get("id") or "").strip()
+        text = str(raw.get("claim") or "").strip()
+        if not claim_id or not text:
+            malformed += 1
+            continue
+        origin = raw.get("origin") if isinstance(raw.get("origin"), dict) else {}
+        checkable_at = str(raw.get("checkable_at") or "").strip()
+        rows.append({
+            "id": claim_id,
+            "claim": text,
+            # `None` means "no verdict yet" and renders as still open.
+            # Never defaulted to MET, and never dropped.
+            "verdict": (
+                raw.get("verdict") if raw.get("verdict") in _CLAIM_VERDICTS else None
+            ),
+            "evidence_kind": (
+                raw.get("evidence_kind")
+                if raw.get("evidence_kind") in ("probed", "judged") else None
+            ),
+            "authored_by": (
+                "counterpart" if raw.get("authored_by") == "counterpart" else "ace"
+            ),
+            "person": str(origin.get("person") or "").strip() or "Unattributed",
+            "quote": str(origin.get("quote") or "").strip() or None,
+            "artifact": str(raw.get("artifact") or "").strip() or None,
+            "checkable_at": checkable_at or None,
+            "says": str(raw.get("says") or "").strip() or None,
+            # Members only. See the docstring.
+            "evidence": (
+                (str(raw.get("evidence") or "").strip() or None)
+                if viewer_is_member else None
+            ),
+            "would_settle_it": str(raw.get("would_settle_it") or "").strip() or None,
+            "_order": ordinals.get(checkable_at, 10_000),
+        })
+
+    if not rows:
+        if malformed:
+            return _broken(
+                f"{malformed} claim(s) in this run's claims file are malformed "
+                "and could not be read."
+            )
+        return None
+
+    counts = {
+        "met": sum(1 for r in rows if r["verdict"] == "MET"),
+        "unmet": sum(1 for r in rows if r["verdict"] == "UNMET"),
+        "not_reached": sum(1 for r in rows if r["verdict"] == "NOT REACHED"),
+        "indeterminate": sum(1 for r in rows if r["verdict"] == "INDETERMINATE"),
+        "unanswered": sum(1 for r in rows if r["verdict"] is None),
+    }
+    total = len(rows)
+
+    # Grouped by person, ordered by `checkable_at` within the group.
+    # `sorted` is stable, so claims sharing a phase keep file order.
+    people: list[dict] = []
+    for row in sorted(rows, key=lambda r: r["_order"]):
+        group = next((g for g in people if g["person"] == row["person"]), None)
+        if group is None:
+            group = {"person": row["person"], "claims": []}
+            people.append(group)
+        group["claims"].append({k: v for k, v in row.items() if k != "_order"})
+
+    return {
+        "summary": _claim_summary_line(counts, total),
+        "total": total,
+        # TRUE only when EVERY claim is MET. A run where every ANSWERED
+        # claim passed but a checkpoint never ran has NOT met its claims;
+        # reporting otherwise recreates the silence being removed.
+        "all_met": total > 0 and counts["met"] == total,
+        "counts": counts,
+        # A file that read but carried unusable rows: the good ones still
+        # render AND the page says some could not be read. Dropping them
+        # quietly would corrupt the denominator, which is the one thing
+        # this section has to get right.
+        "error": (
+            f"{malformed} further claim(s) in this run's claims file are malformed "
+            "and could not be read."
+        ) if malformed else None,
+        "people": people,
+    }
+
+
 def _read_feedback(
     drive: DriveClient, opp_folder_id: str, *, viewer_is_member: bool,
     access: LinkAccessReader | None = None,
@@ -2584,6 +2792,13 @@ def build_summary_payload(
         # renders exactly as before — but a partial one can no longer read
         # as finished.
         "carried_residuals": _read_carried_residuals(state),
+        # "What changed because you asked" — the run's frozen claim set
+        # (ace#2420). `null` on every run that authored none, which is
+        # most of them: the auditor must read absence as "this run has no
+        # claims", not as a missing section.
+        "claims": _read_claims(
+            drive, run_folder.id, viewer_is_member=viewer_is_member,
+        ),
         "feedback": _read_feedback(
             drive, opp_folder.id, viewer_is_member=viewer_is_member, access=access,
         ),

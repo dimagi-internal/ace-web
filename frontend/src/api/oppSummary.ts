@@ -115,6 +115,65 @@ export interface OppSummaryPayload {
      */
     body: string | null;
   } | null;
+  /**
+   * "What changed because you asked" — the run's frozen claim set
+   * (ace#2420).
+   *
+   * A CLAIM is a falsifiable statement about what THIS run's output had
+   * to look like, written because a named person decided something
+   * between runs. `null` on every run that authored none, which is most
+   * of them, and the section then does not render at all.
+   *
+   * The shape mirrors `lib/render-claims.ts::renderClaimsSection` in the
+   * ACE plugin — one contract, two surfaces. `verdict: null` means NO
+   * VERDICT YET and must never render as met.
+   */
+  claims: {
+    /** The tally, as `summarizeClaims` composes it: "6/8 met, 2 not met". */
+    summary: string;
+    total: number;
+    /** TRUE only when EVERY claim is MET — a never-reached one does not pass. */
+    all_met: boolean;
+    counts: {
+      met: number;
+      unmet: number;
+      not_reached: number;
+      indeterminate: number;
+      /** No verdict yet. A mid-run state, not a closeout one. */
+      unanswered: number;
+    };
+    /**
+     * Set when the claims file could not be read, or carried rows that
+     * could not be. Rendered as a visible problem, matching
+     * `classifyRunClaims`'s `ok: false` posture — never silence.
+     */
+    error: string | null;
+    people: {
+      person: string;
+      claims: {
+        id: string;
+        claim: string;
+        verdict: "MET" | "UNMET" | "NOT REACHED" | "INDETERMINATE" | null;
+        /** `judged` renders as a qualifier, so it reads weaker than `probed`. */
+        evidence_kind: "probed" | "judged" | null;
+        /** A claim the counterpart set is marked as theirs on the page. */
+        authored_by: "ace" | "counterpart";
+        person: string;
+        quote: string | null;
+        artifact: string | null;
+        checkable_at: string | null;
+        /** The counterpart-facing sentence. Served to everyone. */
+        says: string | null;
+        /**
+         * The AUDIT record — Drive file ids, MCP atom signatures,
+         * read-path caveats. Served to workspace MEMBERS only; `null`
+         * for everyone else, so both variants carry one shape.
+         */
+        evidence: string | null;
+        would_settle_it: string | null;
+      }[];
+    }[];
+  } | null;
   // The PDD (and Work Order when present) — what a reviewer actually
   // comments on. Absent before: the page linked the training pack but not
   // the design it came from.

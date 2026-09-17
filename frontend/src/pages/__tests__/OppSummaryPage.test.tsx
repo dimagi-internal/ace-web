@@ -17,6 +17,9 @@ const BASE: OppSummaryPayload = {
     status: "active",
     end_date: "2027-03-14",
   },
+  // Null on every run that authored no claims — most of them — and the
+  // section must then not render at all.
+  claims: null,
   // Null on every run before ace#2371 — the page must draw nothing for it.
   build_memo: null,
   design: {
@@ -148,6 +151,79 @@ describe("OppSummaryPage", () => {
     expect(screen.getByRole("table")).toBeTruthy();
     expect(screen.getByText("Deliver → Visit")).toBeTruthy();
     expect(screen.getByText("Learn memo absent")).toBeTruthy();
+  });
+
+  // ─── "What changed because you asked" (ace#2420) ──────────────────
+
+  it("draws nothing for claims on a run that authored none", async () => {
+    // Most opportunities have none. A "no claims" heading on every other
+    // run teaches reviewers to skip the section.
+    renderWith(BASE);
+    await screen.findByText("Program Design Document");
+    expect(screen.queryByText("What changed because you asked")).toBeNull();
+  });
+
+  it("puts the claim set ABOVE the build memo — it is a returning reviewer's first question", async () => {
+    renderWith({
+      ...BASE,
+      claims: {
+        summary: "1/2 met, 1 not met",
+        total: 2,
+        all_met: false,
+        counts: { met: 1, unmet: 1, not_reached: 0, indeterminate: 0, unanswered: 0 },
+        error: null,
+        people: [{
+          person: "Sophie Feintuch",
+          claims: [
+            {
+              id: "a",
+              claim: "The Deliver app carries no payment marker on consumption support.",
+              verdict: "MET",
+              evidence_kind: "probed",
+              authored_by: "ace",
+              person: "Sophie Feintuch",
+              quote: null,
+              artifact: "deliver-app",
+              checkable_at: "commcare-setup",
+              says: "Nobody is paid for consumption support.",
+              evidence: null,
+              would_settle_it: null,
+            },
+            {
+              id: "b",
+              claim: "My nine comments land in this run's design.",
+              verdict: "UNMET",
+              evidence_kind: "judged",
+              authored_by: "counterpart",
+              person: "Sophie Feintuch",
+              quote: "whether my comments land",
+              artifact: "composed-pdd",
+              checkable_at: "idea-to-design",
+              says: "Two of your nine comments were not accounted for.",
+              evidence: null,
+              would_settle_it: null,
+            },
+          ],
+        }],
+      },
+      build_memo: {
+        title: "Build memo",
+        url: "https://docs.google.com/document/d/memo/edit",
+        access: "public",
+        complete: true,
+        gaps: [],
+        body: "# Build memo\n\nIntro.\n",
+      },
+    });
+    const claims = await screen.findByText("What changed because you asked");
+    const memo = screen.getByText("Build memo");
+    expect(
+      claims.compareDocumentPosition(memo) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // The unmet one accuses rather than going missing, and the bar she
+    // set herself is marked as hers.
+    expect(screen.getByText("Not met")).toBeTruthy();
+    expect(screen.getByText(/you asked for this one/i)).toBeTruthy();
   });
 
   it("says a withheld walkthrough was withheld, not that it doesn't exist", async () => {
