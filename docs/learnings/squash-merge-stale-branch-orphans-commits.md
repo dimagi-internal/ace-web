@@ -2,7 +2,10 @@
 
 **Date**: 2026-05-12
 **Context**: PR #309 (mobile stop busy-guard) showed up on GitHub as MERGED but the contract was never on `main`. Surfaced during the cloud-emulator code review (2026-05-12). Repo-wide squash merges have been disabled in response; see the Fix section.
-**Status**: Active (defense in place: `allow_squash_merge=false`)
+**Status**: Active — but the defense CHANGED. Squash merges are enabled again;
+what closes the hazard now is the `main protection` ruleset's
+`strict_required_status_checks_policy: true` (a stale branch cannot merge at
+all). See "Status as of 2026-09-17" below before acting on anything here.
 
 ## Problem
 
@@ -90,6 +93,32 @@ The verified repo settings after the fix:
 | `delete_branch_on_merge` | `true` |
 
 ## How to apply
+
+## Status as of 2026-09-17: squash is back ON, and legitimately
+
+`allow_squash_merge=true` again, and the condition this doc set for that is
+**met** — so don't "fix" it back. The `main protection` ruleset now carries
+`required_status_checks` with
+`strict_required_status_checks_policy: true`, which is the enforcement half of
+the mitigation below: a branch that has not pulled an intervening merge simply
+**cannot** merge, so the stale-base vector this whole document is about is
+closed structurally rather than by everyone remembering. Check it yourself
+before acting on anything here:
+
+```bash
+gh api repos/dimagi-internal/ace-web --jq '.allow_squash_merge'
+gh api repos/dimagi-internal/ace-web/rulesets --jq '.[].id' \
+  | xargs -I{} gh api repos/dimagi-internal/ace-web/rulesets/{} \
+      --jq '[.rules[]|select(.type=="required_status_checks")
+             |.parameters.strict_required_status_checks_policy]|first'
+```
+
+`true` and `true` means the defense is in place. If `strict` is ever `false`
+while squash is on, the hazard below is live again.
+
+(`allow_update_branch` is still `false` — that only controls whether GitHub
+*suggests* the update button. `strict` is the one that enforces, and it is the
+one that matters.)
 
 - **Don't re-enable `allow_squash_merge`** without the mitigations below.
 - If you do need to re-enable it (e.g. team preference for one-commit-per-PR

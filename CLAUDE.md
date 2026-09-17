@@ -584,7 +584,7 @@ QA / probe:
 - [e2e-probe](docs/qa/e2e-probe.md) — `scripts/qa/labs_probe.py` walks every UI surface + cross-checks the OpenAPI schema for orphan endpoints. Re-run after every deploy: `LABS_TOKEN=... uv run --extra walkthrough python scripts/qa/labs_probe.py`. Caught three Phase-5 regressions (public summary endpoint deleted, cross-opp compare deleted, empty-runs-folder 404) that nothing else surfaced.
 
 Repo / merge process:
-- [squash-merge-stale-branch-orphans-commits](docs/learnings/squash-merge-stale-branch-orphans-commits.md) — squash-merge from a topic branch that hasn't pulled an intervening merge silently overwrites the intervening commits on `main`. Repo defense set 2026-05-12: `allow_squash_merge=false`. Don't re-enable without "Always suggest updating PR branches" + a branch-protection rule.
+- [squash-merge-stale-branch-orphans-commits](docs/learnings/squash-merge-stale-branch-orphans-commits.md) — squash-merge from a topic branch that hasn't pulled an intervening merge silently overwrites the intervening commits on `main`. Defense CHANGED 2026-09-17: squash is enabled again, and the `main protection` ruleset's `strict_required_status_checks_policy: true` is what closes the hazard now — a stale branch cannot merge at all. The old `allow_squash_merge=false` note is superseded; don't re-disable squash on the strength of it.
 
 ## Workflow
 
