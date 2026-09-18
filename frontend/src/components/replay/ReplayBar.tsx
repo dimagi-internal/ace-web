@@ -176,11 +176,13 @@ interface PhaseRun {
 }
 
 /**
- * One evenly-sized slot per step, grouped into phases.
+ * The run's steps, grouped into phases that share the width EQUALLY.
  *
- * Deliberately NOT time-proportional: on real runs a single phase can hold
- * most of the elapsed hours (often idle), which would crush every other phase
- * to a sliver. Here each phase's width is its number of steps.
+ * Every phase gets the same slice of the bar and its steps divide that slice.
+ * Neither time-proportional (one idle phase can hold most of a run's hours)
+ * nor step-proportional (a two-step phase shrank until its name was cut to
+ * "Scenarios & Acceptanc…") — the phases are what a viewer reads, so each one
+ * gets room for its name.
  */
 function StepTrack({
   timeline,
@@ -215,7 +217,7 @@ function StepTrack({
           <div
             key={`${run.phase}-${run.from}`}
             className="flex min-w-0 flex-col gap-1"
-            style={{ flexGrow: run.count, flexBasis: 0 }}
+            style={{ flexGrow: 1, flexBasis: 0 }}
           >
             <div className="flex h-3 gap-px">
               {Array.from({ length: run.count }, (_, k) => {
@@ -243,7 +245,7 @@ function StepTrack({
               })}
             </div>
             <span
-              className="truncate text-[10px]"
+              className="line-clamp-2 break-words text-[10px] leading-tight"
               style={{
                 color: containsCurrent ? color : "var(--muted-foreground)",
                 fontWeight: containsCurrent ? 600 : 400,
