@@ -1,5 +1,7 @@
 # Service Accounts Library + Share Tokens — Design Spec
 
+> **Status: partly shipped, partly retired — historical record, not current-state.** Service accounts / personal tokens shipped (PR #28, 2026-04-10) and live on as `apps/service_accounts` + Bearer PATs. Session share tokens were dropped with ace-web's own chat (PR #687, 2026-07-26).
+
 **Date:** 2026-04-10
 **Status:** Approved for execution
 **Scope:** A reusable Django service accounts library (`apps/service_accounts/`) with

@@ -1,5 +1,7 @@
 # Per-user CLI credentials — Implementation Plan
 
+> **Status: shipped (PR #117, 2026-04-19) — historical record, not current-state.** See `docs/architecture/cli-credentials.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Each ace-web user stores their own Claude CLI credential blob (encrypted at rest); web chat runs `claude -p` using the session owner's blob, falling back to the existing global `SystemConfig` blob when the owner hasn't uploaded one.

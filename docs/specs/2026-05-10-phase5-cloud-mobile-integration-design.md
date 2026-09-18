@@ -1,5 +1,7 @@
 # Phase 5 ↔ Cloud Mobile Runner: Integration Design
 
+> **Status: shipped (PR #272, 2026-05-10); resources moved under CloudFormation 2026-09 (PR #764) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-05-10
 **Status:** Draft (to be confirmed against the e2e test results)
 **Owners:** Jon (ACE plugin); ace-web (this repo) for the runner

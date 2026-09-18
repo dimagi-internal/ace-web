@@ -146,3 +146,36 @@ export function parseLedger(body: string): LedgerItem[] | null {
   if (items.every((i) => i.dispositions.length === 0)) return null;
   return items;
 }
+
+/**
+ * What a disposition actually changed — the distinction the ledger's own
+ * SHIPPED badge hides.
+ *
+ *   ace      — a fix to ACE itself (a skill). Every FUTURE program gets it.
+ *              This is the self-improvement story.
+ *   program  — a change to this one program's design (a run decision).
+ *   person   — still waiting on a human (an open question, NEEDS YOU).
+ *
+ * Read off the ledger's own `kind` / status words, never inferred from prose.
+ */
+export type Outcome = "ace" | "program" | "person" | "other";
+
+export function outcomeOf(d: Disposition): Outcome {
+  const kind = d.kind.toLowerCase();
+  const status = d.status.toLowerCase();
+  if (status.includes("need") || kind.includes("question")) return "person";
+  if (kind.includes("skill") || kind.includes("fix")) return "ace";
+  if (kind.includes("decision")) return "program";
+  return "other";
+}
+
+/** How many COMMENTS led to each outcome. A comment that produced both a skill
+ *  fix and a decision counts under both — that's what happened. */
+export function outcomeCounts(items: readonly LedgerItem[]): Record<Outcome, number> {
+  const counts: Record<Outcome, number> = { ace: 0, program: 0, person: 0, other: 0 };
+  for (const item of items) {
+    const seen = new Set(item.dispositions.map(outcomeOf));
+    for (const o of seen) counts[o] += 1;
+  }
+  return counts;
+}

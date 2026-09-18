@@ -1,5 +1,7 @@
 # API Modernization Implementation Plan
 
+> **Status: shipped (PRs #345–#352, 2026-05-14) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace DRF with Django Ninja, make Pydantic v2 the single source of truth for every API request/response shape, generate the frontend TypeScript client from the OpenAPI 3.1 schema, kill the `{data, error}` envelope in favor of RFC 7807 `application/problem+json`, add Schemathesis contract tests in CI, and expose the API as MCP tools via FastMCP. Keep Django (ORM, auth, Channels, middleware) untouched.

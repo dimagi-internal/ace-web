@@ -1,5 +1,7 @@
 # Multiple view modes for opps + chats — design
 
+> **Status: shipped (PR #185, 2026-05-03) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Status:** Approved 2026-05-02 by jjackson (verbal — "just implement with your best judgement"). User-review gate explicitly waived.
 
 **Premise.** ace-web's data model has Workspaces → Opps → Runs → Steps → Chats + Artifacts + Verdicts + Gates. Today users browse it through three single-projection pages: a flat opp list (`/opps`), a flat session list (`/sessions`), and a three-pane Workbench (`/opps/<slug>`). The lift in sprints 1 + 2 (PRs #178, #182) made the chat side opp-aware, but the surfaces are still single-shape.

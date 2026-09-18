@@ -1,5 +1,7 @@
 # ACE Opportunity Workbench — Implementation Plan
 
+> **Status: shipped (PR #17, 2026-04-09) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the Workbench — a new `apps/opps/` Django app plus a three-pane React surface at `/opps` in ace-web — that reads ACE opportunity state live from Google Drive (via a per-user OAuth Drive client) and presents all 19 skills of a selected run as a dense, scannable list with inline output previews, judge scores + deltas, gate history, and a hero "Discuss in chat" CTA that launches a new ace-web chat session pre-seeded with the step's context so the team can iterate on the output and push a SKILL.md improvement to GitHub from the chat. Multiple runs per IDD are first-class; a lightweight side-by-side comparison page is included.

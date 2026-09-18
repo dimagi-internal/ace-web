@@ -1,5 +1,7 @@
 # Plan: Mobile Cloud Runner POC (ace-web side)
 
+> **Status: shipped (PR #272, 2026-05-10) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-05-09
 **Status:** Draft for review
 **Owner:** Jon

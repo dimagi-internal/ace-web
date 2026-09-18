@@ -1,5 +1,7 @@
 # ACE Web — Phase 3: Multi-player Collaboration — Design
 
+> **ARCHIVED 2026-09-18 — describes code or an approach that no longer exists; do not follow it.** See `docs/archive/README.md` for why, and `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-04-09
 **Status:** Approved for implementation planning.
 **Scope:** Detailed design for Phase 3 of `docs/specs/2026-04-08-ace-web-design.md`. Expands §4.3 and §5.2 of the main spec with the decisions made in the Phase 3 brainstorming session.

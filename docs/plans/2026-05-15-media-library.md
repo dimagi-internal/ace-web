@@ -1,5 +1,7 @@
 # Media Library Implementation Plan
 
+> **Status: shipped (PR #412, 2026-05-15) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship a curated workspace-scoped media library (video + audio) at `<workspace_root>/videos/library/`, with per-file JSON sidecars, MCP-exposed list endpoints, a React library page, a `library:video/<subfolder>/<filename>` spec-yaml reference syntax, and an end-to-end demo across multiple programs.

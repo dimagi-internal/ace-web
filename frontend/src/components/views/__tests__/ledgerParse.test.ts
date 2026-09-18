@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseLedger } from "../ledgerParse";
+import { type Disposition, outcomeCounts, outcomeOf, parseLedger } from "../ledgerParse";
 
 /** Taken verbatim from the real export of
  *  ACE/hh-poverty-targeting/feedback/20260727-sophie-feintuch-ledger, so a
@@ -110,5 +110,30 @@ describe("parseLedger", () => {
     expect(items).toHaveLength(1);
     expect(items[0].dispositions[0].status).toBe("UNROUTED");
     expect(items[0].dispositions[0].text).toContain("nobody picked this up");
+  });
+});
+
+describe("outcomeOf / outcomeCounts", () => {
+  const d = (status: string, kind: string) =>
+    ({ status, kind, text: "", ref: null, href: null }) as Disposition;
+
+  it("reads a skill fix as a change to ACE itself", () => {
+    expect(outcomeOf(d("SHIPPED", "skill fix"))).toBe("ace");
+  });
+  it("reads a decision as a change to this program", () => {
+    expect(outcomeOf(d("SHIPPED", "decision"))).toBe("program");
+  });
+  it("reads an open question or NEEDS YOU as waiting on a person", () => {
+    expect(outcomeOf(d("NEEDS YOU", "open question"))).toBe("person");
+    expect(outcomeOf(d("SHIPPED", "open question"))).toBe("person");
+  });
+  it("leaves an unknown kind unclassified rather than guessing", () => {
+    expect(outcomeOf(d("SHIPPED", "something new"))).toBe("other");
+  });
+
+  it("counts comments, and a comment that did two things counts under both", () => {
+    const items = parseLedger(REAL)!;
+    // a → decision; b → two skill fixes (one comment); d → skill fix.
+    expect(outcomeCounts(items)).toEqual({ ace: 2, program: 1, person: 0, other: 0 });
   });
 });

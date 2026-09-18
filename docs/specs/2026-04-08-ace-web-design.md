@@ -1,5 +1,7 @@
 # ACE Web Harness — Design Spec
 
+> **Status: Phases 1–4 shipped 2026-04; Phase 5 deferred indefinitely. Superseded in part: GCP/IAP → AWS ECS + Connect OAuth (PR #11), and ace-web-hosted chat → canopy-hosted chat (PR #687, 2026-07-26) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-04-08
 **Status:** Approved for execution. Phase 1 complete; Phase 2 implementation plan to follow.
 **Scope:** The complete ace-web product. Phase breakdown is engineering execution order, not user-facing milestones.

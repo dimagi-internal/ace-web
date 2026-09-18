@@ -1,5 +1,7 @@
 # Turmeric Smoke Walkthrough Implementation Plan
 
+> **Status: shipped (PR #92, 2026-04-17) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the Turmeric smoke walkthrough — a repeatable, committed `canopy:walkthrough` run that exercises the ACE → Drive → ace-web flow against prod, with the new delete-opp feature enabling clean teardown.

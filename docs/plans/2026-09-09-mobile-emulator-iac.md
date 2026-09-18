@@ -1,5 +1,7 @@
 # Mobile Emulator: Back Under IaC Implementation Plan
 
+> **Status: shipped (PRs #762/#764, 2026-09-09/10) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Put the ACE mobile emulator's AWS resources back under version-controlled infrastructure-as-code, and prove the emulator still boots and runs a Maestro flow after three months stopped.

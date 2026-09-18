@@ -1,5 +1,7 @@
 # Opp Workbench Cache Redesign Implementation Plan
 
+> **Status: shipped (PR #251, 2026-05-09) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the 30-second TTL Drive cache with a Drive-Changes-API–driven long-lived snapshot cache + ETag-aware frontend cache so loading any opp once makes subsequent navigations instant until something in that opp's tree actually changes in Drive.

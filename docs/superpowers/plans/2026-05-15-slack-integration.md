@@ -1,5 +1,7 @@
 # Slack Integration Implementation Plan
 
+> **Status: shipped (PR #396, 2026-05-15) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the v1 Slack integration described in `docs/superpowers/specs/2026-05-15-slack-integration-design.md` — trigger ACE runs from Slack and mirror the Workbench Phase view as a parent status card + one thread message per phase.

@@ -340,23 +340,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Seed chat from step */
-        readonly post: operations["apps_opps_api_seed_chat"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/api/w/{workspace_slug}/opps/{slug}/actions/seeded-run": {
         readonly parameters: {
             readonly query?: never;
@@ -2717,16 +2700,6 @@ export interface components {
              * Format: date-time
              */
             readonly decided_at: string;
-        };
-        /**
-         * SeedChatIn
-         * @description Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seed-chat.
-         */
-        readonly SeedChatIn: {
-            /** Step Skill */
-            readonly step_skill: string;
-            /** Run Id */
-            readonly run_id?: string | null;
         };
         /**
          * SeededRunIn
@@ -5643,31 +5616,6 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["OppCompareOut"];
                 };
-            };
-        };
-    };
-    readonly apps_opps_api_seed_chat: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_slug: string;
-                readonly slug: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["SeedChatIn"];
-            };
-        };
-        readonly responses: {
-            /** @description OK */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
