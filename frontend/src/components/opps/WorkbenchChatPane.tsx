@@ -1,11 +1,12 @@
 import { useParams } from "react-router-dom";
 import { ExternalLink, MessageSquare, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "canopy-ui/ui";
 import { CanopyChatPanel } from "../../canopy/CanopyChatPanel";
-import { createCanopySession } from "../../canopy/api";
+import { createCanopySession, type CanopyPageState } from "../../canopy/api";
+import { useCanopyPageState } from "../../canopy/usePageState";
 import { useCanopySessionsList } from "../../canopy/useCanopySessionsList";
 import { useCanopyStatus } from "../../canopy/useCanopyStatus";
 
@@ -48,6 +49,45 @@ export function WorkbenchChatPane({ slug, runId, skill, skillDisplayName }: Prop
   const [startError, setStartError] = useState<string | null>(null);
 
   const activeId = selectedId ?? (canopyChats.length > 0 ? canopyChats[0].id : null);
+
+  /**
+   * What the reader is looking at RIGHT NOW, handed to canopy so the agent can
+   * re-read it (`current_page`) instead of relying on what was true when the
+   * chat was opened.
+   *
+   * The session's `metadata` already carries `opp_slug`/`opp_run_id`/
+   * `opp_step_skill`, but that is stamped once at create and then frozen: pick
+   * a different step or a different run and the agent is still answering about
+   * the screen the chat started on. These props change with the selection, so
+   * this does too.
+   *
+   * SELECTION, not data — ids and the tool that resolves them, never the
+   * artifacts themselves. `apps_opps_api_get_step` is ace-web's own MCP tool
+   * for exactly this read (`GET /api/w/{ws}/opps/{slug}/steps/{skill}`), so the
+   * agent fetches the step live, under the caller's own permissions, rather
+   * than trusting a copy this pane made. See `useCanopyPageState`.
+   */
+  const pageState = useMemo<CanopyPageState>(
+    () => ({
+      resource: `opp://${slug}/${runId}`,
+      backing_tool: "apps_opps_api_get_step",
+      // The Workbench shows ONE step at a time, so the selection is that step.
+      visible_ids: [skill],
+      filters: {
+        workspace_slug: workspaceSlug,
+        opp_slug: slug,
+        run_id: runId,
+        step_skill: skill,
+      },
+      // Descriptive only, so the agent can say the step's name the way the
+      // reader sees it rather than echoing a slug back at them.
+      step_display_name: skillDisplayName ?? skill,
+      surface: "opp-workbench",
+    }),
+    [workspaceSlug, slug, runId, skill, skillDisplayName],
+  );
+
+  useCanopyPageState(canopyEnabled ? canopyBase : null, activeId, pageState);
 
   const handleStart = async () => {
     setStarting(true);

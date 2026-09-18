@@ -233,10 +233,21 @@ Google Drive.
   workspace instead of every ace workspace sharing the same `CANOPY_WORKSPACE`
   tenant; every ace workspace maps to one canopy workspace today, so without
   this a `team-b` member could list, and open, `team-a`'s chats).
-  **Residual, not fully closed:** this scopes the LIST only — canopy's own
-  tenancy still lets any member of the canopy workspace open a session
-  directly by id (`GET /api/canopy-sessions/{id}`). Hard isolation requires
-  mapping each ace workspace onto its own canopy workspace.
+  **The by-id hole this used to name is CLOSED upstream (2026-09-17).** It
+  read: "canopy's own tenancy still lets any member of the canopy workspace
+  open a session directly by id (`GET /api/canopy-sessions/{id}`); hard
+  isolation requires mapping each ace workspace onto its own canopy
+  workspace." That was true and is not any more, and leaving it written down
+  was the more expensive half — it is an instruction to go build per-workspace
+  canopy tenancy that nothing now needs. canopy-web#749 gave the list and the
+  by-id read ONE predicate (`apps/canopy_sessions/access.py::visible_session_q`
+  — you created it, or you are a participant, or it is a runner-discovered
+  session with a binding), gated inside the tenant check rather than instead of
+  it, with `tests/test_session_by_id_access.py` asserting the two agree;
+  canopy-web#795 added the disjoint contact predicate. A co-tenant holding a
+  session UUID can no longer read that chat. The `origin_key` scoping below is
+  still ours and still required — it is what keeps one ace workspace's chats
+  out of another's LIST — but it is no longer papering over a by-id gap.
   Ops + deploy prerequisites (undocumented failure modes if any is
   missed): (1) a registered prod `AppCredential` on canopy-web (name
   `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`), its raw
@@ -263,6 +274,47 @@ Google Drive.
   a dead page; every user-triggered canopy call (new chat, discuss-this-step)
   surfaces its error rather than swallowing it — see
   `RecentSessionsSidebar.handleNew`'s try/catch.
+- **The Workbench tells the agent what is on screen (page state).** A canopy
+  session's `metadata` (`opp_slug`/`opp_run_id`/`opp_step_skill`) is stamped
+  once at create and then FROZEN, so before this the agent kept answering about
+  the step a chat was opened on — pick another step or another run and it was
+  confidently discussing a screen the reader had left. canopy's page contract
+  (2026-09-16) replaces that: `PUT /api/canopy-sessions/{id}/page-state` holds
+  a live declaration the agent re-reads on demand via its own `current_page`
+  MCP tool, plus a copy folded into the first message so turn one does not race
+  the MCP connection. ace-web's half is `canopy/usePageState.ts`
+  (`useCanopyPageState`) + `declareCanopyPageState` in `canopy/api.ts`, wired
+  into `WorkbenchChatPane`. **This is plain REST on the session with the
+  delegated token ace-web already mints — it needs no iframe, no widget, and no
+  change to `CanopyChatPanel`.** Three rules it must keep: it declares the
+  SELECTION (ids + `backing_tool`, the MCP tool that resolves them), never the
+  rows — canopy refuses a declaration over 8 KiB with `too_large` precisely to
+  enforce that, and sending rows would duplicate our own API, go stale between
+  render and send, and add a second place to get access control wrong; a failed
+  declaration is non-fatal (the agent knows less, the chat still works); and
+  only one PUT is ever in flight, because canopy replaces wholesale and a slow
+  PUT for the previous step landing last restores the exact staleness this
+  exists to remove. `backing_tool` must name a REAL MCP tool — today
+  `apps_opps_api_get_step`, the operationId FastMCP derives from
+  `GET /api/w/{ws}/opps/{slug}/steps/{skill}`; a name that resolves to nothing
+  is worse than sending none, because the agent will try it.
+- **`page.invalidate` is NOT wired, and that is a finding rather than a gap.**
+  canopy's page contract has a third limb beside state and actions: a
+  `page.invalidate` WS frame telling a page its data moved, which canopy's own
+  `/insights` consumes through `useResource`. It does not apply to ace-web, and
+  checking why is cheaper than discovering it half-built. canopy raises these at
+  the MODEL layer — `invalidation.mark_dirty` is called from Django `post_save`/
+  `post_delete` receivers on canopy's OWN rows, and `sessions_showing` matches
+  `page_state__resource` EXACTLY. Grep it: the only producer in canopy is
+  `apps/projects/signals.py` raising `insight://`. **ace-web's opp data is in
+  Google Drive**, written by agents through Drive, which canopy has no model,
+  no signal and no knowledge of — so nothing can ever publish `opp://…` and a
+  handler for it would be dead code that reads as live. ace-web already has the
+  right mechanism for this anyway: the Drive Changes API poll behind the opp
+  cache (`opp-cache-architecture.md`). Making the two meet would mean ace-web
+  becoming a *producer* of canopy invalidations, which needs an API surface
+  canopy does not expose (`mark_dirty` is internal) plus an answer to "who may
+  tell whom to refresh" — a design question, not a wiring job.
 - **ace-web's own interactive chat UI is retired.** `apps/sessions/
   {consumers,drafts,presence,routing}.py`, the `Draft`/`ShareToken` models
   and their tables, and the frontend's `useSessionSocket`/`sessionReducer`/
@@ -549,7 +601,7 @@ QA / probe:
 - [e2e-probe](docs/qa/e2e-probe.md) — `scripts/qa/labs_probe.py` walks every UI surface + cross-checks the OpenAPI schema for orphan endpoints. Re-run after every deploy: `LABS_TOKEN=... uv run --extra walkthrough python scripts/qa/labs_probe.py`. Caught three Phase-5 regressions (public summary endpoint deleted, cross-opp compare deleted, empty-runs-folder 404) that nothing else surfaced.
 
 Repo / merge process:
-- [squash-merge-stale-branch-orphans-commits](docs/learnings/squash-merge-stale-branch-orphans-commits.md) — squash-merge from a topic branch that hasn't pulled an intervening merge silently overwrites the intervening commits on `main`. Repo defense set 2026-05-12: `allow_squash_merge=false`. Don't re-enable without "Always suggest updating PR branches" + a branch-protection rule.
+- [squash-merge-stale-branch-orphans-commits](docs/learnings/squash-merge-stale-branch-orphans-commits.md) — squash-merge from a topic branch that hasn't pulled an intervening merge silently overwrites the intervening commits on `main`. Defense CHANGED 2026-09-17: squash is enabled again, and the `main protection` ruleset's `strict_required_status_checks_policy: true` is what closes the hazard now — a stale branch cannot merge at all. The old `allow_squash_merge=false` note is superseded; don't re-disable squash on the strength of it.
 
 ## Workflow
 

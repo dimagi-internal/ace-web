@@ -83,6 +83,7 @@ from apps.opps.tests.test_summary import (
     _FakeWorkspace,
     _state_yaml,
 )
+from apps.opps.tests.test_summary_claims import CLAIMS_YAML
 
 OPP_SLUG = "turmeric"
 RUN_ID = "20260503-0835"
@@ -471,6 +472,12 @@ def _maximal_tree() -> dict:
                     RUN_ID: {
                         "run_state.yaml": _maximal_state_yaml(),
                         "decisions.yaml": _DECISIONS_YAML,
+                        # The run's frozen claim set. Like the two deep-QA
+                        # verdicts below, nothing in `run_state.yaml`
+                        # points at it — its PRESENCE is the signal, and
+                        # its absence is what makes the section vanish on
+                        # every other run.
+                        "claims.yaml": CLAIMS_YAML,
                         # `/ace:qa-deep`'s two outputs, at the paths it
                         # documents. Nothing in `run_state.yaml` points
                         # at them — their PRESENCE is the signal the
@@ -579,6 +586,12 @@ def _dicts(payload: dict):
 
 PUBLIC_PAYLOAD_KEYS = frozenset({
     "opp",
+    # "What changed because you asked" — the run's frozen claim set
+    # (ace#2420). What a named counterpart DECIDED between runs, and
+    # whether this run's output acted on it. `null` on every run that
+    # authored none — the auditor must read absence as "this run has no
+    # claims", not as a missing section.
+    "claims",
     # The run's build memo, carried as CONTENT (ace-web#767) — the review
     # artifact the PDD names: "humans review the memo and spot-check the
     # apps, rather than reviewing every screen." `null` on every run
@@ -674,6 +687,29 @@ SECTION_KEYS: dict[str, frozenset[str]] = {
     # read. `complete` is null when the run did not say. `gaps` is what
     # the memo itself says it is missing — never presented as complete.
     "build_memo": frozenset({"title", "url", "access", "complete", "gaps", "body"}),
+    # The claim set is the DENOMINATOR, so `counts` has to name every way
+    # a claim can go — an UNMET one must appear as an accusation rather
+    # than as an absence. `error` is set when the file could not be read:
+    # `classifyRunClaims` reports `ok: false` rather than throwing, and a
+    # page that dropped it would render unreadability as "no claims".
+    "claims": frozenset({
+        "summary", "total", "all_met", "counts", "error", "people",
+    }),
+    "claims.counts": frozenset({
+        "met", "unmet", "not_reached", "indeterminate", "unanswered",
+    }),
+    "claims.people[]": frozenset({"person", "claims"}),
+    # `authored_by` and `evidence_kind` are the two load-bearing ones.
+    # ACE writes its own exam here and the design's ONLY mitigation is
+    # that the reviewer can see which bar was hers (`authored_by:
+    # counterpart`); `evidence_kind: judged` is what stops a read-and-
+    # assessed verdict borrowing a probe's authority. `evidence` is the
+    # AUDIT record and is null for a non-member — see (e).
+    "claims.people[].claims[]": frozenset({
+        "id", "claim", "verdict", "evidence_kind", "authored_by", "person",
+        "quote", "artifact", "checkable_at", "says", "evidence",
+        "would_settle_it",
+    }),
     "design": frozenset({"docs"}),
     "design.docs[]": frozenset({"title", "url", "access"}),
     "apps[]": frozenset({"kind", "name", "hq_url", "access"}),
@@ -1075,6 +1111,32 @@ def test_no_undeclared_secret_shaped_value_reaches_an_anonymous_reader(anon_payl
 
 
 # ─── (e) Confidentiality vs usability are DIFFERENT rules ───────────
+
+
+def test_a_non_member_payload_never_carries_a_claims_audit_record(anon_payload):
+    """The second confidentiality-shaped exception, and the same rule.
+
+    A claim's ``says`` is written FOR the counterpart and is served to
+    everyone. Its ``evidence`` is the audit record — Drive file ids, MCP
+    atom signatures like ``commcare_download_ccz(domain=…, app_id=…)``,
+    internal field names, and reliability caveats about ACE's own read
+    paths. On the first live run that came to ~3,900 words for eight
+    claims, and it is the class ``skills/agent-turn-review`` § F bans
+    from counterpart comms (ace#2386, ace#2420).
+
+    Note what this is NOT: hiding a LINK. Every link stays on the page
+    with its ``access`` tag, per the usability rule above. This removes a
+    VALUE the reader must not have, the same way a privately captured
+    review's ledger is removed.
+    """
+    section = anon_payload["claims"]
+    assert section is not None, "the maximal fixture must carry a claim set"
+    rows = [c for group in section["people"] for c in group["claims"]]
+    assert rows, "the maximal fixture must carry claims"
+    assert all(c["evidence"] is None for c in rows)
+    # The counterpart-facing half is still there — this must not read as
+    # "the section is empty for outsiders".
+    assert any(c["says"] for c in rows)
 
 
 def test_a_non_member_payload_never_carries_an_admin_feedback_ledger(anon_payload):

@@ -211,6 +211,73 @@ export async function detachCanopySession(base: string, id: string): Promise<voi
   });
 }
 
+/**
+ * What the Workbench is currently showing, as state the agent can re-read
+ * (canopy's `PUT /api/canopy-sessions/{id}/page-state`, spec
+ * 2026-09-12-embedded-agent-widget-v2 §5).
+ *
+ * **Send the SELECTION, not the data.** `visible_ids` + `backing_tool` says
+ * which rows are on screen and which MCP tool resolves them; the agent then
+ * calls that tool itself, live, under the caller's own permissions. Serialising
+ * the rows here would duplicate our own API, go stale between render and send,
+ * and create a second place to get access control wrong — which is why canopy
+ * caps a declaration at 8 KiB and refuses anything larger with `too_large`.
+ * The cap is generous for hundreds of ids and deliberately too small for the
+ * rows behind them.
+ */
+export interface CanopyPageState {
+  /** An MCP resource URI naming WHAT is on screen, e.g. `opp://<slug>/<run>`. */
+  resource: string;
+  /** The MCP tool that resolves the rows this page is showing. */
+  backing_tool?: string;
+  /** Which rows, by identifier — never the rows themselves. */
+  visible_ids?: (string | number)[];
+  /** What the user narrowed to. */
+  filters?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/** Canopy refused the declaration itself (422) — the page must send something
+ *  different, which is a different fix from retrying. `too_large` is the only
+ *  code that fires in practice. */
+export class CanopyPageStateRejected extends Error {
+  readonly code: string;
+  constructor(code: string, detail: string) {
+    super(`canopy refused the page state (${code}): ${detail}`);
+    this.code = code;
+  }
+}
+
+/**
+ * Replace this session's declared page state wholesale.
+ *
+ * Wholesale, never merged — a key left over from the step the user navigated
+ * away from is a key the agent would reason about as though it were still on
+ * screen, and merging makes stale state indistinguishable from fresh.
+ */
+export async function declareCanopyPageState(
+  base: string,
+  sessionId: string,
+  state: CanopyPageState,
+): Promise<void> {
+  const response = await canopyFetch(
+    base,
+    `/api/canopy-sessions/${encodeURIComponent(sessionId)}/page-state`,
+    { method: "PUT", body: JSON.stringify({ state }) },
+  );
+  if (response.status === 422) {
+    // Ninja renders these as `{"detail": "<code>: <message>"}`. Surfacing the
+    // code matters because `too_large` means "you sent rows instead of ids" —
+    // a design mistake with a specific fix — and retrying it never helps.
+    const detail = await response.text().catch(() => "");
+    const code = /"detail"\s*:\s*"([a-z_]+):/.exec(detail)?.[1] ?? "rejected";
+    throw new CanopyPageStateRejected(code, detail.slice(0, 200));
+  }
+  if (!response.ok) {
+    throw new Error(`canopy request failed (${response.status}): page-state`);
+  }
+}
+
 export async function placeCanopySession(
   base: string,
   id: string,
