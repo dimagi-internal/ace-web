@@ -1,5 +1,7 @@
+import { CanopyRestError } from "canopy-client";
+
 import { apiClient } from "../api/apiClient";
-import { getCanopyToken } from "./token";
+import { canopyRest } from "./client";
 
 /**
  * api.ts — browser → canopy-web REST.
@@ -44,14 +46,9 @@ export interface CanopySessionSummary {
   runner_online?: boolean | null;
 }
 
-/** `origin_key` this ace workspace stamps on (and filters by) every canopy
- *  session it creates/lists — must match `apps/canopy/api.py`'s server-side
- *  derivation (`f"ace-web:{workspace_slug}"`) exactly, since it's how canopy
- *  scopes the session LIST to one ace workspace instead of every ace
- *  workspace sharing the same canopy tenant (C1). */
-export function aceOriginKey(workspaceSlug: string): string {
-  return `ace-web:${workspaceSlug}`;
-}
+/** Re-exported from `client.ts`, where it sits next to the rest config it
+ *  belongs to. Kept here so existing importers do not have to move. */
+export { aceOriginKey } from "./client";
 
 /** `GET /api/canopy-sessions/{id}` (`SessionDetailOut`) — the single-session
  *  detail fetch. Unlike `listCanopySessions`, this is NOT filtered by
@@ -65,35 +62,38 @@ export interface CanopySessionDetail extends CanopySessionSummary {
   oldest_loaded_turn_index: number | null;
 }
 
-async function canopyFetch(base: string, path: string, init: RequestInit = {}): Promise<Response> {
-  const doFetch = (bearer: string) =>
-    fetch(`${base}${path}`, {
-      ...init,
-      headers: {
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
-        ...init.headers,
-        Authorization: `Bearer ${bearer}`,
-      },
-    });
-
-  const token = await getCanopyToken();
-  let response = await doFetch(token);
-  if (response.status === 401) {
-    const fresh = await getCanopyToken(true);
-    response = await doFetch(fresh);
-  }
-  return response;
+/**
+ * Bearer + retry-once-on-401, from `canopy-client`.
+ *
+ * This was ~30 hand-rolled lines here and is the machinery canopy-web extracted
+ * into the package. The retry semantics are unchanged and deliberately so: on a
+ * 401 the token is re-minted with `force`, because canopy has already rejected
+ * it and our own expiry bookkeeping is not the authority (it may have been
+ * revoked early, or the clocks may disagree).
+ *
+ * The ace-specific endpoints below ride on these rather than importing the
+ * package's `listSessions`/`getSession`, because ace-web's shapes are snake_case
+ * (`has_more_before`, `runner_online`) where the package normalises to camel,
+ * and its session list also filters by `opp_slug`/`opp_run_id`, which the
+ * package does not model. Sharing the TRANSPORT is the win; re-shaping ~20 call
+ * sites to gain nothing is not.
+ */
+function canopyFetch(base: string, path: string, init: RequestInit = {}): Promise<Response> {
+  return canopyRest(base).raw(path, init);
 }
 
 async function canopyJson<T>(base: string, path: string, init?: RequestInit): Promise<T> {
-  const response = await canopyFetch(base, path, init);
-  if (!response.ok) {
-    throw new Error(`canopy request failed (${response.status}): ${path}`);
+  try {
+    return await canopyRest(base).json<T>(path, init);
+  } catch (err) {
+    // The package throws a typed `CanopyRestError` carrying `status` and
+    // `path`; ace-web's callers have always caught a plain `Error` and shown
+    // its message, so preserve that surface rather than churn every catch.
+    if (err instanceof CanopyRestError) {
+      throw new Error(`canopy request failed (${err.status}): ${err.path}`);
+    }
+    throw err;
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
 }
 
 /**
