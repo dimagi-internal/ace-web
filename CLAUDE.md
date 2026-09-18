@@ -450,38 +450,6 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `--replay-phase-1..10` at `:root`/`.dark`. Frontend:
   `frontend/src/components/replay/`. Spec + why it isn't a standalone player:
   `docs/specs/2026-09-17-ace-demo-player-design.md` (see the addenda).
-- **Expert review tab** (`/w/<ws>/opps/<slug>?view=review`): what outside reviewers
-  said about an opp and what it changed — the self-improvement loop, made visible.
-  Every change is classified by WHAT it changed (`ledgerParse.outcomeOf`, read off
-  the ledger's own kind/status words): **Fixed in ACE** (a skill fix — every future
-  program gets it; this is the self-improvement story), **Changed this program** (a
-  run decision), **Needs a decision** (open question). The ledger's own badge says
-  SHIPPED for both of the first two, which buried the distinction — don't
-  reintroduce it. The header counts COMMENTS per outcome, so a comment that did two
-  things counts under both.
-  Opp-level, not per-run: a review is written against one run but survives every
-  later one. Reads two files the ACE plugin's `feedback-ledger` skill writes under
-  `ACE/<opp>/feedback/`: `<slug>.yaml` (the VERBATIM inbound record — reviewer,
-  channel, each comment with the section it was anchored to) and `<slug>-ledger`
-  (the DERIVED view joining each comment to the GitHub issues / decisions /
-  open questions it produced). **ace-web does NOT recompute the derived half** —
-  the plugin owns that join (it greps issue bodies for
-  `Feedback-Ref: <record-slug>/<item-id>` stamps), and a second implementation
-  here would need a GitHub credential and would drift from the one people run.
-  We render what the plugin published, same as the run summary renders the build
-  memo. Two gotchas: the ledger doc carries **no file extension**, so
-  `drive_export.read_prose` won't markdown-export it — export explicitly, and
-  **don't unescape** (the frontend's CommonMark renderer resolves escapes; the
-  build memo has the same rule). And the tally ("9 comments — 8 shipped, 1 need a
-  human, 0 unrouted") plus the responding run are **READ** from the rendered
-  prose with a narrow regex, absent rather than guessed on a miss — they come
-  from the join we deliberately don't reimplement. The panel strips the ledger's
-  own preamble (everything before the first `## ` item heading) because the
-  header already shows it. Backend: `apps/opps/feedback.py` at
-  `GET /api/w/<ws>/opps/<slug>/feedback`; frontend
-  `components/views/ReviewView.tsx`. Worked example: `hh-poverty-targeting`,
-  Sophie Feintuch 2026-07-27 — 9 comments → 6 skill defects (ace#979–#984), one
-  against a Learn assessment ACE's own eval had scored 9.4.
 - **Per-session Structure view** (page at `/w/<workspace>/chat/<slug>/structure`):
   hierarchical session tree (phase → skill → tool, with subagent recursion +
   parallel-group clusters). Computed fresh per request from
