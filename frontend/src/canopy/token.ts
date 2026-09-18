@@ -1,89 +1,63 @@
+import { createTokenStore } from "canopy-client";
+
 import { apiClient } from "../api/apiClient";
 
 /**
- * token.ts — the browser's cached delegated canopy token.
+ * The browser's cached delegated canopy token.
  *
- * ace-web's own `POST /api/canopy/token` (session-authed, cookie + CSRF —
- * see `apiClient`) exchanges ace's registered app credential for a
- * short-lived per-user bearer token the browser then presents directly to
- * canopy-web (`Authorization: Bearer <token>` — see api.ts, `?token=` on the
- * WS — see ws.ts). Minting a fresh one on every REST call would be wasteful
- * and slow, so it's cached here until shortly before it expires.
+ * The cache itself is `canopy-client`'s `createTokenStore` — the package
+ * canopy-web extracted FROM this file, so the logic here was the original and
+ * is now the shared one. What stays is the part that cannot be shared: HOW
+ * ace-web mints. That needs ace-web's `AppCredential`, which is a secret and
+ * can only live on ace-web's server, so the package takes a `fetchToken`
+ * callback and knows nothing about the exchange. That single inversion is what
+ * lets one package serve this SPA, a Django page and an iframe widget.
  *
- * `force` bypasses the cache outright — the retry-once-on-401 path in
- * api.ts calls `getCanopyToken(true)` when canopy-web itself rejects the
- * token (e.g. revoked early, clock skew), regardless of what our own TTL
- * bookkeeping thinks; `CanopyChatPanel` also forces a refresh after a
- * reconnect attempt, so a revoked-but-unexpired token can't wedge the
- * socket in a permanent reconnect loop (I5).
+ * ONE store for the app. The package de-globalised its own because a WIDGET can
+ * be mounted twice and the two would leak state into each other; ace-web is a
+ * single-user SPA minting one token for one signed-in human, and a single store
+ * is what keeps the in-flight dedup meaningful — several components mounting in
+ * the same tick (sidebar + chat panel + placement poll) would otherwise fire N
+ * concurrent mints and create N `DelegatedToken` rows server-side.
  */
 
-interface CachedToken {
-  token: string;
-  expiresAtMs: number;
-}
-
-// Refetch this long before the token's real expiry so a request kicked off
-// just under the wire doesn't race expiry mid-flight.
-const REFRESH_SKEW_MS = 5 * 60 * 1000;
-
-let cached: CachedToken | null = null;
-
-// In-flight dedup (I6): without this, several components mounting at once
-// (e.g. the sidebar + the chat panel + the placement banner's fleet poll)
-// each call getCanopyToken() before any of them has a cached result, firing
-// N concurrent mints — and N new DelegatedToken rows server-side. Every
-// caller in the same tick instead awaits the one request already underway.
-let inflight: Promise<string> | null = null;
-
-interface CanopyTokenResponse {
-  token: string;
-  expires_at: string;
-}
-
-async function requestToken(): Promise<CanopyTokenResponse> {
-  // This one mattered most: it fetches the short-lived DelegatedToken the chat
-  // WebSocket rides on `?token=`. It threw on every call, so even with the
-  // status fix in #749 the chat page could not have worked.
-  // openapi-fetch CONSUMES the body to build `data` (dist/index.mjs) and never
-  // clones, so `response.json()` here throws "body stream already read" on every
-  // call. Use the parsed `data`. Same defect as useCanopyStatus — see #749.
+async function requestToken() {
+  // openapi-fetch CONSUMES the body to build `data` and never clones, so
+  // calling `response.json()` here throws "body stream already read" on every
+  // call — the defect fixed in #749. Use the parsed `data`.
   const { data, error, response } = await apiClient.POST("/api/canopy/token", {});
   if (!response.ok || error || !data) {
     throw new Error(`Failed to fetch canopy token: ${response.status}`);
   }
-  return data as CanopyTokenResponse;
+  const body = data as unknown as { token: string; expires_at: string };
+  // The package's contract is `expiresAt`; ace's endpoint says `expires_at`.
+  // A non-parseable value is treated as already-expired by the store rather
+  // than cached as NaN.
+  return { token: body.token, expiresAt: body.expires_at };
 }
 
-/** A non-parseable `expires_at` is treated as already-expired (M6) rather
- *  than caching a token whose expiry is `NaN` — `now < NaN - skew` is always
- *  `false`, so this was already forcing a refetch on every call; made
- *  explicit (and covered by a test) rather than relying on that NaN
- *  coincidence. */
-function expiresAtMsOf(expiresAt: string): number {
-  const ms = new Date(expiresAt).getTime();
-  return Number.isNaN(ms) ? 0 : ms;
+const store = createTokenStore(requestToken);
+
+/**
+ * Cached delegated token, refetching shortly before expiry.
+ *
+ * `force` bypasses the cache outright: the retry-once-on-401 path uses it when
+ * canopy has already rejected a token, regardless of what our own TTL
+ * bookkeeping thinks (it may have been revoked early, or the clocks may
+ * disagree); `CanopyChatPanel` uses it — rate-limited — after a reconnect, so a
+ * revoked-but-unexpired token cannot wedge the socket in a permanent loop.
+ */
+export function getCanopyToken(force = false): Promise<string> {
+  return store.get(force);
 }
 
-export async function getCanopyToken(force = false): Promise<string> {
-  const now = Date.now();
-  if (!force && cached && now < cached.expiresAtMs - REFRESH_SKEW_MS) {
-    return cached.token;
-  }
-  if (!inflight) {
-    inflight = requestToken()
-      .then(({ token, expires_at }) => {
-        cached = { token, expiresAtMs: expiresAtMsOf(expires_at) };
-        return cached.token;
-      })
-      .finally(() => {
-        inflight = null;
-      });
-  }
-  return inflight;
-}
-
-/** Sync read for callers (e.g. ws.ts's URL builder) that can't await. */
+/** Sync read for callers that cannot await — the WS URL builder, which has to
+ *  put the token in a query string. `null` before the first mint. */
 export function peekCanopyToken(): string | null {
-  return cached ? cached.token : null;
+  return store.peek();
+}
+
+/** Drop the cached token. For a sign-out or an account switch. */
+export function clearCanopyToken(): void {
+  store.clear();
 }
