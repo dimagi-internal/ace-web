@@ -1,6 +1,7 @@
 import { CanopyRestError } from "canopy-client";
 
 import { apiClient } from "../api/apiClient";
+import type { components as canopy } from "../api/canopy-generated";
 import { canopyRest } from "./client";
 
 /**
@@ -25,6 +26,25 @@ import { canopyRest } from "./client";
  * (apps/canopy_sessions/schemas.py, apps/harness/schemas.py) rather than
  * guessed — see the per-function mapping notes below.
  */
+
+/**
+ * canopy's own response shapes, generated from ITS OpenAPI schema
+ * (`npm run gen:canopy-api`) rather than described again here.
+ *
+ * Every mapper below takes one of these instead of `Record<string, unknown>`,
+ * which is the whole point: a field canopy renames or drops becomes a compile
+ * error at the mapping site. It was a runtime surprise before — an earlier
+ * draft compared `Runner.live_status` against `"ONLINE"`, the Python
+ * constant's NAME rather than its lowercase VALUE, and every runner silently
+ * looked offline.
+ */
+type SessionOut = canopy["schemas"]["SessionOut"];
+type SessionDetailOut = canopy["schemas"]["SessionDetailOut"];
+type RunnerOut = canopy["schemas"]["RunnerOut"];
+type EmdashSessionOut = canopy["schemas"]["EmdashSessionOut"];
+type TurnOut = canopy["schemas"]["TurnOut"];
+type TurnEventsOut = canopy["schemas"]["TurnEventsOut"];
+type MessagePageOut = canopy["schemas"]["MessagePageOut"];
 
 export interface CanopySessionSummary {
   id: string;
@@ -103,14 +123,14 @@ async function canopyJson<T>(base: string, path: string, init?: RequestInit): Pr
  * optimistically passed it through; removed per M4 so it doesn't read as
  * available provenance when it can never actually be populated).
  */
-function mapSessionSummary(raw: Record<string, unknown>): CanopySessionSummary {
+function mapSessionSummary(raw: SessionOut): CanopySessionSummary {
   return {
-    id: raw.id as string,
-    title: raw.title as string,
-    agent_slug: (raw.agent_slug as string | null | undefined) ?? null,
-    updated_at: (raw.last_activity_at as string | undefined) ?? (raw.updated_at as string),
-    runner_name: (raw.runner_name as string | null | undefined) ?? null,
-    runner_online: (raw.runner_online as boolean | null | undefined) ?? null,
+    id: raw.id,
+    title: raw.title,
+    agent_slug: raw.agent_slug ?? null,
+    updated_at: raw.last_activity_at,
+    runner_name: raw.runner_name ?? null,
+    runner_online: raw.runner_online ?? null,
   };
 }
 
@@ -127,7 +147,7 @@ export async function listCanopySessions(
   // filter applied) only when the caller has no ace workspace to scope by.
   if (filters.origin_key) params.set("origin_key", filters.origin_key);
 
-  const rows = await canopyJson<Record<string, unknown>[]>(
+  const rows = await canopyJson<SessionOut[]>(
     base,
     `/api/canopy-sessions/?${params.toString()}`,
   );
@@ -143,15 +163,14 @@ export async function listCanopySessions(
  * (fix-round-1 review, Important 2).
  */
 export async function getCanopySession(base: string, id: string): Promise<CanopySessionDetail> {
-  const raw = await canopyJson<Record<string, unknown>>(
+  const raw = await canopyJson<SessionDetailOut>(
     base,
     `/api/canopy-sessions/${encodeURIComponent(id)}`,
   );
   return {
     ...mapSessionSummary(raw),
-    has_more_before: Boolean(raw.has_more_before),
-    oldest_loaded_turn_index:
-      (raw.oldest_loaded_turn_index as number | null | undefined) ?? null,
+    has_more_before: raw.has_more_before,
+    oldest_loaded_turn_index: raw.oldest_loaded_turn_index ?? null,
   };
 }
 
@@ -188,8 +207,8 @@ export async function fetchOlderMessages(
   base: string,
   id: string,
   before: number,
-): Promise<{ messages: unknown[]; has_more_before: boolean }> {
-  return canopyJson<{ messages: unknown[]; has_more_before: boolean }>(
+): Promise<MessagePageOut> {
+  return canopyJson<MessagePageOut>(
     base,
     `/api/canopy-sessions/${encodeURIComponent(id)}/messages?before=${encodeURIComponent(String(before))}`,
   );
@@ -327,13 +346,13 @@ export async function listCanopyRunners(base: string): Promise<CanopyRunnerSumma
   // degraded/retired, see RUNNER_STATUS_ONLINE above) — renamed here to
   // `live_status` to match what the directed-routing UI actually reasons
   // about, per the interface Task 4 consumes.
-  const rows = await canopyJson<Record<string, unknown>[]>(base, `/api/harness/runners/`);
+  const rows = await canopyJson<RunnerOut[]>(base, `/api/harness/runners/`);
   return rows.map((raw) => ({
-    id: raw.id as string,
-    name: raw.name as string,
-    live_status: raw.status as string | undefined,
-    ready: raw.ready as boolean | undefined,
-    capabilities: raw.capabilities as Record<string, unknown> | undefined,
+    id: raw.id,
+    name: raw.name,
+    live_status: raw.status,
+    ready: raw.ready,
+    capabilities: raw.capabilities,
   }));
 }
 
@@ -374,20 +393,26 @@ export interface ActiveRun {
  * sessions(request.user)`), so no workspace argument is threaded here.
  */
 export async function listActiveRuns(base: string): Promise<ActiveRun[]> {
-  const rows = await canopyJson<Record<string, unknown>[]>(base, `/api/harness/sessions`);
+  const rows = await canopyJson<EmdashSessionOut[]>(base, `/api/harness/sessions`);
   return rows.map((raw) => {
-    const messages = (raw.recent_messages as { text?: string }[] | undefined) ?? [];
+    // `recent_messages` is `readonly unknown[]` in canopy's OWN schema — it
+    // declares the field but not the element shape, so `.text` is the one thing
+    // on this path the generated contract cannot check for us. Narrowed here,
+    // in one place and out loud, rather than cast invisibly inside the map:
+    // if canopy ever renames it, this is where to look, and nothing above
+    // silently starts rendering blanks.
+    const messages = (raw.recent_messages ?? []) as readonly { text?: string }[];
     // The LAST message is the newest — the feed returns them in order, and the
     // point of showing one is "what is it doing now".
     const last = messages.length ? messages[messages.length - 1]?.text : undefined;
     return {
-      id: raw.id as string,
-      task: (raw.emdash_task as string | undefined) ?? "",
-      project: (raw.project as string | undefined) ?? "",
-      agent: (raw.agent as string | null | undefined) ?? null,
-      runner_name: (raw.runner_name as string | null | undefined) ?? null,
-      status: (raw.status as string | undefined) ?? "",
-      last_interacted_at: (raw.last_interacted_at as string | null | undefined) ?? null,
+      id: raw.id,
+      task: raw.emdash_task ?? "",
+      project: raw.project ?? "",
+      agent: raw.agent ?? null,
+      runner_name: raw.runner_name ?? null,
+      status: raw.status ?? "",
+      last_interacted_at: raw.last_interacted_at ?? null,
       latest_message: last ?? null,
     };
   });
@@ -430,19 +455,19 @@ export interface ActiveTurn {
  * exact moment someone is waiting for their email to be picked up.
  */
 export async function listActiveTurns(base: string, agent = "ace"): Promise<ActiveTurn[]> {
-  const rows = await canopyJson<Record<string, unknown>[]>(
+  const rows = await canopyJson<TurnOut[]>(
     base, `/api/harness/turns/?agent=${encodeURIComponent(agent)}&limit=25`,
   );
   return rows.map((raw) => ({
-    id: raw.id as string,
-    agent: (raw.agent_slug as string | null | undefined) ?? null,
-    project: (raw.project as string | undefined) ?? "",
-    origin: (raw.origin as string | undefined) ?? "",
-    status: (raw.status as string | undefined) ?? "",
-    prompt: (raw.prompt as string | undefined) ?? "",
-    runner_name: (raw.claimed_by_name as string | null | undefined) ?? null,
-    created_at: (raw.created_at as string | undefined) ?? "",
-    session_id: (raw.session_id as string | undefined) ?? "",
+    id: raw.id,
+    agent: raw.agent_slug ?? null,
+    project: raw.project ?? "",
+    origin: raw.origin ?? "",
+    status: raw.status ?? "",
+    prompt: raw.prompt ?? "",
+    runner_name: raw.claimed_by_name ?? null,
+    created_at: raw.created_at ?? "",
+    session_id: raw.session_id ?? "",
   }));
 }
 
@@ -495,10 +520,12 @@ export interface TurnEvent {
 export async function listTurnEvents(
   base: string, turnId: string, after = 0,
 ): Promise<TurnEvent[]> {
-  const body = await canopyJson<{ events: TurnEvent[] }>(
+  const body = await canopyJson<TurnEventsOut>(
     base, `/api/harness/turns/${encodeURIComponent(turnId)}/events?after=${after}`,
   );
-  return body.events ?? [];
+  // Structurally identical to canopy's `TurnEventOut`; the local `TurnEvent`
+  // stays as the name this app's components import.
+  return (body.events ?? []) as TurnEvent[];
 }
 
 /** The runs worth showing on an ACE surface: this agent's, still going.

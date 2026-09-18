@@ -1,0 +1,82 @@
+name: Canopy contract drift
+
+# Is the canopy API ace-web is COMPILED against still the canopy API that is
+# DEPLOYED?
+#
+# `src/api/canopy-generated.ts` is generated from canopy-web's OpenAPI schema and
+# committed, so ace-web's build is hermetic and `tsc` enforces the contract. The
+# cost of committing it is that it can go stale: canopy ships several times a day
+# and ace-web only rebuilds on its own merges, so a field canopy renames is
+# invisible here until someone regenerates.
+#
+# DELIBERATELY NOT A PR CHECK. Regenerating needs the deployed canopy's schema
+# over the network, so as a required check it would (a) fail every ace-web PR
+# whenever labs is down or mid-deploy, and (b) make a canopy deploy able to block
+# an unrelated ace-web change. Neither is a trade worth making for a contract
+# that moves in days, not minutes. A daily run catches it inside one working day
+# and costs nobody a red PR.
+#
+# The generator is fatal on a MISSING operation, which is the signal that
+# matters most: an endpoint ace-web calls that canopy no longer serves would
+# otherwise regenerate to a smaller file, pass `tsc`, and 404 at runtime for
+# whoever opened the page.
+
+on:
+  schedule:
+    # 07:00 UTC — before the working day, after canopy's usual overnight merges.
+    - cron: "0 7 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      schema_url:
+        description: "Override the canopy schema URL"
+        required: false
+        type: string
+
+concurrency:
+  group: canopy-contract-drift
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Regenerate against deployed canopy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Regenerate the canopy contract
+        working-directory: frontend
+        env:
+          CANOPY_SCHEMA_URL: ${{ inputs.schema_url }}
+        run: npm run gen:canopy-api
+
+      - name: Report drift
+        run: |
+          if git diff --quiet -- frontend/src/api/canopy-generated.ts; then
+            echo "No drift — ace-web's committed canopy contract matches deployed canopy."
+            exit 0
+          fi
+          echo "::error file=frontend/src/api/canopy-generated.ts::canopy's API has moved since this file was generated."
+          echo
+          echo "ace-web is compiled against a canopy contract that no longer matches the"
+          echo "deployed one. Regenerate and let tsc show you what breaks:"
+          echo
+          echo "    cd frontend && npm run gen:canopy-api && bunx tsc -b"
+          echo
+          echo "A clean tsc means the change was additive and you can just commit the file."
+          echo "A type error is the point of this job: it is a real incompatibility, sitting"
+          echo "in production right now, that would otherwise have surfaced as a blank panel."
+          echo
+          echo "--- diff ---"
+          git --no-pager diff -- frontend/src/api/canopy-generated.ts
+          exit 1
+
+      - name: Upload the regenerated contract
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canopy-generated-current
+          path: frontend/src/api/canopy-generated.ts

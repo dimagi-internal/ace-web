@@ -274,6 +274,30 @@ Google Drive.
   a dead page; every user-triggered canopy call (new chat, discuss-this-step)
   surfaces its error rather than swallowing it — see
   `RecentSessionsSidebar.handleNew`'s try/catch.
+- **ace-web's view of canopy's API is GENERATED, not hand-written.**
+  `frontend/src/api/canopy-generated.ts` comes from canopy-web's own OpenAPI
+  schema via `npm run gen:canopy-api` (`frontend/scripts/gen-canopy-contract.mjs`).
+  Before this, `canopy/api.ts` hand-mapped canopy's responses — 27 unchecked
+  primitive casts with manual renames (`status` -> `live_status`,
+  `last_activity_at` -> `updated_at`) — while canopy-web's OWN frontend read the
+  identical endpoints through generated types. Two descriptions of one contract,
+  one of them unchecked, and it had already cost a production bug: comparing
+  `Runner.live_status` against `"ONLINE"` (the Python constant's NAME, not its
+  lowercase VALUE) made every runner look offline and mis-fired the placement
+  banner on every chat. Now 0 casts; a rename is a compile error.
+  **The `CONSUMED` allowlist in that script is the contract surface** — canopy's
+  full schema is 208 paths / 322 schemas (~17,900 generated lines), so it prunes
+  to the 11 operations ace-web actually calls (905 lines). Calling a new canopy
+  endpoint means adding a line there, which is the right moment to notice the
+  coupling widening. A listed operation that canopy no longer serves is FATAL,
+  deliberately: a silent skip would regenerate smaller, pass `tsc`, and 404 at
+  runtime. One thing the contract cannot check — `EmdashSessionOut.recent_messages`
+  is `readonly unknown[]` in canopy's own schema, so the `.text` read is narrowed
+  explicitly in `listActiveRuns` and is the one unverified field on that path.
+  Drift is caught by `.github/workflows/canopy-contract-drift.yml`, which runs
+  **daily, not on PRs** — regenerating needs the deployed schema over the
+  network, so as a required check a canopy deploy could block an unrelated
+  ace-web PR.
 - **The Workbench tells the agent what is on screen (page state).** A canopy
   session's `metadata` (`opp_slug`/`opp_run_id`/`opp_step_skill`) is stamped
   once at create and then FROZEN, so before this the agent kept answering about

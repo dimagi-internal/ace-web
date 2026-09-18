@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:api": "openapi-typescript http://localhost:8000/api/openapi.json --output src/api/generated.ts --immutable",
-    "gen:narrative": "node scripts/gen-narrative-contract.mjs"
+    "gen:narrative": "node scripts/gen-narrative-contract.mjs",
+    "gen:canopy-api": "node scripts/gen-canopy-contract.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
