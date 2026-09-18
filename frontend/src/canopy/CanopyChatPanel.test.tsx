@@ -165,7 +165,7 @@ describe("CanopyChatPanel", () => {
     // Renders once status + the token mint have settled.
     await screen.findByText("hello");
     expect(sessionSocketMock).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "sess-1" }),
+      expect.objectContaining({ sessionId: "sess-1", protocol: "ag-ui" }),
     );
   });
 

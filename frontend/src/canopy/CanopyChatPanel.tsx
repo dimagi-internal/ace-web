@@ -222,7 +222,16 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
     [base, sessionId],
   );
 
-  const socket = useSessionSocket({ sessionId, wsUrl, onTitleUpdated: handleTitleUpdated });
+  // AG-UI on the wire (canopy-ui >= 0.9). The kit decodes it back into the same
+  // frames its reducer has always consumed, and proves the two reach identical
+  // state; `buildCanopyWsUrl` ignoring the path it is handed is fine, because
+  // the kit adds the protocol flag to the URL this builder RETURNS.
+  const socket = useSessionSocket({
+    sessionId,
+    wsUrl,
+    onTitleUpdated: handleTitleUpdated,
+    protocol: "ag-ui",
+  });
 
   // Viewer-liveness pair: tells the bound runner to start/stop streaming
   // this session live (RunnerBinding.stream_desired). Fire-and-forget on
