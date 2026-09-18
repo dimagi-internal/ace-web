@@ -114,7 +114,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/demo": {
+    readonly "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/replay": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -122,15 +122,15 @@ export interface paths {
             readonly cookie?: never;
         };
         /**
-         * Demo Player payload
-         * @description One saved run, rendered as an ordered set of acts.
+         * Run replay payload
+         * @description One saved run, as the beat stream the Phases screen replays.
          *
          *     Returns ``response={200: dict}`` deliberately — the payload nests the
          *     legacy ``serialize_opp_*`` step/judge/decision shapes, which a thin
          *     Pydantic schema would silently drop fields from (see CLAUDE.md § Rich
          *     response shapes over strict Pydantic outputs).
          */
-        readonly get: operations["apps_opps_api_get_run_demo"];
+        readonly get: operations["apps_opps_api_get_run_replay"];
         readonly put?: never;
         readonly post?: never;
         readonly delete?: never;
@@ -5344,7 +5344,7 @@ export interface operations {
             };
         };
     };
-    readonly apps_opps_api_get_run_demo: {
+    readonly apps_opps_api_get_run_replay: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;

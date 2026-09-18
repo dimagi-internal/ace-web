@@ -374,29 +374,32 @@ Google Drive.
   `docs/specs/2026-05-16-workspace-activity-view-design.md`. Runbook:
   `docs/architecture/workspace-activity.md`. Phase view is the canonical
   drill-down — row clicks go to `?run_id=<id>`, not the Workbench.
-- **Demo Player** (page at `/w/<ws>/opps/<slug>/runs/<run>/demo`): any saved run
-  presented to a room as an ordered set of **acts** — a time-compressed replay
-  of the run (dual clock: real run time against minutes on screen), a wall-time
-  ledger per phase, the steps their own QA/judge refused, and the decisions a
-  human overrode. Renders **chromeless** (registered under `PublicLayout`, no
-  TopNav) because it's projected; the payload endpoint still enforces workspace
-  membership, so it is not a public page. Acts are **capability-gated**: the
-  backend reports each act available or not *with a reason*, so a thin run gets
-  a short demo instead of a broken one. **Honesty rule — the player never
-  renders a value it can't source from the run**. Three timing modes, because
-  ACE stamps PHASE boundaries in `run_state.yaml` but almost never per-STEP
-  ones (a real 2026-07 run: a measured span on every phase, a timestamp on 0
-  of 48 steps): `measured` (step stamps are real), `phase` (the run clock and
-  the per-phase ledger are real; step offsets are interpolated for layout and
+- **Run replay** (a mode of the Workbench's Phases screen, not a separate
+  page): **Replay this run** plays a saved run back beat by beat — entering a
+  phase, starting a skill, finishing one — filling the real Phases UI in as it
+  goes. The open phase follows the cursor; phases/skills not yet reached dim;
+  the current skill is ringed and auto-expanded; **a step the cursor hasn't
+  finished renders pending with its verdict withheld**, because the point of a
+  replay is that you don't already know how it turned out. Off by default and
+  lazily fetched (costs nothing for anyone who never turns it on); once on it
+  warms every step's detail in the background so stepping never waits on Drive.
+  Space plays, arrows step one beat, R restarts, Esc exits. **Honesty rule —
+  never render a value it can't source from the run.** Three timing modes,
+  because ACE stamps PHASE boundaries in `run_state.yaml` but almost never
+  per-STEP ones (a real 2026-07 run: a measured span on every phase, a
+  timestamp on 0 of 48 steps): `measured` (step stamps are real), `phase` (the
+  clock and bands are real; step offsets are interpolated for layout and
   flagged `t_estimated`, and the UI shows the phase name rather than a step
   time it didn't measure), `ordinal` (nothing stamped — sequence, no clock).
-  Phase timings ride on `RunDetail.phase_timings`, read off run_state by
-  `framework_map._phase_timings`. **No token or cost readout, ever**
-  (deliberate; a token ledger discloses our subscription-vs-API cost structure
-  to an audience that is frequently an AI company — don't "fix" it). Backend:
-  `apps/opps/demo.py`, served at `GET /api/w/<ws>/opps/<slug>/runs/<run>/demo`,
-  derived from the same rich snapshot the Workbench uses (no new ORM tables).
-  Spec: `docs/specs/2026-09-17-ace-demo-player-design.md`.
+  Phase timings ride on `RunDetail.phase_timings` via
+  `framework_map._phase_timings`. **No token or cost readout, ever** —
+  deliberate: a token ledger discloses our subscription-vs-API cost structure
+  to an audience that is frequently an AI company. Don't "fix" it. Backend:
+  `apps/opps/replay.py` at `GET /api/w/<ws>/opps/<slug>/runs/<run>/replay`,
+  derived from the same rich snapshot the Workbench already loads (no new ORM
+  tables). Frontend: `frontend/src/components/replay/`. Spec +
+  why-it-isn't-a-standalone-player:
+  `docs/specs/2026-09-17-ace-demo-player-design.md` (see the addendum).
 - **Per-session Structure view** (page at `/w/<workspace>/chat/<slug>/structure`):
   hierarchical session tree (phase → skill → tool, with subagent recursion +
   parallel-group clusters). Computed fresh per request from

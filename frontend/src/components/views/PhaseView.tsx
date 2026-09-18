@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronRight, GitFork, Workflow } from "lucide-react";
+import { ChevronRight, GitFork, History, Workflow } from "lucide-react";
 import { toast } from "sonner";
 
 import { saveDecisionOverrides } from "@/api/opps";
@@ -23,6 +23,8 @@ import { computeForkPoint } from "@/components/views/decisions/forkPoint";
 import { PendingEditsBar } from "@/components/views/decisions/PendingEditsBar";
 import { ForkWithEditsDialog } from "@/components/views/decisions/ForkWithEditsDialog";
 import { PresenceStrip } from "@/components/views/PresenceStrip";
+import { ReplayBar } from "@/components/replay/ReplayBar";
+import { useReplay } from "@/components/replay/useReplay";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -270,6 +272,24 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
     ? (stepsByPhase.get(selectedPhase) ?? [])
     : [];
 
+  // Replay — the Phases screen, played back beat by beat. Off by default and
+  // lazily fetched, so it costs nothing for anyone who never turns it on.
+  const replay = useReplay(
+    workspaceSlug,
+    oppSlug,
+    snapshot.current_run.run_id ?? null,
+  );
+
+  // While replaying, the open phase follows the cursor: the audience watches
+  // the run move between phases rather than having to drive it by hand.
+  useEffect(() => {
+    if (!replay.active || !replay.beat.phase) return;
+    if (replay.beat.phase !== selectedPhase) setSelectedPhase(replay.beat.phase);
+    // setSelectedPhase writes a search param; excluded deliberately so this
+    // doesn't re-fire on every URL change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replay.active, replay.beat.phase]);
+
   const selectedPhaseRunning = selectedPhaseInfo
     ? isPhaseRunning(selectedPhaseInfo.name)
     : false;
@@ -281,6 +301,18 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <PresenceStrip viewers={uniqueEditors} />
+      {replay.active ? (
+        <div className="px-4 pt-3">
+          <ReplayBar replay={replay} />
+        </div>
+      ) : (
+        <div className="flex justify-end px-4 pt-3">
+          <Button size="sm" variant="outline" onClick={replay.start}>
+            <History className="mr-1.5 size-3.5" />
+            Replay this run
+          </Button>
+        </div>
+      )}
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-[340px] shrink-0 overflow-y-auto border-r border-border bg-background p-4">
           <ul className="flex flex-col gap-2">
@@ -290,13 +322,23 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
               ).filter((d) => d.phase === phase.name);
               return (
                 <li key={phase.name}>
-                  <PhaseTile
-                    phase={phase}
-                    steps={stepsByPhase.get(phase.name) ?? []}
-                    decisions={phaseDecisions}
-                    isSelected={selectedPhase === phase.name}
-                    onClick={() => setSelectedPhase(phase.name)}
-                  />
+                  <div
+                    className="transition-opacity"
+                    style={{
+                      opacity:
+                        replay.active && !replay.reveal.phases.has(phase.name)
+                          ? 0.35
+                          : 1,
+                    }}
+                  >
+                    <PhaseTile
+                      phase={phase}
+                      steps={stepsByPhase.get(phase.name) ?? []}
+                      decisions={phaseDecisions}
+                      isSelected={selectedPhase === phase.name}
+                      onClick={() => setSelectedPhase(phase.name)}
+                    />
+                  </div>
                 </li>
               );
             })}
@@ -377,15 +419,47 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
                       </span>
                     </header>
                     <ul className="flex flex-col gap-1.5">
-                      {selectedPhaseSteps.map((step) => (
-                        <li key={step.skill_name}>
-                          <PhaseSkillRow
-                            step={step}
-                            oppSlug={oppSlug}
-                            runId={snapshot.current_run.run_id}
-                          />
-                        </li>
-                      ))}
+                      {selectedPhaseSteps.map((step) => {
+                        const reached =
+                          !replay.active ||
+                          replay.reveal.done.has(step.skill_name) ||
+                          replay.reveal.running.has(step.skill_name);
+                        const isCurrent =
+                          replay.active && replay.beat.skill === step.skill_name;
+                        return (
+                          <li key={step.skill_name}>
+                            <div
+                              className={cn(
+                                "rounded-md transition-opacity",
+                                isCurrent && "ring-2 ring-primary",
+                              )}
+                              style={{ opacity: reached ? 1 : 0.35 }}
+                            >
+                              <PhaseSkillRow
+                                step={
+                                  // Until the cursor reaches a step, show it as
+                                  // pending rather than leaking its final
+                                  // verdict — the point of a replay is that you
+                                  // don't already know how it turned out.
+                                  replay.active && !replay.reveal.done.has(step.skill_name)
+                                    ? {
+                                        ...step,
+                                        status: replay.reveal.running.has(step.skill_name)
+                                          ? "running"
+                                          : "pending",
+                                        judge: null,
+                                        qa_result: null,
+                                      }
+                                    : step
+                                }
+                                oppSlug={oppSlug}
+                                runId={snapshot.current_run.run_id}
+                                autoOpen={isCurrent}
+                              />
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </section>
                 )}

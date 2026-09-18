@@ -1,7 +1,7 @@
 /**
- * Demo Player API client.
+ * Run replay API client.
  *
- * GET /api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/demo
+ * GET /api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/replay
  *
  * The response is `response={200: dict}` server-side (it nests the legacy
  * serialize_opp_* step/judge/decision shapes, which a thin Pydantic schema
@@ -23,7 +23,7 @@ import { apiClient } from "./apiClient";
  */
 export type TimingSource = "measured" | "phase" | "ordinal";
 
-export type DemoActId = "timeline" | "time_ledger" | "gates" | "decisions";
+export type ReplayActId = "timeline" | "time_ledger" | "gates" | "decisions";
 
 export interface DemoArtifact {
   readonly name: string | null;
@@ -32,6 +32,8 @@ export interface DemoArtifact {
 
 export interface DemoJudge {
   readonly score?: number | null;
+  /** Server-normalised 0-100. The Workbench prefers this over `score`. */
+  readonly score_pct?: number | null;
   readonly passed?: boolean | null;
   readonly rationale?: string | null;
   readonly criteria?: Record<string, unknown> | null;
@@ -58,6 +60,7 @@ export interface DemoEvent {
   readonly skill?: string | null;
   readonly skill_display?: string | null;
   readonly status?: string | null;
+  readonly preview_text?: string | null;
   readonly duration_seconds?: number | null;
   readonly artifacts?: readonly DemoArtifact[];
   readonly judge?: DemoJudge | null;
@@ -65,11 +68,37 @@ export interface DemoEvent {
   readonly error?: string | null;
 }
 
+/** One skill in the run's plan, ran or not. */
+export interface LadderStep {
+  readonly skill: string;
+  readonly skill_display: string;
+  readonly ordinal: number | null;
+  readonly status: string | null;
+  /** False for a step that never ran — shown greyed so the audience can see
+   *  what was still ahead, rather than steps appearing from nowhere. */
+  readonly ran: boolean;
+  readonly has_judge?: boolean | null;
+  readonly judge: DemoJudge | null;
+  readonly qa_result: DemoQaResult | null;
+  readonly preview_text?: string | null;
+  readonly error?: string | null;
+  readonly artifacts: readonly DemoArtifact[];
+}
+
+export interface LadderPhase {
+  readonly phase: string;
+  readonly phase_display: string;
+  readonly ordinal: number | null;
+  readonly steps: readonly LadderStep[];
+}
+
 export interface DemoTimeline {
   readonly timing_source: TimingSource;
   readonly origin: string | null;
   readonly wall_seconds: number | null;
   readonly events: readonly DemoEvent[];
+  /** The run's whole plan, phase by phase. */
+  readonly ladder: readonly LadderPhase[];
 }
 
 export interface LedgerSkill {
@@ -125,16 +154,16 @@ export interface DemoDecisions {
   readonly rows: readonly DemoDecisionRow[];
 }
 
-export type DemoActData = DemoTimeline | DemoLedger | { gates: readonly DemoGate[] } | DemoDecisions;
+export type ReplayActData = DemoTimeline | DemoLedger | { gates: readonly DemoGate[] } | DemoDecisions;
 
-export interface DemoAct {
-  readonly id: DemoActId;
+export interface ReplayAct {
+  readonly id: ReplayActId;
   readonly title: string;
   readonly available: boolean;
   /** Present whenever `available` is false — the player says why rather than
    *  rendering an empty act. */
   readonly unavailable_reason: string | null;
-  readonly data: DemoActData;
+  readonly data: ReplayActData;
 }
 
 export interface DemoRunHeader {
@@ -148,21 +177,21 @@ export interface DemoRunHeader {
   readonly step_count: number;
 }
 
-export interface DemoPayload {
+export interface ReplayPayload {
   readonly schema_version: number;
   readonly run: DemoRunHeader;
   readonly timing_source: TimingSource;
-  readonly capabilities: Readonly<Record<DemoActId, boolean>>;
-  readonly acts: readonly DemoAct[];
+  readonly capabilities: Readonly<Record<ReplayActId, boolean>>;
+  readonly acts: readonly ReplayAct[];
 }
 
-export async function fetchDemoPayload(
+export async function fetchReplay(
   workspaceSlug: string,
   slug: string,
   runId: string,
-): Promise<DemoPayload> {
+): Promise<ReplayPayload> {
   const { data, response } = await apiClient.GET(
-    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/demo",
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/replay",
     {
       params: {
         path: { workspace_slug: workspaceSlug, slug, run_id: runId },
@@ -172,11 +201,17 @@ export async function fetchDemoPayload(
   if (!response.ok) {
     throw new Error(`Couldn't load this run (${response.status}).`);
   }
-  return data as unknown as DemoPayload;
+  return data as unknown as ReplayPayload;
 }
 
 /** Pull one act out of a payload, typed. Returns null when the run can't
  *  support it — callers render the reason, not an empty stage. */
-export function actOf(payload: DemoPayload, id: DemoActId): DemoAct | null {
+export function actOf(payload: ReplayPayload, id: ReplayActId): ReplayAct | null {
   return payload.acts.find((a) => a.id === id) ?? null;
+}
+
+/** The timeline act's data, or null when this run can't be replayed. */
+export function timelineOf(payload: ReplayPayload): DemoTimeline | null {
+  const act = actOf(payload, "timeline");
+  return act?.available ? (act.data as DemoTimeline) : null;
 }

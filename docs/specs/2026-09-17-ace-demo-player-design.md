@@ -233,3 +233,63 @@ one into the ACE plugin.
 - **Fallbacks for live acts.** Touchables are the demo's only real failure
   surface. Recorded fallbacks should live inside the player rather than as
   separate files a presenter has to find under pressure. Scope in phase 4.
+
+---
+
+## Addendum, 2026-09-17: replay is a Workbench mode, not a separate player
+
+**This supersedes the "Frontend" and "Cuts" sections above.** The standalone
+Demo Player route (`/w/<ws>/opps/<slug>/runs/<run>/demo`) shipped, was reviewed
+against real data, and was then **removed**. Replay now lives on the Workbench's
+Phases screen.
+
+### Why it changed
+
+Jonathan, on seeing the standalone player: *"we want the demo to be as real as
+it can be… it will also help others understand the system and the steps in the
+system."*
+
+Two arguments, and the second is the one that settles it:
+
+1. **A bespoke player is a second rendering of phases, skills, artifacts and
+   verdicts.** The Workbench already owns all four. Two renderings drift, and
+   the copy is the one that rots, because nobody uses it daily.
+2. **Showing the real tool is more convincing than showing a picture of it.**
+   A purpose-built demo surface could be showing anything. The Workbench
+   replaying itself is evidence in a way a bespoke visualisation is not.
+
+And it stops being demo-only. A replay of the Phases screen is how a new
+teammate learns what the system does, which is worth more than a demo prop.
+
+### What that means concretely
+
+- `apps/opps/demo.py` → `apps/opps/replay.py`; the endpoint is
+  `GET /api/w/<ws>/opps/<slug>/runs/<run_id>/replay`. The payload is unchanged
+  — the beat stream and ladder were always the right model; only the consumer
+  moved.
+- Deleted: `DemoPlayerPage`, `RunLadder`, `StepSpotlight`, `TimelineAct`,
+  `LedgerAct`, `GatesAct`, `DecisionsAct`, and the `/demo` route.
+- Kept, moved to `frontend/src/components/replay/`: `band.ts`, `cursor.ts`,
+  `phaseColor.ts`, `time.ts`, `usePlayback.ts` — the replay engine is
+  presentation-independent and survives intact.
+- Added: `useReplay` (lazy fetch + cursor + background warm of every step's
+  detail, so stepping never waits on Drive) and `ReplayBar` (transport, band,
+  dual clock).
+- `PhaseView` gains a **Replay this run** button. While replaying: the open
+  phase follows the cursor, phases and skills the cursor hasn't reached are
+  dimmed, the current skill is ringed and auto-expanded, and **a step the
+  cursor hasn't finished renders as pending with its verdict withheld** — the
+  point of a replay is that you don't already know how it turned out.
+- Replay is **off by default and lazily fetched**, so the Workbench costs
+  exactly what it did before for anyone who never turns it on.
+
+### What the acts became
+
+The four acts collapse into the surfaces that already exist: the timeline is
+the replay itself; gates and decisions are already native to the Workbench
+(`PhaseSkillRow`'s QA/Eval sections, `DecisionsPanel`); the time ledger's
+figures now ride in the `ReplayBar`'s dual clock. The **cuts** idea is dropped
+— it only made sense for a bespoke presentation surface.
+
+The **honesty rule and the no-token-or-cost rule are unchanged and still
+apply**, now to the Workbench's replay mode.

@@ -84,7 +84,7 @@ class RunDetail:
     # real 2026-07 run: 0 of 48 steps carried a timestamp, every phase
     # carried a real span), so the phase blocks are the only measured
     # clock a finished run actually has. Empty for runs that predate the
-    # convention. See apps/opps/demo.py.
+    # convention. See apps/opps/replay.py.
     phase_timings: dict[str, dict] = field(default_factory=dict)
     # Per-run decisions log (added with the decisions-log framework, May
     # 2026). Each row carries its own ``phase`` tag; the UI groups them

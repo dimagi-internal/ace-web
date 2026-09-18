@@ -5,7 +5,6 @@ import { PublicLayout } from "./components/PublicLayout";
 import { AuthCliPage } from "./pages/AuthCliPage";
 import { CanopyChatRoutePage } from "./pages/ChatPage";
 import { ChatRedirectPage, LegacyChatSlugRedirect } from "./pages/ChatRedirectPage";
-import DemoPlayerPage from "./pages/DemoPlayerPage";
 import InviteAcceptPage from "./pages/InviteAcceptPage";
 import MediaLibraryPage from "./pages/MediaLibraryPage";
 import { NoWorkspaceRedirect } from "./pages/NoWorkspaceRedirect";
@@ -35,14 +34,6 @@ export const router = createBrowserRouter(
         {
           path: "/opps/:workspace/:slug/runs/:runId/summary",
           element: <OppSummaryPage />,
-        },
-        // The Demo Player is presented full-screen to a room, so it renders
-        // without TopNav. It is NOT public: the payload endpoint it loads
-        // requires workspace membership, and a non-member sees the page's
-        // own error state rather than any run data.
-        {
-          path: "/w/:workspaceSlug/opps/:slug/runs/:runId/demo",
-          element: <DemoPlayerPage />,
         },
       ],
     },
