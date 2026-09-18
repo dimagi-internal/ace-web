@@ -51,6 +51,32 @@ interface Props {
 }
 
 /**
+ * A step as it looked BEFORE the replay cursor reached it.
+ *
+ * Everything the run had not produced yet is withheld — verdict, QA result,
+ * artifacts, the preview line, any error. The point of a replay is that you
+ * do not already know how it turned out, and a dimmed row that still lists
+ * the files it is about to write, or the score it is about to get, gives the
+ * ending away.
+ *
+ * Withholding rather than hiding is deliberate: `PhaseSkillRow` renders a
+ * labelled stub for a section with no data, so an expanded not-yet-reached
+ * step reads as "nothing here yet" rather than looking broken.
+ */
+export function asOfCursor(step: Step, running: boolean): Step {
+  return {
+    ...step,
+    status: running ? "running" : "pending",
+    judge: null,
+    qa_result: null,
+    artifacts: [],
+    preview_text: "",
+    error: null,
+    completed_at: null,
+  };
+}
+
+/**
  * Vertical phase list on the left; click a phase to expand a detail
  * panel on the right showing the skills in that phase. Click a skill
  * to drill into the same StepDetailPane the Workbench uses.
@@ -437,19 +463,11 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
                             >
                               <PhaseSkillRow
                                 step={
-                                  // Until the cursor reaches a step, show it as
-                                  // pending rather than leaking its final
-                                  // verdict — the point of a replay is that you
-                                  // don't already know how it turned out.
                                   replay.active && !replay.reveal.done.has(step.skill_name)
-                                    ? {
-                                        ...step,
-                                        status: replay.reveal.running.has(step.skill_name)
-                                          ? "running"
-                                          : "pending",
-                                        judge: null,
-                                        qa_result: null,
-                                      }
+                                    ? asOfCursor(
+                                        step,
+                                        replay.reveal.running.has(step.skill_name),
+                                      )
                                     : step
                                 }
                                 oppSlug={oppSlug}
