@@ -1,5 +1,7 @@
 # Run-execution convergence — ace-web side Implementation Plan
 
+> **Status: shipped (PRs #691/#702, 2026-07-27/28); `CANOPY_RUN_EXECUTION=true` in prod since 2026-07-28 (PR #703) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** ace-web stops being a second execution engine. Its programmatic ACE runs enqueue a canopy `Turn` against a canopy `Session` instead of spawning `claude -p` in-process; cost and structure derive from canopy's retained per-turn transcript; and a run that no runner can take says so in plain words instead of rendering as "queued".

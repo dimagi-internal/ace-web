@@ -1,5 +1,7 @@
 # Per-session and per-opp cost & timing breakdown
 
+> **Status: shipped (PR #201, 2026-05-04); the Cost & Timing tab was later replaced by the Structure view (PR #291) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date**: 2026-05-03
 **Status**: Design — pending approval before implementation plan
 **Owner**: Jonathan Jackson

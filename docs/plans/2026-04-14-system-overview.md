@@ -1,5 +1,7 @@
 # System Overview Tab — Implementation Plan
 
+> **Status: shipped (PR #62, 2026-04-14) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a "System" tab to ace-web that visualizes the full ACE/CRISPR-Connect system blueprint — skills, agents, phases, judges, gates, artifacts — generated from runtime inspection of the ACE plugin repo.

@@ -1,5 +1,7 @@
 # Template Editor — Design Spec
 
+> **Status: shipped (PR #625, 2026-06-08) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-06-08
 **Status:** Approved design, pre-plan
 **Surfaces:** `videos/templates` (gallery) + `videos/templates/:templateId` (editor)

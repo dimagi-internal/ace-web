@@ -1,5 +1,7 @@
 # Slack Multi-Player Decisions & Fork
 
+> **Status: shipped (PR #547, 2026-05-23) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Status:** Active
 **Date:** 2026-05-23
 

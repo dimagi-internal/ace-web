@@ -1,5 +1,7 @@
 # ACE Demo Player
 
+> **Status: shipped (PR #777, 2026-09-18), then folded into the Phases screen as run replay (PR #780) — see the addendum — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date**: 2026-09-17
 **Status**: Design — pending approval before implementation plan
 **Owner**: Jonathan Jackson

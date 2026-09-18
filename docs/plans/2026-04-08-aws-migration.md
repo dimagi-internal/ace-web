@@ -1,5 +1,7 @@
 # ACE Web Harness — AWS Migration
 
+> **Status: shipped (PR #11, 2026-04-09) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Migrate ace-web off standalone GCP Cloud Run and onto AWS ECS Fargate as a tenant service behind the `labs.connect.dimagi.com` ALB, mirroring scout's deployment pattern. Reuse the shared connect-labs AWS infrastructure (RDS, ElastiCache, ALB, VPC) so incremental cost is ~$5-15/month instead of the ~$100-150/month that standalone GCP required. Drop Filestore entirely — the CLIBackend hybrid resume path already handles cold-start CLI session state from Django history. Swap IAP auth for connect-labs' hand-rolled Connect OAuth flow with a `@dimagi.com` email filter.

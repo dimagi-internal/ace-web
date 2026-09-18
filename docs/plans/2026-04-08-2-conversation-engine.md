@@ -1,5 +1,7 @@
 # ACE Web Harness — Phase 2: Conversation Engine
 
+> **Status: shipped (PR #8, 2026-04-08); its SSE transport and chat UI were later replaced (WebSocket in Phase 3, then canopy-hosted chat in PR #687) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stand up a working single-user chat experience end-to-end. A team member logs in via IAP, lands at `/chat`, gets redirected to a fresh `/chat/<slug>` session, types a message, watches Claude stream a token-by-token response (with tool use rendered as nested blocks), can hit a stop button mid-stream to cleanly cancel, can navigate back to that conversation later via a recent-sessions sidebar, and can edit the auto-generated title inline. CLI authentication is self-service via an in-app `/auth/cli` page that drives `claude setup-token` over a PTY.

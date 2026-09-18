@@ -1,5 +1,7 @@
 # Turmeric Smoke Walkthrough — Design
 
+> **Status: shipped (PR #92, 2026-04-17) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Status:** Approved, pending implementation plan.
 **Target:** prod (`labs.connect.dimagi.com/ace/`).
 **Invocation:** human-driven via Claude Code; not a CI gate.

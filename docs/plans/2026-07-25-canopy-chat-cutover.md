@@ -1,5 +1,7 @@
 # ace-web → canopy hosted chat cutover (Part 2) Implementation Plan
 
+> **Status: shipped (PRs #685/#687, 2026-07-25/26) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** ace-web keeps its chat UX but all chat state + execution move to canopy-web: sessions, messages, drafts, presence, turns, and the runner fleet. ace-web's backend keeps exactly one chat responsibility — brokering identity via canopy's token exchange — plus a session-create convenience that bakes in opp linkage.
