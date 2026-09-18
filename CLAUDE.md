@@ -439,8 +439,9 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   no clock and nothing time-proportional**: runs span many hours with long idle
   gaps (one phase of `hh-poverty-targeting/20260722-1341` holds 82% of its
   elapsed time), so timed playback spends most of its length showing nothing
-  change. The step track under the controls gives each phase width = its NUMBER
-  OF STEPS. Off by default and lazily fetched; once on, it warms every step's
+  change. The step track under the controls gives every phase an EQUAL share of
+  the width (its steps subdivide it) — step-proportional widths squeezed short
+  phases until their names were cut off. Off by default and lazily fetched; once on, it warms every step's
   detail in the background. Backend: `apps/opps/replay.py` at
   `GET /api/w/<ws>/opps/<slug>/runs/<run>/replay` — it still computes timing
   fields (`timing_source`, `phase_timings`, the time-ledger act) that the UI no
