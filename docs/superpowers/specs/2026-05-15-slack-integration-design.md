@@ -1,5 +1,7 @@
 # Slack Integration — Design Doc
 
+> **Status: shipped (PR #396, 2026-05-15) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Status:** Draft · 2026-05-15
 **Author:** jjackson + Claude (brainstorming session)
 **Scope:** ace-web Slack integration v1

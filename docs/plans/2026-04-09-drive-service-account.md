@@ -1,5 +1,7 @@
 # Drive Service Account Implementation Plan
 
+> **Status: shipped (PR #24, 2026-04-10) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the per-user Google OAuth flow that backs the ACE opportunity Workbench with a single shared service account credential, delivered via AWS Secrets Manager in prod and a local `.env` in dev. Full delete of the old flow — no soft migration.

@@ -1,5 +1,7 @@
 # Per-user CLI credentials — Design
 
+> **Status: shipped (PR #117, 2026-04-19) — historical record, not current-state.** Current behavior: `docs/architecture/cli-credentials.md` (per-user `UserCredential` with the global `SystemConfig` row as fallback).
+
 **Date:** 2026-04-18
 **Status:** Approved for execution.
 **Parent spec:** `docs/specs/2026-04-08-ace-web-design.md` (§ auth/chat-backend).

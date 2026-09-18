@@ -468,10 +468,6 @@ export interface LinkedChat {
   preview: string;
 }
 
-export interface DiscussResponse {
-  session_slug: string;
-}
-
 export interface OppCompareSummary {
   score_a: number | null;
   passed_a: boolean | null;

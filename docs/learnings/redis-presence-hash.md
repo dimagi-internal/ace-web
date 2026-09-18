@@ -2,7 +2,7 @@
 
 **Date**: 2026-04-09
 **Context**: Phase 3 `apps/sessions/presence.py` tracks which users are currently connected to each session for live membership broadcasts and Phase 4 "last seen N hours ago" display in the session library.
-**Status**: Active
+**Status**: Active pattern, retired origin. `apps/sessions/presence.py` was deleted with ace-web's own chat (PR #687). The HASH-per-key + TTL pattern, the fakeredis import-the-module rule, and the known race documented here carry over to cross-app viewer presence in `apps/presence/store.py` (PR #699).
 
 ## Problem
 

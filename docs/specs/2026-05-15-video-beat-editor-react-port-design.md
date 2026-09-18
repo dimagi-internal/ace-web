@@ -1,5 +1,7 @@
 # Video Beat Editor — React Rewrite (Phase 1)
 
+> **Status: shipped (PR #391, 2026-05-15) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Status:** Design · 2026-05-15
 **Scope:** Replace the iframe-served HTML beat editor with a native React surface. Click-to-edit drawer model, local-buffer dirty state, batched save. Fix trim-widget mouse bugs. Expand editable surface to stats panels.
 **Out of scope (deferred):** Insert / remove beats, smart-regen, trim driving beat duration, library picker redesign, brand-template / voice / music-bed editor, `build-clip-explorer.ts` migration.

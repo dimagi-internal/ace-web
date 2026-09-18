@@ -1,5 +1,7 @@
 # ACE System Overview — Design Spec
 
+> **Status: shipped (PR #62, 2026-04-14) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-04-14
 **Status:** Draft — awaiting review.
 **Scope:** New "System" tab in ace-web that visualizes the full ACE/CRISPR-Connect

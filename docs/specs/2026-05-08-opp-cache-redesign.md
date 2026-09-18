@@ -1,5 +1,7 @@
 # Opp Workbench cache redesign
 
+> **Status: shipped (PR #251, 2026-05-09) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date**: 2026-05-08
 **Status**: Approved (brainstorming complete; ready for implementation plan)
 **Author**: jjackson + Claude

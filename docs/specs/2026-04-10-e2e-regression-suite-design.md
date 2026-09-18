@@ -1,5 +1,7 @@
 # E2E Regression Suite — Design Spec
 
+> **Status: shipped (PR #29, 2026-04-10); its multi-player chat coverage retired with ace-web chat (PR #687) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-04-10
 **Status:** Approved for execution
 **Scope:** Expand the existing Playwright E2E test suite to cover every testable

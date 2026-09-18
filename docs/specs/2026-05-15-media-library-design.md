@@ -1,5 +1,7 @@
 # Media Library — design
 
+> **Status: shipped (PR #412, 2026-05-15) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Status:** draft, awaiting first implementation.
 **Owner:** jjackson.
 **Date:** 2026-05-15.

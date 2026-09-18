@@ -7,7 +7,7 @@ killing the `claude -p` subprocess and its enclosing asyncio turn task
 mid-flight. The orchestrator typically has to be told to pick up where
 it left off, which requires the operator to (a) notice the kill, (b)
 clean up the now-stale `cli_session_id`, and (c) resend a continuation.
-**Status**: Known fragility — flagged but not yet addressed.
+**Status**: Largely resolved in prod (2026-07-28). With `CANOPY_RUN_EXECUTION=true`, programmatic runs execute on canopy's cloud runner (`apps/canopy/run_dispatch.py`, PRs #691/#702/#703), so an ace-web deploy no longer kills them. Still applies to the flag-off / local `claude -p` fallback path (`apps/sessions/turn_driver.py`). The chat WebSocket described below is retired (PR #687).
 
 ## Observed failure mode
 

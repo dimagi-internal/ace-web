@@ -1,5 +1,7 @@
 # Cost & Timing Breakdown Implementation Plan
 
+> **Status: shipped (PR #201, 2026-05-04) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Aggregate per-phase / per-skill wall time and token costs from uploaded JSONL transcripts at ingest time, persist to `Session.cost_breakdown`, and surface in the UI as (a) a Cost & Timing tab on the session detail page and (b) a rollup card on the Opp Workbench.

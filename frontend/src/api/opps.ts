@@ -4,7 +4,6 @@ import type { components } from "./generated";
 import type {
   CreateOppPayload,
   CreateOppResponse,
-  DiscussResponse,
   LinkedChat,
   MultiRunSummary,
   OppCard,
@@ -238,20 +237,6 @@ export function getLinkedChats(
   return Promise.reject(
     new Error("getLinkedChats: no v2 endpoint — will be addressed in a future PR"),
   );
-}
-
-export async function discussStep(
-  workspaceSlug: string,
-  slug: string,
-  runId: string,
-  skill: string,
-): Promise<DiscussResponse> {
-  const { data, response } = await apiClient.POST("/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat", {
-    params: { path: { workspace_slug: workspaceSlug, slug } },
-    body: { step_skill: skill, run_id: runId },
-  });
-  if (!response.ok) throw new Error(`discussStep: ${response.status}`);
-  return data as unknown as DiscussResponse;
 }
 
 export async function listOppRuns(workspaceSlug: string, slug: string): Promise<RunSummary[]> {

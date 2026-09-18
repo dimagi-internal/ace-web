@@ -1,5 +1,7 @@
 # Web-Native Opp Lifecycle — Design Spec
 
+> **Status: shipped (PR #73, 2026-04-15) — historical record, not current-state.** Its attached-chat execution model (ace-web chat + in-container `CLIBackend`) is superseded: chat is canopy-hosted (PR #687) and runs execute on canopy's runner (PR #702). `OppWorkspace` still follows § 4.2.
+
 **Date:** 2026-04-15
 **Status:** Draft — awaiting review.
 **Scope:** Turn ace-web into the primary interface for building a CRISPR-Connect

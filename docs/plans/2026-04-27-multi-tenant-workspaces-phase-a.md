@@ -1,5 +1,7 @@
 # Multi-Tenant Workspaces — Phase A Implementation Plan
 
+> **Status: shipped (PR #134, 2026-04-27) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add the multi-tenancy substrate to ace-web — `Workspace`, `WorkspaceMembership`, `WorkspaceInvite` models with membership-gated reads on every existing opp/session/upload endpoint, the `@dimagi.com` filter dropped, and existing data migrated into a single seeded `dimagi-team` workspace. After Phase A, the product behaves identically for the founding user, but the plumbing for third-party self-onboarding is in place.

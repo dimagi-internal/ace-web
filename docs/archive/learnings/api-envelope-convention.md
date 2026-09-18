@@ -1,5 +1,7 @@
 # Learning: All API responses use a `{data, error}` envelope
 
+> **ARCHIVED 2026-09-18 — describes code or an approach that no longer exists; do not follow it.** See `docs/archive/README.md` for why, and `CLAUDE.md` for how this area works today.
+
 **Date**: 2026-04-08
 **Context**: Plan 1A `apps/common/envelope.py`, inherited from `canopy-web`. Relevant to every endpoint added in Plan 1B and beyond.
 **Status**: Active
