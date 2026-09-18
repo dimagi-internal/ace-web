@@ -447,6 +447,55 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/opps/{slug}/feedback": {
+      "get": {
+        "operationId": "apps_opps_api_get_opp_feedback",
+        "summary": "Reviewer feedback and its ledger",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "description": "What outside reviewers said about this opp, and what it changed.",
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/replay": {
       "get": {
         "operationId": "apps_opps_api_get_run_replay",
