@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ExternalLink } from "lucide-react";
 
 import { type FeedbackPayload, type FeedbackRecord, fetchFeedback } from "@/api/feedback";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { type Disposition, type LedgerItem, parseLedger } from "@/components/views/ledgerParse";
 import { cn } from "@/lib/utils";
 
 /**
@@ -81,6 +82,7 @@ export function ReviewView({
 
 function ReviewRecord({ record }: { record: FeedbackRecord }) {
   const [showComments, setShowComments] = useState(false);
+  const parsed = useMemo(() => parseLedger(record.ledger_body), [record.ledger_body]);
 
   return (
     <article>
@@ -134,9 +136,18 @@ function ReviewRecord({ record }: { record: FeedbackRecord }) {
       </header>
 
       {record.ledger_body ? (
-        <div className="prose prose-sm dark:prose-invert mt-4 max-w-none">
-          <MarkdownRenderer content={record.ledger_body} />
-        </div>
+        parsed ? (
+          <ol className="mt-5 flex flex-col gap-6">
+            {parsed.map((item) => (
+              <LedgerItemRow key={item.id || item.anchor} item={item} />
+            ))}
+          </ol>
+        ) : (
+          // Unrecognised shape — the markdown is always correct, just dense.
+          <div className="prose prose-sm dark:prose-invert mt-4 max-w-none">
+            <MarkdownRenderer content={record.ledger_body} />
+          </div>
+        )
       ) : (
         <ul className="mt-4 flex flex-col gap-4">
           {record.items.map((item) => (
@@ -151,7 +162,7 @@ function ReviewRecord({ record }: { record: FeedbackRecord }) {
       )}
 
       <footer className="mt-4 flex flex-wrap gap-4 text-xs text-muted-foreground">
-        {record.ledger_body && record.items.length > 0 && (
+        {record.ledger_body && !parsed && record.items.length > 0 && (
           <button
             type="button"
             onClick={() => setShowComments((v) => !v)}
@@ -195,6 +206,74 @@ function ReviewRecord({ record }: { record: FeedbackRecord }) {
         </ul>
       )}
     </article>
+  );
+}
+
+function LedgerItemRow({ item }: { item: LedgerItem }) {
+  return (
+    <li className="border-t pt-4 first:border-t-0 first:pt-0">
+      <h3 className="text-sm font-semibold text-foreground">
+        {item.anchor}
+      </h3>
+      {item.quote && (
+        <blockquote className="mt-2 whitespace-pre-line border-l-2 border-muted-foreground/40 pl-3 text-sm italic text-muted-foreground">
+          {item.quote}
+        </blockquote>
+      )}
+      {item.dispositions.length > 0 && (
+        <ul className="mt-3 flex flex-col gap-2">
+          {item.dispositions.map((d, i) => (
+            <DispositionRow key={i} d={d} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function DispositionRow({ d }: { d: Disposition }) {
+  return (
+    <li className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+      <StatusChip status={d.status} />
+      {d.kind && <span className="text-xs text-muted-foreground">{d.kind}</span>}
+      {d.ref &&
+        (d.href ? (
+          <a
+            href={d.href}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+          >
+            {d.ref}
+          </a>
+        ) : (
+          <span className="font-medium text-foreground">{d.ref}</span>
+        ))}
+      <span className="min-w-0 flex-1 basis-full text-muted-foreground sm:basis-auto">
+        {d.text}
+      </span>
+    </li>
+  );
+}
+
+/** SHIPPED reads green, anything unresolved reads as unfinished. Unrouted —
+ *  nobody actioned it — is the one that should look wrong. */
+function StatusChip({ status }: { status: string }) {
+  const s = status.toLowerCase();
+  const tone = s.includes("ship")
+    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+    : s.includes("unrouted")
+      ? "border-destructive/40 bg-destructive/10 text-destructive"
+      : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide",
+        tone,
+      )}
+    >
+      {status}
+    </span>
   );
 }
 
