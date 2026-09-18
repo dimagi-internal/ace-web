@@ -7,16 +7,16 @@
  * phase keeps its colour on the band, in the ledger and in the event log.
  */
 const SPECTRUM = [
-  "var(--demo-phase-1)",
-  "var(--demo-phase-2)",
-  "var(--demo-phase-3)",
-  "var(--demo-phase-4)",
-  "var(--demo-phase-5)",
-  "var(--demo-phase-6)",
-  "var(--demo-phase-7)",
-  "var(--demo-phase-8)",
-  "var(--demo-phase-9)",
-  "var(--demo-phase-10)",
+  "var(--replay-phase-1)",
+  "var(--replay-phase-2)",
+  "var(--replay-phase-3)",
+  "var(--replay-phase-4)",
+  "var(--replay-phase-5)",
+  "var(--replay-phase-6)",
+  "var(--replay-phase-7)",
+  "var(--replay-phase-8)",
+  "var(--replay-phase-9)",
+  "var(--replay-phase-10)",
 ] as const;
 
 export function buildPhasePalette(phases: readonly string[]): Map<string, string> {
@@ -31,6 +31,6 @@ export function buildPhasePalette(phases: readonly string[]): Map<string, string
 }
 
 export function phaseColor(palette: Map<string, string>, phase: string | null | undefined): string {
-  if (!phase) return "var(--demo-dim)";
-  return palette.get(phase) ?? "var(--demo-dim)";
+  if (!phase) return "var(--muted-foreground)";
+  return palette.get(phase) ?? "var(--muted-foreground)";
 }

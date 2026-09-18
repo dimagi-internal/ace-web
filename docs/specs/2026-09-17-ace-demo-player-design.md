@@ -295,3 +295,25 @@ figures now ride in the `ReplayBar`'s dual clock. The **cuts** idea is dropped
 
 The **honesty rule and the no-token-or-cost rule are unchanged and still
 apply**, now to the Workbench's replay mode.
+
+---
+
+## Addendum, 2026-09-18: step-through, not a clock
+
+**This supersedes every timing and pacing decision above.** Jonathan, after
+using it: *"I don't think time is going to be interesting anymore given how long
+these sessions run, I think we just want to be able to step-through
+everything."*
+
+The data backs him. On `hh-poverty-targeting/20260722-1341` one phase holds
+82% of the elapsed span — its `completed_at` is the next morning and it
+overlaps the phase after it, which looks like a late write-back rather than
+work. Time-proportional playback spent most of its length crawling through that
+gap with nothing on screen changing. Beat-pacing (tried briefly) fixed the pace
+but kept a clock nobody was reading.
+
+Replay is now a pure step-through: Prev / Next / Play-with-a-1.5s-delay over the
+beat stream, with a step track that sizes each phase by its step count. The
+dual clock, the time-proportional band, the timing-mode banners and the
+`usePlayback` animation loop are deleted. The honesty rule still governs what
+is SHOWN at each step — nothing the cursor hasn't reached.
