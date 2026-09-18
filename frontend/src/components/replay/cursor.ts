@@ -62,6 +62,49 @@ export function beatForSkill(timeline: DemoTimeline, skill: string): number {
   return timeline.events.findIndex((e) => e.kind === "step_end" && e.skill === skill);
 }
 
+/**
+ * Where each beat sits along the run, 0..1 — the playhead's stopping points.
+ *
+ * Playback walks these at a STEADY pace rather than sweeping the clock
+ * linearly, and the difference is the whole readability of the act. On a real
+ * run the phase spans are wildly uneven: on hh-poverty-targeting/20260722-1341
+ * one phase holds 82% of the elapsed time, so a linear sweep spends five
+ * sixths of the demo crawling through a single phase while nothing visible
+ * changes. Equal time per beat gives every step its moment.
+ *
+ * The BAND stays proportional — that is the evidence, and it still shows that
+ * one phase ate the day. Only the pacing is redistributed, and the clock still
+ * reads the real run time wherever the playhead lands.
+ */
+export function beatStops(timeline: DemoTimeline): number[] {
+  return timeline.events.map((_, i) => progressForBeat(timeline, i));
+}
+
+/** Uniform playback position (0..1) → position along the run (0..1). */
+export function paceToProgress(stops: readonly number[], t: number): number {
+  if (stops.length === 0) return 0;
+  if (stops.length === 1) return stops[0];
+  const scaled = Math.min(1, Math.max(0, t)) * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(scaled));
+  const frac = scaled - i;
+  return stops[i] + (stops[i + 1] - stops[i]) * frac;
+}
+
+/** The inverse: a scrub on the band → the uniform position that lands there. */
+export function progressToPace(stops: readonly number[], progress: number): number {
+  if (stops.length < 2) return 0;
+  const p = Math.min(1, Math.max(0, progress));
+  for (let i = 0; i < stops.length - 1; i += 1) {
+    const lo = stops[i];
+    const hi = stops[i + 1];
+    if (p <= hi) {
+      const frac = hi === lo ? 0 : (p - lo) / (hi - lo);
+      return (i + Math.min(1, Math.max(0, frac))) / (stops.length - 1);
+    }
+  }
+  return 1;
+}
+
 export interface Reveal {
   /** Skills whose step_end the cursor has passed — fully filled in. */
   readonly done: ReadonlySet<string>;

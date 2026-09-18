@@ -33,8 +33,15 @@ export function usePlayback(demoDurationSeconds: number, enabled: boolean): Play
   const frame = useRef<number | null>(null);
   const startedAt = useRef<number>(0);
   const startedFrom = useRef<number>(0);
+  // Every start takes a generation; a frame from an older one bails instead of
+  // writing. `cancelAnimationFrame` usually prevents that, but "usually" is
+  // doing real work there — a frame already dispatched when we cancel, or an
+  // effect re-run under StrictMode, would otherwise resume a paused playhead
+  // or overwrite a seek the presenter just made.
+  const generation = useRef(0);
 
   const stop = useCallback(() => {
+    generation.current += 1;
     if (frame.current !== null) {
       cancelAnimationFrame(frame.current);
       frame.current = null;
@@ -91,7 +98,9 @@ export function usePlayback(demoDurationSeconds: number, enabled: boolean): Play
     // Reduced motion: advance in coarse steps rather than a continuous sweep,
     // so the playhead reads as a series of positions instead of a glide.
     const reduced = prefersReducedMotion();
+    const mine = (generation.current += 1);
     const tick = () => {
+      if (generation.current !== mine) return; // superseded — pause, seek, restart
       const elapsed = (performance.now() - startedAt.current) / 1000;
       const raw = startedFrom.current + elapsed / demoDurationSeconds;
       const next = reduced ? Math.floor(raw * 40) / 40 : raw;

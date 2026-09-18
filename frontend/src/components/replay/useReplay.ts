@@ -3,7 +3,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type DemoTimeline, fetchReplay, timelineOf } from "@/api/replay";
 import { getStepDetail } from "@/api/opps";
 
-import { beatAt, progressForBeat, revealAt, type Beat, type Reveal } from "./cursor";
+import {
+  beatAt,
+  beatStops,
+  paceToProgress,
+  progressToPace,
+  revealAt,
+  type Beat,
+  type Reveal,
+} from "./cursor";
 import { usePlayback } from "./usePlayback";
 
 /** How long the whole run takes to cross the screen once. */
@@ -59,6 +67,15 @@ export function useReplay(
   const warmed = useRef<string | null>(null);
 
   const playback = usePlayback(demoSeconds, active && timeline !== null);
+
+  // Playback advances at a STEADY beat rate rather than sweeping the clock,
+  // so every step gets equal screen time no matter how uneven the run's phase
+  // spans are. The band stays proportional — see cursor.ts § beatStops.
+  const stops = useMemo(() => (timeline ? beatStops(timeline) : []), [timeline]);
+  const progress = useMemo(
+    () => (stops.length > 1 ? paceToProgress(stops, playback.progress) : playback.progress),
+    [stops, playback.progress],
+  );
 
   // Turning replay off, or changing run, resets everything.
   useEffect(() => {
@@ -116,24 +133,30 @@ export function useReplay(
   }, [active, timeline, workspaceSlug, oppSlug, runId]);
 
   const beat = useMemo(
-    () => (timeline ? beatAt(timeline, playback.progress) : NO_BEAT),
-    [timeline, playback.progress],
+    () => (timeline ? beatAt(timeline, progress) : NO_BEAT),
+    [timeline, progress],
   );
   const reveal = useMemo(
     () => (timeline ? revealAt(timeline, beat.index) : EMPTY_REVEAL),
     [timeline, beat.index],
   );
 
+  /** Land the playhead exactly on a beat, in playback's uniform space. */
+  const seekBeatIndex = useCallback(
+    (index: number) => {
+      if (stops.length < 2) return;
+      const clamped = Math.min(stops.length - 1, Math.max(0, index));
+      playback.seek(clamped / (stops.length - 1));
+    },
+    [stops, playback],
+  );
+
   const step = useCallback(
     (delta: number) => {
       if (!timeline || timeline.events.length === 0) return;
-      const next = Math.min(
-        timeline.events.length - 1,
-        Math.max(0, beatAt(timeline, playback.progress).index + delta),
-      );
-      playback.seek(progressForBeat(timeline, next));
+      seekBeatIndex(beatAt(timeline, progress).index + delta);
     },
-    [timeline, playback],
+    [timeline, progress, seekBeatIndex],
   );
 
   const seekSkill = useCallback(
@@ -142,14 +165,20 @@ export function useReplay(
       const index = timeline.events.findIndex(
         (e) => e.kind === "step_end" && e.skill === skill,
       );
-      if (index >= 0) playback.seek(progressForBeat(timeline, index));
+      if (index >= 0) seekBeatIndex(index);
     },
-    [timeline, playback],
+    [timeline, seekBeatIndex],
+  );
+
+  /** A scrub on the band arrives in RUN space; convert before seeking. */
+  const seekProgress = useCallback(
+    (p: number) => playback.seek(stops.length > 1 ? progressToPace(stops, p) : p),
+    [stops, playback],
   );
 
   const runElapsedSeconds =
     timeline && timeline.timing_source !== "ordinal" && timeline.wall_seconds
-      ? playback.progress * timeline.wall_seconds
+      ? progress * timeline.wall_seconds
       : null;
 
   return {
@@ -159,7 +188,7 @@ export function useReplay(
     timeline,
     beat,
     reveal,
-    progress: playback.progress,
+    progress,
     playing: playback.playing,
     runElapsedSeconds,
     demoElapsedSeconds: playback.demoElapsed,
@@ -169,7 +198,7 @@ export function useReplay(
     toggle: playback.toggle,
     restart: playback.restart,
     step,
-    seekProgress: playback.seek,
+    seekProgress,
     seekSkill,
   };
 }
