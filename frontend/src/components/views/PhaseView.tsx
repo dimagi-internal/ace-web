@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronRight, GitFork, History, Workflow } from "lucide-react";
+import { ChevronRight, ExternalLink, GitFork, History, Workflow } from "lucide-react";
 import { toast } from "sonner";
 
 import { saveDecisionOverrides } from "@/api/opps";
@@ -48,6 +48,46 @@ interface Props {
     | null
   >;
   onRemoteDecisionRevert?: React.MutableRefObject<((data: { row_id: string }) => void) | null>;
+}
+
+/**
+ * Link to the run's public summary page.
+ *
+ * The summary already resolves the run's `products` block into links to every
+ * live system it produced — the Connect opportunity, the CommCare apps on HQ,
+ * the OCS chatbot, the labs dashboards. It was only reachable from the Runs
+ * tab, which is the wrong place: the person watching a replay is exactly the
+ * person who then wants to open the thing that was built.
+ *
+ * Opens in a new tab so a replay in progress is never navigated away from.
+ */
+function RunSummaryLink({
+  workspaceSlug,
+  oppSlug,
+  runId,
+}: {
+  workspaceSlug: string;
+  oppSlug: string;
+  runId: string;
+}) {
+  // Vite's BASE_URL is `/ace` in prod (ace-web is ALB-mounted at `/ace/*`).
+  const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+  const href = `${base}/opps/${encodeURIComponent(workspaceSlug)}/${encodeURIComponent(
+    oppSlug,
+  )}/runs/${encodeURIComponent(runId)}/summary`;
+  // A plain anchor, not a Button — canopy-ui's Button has no `asChild`, and a
+  // button that navigates should still be a link (middle-click, copy address).
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex h-8 items-center rounded-md px-3 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+    >
+      Run summary
+      <ExternalLink className="ml-1.5 size-3.5" />
+    </a>
+  );
 }
 
 /**
@@ -327,16 +367,24 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <PresenceStrip viewers={uniqueEditors} />
-      {replay.active ? (
-        <div className="px-4 pt-3">
-          <ReplayBar replay={replay} />
-        </div>
-      ) : (
-        <div className="flex justify-end px-4 pt-3">
+      <div className="flex items-center justify-end gap-2 px-4 pt-3">
+        {snapshot.current_run.run_id && (
+          <RunSummaryLink
+            workspaceSlug={workspaceSlug}
+            oppSlug={oppSlug}
+            runId={snapshot.current_run.run_id}
+          />
+        )}
+        {!replay.active && (
           <Button size="sm" variant="outline" onClick={replay.start}>
             <History className="mr-1.5 size-3.5" />
             Replay this run
           </Button>
+        )}
+      </div>
+      {replay.active && (
+        <div className="px-4 pt-3">
+          <ReplayBar replay={replay} />
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">
