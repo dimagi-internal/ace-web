@@ -37,7 +37,7 @@ const VIEW_TABS: ViewTab[] = [
   // What outside reviewers said about this opp and what it changed. Opp-level
   // like Runs — a review is written against one run but survives every later
   // one, which is the point.
-  { kind: "review", label: "Review" },
+  { kind: "review", label: "Expert review" },
 ];
 
 // Cheap human form for the initial loading label, before the API
