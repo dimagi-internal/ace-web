@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, History } from "lucide-react";
 
 import { getOpp } from "../api/opps";
 import { dropOpp } from "../api/oppCache";
@@ -16,6 +16,7 @@ import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
 import { RunsTable } from "../components/opps/RunsTable";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
+import { useReplay } from "../components/replay/useReplay";
 import { WorkbenchLayout, usePaneCollapsed } from "../components/workbench";
 import { useOppCostRollup } from "../hooks/useOppCostRollup";
 import { useOppSocket } from "../hooks/useOppSocket";
@@ -67,6 +68,13 @@ export default function OppWorkbenchPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selectedSkill, setSelectedSkill] = useState<string | null>(skill ?? null);
   const costRollup = useOppCostRollup(slug, workspaceSlug);
+  // Replay is started from the tab row but plays on the Phases view, so the
+  // page owns it. Lazily fetched — costs nothing until someone presses it.
+  const replay = useReplay(
+    workspaceSlug ?? "",
+    slug,
+    state.kind === "loaded" ? state.snapshot.current_run.run_id : null,
+  );
   const { collapsed: chatCollapsed, toggle: toggleChatCollapsed } =
     usePaneCollapsed("ace.workbench.chatPaneCollapsed");
   const { collapsed: navCollapsed, toggle: toggleNavCollapsed } =
@@ -204,11 +212,26 @@ export default function OppWorkbenchPage() {
       />
       <div className="flex items-center border-b border-border bg-background">
         <ViewSwitcher current={view} tabs={VIEW_TABS} onChange={setView} />
+        {!(replay.active && view === "phase") && (
+          <button
+            type="button"
+            onClick={() => {
+              setView("phase");
+              if (!replay.active) replay.start();
+            }}
+            className="ml-auto flex items-center gap-1.5 px-3 text-xs text-muted-foreground transition hover:text-foreground"
+          >
+            <History className="h-3 w-3" />
+            {replay.active ? "Back to replay" : "Replay this run"}
+          </button>
+        )}
         <a
           href={`/ace/opps/${workspaceSlug}/${slug}/runs/${snapshot.current_run.run_id}/summary`}
           target="_blank"
           rel="noopener noreferrer"
-          className="ml-auto flex items-center gap-1.5 px-6 text-xs text-muted-foreground hover:text-foreground transition"
+          className={`flex items-center gap-1.5 px-6 text-xs text-muted-foreground hover:text-foreground transition ${
+            replay.active && view === "phase" ? "ml-auto" : ""
+          }`}
         >
           Summary
           <ExternalLink className="h-3 w-3" />
@@ -294,6 +317,7 @@ export default function OppWorkbenchPage() {
       {view === "phase" && (
         <div className="min-h-0 flex-1">
           <PhaseView
+            replay={replay}
             snapshot={snapshot}
             oppSlug={slug}
             workspaceSlug={workspaceSlug ?? ""}
