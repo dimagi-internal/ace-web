@@ -334,10 +334,6 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
   const selectedPhaseInfo = selectedPhase
     ? (phases.find((p) => p.name === selectedPhase) ?? null)
     : null;
-  const selectedPhaseSteps = selectedPhase
-    ? (stepsByPhase.get(selectedPhase) ?? [])
-    : [];
-
   // Replay — the Phases screen, played back beat by beat. Off by default and
   // lazily fetched, so it costs nothing for anyone who never turns it on.
   const replay = useReplay(
@@ -355,6 +351,36 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
     // doesn't re-fire on every URL change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replay.active, replay.beat.phase]);
+
+  // What the screen SHOWS. While replaying, every step the cursor hasn't
+  // finished is shown as it looked then — pending or running, no verdict, no
+  // artifacts — and every surface that summarises steps (the phase tiles'
+  // "n/m done" and mean score, the panel header, the rows) reads from THIS map.
+  // Summarising the real steps instead is how an unreached phase tile ended up
+  // announcing "5/6 done · 74/100" while the cursor was still two phases back.
+  //
+  // `isPhaseRunning` deliberately keeps reading the REAL steps: it locks
+  // decision editing during a live run, and that has to reflect reality, not
+  // wherever someone has scrubbed a replay to.
+  const shownStepsByPhase = useMemo(() => {
+    if (!replay.active || !replay.timeline) return stepsByPhase;
+    const m = new Map<string, Step[]>();
+    for (const [phase, steps] of stepsByPhase) {
+      m.set(
+        phase,
+        steps.map((st) =>
+          replay.reveal.done.has(st.skill_name)
+            ? st
+            : asOfCursor(st, replay.reveal.running.has(st.skill_name)),
+        ),
+      );
+    }
+    return m;
+  }, [stepsByPhase, replay.active, replay.timeline, replay.reveal]);
+
+  const selectedPhaseSteps = selectedPhase
+    ? (shownStepsByPhase.get(selectedPhase) ?? [])
+    : [];
 
   const selectedPhaseRunning = selectedPhaseInfo
     ? isPhaseRunning(selectedPhaseInfo.name)
@@ -407,7 +433,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
                   >
                     <PhaseTile
                       phase={phase}
-                      steps={stepsByPhase.get(phase.name) ?? []}
+                      steps={shownStepsByPhase.get(phase.name) ?? []}
                       decisions={phaseDecisions}
                       isSelected={selectedPhase === phase.name}
                       onClick={() => setSelectedPhase(phase.name)}
@@ -510,14 +536,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, sendDecisionEdit, 
                               style={{ opacity: reached ? 1 : 0.35 }}
                             >
                               <PhaseSkillRow
-                                step={
-                                  replay.active && !replay.reveal.done.has(step.skill_name)
-                                    ? asOfCursor(
-                                        step,
-                                        replay.reveal.running.has(step.skill_name),
-                                      )
-                                    : step
-                                }
+                                step={step}
                                 oppSlug={oppSlug}
                                 runId={snapshot.current_run.run_id}
                                 autoOpen={isCurrent}
