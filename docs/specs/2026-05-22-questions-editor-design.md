@@ -1,5 +1,7 @@
 # In-Workbench Decisions Editor + Edit-Aware Fork
 
+> **Status: shipped (PR #533, 2026-05-22) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 Status: Draft — 2026-05-22
 
 ## Motivation

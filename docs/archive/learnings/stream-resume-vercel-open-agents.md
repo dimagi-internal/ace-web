@@ -1,5 +1,7 @@
 # Learning: Stream-resume hazards (and what to lift from vercel-labs/open-agents)
 
+> **ARCHIVED 2026-09-18 — describes code or an approach that no longer exists; do not follow it.** See `docs/archive/README.md` for why, and `CLAUDE.md` for how this area works today.
+
 **Date**: 2026-05-05
 **Context**: ace-web's Phase 2/3 chat path (`apps/sessions/consumers.py`, `apps/sessions/turn_driver.py`, `frontend/src/hooks/useSessionSocket.ts`) has unresolved hazards around what happens when the user disconnects, navigates, or hits "stop" while a stream is in flight. Vercel just open-sourced [vercel-labs/open-agents](https://github.com/vercel-labs/open-agents), whose `docs/agents/lessons-learned.md` documents the same class of bugs in detail. This file captures the relevant findings and where ace-web has matching exposure, so the next person to touch streaming code does not re-learn them.
 **Status**: Partial — Hazard 1 (stop-during-reconnect) being addressed via `docs/plans/2026-05-05-stream-reconnect-resilience.md`. Hazard 2 (reconnect-during-stream gap) is **documented but deferred**: a proper fix requires Redis live-mirror state + delta sequence numbers + client-side dedupe, which is a multi-day architectural change, not a port. Revisit when the 250 ms character-loss gap is observed in real user reports.

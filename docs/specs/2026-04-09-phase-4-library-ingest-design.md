@@ -1,5 +1,7 @@
 # ACE Web Harness — Phase 4: Library & Ingest Design
 
+> **Status: shipped piecemeal across many PRs (see the plan's header) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-04-09
 **Status:** Approved for execution.
 **Scope:** Design system foundation (light/dark, shadcn/ui), basic library page, JSONL ingest (CLI + endpoint), personal upload tokens. Share tokens, participant management, and workbench↔session integration are explicitly deferred.

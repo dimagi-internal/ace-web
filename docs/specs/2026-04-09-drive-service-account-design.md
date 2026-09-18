@@ -1,5 +1,7 @@
 # Drive Service Account — Design Spec
 
+> **Status: shipped (PR #24, 2026-04-10) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-04-09
 **Status:** Approved for execution. Follow-up: implementation plan via writing-plans skill.
 **Scope:** Replace the per-user Google OAuth flow that backs the ACE opportunity Workbench (`apps/opps/`) with a single shared service-account credential. Full delete of the old flow — no soft migration.

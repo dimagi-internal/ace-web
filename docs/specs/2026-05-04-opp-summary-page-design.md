@@ -1,5 +1,7 @@
 # Public per-run opp summary page
 
+> **Status: shipped (PR #220, 2026-05-05); the public run summary has grown well beyond this design since — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date**: 2026-05-04
 **Status**: Design — pending approval before implementation plan
 **Owner**: Jonathan Jackson

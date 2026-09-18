@@ -1,5 +1,7 @@
 # Session Structure View Implementation Plan
 
+> **Status: shipped (PR #291, 2026-05-10) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the session detail "Cost & timing" tab with a GitHub-Actions-style hierarchical Structure view that shows phases → skills → individual tool calls with timing, status, and parallel-execution visualization. Compute the structure tree on-demand from persisted raw JSONL — no transcript-shaped intermediate persistence.

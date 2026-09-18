@@ -1,5 +1,7 @@
 # Learning: SSE in Django async views
 
+> **ARCHIVED 2026-09-18 — describes code or an approach that no longer exists; do not follow it.** See `docs/archive/README.md` for why, and `CLAUDE.md` for how this area works today.
+
 **Date**: 2026-04-08
 **Context**: Phase 2 implements `GET /api/messages/<id>/stream` as a Django async view returning `StreamingHttpResponse` with `text/event-stream`. There are several non-obvious gotchas.
 **Status**: Active

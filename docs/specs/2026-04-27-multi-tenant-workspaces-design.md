@@ -1,5 +1,7 @@
 # Multi-Tenant Workspaces — Design Spec
 
+> **Status: shipped (PR #134, 2026-04-27) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-04-27
 **Status:** Draft — awaiting review.
 **Scope:** Turn ace-web from a Dimagi-team-only single-tenant deployment

@@ -9,20 +9,25 @@ Phases 1–4 of the original design spec shipped (foundation, conversation engin
 multi-player, library/ingest); Phase 5 (Polish) is deferred indefinitely. Interactive
 chat moved out to canopy-hosted chat (canopy-web) — ace-web's own multi-player
 WebSocket chat UI was retired; see "Chat is canopy-hosted, full stop" below. Active
-surfaces in 2026-07 are the opp Workbench, the cloud mobile emulator, and the videos
-app.
+surfaces in 2026-09 are the opp Workbench (Phases/Runs/Review tabs + run replay), the
+public run summary, the cloud mobile emulator, and the videos app.
 
 ## Where things live
 
-- **Design spec** (whole vision): `docs/specs/2026-04-08-ace-web-design.md`
+- **Design spec** (original whole vision — historical; its GCP/IAP and
+  ace-web-hosted-chat parts were superseded): `docs/specs/2026-04-08-ace-web-design.md`
 - **Other specs**: `docs/specs/` (per-feature design docs — workspaces, opp summary,
   videos editor, mobile cloud, opp-cache redesign, products contract, …)
 - **Implementation plans**: `docs/plans/` (historical for shipped phases; check
   the file header for status)
 - **Learnings**: `docs/learnings/` (load-bearing gotchas — read these before
   touching the relevant area)
-- **Architecture docs**: `docs/architecture/cli-credentials.md`,
-  `docs/architecture/mcp-surface.md`, `docs/architecture/slack-integration.md`,
+- **Archive**: `docs/archive/` — learnings/plans/specs for code that no longer
+  exists (retired chat stream, `{data, error}` envelope, …). Not guidance;
+  `docs/archive/README.md` says why each was archived.
+- **Architecture docs**: `docs/architecture/cli-credentials.md` (per-user
+  `UserCredential` blobs, shipped PR #117, with the global `SystemConfig` row as
+  fallback), `docs/architecture/mcp-surface.md`, `docs/architecture/slack-integration.md`,
   `docs/architecture/workspace-activity.md`
 - **QA**: `docs/qa/e2e-probe.md` — re-runnable Playwright probe of every UI
   surface; lives at `scripts/qa/labs_probe.py`. Run it after every deploy.
@@ -40,6 +45,11 @@ a git submodule from `ace`, but day-to-day work happens here.
 
 The Docker image bundles two Claude plugins at build time so `claude -p` subprocesses
 spawned by `CLIBackend` have ACE skills, slash commands, and MCP servers available.
+**In prod those subprocesses are the fallback path, not the main one:** with
+`CANOPY_RUN_EXECUTION=true` (set in `deploy/aws/ace-web.cfn.yaml` since 2026-07-28)
+programmatic runs execute on canopy's cloud runner — see "Programmatic runs execute
+on canopy" below. The baked plugin still feeds the System Overview tab and the
+flag-off / local path.
 
 - **ACE plugin** at `/app/vendor/ace`. The System Overview tab (`apps/system/`)
   reads skill/agent/manifest metadata from `ACE_PLUGIN_PATH`. The plugin is also
@@ -85,7 +95,9 @@ push to ace-web `main` (triggers `build-backend.yml`) followed by a deploy.
   Insights); `RequestIDMiddleware` stamps every log record with a `request_id`.
   No distributed tracing.
 - **Frontend**: React 19, Vite 5, TypeScript 5, Tailwind 3.4, react-router-dom 6.
-  Served via nginx sidecar container in prod, built with bun.
+  Served via nginx sidecar container in prod, built with bun. Canopy SDK packages
+  from npm (unscoped): `canopy-ui` (shared chat + presence kit) and `canopy-client`
+  (token store / REST / WS primitives, adopted in PR #779).
 - **DB**: PostgreSQL (shared AWS RDS `labs-*` instance, database `ace_web`; local
   Postgres via `docker compose`).
 - **Infra**: AWS ECS Fargate (cluster `labs-jj-cluster`, us-east-1) behind the
@@ -105,10 +117,13 @@ ace-web/
 │   ├── activity/        # Workspace Timeline aggregator
 │   ├── api/             # API root (Ninja registry, MCP bridge, OpenAPI/Scalar/Redoc)
 │   ├── auth/            # Custom User model + Connect OAuth + Nova OAuth
+│   ├── canopy/          # canopy identity brokering (token exchange), workspace-scoped
+│   │                     # session create, run_dispatch (runs → canopy Turns)
 │   ├── common/          # CLI backend, channels auth, Nova auth flow, problem+json
 │   ├── ingest/          # JSONL upload + cost/timing + structure aggregators + pricing
 │   ├── mobile/          # Cloud emulator controller + jobs
 │   ├── opps/            # ACE opp Workbench (Drive-backed) + summary page + cache
+│   ├── presence/        # Cross-app viewer presence (ws/presence/ + Redis HASH store)
 │   ├── service_accounts/ # Personal tokens
 │   ├── sessions/        # Session/Message execution engine for programmatic
 │   │                     # ACE runs (seeded-run, drive_turn) + structure view;
@@ -119,7 +134,7 @@ ace-web/
 │   ├── videos/          # Video program editor (Drive-backed) + render orchestration
 │   └── workspaces/      # Multi-tenant workspace + invites + audit log
 ├── config/              # Split settings (base, connectlabs, development, production, e2e, test)
-├── frontend/src/        # api, components, hooks, pages, router (Vite + bun)
+├── frontend/src/        # api, canopy, components, hooks, pages, presence, router
 ├── e2e/                 # Playwright smoke/regression suite (separate bun workspace)
 ├── tests/               # Project-level tests (asgi smoke)
 ├── tools/               # Walkthrough/demo helpers
@@ -127,10 +142,11 @@ ace-web/
 ├── docs/                # specs/, plans/, learnings/, architecture/, qa/, deploy.md
 ├── scripts/qa/          # Re-runnable Playwright probe of the deployed UI
 ├── infra/mobile-ami/    # Packer bake for the mobile EC2 AMI + rebake.sh
-├── deploy/aws/          # ace-web.cfn.yaml (CFN owns the task def + service)
+├── deploy/aws/          # ace-web.cfn.yaml (task def + service) + ace-mobile.cfn.yaml
+│                        # (the mobile emulator's EC2/S3/IAM, imported 2026-09)
 ├── .github/workflows/   # build-backend, build-frontend, deploy-ace-web-labs, ci,
-│                        # contract-tests, regen-openapi, typecheck,
-│                        # sync-video-library-labs
+│                        # contract-tests, regen-openapi, typecheck, frontend,
+│                        # videos, sync-video-library-labs, canopy-contract-drift
 └── pyproject.toml
 ```
 
@@ -140,8 +156,11 @@ The sessions data model has 5 core tables: `users`, `sessions`,
 drafts, session share links) was retired in favor of canopy-hosted chat; see
 "ace-web's own interactive chat UI is retired" below. `apps/workspaces/` adds
 `Workspace`, `WorkspaceMembership`, `WorkspaceInvite`, and audit-log tables.
-The `opps` and `videos` modules add **no ORM tables** — they read through to
-Google Drive.
+Drive is the source of truth for opp and video **content**: `opps` keeps only a
+thin `OppWorkspace` wrapper row (display name, working session), and `videos` keeps
+a Postgres library index (`VideoLibraryEntry`/`VideoSnippet`/`AudioLibraryEntry`)
+that is reconstructible from Drive via `videos_sync_library --direction=import`.
+`presence` adds one `PresencePreference` row per user.
 
 ## Key architectural decisions
 
@@ -184,20 +203,10 @@ Google Drive.
   (`apps/common/channels_auth.py`) handles WebSocket Bearer auth so PAT-only
   callers can connect to Channels. For browser contexts that can't set
   custom WS headers, `POST /api/auth/pat-to-session` trades a Bearer for a
-  session cookie. `tools/walkthrough/run_chat.py` (a Bearer-PAT-end-to-end
-  reference walkthrough that drove a turn over ace-web's own interactive
-  chat WebSocket) was **deleted** by the chat-retirement PR along with that
-  WebSocket (`ws/sessions/<slug>/`, `apps/sessions/{consumers,drafts,
-  presence,routing}.py`) — it had no other callers (not CI, not a Makefile,
-  not the canopy plugin). The capability it smoke-tested — "does the
-  deployed `claude -p` subprocess survive a long turn on ECS?" — is still
-  real (`apps.sessions.turn_driver` + `apps.common.cli_backend.CLIBackend`
-  are unaffected; they back the MCP-exposed `apps.opps.api::seeded_run` and
-  the `drive_turn` management command), but re-verifying it needs a new
-  non-WebSocket harness (e.g. driving `seeded_run` or `POST .../resume` and
-  polling `GET .../messages`) — not a repoint onto canopy-web's chat
-  WebSocket, which drives a different service's subprocess entirely and
-  would test the wrong thing.
+  session cookie. (`tools/walkthrough/run_chat.py`, the old Bearer-PAT
+  walkthrough over ace-web's own chat WebSocket, was deleted with that
+  WebSocket; don't recreate it against canopy's chat socket — that drives a
+  different service's execution and tests the wrong thing.)
 - **Nova MCP integration**: ace-web runs Nova's OAuth 2.1 + PKCE dance server-side
   and injects a fresh access_token into every `claude -p` subprocess so the
   bundled Nova plugin's HTTP MCP can authenticate without prompting. Auth flow in
@@ -207,11 +216,24 @@ Google Drive.
   refreshes from sibling tasks would both fail). Bot-identity write permission
   gates on `_can_write_global`, not Django's `is_staff`. See `nova-mcp-oauth.md`
   before touching this.
-- **The opp-workbench live socket (`OppConsumer`, `apps/opps/{consumers,
-  routing}.py`) is the one WebSocket surface left** now that chat's own
-  `SessionConsumer` is retired (see below). `channels-ws-proxy-path.md` (the
-  `/ace/ws/` proxy detail) and `channels-websocket-auth.md` (the handshake
-  auth pattern) still apply to it.
+- **Two WebSocket surfaces remain** now that chat's own `SessionConsumer` is
+  retired (see below): the opp-workbench live socket (`OppConsumer`,
+  `apps/opps/{consumers,routing}.py`, `ws/opps/<slug>/[runs/<run>/]`) and
+  cross-app viewer presence (`PresenceConsumer`, `apps/presence/`,
+  `ws/presence/`). Both are mounted in `config/asgi.py`;
+  `channels-ws-proxy-path.md` (the `/ace/ws/` proxy detail) and
+  `channels-websocket-auth.md` (the handshake auth pattern) apply to both.
+- **Cross-app viewer presence** (PR #699, spec
+  `docs/specs/2026-07-27-cross-app-presence-design.md`): the Google-Docs-style
+  "who else is viewing" badge, one shared `canopy-ui/presence` React module with
+  a per-app Channels backend writing to that app's own Redis
+  (`apps/presence/store.py`, HASH per page key). Rules that carry the security
+  weight: the page key is CLIENT-SUPPLIED, so its workspace segment is checked
+  against memberships LIVE on every `presence.enter` (never cached for the
+  socket's life); `show_presence=False` is enforced server-side only; page keys
+  are hashed before use as Channels group names (`:`/`/` are illegal there).
+  Heartbeat 20s / field TTL 60s / key TTL 120s are tuned together — don't
+  change one alone. Every failure degrades to "badge renders nothing".
 - **Chat is canopy-hosted, full stop** — not a flag. Session state, messages,
   drafts, presence, and turn execution for interactive chat all live in
   canopy-web; the browser talks to canopy **directly** (same-origin
@@ -233,21 +255,13 @@ Google Drive.
   workspace instead of every ace workspace sharing the same `CANOPY_WORKSPACE`
   tenant; every ace workspace maps to one canopy workspace today, so without
   this a `team-b` member could list, and open, `team-a`'s chats).
-  **The by-id hole this used to name is CLOSED upstream (2026-09-17).** It
-  read: "canopy's own tenancy still lets any member of the canopy workspace
-  open a session directly by id (`GET /api/canopy-sessions/{id}`); hard
-  isolation requires mapping each ace workspace onto its own canopy
-  workspace." That was true and is not any more, and leaving it written down
-  was the more expensive half — it is an instruction to go build per-workspace
-  canopy tenancy that nothing now needs. canopy-web#749 gave the list and the
-  by-id read ONE predicate (`apps/canopy_sessions/access.py::visible_session_q`
-  — you created it, or you are a participant, or it is a runner-discovered
-  session with a binding), gated inside the tenant check rather than instead of
-  it, with `tests/test_session_by_id_access.py` asserting the two agree;
-  canopy-web#795 added the disjoint contact predicate. A co-tenant holding a
-  session UUID can no longer read that chat. The `origin_key` scoping below is
-  still ours and still required — it is what keeps one ace workspace's chats
-  out of another's LIST — but it is no longer papering over a by-id gap.
+  **By-id reads are closed upstream too** — do NOT go build per-workspace
+  canopy tenancy for isolation. canopy-web#749 (2026-09-17) gave canopy's list
+  and `GET /api/canopy-sessions/{id}` ONE visibility predicate
+  (`apps/canopy_sessions/access.py::visible_session_q` in canopy-web: creator,
+  participant, or a bound runner-discovered session), so a co-tenant holding a
+  session UUID can't read that chat. `origin_key` is still ours and still
+  required for LIST scoping.
   Ops + deploy prerequisites (undocumented failure modes if any is
   missed): (1) a registered prod `AppCredential` on canopy-web (name
   `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`), its raw
@@ -257,14 +271,11 @@ Google Drive.
   `enabled: false` and chat is unreachable (see below); (2) a canopy `Agent`
   with slug matching `CANOPY_AGENT_SLUG` (default `ace`) must exist in the
   canopy workspace named by `CANOPY_WORKSPACE` — `createCanopySession` 404s
-  otherwise; (3) ~~every ace user who uses chat must actually be a member of
-  that canopy workspace~~ — **no longer a prerequisite.** canopy's
-  token-exchange now provisions membership itself: an `AppCredential` carries
-  `provision_workspace` + `provision_role`, and the exchange creates the
-  membership (and the user, JIT) inside one atomic block, create-only so an
-  existing member's role is never changed. The prod `ace-web` credential is
-  provisioned onto `connect`, which is why an exchange returns
-  `{"workspace": "connect"}`. Do NOT re-add a manual invite step; (4) the
+  otherwise; (3) canopy workspace membership is NOT a manual prerequisite —
+  token-exchange provisions it (and the user, JIT) from the `AppCredential`'s
+  `provision_workspace` + `provision_role`, create-only; the prod credential
+  provisions onto `connect`, hence `{"workspace": "connect"}` in exchange
+  responses. Do NOT re-add a manual invite step; (4) the
   signed-in user's email domain must be in the `AppCredential`'s allowed
   domains — otherwise `token-exchange` 403s and every canopy call fails.
   None of these 404/403s are silent in the UI: `useCanopyStatus()` gates
@@ -297,7 +308,13 @@ Google Drive.
   Drift is caught by `.github/workflows/canopy-contract-drift.yml`, which runs
   **daily, not on PRs** — regenerating needs the deployed schema over the
   network, so as a required check a canopy deploy could block an unrelated
-  ace-web PR.
+  ace-web PR. The transport underneath (`canopy/{token,api,ws,client}.ts`)
+  builds on the `canopy-client` npm package's primitives (`createTokenStore` /
+  `createRest` / `buildSessionWsUrl`, PR #779) — deliberately not its bundled
+  client, because `CanopyChatPanel` needs `get(force)` to rate-limit forced
+  token refreshes on reconnect. What stays ours: `createCanopySession` (the
+  server-stamped `origin_key` path) and the `/api/harness/*` reads the package
+  doesn't model.
 - **The Workbench tells the agent what is on screen (page state).** A canopy
   session's `metadata` (`opp_slug`/`opp_run_id`/`opp_step_skill`) is stamped
   once at create and then FROZEN, so before this the agent kept answering about
@@ -353,17 +370,27 @@ Google Drive.
   backend selection machinery in `apps/common`) are live production
   infrastructure for **programmatic** ACE runs — the MCP-exposed
   `apps.opps.api::seeded_run`, the `drive_turn` management command,
-  Slack-triggered runs (which, until 2026-07-26, depended on the *models*
-  only — `apps/slack/run_starter.py` created a Session and a completed user
-  turn and never called the driver at all, so `/ace run` executed nothing;
-  it now creates a pending assistant turn and dispatches it through
-  `apps.canopy.run_dispatch.start_turn`, see
-  `docs/plans/2026-07-26-run-convergence-ace-side.md`),
+  Slack-triggered runs (`apps/slack/run_starter.py` creates a pending
+  assistant turn and dispatches it — see below),
   the post-deploy `resume-interrupted` self-heal, and
   `apps.ingest`/`apps.activity`/`apps.slack` all depend on them regardless of
   whether any human is chatting interactively. See
   `apps/sessions/models.py`'s module docstring and the chat-retirement PR's
   description for the full dependency map.
+- **Programmatic runs execute on canopy, not in this container.** Every run
+  caller (`seeded_run`, Slack `/ace run`, session resume) goes through ONE seam,
+  `apps.canopy.run_dispatch.start_turn(assistant_message_id)`: with
+  `CANOPY_RUN_EXECUTION` on (it is `true` in `deploy/aws/ace-web.cfn.yaml` since
+  2026-07-28) it enqueues a **session-targeted** canopy Turn (never agent-
+  targeted — `one_executing_turn_per_agent` would serialize every ACE run in the
+  fleet) that canopy's cloud runner executes; off, it falls back to
+  `turn_driver.start_turn_subprocess` (local `claude -p` via `CLIBackend`).
+  Monkeypatch `apps.sessions.turn_driver.start_turn_subprocess`, not
+  `run_dispatch`, in tests. Plan: `docs/plans/2026-07-26-run-convergence-ace-side.md`.
+  **Active runs** (`frontend/src/components/ActiveRuns.tsx`, PRs #755/#756) shows
+  in-progress ACE runs however they started (inbound email, schedule, laptop),
+  reading canopy's `/api/harness/sessions` feed PLUS turn events — the harness
+  feed alone is emdash-derived and structurally blind to the cloud runner.
 - **Response envelope removed**: API errors return RFC 7807 `application/problem+json`;
   success responses return bare typed payloads. The legacy `{data, error}` envelope
   was retired in PR #352 along with DRF.
@@ -552,7 +579,13 @@ Google Drive.
   `AWS_PROFILE=labs ./infra/mobile-ami/rebake.sh`** — bakes, updates the
   launch-template, terminates+recreates the EC2 instance (AMIs are pinned at
   launch), enables nested virt, updates task-def, opens+merges PR, triggers
-  deploy. `status()` caches the in-VM idle marker probe for 10s. See
+  deploy. The emulator's AWS resources (instance, launch template, SG, IAM,
+  `ace-mobile-artifacts-labs` bucket — `DeletionPolicy: Retain`, never replace)
+  are owned by the `ace-mobile` CloudFormation stack
+  (`deploy/aws/ace-mobile.cfn.yaml`, adopted by resource import 2026-09; the old
+  laptop-state Terraform is deleted). `rebake.sh` still rolls the AMI via the AWS
+  CLI directly — **after a rebake, update the stack's `AmiId` parameter** or the
+  next drift check flags it. `status()` caches the in-VM idle marker probe for 10s. See
   `squash-merge-stale-branch-orphans-commits.md` for the merge-method gotcha
   that lost the stop busy-guard PR.
 
@@ -564,11 +597,7 @@ run-level opp-eval scorecard + trend, a pending-gates banner, and a "Discuss in
 chat" CTA (`WorkbenchChatPane`) that seeds a canopy-hosted chat session
 (`createCanopySession`, title + `opp_slug`/`opp_run_id`/`opp_step_skill`
 metadata) from a step's context — see "Chat is canopy-hosted, full stop"
-above. The older `apps/opps/api.py::seed_chat_for_step` (`POST
-.../actions/seed-chat`) still exists and still seeds an ace-web `Session` the
-same way it always did, but is no longer wired to any frontend button; it's
-out of scope for the chat-retirement PR (not touched, not deleted) and is
-effectively dead code reachable only by a direct API/MCP call.
+above.
 
 Drive is the source of truth — **no ORM tables** for opps / runs / steps /
 artifacts. The data lives as files under `<workspace.drive_root_folder_id>/<opp-slug>/`
@@ -585,10 +614,25 @@ the loader falls through to the flat-layout reader and synthesises a
 placeholder `RunDetail`. Don't tighten the loader to require a real run.
 
 **Multi-run per opp:** Each opp is expected to have multiple runs under
-`runs/run-001/`, `runs/run-002/`, … The Workbench reads them through the
-multi-run reader; the run selector + URL `?run_id=…` chooses the active run. The
-improvement loop is "run → inspect → chat → upgrade skill → rerun → compare
-across runs".
+`runs/<run-id>/` (timestamped ids like `20260824-1404`). The Workbench reads them
+through the multi-run reader; the run selector + URL `?run_id=…` chooses the
+active run, and the **Runs tab** (`components/opps/RunsTable.tsx`, PR #727) shows
+one row per run with a per-phase track and deep links (public summary, Drive
+folder, workbench). The improvement loop is "run → inspect → chat → upgrade
+skill → rerun → compare across runs".
+
+**Public run summary** (`apps/opps/summary.py`, served anonymously by
+`public_summary_router` at `GET /api/opps/public/<ws>/<opp>/runs/<run>/summary`):
+the partner-facing review page. Its payload is frozen as an external contract
+(PR #723 — change it deliberately). Beyond the build memo, decisions and open
+questions (see the `public-summary-*` learnings), it renders a **Deep QA**
+section only when `/ace:qa-deep` actually ran (read from Drive by path, not
+`run_state.yaml`, because qa-deep writes nothing there — PR #746) and the run's
+frozen **claim set**, "What changed because you asked" (verdicts
+`MET`/`UNMET`/`NOT REACHED`/`INDETERMINATE` from the plugin's
+`lib/run-claims.ts`; an unknown verdict is carried as "no verdict", never
+coerced — PR #773). Audit it anonymously (`/ace:run-surface-audit`) before
+sending anyone the URL.
 
 **Skill registry is dynamic:** `apps/opps/skills.py` imports agent frontmatter
 and the artifact manifest from `ACE_PLUGIN_PATH` at first access. Adding or
@@ -612,9 +656,9 @@ skill) surface under the originating opp in the Workbench's linked-chats panel.
 ## Learnings (read before touching the relevant area)
 
 Infra & scaling:
-- [channels-single-instance](docs/learnings/channels-single-instance.md) — resolved Phase 3; `CHANNEL_LAYERS` uses channels-redis against shared ElastiCache. Raising ECS desired count past 1 is a separate operational step.
-- [channels-websocket-auth](docs/learnings/channels-websocket-auth.md) — ASGI session-cookie middleware for WebSocket handshakes; tenant-specific cookie name.
-- [redis-presence-hash](docs/learnings/redis-presence-hash.md) — HASH-per-session presence with debounced Postgres writes.
+- [channels-single-instance](docs/learnings/channels-single-instance.md) — resolved Phase 3; `CHANNEL_LAYERS` uses channels-redis against shared ElastiCache. The service now runs `DesiredCount: 2` (`deploy/aws/ace-web.cfn.yaml`), so any new in-process state must be cross-task safe.
+- [channels-websocket-auth](docs/learnings/channels-websocket-auth.md) — ASGI session-cookie middleware for WebSocket handshakes; tenant-specific cookie name. Written for the retired `SessionConsumer`; the pattern is what `OppConsumer` + `PresenceConsumer` use today.
+- [redis-presence-hash](docs/learnings/redis-presence-hash.md) — HASH-per-key presence with debounced Postgres writes. Its original home (`apps/sessions/presence.py`) was retired with chat; the HASH + TTL pattern, the fakeredis import-the-module rule, and the known race it documents carry over to `apps/presence/store.py`.
 - [channels-ws-proxy-path](docs/learnings/channels-ws-proxy-path.md) — `/ace/ws/` nginx proxy strips the prefix because `FORCE_SCRIPT_NAME` doesn't cover Channels routing.
 
 Auth & identity:
@@ -625,9 +669,6 @@ Auth & identity:
 
 Conversation engine:
 - [cli-stream-json-format](docs/learnings/cli-stream-json-format.md) — Claude CLI stream-json event shapes captured as fixtures; recapture if the CLI is upgraded.
-- [sse-django-async](docs/learnings/sse-django-async.md) — historical (SSE was superseded by WebSocket in Phase 3); kept for the async-cleanup patterns.
-- [api-envelope-convention](docs/learnings/api-envelope-convention.md) — historical (`{data, error}` envelope retired in PR #352 alongside DRF); kept for context when grepping older code that still references the shape.
-- [stream-resume-vercel-open-agents](docs/learnings/stream-resume-vercel-open-agents.md) — two stream-resume hazards: stop-during-reconnect drops the stop frame (Hazard 1, addressed); reconnect-during-stream loses up to 250ms of characters (Hazard 2, deferred).
 
 Cost / timing / structure:
 - [sidechain-attribution](docs/learnings/sidechain-attribution.md) — `apps/ingest/cost_aggregator.py` rolls subagent assistant turns into the parent skill segment via `parentUuid` → containing-message uuid match. Without this, Phase totals under-report by the cost of every Agent dispatch.
@@ -651,13 +692,13 @@ Slack:
 - [slack-integration](docs/learnings/slack-integration.md) — `SlackConfig.ready()` runs in every management command (guard with env + sys.argv); `channel_not_found` is silent (wrapper normalises to `SlackChannelGone`); `(channel_id, ts)` must be stored together; dedup lock must be `cache.add` (SETNX); `Workspace` field is `name` not `display_name`; `bot_token` is a property (no `set_bot_token`); use `asyncio.get_running_loop()` not `get_event_loop()`.
 
 Frontend:
-- [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs showing wall-clock-driven transitions need explicit `setTimeout`-driven re-renders.
+- [draft-soft-lock-idle-timer](docs/learnings/draft-soft-lock-idle-timer.md) — React UIs showing wall-clock-driven transitions need explicit `setTimeout`-driven re-renders. (The draft soft-lock it came from is retired; the lesson is general.)
 - [card-click-and-grid-stretch](docs/learnings/card-click-and-grid-stretch.md) — two layout traps that masquerade as React state bugs: (1) `<button>` nested in `<Link>` routes clicks ambiguously; (2) CSS Grid's default `align-items: stretch` makes collapsed neighbors visually expand.
 
 Deploy & infrastructure:
 - [alb-nginx-django-https](docs/learnings/alb-nginx-django-https.md) — `SECURE_PROXY_SSL_HEADER` + nginx `$real_scheme` map preserve the ALB's `https`; every `proxy_pass` must rewrite `Host` so ALB health checks don't trip `ALLOWED_HOSTS`.
 - [mcp-bootstrap-container-traps](docs/learnings/mcp-bootstrap-container-traps.md) — (1) `op inject` parses `{{ }}` and `op://` literals inside `.env.tpl` comments and aborts; (2) `npx tsx` from a cwd without `node_modules` triggers a registry install that races Claude Code's 30s MCP connection timeout.
-- [long-running-turns-vs-deploys](docs/learnings/long-running-turns-vs-deploys.md) — ECS task replacement kills in-flight `claude -p` subprocesses; Drive state is the durable source of truth. **Operational rule:** deploys and chats can run concurrently — but if you fire a deploy while a `/ace:run` (or any long chat turn) is streaming, the WebSocket will drop mid-turn. Don't avoid the deploy; resume the run from Drive once the deploy lands. For `/ace:run`, that's the `<opp>/<run-id>` form (e.g. `/ace:run bednet-spot-check/20260524-2354`) which reads the existing `run_state.yaml` and continues at the first non-`complete` phase.
+- [long-running-turns-vs-deploys](docs/learnings/long-running-turns-vs-deploys.md) — ECS task replacement kills in-flight `claude -p` subprocesses; Drive state is the durable source of truth. **Mostly moot in prod since 2026-07-28:** with `CANOPY_RUN_EXECUTION=true` runs execute on canopy's cloud runner, so an ace-web deploy doesn't kill them. It still applies to the flag-off / local `claude -p` path: don't avoid the deploy; resume the run from Drive once it lands. For `/ace:run`, that's the `<opp>/<run-id>` form (e.g. `/ace:run bednet-spot-check/20260524-2354`) which reads the existing `run_state.yaml` and continues at the first non-`complete` phase.
 - [cloud-emulator-snapshot-persistence](docs/learnings/cloud-emulator-snapshot-persistence.md) — mobile AVD snapshot/restore semantics on the EC2 host; read before touching the rebake or in-VM launcher.
 
 QA / probe:
@@ -682,8 +723,11 @@ Repo / merge process:
   ```
 - **Tests**: `.venv/bin/pytest -v` from repo root (in-memory SQLite; fast
   hashers; ~20s for the full unit suite — no Postgres needed). Frontend:
-  `bun run test` from `frontend/`. **Run this before arming auto-merge —
-  `pytest + ruff` is NOT a required check, so a red suite can still auto-merge.**
+  `bun run test` from `frontend/`. **Required checks** (`main protection`
+  ruleset, strict — branch must be up to date): `pytest + ruff`, `schemathesis
+  contract tests`, `basedpyright`. The frontend job (`tsc + vitest + build`) is
+  **NOT** required, so run `bun run test` + `bunx tsc -b` locally before arming
+  auto-merge on a frontend change.
 - **Post-deploy probe**: `LABS_TOKEN=... uv run --extra walkthrough python
   scripts/qa/labs_probe.py` — walks every UI surface on labs + cross-checks the
   OpenAPI schema for orphan endpoints. ~90s for ~40 steps. Writes
@@ -699,10 +743,10 @@ Repo / merge process:
 
 ## What does NOT ship yet
 
-- Stream-reconnect Hazard 2 (reconnect-during-stream gap, up to 250ms char loss)
-  is documented but **deferred** until observed in real user reports. See
-  `stream-resume-vercel-open-agents.md`.
 - Phase 5 of the original ace-web design (observability eval harness, a11y pass,
   full security review, demo prep) is deferred indefinitely — revisit if a
   specific pain point surfaces. Don't propose it as planned work.
-- Per-user CLI tokens (currently one global SystemConfig row).
+- The ace-web bootstrap/app CloudFormation stack split
+  (`docs/plans/2026-09-09-ace-web-bootstrap-split.md`) is planned, not applied —
+  `ace-web.cfn.yaml` still owns the log group + listener rule the CI role can't
+  write.

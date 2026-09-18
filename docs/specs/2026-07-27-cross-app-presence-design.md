@@ -1,5 +1,7 @@
 # Cross-app viewer presence — design
 
+> **Status: shipped (PR #699, 2026-07-28) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date**: 2026-07-27
 **Status**: Approved, not yet implemented
 **Scope**: ace-web + canopy-web (shared frontend, separate backends)

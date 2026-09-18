@@ -1,5 +1,7 @@
 # ACE Web Harness — Phase 3: Multi-player Collaboration
 
+> **ARCHIVED 2026-09-18 — describes code or an approach that no longer exists; do not follow it.** See `docs/archive/README.md` for why, and `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Two `@dimagi.com` teammates can sit in the same `Session`, collaboratively draft the next prompt with turn-taking hand-off, watch the same streaming assistant response, see each other's live presence, and stop a bad response mid-stream. WebSocket is the only chat transport; the Phase 2 SSE + REST-send path is deleted.

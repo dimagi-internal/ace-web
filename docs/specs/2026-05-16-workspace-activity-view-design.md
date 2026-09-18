@@ -1,5 +1,7 @@
 # Workspace Activity View — Design Doc
 
+> **Status: shipped (PR #431, 2026-05-16) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Status:** Draft · 2026-05-16
 **Author:** jjackson + Claude (brainstorming session)
 **Scope:** A unified "what's happening across the workspace right now?" view, rendered identically (data-wise) on both ace-web and Slack.

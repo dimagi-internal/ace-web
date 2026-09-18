@@ -1,5 +1,7 @@
 # Video Beat Editor — React Rewrite Implementation Plan
 
+> **Status: shipped (PR #391, 2026-05-15) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the iframe-served HTML clip-explorer editor with a native React surface that uses a local-buffer dirty-state model, a swappable side-drawer (modal-ready) for click-to-edit, batched save via a new `/edit-batch` endpoint, and a fixed trim widget. Stats (`problem`, `impact[]`) become editable; clips and narration carry over.

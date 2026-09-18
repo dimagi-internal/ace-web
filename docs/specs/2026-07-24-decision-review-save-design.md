@@ -1,5 +1,7 @@
 # Decision review: honest staging + durable save
 
+> **Status: shipped (PRs #674/#675, 2026-07-25) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Status:** design approved 2026-07-24, implementation in progress
 **Author:** jjackson + Claude
 **Surface:** `apps/opps/` (Phases tab → Decisions panel)

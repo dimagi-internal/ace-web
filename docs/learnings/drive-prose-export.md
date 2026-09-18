@@ -50,7 +50,7 @@ not a bug fix, and `test_drive_export.py` locks BOTH exports to the same
 parsed items so it stays that way.
 
 Readers switched: `open-questions.md` (`apps/opps/summary.py`) and
-`pdd.md` / `idea.md` (`apps/opps/framework_reader.py`, whose body
-`apps/opps/seed.py` fences as ```markdown). Deliberately NOT switched: the
+`pdd.md` / `idea.md` (`apps/opps/framework_reader.py`, whose body is rendered
+as markdown). Deliberately NOT switched: the
 artifact download path (`apps/opps/api.py`), which serves the file itself
 rather than parsing it.

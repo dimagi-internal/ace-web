@@ -1,5 +1,7 @@
 # Template Editor Implementation Plan
 
+> **Status: shipped (PR #625, 2026-06-08) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the video-spec templates Drive-backed and editable live on labs through a comprehensive structured editor (reusing the BeatEditor for the demo).

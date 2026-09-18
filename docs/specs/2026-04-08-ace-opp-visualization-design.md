@@ -1,5 +1,7 @@
 # ACE Opportunity Visualization — Design Spec
 
+> **Status: shipped as the Opp Workbench (PR #17, 2026-04-09) and heavily evolved since — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 **Date:** 2026-04-08
 **Status:** Draft — awaiting user sign-off before writing-plans
 **Scope:** A new `apps/opps/` module in ace-web that reads ACE opportunity state

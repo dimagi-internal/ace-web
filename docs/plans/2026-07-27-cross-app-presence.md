@@ -1,5 +1,7 @@
 # Cross-App Viewer Presence — Implementation Plan
 
+> **Status: shipped (PR #699, 2026-07-28) — historical record, not current-state.** See `CLAUDE.md` for how this area works today.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship a Google-Docs-style "who else is viewing this page" badge on every page of ace-web and canopy-web — a compressed avatar cluster that expands into a live, named viewer list.
