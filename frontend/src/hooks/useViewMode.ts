@@ -1,14 +1,5 @@
 import { useSearchParams } from "react-router-dom";
-import type { ViewKind } from "../components/views/ViewSwitcher";
-
-const VALID: readonly ViewKind[] = [
-  "hierarchy",
-  "timeline",
-  "workbench",
-  "phase",
-  "story",
-  "runs",
-] as const;
+import { VIEW_KINDS, type ViewKind } from "../components/views/ViewSwitcher";
 
 /**
  * URL-state-driven tab selection, generic over the tab key.
@@ -50,7 +41,7 @@ export function useUrlTab<K extends string>({
 export function useViewMode(defaultView: ViewKind = "hierarchy") {
   const { tab, setTab } = useUrlTab<ViewKind>({
     param: "view",
-    valid: VALID,
+    valid: VIEW_KINDS,
     defaultTab: defaultView,
   });
   return { view: tab, setView: setTab };
