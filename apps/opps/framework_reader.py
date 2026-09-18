@@ -387,8 +387,8 @@ def load_opp_run_via_store(
                 inputs_children, "idea.md"
             )
     # `read_prose`, not a bare get_content: the PDD is a Google Doc and the
-    # plain-text export drops its headings and emphasis. `apps/opps/seed.py`
-    # fences this body as ```markdown, so a flattened body is a lie.
+    # plain-text export drops its headings and emphasis, and callers render
+    # this body as markdown, so a flattened body is a lie.
     pdd_body = read_prose(client, pdd_file) if pdd_file else ""
 
     rd = fm.map_run_detail(fw_run, folder_id=run_folder_id, run_state=state_data)
@@ -445,8 +445,8 @@ def load_opp_flat_via_store(
     # IDD→PDD rename transition: accept either primary-doc filename.
     pdd_file = _find_child(opp_children, "pdd.md") or _find_child(opp_children, "idd.md")
     # `read_prose`, not a bare get_content: the PDD is a Google Doc and the
-    # plain-text export drops its headings and emphasis. `apps/opps/seed.py`
-    # fences this body as ```markdown, so a flattened body is a lie.
+    # plain-text export drops its headings and emphasis, and callers render
+    # this body as markdown, so a flattened body is a lie.
     pdd_body = read_prose(client, pdd_file) if pdd_file else ""
 
     flat_client = _FlatRunClient(client, opp_folder)

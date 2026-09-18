@@ -1108,55 +1108,6 @@
         ]
       }
     },
-    "/api/w/{workspace_slug}/opps/{slug}/actions/seed-chat": {
-      "post": {
-        "operationId": "apps_opps_api_seed_chat",
-        "summary": "Seed chat from step",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_slug",
-            "schema": {
-              "title": "Workspace Slug",
-              "type": "string"
-            },
-            "required": true
-          },
-          {
-            "in": "path",
-            "name": "slug",
-            "schema": {
-              "title": "Slug",
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        },
-        "tags": [
-          "opps"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SeedChatIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "security": [
-          {
-            "DjangoSessionAuth": []
-          }
-        ]
-      }
-    },
     "/api/w/{workspace_slug}/opps/{slug}/actions/seeded-run": {
       "post": {
         "operationId": "apps_opps_api_seeded_run",
@@ -6837,33 +6788,6 @@
           "decided_at"
         ],
         "title": "ScorecardOut",
-        "type": "object"
-      },
-      "SeedChatIn": {
-        "additionalProperties": false,
-        "description": "Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seed-chat.",
-        "properties": {
-          "step_skill": {
-            "minLength": 1,
-            "title": "Step Skill",
-            "type": "string"
-          },
-          "run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Id"
-          }
-        },
-        "required": [
-          "step_skill"
-        ],
-        "title": "SeedChatIn",
         "type": "object"
       },
       "SeededRunIn": {

@@ -424,22 +424,6 @@ class OppHealthOut(StrictModel):
     error: str | None = None
 
 
-# --- Seed-chat ---------------------------------------------------------
-
-
-class SeedChatIn(StrictModel):
-    """Request body for POST /w/{workspace_slug}/opps/{slug}/actions/seed-chat."""
-
-    step_skill: str = Field(min_length=1)
-    run_id: RunId | None = None
-
-
-class SeedChatOut(StrictModel):
-    """Response for POST /w/{workspace_slug}/opps/{slug}/actions/seed-chat."""
-
-    session_slug: str
-
-
 # --- Seeded run --------------------------------------------------------
 
 

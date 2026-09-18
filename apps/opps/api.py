@@ -36,8 +36,6 @@ from .schemas import (
     OppHealthOut,
     OppPatchIn,
     ScorecardOut,
-    SeedChatIn,
-    SeedChatOut,
     SeededRunIn,
     SeededRunOut,
     StepArtifactOut,
@@ -1854,110 +1852,6 @@ def compare_runs(
             404, "Opp not found", type_=TYPE_NOT_FOUND, detail=str(exc),
         ) from exc
     return OppCompareOut.model_validate(result)
-
-
-# ---------------------------------------------------------------------------
-# Task 2.1.18 helpers — seed-chat
-# ---------------------------------------------------------------------------
-
-
-def seed_chat_for_step(workspace, slug: str, user, body: SeedChatIn) -> dict:
-    """Create a seed chat session for a step. Returns SeedChatOut-compatible dict.
-
-    Delegates to apps/opps/seed.py::build_chat_seed and Session.create_with_owner.
-    Raises ValueError when the step doesn't exist.
-    The monkeypatch target in contract tests is this module-level function.
-    """
-    from django.db import transaction
-
-    from apps.opps import access
-    from apps.opps.drive_client import get_drive_client
-    from apps.opps.seed import build_chat_seed
-    from apps.opps.sync import load_opp
-    from apps.opps.views_session import _skill_md_relative_path
-    from apps.service_accounts.exceptions import ServiceAccountNotFound
-    from apps.sessions.models import Message, Session
-
-    ace_folder_id = access.resolve_ace_root_folder_id(workspace)
-    if ace_folder_id is None:
-        raise FileNotFoundError("ACE root folder not configured")
-
-    try:
-        drive = get_drive_client(workspace=workspace)
-    except ServiceAccountNotFound as exc:
-        raise FileNotFoundError(f"Drive not configured: {exc}") from exc
-
-    run_id = body.run_id or None
-    try:
-        snap = load_opp(drive, ace_folder_id=ace_folder_id, slug=slug, run_id=run_id)
-    except FileNotFoundError:
-        raise
-
-    access.overlay_workspace_display_name(snap.opp, slug, workspace=workspace)
-    seed_body = build_chat_seed(
-        snap,
-        skill=body.step_skill,
-        drive_client=drive,
-        skill_md_path=_skill_md_relative_path(body.step_skill),
-    )
-    idd_drive_id = ""
-    for step_snap in snap.current_run.steps:
-        if step_snap.step.skill_name == "idea-to-pdd":
-            for artifact in step_snap.artifacts:
-                if artifact.name in ("pdd.md", "idd.md"):
-                    idd_drive_id = artifact.drive_file_id
-                    break
-
-    with transaction.atomic():
-        session = Session.create_with_owner(
-            owner=user,
-            title=f"{body.step_skill}: {slug}",
-            backend_kind="cli",
-            status="active",
-            source="web",
-            opp_slug=slug,
-            opp_run_id=snap.current_run.run_id,
-            opp_step_skill=body.step_skill,
-            idd_ref=idd_drive_id,
-            workspace=workspace,
-        )
-        Message.objects.create(
-            session=session,
-            turn_index=0,
-            role="system",
-            sender_user=user,
-            content={"type": "system", "source": "opps-discuss"},
-            plaintext=seed_body,
-            status="complete",
-        )
-    return {"session_slug": session.slug}
-
-
-# ---------------------------------------------------------------------------
-# Task 2.1.18 — POST /w/{workspace_slug}/opps/{slug}/actions/seed-chat
-# ---------------------------------------------------------------------------
-
-
-@router.post("/{slug}/actions/seed-chat", summary="Seed chat from step")
-def seed_chat(
-    request: HttpRequest,
-    workspace_slug: Annotated[str, Path()],
-    slug: Annotated[str, Path()],
-    body: SeedChatIn,
-) -> HttpResponse:
-    workspace = resolve_workspace_for_member(request, workspace_slug)
-    try:
-        result = seed_chat_for_step(workspace, slug, request.user, body)
-    except FileNotFoundError as exc:
-        raise ProblemError(
-            404, "Opp not found", type_=TYPE_NOT_FOUND, detail=str(exc),
-        ) from exc
-    except ValueError as exc:
-        raise ProblemError(
-            404, str(exc), type_=TYPE_NOT_FOUND,
-        ) from exc
-    payload = SeedChatOut.model_validate(result).model_dump(mode="json")
-    return JsonResponse(payload, status=201)
 
 
 # ---------------------------------------------------------------------------

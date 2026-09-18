@@ -13,7 +13,6 @@ from apps.opps.schemas import (
     OppHealthOut,
     OppSnapshotOut,
     ScorecardOut,
-    SeedChatOut,
     SeededRunIn,
     SeededRunOut,
     StepArtifactOut,
@@ -1625,81 +1624,6 @@ def test_compare_runs_400_too_few_run_ids(member_client):
     client, _, _ = member_client
     response = client.get("/api/w/ws1/opps/opp-1/compare?run_ids=run-001")
     assert response.status_code == 400
-    assert response["Content-Type"].startswith("application/problem+json")
-
-
-# ---------------------------------------------------------------------------
-# Task 2.1.18 — POST /w/{ws}/opps/{slug}/actions/seed-chat
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_seed_chat_happy_path(member_client, monkeypatch):
-    client, _, _ = member_client
-    monkeypatch.setattr(
-        "apps.opps.api.seed_chat_for_step",
-        lambda workspace, slug, user, body: {"session_slug": "sess-abc"},
-    )
-    response = client.post(
-        "/api/w/ws1/opps/opp-1/actions/seed-chat",
-        data={"step_skill": "idea-to-pdd"},
-        content_type="application/json",
-    )
-    assert response.status_code == 201
-    SeedChatOut.model_validate(response.json())
-    assert response.json()["session_slug"] == "sess-abc"
-
-
-@pytest.mark.django_db
-def test_seed_chat_404_non_member(non_member_client):
-    client, _, _ = non_member_client
-    response = client.post(
-        "/api/w/ws1/opps/opp-1/actions/seed-chat",
-        data={"step_skill": "idea-to-pdd"},
-        content_type="application/json",
-    )
-    assert response.status_code == 404
-
-
-@pytest.mark.django_db
-def test_seed_chat_401_anonymous(db, client):
-    Workspace.objects.create(
-        slug="ws1", display_name="WS1", drive_root_folder_id="folder-1",
-        created_by=User.objects.create_user(email="creator-seed1@example.com"),
-    )
-    response = client.post(
-        "/api/w/ws1/opps/opp-1/actions/seed-chat",
-        data={"step_skill": "idea-to-pdd"},
-        content_type="application/json",
-    )
-    assert response.status_code == 401
-
-
-@pytest.mark.django_db
-def test_seed_chat_422_empty_step_skill(member_client):
-    client, _, _ = member_client
-    response = client.post(
-        "/api/w/ws1/opps/opp-1/actions/seed-chat",
-        data={"step_skill": ""},
-        content_type="application/json",
-    )
-    assert response.status_code == 422
-
-
-@pytest.mark.django_db
-def test_seed_chat_404_opp_not_found(member_client, monkeypatch):
-    client, _, _ = member_client
-
-    def _raise(workspace, slug, user, body):
-        raise FileNotFoundError("no opp named 'no-such'")
-
-    monkeypatch.setattr("apps.opps.api.seed_chat_for_step", _raise)
-    response = client.post(
-        "/api/w/ws1/opps/no-such/actions/seed-chat",
-        data={"step_skill": "idea-to-pdd"},
-        content_type="application/json",
-    )
-    assert response.status_code == 404
     assert response["Content-Type"].startswith("application/problem+json")
 
 
