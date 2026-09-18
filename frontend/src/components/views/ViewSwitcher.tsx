@@ -4,18 +4,35 @@ import {
   Layers,
   LayoutGrid,
   ListTree,
+  MessageSquareQuote,
   Workflow,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type ViewKind =
-  | "hierarchy"
-  | "timeline"
-  | "workbench"
-  | "phase"
-  | "story"
-  | "runs";
+/**
+ * Every view the Workbench can show, and the SINGLE source of truth for what
+ * `?view=` accepts.
+ *
+ * The type is derived from this array rather than declared beside it. When
+ * they were two declarations, adding a kind to the union did not force adding
+ * it to the runtime list `useViewMode` validates against — so a new tab set
+ * `?view=<kind>`, failed validation on the next read, and silently fell back
+ * to the default. TypeScript could not see it: the list was typed
+ * `readonly ViewKind[]`, which a SUBSET satisfies. Deriving one from the other
+ * makes that drift impossible.
+ */
+export const VIEW_KINDS = [
+  "hierarchy",
+  "timeline",
+  "workbench",
+  "phase",
+  "story",
+  "runs",
+  "review",
+] as const;
+
+export type ViewKind = (typeof VIEW_KINDS)[number];
 
 export interface ViewTab<K extends string = ViewKind> {
   kind: K;
@@ -46,6 +63,7 @@ const ICONS: Record<ViewKind, React.ComponentType<{ className?: string }>> = {
   phase: Layers,
   story: Film,
   runs: Workflow,
+  review: MessageSquareQuote,
 };
 
 const DEFAULT_CONTAINER = "border-b border-border bg-background px-6";

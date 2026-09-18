@@ -1005,6 +1005,65 @@ def get_run(
 
 
 # ---------------------------------------------------------------------------
+# Reviewer feedback — GET /w/{workspace_slug}/opps/{slug}/feedback
+# ---------------------------------------------------------------------------
+
+
+def load_feedback_payload(workspace, slug: str) -> dict | None:
+    """Every review of one opp, with the ledger the plugin rendered for it.
+
+    Opp-level, not per-run: a review is written against a run but survives
+    every later one, which is the whole point — the ledger is how you see that
+    an outsider's comment changed the system.
+
+    The monkeypatch target in contract tests is this module-level function.
+    """
+    from apps.opps import access
+    from apps.opps.drive_client import get_drive_client
+    from apps.opps.feedback import build_feedback_payload
+    from apps.opps.sync import _find_child_folder
+    from apps.service_accounts.exceptions import ServiceAccountNotFound
+
+    ace_folder_id = access.resolve_ace_root_folder_id(workspace)
+    if ace_folder_id is None:
+        return None
+    try:
+        drive = get_drive_client(workspace=workspace)
+    except ServiceAccountNotFound:
+        log.warning("load_feedback_payload: Drive not configured for %s", workspace.slug)
+        return None
+
+    opp_folder = _find_child_folder(drive.list_folder(ace_folder_id), slug)
+    if opp_folder is None:
+        return None
+    return build_feedback_payload(drive, opp_folder.id)
+
+
+@router.get(
+    "/{slug}/feedback",
+    response={200: dict},
+    summary="Reviewer feedback and its ledger",
+)
+def get_opp_feedback(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+) -> HttpResponse:
+    """What outside reviewers said about this opp, and what it changed."""
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    payload = load_feedback_payload(workspace, slug)
+    if payload is None:
+        raise ProblemError(404, "Opp not found", type_=TYPE_NOT_FOUND)
+    etag = compute_etag(payload)
+    not_modified = maybe_not_modified(request, etag)
+    if not_modified is not None:
+        return not_modified
+    response = JsonResponse(payload)
+    response["ETag"] = etag
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Run replay — GET /w/{workspace_slug}/opps/{slug}/runs/{run_id}/replay
 # docs/specs/2026-09-17-ace-demo-player-design.md
 # ---------------------------------------------------------------------------
