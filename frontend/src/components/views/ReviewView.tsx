@@ -3,7 +3,14 @@ import { ExternalLink } from "lucide-react";
 
 import { type FeedbackPayload, type FeedbackRecord, fetchFeedback } from "@/api/feedback";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
-import { type Disposition, type LedgerItem, parseLedger } from "@/components/views/ledgerParse";
+import {
+  type Disposition,
+  type LedgerItem,
+  type Outcome,
+  outcomeCounts,
+  outcomeOf,
+  parseLedger,
+} from "@/components/views/ledgerParse";
 import { cn } from "@/lib/utils";
 
 /**
@@ -83,54 +90,70 @@ export function ReviewView({
 function ReviewRecord({ record }: { record: FeedbackRecord }) {
   const [showComments, setShowComments] = useState(false);
   const parsed = useMemo(() => parseLedger(record.ledger_body), [record.ledger_body]);
+  const counts = useMemo(() => (parsed ? outcomeCounts(parsed) : null), [parsed]);
 
   return (
     <article>
-      <header className="border-b pb-3">
-        <h2 className="text-lg font-semibold text-foreground">{record.reviewer}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Reviewed {record.artifact_url ? (
+      <header className="border-b pb-5">
+        <h2 className="text-lg font-semibold text-foreground">
+          What an outside expert changed
+        </h2>
+        <p className="mt-1.5 max-w-[70ch] text-sm leading-relaxed text-muted-foreground">
+          <span className="text-foreground">{record.reviewer}</span> reviewed{" "}
+          {record.artifact_url ? (
             <a
               href={record.artifact_url}
               target="_blank"
               rel="noreferrer"
               className="underline underline-offset-2 hover:text-foreground"
             >
-              {record.artifact || "the design document"}
+              this program&rsquo;s design
             </a>
           ) : (
-            record.artifact || "the design document"
+            "this program\u2019s design"
           )}
-          {record.received_at && ` on ${record.received_at}`}
-          {record.against_run && `, against run ${record.against_run}`}.
-          {record.responding_run && (
-            <> Answered in run {record.responding_run}.</>
-          )}
+          {record.received_at && ` on ${record.received_at}`} and left{" "}
+          {record.tally?.comments ?? record.item_count} comments. Each one is below,
+          in their words, with what it changed.
         </p>
 
-        {record.tally ? (
-          <p className="mt-3 text-sm">
-            <Count n={record.tally.comments} noun="comment" />
-            {" — "}
-            <span className="text-foreground">{record.tally.shipped} shipped</span>
-            {record.tally.needs_human > 0 && (
-              <span className="text-muted-foreground">
-                , {record.tally.needs_human} still{" "}
-                {record.tally.needs_human === 1 ? "needs" : "need"} a person
-              </span>
+        {counts ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {counts.ace > 0 && (
+              <Stat
+                outcome="ace"
+                n={counts.ace}
+                label="fixed in ACE itself"
+                note="Every future program gets these fixes."
+              />
             )}
-            {record.tally.unrouted > 0 && (
-              <span className="text-destructive">
-                , {record.tally.unrouted} unrouted
-              </span>
+            {counts.program > 0 && (
+              <Stat
+                outcome="program"
+                n={counts.program}
+                label="changed this program"
+                note="Design decisions for this program only."
+              />
             )}
-          </p>
-        ) : (
+            {counts.person > 0 && (
+              <Stat
+                outcome="person"
+                n={counts.person}
+                label="waiting on a person"
+                note="A call ACE shouldn't make on its own."
+              />
+            )}
+          </div>
+        ) : record.ledger_body ? null : (
           <p className="mt-3 text-sm text-muted-foreground">
-            <Count n={record.item_count} noun="comment" />
-            {record.ledger_body
-              ? ""
-              : " — the ledger for this review hasn't been rendered yet, so what changed isn't shown."}
+            What changed hasn&rsquo;t been worked out for this review yet, so only the
+            comments are shown.
+          </p>
+        )}
+        {counts && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Some comments did more than one thing, so these add up to more than{" "}
+            {record.tally?.comments ?? record.item_count}.
           </p>
         )}
       </header>
@@ -234,8 +257,7 @@ function LedgerItemRow({ item }: { item: LedgerItem }) {
 function DispositionRow({ d }: { d: Disposition }) {
   return (
     <li className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-      <StatusChip status={d.status} />
-      {d.kind && <span className="text-xs text-muted-foreground">{d.kind}</span>}
+      <OutcomeBadge outcome={outcomeOf(d)} fallback={d.status} />
       {d.ref &&
         (d.href ? (
           <a
@@ -256,33 +278,55 @@ function DispositionRow({ d }: { d: Disposition }) {
   );
 }
 
-/** SHIPPED reads green, anything unresolved reads as unfinished. Unrouted —
- *  nobody actioned it — is the one that should look wrong. */
-function StatusChip({ status }: { status: string }) {
-  const s = status.toLowerCase();
-  const tone = s.includes("ship")
-    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-    : s.includes("unrouted")
-      ? "border-destructive/40 bg-destructive/10 text-destructive"
-      : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+const OUTCOME: Record<Outcome, { label: string; tone: string }> = {
+  ace: {
+    label: "Fixed in ACE",
+    tone: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  },
+  program: {
+    label: "Changed this program",
+    tone: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  },
+  person: {
+    label: "Needs a decision",
+    tone: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  },
+  other: { label: "", tone: "border-border bg-muted text-muted-foreground" },
+};
+
+/** Says WHAT changed. The ledger's own badge said SHIPPED for a fix to ACE and
+ *  a one-off program decision alike, which buried the self-improvement story. */
+function OutcomeBadge({ outcome, fallback }: { outcome: Outcome; fallback: string }) {
+  const o = OUTCOME[outcome];
   return (
     <span
       className={cn(
-        "shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide",
-        tone,
+        "shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-semibold",
+        o.tone,
       )}
     >
-      {status}
+      {o.label || fallback}
     </span>
   );
 }
 
-function Count({ n, noun }: { n: number; noun: string }) {
+function Stat({
+  outcome,
+  n,
+  label,
+  note,
+}: {
+  outcome: Outcome;
+  n: number;
+  label: string;
+  note: string;
+}) {
   return (
-    <span className="text-foreground">
-      {n} {noun}
-      {n === 1 ? "" : "s"}
-    </span>
+    <div className={cn("rounded-md border px-3 py-2.5", OUTCOME[outcome].tone)}>
+      <div className="text-2xl font-semibold leading-none">{n}</div>
+      <div className="mt-1 text-sm font-medium">{label}</div>
+      <div className="mt-0.5 text-xs opacity-80">{note}</div>
+    </div>
   );
 }
 
