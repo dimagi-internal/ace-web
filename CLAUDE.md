@@ -399,31 +399,29 @@ Google Drive.
   `docs/architecture/workspace-activity.md`. Phase view is the canonical
   drill-down — row clicks go to `?run_id=<id>`, not the Workbench.
 - **Run replay** (a mode of the Workbench's Phases screen, not a separate
-  page): **Replay this run** plays a saved run back beat by beat — entering a
-  phase, starting a skill, finishing one — filling the real Phases UI in as it
-  goes. The open phase follows the cursor; phases/skills not yet reached dim;
-  the current skill is ringed and auto-expanded; **a step the cursor hasn't
-  finished renders pending with its verdict withheld**, because the point of a
-  replay is that you don't already know how it turned out. Off by default and
-  lazily fetched (costs nothing for anyone who never turns it on); once on it
-  warms every step's detail in the background so stepping never waits on Drive.
-  Space plays, arrows step one beat, R restarts, Esc exits. **Honesty rule —
-  never render a value it can't source from the run.** Three timing modes,
-  because ACE stamps PHASE boundaries in `run_state.yaml` but almost never
-  per-STEP ones (a real 2026-07 run: a measured span on every phase, a
-  timestamp on 0 of 48 steps): `measured` (step stamps are real), `phase` (the
-  clock and bands are real; step offsets are interpolated for layout and
-  flagged `t_estimated`, and the UI shows the phase name rather than a step
-  time it didn't measure), `ordinal` (nothing stamped — sequence, no clock).
-  Phase timings ride on `RunDetail.phase_timings` via
-  `framework_map._phase_timings`. **No token or cost readout, ever** —
-  deliberate: a token ledger discloses our subscription-vs-API cost structure
-  to an audience that is frequently an AI company. Don't "fix" it. Backend:
-  `apps/opps/replay.py` at `GET /api/w/<ws>/opps/<slug>/runs/<run>/replay`,
-  derived from the same rich snapshot the Workbench already loads (no new ORM
-  tables). Frontend: `frontend/src/components/replay/`. Spec +
-  why-it-isn't-a-standalone-player:
-  `docs/specs/2026-09-17-ace-demo-player-design.md` (see the addendum).
+  page): **Replay this run** is a STEP-THROUGH of a saved run, one beat at a
+  time — entering a phase, starting a skill, finishing one. **→ / ←** step,
+  **Play** advances one step every 1.5s, **R** starts over, **Esc** exits. The
+  open phase follows the cursor; phases/skills not yet reached dim; the current
+  skill is ringed and auto-expanded. **Nothing the cursor hasn't reached may be
+  shown**: `asOfCursor` withholds verdict, QA, artifacts and preview, and every
+  surface that SUMMARISES steps (phase tiles' "n/m done" + mean, the panel
+  header) must read the as-of-cursor map `shownStepsByPhase`, not the real one —
+  an unreached tile once announced "5/6 done · 74/100". `isPhaseRunning` stays
+  on REAL steps (it locks decision editing during a live run). **Deliberately
+  no clock and nothing time-proportional**: runs span many hours with long idle
+  gaps (one phase of `hh-poverty-targeting/20260722-1341` holds 82% of its
+  elapsed time), so timed playback spends most of its length showing nothing
+  change. The step track under the controls gives each phase width = its NUMBER
+  OF STEPS. Off by default and lazily fetched; once on, it warms every step's
+  detail in the background. Backend: `apps/opps/replay.py` at
+  `GET /api/w/<ws>/opps/<slug>/runs/<run>/replay` — it still computes timing
+  fields (`timing_source`, `phase_timings`, the time-ledger act) that the UI no
+  longer reads; left in place because removing `RunDetail.phase_timings` would
+  need another `_KEY_VERSION` bump and a global cold-cache. Phase colours are
+  `--replay-phase-1..10` at `:root`/`.dark`. Frontend:
+  `frontend/src/components/replay/`. Spec + why it isn't a standalone player:
+  `docs/specs/2026-09-17-ace-demo-player-design.md` (see the addenda).
 - **Review tab** (`/w/<ws>/opps/<slug>?view=review`): what outside reviewers said
   about an opp and what it changed — the self-improvement loop, made visible.
   Opp-level, not per-run: a review is written against one run but survives every

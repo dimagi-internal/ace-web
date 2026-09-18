@@ -1,34 +1,26 @@
-import { useEffect, useMemo, useRef } from "react";
-import { Pause, Play, RotateCcw, SkipBack, SkipForward, X } from "lucide-react";
+import { useEffect, useMemo } from "react";
+import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, X } from "lucide-react";
 
 import { Button } from "canopy-ui/ui";
+import type { DemoEvent, DemoTimeline } from "@/api/replay";
 
-import { bandSegments, bandTicks } from "./band";
+import { stepFailed } from "./cursor";
 import { buildPhasePalette, phaseColor } from "./phaseColor";
-import { clock } from "./time";
 import type { Replay } from "./useReplay";
 
 /**
- * Replay transport for the Phases screen.
+ * Step-through controls for the Phases screen.
  *
- * The band is the run: each phase takes its measured share of it, ticks mark
- * where each skill finished, and the playhead sweeps. Below it, two clocks —
- * how long the run actually took, against how long you have been watching.
- * That contrast is the point of replaying at all.
+ * Next / Prev walk the run one step at a time; Play walks it on a short delay.
+ * The track below is the run's steps laid out evenly — one slot per step, not
+ * per minute — grouped and coloured by phase, so you can see where you are
+ * and jump anywhere with a click.
  *
- * Keyboard-first, because whoever is driving this is usually talking over it:
- * space plays, arrows step one beat, R restarts.
+ * Keyboard-first, because whoever drives this is usually talking over it:
+ * → next, ← back, space play/pause, R start over, Esc leave.
  */
 export function ReplayBar({ replay }: { replay: Replay }) {
   const { timeline } = replay;
-  const bandRef = useRef<HTMLDivElement>(null);
-
-  const segments = useMemo(() => (timeline ? bandSegments(timeline) : []), [timeline]);
-  const ticks = useMemo(() => (timeline ? bandTicks(timeline) : []), [timeline]);
-  const palette = useMemo(
-    () => buildPhasePalette(segments.map((s) => s.phase)),
-    [segments],
-  );
 
   useEffect(() => {
     if (!replay.active) return;
@@ -41,10 +33,10 @@ export function ReplayBar({ replay }: { replay: Replay }) {
         replay.toggle();
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        replay.step(1);
+        replay.next();
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        replay.step(-1);
+        replay.prev();
       } else if (e.key.toLowerCase() === "r") {
         replay.restart();
       } else if (e.key === "Escape") {
@@ -70,145 +62,208 @@ export function ReplayBar({ replay }: { replay: Replay }) {
   }
   if (!timeline) return null;
 
-  const hasClock = timeline.timing_source !== "ordinal";
-  const onScrub = (e: React.MouseEvent<HTMLDivElement>) => {
-    const box = bandRef.current?.getBoundingClientRect();
-    if (!box || box.width === 0) return;
-    replay.seekProgress((e.clientX - box.left) / box.width);
-  };
+  const atStart = replay.beat.index <= 0;
+  const atEnd = replay.beat.index >= replay.total - 1;
 
   return (
     <div className="mb-4 rounded-md border bg-card p-3">
-      <div className="mb-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-center gap-1">
-          <Button size="icon" variant="ghost" onClick={() => replay.step(-1)} title="Back one step">
-            <SkipBack className="size-4" />
-          </Button>
-          <Button size="icon" variant="secondary" onClick={replay.toggle} title="Play or pause (space)">
-            {replay.playing ? <Pause className="size-4" /> : <Play className="size-4" />}
-          </Button>
-          <Button size="icon" variant="ghost" onClick={() => replay.step(1)} title="Forward one step">
-            <SkipForward className="size-4" />
-          </Button>
-          <Button size="icon" variant="ghost" onClick={replay.restart} title="Back to the start (R)">
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={replay.restart}
+            disabled={atStart}
+            title="Start over (R)"
+          >
             <RotateCcw className="size-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={replay.prev}
+            disabled={atStart}
+            title="Previous step (←)"
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={replay.toggle}
+            title="Play or pause (space)"
+            className="w-20"
+          >
+            {replay.playing ? (
+              <>
+                <Pause className="mr-1 size-3.5" /> Pause
+              </>
+            ) : (
+              <>
+                <Play className="mr-1 size-3.5" /> {atEnd ? "Replay" : "Play"}
+              </>
+            )}
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={replay.next}
+            disabled={atEnd}
+            title="Next step (→)"
+          >
+            <ChevronRight className="size-4" />
           </Button>
         </div>
 
-        {hasClock ? (
-          <div className="flex items-baseline gap-5">
-            <Readout label="Run time" value={clock(replay.runElapsedSeconds ?? 0, timeline.wall_seconds ?? 0)} strong />
-            <Readout label="Watching" value={clock(replay.demoElapsedSeconds, replay.demoDurationSeconds)} />
-          </div>
-        ) : (
-          <Readout
-            label="Step"
-            value={`${replay.reveal.done.size} of ${ticks.length}`}
-            strong
-          />
-        )}
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          Step {replay.beat.index + 1} of {replay.total}
+        </span>
 
-        <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-          {describe(replay)}
+        <p className="min-w-0 flex-1 truncate text-sm text-foreground">
+          <Describe event={replay.beat.event} />
         </p>
 
-        <Button size="sm" variant="ghost" onClick={replay.stop} title="Leave replay (esc)">
+        <Button size="sm" variant="ghost" onClick={replay.stop} title="Leave replay (Esc)">
           <X className="mr-1 size-3.5" />
           Exit replay
         </Button>
       </div>
 
-      <div
-        ref={bandRef}
-        onClick={onScrub}
-        role="slider"
-        tabIndex={0}
-        aria-label="Run position"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(replay.progress * 100)}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowLeft") replay.step(-1);
-          if (e.key === "ArrowRight") replay.step(1);
-        }}
-        className="relative h-8 w-full cursor-pointer overflow-hidden rounded-sm border bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-      >
-        {segments.map((segment) => {
-          const color = phaseColor(palette, segment.phase);
-          return (
-            <div
-              key={segment.phase}
-              className="absolute inset-y-0"
-              style={{
-                left: `${segment.start * 100}%`,
-                width: `${segment.width * 100}%`,
-                background: `color-mix(in srgb, ${color} ${
-                  segment.phase === replay.beat.phase ? 55 : 28
-                }%, transparent)`,
-              }}
-              title={segment.label}
-            />
-          );
-        })}
-        {ticks.map((tick, i) => (
-          <div
-            key={`${tick.skill}-${i}`}
-            className="absolute top-0 h-3 w-px"
-            style={{
-              left: `${tick.at * 100}%`,
-              background: tick.failed
-                ? "var(--destructive)"
-                : phaseColor(palette, tick.phase),
-              opacity: tick.at <= replay.progress ? 1 : 0.3,
-            }}
-          />
-        ))}
-        <div
-          className="absolute inset-y-0 w-0.5 bg-foreground"
-          style={{ left: `${replay.progress * 100}%` }}
-        />
-      </div>
-
-      {timeline.timing_source === "phase" && (
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          This run timed each phase but not each step, so the clock and the bands
-          are measured while steps sit inside the phase they ran in.
-        </p>
-      )}
+      <StepTrack
+        timeline={timeline}
+        current={replay.beat.index}
+        onPick={replay.goTo}
+      />
     </div>
   );
 }
 
-function describe(replay: Replay): string {
-  const e = replay.beat.event;
-  if (!e) return "Press space to run it, or step through with the arrow keys.";
-  if (e.kind === "phase_start") return `Starting ${e.phase_display}`;
-  if (e.kind === "step_start") return `Running ${e.skill_display ?? e.skill}`;
-  const failed = e.judge?.passed === false || e.qa_result?.verdict === "fail";
-  return `${e.skill_display ?? e.skill} ${failed ? "did not pass" : "finished"}`;
+function Describe({ event }: { event: DemoEvent | null }) {
+  if (!event) return <>Press Play, or use → to step through the run.</>;
+  if (event.kind === "phase_start") {
+    return (
+      <>
+        <span className="text-muted-foreground">Starting phase </span>
+        {event.phase_display}
+      </>
+    );
+  }
+  const name = event.skill_display ?? event.skill ?? "";
+  if (event.kind === "step_start") {
+    return (
+      <>
+        <span className="text-muted-foreground">Running </span>
+        {name}
+      </>
+    );
+  }
+  return stepFailed(event) ? (
+    <>
+      {name} <span className="text-destructive">did not pass its own review</span>
+    </>
+  ) : (
+    <>
+      {name} <span className="text-muted-foreground">finished</span>
+    </>
+  );
 }
 
-function Readout({
-  label,
-  value,
-  strong,
+interface PhaseRun {
+  readonly phase: string;
+  readonly label: string;
+  readonly from: number;
+  readonly count: number;
+}
+
+/**
+ * One evenly-sized slot per step, grouped into phases.
+ *
+ * Deliberately NOT time-proportional: on real runs a single phase can hold
+ * most of the elapsed hours (often idle), which would crush every other phase
+ * to a sliver. Here each phase's width is its number of steps.
+ */
+function StepTrack({
+  timeline,
+  current,
+  onPick,
 }: {
-  label: string;
-  value: string;
-  strong?: boolean;
+  timeline: DemoTimeline;
+  current: number;
+  onPick: (i: number) => void;
 }) {
+  const events = timeline.events;
+  const runs = useMemo<PhaseRun[]>(() => {
+    const out: PhaseRun[] = [];
+    events.forEach((e, i) => {
+      const last = out.at(-1);
+      if (last && last.phase === e.phase) {
+        out[out.length - 1] = { ...last, count: last.count + 1 };
+      } else {
+        out.push({ phase: e.phase, label: e.phase_display || e.phase, from: i, count: 1 });
+      }
+    });
+    return out;
+  }, [events]);
+  const palette = useMemo(() => buildPhasePalette(runs.map((r) => r.phase)), [runs]);
+
   return (
-    <div className="shrink-0">
-      <div className="text-[10px] text-muted-foreground">{label}</div>
-      <div
-        className={`tabular-nums leading-none ${
-          strong ? "text-xl text-foreground" : "text-xl text-muted-foreground"
-        }`}
-      >
-        {value}
-      </div>
+    <div className="mt-3 flex w-full gap-0.5" role="list" aria-label="Steps in this run">
+      {runs.map((run) => {
+        const color = phaseColor(palette, run.phase);
+        const containsCurrent = current >= run.from && current < run.from + run.count;
+        return (
+          <div
+            key={`${run.phase}-${run.from}`}
+            className="flex min-w-0 flex-col gap-1"
+            style={{ flexGrow: run.count, flexBasis: 0 }}
+          >
+            <div className="flex h-3 gap-px">
+              {Array.from({ length: run.count }, (_, k) => {
+                const i = run.from + k;
+                const e = events[i];
+                const failed = e.kind === "step_end" && stepFailed(e);
+                const reached = i <= current;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    role="listitem"
+                    onClick={() => onPick(i)}
+                    title={stepTitle(e)}
+                    aria-label={stepTitle(e)}
+                    aria-current={i === current ? "step" : undefined}
+                    className="min-w-0 flex-1 rounded-[1px] transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+                    style={{
+                      background: failed ? "var(--destructive)" : color,
+                      opacity: i === current ? 1 : reached ? 0.7 : 0.18,
+                      boxShadow: i === current ? "0 0 0 2px var(--foreground)" : undefined,
+                    }}
+                  />
+                );
+              })}
+            </div>
+            <span
+              className="truncate text-[10px]"
+              style={{
+                color: containsCurrent ? color : "var(--muted-foreground)",
+                fontWeight: containsCurrent ? 600 : 400,
+              }}
+              title={run.label}
+            >
+              {run.label}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
+}
+
+function stepTitle(e: DemoEvent): string {
+  if (e.kind === "phase_start") return `Starting ${e.phase_display}`;
+  const name = e.skill_display ?? e.skill ?? "";
+  if (e.kind === "step_start") return `Running ${name}`;
+  return stepFailed(e) ? `${name} — did not pass` : `${name} — finished`;
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
