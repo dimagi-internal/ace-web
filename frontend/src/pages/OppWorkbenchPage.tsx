@@ -8,7 +8,6 @@ import { ApiError } from "../api/client";
 import type { OppSnapshot, Step } from "../api/types.ws";
 import { ForkOppDialog } from "../components/opps/ForkOppDialog";
 import { PhaseView } from "../components/views/PhaseView";
-import { ReviewView } from "../components/views/ReviewView";
 import { EmptyState, ErrorState, LoadingSpinner } from "../components/opps/LoadingStates";
 import { SkillList } from "../components/opps/SkillList";
 import { StepDetailPane } from "../components/opps/StepDetailPane";
@@ -34,10 +33,6 @@ const VIEW_TABS: ViewTab[] = [
   // `snapshot.runs`, which the page already loads for the run selector, so
   // the tab costs no additional fetch.
   { kind: "runs", label: "Runs" },
-  // What outside reviewers said about this opp and what it changed. Opp-level
-  // like Runs — a review is written against one run but survives every later
-  // one, which is the point.
-  { kind: "review", label: "Expert review" },
 ];
 
 // Cheap human form for the initial loading label, before the API
@@ -307,11 +302,6 @@ export default function OppWorkbenchPage() {
               setSearchParams({ run_id: id, view: "phase", phase: phaseName })
             }
           />
-        </div>
-      )}
-      {view === "review" && (
-        <div className="min-h-0 flex-1">
-          <ReviewView oppSlug={slug} workspaceSlug={workspaceSlug ?? ""} />
         </div>
       )}
       {view === "phase" && (

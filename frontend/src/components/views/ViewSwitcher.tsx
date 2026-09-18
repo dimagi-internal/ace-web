@@ -4,7 +4,6 @@ import {
   Layers,
   LayoutGrid,
   ListTree,
-  MessageSquareQuote,
   Workflow,
 } from "lucide-react";
 
@@ -29,7 +28,6 @@ export const VIEW_KINDS = [
   "phase",
   "story",
   "runs",
-  "review",
 ] as const;
 
 export type ViewKind = (typeof VIEW_KINDS)[number];
@@ -63,7 +61,6 @@ const ICONS: Record<ViewKind, React.ComponentType<{ className?: string }>> = {
   phase: Layers,
   story: Film,
   runs: Workflow,
-  review: MessageSquareQuote,
 };
 
 const DEFAULT_CONTAINER = "border-b border-border bg-background px-6";
