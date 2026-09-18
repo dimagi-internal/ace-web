@@ -1,5 +1,7 @@
 # Service Accounts Library + Share Tokens — Implementation Plan
 
+> **Status: partly shipped, partly retired — historical record, not current-state.** Service accounts / personal tokens shipped (PR #28, 2026-04-10); session share tokens were dropped with ace-web's own chat (PR #687, 2026-07-26).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a reusable Django service accounts library with provider-agnostic credentials, application-layer impersonation policy, and audit logging. Then finish the share token feature (REST endpoints, public viewer route, frontend UI).

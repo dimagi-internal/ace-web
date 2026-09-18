@@ -22,8 +22,12 @@ public run summary, the cloud mobile emulator, and the videos app.
   the file header for status)
 - **Learnings**: `docs/learnings/` (load-bearing gotchas — read these before
   touching the relevant area)
-- **Architecture docs**: `docs/architecture/cli-credentials.md`,
-  `docs/architecture/mcp-surface.md`, `docs/architecture/slack-integration.md`,
+- **Archive**: `docs/archive/` — learnings/plans/specs for code that no longer
+  exists (retired chat stream, `{data, error}` envelope, …). Not guidance;
+  `docs/archive/README.md` says why each was archived.
+- **Architecture docs**: `docs/architecture/cli-credentials.md` (per-user
+  `UserCredential` blobs, shipped PR #117, with the global `SystemConfig` row as
+  fallback), `docs/architecture/mcp-surface.md`, `docs/architecture/slack-integration.md`,
   `docs/architecture/workspace-activity.md`
 - **QA**: `docs/qa/e2e-probe.md` — re-runnable Playwright probe of every UI
   surface; lives at `scripts/qa/labs_probe.py`. Run it after every deploy.
@@ -588,10 +592,7 @@ run-level opp-eval scorecard + trend, a pending-gates banner, and a "Discuss in
 chat" CTA (`WorkbenchChatPane`) that seeds a canopy-hosted chat session
 (`createCanopySession`, title + `opp_slug`/`opp_run_id`/`opp_step_skill`
 metadata) from a step's context — see "Chat is canopy-hosted, full stop"
-above. The older `apps/opps/api.py::seed_chat_for_step` (`POST
-.../actions/seed-chat`) still seeds an ace-web `Session` but no frontend button
-calls it — effectively dead code reachable only by a direct API/MCP call
-(deletion candidate).
+above.
 
 Drive is the source of truth — **no ORM tables** for opps / runs / steps /
 artifacts. The data lives as files under `<workspace.drive_root_folder_id>/<opp-slug>/`
@@ -663,9 +664,6 @@ Auth & identity:
 
 Conversation engine:
 - [cli-stream-json-format](docs/learnings/cli-stream-json-format.md) — Claude CLI stream-json event shapes captured as fixtures; recapture if the CLI is upgraded.
-- [sse-django-async](docs/learnings/sse-django-async.md) — historical (SSE was superseded by WebSocket in Phase 3); kept for the async-cleanup patterns.
-- [api-envelope-convention](docs/learnings/api-envelope-convention.md) — historical (`{data, error}` envelope retired in PR #352 alongside DRF); kept for context when grepping older code that still references the shape.
-- [stream-resume-vercel-open-agents](docs/learnings/stream-resume-vercel-open-agents.md) — historical — both hazards were in ace-web's own chat stream, which is retired; interactive chat streaming is canopy-web's now. Kept for the open-agents comparison if canopy hits the same shapes.
 
 Cost / timing / structure:
 - [sidechain-attribution](docs/learnings/sidechain-attribution.md) — `apps/ingest/cost_aggregator.py` rolls subagent assistant turns into the parent skill segment via `parentUuid` → containing-message uuid match. Without this, Phase totals under-report by the cost of every Agent dispatch.
@@ -743,8 +741,6 @@ Repo / merge process:
 - Phase 5 of the original ace-web design (observability eval harness, a11y pass,
   full security review, demo prep) is deferred indefinitely — revisit if a
   specific pain point surfaces. Don't propose it as planned work.
-- Per-user CLI tokens (currently one global SystemConfig row; spec
-  `docs/specs/2026-04-18-per-user-cli-credentials-design.md` is unexecuted).
 - The ace-web bootstrap/app CloudFormation stack split
   (`docs/plans/2026-09-09-ace-web-bootstrap-split.md`) is planned, not applied —
   `ace-web.cfn.yaml` still owns the log group + listener rule the CI role can't

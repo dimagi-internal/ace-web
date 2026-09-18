@@ -1,5 +1,7 @@
 # Drop Multi-Run: Simplification Refactor
 
+> **Status: CONTRADICTED by the current model — do not follow.** ace-web went back to multi-run per opp (`runs/<run-id>/`, see `CLAUDE.md` § Multi-run per opp). Kept, not archived, because `apps/opps/{parsers,sync,access,models,opp_creator}.py` cite it for the flat-layout reader (still the fallback for pre-run and legacy opps) and `OppWorkspace.tags`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Eliminate the dual Drive-layout problem between ace-web and the ACE plugin. Each opp is treated as a single run — no `runs/` subfolder, no `opp.yaml`/`run.yaml`/`step.yaml`. One flat Drive layout, owned by the ACE plugin. Make `/ace:run` scriptable end-to-end with optional ace-web transcript upload.

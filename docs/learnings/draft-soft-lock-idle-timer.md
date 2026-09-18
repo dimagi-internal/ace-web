@@ -2,7 +2,7 @@
 
 **Date**: 2026-04-09
 **Context**: Phase 3 multi-player drafts show a soft lock indicator that is supposed to flip to "idle — another user can take over" after 2 s of inactivity.
-**Status**: Active
+**Status**: Active lesson, retired origin. The draft soft-lock UI was deleted with ace-web's own chat (PR #687); the general React takeaway (wall-clock transitions need an explicit `setTimeout` re-render) still applies anywhere.
 
 ## Problem
 

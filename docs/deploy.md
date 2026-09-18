@@ -129,43 +129,29 @@ immediately.
 
 ### ALB target-group stickiness
 
-**Auto-applied by `deploy-ace-web-labs.yml` on every deploy** — see the
-"Configure ALB target-group attributes" step. Idempotent
-(`modify-target-group-attributes` is a set-not-merge call), so any
-manual change OR target-group recreation gets healed by the next
-deploy. You should not need to set this by hand; the section below
-documents *what* it does and *why* in case you ever need to debug it.
+**Owned by CloudFormation** — the target group's `stickiness.*` attributes
+are declared in `deploy/aws/ace-web.cfn.yaml` (moved there from a workflow
+step in PR #696), so every deploy re-applies them and any manual change is
+healed. You should not need to set this by hand.
 
-Two surfaces depend on the AWSALB stickiness cookie:
+What still depends on it: the **flag-off / local run path**.
+`apps/common/cli_backend.py` keeps one long-lived
+`claude -p --input-format stream-json` subprocess per Django Session in a
+per-task in-memory pool, and stickiness keeps consecutive turns on the task
+that already has one (avoiding the ~5–30s MCP-startup cost). In prod
+(`CANOPY_RUN_EXECUTION=true`) programmatic runs execute on canopy's runner
+instead, so this matters much less than it used to. (The PTY
+`claude setup-token` auth flow that also needed stickiness was deleted in
+PR #100; CLI credentials are uploaded now.)
 
-1. **Auth flow** — `/ace/auth/cli/*` spawns a long-lived
-   `claude setup-token` PTY subprocess that must outlive one HTTP call
-   (URL fetch) and pick up again on the next (code submit). The
-   subprocess is module-global state on one ECS task, so both requests
-   have to land on the same task or the second call returns
-   "No active auth flow" instantly.
-
-2. **Chat (Phase 1B long-lived subprocess pool)** — `apps/common/cli_backend.py`
-   keeps one `claude -p --input-format stream-json` subprocess per
-   Django Session in a per-task in-memory pool. Stickiness pins each
-   browser to one task so subsequent chat turns reuse the existing
-   subprocess (which has all 5 ACE MCPs already booted) instead of
-   paying the ~5–30s MCP-startup cost on every turn. Without
-   stickiness on a 2-task service, ~50% of consecutive turns hop tasks
-   and need a fresh spawn.
-
-The applied config (lb_cookie, 1h):
+To inspect the live values:
 
 ```bash
-aws elbv2 modify-target-group-attributes \
+aws elbv2 describe-target-group-attributes \
   --region us-east-1 \
   --target-group-arn $(aws elbv2 describe-target-groups \
     --region us-east-1 --names labs-jj-ace-web-tg \
-    --query 'TargetGroups[0].TargetGroupArn' --output text) \
-  --attributes \
-    Key=stickiness.enabled,Value=true \
-    Key=stickiness.type,Value=lb_cookie \
-    Key=stickiness.lb_cookie.duration_seconds,Value=3600
+    --query 'TargetGroups[0].TargetGroupArn' --output text)
 ```
 
 Chat traffic is multi-task safe (Redis channel layer), so if the
@@ -294,16 +280,21 @@ aws ecs execute-command \
   --command "/bin/sh -c 'env | grep REDIS_URL'"
 ```
 
-**Scaling past 1 ECS task:** the old `InMemoryChannelLayer` pinned
-ace-web to a single task (see `docs/learnings/channels-single-instance.md`).
-Once `REDIS_URL` is verified working end-to-end (open two browsers in one
-session, confirm draft updates and presence propagate), it is safe to
-raise `desiredCount` on the ECS service. Do this as a canary: bump to 2
-first, watch CloudWatch logs for handshake errors, then scale further.
+**Multiple ECS tasks:** the old `InMemoryChannelLayer` pinned ace-web to a
+single task (see `docs/learnings/channels-single-instance.md`). With
+channels-redis the service runs `DesiredCount: 2` (`deploy/aws/ace-web.cfn.yaml`);
+any new in-process state must be safe across tasks.
 
 ## WebSocket proxy path
 
-The frontend connects to `wss://labs.connect.dimagi.com/ace/ws/sessions/<slug>/`.
+Two WebSocket routes are live (ace-web's own chat socket,
+`ws/sessions/<slug>/`, was retired in PR #687):
+
+- `wss://labs.connect.dimagi.com/ace/ws/opps/<slug>/[runs/<run>/]` —
+  opp-workbench live updates (`apps/opps/routing.py`)
+- `wss://labs.connect.dimagi.com/ace/ws/presence/` — cross-app viewer
+  presence (`apps/presence/routing.py`)
+
 The nginx sidecar has a dedicated `/ace/ws/` location block that:
 
 1. Sets the `Upgrade` and `Connection: upgrade` headers so nginx upgrades
@@ -314,12 +305,12 @@ The nginx sidecar has a dedicated `/ace/ws/` location block that:
    long-lived idle presence connections don't drop at the default 60s
 
 This prefix strip is necessary because Django's `FORCE_SCRIPT_NAME=/ace`
-only applies to HTTP URL reversing — Channels URL routing in
-`apps/sessions/routing.py` registers `ws/sessions/<slug>/` without any
-`/ace` prefix. Without the nginx block the WS handshake would fall
-through to the `/ace/` SPA catch-all and return `index.html` instead of
-upgrading. The local dev Vite proxy in `frontend/vite.config.ts`
-mirrors this with a matching `/ace/ws` entry + `rewrite`.
+only applies to HTTP URL reversing — Channels URL routing (mounted in
+`config/asgi.py`) registers `ws/...` without any `/ace` prefix. Without the
+nginx block the WS handshake would fall through to the `/ace/` SPA catch-all
+and return `index.html` instead of upgrading. The local dev Vite proxy in
+`frontend/vite.config.ts` mirrors this with a matching `/ace/ws` entry +
+`rewrite`.
 
 ## Observability
 

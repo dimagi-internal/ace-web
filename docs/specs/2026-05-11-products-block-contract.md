@@ -1,5 +1,7 @@
 # `phases.<phase>.products.*` contract — finish state-consolidation
 
+> **Status: adopted (ace-web side PR #303, 2026-05-12 — `summary.py` reads `phases.<phase>.products.*`) — historical record, not current-state.** Forks carry products blocks since PRs #760/#765/#766.
+
 **Date:** 2026-05-11
 **Owner:** ACE
 **Status:** Proposed

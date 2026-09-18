@@ -1,5 +1,7 @@
 # Videos: Structured YAML Editor (follow-up plan)
 
+> **ARCHIVED 2026-09-18 — describes code or an approach that no longer exists; do not follow it.** See `docs/archive/README.md` for why, and `CLAUDE.md` for how this area works today.
+
 **Status**: design sketch, not yet implemented.
 **Owner**: TBD.
 **Trigger**: requested in the same iteration that landed the
