@@ -114,6 +114,31 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/demo": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Demo Player payload
+         * @description One saved run, rendered as an ordered set of acts.
+         *
+         *     Returns ``response={200: dict}`` deliberately — the payload nests the
+         *     legacy ``serialize_opp_*`` step/judge/decision shapes, which a thin
+         *     Pydantic schema would silently drop fields from (see CLAUDE.md § Rich
+         *     response shapes over strict Pydantic outputs).
+         */
+        readonly get: operations["apps_opps_api_get_run_demo"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
         readonly parameters: {
             readonly query?: never;
@@ -5316,6 +5341,32 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly apps_opps_api_get_run_demo: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_slug: string;
+                readonly slug: string;
+                readonly run_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
+                };
             };
         };
     };

@@ -374,6 +374,23 @@ Google Drive.
   `docs/specs/2026-05-16-workspace-activity-view-design.md`. Runbook:
   `docs/architecture/workspace-activity.md`. Phase view is the canonical
   drill-down — row clicks go to `?run_id=<id>`, not the Workbench.
+- **Demo Player** (page at `/w/<ws>/opps/<slug>/runs/<run>/demo`): any saved run
+  presented to a room as an ordered set of **acts** — a time-compressed replay
+  of the run (dual clock: real run time against minutes on screen), a wall-time
+  ledger per phase, the steps their own QA/judge refused, and the decisions a
+  human overrode. Renders **chromeless** (registered under `PublicLayout`, no
+  TopNav) because it's projected; the payload endpoint still enforces workspace
+  membership, so it is not a public page. Acts are **capability-gated**: the
+  backend reports each act available or not *with a reason*, so a thin run gets
+  a short demo instead of a broken one. **Honesty rule — the player never
+  renders a value it can't source from the run**: a run with no per-step
+  timestamps reports `timing_source: "ordinal"` and draws sequence with no wall
+  clock rather than a plausible-looking one. **No token or cost readout, ever**
+  (deliberate; a token ledger discloses our subscription-vs-API cost structure
+  to an audience that is frequently an AI company — don't "fix" it). Backend:
+  `apps/opps/demo.py`, served at `GET /api/w/<ws>/opps/<slug>/runs/<run>/demo`,
+  derived from the same rich snapshot the Workbench uses (no new ORM tables).
+  Spec: `docs/specs/2026-09-17-ace-demo-player-design.md`.
 - **Per-session Structure view** (page at `/w/<workspace>/chat/<slug>/structure`):
   hierarchical session tree (phase → skill → tool, with subagent recursion +
   parallel-group clusters). Computed fresh per request from

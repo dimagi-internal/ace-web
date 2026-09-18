@@ -229,6 +229,59 @@ def test_map_step_snapshot_preview_stats_from_run_state():
     assert snap.step.preview_stats == {"words": 120}
 
 
+def test_map_step_snapshot_timestamps_from_run_state():
+    """run_state.yaml carries per-step started_at/completed_at; the framework
+    Step read model drops them, so the mapper reads them straight off run_state."""
+    step = FwStep(key="idea-to-pdd", ordinal=1, title="design-review", status="complete")
+    run_state = {
+        "phases": {
+            "design-review": {
+                "steps": {
+                    "idea-to-pdd": {
+                        "status": "done",
+                        "started_at": "2026-07-22T13:41:00Z",
+                        "completed_at": "2026-07-22T14:07:30Z",
+                    }
+                },
+            }
+        }
+    }
+    snap = fm.map_step_snapshot(step, [], [], run_state=run_state)
+    assert snap.step.started_at == "2026-07-22T13:41:00Z"
+    assert snap.step.completed_at == "2026-07-22T14:07:30Z"
+
+
+def test_map_step_snapshot_timestamps_accept_parsed_datetimes():
+    """PyYAML auto-parses unquoted ISO-8601 scalars into datetime, so the
+    mapper must normalise both shapes to the same ``Z`` string."""
+    step = FwStep(key="idea-to-pdd", ordinal=1, title="design-review", status="complete")
+    run_state = {
+        "phases": {
+            "design-review": {
+                "steps": {
+                    "idea-to-pdd": {
+                        "started_at": dt.datetime(2026, 7, 22, 13, 41, tzinfo=UTC),
+                        "completed_at": dt.datetime(2026, 7, 22, 14, 7, 30, tzinfo=UTC),
+                    }
+                },
+            }
+        }
+    }
+    snap = fm.map_step_snapshot(step, [], [], run_state=run_state)
+    assert snap.step.started_at == "2026-07-22T13:41:00Z"
+    assert snap.step.completed_at == "2026-07-22T14:07:30Z"
+
+
+def test_map_step_snapshot_timestamps_absent_stay_none():
+    """A run predating the convention yields None — callers fall back to
+    ordinal sequencing rather than inventing a clock."""
+    step = FwStep(key="idea-to-pdd", ordinal=1, title="design-review", status="complete")
+    run_state = {"phases": {"design-review": {"steps": {"idea-to-pdd": {"status": "done"}}}}}
+    snap = fm.map_step_snapshot(step, [], [], run_state=run_state)
+    assert snap.step.started_at is None
+    assert snap.step.completed_at is None
+
+
 # --------------------------------------------------------------------------- #
 # run mapper
 # --------------------------------------------------------------------------- #

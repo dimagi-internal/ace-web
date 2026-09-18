@@ -273,14 +273,15 @@ def map_step_snapshot(
         status = _FW_TO_ACE_STEP_STATUS.get(step.status, "pending")
 
     preview_stats = _step_preview_stats(run_state, key)
+    rs_started, rs_completed = _step_timestamps(run_state, key)
 
     manifest = StepManifest(
         skill_name=key,
         phase=step.title,
         ordinal=step.ordinal,
         status=status,
-        started_at=_iso(step.started_at),
-        completed_at=_iso(step.completed_at),
+        started_at=rs_started or _iso(step.started_at),
+        completed_at=rs_completed or _iso(step.completed_at),
         error=step.error or None,
         preview_stats=preview_stats,
     )
@@ -293,11 +294,11 @@ def map_step_snapshot(
     )
 
 
-def _step_preview_stats(run_state: dict[str, Any] | None, skill: str) -> dict:
-    """Pull a per-step ``preview_stats`` block out of a parsed run_state.yaml.
+def _step_block(run_state: dict[str, Any] | None, skill: str) -> dict:
+    """Return the raw ``phases.<phase>.steps.<skill>`` block from a parsed
+    run_state.yaml, or ``{}`` when absent.
 
-    Walks the same ``phases -> [steps ->] <skill>`` shapes ace tolerates. Returns
-    ``{}`` (the ace default) when run_state is absent or carries none.
+    Walks the same ``phases -> [steps ->] <skill>`` shapes ace tolerates.
     """
     if not isinstance(run_state, dict):
         return {}
@@ -312,10 +313,51 @@ def _step_preview_stats(run_state: dict[str, Any] | None, skill: str) -> dict:
             continue
         sv = steps_map.get(skill)
         if isinstance(sv, dict):
-            ps = sv.get("preview_stats")
-            if isinstance(ps, dict):
-                return dict(ps)
+            return sv
     return {}
+
+
+def _step_preview_stats(run_state: dict[str, Any] | None, skill: str) -> dict:
+    """Pull a per-step ``preview_stats`` block out of a parsed run_state.yaml.
+
+    Returns ``{}`` (the ace default) when run_state is absent or carries none.
+    """
+    ps = _step_block(run_state, skill).get("preview_stats")
+    return dict(ps) if isinstance(ps, dict) else {}
+
+
+def _coerce_iso(value: Any) -> str | None:
+    """Normalise a run_state timestamp to the ISO-8601 ``Z`` string shape ace's
+    serializers emit.
+
+    PyYAML auto-parses ISO-8601 scalars into ``datetime``, so a run_state block
+    hands us either a datetime or the raw string depending on how the plugin
+    quoted it. Both are accepted; anything else is dropped rather than guessed.
+    """
+    if isinstance(value, dt.datetime):
+        return _iso(value)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _step_timestamps(
+    run_state: dict[str, Any] | None, skill: str
+) -> tuple[str | None, str | None]:
+    """Return ``(started_at, completed_at)`` for one step, read from run_state.
+
+    ``run_state.yaml`` carries per-step ``started_at`` / ``completed_at``
+    (plugin ``agents/orchestrator-reference.md``, ``phases.<phase>.steps.<skill>``),
+    but the framework read model drops them: ``_snapshot_to_schema`` in
+    ``canopy_agent_runs.drive.store`` builds its ``Step`` with key / ordinal /
+    title / status / error only. Reading them here recovers the per-step
+    timeline without a change to the shared package.
+
+    Returns ``(None, None)`` when the run predates the convention — callers
+    fall back to ordinal sequencing rather than inventing a clock.
+    """
+    block = _step_block(run_state, skill)
+    return _coerce_iso(block.get("started_at")), _coerce_iso(block.get("completed_at"))
 
 
 # --------------------------------------------------------------------------- #
