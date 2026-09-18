@@ -449,8 +449,15 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `--replay-phase-1..10` at `:root`/`.dark`. Frontend:
   `frontend/src/components/replay/`. Spec + why it isn't a standalone player:
   `docs/specs/2026-09-17-ace-demo-player-design.md` (see the addenda).
-- **Review tab** (`/w/<ws>/opps/<slug>?view=review`): what outside reviewers said
-  about an opp and what it changed — the self-improvement loop, made visible.
+- **Expert review tab** (`/w/<ws>/opps/<slug>?view=review`): what outside reviewers
+  said about an opp and what it changed — the self-improvement loop, made visible.
+  Every change is classified by WHAT it changed (`ledgerParse.outcomeOf`, read off
+  the ledger's own kind/status words): **Fixed in ACE** (a skill fix — every future
+  program gets it; this is the self-improvement story), **Changed this program** (a
+  run decision), **Needs a decision** (open question). The ledger's own badge says
+  SHIPPED for both of the first two, which buried the distinction — don't
+  reintroduce it. The header counts COMMENTS per outcome, so a comment that did two
+  things counts under both.
   Opp-level, not per-run: a review is written against one run but survives every
   later one. Reads two files the ACE plugin's `feedback-ledger` skill writes under
   `ACE/<opp>/feedback/`: `<slug>.yaml` (the VERBATIM inbound record — reviewer,
