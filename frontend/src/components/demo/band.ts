@@ -27,10 +27,11 @@ export function stepFailed(event: DemoEvent): boolean {
 /**
  * Lay the run out along the band.
  *
- * With measured timing each phase occupies its real share of the run, which is
- * the point — an audience sees at a glance that one phase ate half the day.
- * Without it, phases are spaced by step count and the caller suppresses the
- * clock, so nobody reads proportions that aren't there.
+ * Whenever there is a clock — step-level or phase-level — each phase occupies
+ * its real share of the run, which is the point: an audience sees at a glance
+ * that one phase ate half the day. With no clock at all, phases are spaced by
+ * step count and the caller suppresses the clock, so nobody reads proportions
+ * that aren't there.
  */
 export function bandSegments(timeline: DemoTimeline): BandSegment[] {
   const { events, wall_seconds: wall, timing_source: timing } = timeline;
@@ -58,7 +59,7 @@ export function bandSegments(timeline: DemoTimeline): BandSegment[] {
     }
   }
 
-  if (timing === "measured" && wall && wall > 0) {
+  if (timing !== "ordinal" && wall && wall > 0) {
     return order.map((phase) => {
       const span = spans.get(phase);
       const from = span ? span.from / wall : 0;
@@ -86,7 +87,7 @@ export function bandSegments(timeline: DemoTimeline): BandSegment[] {
 export function bandTicks(timeline: DemoTimeline): BandTick[] {
   const { events, wall_seconds: wall, timing_source: timing } = timeline;
   const ends = events.filter((e) => e.kind === "step_end");
-  if (timing === "measured" && wall && wall > 0) {
+  if (timing !== "ordinal" && wall && wall > 0) {
     return ends
       .filter((e) => e.t !== null)
       .map((e) => ({
@@ -105,15 +106,19 @@ export function bandTicks(timeline: DemoTimeline): BandTick[] {
 }
 
 /** How far through the run the playhead sits, in seconds of run time. */
+/** How far through the run the playhead sits, in seconds of run time.
+ *
+ * Available in `phase` mode too: the run's start and end are measured even
+ * when its individual steps are not. */
 export function runElapsed(timeline: DemoTimeline, progress: number): number | null {
-  if (timeline.timing_source !== "measured" || !timeline.wall_seconds) return null;
+  if (timeline.timing_source === "ordinal" || !timeline.wall_seconds) return null;
   return progress * timeline.wall_seconds;
 }
 
 /** Events the playhead has already passed. */
 export function revealedEvents(timeline: DemoTimeline, progress: number): DemoEvent[] {
   const { events, wall_seconds: wall, timing_source: timing } = timeline;
-  if (timing === "measured" && wall && wall > 0) {
+  if (timing !== "ordinal" && wall && wall > 0) {
     const cutoff = progress * wall;
     return events.filter((e) => e.t === null || e.t <= cutoff);
   }

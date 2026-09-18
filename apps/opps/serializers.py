@@ -251,6 +251,10 @@ def serialize_run_detail(run: RunDetail) -> dict:
         "notes": run.notes,
         "steps": [serialize_step_snapshot(s) for s in run.steps],
         "decisions": [serialize_decision(d) for d in run.decisions],
+        # Read field-by-field rather than via asdict(): this is served from a
+        # Redis snapshot cache, so an entry written before the field existed
+        # deserialises without it.
+        "phase_timings": dict(getattr(run, "phase_timings", None) or {}),
     }
 
 

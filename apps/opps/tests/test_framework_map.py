@@ -442,3 +442,39 @@ def test_map_opp_snapshot_full_assembly():
     assert len(snap.runs_summary) == 1
     assert snap.runs_summary[0].folder_id == "run-folder-1"
     assert snap.runs_summary[0].phases_done == 1
+
+
+def test_map_run_detail_extracts_phase_timings():
+    """Real runs stamp PHASE boundaries, not step ones — these are the only
+    measured clock a finished run reliably has. See apps/opps/demo.py."""
+    run = _complete_run()
+    rd = fm.map_run_detail(
+        run,
+        run_state={
+            "phases": {
+                "idea-to-design": {
+                    "status": "done",
+                    "started_at": "2026-07-22T19:41:00Z",
+                    "completed_at": "2026-07-22T20:10:00Z",
+                },
+                "commcare-setup": {
+                    "status": "done",
+                    "completed_at": dt.datetime(2026, 7, 22, 21, 18, tzinfo=UTC),
+                },
+                # No stamps at all — omitted so callers can tell "not recorded"
+                # from "recorded as null".
+                "closeout": {"status": "skipped"},
+            }
+        },
+    )
+    assert rd.phase_timings == {
+        "idea-to-design": {
+            "started_at": "2026-07-22T19:41:00Z",
+            "completed_at": "2026-07-22T20:10:00Z",
+        },
+        "commcare-setup": {"started_at": None, "completed_at": "2026-07-22T21:18:00Z"},
+    }
+
+
+def test_map_run_detail_phase_timings_empty_without_run_state():
+    assert fm.map_run_detail(_complete_run()).phase_timings == {}

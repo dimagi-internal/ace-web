@@ -360,6 +360,28 @@ def _step_timestamps(
     return _coerce_iso(block.get("started_at")), _coerce_iso(block.get("completed_at"))
 
 
+def _phase_timings(run_state: dict[str, Any] | None) -> dict[str, dict]:
+    """Pull ``{phase: {started_at, completed_at}}`` out of a parsed run_state.
+
+    Only phases carrying at least one usable timestamp are returned, so a
+    caller can tell "no timing recorded" from "recorded as null".
+    """
+    if not isinstance(run_state, dict):
+        return {}
+    phases = run_state.get("phases")
+    if not isinstance(phases, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for name, block in phases.items():
+        if not isinstance(block, dict):
+            continue
+        started = _coerce_iso(block.get("started_at"))
+        completed = _coerce_iso(block.get("completed_at"))
+        if started or completed:
+            out[str(name)] = {"started_at": started, "completed_at": completed}
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # run mapper
 # --------------------------------------------------------------------------- #
@@ -408,6 +430,7 @@ def map_run_detail(
         steps=steps,
         folder_id=folder_id,
         decisions=decisions,
+        phase_timings=_phase_timings(rs),
     )
 
 

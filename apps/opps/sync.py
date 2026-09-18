@@ -78,6 +78,14 @@ class RunDetail:
     notes: str
     steps: list[StepSnapshot]
     folder_id: str
+    # Per-phase {started_at, completed_at} read off run_state.yaml's
+    # ``phases.<phase>`` blocks. Load-bearing for the Demo Player: ACE
+    # reliably stamps PHASE boundaries but almost never per-STEP ones (a
+    # real 2026-07 run: 0 of 48 steps carried a timestamp, every phase
+    # carried a real span), so the phase blocks are the only measured
+    # clock a finished run actually has. Empty for runs that predate the
+    # convention. See apps/opps/demo.py.
+    phase_timings: dict[str, dict] = field(default_factory=dict)
     # Per-run decisions log (added with the decisions-log framework, May
     # 2026). Each row carries its own ``phase`` tag; the UI groups them
     # per phase. Empty list when the run predates the framework or hasn't

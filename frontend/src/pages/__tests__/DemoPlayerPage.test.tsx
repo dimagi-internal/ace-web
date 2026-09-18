@@ -3,7 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DemoPayload } from "@/api/demo";
-import { SAMPLE } from "@/components/demo/__fixtures__/sample";
+import { PHASE_TIMED, SAMPLE } from "@/components/demo/__fixtures__/sample";
 
 const fetchDemoPayload = vi.fn();
 vi.mock("@/api/demo", async (importOriginal) => ({
@@ -102,5 +102,32 @@ describe("DemoPlayerPage", () => {
       expect(screen.getByText("Couldn't load this run (404).")).toBeInTheDocument(),
     );
     expect(screen.getByText(/Sign in and check you're a member/)).toBeInTheDocument();
+  });
+});
+
+describe("DemoPlayerPage — phase-level timing", () => {
+  beforeEach(() => {
+    fetchDemoPayload.mockReset();
+    fetchDemoPayload.mockResolvedValue(PHASE_TIMED);
+  });
+
+  it("shows the run clock, because phase spans are measured", async () => {
+    renderAt();
+    await screen.findByText("Run time");
+    expect(screen.queryByText("Steps")).not.toBeInTheDocument();
+  });
+
+  it("says plainly what was timed and what wasn't", async () => {
+    renderAt();
+    expect(
+      await screen.findByText(/timed each phase but not each step/i),
+    ).toBeInTheDocument();
+  });
+
+  it("still reports per-phase wall time in the ledger", async () => {
+    renderAt("?act=time_ledger");
+    expect(await screen.findByText("Start to finish, unattended")).toBeInTheDocument();
+    // The act is available rather than gated out — the regression this fixes.
+    expect(screen.queryByText(/recorded no timestamps/i)).not.toBeInTheDocument();
   });
 });
