@@ -149,3 +149,66 @@
     @apply font-sans;
     }
 }
+
+/* ---------------------------------------------------------------------------
+   Demo Player — a scoped visual world.
+
+   The player is shown on a projector to a room, so it runs on its own dark
+   ground rather than the app theme: dark projects with less glare, and a
+   bright playhead sweeping a dark band is legible from the back of a room.
+   Every token is scoped under `.demo-shell` so none of it leaks into the
+   app's light/dark themes.
+
+   The phase spectrum is information, not decoration — a run has up to ten
+   phases and they must be told apart at a glance on the time band, so there
+   are ten hues walking the wheel rather than one accent. It cycles only if a
+   run somehow has more than ten.
+
+   Spec: docs/specs/2026-09-17-ace-demo-player-design.md
+   --------------------------------------------------------------------------- */
+.demo-shell {
+    --demo-ground: #0e151d;
+    --demo-raised: #16202b;
+    --demo-rule: #24313f;
+    --demo-ink: #e9eff5;
+    --demo-dim: #8fa0b2;
+    --demo-playhead: #ffffff;
+    --demo-alert: #ff6f6f;
+
+    --demo-phase-1: #45c4ac;
+    --demo-phase-2: #7fcb62;
+    --demo-phase-3: #c9d45c;
+    --demo-phase-4: #e0be55;
+    --demo-phase-5: #e28c52;
+    --demo-phase-6: #d96c83;
+    --demo-phase-7: #c979c4;
+    --demo-phase-8: #9c8bd4;
+    --demo-phase-9: #6e9fe0;
+    --demo-phase-10: #4fb8d4;
+
+    background: var(--demo-ground);
+    color: var(--demo-ink);
+    /* Counters must not change width as they tick. */
+    font-variant-numeric: tabular-nums;
+}
+
+/* The playhead is the one piece of non-user-triggered motion in the player,
+   and it is the whole argument: a six-hour run crossing the screen in three
+   minutes. Nothing else animates on its own. */
+.demo-playhead {
+    box-shadow: 0 0 12px 1px color-mix(in srgb, var(--demo-playhead) 55%, transparent);
+}
+
+.demo-scan {
+    background: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--demo-playhead) 0%, transparent) 0%,
+        color-mix(in srgb, var(--demo-playhead) 9%, transparent) 100%
+    );
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .demo-playhead {
+        box-shadow: none;
+    }
+}

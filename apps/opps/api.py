@@ -1005,6 +1005,58 @@ def get_run(
 
 
 # ---------------------------------------------------------------------------
+# Demo Player — GET /w/{workspace_slug}/opps/{slug}/runs/{run_id}/demo
+# docs/specs/2026-09-17-ace-demo-player-design.md
+# ---------------------------------------------------------------------------
+
+
+def load_demo_payload(workspace, slug: str, run_id: str) -> dict | None:
+    """Build the Demo Player payload for one run, or None when it doesn't exist.
+
+    Derived entirely from the rich Workbench snapshot, so it rides the same
+    snapshot cache and freshness overlays. The monkeypatch target in contract
+    tests is this module-level function.
+    """
+    from apps.opps.demo import build_demo_payload
+
+    snapshot = load_rich_opp_snapshot(workspace, slug, run_id=run_id)
+    if snapshot is None:
+        return None
+    return build_demo_payload(snapshot, run_id=run_id)
+
+
+@router.get(
+    "/{slug}/runs/{run_id}/demo",
+    response={200: dict},
+    summary="Demo Player payload",
+)
+def get_run_demo(
+    request: HttpRequest,
+    workspace_slug: Annotated[str, Path()],
+    slug: Annotated[str, Path()],
+    run_id: Annotated[str, Path()],
+) -> HttpResponse:
+    """One saved run, rendered as an ordered set of acts.
+
+    Returns ``response={200: dict}`` deliberately — the payload nests the
+    legacy ``serialize_opp_*`` step/judge/decision shapes, which a thin
+    Pydantic schema would silently drop fields from (see CLAUDE.md § Rich
+    response shapes over strict Pydantic outputs).
+    """
+    workspace = resolve_workspace_for_member(request, workspace_slug)
+    payload = load_demo_payload(workspace, slug, run_id)
+    if payload is None:
+        raise ProblemError(404, "Run not found", type_=TYPE_NOT_FOUND)
+    etag = compute_etag(payload)
+    not_modified = maybe_not_modified(request, etag)
+    if not_modified is not None:
+        return not_modified
+    response = JsonResponse(payload)
+    response["ETag"] = etag
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Task 2.1.9 helpers — delete run
 # ---------------------------------------------------------------------------
 

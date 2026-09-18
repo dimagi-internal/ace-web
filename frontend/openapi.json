@@ -447,6 +447,64 @@
         ]
       }
     },
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/demo": {
+      "get": {
+        "operationId": "apps_opps_api_get_run_demo",
+        "summary": "Demo Player payload",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_slug",
+            "schema": {
+              "title": "Workspace Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "description": "One saved run, rendered as an ordered set of acts.\n\nReturns ``response={200: dict}`` deliberately \u2014 the payload nests the\nlegacy ``serialize_opp_*`` step/judge/decision shapes, which a thin\nPydantic schema would silently drop fields from (see CLAUDE.md \u00a7 Rich\nresponse shapes over strict Pydantic outputs).",
+        "tags": [
+          "opps"
+        ],
+        "security": [
+          {
+            "DjangoSessionAuth": []
+          }
+        ]
+      }
+    },
     "/api/w/{workspace_slug}/opps/{slug}/steps/{skill}": {
       "get": {
         "operationId": "apps_opps_api_get_step",

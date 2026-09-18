@@ -2719,3 +2719,109 @@ def test_fork_opp_echoes_what_a_skill_fork_carried(member_client, monkeypatch):
     assert response.status_code == 201
     OppForkOut.model_validate(response.json())
     assert response.json()["carried"] == carried
+
+
+# ---------------------------------------------------------------------------
+# Demo Player — GET /w/{ws}/opps/{slug}/runs/{run_id}/demo
+# ---------------------------------------------------------------------------
+
+_FAKE_DEMO_SNAPSHOT = {
+    "slug": "opp-1",
+    "title": "Opp One",
+    "current_run": {
+        "run_id": "run-001",
+        "status": "complete",
+        "started_at": "2026-07-22T13:41:00Z",
+        "completed_at": "2026-07-22T15:41:00Z",
+        "steps": [
+            {
+                "skill_name": "idea-to-pdd",
+                "display_name": "Idea To PDD",
+                "phase": "1-design",
+                "phase_display": "Design",
+                "ordinal": 1,
+                "status": "complete",
+                "started_at": "2026-07-22T13:41:00Z",
+                "completed_at": "2026-07-22T14:11:00Z",
+                "error": None,
+                "judge": {"score": 8.0, "passed": True},
+                "qa_result": None,
+                "artifacts": [{"name": "pdd.md", "drive_web_link": "https://drive/pdd"}],
+            }
+        ],
+        "decisions": [{"row_id": "d1", "status": "overridden", "question": "Archetype?"}],
+    },
+}
+
+
+@pytest.mark.django_db
+def test_get_run_demo_happy_path(member_client, monkeypatch):
+    client, _, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api.load_rich_opp_snapshot",
+        lambda workspace, slug, run_id=None: _FAKE_DEMO_SNAPSHOT,
+    )
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/demo")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == 1
+    assert body["timing_source"] == "measured"
+    assert body["run"]["wall_seconds"] == 1800.0
+    assert [a["id"] for a in body["acts"]] == [
+        "timeline", "time_ledger", "gates", "decisions",
+    ]
+
+
+@pytest.mark.django_db
+def test_get_run_demo_does_not_collide_with_run_detail_route(member_client, monkeypatch):
+    """`/runs/{run_id}` is registered first; a run_id path converter must not
+    swallow the `/demo` suffix."""
+    client, _, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api.load_rich_opp_snapshot",
+        lambda workspace, slug, run_id=None: _FAKE_DEMO_SNAPSHOT,
+    )
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/demo")
+    assert response.status_code == 200
+    assert "acts" in response.json()
+
+
+@pytest.mark.django_db
+def test_get_run_demo_etag_round_trips_304(member_client, monkeypatch):
+    client, _, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api.load_rich_opp_snapshot",
+        lambda workspace, slug, run_id=None: _FAKE_DEMO_SNAPSHOT,
+    )
+    first = client.get("/api/w/ws1/opps/opp-1/runs/run-001/demo")
+    assert first.status_code == 200
+    etag = first["ETag"]
+    again = client.get(
+        "/api/w/ws1/opps/opp-1/runs/run-001/demo", HTTP_IF_NONE_MATCH=etag
+    )
+    assert again.status_code == 304
+
+
+@pytest.mark.django_db
+def test_get_run_demo_404_unknown_run(member_client, monkeypatch):
+    client, _, _ = member_client
+    monkeypatch.setattr(
+        "apps.opps.api.load_rich_opp_snapshot",
+        lambda workspace, slug, run_id=None: None,
+    )
+    response = client.get("/api/w/ws1/opps/opp-1/runs/nope/demo")
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_get_run_demo_404_non_member(non_member_client):
+    """Non-members get 404, not 403 — existence isn't leaked."""
+    client, _, _ = non_member_client
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/demo")
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_get_run_demo_401_anonymous(db, client):
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/demo")
+    assert response.status_code in (401, 403)
