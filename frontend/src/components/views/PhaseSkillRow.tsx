@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChevronRight, ExternalLink } from "lucide-react";
 
@@ -11,6 +11,11 @@ interface Props {
   step: Step;
   oppSlug: string;
   runId: string;
+  /** Replay: the cursor is on this step, so open the drawer without a click —
+   *  the Producer / QA / Eval sections are the thing worth watching land.
+   *  Only rows this opened are auto-closed again; a row someone opened by
+   *  hand stays open as the cursor moves on. */
+  autoOpen?: boolean;
 }
 
 /**
@@ -26,8 +31,19 @@ interface Props {
  * defined, eval skipped because QA gated, etc.) we render a labeled stub
  * rather than hiding it, so the absence is itself visible.
  */
-export function PhaseSkillRow({ step, oppSlug, runId }: Props) {
+export function PhaseSkillRow({ step, oppSlug, runId, autoOpen = false }: Props) {
   const [open, setOpen] = useState(false);
+  const openedByReplay = useRef(false);
+
+  useEffect(() => {
+    if (autoOpen) {
+      setOpen(true);
+      openedByReplay.current = true;
+    } else if (openedByReplay.current) {
+      setOpen(false);
+      openedByReplay.current = false;
+    }
+  }, [autoOpen]);
   const { workspaceSlug = "" } = useParams<{ workspaceSlug?: string }>();
   const judgeScorePct = step.judge?.score_pct ?? step.judge?.score ?? null;
 
@@ -35,7 +51,12 @@ export function PhaseSkillRow({ step, oppSlug, runId }: Props) {
     <div className={cn("rounded border", open ? "border-border bg-card" : "border-transparent")}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          // A hand-driven toggle takes ownership: the cursor moving on will
+          // no longer close this row.
+          openedByReplay.current = false;
+          setOpen((v) => !v);
+        }}
         aria-expanded={open}
         className={cn(
           "flex w-full items-center gap-3 rounded px-2 py-2 text-left text-xs",

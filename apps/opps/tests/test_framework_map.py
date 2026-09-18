@@ -446,7 +446,7 @@ def test_map_opp_snapshot_full_assembly():
 
 def test_map_run_detail_extracts_phase_timings():
     """Real runs stamp PHASE boundaries, not step ones — these are the only
-    measured clock a finished run reliably has. See apps/opps/demo.py."""
+    measured clock a finished run reliably has. See apps/opps/replay.py."""
     run = _complete_run()
     rd = fm.map_run_detail(
         run,

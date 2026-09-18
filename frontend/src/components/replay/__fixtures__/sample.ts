@@ -7,13 +7,16 @@
  * player's visuals without a live run behind it.
  */
 import type {
+  ReplayAct,
   DemoEvent,
   DemoLedger,
-  DemoPayload,
+  ReplayPayload,
   DemoTimeline,
+  LadderPhase,
+  LadderStep,
   LedgerPhase,
   LedgerSkill,
-} from "@/api/demo";
+} from "@/api/replay";
 
 const PHASES: ReadonlyArray<readonly [string, string, number]> = [
   ["1-design", "Design", 4],
@@ -32,6 +35,7 @@ const FAILING_RATIONALE =
 
 const events: DemoEvent[] = [];
 const ledgerPhases: LedgerPhase[] = [];
+const ladder: LadderPhase[] = [];
 
 let clock = 0;
 let seq = 0;
@@ -41,6 +45,7 @@ for (const [phase, phase_display, count] of PHASES) {
   events.push({ seq: seq++, t: clock, kind: "phase_start", phase, phase_display });
 
   const skills: LedgerSkill[] = [];
+  const rungs: LadderStep[] = [];
   for (let i = 0; i < count; i += 1) {
     const skill = `${phase.split("-")[1]}-skill-${i + 1}`;
     const skill_display = `${phase_display} step ${i + 1}`;
@@ -69,9 +74,28 @@ for (const [phase, phase_display, count] of PHASES) {
       status: failed ? "judge-fail" : "complete",
       seconds,
     });
+    rungs.push({
+      skill, skill_display,
+      ordinal: i + 1,
+      status: failed ? "judge-fail" : "complete",
+      ran: true,
+      has_judge: true,
+      judge: failed
+        ? { score: 2, score_pct: 22, passed: false, rationale: FAILING_RATIONALE }
+        : { score: 8, score_pct: 84, passed: true },
+      qa_result: null,
+      preview_text: `Produced ${skill}.md`,
+      error: null,
+      artifacts: [{ name: `${skill}.md`, url: "#" }],
+    });
     clock += 120; // handoff gap between skills
   }
 
+  ladder.push({
+    phase, phase_display,
+    ordinal: ladder.length + 1,
+    steps: rungs,
+  });
   ledgerPhases.push({
     phase, phase_display,
     seconds: clock - phaseStart,
@@ -89,6 +113,7 @@ const timeline: DemoTimeline = {
   origin: "2026-07-22T13:41:00Z",
   wall_seconds: WALL_SECONDS,
   events,
+  ladder,
 };
 
 const ledger: DemoLedger = {
@@ -97,7 +122,7 @@ const ledger: DemoLedger = {
   phases: ledgerPhases,
 };
 
-export const SAMPLE: DemoPayload = {
+export const SAMPLE: ReplayPayload = {
   schema_version: 1,
   run: {
     opp_slug: "hh-poverty-targeting",
@@ -163,10 +188,10 @@ export const SAMPLE: DemoPayload = {
  * The same run as a REAL one records it: phase spans measured, no step stamps.
  * Step offsets are interpolated across their phase and flagged estimated.
  */
-export const PHASE_TIMED: DemoPayload = {
+export const PHASE_TIMED: ReplayPayload = {
   ...SAMPLE,
   timing_source: "phase",
-  acts: SAMPLE.acts.map((act) => {
+  acts: SAMPLE.acts.map((act): ReplayAct => {
     if (act.id === "timeline") {
       const t = act.data as DemoTimeline;
       return {

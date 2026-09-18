@@ -1,22 +1,29 @@
-"""Demo Player payload — a saved run, rendered as an ordered set of acts.
+"""Run replay payload — a saved run, rendered as a stepped-through beat stream.
 
-The Workbench is built for ACE-team QA and the public summary page for a
-partner who wants the deliverables. Neither tells the *story* of a run to a
-room. This module derives that story from data every run already has.
+The Workbench shows a run's FINAL state. This module derives the same run as
+a sequence of beats — entering a phase, starting a skill, finishing one — so
+the Phases screen can replay it: filling in as it goes, steppable one beat at
+a time, so anyone can watch the system work rather than read its output.
 
-Design: docs/specs/2026-09-17-ace-demo-player-design.md
+It is deliberately a mode of the real Workbench rather than a separate
+presentation surface. A bespoke replay would be a second rendering of phases,
+skills and verdicts that drifts from the one people actually use, and showing
+the real tool is more convincing than showing a picture of it.
+
+Design: docs/specs/2026-09-17-ace-demo-player-design.md (built as
+Workbench replay rather than a standalone player — see that spec's addendum)
 
 Two rules govern everything here:
 
 **The honesty rule.** The player never renders a value it cannot source from
 the run. When an act's data is missing the act is returned unavailable with a
-reason, never filled in. The player's whole value is that it is evidence; one
+reason, never filled in. The replay's whole value is that it is evidence; one
 fabricated number destroys it.
 
 That rule is why there are three timing modes rather than two. ACE reliably
 stamps PHASE boundaries in run_state.yaml but almost never per-STEP ones — a
 real 2026-07 run carried a measured span on every phase and a timestamp on 0
-of its 48 steps — so a player that only understood step times would fall back
+of its 48 steps — so a replay that only understood step times would fall back
 to "no clock at all" on essentially every finished run, and one that spread
 steps evenly across a phase and printed the result as a step time would be
 inventing measurements. So:
@@ -24,11 +31,11 @@ inventing measurements. So:
 * ``measured`` — steps carry their own timestamps. Step times are real.
 * ``phase``    — only phase boundaries are stamped. The run clock and the
   per-phase ledger are real; steps are POSITIONED inside their phase for
-  layout, and the player must not print a per-step time it did not measure.
+  layout, and the UI must not print a per-step time it did not measure.
 * ``ordinal``  — nothing is stamped. Sequence only, no clock anywhere.
 
 **No token or cost readout.** Elapsed wall time is the only measure of effort
-the player reports. This is deliberate — a token count is not a unit an
+the replay reports. This is deliberate — a token count is not a unit an
 audience converts into meaning, and the funder audience is frequently an AI
 company, to whom a per-phase token ledger discloses our own cost structure.
 Do not add one. See the spec section of the same name.
@@ -260,6 +267,7 @@ def build_timeline(snapshot: dict) -> dict:
             "skill": step.get("skill_name"),
             "skill_display": step.get("display_name") or step.get("skill_name"),
             "status": step.get("status"),
+            "preview_text": step.get("preview_text"),
             "duration_seconds": duration,
             "artifacts": [
                 {"name": a.get("name"), "url": a.get("drive_web_link") or a.get("url")}
@@ -281,6 +289,73 @@ def build_timeline(snapshot: dict) -> dict:
         "wall_seconds": wall_seconds,
         "events": events,
     }
+
+
+# --------------------------------------------------------------------------- #
+# ladder — the run's whole plan, phase by phase
+# --------------------------------------------------------------------------- #
+def build_ladder(snapshot: dict) -> list[dict]:
+    """Every phase and every skill in the run, in order, whether or not it ran.
+
+    The Workbench shows the plan; so does the replay. A step that never ran is
+    present and marked ``ran: false`` so the audience can see what was still
+    ahead at any point in the replay, instead of steps appearing from nowhere.
+
+    Phase ordinals come from the plugin's own phase registry (the snapshot's
+    ``phases``), so the ladder numbers phases the way every other ACE surface
+    does rather than inventing its own sequence.
+    """
+    run = snapshot.get("current_run") or {}
+    all_steps = run.get("steps") or []
+    registry = {
+        p.get("name"): p for p in (snapshot.get("phases") or []) if isinstance(p, dict)
+    }
+
+    order: list[str] = []
+    grouped: dict[str, list[dict]] = {}
+    for step in sorted(all_steps, key=lambda s: (s.get("ordinal") or 0, s.get("skill_name") or "")):
+        phase = step.get("phase") or ""
+        if phase not in grouped:
+            grouped[phase] = []
+            order.append(phase)
+        grouped[phase].append(step)
+
+    def phase_sort_key(name: str) -> tuple[int, int]:
+        meta = registry.get(name) or {}
+        ordinal = meta.get("ordinal")
+        return (0, ordinal) if isinstance(ordinal, int) else (1, order.index(name))
+
+    ladder = []
+    for phase in sorted(order, key=phase_sort_key):
+        members = grouped[phase]
+        meta = registry.get(phase) or {}
+        ladder.append({
+            "phase": phase,
+            "phase_display": (
+                meta.get("display_name") or members[0].get("phase_display") or phase
+            ),
+            "ordinal": meta.get("ordinal"),
+            "steps": [
+                {
+                    "skill": s.get("skill_name"),
+                    "skill_display": s.get("display_name") or s.get("skill_name"),
+                    "ordinal": s.get("ordinal"),
+                    "status": s.get("status"),
+                    "ran": (s.get("status") or "pending") not in _INERT_STATUSES,
+                    "has_judge": s.get("has_judge"),
+                    "judge": s.get("judge"),
+                    "qa_result": s.get("qa_result"),
+                    "preview_text": s.get("preview_text"),
+                    "error": s.get("error"),
+                    "artifacts": [
+                        {"name": a.get("name"), "url": a.get("drive_web_link") or a.get("url")}
+                        for a in (s.get("artifacts") or [])
+                    ],
+                }
+                for s in members
+            ],
+        })
+    return ladder
 
 
 # --------------------------------------------------------------------------- #
@@ -444,7 +519,7 @@ def build_acts(snapshot: dict) -> tuple[list[dict], dict]:
             "title": "The run",
             "available": has_events,
             "unavailable_reason": None if has_events else "This run has no completed steps yet.",
-            "data": timeline,
+            "data": {**timeline, "ladder": build_ladder(snapshot)},
         },
         {
             "id": "time_ledger",
@@ -481,8 +556,8 @@ def build_acts(snapshot: dict) -> tuple[list[dict], dict]:
     return acts, capabilities
 
 
-def build_demo_payload(snapshot: dict, *, run_id: str | None = None) -> dict:
-    """Assemble the full Demo Player payload from a rich snapshot dict."""
+def build_replay_payload(snapshot: dict, *, run_id: str | None = None) -> dict:
+    """Assemble the full replay payload from a rich snapshot dict."""
     run = snapshot.get("current_run") or {}
     opp = snapshot.get("opp") or {}
     acts, capabilities = build_acts(snapshot)

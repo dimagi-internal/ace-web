@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { DemoEvent, DemoTimeline } from "@/api/demo";
+import type { DemoEvent, DemoTimeline } from "@/api/replay";
 import {
   bandSegments,
   bandTicks,
@@ -23,6 +23,7 @@ function measured(): DemoTimeline {
     timing_source: "measured",
     origin: "2026-07-22T13:41:00Z",
     wall_seconds: 7200,
+    ladder: [],
     events: [
       evt({ seq: 0, kind: "phase_start", phase: "design", t: 0 }),
       evt({ seq: 1, kind: "step_start", phase: "design", t: 0, skill: "a" }),
@@ -39,6 +40,7 @@ function ordinal(): DemoTimeline {
     timing_source: "ordinal",
     origin: null,
     wall_seconds: null,
+    ladder: [],
     events: [
       evt({ seq: 0, kind: "phase_start", phase: "design" }),
       evt({ seq: 1, kind: "step_start", phase: "design", skill: "a" }),
@@ -160,6 +162,7 @@ function phaseTimed(): DemoTimeline {
     timing_source: "phase",
     origin: "2026-07-22T19:41:00Z",
     wall_seconds: 5820,
+    ladder: [],
     events: [
       evt({ seq: 0, kind: "phase_start", phase: "design", t: 0, t_estimated: false }),
       evt({ seq: 1, kind: "step_start", phase: "design", t: 870, t_estimated: true, skill: "a" }),

@@ -447,10 +447,10 @@
         ]
       }
     },
-    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/demo": {
+    "/api/w/{workspace_slug}/opps/{slug}/runs/{run_id}/replay": {
       "get": {
-        "operationId": "apps_opps_api_get_run_demo",
-        "summary": "Demo Player payload",
+        "operationId": "apps_opps_api_get_run_replay",
+        "summary": "Run replay payload",
         "parameters": [
           {
             "in": "path",
@@ -494,7 +494,7 @@
             }
           }
         },
-        "description": "One saved run, rendered as an ordered set of acts.\n\nReturns ``response={200: dict}`` deliberately \u2014 the payload nests the\nlegacy ``serialize_opp_*`` step/judge/decision shapes, which a thin\nPydantic schema would silently drop fields from (see CLAUDE.md \u00a7 Rich\nresponse shapes over strict Pydantic outputs).",
+        "description": "One saved run, as the beat stream the Phases screen replays.\n\nReturns ``response={200: dict}`` deliberately \u2014 the payload nests the\nlegacy ``serialize_opp_*`` step/judge/decision shapes, which a thin\nPydantic schema would silently drop fields from (see CLAUDE.md \u00a7 Rich\nresponse shapes over strict Pydantic outputs).",
         "tags": [
           "opps"
         ],

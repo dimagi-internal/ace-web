@@ -1,4 +1,4 @@
-"""Unit tests for ``apps.opps.demo`` — the Demo Player payload.
+"""Unit tests for ``apps.opps.replay`` — the Workbench replay payload.
 
 Pure derivation from a rich snapshot dict: no Drive, no DB, no cache.
 
@@ -13,7 +13,7 @@ import datetime as dt
 
 import pytest
 
-from apps.opps import demo
+from apps.opps import replay
 
 UTC = dt.UTC
 
@@ -98,19 +98,19 @@ def _measured_steps():
     ],
 )
 def test_parse_iso_accepts_every_shape_the_read_path_produces(raw, expected):
-    assert demo._parse_iso(raw) == expected
+    assert replay._parse_iso(raw) == expected
 
 
 @pytest.mark.parametrize("raw", [None, "", "   ", "not-a-date", 42, {}])
 def test_parse_iso_rejects_garbage_rather_than_guessing(raw):
-    assert demo._parse_iso(raw) is None
+    assert replay._parse_iso(raw) is None
 
 
 # --------------------------------------------------------------------------- #
 # timeline
 # --------------------------------------------------------------------------- #
 def test_timeline_measures_real_elapsed_time():
-    tl = demo.build_timeline(_snapshot(_measured_steps()))
+    tl = replay.build_timeline(_snapshot(_measured_steps()))
     assert tl["timing_source"] == "measured"
     assert tl["origin"] == "2026-07-22T13:41:00Z"
     # 13:41 -> 15:41 is two hours.
@@ -118,13 +118,13 @@ def test_timeline_measures_real_elapsed_time():
 
 
 def test_timeline_emits_phase_start_once_per_phase():
-    tl = demo.build_timeline(_snapshot(_measured_steps()))
+    tl = replay.build_timeline(_snapshot(_measured_steps()))
     phase_starts = [e for e in tl["events"] if e["kind"] == "phase_start"]
     assert [e["phase"] for e in phase_starts] == ["1-design", "2-commcare"]
 
 
 def test_timeline_events_are_sequenced_and_offset_from_origin():
-    tl = demo.build_timeline(_snapshot(_measured_steps()))
+    tl = replay.build_timeline(_snapshot(_measured_steps()))
     assert [e["seq"] for e in tl["events"]] == list(range(len(tl["events"])))
     first_end = next(e for e in tl["events"] if e["kind"] == "step_end")
     assert first_end["t"] == 1800.0  # 13:41 -> 14:11
@@ -132,7 +132,7 @@ def test_timeline_events_are_sequenced_and_offset_from_origin():
 
 
 def test_timeline_step_end_carries_artifacts_and_verdict():
-    tl = demo.build_timeline(_snapshot(_measured_steps()))
+    tl = replay.build_timeline(_snapshot(_measured_steps()))
     end = next(e for e in tl["events"] if e["kind"] == "step_end")
     assert end["artifacts"] == [{"name": "pdd.md", "url": "https://drive/pdd"}]
     assert end["judge"] == {"score": 8.0, "passed": True}
@@ -142,7 +142,7 @@ def test_timeline_without_timestamps_reports_ordinal_and_no_clock():
     """The honesty rule: a run predating per-step timestamps gets sequence,
     never a fabricated wall clock."""
     steps = [_step("idea-to-pdd", "1-design", 1), _step("app-deploy", "2-commcare", 2)]
-    tl = demo.build_timeline(_snapshot(steps))
+    tl = replay.build_timeline(_snapshot(steps))
     assert tl["timing_source"] == "ordinal"
     assert tl["wall_seconds"] is None
     assert all(e["t"] is None for e in tl["events"])
@@ -155,7 +155,7 @@ def test_timeline_skips_steps_that_never_ran():
         _step("llo-launch", "9-execution", 9, status="pending"),
         _step("closeout", "10-closeout", 10, status="skipped"),
     ]
-    tl = demo.build_timeline(_snapshot(steps))
+    tl = replay.build_timeline(_snapshot(steps))
     assert "llo-launch" not in {e.get("skill") for e in tl["events"]}
     assert "closeout" not in {e.get("skill") for e in tl["events"]}
 
@@ -163,7 +163,7 @@ def test_timeline_skips_steps_that_never_ran():
 def test_timeline_origin_prefers_first_step_over_a_resumed_run_header():
     """A run resumed after an interruption carries a header timestamp from its
     first attempt; using it would stretch the timeline across the dead hours."""
-    tl = demo.build_timeline(
+    tl = replay.build_timeline(
         _snapshot(_measured_steps(), run_started="2026-07-20T09:00:00Z")
     )
     assert tl["origin"] == "2026-07-22T13:41:00Z"
@@ -175,12 +175,12 @@ def test_timeline_clamps_negative_offsets_from_clock_skew():
         # Stamped a second before the run's first step — skew, not time travel.
         _step("b", "p", 2, started="2026-07-22T13:40:59Z", completed="2026-07-22T13:50:00Z"),
     ]
-    tl = demo.build_timeline(_snapshot(steps))
+    tl = replay.build_timeline(_snapshot(steps))
     assert all(e["t"] is None or e["t"] >= 0 for e in tl["events"])
 
 
 def test_timeline_of_an_empty_run_is_empty_not_broken():
-    tl = demo.build_timeline(_snapshot([]))
+    tl = replay.build_timeline(_snapshot([]))
     assert tl["events"] == []
     assert tl["timing_source"] == "ordinal"
 
@@ -191,7 +191,7 @@ def test_timeline_of_an_empty_run_is_empty_not_broken():
 def test_ledger_measures_phase_span_not_the_sum_of_its_skills():
     """The 10-minute gap between the two 2-commcare... er, 1-design skills and
     the next phase is real elapsed time; summing skill durations hides it."""
-    ledger = demo.build_time_ledger(_snapshot(_measured_steps()))
+    ledger = replay.build_time_ledger(_snapshot(_measured_steps()))
     design = next(p for p in ledger["phases"] if p["phase"] == "1-design")
     # 13:41 -> 14:20 span = 2340s; active = 1800 + 540 = 2340s here (no gap).
     assert design["seconds"] == 2340.0
@@ -204,20 +204,20 @@ def test_ledger_span_exceeds_active_time_when_a_phase_has_gaps():
         _step("a", "p1", 1, started="2026-07-22T10:00:00Z", completed="2026-07-22T10:10:00Z"),
         _step("b", "p1", 2, started="2026-07-22T11:00:00Z", completed="2026-07-22T11:10:00Z"),
     ]
-    ledger = demo.build_time_ledger(_snapshot(steps))
+    ledger = replay.build_time_ledger(_snapshot(steps))
     phase = ledger["phases"][0]
     assert phase["seconds"] == 4200.0  # 10:00 -> 11:10
     assert phase["active_seconds"] == 1200.0  # 10 + 10 minutes of actual work
 
 
 def test_ledger_preserves_phase_execution_order():
-    ledger = demo.build_time_ledger(_snapshot(_measured_steps()))
+    ledger = replay.build_time_ledger(_snapshot(_measured_steps()))
     assert [p["phase"] for p in ledger["phases"]] == ["1-design", "2-commcare"]
 
 
 def test_ledger_reports_no_seconds_without_timestamps():
     steps = [_step("idea-to-pdd", "1-design", 1)]
-    ledger = demo.build_time_ledger(_snapshot(steps))
+    ledger = replay.build_time_ledger(_snapshot(steps))
     assert ledger["wall_seconds"] is None
     assert ledger["phases"][0]["seconds"] is None
     assert ledger["phases"][0]["active_seconds"] is None
@@ -227,7 +227,7 @@ def test_ledger_never_reports_tokens_or_cost():
     """Deliberate omission — see the spec section of the same name. A token
     ledger discloses our subscription-vs-API cost structure to an audience
     that is frequently an AI company."""
-    ledger = demo.build_time_ledger(_snapshot(_measured_steps()))
+    ledger = replay.build_time_ledger(_snapshot(_measured_steps()))
     blob = repr(ledger).lower()
     for banned in ("token", "cost", "usd", "dollar", "price"):
         assert banned not in blob
@@ -241,7 +241,7 @@ def test_gates_surface_a_failed_judge():
         _step("pdd-to-deliver-app", "2-commcare", 4, status="judge-fail",
               judge={"score": 2.0, "passed": False, "rationale": "fields out of order"}),
     ]
-    gates = demo.build_gates(_snapshot(steps))
+    gates = replay.build_gates(_snapshot(steps))
     assert [g["skill"] for g in gates] == ["pdd-to-deliver-app"]
     assert gates[0]["judge"]["score"] == 2.0
 
@@ -249,18 +249,18 @@ def test_gates_surface_a_failed_judge():
 def test_gates_surface_a_failed_qa():
     steps = [_step("idea-to-pdd", "1-design", 1, status="qa-failed",
                    qa={"verdict": "fail", "failures": ["missing archetype"]})]
-    gates = demo.build_gates(_snapshot(steps))
+    gates = replay.build_gates(_snapshot(steps))
     assert gates[0]["qa_result"]["verdict"] == "fail"
 
 
 def test_gates_surface_an_errored_step():
     steps = [_step("app-deploy", "3-commcare", 1, status="error", error="boom")]
-    gates = demo.build_gates(_snapshot(steps))
+    gates = replay.build_gates(_snapshot(steps))
     assert gates[0]["error"] == "boom"
 
 
 def test_gates_empty_on_a_clean_run():
-    assert demo.build_gates(_snapshot(_measured_steps())) == []
+    assert replay.build_gates(_snapshot(_measured_steps())) == []
 
 
 # --------------------------------------------------------------------------- #
@@ -272,13 +272,13 @@ def test_decisions_count_the_rows_a_human_moved():
         {"row_id": "d2", "status": "overridden", "question": "Payment per visit?"},
         {"row_id": "d3", "status": "overridden", "question": "Photo required?"},
     ]
-    out = demo.build_decisions(_snapshot(_measured_steps(), decisions=decisions))
+    out = replay.build_decisions(_snapshot(_measured_steps(), decisions=decisions))
     assert out["total"] == 3
     assert out["overridden_count"] == 2
 
 
 def test_decisions_empty_when_the_run_wrote_no_log():
-    out = demo.build_decisions(_snapshot(_measured_steps()))
+    out = replay.build_decisions(_snapshot(_measured_steps()))
     assert out == {"total": 0, "overridden_count": 0, "rows": []}
 
 
@@ -290,7 +290,7 @@ def test_acts_available_on_a_rich_run():
         _step("x", "2-commcare", 5, status="judge-fail", judge={"passed": False, "score": 1.0}),
     ]
     snap = _snapshot(steps, decisions=[{"row_id": "d1", "status": "ai-default"}])
-    acts, caps = demo.build_acts(snap)
+    acts, caps = replay.build_acts(snap)
     assert caps == {"timeline": True, "time_ledger": True, "gates": True, "decisions": True}
     assert all(a["unavailable_reason"] is None for a in acts)
 
@@ -298,7 +298,7 @@ def test_acts_available_on_a_rich_run():
 def test_unavailable_acts_carry_a_reason_rather_than_rendering_empty():
     """A thin run gets a short demo, and the player can say why."""
     steps = [_step("idea-to-pdd", "1-design", 1)]  # no timestamps, no gate, no decisions
-    acts, caps = demo.build_acts(_snapshot(steps))
+    acts, caps = replay.build_acts(_snapshot(steps))
     assert caps["timeline"] is True
     assert caps["time_ledger"] is False
     assert caps["gates"] is False
@@ -309,15 +309,15 @@ def test_unavailable_acts_carry_a_reason_rather_than_rendering_empty():
 
 
 def test_empty_run_reports_the_timeline_act_unavailable():
-    acts, caps = demo.build_acts(_snapshot([]))
+    acts, caps = replay.build_acts(_snapshot([]))
     assert caps["timeline"] is False
     timeline = next(a for a in acts if a["id"] == "timeline")
     assert "no completed steps" in timeline["unavailable_reason"]
 
 
 def test_payload_header_and_schema_version():
-    payload = demo.build_demo_payload(_snapshot(_measured_steps()), run_id="20260722-1341")
-    assert payload["schema_version"] == demo.SCHEMA_VERSION
+    payload = replay.build_replay_payload(_snapshot(_measured_steps()), run_id="20260722-1341")
+    assert payload["schema_version"] == replay.SCHEMA_VERSION
     assert payload["timing_source"] == "measured"
     assert payload["run"]["opp_slug"] == "hh-poverty-targeting"
     assert payload["run"]["opp_title"] == "HH Poverty Targeting"
@@ -332,8 +332,8 @@ def test_payload_header_and_schema_version():
 def test_payload_is_json_serializable():
     """It is served through JsonResponse; a stray datetime would 500."""
     import json
-    payload = demo.build_demo_payload(_snapshot(_measured_steps()))
-    assert json.loads(json.dumps(payload))["schema_version"] == demo.SCHEMA_VERSION
+    payload = replay.build_replay_payload(_snapshot(_measured_steps()))
+    assert json.loads(json.dumps(payload))["schema_version"] == replay.SCHEMA_VERSION
 
 
 # --------------------------------------------------------------------------- #
@@ -367,7 +367,7 @@ def _phase_only_snapshot():
 
 
 def test_phase_timing_gives_the_run_a_real_clock():
-    tl = demo.build_timeline(_phase_only_snapshot())
+    tl = replay.build_timeline(_phase_only_snapshot())
     assert tl["timing_source"] == "phase"
     assert tl["origin"] == "2026-07-22T19:41:00Z"
     # 19:41 -> 21:18 is 1h37m.
@@ -377,7 +377,7 @@ def test_phase_timing_gives_the_run_a_real_clock():
 def test_phase_timing_marks_interpolated_step_offsets_as_estimated():
     """Positioning a step inside its phase is layout, not measurement. The
     flag is what stops the player printing it as a step time."""
-    tl = demo.build_timeline(_phase_only_snapshot())
+    tl = replay.build_timeline(_phase_only_snapshot())
     step_events = [e for e in tl["events"] if e["kind"] in ("step_start", "step_end")]
     assert step_events, "expected step events"
     assert all(e["t"] is not None for e in step_events)
@@ -385,20 +385,20 @@ def test_phase_timing_marks_interpolated_step_offsets_as_estimated():
 
 
 def test_measured_runs_never_mark_step_offsets_estimated():
-    tl = demo.build_timeline(_snapshot(_measured_steps()))
+    tl = replay.build_timeline(_snapshot(_measured_steps()))
     assert tl["timing_source"] == "measured"
     assert all(e.get("t_estimated") is False for e in tl["events"])
 
 
 def test_phase_start_events_use_the_phase_s_own_measured_start():
-    tl = demo.build_timeline(_phase_only_snapshot())
+    tl = replay.build_timeline(_phase_only_snapshot())
     starts = [e for e in tl["events"] if e["kind"] == "phase_start"]
     assert [e["t"] for e in starts] == [0.0, 2820.0]  # 19:41, then 20:28
     assert all(e["t_estimated"] is False for e in starts)
 
 
 def test_ledger_reads_phase_spans_when_steps_carry_no_stamps():
-    ledger = demo.build_time_ledger(_phase_only_snapshot())
+    ledger = replay.build_time_ledger(_phase_only_snapshot())
     design = next(p for p in ledger["phases"] if p["phase"] == "idea-to-design")
     commcare = next(p for p in ledger["phases"] if p["phase"] == "commcare-setup")
     assert design["seconds"] == 1740.0  # 19:41 -> 20:10
@@ -408,7 +408,7 @@ def test_ledger_reads_phase_spans_when_steps_carry_no_stamps():
 def test_ledger_reports_no_working_time_it_cannot_measure():
     """Without per-step stamps there is no honest "time actually working"
     figure — it must be absent, not derived from the span."""
-    ledger = demo.build_time_ledger(_phase_only_snapshot())
+    ledger = replay.build_time_ledger(_phase_only_snapshot())
     assert all(p["active_seconds"] is None for p in ledger["phases"])
     assert all(s["seconds"] is None for p in ledger["phases"] for s in p["skills"])
 
@@ -416,19 +416,95 @@ def test_ledger_reports_no_working_time_it_cannot_measure():
 def test_ledger_act_is_available_on_a_phase_timed_run():
     """The regression that motivated all of this: on a real run the ledger
     act used to come back unavailable, because no step carried a stamp."""
-    _, caps = demo.build_acts(_phase_only_snapshot())
+    _, caps = replay.build_acts(_phase_only_snapshot())
     assert caps["time_ledger"] is True
     assert caps["timeline"] is True
 
 
 def test_run_with_no_timestamps_at_all_still_falls_back_to_ordinal():
     steps = [_step("idea-to-pdd", "idea-to-design", 1)]
-    tl = demo.build_timeline(_snapshot(steps))
+    tl = replay.build_timeline(_snapshot(steps))
     assert tl["timing_source"] == "ordinal"
     assert tl["wall_seconds"] is None
 
 
 def test_payload_reports_phase_timing_source():
-    payload = demo.build_demo_payload(_phase_only_snapshot())
+    payload = replay.build_replay_payload(_phase_only_snapshot())
     assert payload["timing_source"] == "phase"
     assert payload["run"]["wall_seconds"] == 5820.0
+
+
+# --------------------------------------------------------------------------- #
+# ladder — the run's whole plan
+# --------------------------------------------------------------------------- #
+def _ladder_snapshot():
+    steps = [
+        _step("idea-to-pdd", "idea-to-design", 1,
+              artifacts=[{"name": "pdd.md", "drive_web_link": "u"}],
+              judge={"score": 8.0, "score_pct": 88.0, "passed": True}),
+        _step("idea-to-pdd-eval", "idea-to-design", 2),
+        _step("pdd-to-learn-app", "commcare-setup", 3),
+        # Never ran — must still appear, marked not-ran.
+        _step("llo-launch", "execution-management", 9, status="pending"),
+        _step("closeout", "closeout", 10, status="skipped"),
+    ]
+    snap = _snapshot(steps)
+    snap["phases"] = [
+        {"name": "commcare-setup", "display_name": "CommCare setup", "ordinal": 3},
+        {"name": "idea-to-design", "display_name": "Design", "ordinal": 1},
+        {"name": "execution-management", "display_name": "Execution", "ordinal": 9},
+        {"name": "closeout", "display_name": "Closeout", "ordinal": 10},
+    ]
+    return snap
+
+
+def test_ladder_orders_phases_by_the_plugin_registry_not_first_appearance():
+    ladder = replay.build_ladder(_ladder_snapshot())
+    assert [p["phase"] for p in ladder] == [
+        "idea-to-design", "commcare-setup", "execution-management", "closeout",
+    ]
+    assert [p["ordinal"] for p in ladder] == [1, 3, 9, 10]
+
+
+def test_ladder_uses_the_registry_display_name():
+    ladder = replay.build_ladder(_ladder_snapshot())
+    assert ladder[0]["phase_display"] == "Design"
+
+
+def test_ladder_keeps_steps_that_never_ran_and_marks_them():
+    """The Workbench shows the plan; so does the player. Without this, steps
+    appear from nowhere and the audience can't see what's still ahead."""
+    ladder = replay.build_ladder(_ladder_snapshot())
+    by_skill = {s["skill"]: s for p in ladder for s in p["steps"]}
+    assert by_skill["llo-launch"]["ran"] is False
+    assert by_skill["closeout"]["ran"] is False
+    assert by_skill["idea-to-pdd"]["ran"] is True
+
+
+def test_ladder_carries_the_judging_detail_the_workbench_shows():
+    ladder = replay.build_ladder(_ladder_snapshot())
+    step = ladder[0]["steps"][0]
+    assert step["judge"]["score_pct"] == 88.0
+    assert step["artifacts"] == [{"name": "pdd.md", "url": "u"}]
+
+
+def test_ladder_falls_back_to_run_order_for_a_phase_the_registry_omits():
+    snap = _ladder_snapshot()
+    snap["phases"] = []  # registry unavailable
+    ladder = replay.build_ladder(snap)
+    assert [p["phase"] for p in ladder][0] == "idea-to-design"
+    assert all(p["ordinal"] is None for p in ladder)
+
+
+def test_timeline_act_carries_the_ladder():
+    acts, _ = replay.build_acts(_ladder_snapshot())
+    timeline = next(a for a in acts if a["id"] == "timeline")
+    assert timeline["data"]["ladder"], "timeline act must carry the ladder"
+
+
+def test_step_end_events_carry_the_workbench_preview_line():
+    steps = _measured_steps()
+    steps[0]["preview_text"] = "A 12-page programme design document."
+    tl = replay.build_timeline(_snapshot(steps))
+    end = next(e for e in tl["events"] if e["kind"] == "step_end")
+    assert end["preview_text"] == "A 12-page programme design document."

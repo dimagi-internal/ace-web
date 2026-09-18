@@ -2722,10 +2722,10 @@ def test_fork_opp_echoes_what_a_skill_fork_carried(member_client, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Demo Player — GET /w/{ws}/opps/{slug}/runs/{run_id}/demo
+# Run replay — GET /w/{ws}/opps/{slug}/runs/{run_id}/replay
 # ---------------------------------------------------------------------------
 
-_FAKE_DEMO_SNAPSHOT = {
+_FAKE_REPLAY_SNAPSHOT = {
     "slug": "opp-1",
     "title": "Opp One",
     "current_run": {
@@ -2755,13 +2755,13 @@ _FAKE_DEMO_SNAPSHOT = {
 
 
 @pytest.mark.django_db
-def test_get_run_demo_happy_path(member_client, monkeypatch):
+def test_get_run_replay_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
         "apps.opps.api.load_rich_opp_snapshot",
-        lambda workspace, slug, run_id=None: _FAKE_DEMO_SNAPSHOT,
+        lambda workspace, slug, run_id=None: _FAKE_REPLAY_SNAPSHOT,
     )
-    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/demo")
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/replay")
     assert response.status_code == 200
     body = response.json()
     assert body["schema_version"] == 1
@@ -2773,55 +2773,55 @@ def test_get_run_demo_happy_path(member_client, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_get_run_demo_does_not_collide_with_run_detail_route(member_client, monkeypatch):
+def test_get_run_replay_does_not_collide_with_run_detail_route(member_client, monkeypatch):
     """`/runs/{run_id}` is registered first; a run_id path converter must not
     swallow the `/demo` suffix."""
     client, _, _ = member_client
     monkeypatch.setattr(
         "apps.opps.api.load_rich_opp_snapshot",
-        lambda workspace, slug, run_id=None: _FAKE_DEMO_SNAPSHOT,
+        lambda workspace, slug, run_id=None: _FAKE_REPLAY_SNAPSHOT,
     )
-    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/demo")
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/replay")
     assert response.status_code == 200
     assert "acts" in response.json()
 
 
 @pytest.mark.django_db
-def test_get_run_demo_etag_round_trips_304(member_client, monkeypatch):
+def test_get_run_replay_etag_round_trips_304(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
         "apps.opps.api.load_rich_opp_snapshot",
-        lambda workspace, slug, run_id=None: _FAKE_DEMO_SNAPSHOT,
+        lambda workspace, slug, run_id=None: _FAKE_REPLAY_SNAPSHOT,
     )
-    first = client.get("/api/w/ws1/opps/opp-1/runs/run-001/demo")
+    first = client.get("/api/w/ws1/opps/opp-1/runs/run-001/replay")
     assert first.status_code == 200
     etag = first["ETag"]
     again = client.get(
-        "/api/w/ws1/opps/opp-1/runs/run-001/demo", HTTP_IF_NONE_MATCH=etag
+        "/api/w/ws1/opps/opp-1/runs/run-001/replay", HTTP_IF_NONE_MATCH=etag
     )
     assert again.status_code == 304
 
 
 @pytest.mark.django_db
-def test_get_run_demo_404_unknown_run(member_client, monkeypatch):
+def test_get_run_replay_404_unknown_run(member_client, monkeypatch):
     client, _, _ = member_client
     monkeypatch.setattr(
         "apps.opps.api.load_rich_opp_snapshot",
         lambda workspace, slug, run_id=None: None,
     )
-    response = client.get("/api/w/ws1/opps/opp-1/runs/nope/demo")
+    response = client.get("/api/w/ws1/opps/opp-1/runs/nope/replay")
     assert response.status_code == 404
 
 
 @pytest.mark.django_db
-def test_get_run_demo_404_non_member(non_member_client):
+def test_get_run_replay_404_non_member(non_member_client):
     """Non-members get 404, not 403 — existence isn't leaked."""
     client, _, _ = non_member_client
-    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/demo")
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/replay")
     assert response.status_code == 404
 
 
 @pytest.mark.django_db
-def test_get_run_demo_401_anonymous(db, client):
-    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/demo")
+def test_get_run_replay_401_anonymous(db, client):
+    response = client.get("/api/w/ws1/opps/opp-1/runs/run-001/replay")
     assert response.status_code in (401, 403)

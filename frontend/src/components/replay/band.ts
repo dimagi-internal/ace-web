@@ -1,4 +1,4 @@
-import type { DemoEvent, DemoTimeline } from "@/api/demo";
+import type { DemoEvent, DemoTimeline } from "@/api/replay";
 
 export interface BandSegment {
   readonly phase: string;
