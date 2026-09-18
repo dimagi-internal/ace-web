@@ -383,9 +383,15 @@ Google Drive.
   membership, so it is not a public page. Acts are **capability-gated**: the
   backend reports each act available or not *with a reason*, so a thin run gets
   a short demo instead of a broken one. **Honesty rule — the player never
-  renders a value it can't source from the run**: a run with no per-step
-  timestamps reports `timing_source: "ordinal"` and draws sequence with no wall
-  clock rather than a plausible-looking one. **No token or cost readout, ever**
+  renders a value it can't source from the run**. Three timing modes, because
+  ACE stamps PHASE boundaries in `run_state.yaml` but almost never per-STEP
+  ones (a real 2026-07 run: a measured span on every phase, a timestamp on 0
+  of 48 steps): `measured` (step stamps are real), `phase` (the run clock and
+  the per-phase ledger are real; step offsets are interpolated for layout and
+  flagged `t_estimated`, and the UI shows the phase name rather than a step
+  time it didn't measure), `ordinal` (nothing stamped — sequence, no clock).
+  Phase timings ride on `RunDetail.phase_timings`, read off run_state by
+  `framework_map._phase_timings`. **No token or cost readout, ever**
   (deliberate; a token ledger discloses our subscription-vs-API cost structure
   to an audience that is frequently an AI company — don't "fix" it). Backend:
   `apps/opps/demo.py`, served at `GET /api/w/<ws>/opps/<slug>/runs/<run>/demo`,

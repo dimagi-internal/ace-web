@@ -69,7 +69,14 @@ _set = set  # preserve builtin before our module-level `set` shadows it
 #        the fix, and `_serialize_card_runs_summary` was additionally made
 #        unable to 500 on a stale object, because a missed bump should
 #        degrade a card, not the page.
-_KEY_VERSION = "v9"
+#   v10 — RunDetail gained ``phase_timings`` (the Demo Player). v9 entries
+#        deserialise into the NEW dataclass without the attribute; the
+#        serializer reads it via getattr(..., None) so a stale entry
+#        degrades to "no timings" rather than raising, but it would serve
+#        a clockless replay indefinitely — the Drive files never changed,
+#        so the changes feed can't invalidate it. The CODE did.
+#        Shipped 2026-09-17.
+_KEY_VERSION = "v10"
 
 
 def _snap_key(workspace_id: str, slug: str, run_id: str | None) -> str:

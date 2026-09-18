@@ -158,3 +158,46 @@ export const SAMPLE: DemoPayload = {
     },
   ],
 };
+
+/**
+ * The same run as a REAL one records it: phase spans measured, no step stamps.
+ * Step offsets are interpolated across their phase and flagged estimated.
+ */
+export const PHASE_TIMED: DemoPayload = {
+  ...SAMPLE,
+  timing_source: "phase",
+  acts: SAMPLE.acts.map((act) => {
+    if (act.id === "timeline") {
+      const t = act.data as DemoTimeline;
+      return {
+        ...act,
+        data: {
+          ...t,
+          timing_source: "phase" as const,
+          events: t.events.map((e) => ({
+            ...e,
+            t_estimated: e.kind !== "phase_start",
+            // A run that didn't stamp its steps has no per-step duration.
+            duration_seconds: null,
+          })),
+        },
+      };
+    }
+    if (act.id === "time_ledger") {
+      const l = act.data as DemoLedger;
+      return {
+        ...act,
+        data: {
+          ...l,
+          timing_source: "phase" as const,
+          phases: l.phases.map((p) => ({
+            ...p,
+            active_seconds: null,
+            skills: p.skills.map((s) => ({ ...s, seconds: null })),
+          })),
+        },
+      };
+    }
+    return act;
+  }),
+};

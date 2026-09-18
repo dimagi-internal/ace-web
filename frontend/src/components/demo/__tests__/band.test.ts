@@ -152,3 +152,51 @@ describe("revealedEvents", () => {
     expect(revealedEvents(measured(), 0).map((e) => e.seq)).toEqual([0, 1]);
   });
 });
+
+/** What a real finished run records: phase spans measured, step stamps absent.
+ *  Step offsets are interpolated across the phase and flagged estimated. */
+function phaseTimed(): DemoTimeline {
+  return {
+    timing_source: "phase",
+    origin: "2026-07-22T19:41:00Z",
+    wall_seconds: 5820,
+    events: [
+      evt({ seq: 0, kind: "phase_start", phase: "design", t: 0, t_estimated: false }),
+      evt({ seq: 1, kind: "step_start", phase: "design", t: 870, t_estimated: true, skill: "a" }),
+      evt({ seq: 2, kind: "step_end", phase: "design", t: 1740, t_estimated: true, skill: "a", status: "complete" }),
+      evt({ seq: 3, kind: "phase_start", phase: "commcare", t: 2820, t_estimated: false }),
+      evt({ seq: 4, kind: "step_start", phase: "commcare", t: 4320, t_estimated: true, skill: "b" }),
+      evt({ seq: 5, kind: "step_end", phase: "commcare", t: 5820, t_estimated: true, skill: "b", status: "complete" }),
+    ],
+  };
+}
+
+describe("phase-level timing", () => {
+  it("gives the run a real clock", () => {
+    // 19:41 -> 21:18 is 1h37m, and half of it is half of that.
+    expect(runElapsed(phaseTimed(), 0.5)).toBe(2910);
+  });
+
+  it("lays phases out by their measured share, not by step count", () => {
+    const [design, commcare] = bandSegments(phaseTimed());
+    expect(design.start).toBeCloseTo(0);
+    expect(design.width).toBeCloseTo(1740 / 5820);
+    expect(commcare.start).toBeCloseTo(2820 / 5820);
+  });
+
+  it("places ticks at the interpolated offsets", () => {
+    expect(bandTicks(phaseTimed()).map((t) => t.at)).toEqual([1740 / 5820, 1]);
+  });
+
+  it("reveals by the clock rather than by sequence", () => {
+    // 30% of 5820 = 1746s, so the first step's end (1740) has just passed.
+    expect(revealedEvents(phaseTimed(), 0.3).map((e) => e.seq)).toEqual([0, 1, 2]);
+  });
+
+  it("marks interpolated step offsets estimated and phase starts measured", () => {
+    const events = phaseTimed().events;
+    const steps = events.filter((e) => e.kind !== "phase_start");
+    expect(steps.every((e) => e.t_estimated === true)).toBe(true);
+    expect(events.filter((e) => e.kind === "phase_start").every((e) => e.t_estimated === false)).toBe(true);
+  });
+});

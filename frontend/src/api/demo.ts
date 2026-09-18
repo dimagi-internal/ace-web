@@ -12,9 +12,16 @@
  */
 import { apiClient } from "./apiClient";
 
-/** How a run's clock was established. `ordinal` means the run carries no
- *  per-step timestamps — render sequence, never a fabricated wall clock. */
-export type TimingSource = "measured" | "ordinal";
+/** How a run's clock was established.
+ *
+ * - `measured` — steps carry their own timestamps. Step times are real.
+ * - `phase`    — only phase boundaries are stamped (what a real run actually
+ *   records). The run clock and the per-phase ledger are real; step offsets
+ *   are interpolated for layout and carry `t_estimated`, so the player must
+ *   not print them as step times.
+ * - `ordinal`  — nothing is stamped. Sequence only, no clock anywhere.
+ */
+export type TimingSource = "measured" | "phase" | "ordinal";
 
 export type DemoActId = "timeline" | "time_ledger" | "gates" | "decisions";
 
@@ -40,8 +47,11 @@ export interface DemoQaResult {
 
 export interface DemoEvent {
   readonly seq: number;
-  /** Seconds from the run origin, or null when this step carries no timestamp. */
+  /** Seconds from the run origin, or null when nothing places this event. */
   readonly t: number | null;
+  /** True when `t` was interpolated across the phase for layout rather than
+   *  measured. Never render an estimated `t` as a time. */
+  readonly t_estimated?: boolean;
   readonly kind: "phase_start" | "step_start" | "step_end";
   readonly phase: string;
   readonly phase_display: string;

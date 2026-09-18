@@ -334,3 +334,101 @@ def test_payload_is_json_serializable():
     import json
     payload = demo.build_demo_payload(_snapshot(_measured_steps()))
     assert json.loads(json.dumps(payload))["schema_version"] == demo.SCHEMA_VERSION
+
+
+# --------------------------------------------------------------------------- #
+# phase-level timing — what a REAL finished run actually records
+# --------------------------------------------------------------------------- #
+def _phase_only_snapshot():
+    """The shape a real run has.
+
+    Measured from hh-poverty-targeting/20260722-1341: every phase carries a
+    real span, and 0 of its 48 steps carries a timestamp. A player that only
+    understood step times would show no clock at all on this run.
+    """
+    steps = [
+        _step("idea-to-pdd", "idea-to-design", 1),
+        _step("pdd-to-work-order", "idea-to-design", 2),
+        _step("pdd-to-learn-app", "commcare-setup", 3),
+        _step("app-deploy", "commcare-setup", 4),
+    ]
+    snap = _snapshot(steps)
+    snap["current_run"]["phase_timings"] = {
+        "idea-to-design": {
+            "started_at": "2026-07-22T19:41:00Z",
+            "completed_at": "2026-07-22T20:10:00Z",
+        },
+        "commcare-setup": {
+            "started_at": "2026-07-22T20:28:00Z",
+            "completed_at": "2026-07-22T21:18:00Z",
+        },
+    }
+    return snap
+
+
+def test_phase_timing_gives_the_run_a_real_clock():
+    tl = demo.build_timeline(_phase_only_snapshot())
+    assert tl["timing_source"] == "phase"
+    assert tl["origin"] == "2026-07-22T19:41:00Z"
+    # 19:41 -> 21:18 is 1h37m.
+    assert tl["wall_seconds"] == 5820.0
+
+
+def test_phase_timing_marks_interpolated_step_offsets_as_estimated():
+    """Positioning a step inside its phase is layout, not measurement. The
+    flag is what stops the player printing it as a step time."""
+    tl = demo.build_timeline(_phase_only_snapshot())
+    step_events = [e for e in tl["events"] if e["kind"] in ("step_start", "step_end")]
+    assert step_events, "expected step events"
+    assert all(e["t"] is not None for e in step_events)
+    assert all(e["t_estimated"] is True for e in step_events)
+
+
+def test_measured_runs_never_mark_step_offsets_estimated():
+    tl = demo.build_timeline(_snapshot(_measured_steps()))
+    assert tl["timing_source"] == "measured"
+    assert all(e.get("t_estimated") is False for e in tl["events"])
+
+
+def test_phase_start_events_use_the_phase_s_own_measured_start():
+    tl = demo.build_timeline(_phase_only_snapshot())
+    starts = [e for e in tl["events"] if e["kind"] == "phase_start"]
+    assert [e["t"] for e in starts] == [0.0, 2820.0]  # 19:41, then 20:28
+    assert all(e["t_estimated"] is False for e in starts)
+
+
+def test_ledger_reads_phase_spans_when_steps_carry_no_stamps():
+    ledger = demo.build_time_ledger(_phase_only_snapshot())
+    design = next(p for p in ledger["phases"] if p["phase"] == "idea-to-design")
+    commcare = next(p for p in ledger["phases"] if p["phase"] == "commcare-setup")
+    assert design["seconds"] == 1740.0  # 19:41 -> 20:10
+    assert commcare["seconds"] == 3000.0  # 20:28 -> 21:18
+
+
+def test_ledger_reports_no_working_time_it_cannot_measure():
+    """Without per-step stamps there is no honest "time actually working"
+    figure — it must be absent, not derived from the span."""
+    ledger = demo.build_time_ledger(_phase_only_snapshot())
+    assert all(p["active_seconds"] is None for p in ledger["phases"])
+    assert all(s["seconds"] is None for p in ledger["phases"] for s in p["skills"])
+
+
+def test_ledger_act_is_available_on_a_phase_timed_run():
+    """The regression that motivated all of this: on a real run the ledger
+    act used to come back unavailable, because no step carried a stamp."""
+    _, caps = demo.build_acts(_phase_only_snapshot())
+    assert caps["time_ledger"] is True
+    assert caps["timeline"] is True
+
+
+def test_run_with_no_timestamps_at_all_still_falls_back_to_ordinal():
+    steps = [_step("idea-to-pdd", "idea-to-design", 1)]
+    tl = demo.build_timeline(_snapshot(steps))
+    assert tl["timing_source"] == "ordinal"
+    assert tl["wall_seconds"] is None
+
+
+def test_payload_reports_phase_timing_source():
+    payload = demo.build_demo_payload(_phase_only_snapshot())
+    assert payload["timing_source"] == "phase"
+    assert payload["run"]["wall_seconds"] == 5820.0

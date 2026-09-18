@@ -69,5 +69,10 @@ def test_a_current_runsummary_serialises_with_the_new_fields():
 
 def test_cache_key_version_was_bumped_past_the_dataclass_change():
     """Guards the discipline, not the value: adding a field to a cached
-    dataclass REQUIRES retiring old entries."""
-    assert snapshot_cache._KEY_VERSION >= "v9"
+    dataclass REQUIRES retiring old entries.
+
+    Compared NUMERICALLY. This read ``_KEY_VERSION >= "v9"`` until the v10
+    bump, where string ordering puts "v10" before "v9" and the guard failed
+    on a version that satisfied it.
+    """
+    assert int(snapshot_cache._KEY_VERSION.lstrip("v")) >= 9

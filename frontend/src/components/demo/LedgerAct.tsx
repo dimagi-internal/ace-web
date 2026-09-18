@@ -64,7 +64,8 @@ export function LedgerAct({ ledger }: { ledger: DemoLedger }) {
               <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--demo-dim)]">
                 {phase.skills.map((skill) => (
                   <span key={skill.skill}>
-                    {skill.skill_display} {duration(skill.seconds)}
+                    {skill.skill_display}
+                    {skill.seconds !== null && ` ${duration(skill.seconds)}`}
                   </span>
                 ))}
               </div>

@@ -34,7 +34,10 @@ export function TimelineAct({
   );
 
   const elapsed = runElapsed(timeline, playback.progress);
-  const measured = timeline.timing_source === "measured";
+  const hasClock = timeline.timing_source !== "ordinal";
+  // In phase mode the run clock is real but per-STEP times are not measured,
+  // so the log shows the phase it belongs to instead of inventing a stamp.
+  const stepTimesMeasured = timeline.timing_source === "measured";
   const bandRef = useRef<HTMLDivElement>(null);
 
   const completed = revealed.filter((e) => e.kind === "step_end");
@@ -50,9 +53,9 @@ export function TimelineAct({
     <div className="flex h-full flex-col gap-8">
       <div className="flex flex-wrap items-end gap-x-16 gap-y-6">
         <Counter
-          label={measured ? "Run time" : "Steps"}
+          label={hasClock ? "Run time" : "Steps"}
           value={
-            measured
+            hasClock
               ? clock(elapsed ?? 0, timeline.wall_seconds ?? 0)
               : `${completed.length} of ${ticks.length}`
           }
@@ -63,10 +66,16 @@ export function TimelineAct({
           value={clock(playback.demoElapsed, playback.demoDuration)}
           tone="dim"
         />
-        {!measured && (
+        {!hasClock && (
           <p className="max-w-[46ch] text-sm leading-relaxed text-[var(--demo-dim)]">
-            This run was written before ACE recorded per-step times, so the
-            player shows the order its work happened in and no clock.
+            This run recorded no times, so the player shows the order its work
+            happened in and no clock.
+          </p>
+        )}
+        {timeline.timing_source === "phase" && (
+          <p className="max-w-[46ch] text-sm leading-relaxed text-[var(--demo-dim)]">
+            This run timed each phase but not each step, so the clock and the
+            bands are measured while steps sit inside the phase they ran in.
           </p>
         )}
       </div>
@@ -147,10 +156,12 @@ export function TimelineAct({
                 opacity: index === completed.length - 1 ? 1 : 0.62,
               }}
             >
-              <span className="w-16 shrink-0 text-xs text-[var(--demo-dim)]">
-                {event.t !== null && measured
+              <span className="w-28 shrink-0 truncate text-xs text-[var(--demo-dim)]">
+                {stepTimesMeasured && event.t !== null && !event.t_estimated
                   ? clock(event.t, timeline.wall_seconds ?? 0)
-                  : `${index + 1}`}
+                  : hasClock
+                    ? event.phase_display
+                    : `${index + 1}`}
               </span>
               <span className="flex-1 truncate">
                 {event.skill_display ?? event.skill}
@@ -160,9 +171,11 @@ export function TimelineAct({
                   did not pass
                 </span>
               )}
-              <span className="w-16 shrink-0 text-right text-xs text-[var(--demo-dim)]">
-                {duration(event.duration_seconds)}
-              </span>
+              {stepTimesMeasured && (
+                <span className="w-16 shrink-0 text-right text-xs text-[var(--demo-dim)]">
+                  {duration(event.duration_seconds)}
+                </span>
+              )}
               <span className="w-40 shrink-0 truncate text-right text-xs text-[var(--demo-dim)]">
                 {event.artifacts?.[0]?.name ?? ""}
               </span>
