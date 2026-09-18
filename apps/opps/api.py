@@ -1028,10 +1028,18 @@ def load_feedback_payload(workspace, slug: str) -> dict | None:
     if ace_folder_id is None:
         return None
     try:
-        drive = get_drive_client(workspace=workspace)
+        inner = get_drive_client(workspace=workspace)
     except ServiceAccountNotFound:
         log.warning("load_feedback_payload: Drive not configured for %s", workspace.slug)
         return None
+
+    # Through the same short-TTL cache every other Workbench read uses. The
+    # Review tab is opened from a Workbench page that has just listed the ACE
+    # root and the opp folder, so both listings are usually already warm —
+    # reading Drive raw here paid for them a second time.
+    from apps.opps.drive_cache import CachedDriveClient
+
+    drive = CachedDriveClient(inner, bypass=False)
 
     opp_folder = _find_child_folder(drive.list_folder(ace_folder_id), slug)
     if opp_folder is None:
