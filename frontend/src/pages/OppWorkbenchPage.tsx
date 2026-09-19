@@ -301,6 +301,13 @@ export default function OppWorkbenchPage() {
             onOpenPhase={(id, phaseName) =>
               setSearchParams({ run_id: id, view: "phase", phase: phaseName })
             }
+            onCompare={(base, head) =>
+              navigate(
+                `/w/${workspaceSlug}/opps/${encodeURIComponent(slug)}/compare?base=${encodeURIComponent(
+                  base,
+                )}&head=${encodeURIComponent(head)}`,
+              )
+            }
           />
         </div>
       )}

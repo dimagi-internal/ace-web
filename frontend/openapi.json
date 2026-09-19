@@ -995,7 +995,7 @@
     "/api/w/{workspace_slug}/opps/{slug}/compare": {
       "get": {
         "operationId": "apps_opps_api_compare_runs",
-        "summary": "Multi-run comparison",
+        "summary": "Compare two runs",
         "parameters": [
           {
             "in": "path",
@@ -1014,6 +1014,26 @@
               "type": "string"
             },
             "required": true
+          },
+          {
+            "in": "query",
+            "name": "base",
+            "schema": {
+              "default": "",
+              "title": "Base",
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "head",
+            "schema": {
+              "default": "",
+              "title": "Head",
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -1022,36 +1042,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OppCompareOut"
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
                 }
               }
             }
           }
         },
+        "description": "What the later run (``head``) did differently from the earlier (``base``).\n\nLeads with new decisions and new checks rather than score deltas \u2014 see\napps/opps/run_compare.py for why scores alone tell the wrong story.",
         "tags": [
           "opps"
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Run Ids"
-              }
-            }
-          },
-          "required": false
-        },
         "security": [
           {
             "DjangoSessionAuth": []
@@ -6541,204 +6543,6 @@
           "decision"
         ],
         "title": "GateDecisionIn",
-        "type": "object"
-      },
-      "OppCompareOut": {
-        "additionalProperties": false,
-        "description": "Response for GET /w/{workspace_slug}/opps/{slug}/compare.",
-        "properties": {
-          "slug": {
-            "title": "Slug",
-            "type": "string"
-          },
-          "run_ids": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Run Ids",
-            "type": "array"
-          },
-          "snapshots": {
-            "items": {
-              "$ref": "#/components/schemas/OppSnapshotOut"
-            },
-            "title": "Snapshots",
-            "type": "array"
-          }
-        },
-        "required": [
-          "slug",
-          "run_ids",
-          "snapshots"
-        ],
-        "title": "OppCompareOut",
-        "type": "object"
-      },
-      "OppRunOut": {
-        "additionalProperties": false,
-        "properties": {
-          "run_id": {
-            "title": "Run Id",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "started_at": {
-            "format": "date-time",
-            "title": "Started At",
-            "type": "string"
-          },
-          "finished_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Finished At"
-          },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
-          "scorecard": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ScorecardOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "run_id",
-          "label",
-          "started_at",
-          "is_active"
-        ],
-        "title": "OppRunOut",
-        "type": "object"
-      },
-      "OppSnapshotOut": {
-        "additionalProperties": false,
-        "properties": {
-          "slug": {
-            "title": "Slug",
-            "type": "string"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "runs": {
-            "items": {
-              "$ref": "#/components/schemas/OppRunOut"
-            },
-            "title": "Runs",
-            "type": "array"
-          },
-          "active_run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active Run Id"
-          },
-          "steps": {
-            "items": {
-              "$ref": "#/components/schemas/StepSnapshotOut"
-            },
-            "title": "Steps",
-            "type": "array"
-          },
-          "pending_gates": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Pending Gates",
-            "type": "array"
-          },
-          "scorecard": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ScorecardOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "slug",
-          "title",
-          "runs",
-          "steps",
-          "pending_gates",
-          "updated_at"
-        ],
-        "title": "OppSnapshotOut",
-        "type": "object"
-      },
-      "ScorecardOut": {
-        "additionalProperties": false,
-        "properties": {
-          "score": {
-            "maximum": 100,
-            "minimum": 0,
-            "title": "Score",
-            "type": "integer"
-          },
-          "verdict": {
-            "enum": [
-              "pass",
-              "warn",
-              "fail"
-            ],
-            "title": "Verdict",
-            "type": "string"
-          },
-          "rationale": {
-            "title": "Rationale",
-            "type": "string"
-          },
-          "trend": {
-            "items": {
-              "type": "integer"
-            },
-            "title": "Trend",
-            "type": "array"
-          },
-          "decided_at": {
-            "format": "date-time",
-            "title": "Decided At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "score",
-          "verdict",
-          "rationale",
-          "trend",
-          "decided_at"
-        ],
-        "title": "ScorecardOut",
         "type": "object"
       },
       "SeededRunIn": {

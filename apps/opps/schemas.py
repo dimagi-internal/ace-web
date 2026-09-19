@@ -405,14 +405,6 @@ class DecisionEditOut(StrictModel):
 # --- Multi-run compare -------------------------------------------------
 
 
-class OppCompareOut(StrictModel):
-    """Response for GET /w/{workspace_slug}/opps/{slug}/compare."""
-
-    slug: str
-    run_ids: list[RunId]
-    snapshots: list[OppSnapshotOut]
-
-
 # --- Health probe ------------------------------------------------------
 
 

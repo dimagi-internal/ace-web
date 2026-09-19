@@ -29,7 +29,6 @@ from .schemas import (
     GateDecisionIn,
     GateOut,
     OppCardOut,
-    OppCompareOut,
     OppCreateIn,
     OppForkIn,
     OppForkOut,
@@ -1740,59 +1739,59 @@ def record_gate(
     return JsonResponse(payload, status=200)
 
 
-# ---------------------------------------------------------------------------
-# Task 2.1.17 helpers — multi-run compare
-# ---------------------------------------------------------------------------
+def load_run_compare(workspace, slug: str, base: str, head: str) -> dict | None:
+    """Compare two runs of one opp, from the Workbench's own cached snapshots.
 
-
-def compare_opp_runs(workspace, slug: str, run_ids: list[str]) -> dict:
-    """Load multiple runs of an opp and return a comparison payload.
+    Returns None when either run is missing. The snapshot loader falls back to
+    the opp's latest run for an unknown run id, so the id actually loaded is
+    checked — otherwise a typo in the URL would silently compare the wrong run.
 
     The monkeypatch target in contract tests is this module-level function.
     """
-    snapshots: list[dict] = []
-    for rid in run_ids:
-        snap = load_opp_snapshot(workspace, slug, run_id=rid)
-        if snap is None:
-            raise FileNotFoundError(f"opp {slug!r} not found")
-        snapshots.append(snap)
-    return {
-        "slug": slug,
-        "run_ids": run_ids,
-        "snapshots": snapshots,
-    }
+    from apps.opps.run_compare import build_run_compare
+
+    snaps = []
+    for rid in (base, head):
+        snap = load_rich_opp_snapshot(workspace, slug, run_id=rid)
+        if snap is None or (snap.get("current_run") or {}).get("run_id") != rid:
+            return None
+        snaps.append(snap)
+    return build_run_compare(snaps[0], snaps[1])
 
 
 # ---------------------------------------------------------------------------
-# Task 2.1.17 — GET /w/{workspace_slug}/opps/{slug}/compare
+# GET /w/{workspace_slug}/opps/{slug}/compare?base=<run>&head=<run>
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{slug}/compare", response=OppCompareOut, summary="Multi-run comparison")
+@router.get("/{slug}/compare", response={200: dict}, summary="Compare two runs")
 def compare_runs(
     request: HttpRequest,
     workspace_slug: Annotated[str, Path()],
     slug: Annotated[str, Path()],
-    run_ids: list[str] | None = None,
-) -> OppCompareOut:
+    base: str = "",
+    head: str = "",
+) -> HttpResponse:
+    """What the later run (``head``) did differently from the earlier (``base``).
 
+    Leads with new decisions and new checks rather than score deltas — see
+    apps/opps/run_compare.py for why scores alone tell the wrong story.
+    """
     workspace = resolve_workspace_for_member(request, workspace_slug)
-    # Ninja passes multi-value query params as list when annotated correctly;
-    # fall back to a manual parse from the raw query string.
-    if not run_ids:
-        raw = request.GET.getlist("run_ids")
-        run_ids = [r.strip() for r in raw if r.strip()]
-    if len(run_ids) < 2:
-        raise ProblemError(
-            400, "At least 2 run_ids required", type_=TYPE_VALIDATION,
-        )
-    try:
-        result = compare_opp_runs(workspace, slug, run_ids)
-    except FileNotFoundError as exc:
-        raise ProblemError(
-            404, "Opp not found", type_=TYPE_NOT_FOUND, detail=str(exc),
-        ) from exc
-    return OppCompareOut.model_validate(result)
+    if not base or not head:
+        raise ProblemError(400, "Both base and head run ids are required", type_=TYPE_VALIDATION)
+    if base == head:
+        raise ProblemError(400, "Pick two different runs", type_=TYPE_VALIDATION)
+    payload = load_run_compare(workspace, slug, base, head)
+    if payload is None:
+        raise ProblemError(404, "Run not found", type_=TYPE_NOT_FOUND)
+    etag = compute_etag(payload)
+    not_modified = maybe_not_modified(request, etag)
+    if not_modified is not None:
+        return not_modified
+    response = JsonResponse(payload)
+    response["ETag"] = etag
+    return response
 
 
 # ---------------------------------------------------------------------------

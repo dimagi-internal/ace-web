@@ -14,6 +14,7 @@ import OppComparePage from "./pages/OppComparePage";
 import OppListPage from "./pages/OppListPage";
 import OppSummaryPage from "./pages/OppSummaryPage";
 import OppWorkbenchPage from "./pages/OppWorkbenchPage";
+import RunComparePage from "./pages/RunComparePage";
 import { SessionStructurePage } from "./pages/SessionStructurePage";
 import SessionsPage from "./pages/SessionsPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -52,6 +53,7 @@ export const router = createBrowserRouter(
               path: "opps/compare/:slugA/:slugB",
               element: <OppComparePage />,
             },
+            { path: "opps/:slug/compare", element: <RunComparePage /> },
             { path: "opps/:slug", element: <OppWorkbenchPage /> },
             { path: "opps/:slug/runs/:runId", element: <OppWorkbenchPage /> },
             {
