@@ -57,8 +57,6 @@ SCHEMA_VERSION = 1
 # Statuses that mean "this step did not run", and so contributes no event.
 _INERT_STATUSES = frozenset({"pending", "skipped"})
 
-# Statuses that mean "this step ran and did not succeed".
-_FAILED_STATUSES = frozenset({"qa-failed", "judge-fail", "error"})
 
 
 # --------------------------------------------------------------------------- #
@@ -359,160 +357,18 @@ def build_ladder(snapshot: dict) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
-# time ledger
-# --------------------------------------------------------------------------- #
-def build_time_ledger(snapshot: dict) -> dict:
-    """Wall time per phase, drilling to skill.
-
-    Phase duration is measured span (first start → last completion within the
-    phase), not the sum of its skills': the gaps between skills are real
-    elapsed time and summing would under-report them. ``active_seconds`` keeps
-    the summed figure alongside so the player can show both without either
-    being mistaken for the other.
-    """
-    run = snapshot.get("current_run") or {}
-    steps = _live_steps(run.get("steps") or [])
-    spans = _phase_spans(run)
-
-    order: list[str] = []
-    grouped: dict[str, list[dict]] = {}
-    for step in steps:
-        phase = step.get("phase") or ""
-        if phase not in grouped:
-            grouped[phase] = []
-            order.append(phase)
-        grouped[phase].append(step)
-
-    phases = []
-    for phase in order:
-        members = grouped[phase]
-        starts = [t for t in (_parse_iso(s.get("started_at")) for s in members) if t]
-        ends = [t for t in (_parse_iso(s.get("completed_at")) for s in members) if t]
-        span = None
-        if starts and ends:
-            span = max(0.0, (max(ends) - min(starts)).total_seconds())
-        else:
-            # No step in this phase carried a stamp — fall back to the phase's
-            # own measured boundaries, which is the clock a real run actually
-            # records. Still a MEASURED value, just read one level up.
-            phase_start, phase_end = spans.get(phase, (None, None))
-            if phase_start and phase_end:
-                span = max(0.0, (phase_end - phase_start).total_seconds())
-
-        skills = []
-        active = 0.0
-        for s in members:
-            st, cp = _parse_iso(s.get("started_at")), _parse_iso(s.get("completed_at"))
-            dur = max(0.0, (cp - st).total_seconds()) if st and cp else None
-            if dur is not None:
-                active += dur
-            skills.append({
-                "skill": s.get("skill_name"),
-                "skill_display": s.get("display_name") or s.get("skill_name"),
-                "status": s.get("status"),
-                "seconds": dur,
-            })
-
-        phases.append({
-            "phase": phase,
-            "phase_display": members[0].get("phase_display") or phase,
-            "seconds": span,
-            # None, never a guess: without per-step stamps there is no honest
-            # "time actually working" figure to report for this phase.
-            "active_seconds": active if active else None,
-            "skill_count": len(members),
-            "skills": skills,
-        })
-
-    timeline = build_timeline(snapshot)
-    return {
-        "wall_seconds": timeline["wall_seconds"],
-        "timing_source": timeline["timing_source"],
-        "phases": phases,
-    }
-
-
-# --------------------------------------------------------------------------- #
-# the gate that failed
-# --------------------------------------------------------------------------- #
-def _judge_failed(judge: Any) -> bool:
-    return isinstance(judge, dict) and judge.get("passed") is False
-
-
-def _qa_failed(qa: Any) -> bool:
-    return isinstance(qa, dict) and (
-        qa.get("verdict") == "fail" or qa.get("passed") is False
-    )
-
-
-def build_gates(snapshot: dict) -> list[dict]:
-    """Every step whose own QA or judge verdict did not pass.
-
-    This act exists because a demo that only shows success gets discounted by
-    exactly the audiences worth convincing. Showing the system catching its own
-    bad work is the argument that it is engineered rather than prompted — so
-    these are surfaced, never filtered.
-    """
-    run = snapshot.get("current_run") or {}
-    gates = []
-    for step in _live_steps(run.get("steps") or []):
-        judge, qa = step.get("judge"), step.get("qa_result")
-        status = step.get("status") or ""
-        if not (_judge_failed(judge) or _qa_failed(qa) or status in _FAILED_STATUSES):
-            continue
-        gates.append({
-            "skill": step.get("skill_name"),
-            "skill_display": step.get("display_name") or step.get("skill_name"),
-            "phase": step.get("phase"),
-            "phase_display": step.get("phase_display") or step.get("phase"),
-            "ordinal": step.get("ordinal"),
-            "status": status,
-            "judge": judge,
-            "qa_result": qa,
-            "error": step.get("error"),
-        })
-    return gates
-
-
-# --------------------------------------------------------------------------- #
-# decisions
-# --------------------------------------------------------------------------- #
-def build_decisions(snapshot: dict) -> dict:
-    """The run's decision rows, split by whether a human moved them.
-
-    ``overridden`` is the interesting half — it is the visible evidence that a
-    person reviewed the agent's default and changed it.
-    """
-    run = snapshot.get("current_run") or {}
-    rows = [d for d in (run.get("decisions") or []) if isinstance(d, dict)]
-    overridden = [d for d in rows if d.get("status") == "overridden"]
-    return {
-        "total": len(rows),
-        "overridden_count": len(overridden),
-        "rows": rows,
-    }
-
-
-# --------------------------------------------------------------------------- #
 # acts
 # --------------------------------------------------------------------------- #
 def build_acts(snapshot: dict) -> tuple[list[dict], dict]:
-    """Compute the act list and the capability map for one run.
+    """The act list and capability map for one run.
 
-    An act is returned whether or not it is available — an unavailable act
-    carries the reason, so the player can say *why* a thin run gets a short
-    demo instead of silently rendering fewer beats.
+    One act today — the step-through timeline the Phases screen replays. The
+    list shape is kept (rather than returning the timeline bare) so the payload
+    stays stable for the one consumer; the standalone player's other acts
+    (time ledger, gates, decisions) were removed with that player.
     """
     timeline = build_timeline(snapshot)
-    ledger = build_time_ledger(snapshot)
-    gates = build_gates(snapshot)
-    decisions = build_decisions(snapshot)
-
     has_events = bool(timeline["events"])
-    # Phase-level stamps are a real clock, so the ledger works on them. Only a
-    # run with no stamps at all loses the act.
-    measured = timeline["timing_source"] in ("measured", "phase")
-
     acts = [
         {
             "id": "timeline",
@@ -521,39 +377,8 @@ def build_acts(snapshot: dict) -> tuple[list[dict], dict]:
             "unavailable_reason": None if has_events else "This run has no completed steps yet.",
             "data": {**timeline, "ladder": build_ladder(snapshot)},
         },
-        {
-            "id": "time_ledger",
-            "title": "Where the time went",
-            "available": has_events and measured,
-            "unavailable_reason": (
-                None
-                if (has_events and measured)
-                else "This run recorded no timestamps, so elapsed time can't be measured."
-            ),
-            "data": ledger,
-        },
-        {
-            "id": "gates",
-            "title": "What it caught",
-            "available": bool(gates),
-            "unavailable_reason": (
-                None if gates else "No step in this run failed its own QA or judge."
-            ),
-            "data": {"gates": gates},
-        },
-        {
-            "id": "decisions",
-            "title": "What it decided",
-            "available": decisions["total"] > 0,
-            "unavailable_reason": (
-                None if decisions["total"] else "This run wrote no decisions log."
-            ),
-            "data": decisions,
-        },
     ]
-
-    capabilities = {a["id"]: a["available"] for a in acts}
-    return acts, capabilities
+    return acts, {a["id"]: a["available"] for a in acts}
 
 
 def build_replay_payload(snapshot: dict, *, run_id: str | None = None) -> dict:

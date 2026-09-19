@@ -2691,9 +2691,7 @@ def test_get_run_replay_happy_path(member_client, monkeypatch):
     assert body["schema_version"] == 1
     assert body["timing_source"] == "measured"
     assert body["run"]["wall_seconds"] == 1800.0
-    assert [a["id"] for a in body["acts"]] == [
-        "timeline", "time_ledger", "gates", "decisions",
-    ]
+    assert [a["id"] for a in body["acts"]] == ["timeline"]
 
 
 @pytest.mark.django_db

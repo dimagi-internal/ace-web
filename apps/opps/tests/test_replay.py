@@ -186,126 +186,10 @@ def test_timeline_of_an_empty_run_is_empty_not_broken():
 
 
 # --------------------------------------------------------------------------- #
-# time ledger
-# --------------------------------------------------------------------------- #
-def test_ledger_measures_phase_span_not_the_sum_of_its_skills():
-    """The 10-minute gap between the two 2-commcare... er, 1-design skills and
-    the next phase is real elapsed time; summing skill durations hides it."""
-    ledger = replay.build_time_ledger(_snapshot(_measured_steps()))
-    design = next(p for p in ledger["phases"] if p["phase"] == "1-design")
-    # 13:41 -> 14:20 span = 2340s; active = 1800 + 540 = 2340s here (no gap).
-    assert design["seconds"] == 2340.0
-    assert design["active_seconds"] == 2340.0
-    assert design["skill_count"] == 2
-
-
-def test_ledger_span_exceeds_active_time_when_a_phase_has_gaps():
-    steps = [
-        _step("a", "p1", 1, started="2026-07-22T10:00:00Z", completed="2026-07-22T10:10:00Z"),
-        _step("b", "p1", 2, started="2026-07-22T11:00:00Z", completed="2026-07-22T11:10:00Z"),
-    ]
-    ledger = replay.build_time_ledger(_snapshot(steps))
-    phase = ledger["phases"][0]
-    assert phase["seconds"] == 4200.0  # 10:00 -> 11:10
-    assert phase["active_seconds"] == 1200.0  # 10 + 10 minutes of actual work
-
-
-def test_ledger_preserves_phase_execution_order():
-    ledger = replay.build_time_ledger(_snapshot(_measured_steps()))
-    assert [p["phase"] for p in ledger["phases"]] == ["1-design", "2-commcare"]
-
-
-def test_ledger_reports_no_seconds_without_timestamps():
-    steps = [_step("idea-to-pdd", "1-design", 1)]
-    ledger = replay.build_time_ledger(_snapshot(steps))
-    assert ledger["wall_seconds"] is None
-    assert ledger["phases"][0]["seconds"] is None
-    assert ledger["phases"][0]["active_seconds"] is None
-
-
-def test_ledger_never_reports_tokens_or_cost():
-    """Deliberate omission — see the spec section of the same name. A token
-    ledger discloses our subscription-vs-API cost structure to an audience
-    that is frequently an AI company."""
-    ledger = replay.build_time_ledger(_snapshot(_measured_steps()))
-    blob = repr(ledger).lower()
-    for banned in ("token", "cost", "usd", "dollar", "price"):
-        assert banned not in blob
-
-
-# --------------------------------------------------------------------------- #
-# gates
-# --------------------------------------------------------------------------- #
-def test_gates_surface_a_failed_judge():
-    steps = _measured_steps() + [
-        _step("pdd-to-deliver-app", "2-commcare", 4, status="judge-fail",
-              judge={"score": 2.0, "passed": False, "rationale": "fields out of order"}),
-    ]
-    gates = replay.build_gates(_snapshot(steps))
-    assert [g["skill"] for g in gates] == ["pdd-to-deliver-app"]
-    assert gates[0]["judge"]["score"] == 2.0
-
-
-def test_gates_surface_a_failed_qa():
-    steps = [_step("idea-to-pdd", "1-design", 1, status="qa-failed",
-                   qa={"verdict": "fail", "failures": ["missing archetype"]})]
-    gates = replay.build_gates(_snapshot(steps))
-    assert gates[0]["qa_result"]["verdict"] == "fail"
-
-
-def test_gates_surface_an_errored_step():
-    steps = [_step("app-deploy", "3-commcare", 1, status="error", error="boom")]
-    gates = replay.build_gates(_snapshot(steps))
-    assert gates[0]["error"] == "boom"
-
-
-def test_gates_empty_on_a_clean_run():
-    assert replay.build_gates(_snapshot(_measured_steps())) == []
-
-
-# --------------------------------------------------------------------------- #
-# decisions
-# --------------------------------------------------------------------------- #
-def test_decisions_count_the_rows_a_human_moved():
-    decisions = [
-        {"row_id": "d1", "status": "ai-default", "question": "Which archetype?"},
-        {"row_id": "d2", "status": "overridden", "question": "Payment per visit?"},
-        {"row_id": "d3", "status": "overridden", "question": "Photo required?"},
-    ]
-    out = replay.build_decisions(_snapshot(_measured_steps(), decisions=decisions))
-    assert out["total"] == 3
-    assert out["overridden_count"] == 2
-
-
-def test_decisions_empty_when_the_run_wrote_no_log():
-    out = replay.build_decisions(_snapshot(_measured_steps()))
-    assert out == {"total": 0, "overridden_count": 0, "rows": []}
-
-
-# --------------------------------------------------------------------------- #
 # acts + payload
 # --------------------------------------------------------------------------- #
-def test_acts_available_on_a_rich_run():
-    steps = _measured_steps() + [
-        _step("x", "2-commcare", 5, status="judge-fail", judge={"passed": False, "score": 1.0}),
-    ]
-    snap = _snapshot(steps, decisions=[{"row_id": "d1", "status": "ai-default"}])
-    acts, caps = replay.build_acts(snap)
-    assert caps == {"timeline": True, "time_ledger": True, "gates": True, "decisions": True}
-    assert all(a["unavailable_reason"] is None for a in acts)
 
 
-def test_unavailable_acts_carry_a_reason_rather_than_rendering_empty():
-    """A thin run gets a short demo, and the player can say why."""
-    steps = [_step("idea-to-pdd", "1-design", 1)]  # no timestamps, no gate, no decisions
-    acts, caps = replay.build_acts(_snapshot(steps))
-    assert caps["timeline"] is True
-    assert caps["time_ledger"] is False
-    assert caps["gates"] is False
-    assert caps["decisions"] is False
-    for act in acts:
-        if not act["available"]:
-            assert act["unavailable_reason"], f"{act['id']} is unavailable with no reason"
 
 
 def test_empty_run_reports_the_timeline_act_unavailable():
@@ -324,9 +208,7 @@ def test_payload_header_and_schema_version():
     assert payload["run"]["run_id"] == "20260722-1341"
     assert payload["run"]["wall_seconds"] == 7200.0
     assert payload["run"]["step_count"] == 3
-    assert [a["id"] for a in payload["acts"]] == [
-        "timeline", "time_ledger", "gates", "decisions",
-    ]
+    assert [a["id"] for a in payload["acts"]] == ["timeline"]
 
 
 def test_payload_is_json_serializable():
@@ -397,28 +279,10 @@ def test_phase_start_events_use_the_phase_s_own_measured_start():
     assert all(e["t_estimated"] is False for e in starts)
 
 
-def test_ledger_reads_phase_spans_when_steps_carry_no_stamps():
-    ledger = replay.build_time_ledger(_phase_only_snapshot())
-    design = next(p for p in ledger["phases"] if p["phase"] == "idea-to-design")
-    commcare = next(p for p in ledger["phases"] if p["phase"] == "commcare-setup")
-    assert design["seconds"] == 1740.0  # 19:41 -> 20:10
-    assert commcare["seconds"] == 3000.0  # 20:28 -> 21:18
 
 
-def test_ledger_reports_no_working_time_it_cannot_measure():
-    """Without per-step stamps there is no honest "time actually working"
-    figure — it must be absent, not derived from the span."""
-    ledger = replay.build_time_ledger(_phase_only_snapshot())
-    assert all(p["active_seconds"] is None for p in ledger["phases"])
-    assert all(s["seconds"] is None for p in ledger["phases"] for s in p["skills"])
 
 
-def test_ledger_act_is_available_on_a_phase_timed_run():
-    """The regression that motivated all of this: on a real run the ledger
-    act used to come back unavailable, because no step carried a stamp."""
-    _, caps = replay.build_acts(_phase_only_snapshot())
-    assert caps["time_ledger"] is True
-    assert caps["timeline"] is True
 
 
 def test_run_with_no_timestamps_at_all_still_falls_back_to_ordinal():
@@ -508,3 +372,13 @@ def test_step_end_events_carry_the_workbench_preview_line():
     tl = replay.build_timeline(_snapshot(steps))
     end = next(e for e in tl["events"] if e["kind"] == "step_end")
     assert end["preview_text"] == "A 12-page programme design document."
+
+
+def test_payload_carries_only_what_the_step_through_reads():
+    """The standalone player's other acts (time ledger, gates, decisions) went
+    with it; the Phases screen reads the timeline act alone."""
+    payload = replay.build_replay_payload(_snapshot(_measured_steps()))
+    assert [a["id"] for a in payload["acts"]] == ["timeline"]
+    assert payload["capabilities"] == {"timeline": True}
+    timeline = payload["acts"][0]["data"]
+    assert timeline["events"] and "ladder" in timeline
