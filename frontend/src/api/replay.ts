@@ -23,7 +23,8 @@ import { apiClient } from "./apiClient";
  */
 export type TimingSource = "measured" | "phase" | "ordinal";
 
-export type ReplayActId = "timeline" | "time_ledger" | "gates" | "decisions";
+/** One act today — the step-through timeline. */
+export type ReplayActId = "timeline";
 
 export interface DemoArtifact {
   readonly name: string | null;
@@ -101,60 +102,7 @@ export interface DemoTimeline {
   readonly ladder: readonly LadderPhase[];
 }
 
-export interface LedgerSkill {
-  readonly skill: string | null;
-  readonly skill_display: string | null;
-  readonly status: string | null;
-  readonly seconds: number | null;
-}
-
-export interface LedgerPhase {
-  readonly phase: string;
-  readonly phase_display: string;
-  /** Measured span: first start to last completion. Includes the gaps. */
-  readonly seconds: number | null;
-  /** Summed skill durations. Excludes the gaps. */
-  readonly active_seconds: number | null;
-  readonly skill_count: number;
-  readonly skills: readonly LedgerSkill[];
-}
-
-export interface DemoLedger {
-  readonly wall_seconds: number | null;
-  readonly timing_source: TimingSource;
-  readonly phases: readonly LedgerPhase[];
-}
-
-export interface DemoGate {
-  readonly skill: string | null;
-  readonly skill_display: string | null;
-  readonly phase: string | null;
-  readonly phase_display: string | null;
-  readonly ordinal: number | null;
-  readonly status: string;
-  readonly judge: DemoJudge | null;
-  readonly qa_result: DemoQaResult | null;
-  readonly error: string | null;
-}
-
-export interface DemoDecisionRow {
-  readonly row_id?: string;
-  readonly question?: string;
-  readonly ai_default?: string;
-  readonly override?: string | null;
-  readonly status?: string;
-  readonly phase?: string;
-  readonly notes?: string;
-  readonly override_reasoning?: string | null;
-}
-
-export interface DemoDecisions {
-  readonly total: number;
-  readonly overridden_count: number;
-  readonly rows: readonly DemoDecisionRow[];
-}
-
-export type ReplayActData = DemoTimeline | DemoLedger | { gates: readonly DemoGate[] } | DemoDecisions;
+export type ReplayActData = DemoTimeline;
 
 export interface ReplayAct {
   readonly id: ReplayActId;

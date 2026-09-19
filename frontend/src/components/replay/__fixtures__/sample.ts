@@ -9,13 +9,10 @@
 import type {
   ReplayAct,
   DemoEvent,
-  DemoLedger,
   ReplayPayload,
   DemoTimeline,
   LadderPhase,
   LadderStep,
-  LedgerPhase,
-  LedgerSkill,
 } from "@/api/replay";
 
 const PHASES: ReadonlyArray<readonly [string, string, number]> = [
@@ -34,17 +31,14 @@ const FAILING_RATIONALE =
   "Deliver form asks visit outcome before the photo; a worker does that the other way round.";
 
 const events: DemoEvent[] = [];
-const ledgerPhases: LedgerPhase[] = [];
 const ladder: LadderPhase[] = [];
 
 let clock = 0;
 let seq = 0;
 
 for (const [phase, phase_display, count] of PHASES) {
-  const phaseStart = clock;
   events.push({ seq: seq++, t: clock, kind: "phase_start", phase, phase_display });
 
-  const skills: LedgerSkill[] = [];
   const rungs: LadderStep[] = [];
   for (let i = 0; i < count; i += 1) {
     const skill = `${phase.split("-")[1]}-skill-${i + 1}`;
@@ -69,11 +63,6 @@ for (const [phase, phase_display, count] of PHASES) {
       error: null,
     });
 
-    skills.push({
-      skill, skill_display,
-      status: failed ? "judge-fail" : "complete",
-      seconds,
-    });
     rungs.push({
       skill, skill_display,
       ordinal: i + 1,
@@ -96,13 +85,6 @@ for (const [phase, phase_display, count] of PHASES) {
     ordinal: ladder.length + 1,
     steps: rungs,
   });
-  ledgerPhases.push({
-    phase, phase_display,
-    seconds: clock - phaseStart,
-    active_seconds: skills.reduce((total, s) => total + (s.seconds ?? 0), 0),
-    skill_count: count,
-    skills,
-  });
   clock += 300; // gap between phases
 }
 
@@ -116,11 +98,6 @@ const timeline: DemoTimeline = {
   ladder,
 };
 
-const ledger: DemoLedger = {
-  wall_seconds: WALL_SECONDS,
-  timing_source: "measured",
-  phases: ledgerPhases,
-};
 
 export const SAMPLE: ReplayPayload = {
   schema_version: 1,
@@ -135,52 +112,9 @@ export const SAMPLE: ReplayPayload = {
     step_count: PHASES.reduce((total, [, , count]) => total + count, 0),
   },
   timing_source: "measured",
-  capabilities: { timeline: true, time_ledger: true, gates: true, decisions: true },
+  capabilities: { timeline: true },
   acts: [
     { id: "timeline", title: "The run", available: true, unavailable_reason: null, data: timeline },
-    {
-      id: "time_ledger", title: "Where the time went",
-      available: true, unavailable_reason: null, data: ledger,
-    },
-    {
-      id: "gates", title: "What it caught",
-      available: true, unavailable_reason: null,
-      data: {
-        gates: [
-          {
-            skill: FAILING_SKILL, skill_display: "CommCare setup step 5",
-            phase: "3-commcare", phase_display: "CommCare setup", ordinal: 5,
-            status: "judge-fail",
-            judge: { score: 2, passed: false, rationale: FAILING_RATIONALE },
-            qa_result: null, error: null,
-          },
-        ],
-      },
-    },
-    {
-      id: "decisions", title: "What it decided",
-      available: true, unavailable_reason: null,
-      data: {
-        total: 5,
-        overridden_count: 2,
-        rows: [
-          {
-            row_id: "d1", status: "overridden",
-            question: "Which programme archetype fits this design?",
-            ai_default: "Data collection", override: "Service delivery",
-            override_reasoning: "The partner pays per completed visit, not per form.",
-          },
-          {
-            row_id: "d2", status: "overridden",
-            question: "How much does a worker earn per verified visit?",
-            ai_default: "1.50 per visit", override: "2.10 per visit",
-          },
-          { row_id: "d3", status: "ai-default", question: "Is a photo required on every visit?", ai_default: "Yes" },
-          { row_id: "d4", status: "ai-default", question: "What is the daily visit cap per worker?", ai_default: "12" },
-          { row_id: "d5", status: "ai-default", question: "Which language does the Learn app open in?", ai_default: "English" },
-        ],
-      },
-    },
   ],
 };
 
@@ -204,21 +138,6 @@ export const PHASE_TIMED: ReplayPayload = {
             t_estimated: e.kind !== "phase_start",
             // A run that didn't stamp its steps has no per-step duration.
             duration_seconds: null,
-          })),
-        },
-      };
-    }
-    if (act.id === "time_ledger") {
-      const l = act.data as DemoLedger;
-      return {
-        ...act,
-        data: {
-          ...l,
-          timing_source: "phase" as const,
-          phases: l.phases.map((p) => ({
-            ...p,
-            active_seconds: null,
-            skills: p.skills.map((s) => ({ ...s, seconds: null })),
           })),
         },
       };
