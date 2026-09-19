@@ -8,7 +8,6 @@ from apps.opps.schemas import (
     ForkProgress,
     GateOut,
     OppCardOut,
-    OppCompareOut,
     OppForkOut,
     OppHealthOut,
     OppSnapshotOut,
@@ -1587,44 +1586,64 @@ def test_record_gate_404_unknown_opp(member_client, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Task 2.1.17 — GET /w/{ws}/opps/{slug}/compare
+# GET /w/{ws}/opps/{slug}/compare?base=&head=
 # ---------------------------------------------------------------------------
+
+_FAKE_COMPARE = {
+    "schema_version": 1,
+    "base": {"run_id": "run-001"},
+    "head": {"run_id": "run-002"},
+    "new_decisions": [{"id": "gps-capture-scope", "question": "Which outcomes capture GPS?"}],
+    "changed_decisions": [],
+    "dropped_decisions": [],
+    "new_steps": [],
+    "dropped_steps": [],
+    "steps": [],
+}
 
 
 @pytest.mark.django_db
 def test_compare_runs_happy_path(member_client, monkeypatch):
     client, _, _ = member_client
-    fake_compare = {
-        "slug": "opp-1",
-        "run_ids": ["run-001", "run-002"],
-        "snapshots": [_FAKE_SNAPSHOT_A, _FAKE_SNAPSHOT_B],
-    }
-    monkeypatch.setattr(
-        "apps.opps.api.compare_opp_runs",
-        lambda workspace, slug, run_ids: fake_compare,
-    )
-    response = client.get(
-        "/api/w/ws1/opps/opp-1/compare",
-        {"run_ids": ["run-001", "run-002"]},
-    )
+    seen = {}
+
+    def fake(workspace, slug, base, head):
+        seen.update(base=base, head=head)
+        return _FAKE_COMPARE
+
+    monkeypatch.setattr("apps.opps.api.load_run_compare", fake)
+    response = client.get("/api/w/ws1/opps/opp-1/compare?base=run-001&head=run-002")
     assert response.status_code == 200
-    result = OppCompareOut.model_validate(response.json())
-    assert len(result.snapshots) == 2
+    assert response.json()["new_decisions"][0]["id"] == "gps-capture-scope"
+    assert seen == {"base": "run-001", "head": "run-002"}
+
+
+@pytest.mark.django_db
+def test_compare_runs_404_when_a_run_is_missing(member_client, monkeypatch):
+    client, _, _ = member_client
+    monkeypatch.setattr("apps.opps.api.load_run_compare", lambda *a: None)
+    response = client.get("/api/w/ws1/opps/opp-1/compare?base=run-001&head=nope")
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_compare_runs_400_without_both_runs(member_client):
+    client, _, _ = member_client
+    assert client.get("/api/w/ws1/opps/opp-1/compare?base=run-001").status_code == 400
+
+
+@pytest.mark.django_db
+def test_compare_runs_400_same_run_twice(member_client):
+    client, _, _ = member_client
+    response = client.get("/api/w/ws1/opps/opp-1/compare?base=run-001&head=run-001")
+    assert response.status_code == 400
 
 
 @pytest.mark.django_db
 def test_compare_runs_404_non_member(non_member_client):
     client, _, _ = non_member_client
-    response = client.get("/api/w/ws1/opps/opp-1/compare?run_ids=run-001&run_ids=run-002")
+    response = client.get("/api/w/ws1/opps/opp-1/compare?base=run-001&head=run-002")
     assert response.status_code == 404
-
-
-@pytest.mark.django_db
-def test_compare_runs_400_too_few_run_ids(member_client):
-    client, _, _ = member_client
-    response = client.get("/api/w/ws1/opps/opp-1/compare?run_ids=run-001")
-    assert response.status_code == 400
-    assert response["Content-Type"].startswith("application/problem+json")
 
 
 # ---------------------------------------------------------------------------

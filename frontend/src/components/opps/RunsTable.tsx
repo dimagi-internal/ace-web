@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronRight, ExternalLink, GitCompareArrows } from "lucide-react";
+
+import { Button } from "canopy-ui/ui";
 
 import type { RunSummary } from "@/api/types.ws";
 import { RunExecutionBadge } from "@/components/opps/RunExecutionBadge";
@@ -40,6 +42,10 @@ interface Props {
    * carry only counts). Falls back to the run's own phases_total. */
   phaseCount?: number;
   dense?: boolean;
+  /** When given, each row gets a tick box and ticking two offers "Compare".
+   *  Called with the EARLIER run first, whichever order they were ticked in —
+   *  run ids are timestamps, so they sort chronologically. */
+  onCompare?: (base: string, head: string) => void;
 }
 
 /**
@@ -64,9 +70,22 @@ export function RunsTable({
   onOpenPhase,
   phaseCount,
   dense = false,
+  onCompare,
 }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
   if (!runs || runs.length === 0) return null;
+
+  const comparing = Boolean(onCompare) && runs.length > 1;
+  const cols = comparing
+    ? "20px 112px 1fr 220px 88px 20px"
+    : "112px 1fr 220px 88px 20px";
+  // Ticking a third run drops the oldest tick, so it's always "the last two".
+  const togglePick = (id: string) =>
+    setPicked((cur) =>
+      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(-2),
+    );
+  const [base, head] = [...picked].sort();
 
   const maxPhases =
     phaseCount ??
@@ -74,14 +93,44 @@ export function RunsTable({
 
   return (
     <div className="w-full">
+      {comparing && (
+        <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          {picked.length < 2 ? (
+            <span>
+              {picked.length === 0
+                ? "Tick two runs to see what the later one did differently."
+                : "Tick one more run to compare."}
+            </span>
+          ) : (
+            <>
+              <span>
+                <span className="font-mono text-foreground">{base}</span> →{" "}
+                <span className="font-mono text-foreground">{head}</span>
+              </span>
+              <Button size="sm" onClick={() => onCompare?.(base, head)}>
+                <GitCompareArrows className="mr-1.5 size-3.5" />
+                Compare these runs
+              </Button>
+              <button
+                type="button"
+                onClick={() => setPicked([])}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Clear
+              </button>
+            </>
+          )}
+        </div>
+      )}
       <div
         className={
           "grid items-center gap-3 border-b border-border px-4 text-[10px] font-medium uppercase " +
           "tracking-wider text-muted-foreground " +
           (dense ? "py-1" : "py-1.5")
         }
-        style={{ gridTemplateColumns: "112px 1fr 220px 88px 20px" }}
+        style={{ gridTemplateColumns: cols }}
       >
+        {comparing && <div />}
         <div>Run</div>
         <div>Phase 1 &rarr; {maxPhases}</div>
         <div>Last step completed</div>
@@ -102,8 +151,17 @@ export function RunsTable({
                 "grid items-center gap-3 border-b border-border/50 px-4 text-xs " +
                 "hover:bg-accent/30 " + (dense ? "py-1" : "py-1.5")
               }
-              style={{ gridTemplateColumns: "112px 1fr 220px 88px 20px" }}
+              style={{ gridTemplateColumns: cols }}
             >
+              {comparing && (
+                <input
+                  type="checkbox"
+                  checked={picked.includes(r.run_id)}
+                  onChange={() => togglePick(r.run_id)}
+                  aria-label={`Compare run ${r.run_id}`}
+                  className="size-3.5 cursor-pointer accent-primary"
+                />
+              )}
               <a
                 href={onSelect ? undefined : href}
                 onClick={(e) => {

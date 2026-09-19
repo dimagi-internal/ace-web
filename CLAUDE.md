@@ -450,6 +450,20 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `--replay-phase-1..10` at `:root`/`.dark`. Frontend:
   `frontend/src/components/replay/`. Spec + why it isn't a standalone player:
   `docs/specs/2026-09-17-ace-demo-player-design.md` (see the addenda).
+- **Run compare** (`/w/<ws>/opps/<slug>/compare?base=<run>&head=<run>`; tick two runs
+  on the Runs tab): "What the later run did differently" — new decisions, decisions
+  answered differently, new checks, then (collapsed) anything dropped and a plain
+  per-step verdict table. **Deliberately leads with what's NEW, not scores**: on
+  `hh-poverty-targeting` the run after an outside review passed FEWER of its own
+  checks (24 vs 31, +6 warn, +2 fail) because its graders got stricter — a
+  score-delta view puts a red arrow on the better run. The verdict table shows each
+  run's verdict plainly with no better/worse framing. Says WHAT changed, never WHY
+  (ACE changes for many reasons between runs). Answers are compared ignoring case,
+  spacing and trailing punctuation ("weekly" -> "Weekly" is not a change).
+  `load_run_compare` checks the loaded run id matches the requested one, because
+  the snapshot loader falls back to the latest run for an unknown id. Backend
+  `apps/opps/run_compare.py` (pure, over two cached rich snapshots). Replaced the
+  old unused multi-run `/compare?run_ids=` endpoint and `OppCompareOut`.
 - **Per-session Structure view** (page at `/w/<workspace>/chat/<slug>/structure`):
   hierarchical session tree (phase → skill → tool, with subagent recursion +
   parallel-group clusters). Computed fresh per request from

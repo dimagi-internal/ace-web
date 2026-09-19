@@ -310,7 +310,13 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** Multi-run comparison */
+        /**
+         * Compare two runs
+         * @description What the later run (``head``) did differently from the earlier (``base``).
+         *
+         *     Leads with new decisions and new checks rather than score deltas — see
+         *     apps/opps/run_compare.py for why scores alone tell the wrong story.
+         */
         readonly get: operations["apps_opps_api_compare_runs"];
         readonly put?: never;
         readonly post?: never;
@@ -2611,75 +2617,6 @@ export interface components {
             readonly decision: "approved" | "rejected";
             /** Note */
             readonly note?: string | null;
-        };
-        /**
-         * OppCompareOut
-         * @description Response for GET /w/{workspace_slug}/opps/{slug}/compare.
-         */
-        readonly OppCompareOut: {
-            /** Slug */
-            readonly slug: string;
-            /** Run Ids */
-            readonly run_ids: readonly string[];
-            /** Snapshots */
-            readonly snapshots: readonly components["schemas"]["OppSnapshotOut"][];
-        };
-        /** OppRunOut */
-        readonly OppRunOut: {
-            /** Run Id */
-            readonly run_id: string;
-            /** Label */
-            readonly label: string;
-            /**
-             * Started At
-             * Format: date-time
-             */
-            readonly started_at: string;
-            /** Finished At */
-            readonly finished_at?: string | null;
-            /** Is Active */
-            readonly is_active: boolean;
-            readonly scorecard?: components["schemas"]["ScorecardOut"] | null;
-        };
-        /** OppSnapshotOut */
-        readonly OppSnapshotOut: {
-            /** Slug */
-            readonly slug: string;
-            /** Title */
-            readonly title: string;
-            /** Runs */
-            readonly runs: readonly components["schemas"]["OppRunOut"][];
-            /** Active Run Id */
-            readonly active_run_id?: string | null;
-            /** Steps */
-            readonly steps: readonly components["schemas"]["StepSnapshotOut"][];
-            /** Pending Gates */
-            readonly pending_gates: readonly string[];
-            readonly scorecard?: components["schemas"]["ScorecardOut"] | null;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
-        };
-        /** ScorecardOut */
-        readonly ScorecardOut: {
-            /** Score */
-            readonly score: number;
-            /**
-             * Verdict
-             * @enum {string}
-             */
-            readonly verdict: "pass" | "warn" | "fail";
-            /** Rationale */
-            readonly rationale: string;
-            /** Trend */
-            readonly trend: readonly number[];
-            /**
-             * Decided At
-             * Format: date-time
-             */
-            readonly decided_at: string;
         };
         /**
          * SeededRunIn
@@ -5549,7 +5486,10 @@ export interface operations {
     };
     readonly apps_opps_api_compare_runs: {
         readonly parameters: {
-            readonly query?: never;
+            readonly query?: {
+                readonly base?: string;
+                readonly head?: string;
+            };
             readonly header?: never;
             readonly path: {
                 readonly workspace_slug: string;
@@ -5557,11 +5497,7 @@ export interface operations {
             };
             readonly cookie?: never;
         };
-        readonly requestBody?: {
-            readonly content: {
-                readonly "application/json": readonly string[] | null;
-            };
-        };
+        readonly requestBody?: never;
         readonly responses: {
             /** @description OK */
             readonly 200: {
@@ -5569,7 +5505,9 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["OppCompareOut"];
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
                 };
             };
         };
