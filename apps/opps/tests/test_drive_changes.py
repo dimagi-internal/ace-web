@@ -101,3 +101,49 @@ def test_410_expired_token_reseeds_and_returns_empty(workspace, client, monkeypa
     assert observe(workspace, client) == set()
     # Subsequent observe should now use the fresh token, not the old one.
     assert observe(workspace, client) == set()
+
+
+def test_failed_seed_is_not_retried_on_every_call(workspace, client, monkeypatch):
+    """A seed that fails backs off instead of costing every request a Drive call.
+
+    Observed on labs 2026-09-19: the service account was not a member of the
+    shared drive, so every single request re-tried the seed, 403'd, and logged.
+    """
+    attempts: list[int] = []
+
+    def _boom(drive_id=None):
+        attempts.append(1)
+        raise RuntimeError("teamDriveMembershipRequired")
+
+    monkeypatch.setattr(client, "get_changes_start_page_token", _boom)
+
+    assert observe(workspace, client) == set()
+    assert observe(workspace, client) == set()
+    assert observe(workspace, client) == set()
+    assert len(attempts) == 1
+
+
+def test_seed_retried_once_the_backoff_expires(workspace, client, monkeypatch):
+    """The backoff is a pause, not a permanent give-up — fixing access recovers."""
+    from apps.opps import drive_changes
+
+    calls: list[int] = []
+    real_start = client.get_changes_start_page_token
+
+    def _fail_first(drive_id=None):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("teamDriveMembershipRequired")
+        return real_start(drive_id=drive_id)
+
+    monkeypatch.setattr(client, "get_changes_start_page_token", _fail_first)
+
+    assert observe(workspace, client) == set()
+    cache.delete(drive_changes._seed_backoff_key(workspace.pk))  # backoff expires
+    assert observe(workspace, client) == set()
+    assert len(calls) == 2
+
+    # Seeded now, so a later change is reported normally.
+    state_id = client.file_id("ACE/alpha/run_state.yaml")
+    client.update_file(state_id, "step: b\n", "application/x-yaml")
+    assert state_id in observe(workspace, client)

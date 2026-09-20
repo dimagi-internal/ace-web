@@ -68,6 +68,11 @@ export default function RunComparePage() {
 }
 
 function Comparison({ data }: { data: RunCompare }) {
+  const [allSteps, setAllSteps] = useState(false);
+  // Most steps run identically in both runs; listing all 42 buries the few
+  // that moved. The rest stay one click away.
+  const changedSteps = useMemo(() => data.steps.filter((s) => s.changed), [data.steps]);
+  const shownSteps = allSteps ? data.steps : changedSteps;
   return (
     <>
       <header className="mb-6">
@@ -175,7 +180,7 @@ function Comparison({ data }: { data: RunCompare }) {
 
       <details className="mt-8 border-t pt-4">
         <summary className="cursor-pointer text-sm font-medium text-foreground">
-          Every step, side by side ({data.steps.length})
+          Steps whose verdict changed ({changedSteps.length} of {data.steps.length})
         </summary>
         <p className="mt-2 max-w-[70ch] text-xs text-muted-foreground">
           Each run&rsquo;s own review, as it reported it. Reviews can get stricter between
@@ -190,7 +195,7 @@ function Comparison({ data }: { data: RunCompare }) {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {data.steps.map((r) => (
+            {shownSteps.map((r) => (
               <tr key={r.skill} className={r.changed ? "" : "text-muted-foreground"}>
                 <td className="py-1.5 pr-4">
                   <div className={r.changed ? "text-foreground" : undefined}>
@@ -204,6 +209,19 @@ function Comparison({ data }: { data: RunCompare }) {
             ))}
           </tbody>
         </table>
+        {changedSteps.length < data.steps.length && (
+          <button
+            type="button"
+            onClick={() => setAllSteps((v) => !v)}
+            className="mt-3 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            {allSteps
+              ? "Show only the steps that changed"
+              : `Show all ${data.steps.length} steps, including the ${
+                  data.steps.length - changedSteps.length
+                } that ran the same`}
+          </button>
+        )}
       </details>
     </>
   );
