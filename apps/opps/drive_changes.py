@@ -26,9 +26,21 @@ log = logging.getLogger(__name__)
 
 _KEY_VERSION = "v1"
 
+# How long to stop retrying a failing seed. A seed failure caches nothing, so
+# without this every request pays another Drive round-trip to fail the same
+# way — measured on labs 2026-09-19, where the service account is not a member
+# of the shared drive the opps live in and every request logged
+# `teamDriveMembershipRequired`. Short enough that fixing the membership takes
+# effect within minutes without a deploy.
+SEED_RETRY_SECONDS = 300
+
 
 def _token_key(workspace_id: str) -> str:
     return f"drive:changes:{_KEY_VERSION}:token:ws:{workspace_id}"
+
+
+def _seed_backoff_key(workspace_id: str) -> str:
+    return f"drive:changes:{_KEY_VERSION}:seedfail:ws:{workspace_id}"
 
 
 def _drive_id_key(workspace_id: str) -> str:
@@ -77,15 +89,23 @@ def observe(workspace, client: DriveClient) -> set[str]:
 
     token = cache.get(token_key)
     if not token:
-        # First call: seed and return empty.
+        # A recent seed failed. Don't pay the round-trip again yet — a
+        # persistent failure (e.g. the service account isn't a member of the
+        # shared drive) would otherwise cost every request a Drive call and a
+        # log line, and none of them can succeed.
+        if cache.get(_seed_backoff_key(workspace.pk)):
+            return set()
         try:
             new_token = client.get_changes_start_page_token(drive_id=drive_id)
         except Exception as exc:  # noqa: BLE001
             log.warning(
-                "drive_changes: failed to seed start page token for ws=%s: %s",
-                workspace.pk, exc,
+                "drive_changes: failed to seed start page token for ws=%s "
+                "(not retrying for %ss): %s",
+                workspace.pk, SEED_RETRY_SECONDS, exc,
             )
+            cache.set(_seed_backoff_key(workspace.pk), 1, timeout=SEED_RETRY_SECONDS)
             return set()
+        cache.delete(_seed_backoff_key(workspace.pk))
         cache.set(token_key, new_token, timeout=None)
         return set()
 
