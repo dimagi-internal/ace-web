@@ -91,7 +91,7 @@ Then write per-overlay tests in `apps/opps/tests/test_freshness_overlays.py`:
 - Cache hit + new child → fresh value surfaces
 - Drive failure → cached value preserved
 - The integration test asserts ALL overlays apply on a cache hit
-- The perf-guard test asserts `len(call_count) == len(REGISTRY)` — bump the assertion if you accept additional Drive calls
+- The perf-guard test counts Drive round-trips **at the client**, not calls to the loader (see "An overlay's budget is a listing, not a loader" below)
 
 ## Implementation traps
 
@@ -110,3 +110,40 @@ Then write per-overlay tests in `apps/opps/tests/test_freshness_overlays.py`:
 - PR #494 — the one-off `_refresh_runs_summary_from_drive` helper that #495 generalized into the registry.
 - PR #495 — the registry refactor.
 - #510 / PR #511 — dropped the `OppCard.run_count` overlay; established the "registration is not free, prefer cached over overlay for N-card-per-request fields" rule.
+
+## An overlay's budget is a listing, not a loader (2026-09-19)
+
+`runs_summary` was implemented as "call `list_opp_runs` on every cache hit".
+That reads like one listing. It is **~10 uncached Drive round-trips**: the
+walk is done twice (`store.list_runs` and `_run_folders_and_states` each do
+it) and `bypass=True` means none of it is served from the TTL cache. Flat in
+the number of runs — the batching is fine — but paid on every warm request.
+It was most of an 8-9 second Workbench load, on the demo path, for months.
+
+**The perf guard did not catch it, and could not have.** It monkeypatched
+`apps.opps.sync.list_opp_runs` and asserted it was called exactly once. The
+thing being measured was replaced by a stub, so 10 round-trips read as 1. A
+budget test that mocks out the expensive call is measuring its own mock.
+
+The fix is not to make the loader faster. It's to notice that the blind spot
+is narrow: the Changes API doesn't reliably report a folder as modified when
+a **new child folder** appears inside it. Detecting that needs one listing.
+So the overlay now lists `runs/` once, compares the folder names against the
+set the cached summary was last rebuilt from, and calls the loader only when
+they differ. Steady state: 1 Drive call. The expensive path runs on the first
+request after a new run appears — exactly when it earns its cost.
+
+Two details that are load-bearing:
+
+- **Compare against a remembered SET, not against the cached summary's
+  run_ids.** A half-initialised run folder with no `run_state.yaml` is
+  skipped by `list_opp_runs`, so it never appears in the summary. Comparing
+  run_ids to folder names would differ forever and rebuild on every request —
+  reintroducing the whole cost, in the one case nobody tests.
+- **Record the marker only on a successful rebuild.** A failed rebuild must
+  not convince the next request that this folder set is already reflected in
+  the cache.
+
+Generalised rule: an overlay's job is to decide **cheaply** whether the
+expensive loader needs to run at all. If computing the fresh value needs a
+loader, the overlay is not "one listing" no matter how it reads.

@@ -89,6 +89,53 @@ def _make_snapshot(slug: str = "opp-1", runs: list | None = None):
     )
 
 
+class _FolderStub:
+    """Minimal client serving ``<opp>/runs/<run folders>``.
+
+    ``cold_load_client`` wraps this in ``CachedDriveClient(bypass=True)``,
+    whose ``list_folder`` forwards to ``list_files``. Records every folder
+    id it was asked to list so tests can count round-trips.
+    """
+
+    _inner = None
+
+    def __init__(self, run_names: list[str], *, opp_folder_id: str = "opp-folder-opp-1"):
+        self.run_names = list(run_names)
+        self.opp_folder_id = opp_folder_id
+        self.listed: list[str] = []
+
+    def list_files(self, folder_id, recursive=False, page_size=100):
+        from apps.opps.drive_client import DriveFile
+        from apps.opps.framework_reader import FOLDER_MIME
+
+        self.listed.append(folder_id)
+        if folder_id == self.opp_folder_id:
+            return [DriveFile(
+                id="runs-folder", name="runs",
+                mime_type=FOLDER_MIME, web_view_link="",
+            )]
+        if folder_id == "runs-folder":
+            return [
+                DriveFile(
+                    id=f"folder-{n}", name=n,
+                    mime_type=FOLDER_MIME, web_view_link="",
+                )
+                for n in self.run_names
+            ]
+        return []
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """The overlay remembers folder-name sets and folder ids in the cache;
+    leaking one between tests would let a later test skip its rebuild."""
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 def _make_card(slug: str = "opp-1", run_count: int = 1):
     from apps.opps.parsers import OppManifest
     from apps.opps.sync import OppCard
@@ -141,14 +188,8 @@ def test_runs_summary_overlay_surfaces_new_run(monkeypatch):
 
     monkeypatch.setattr("apps.opps.sync.list_opp_runs", _fake_list_opp_runs)
 
-    class _StubClient:
-        # cold_load_client returns CachedDriveClient wrapping this stub,
-        # but list_opp_runs is itself stubbed so the inner client is never
-        # actually invoked.
-        _inner = None
-
     apply_freshness_overlays(
-        snap, _StubClient(),
+        snap, _FolderStub(["20260515-1600", "20260517-1829"]),
         context=OverlayContext(ace_folder_id="ace-root", slug="opp-1"),
         overlays=SNAPSHOT_OVERLAYS,
     )
@@ -208,11 +249,8 @@ def test_runs_summary_overlay_drive_failure_preserves_cached(monkeypatch):
 
     monkeypatch.setattr("apps.opps.sync.list_opp_runs", _boom)
 
-    class _StubClient:
-        _inner = None
-
     apply_freshness_overlays(
-        snap, _StubClient(),
+        snap, _FolderStub(["20260515-1600", "20260517-1829"]),
         context=OverlayContext(ace_folder_id="ace-root", slug="opp-1"),
         overlays=SNAPSHOT_OVERLAYS,
     )
@@ -239,11 +277,8 @@ def test_runs_summary_overlay_empty_listing_preserves_cached(monkeypatch):
         lambda *args, **kwargs: [],
     )
 
-    class _StubClient:
-        _inner = None
-
     apply_freshness_overlays(
-        snap, _StubClient(),
+        snap, _FolderStub(["20260515-1600", "20260517-1829"]),
         context=OverlayContext(ace_folder_id="ace-root", slug="opp-1"),
         overlays=SNAPSHOT_OVERLAYS,
     )
@@ -319,8 +354,11 @@ def test_load_rich_opp_snapshot_cache_hit_applies_registry(monkeypatch, db):
         file_ids={"opp-folder-opp-1"},
     )
 
-    class _StubDrive:
-        pass
+    # Serves <opp>/runs/ so the overlay's probe listing sees the new run
+    # folder and decides a rebuild is warranted.
+    _StubDrive = lambda: _FolderStub(  # noqa: E731
+        ["20260515-1600", "20260518-1100"],
+    )
 
     monkeypatch.setattr(
         "apps.opps.access.resolve_ace_root_folder_id", lambda ws: "ace-root",
@@ -360,20 +398,131 @@ def test_load_rich_opp_snapshot_cache_hit_applies_registry(monkeypatch, db):
 # ---------------------------------------------------------------------------
 
 
-def test_apply_freshness_overlays_drive_call_count_matches_overlays(monkeypatch):
-    """Per-overlay Drive listing budget guard — no n+1 drift.
+def test_runs_summary_overlay_steady_state_is_one_listing(monkeypatch):
+    """The overlay's real budget: ONE Drive listing when nothing changed.
 
-    * ``runs_summary`` calls ``apps.opps.sync.list_opp_runs`` exactly once
-      (bypass client, one folder listing).
-    * ``saved_overrides`` (#673 PR 2) does at most two ``list_files``
-      calls (opp folder → find ``inputs/``, then ``inputs/`` itself) plus
-      one content read — through the request's 30s-TTL caching client, so
-      the steady-state per-request cost is usually zero fresh Drive calls.
-
-    If a future overlay accidentally walks deeper and lists more folders,
-    this test fails and forces the author to either justify the extra
-    call or factor it out.
+    This guard replaces one that monkeypatched ``list_opp_runs`` and
+    asserted it was called once. That measured the wrong thing — the
+    loader costs ~10 uncached Drive round-trips, so a guard that stubs it
+    out reads 10 as 1. Between 2026-05 and 2026-09 that hid the bulk of an
+    8-9 second warm Workbench load. Count round-trips at the CLIENT, and
+    make the second request the one under test: the first legitimately
+    rebuilds, every one after it should be nearly free.
     """
+    from apps.opps.freshness_overlays import (
+        SNAPSHOT_OVERLAYS,
+        OverlayContext,
+        apply_freshness_overlays,
+    )
+
+    runs = ["20260515-1600"]
+    loader_calls = {"n": 0}
+
+    def _counting_loader(*args, **kwargs):
+        loader_calls["n"] += 1
+        return [_make_run_summary("20260515-1600")]
+
+    monkeypatch.setattr("apps.opps.sync.list_opp_runs", _counting_loader)
+    client = _FolderStub(runs)
+    ctx = OverlayContext(ace_folder_id="ace-root", slug="opp-1")
+
+    apply_freshness_overlays(
+        _make_snapshot(), client, context=ctx, overlays=SNAPSHOT_OVERLAYS,
+    )
+    first_listings = len(client.listed)
+    client.listed.clear()
+
+    apply_freshness_overlays(
+        _make_snapshot(), client, context=ctx, overlays=SNAPSHOT_OVERLAYS,
+    )
+
+    assert loader_calls["n"] == 1, (
+        f"list_opp_runs ran {loader_calls['n']} times across two cache hits "
+        f"with an unchanged runs/ folder. It must run only when the set of "
+        f"run folders actually changed — it costs ~10 Drive round-trips."
+    )
+    assert client.listed.count("runs-folder") == 1, (
+        f"runs_summary cost {client.listed.count('runs-folder')} listings of "
+        f"runs/ on a steady-state cache hit {client.listed}; budget is 1."
+    )
+    assert len(client.listed) == 2, (
+        f"the whole registry cost {len(client.listed)} Drive listings "
+        f"{client.listed} on a steady-state cache hit. Budget is 2: one "
+        f"runs/ listing for runs_summary (the runs-folder id itself is "
+        f"cached after the first hit) and one opp-folder listing for "
+        f"saved_overrides. The first hit cost {first_listings}, which is "
+        f"fine — that one rebuilds."
+    )
+
+
+def test_runs_summary_overlay_rebuilds_when_a_run_folder_appears(monkeypatch):
+    """The cheap path must not blind the overlay to the thing it exists for."""
+    from apps.opps.freshness_overlays import (
+        SNAPSHOT_OVERLAYS,
+        OverlayContext,
+        apply_freshness_overlays,
+    )
+
+    known = [_make_run_summary("20260515-1600")]
+    fresh = {"rows": list(known)}
+    monkeypatch.setattr(
+        "apps.opps.sync.list_opp_runs", lambda *a, **k: list(fresh["rows"]),
+    )
+    client = _FolderStub(["20260515-1600"])
+    ctx = OverlayContext(ace_folder_id="ace-root", slug="opp-1")
+
+    snap = _make_snapshot(runs=known)
+    apply_freshness_overlays(snap, client, context=ctx, overlays=SNAPSHOT_OVERLAYS)
+
+    # Orchestration on another machine creates a new run folder.
+    client.run_names.append("20260519-0900")
+    fresh["rows"] = [_make_run_summary("20260519-0900"), *known]
+
+    snap = _make_snapshot(runs=known)
+    apply_freshness_overlays(snap, client, context=ctx, overlays=SNAPSHOT_OVERLAYS)
+
+    assert {r.run_id for r in snap.runs_summary} == {
+        "20260515-1600", "20260519-0900",
+    }
+
+
+def test_half_initialised_run_folder_does_not_rebuild_forever(monkeypatch):
+    """A run folder with no ``run_state.yaml`` never reaches runs_summary.
+
+    Comparing the listing against the cached summary's run_ids would then
+    differ on every single request and rebuild forever — the exact cost this
+    change removes. The overlay compares against the folder-name set it last
+    rebuilt from instead, which is stable.
+    """
+    from apps.opps.freshness_overlays import (
+        SNAPSHOT_OVERLAYS,
+        OverlayContext,
+        apply_freshness_overlays,
+    )
+
+    loader_calls = {"n": 0}
+
+    def _loader(*args, **kwargs):
+        loader_calls["n"] += 1
+        return [_make_run_summary("20260515-1600")]  # the half-built one is skipped
+
+    monkeypatch.setattr("apps.opps.sync.list_opp_runs", _loader)
+    client = _FolderStub(["20260515-1600", "20260520-1200-half-built"])
+    ctx = OverlayContext(ace_folder_id="ace-root", slug="opp-1")
+
+    for _ in range(4):
+        apply_freshness_overlays(
+            _make_snapshot(), client, context=ctx, overlays=SNAPSHOT_OVERLAYS,
+        )
+
+    assert loader_calls["n"] == 1
+
+
+def test_saved_overrides_overlay_listing_budget(monkeypatch):
+    """``saved_overrides`` (#673 PR 2) does at most two ``list_files`` calls
+    (opp folder → find ``inputs/``, then ``inputs/`` itself) plus one content
+    read — through the request's 30s-TTL caching client, so the steady-state
+    per-request cost is usually zero fresh Drive calls."""
     from apps.opps.freshness_overlays import (
         SNAPSHOT_OVERLAYS,
         OverlayContext,
@@ -382,14 +531,12 @@ def test_apply_freshness_overlays_drive_call_count_matches_overlays(monkeypatch)
 
     snap = _make_snapshot()
     snap.opp_folder_id = "opp-folder-1"
+    calls = {"list_files": 0}
 
-    calls = {"list_opp_runs": 0, "list_files": 0}
-
-    def _counting_list(*args, **kwargs):
-        calls["list_opp_runs"] += 1
-        return [_make_run_summary("20260518-1100")]
-
-    monkeypatch.setattr("apps.opps.sync.list_opp_runs", _counting_list)
+    monkeypatch.setattr(
+        "apps.opps.sync.list_opp_runs",
+        lambda *a, **k: [_make_run_summary("20260518-1100")],
+    )
 
     class _StubClient:
         _inner = None
@@ -404,15 +551,12 @@ def test_apply_freshness_overlays_drive_call_count_matches_overlays(monkeypatch)
         overlays=SNAPSHOT_OVERLAYS,
     )
 
-    assert calls["list_opp_runs"] == 1, (
-        f"runs_summary listing calls ({calls['list_opp_runs']}) exceeded "
-        f"its budget of 1. Either factor the extra call out or update "
-        f"this perf guard with a justification."
-    )
-    assert calls["list_files"] <= 2, (
+    # The runs_summary overlay's own probe listing is counted here too; it
+    # finds no runs/ folder on this stub and bails, which is the budget floor.
+    assert calls["list_files"] <= 3, (
         f"saved_overrides listing calls ({calls['list_files']}) exceeded "
-        f"its budget of 2. Either factor the extra call out or update "
-        f"this perf guard with a justification."
+        f"its budget. Either factor the extra call out or update this perf "
+        f"guard with a justification."
     )
 
 
