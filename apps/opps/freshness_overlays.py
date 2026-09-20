@@ -26,10 +26,18 @@ snapshot before returning. This preserves the long-lived content cache (the
 content fetches the Changes API DOES invalidate correctly remain cached and
 free) while keeping the cheap listings fresh.
 
-Cost: ``len(OVERLAYS)`` Drive folder-listing calls per cache hit. Today: 1
-overlay (``OppSnapshot.runs_summary``) = 1 extra Drive call per workbench
-**detail** request. The list view's ``OppCard``s deliberately have NO
-overlays — see "Where overlays live, and where they DON'T" below.
+Cost: one Drive folder listing per registered overlay per cache hit —
+and an overlay must hold itself to that. ``runs_summary`` did not: it called
+``list_opp_runs``, which costs ~10 uncached round-trips, on every hit. That
+was most of an 8-9 second warm Workbench load until 2026-09-19. It now does
+the one listing the blind spot actually needs and rebuilds only when the set
+of run folders changed; see ``_fetch_fresh_runs_summary``.
+
+The lesson generalises: an overlay's budget is a listing, not a loader. If
+the fresh value needs a loader to compute, the overlay's job is to decide
+CHEAPLY whether the loader needs to run at all. The list view's ``OppCard``s
+deliberately have NO overlays — see "Where overlays live, and where they
+DON'T" below.
 
 ## Where overlays live, and where they DON'T
 
@@ -89,6 +97,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from django.core.cache import cache
+
+from apps.opps.framework_reader import FOLDER_MIME
+
 log = logging.getLogger(__name__)
 
 
@@ -114,9 +126,11 @@ class FreshnessOverlay:
     Attributes:
         name: Human-readable label for logs (e.g. ``"runs_summary"``).
         fetch_fn: ``(client, snapshot, context) -> fresh_value``. Performs
-            the Drive listing(s) and returns the new field value. Should
-            do exactly one Drive folder ``list`` (the perf-guard test
-            asserts this). Returning a falsy value signals "no data" /
+            the Drive listing(s) and returns the new field value. Budget:
+            one Drive folder ``list`` in the steady state. Count the calls
+            the whole call tree makes, not the calls this function makes —
+            the perf guard used to stub the loader out and so read 10
+            round-trips as 1. Returning a falsy value signals "no data" /
             "Drive blipped" — preserves the cached value.
         apply_fn: ``(snapshot, fresh_value) -> None``. Mutates the
             snapshot in place. Called only when ``fetch_fn`` returned
@@ -161,25 +175,113 @@ class FreshnessOverlay:
 # ---------------------------------------------------------------------------
 
 
-def _fetch_fresh_runs_summary(client: Any, snapshot: Any, context: OverlayContext) -> Any:
-    """Re-list ``<opp>/runs/`` and return the fresh ``RunSummary`` list.
+# Remembers the set of run-folder names the cached ``runs_summary`` was last
+# built from, so the overlay can tell "nothing new appeared" from "a run was
+# added" with a single listing. Keyed by opp folder id; folder ids are stable
+# for the life of the folder. No TTL — a wrong answer here is impossible, the
+# worst case is a marker for an opp nobody opens again.
+_RUNS_MARKER_KEY = "opp:runs-folder-names:v1:{opp_folder_id}"
 
-    Beats the underlying ``CachedDriveClient`` TTL by wrapping the same
-    inner client in a fresh ``CachedDriveClient(..., bypass=True)`` — reads
-    go straight to Google. Without this, a sub-TTL refresh would return the
-    same stale listing the snapshot was built from.
+# Cached id of ``<opp>/runs/``. Resolving it costs two listings; the id never
+# changes, so paying that once per opp turns the steady-state overlay into a
+# single Drive call.
+_RUNS_FOLDER_ID_KEY = "opp:runs-folder-id:v1:{opp_folder_id}"
+
+
+def _resolve_runs_folder_id(fresh_client: Any, snapshot: Any, context: OverlayContext) -> str:
+    """Id of ``<opp>/runs/``, cached forever — a folder never changes id."""
+    from apps.opps.sync import _find_child_folder
+
+    opp_folder_id = getattr(snapshot, "opp_folder_id", "")
+    if opp_folder_id:
+        key = _RUNS_FOLDER_ID_KEY.format(opp_folder_id=opp_folder_id)
+        hit = cache.get(key)
+        if hit:
+            return hit
+    else:
+        key = ""
+
+    # Resolve the opp folder the long way only when the snapshot doesn't
+    # carry its id (older cached payloads).
+    if not opp_folder_id:
+        if not context.ace_folder_id or not context.slug:
+            return ""
+        opp = _find_child_folder(
+            fresh_client.list_folder(context.ace_folder_id), context.slug,
+        )
+        if opp is None:
+            return ""
+        opp_folder_id = opp.id
+        key = _RUNS_FOLDER_ID_KEY.format(opp_folder_id=opp_folder_id)
+
+    runs = _find_child_folder(fresh_client.list_folder(opp_folder_id), "runs")
+    if runs is None:
+        return ""
+    cache.set(key, runs.id, timeout=None)
+    return runs.id
+
+
+def _fetch_fresh_runs_summary(client: Any, snapshot: Any, context: OverlayContext) -> Any:
+    """Return a fresh ``RunSummary`` list, but only when ``runs/`` actually grew.
+
+    ## Why this is not simply ``list_opp_runs``
+
+    It was, and it cost ~10 uncached Drive round-trips on EVERY cache hit —
+    measured 2026-09-19 against the real client's call profile, and flat in the
+    number of runs, so the batching wasn't the problem: the walk just runs
+    twice (``store.list_runs`` and ``_run_folders_and_states`` each do it) and
+    ``bypass=True`` means none of it is served from the TTL cache. That was the
+    bulk of an 8-9 second warm Workbench load. The perf guard next door read 1,
+    because it stubs ``list_opp_runs`` out and counts the stub.
+
+    The blind spot this overlay exists for is narrow: the Changes API doesn't
+    reliably report a folder as modified when a NEW run folder is created
+    inside it. Detecting that needs one listing, not a full rebuild. So: list
+    ``runs/`` once, compare the folder names against the set the cached
+    summary was built from, and rebuild only when they differ. Steady state is
+    one Drive call; the expensive path runs on the first request after a new
+    run appears, which is exactly when it earns its cost.
+
+    Comparing against a remembered SET rather than against the cached summary's
+    run_ids matters: a half-initialised run folder with no ``run_state.yaml``
+    is skipped by ``list_opp_runs``, so it would never appear in the summary
+    and a naive comparison would rebuild on every request, forever.
+
+    Returning ``None`` means "keep the cached value", which is what the overlay
+    machinery already does for a Drive blip.
     """
     from apps.opps import snapshot_cache
     from apps.opps.sync import list_opp_runs
 
     if not context.ace_folder_id or not context.slug:
         return None
+    # Beats the underlying ``CachedDriveClient`` TTL — reads go straight to
+    # Google. Without this, a sub-TTL refresh would return the same stale
+    # listing the snapshot was built from, which is the whole point.
     fresh_client = snapshot_cache.cold_load_client(client)
-    return list_opp_runs(
+
+    runs_folder_id = _resolve_runs_folder_id(fresh_client, snapshot, context)
+    if not runs_folder_id:
+        return None  # pre-run opp, or a Drive blip — keep what's cached
+
+    names = frozenset(
+        f.name for f in fresh_client.list_folder(runs_folder_id)
+        if f.mime_type == FOLDER_MIME
+    )
+    marker_key = _RUNS_MARKER_KEY.format(opp_folder_id=runs_folder_id)
+    if cache.get(marker_key) == names:
+        return None  # nothing appeared or vanished; the cached summary stands
+
+    fresh = list_opp_runs(
         fresh_client,
         ace_root_folder_id=context.ace_folder_id,
         opp_slug=context.slug,
     )
+    # Record only on success. A failed rebuild must not convince the next
+    # request that this folder set is already reflected in the cache.
+    if fresh:
+        cache.set(marker_key, names, timeout=None)
+    return fresh
 
 
 def _apply_runs_summary(snapshot: Any, fresh: list[Any]) -> None:

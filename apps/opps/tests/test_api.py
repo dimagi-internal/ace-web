@@ -381,8 +381,31 @@ def test_load_rich_opp_snapshot_refreshes_runs_on_cache_hit(monkeypatch, db):
 
     # Stub the Drive client + access helpers so load_rich_opp_snapshot
     # takes the cache-hit branch and doesn't try to talk to real Drive.
+    # It must serve <opp>/runs/ — the overlay lists that folder first and
+    # rebuilds only when the set of run folders changed, so a client that
+    # can't list would (correctly) keep the cached runs and mask the bug
+    # this test exists to catch.
     class _StubDrive:
-        pass
+        _inner = None
+
+        def list_files(self, folder_id, recursive=False, page_size=100):
+            from apps.opps.drive_client import DriveFile
+            from apps.opps.framework_reader import FOLDER_MIME
+
+            if folder_id == "opp-folder":
+                return [DriveFile(
+                    id="runs-folder", name="runs",
+                    mime_type=FOLDER_MIME, web_view_link="",
+                )]
+            if folder_id == "runs-folder":
+                return [
+                    DriveFile(
+                        id=f"folder-{r.run_id}", name=r.run_id,
+                        mime_type=FOLDER_MIME, web_view_link="",
+                    )
+                    for r in fresh_runs
+                ]
+            return []
 
     monkeypatch.setattr(
         "apps.opps.access.resolve_ace_root_folder_id",
