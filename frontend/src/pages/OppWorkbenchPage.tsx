@@ -164,7 +164,17 @@ export default function OppWorkbenchPage() {
     const resolved =
       state.snapshot.selected_run_id ?? state.snapshot.current_run.run_id;
     if (resolved) {
-      setSearchParams({ run_id: resolved }, { replace: true });
+      // Merge, never replace: a bare object drops every other param, so a
+      // shared link like ?view=runs or ?phase=... silently landed on the
+      // default view the moment this effect pinned the run id.
+      setSearchParams(
+        (params) => {
+          const next = new URLSearchParams(params);
+          next.set("run_id", resolved);
+          return next;
+        },
+        { replace: true },
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.kind]);
