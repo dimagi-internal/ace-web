@@ -29,9 +29,12 @@ free) while keeping the cheap listings fresh.
 Cost: one Drive folder listing per registered overlay per cache hit —
 and an overlay must hold itself to that. ``runs_summary`` did not: it called
 ``list_opp_runs``, which costs ~10 uncached round-trips, on every hit. That
-was most of an 8-9 second warm Workbench load until 2026-09-19. It now does
-the one listing the blind spot actually needs and rebuilds only when the set
-of run folders changed; see ``_fetch_fresh_runs_summary``.
+It now does the one listing the blind spot actually needs and rebuilds only
+when the set of run folders changed; see ``_fetch_fresh_runs_summary``.
+(Measured before/after on labs, that took a warm request from ~390ms to
+~425ms — i.e. nowhere, within noise. The round-trips were real; they were
+never the wall clock. What people feel as a slow Workbench is the COLD load,
+3-22s depending on the opp, which this does not touch.)
 
 The lesson generalises: an overlay's budget is a listing, not a loader. If
 the fresh value needs a loader to compute, the overlay's job is to decide
@@ -230,9 +233,14 @@ def _fetch_fresh_runs_summary(client: Any, snapshot: Any, context: OverlayContex
     measured 2026-09-19 against the real client's call profile, and flat in the
     number of runs, so the batching wasn't the problem: the walk just runs
     twice (``store.list_runs`` and ``_run_folders_and_states`` each do it) and
-    ``bypass=True`` means none of it is served from the TTL cache. That was the
-    bulk of an 8-9 second warm Workbench load. The perf guard next door read 1,
-    because it stubs ``list_opp_runs`` out and counts the stub.
+    ``bypass=True`` means none of it is served from the TTL cache. The perf
+    guard next door read 1, because it stubs ``list_opp_runs`` out and counts
+    the stub — so it could never have failed.
+
+    Worth knowing before you attribute latency to this: fixing it moved a warm
+    request on labs from ~390ms to ~425ms, i.e. nowhere. Ten Drive calls from
+    inside ECS cost tens of milliseconds each. The seconds people feel are the
+    COLD load, which this path doesn't touch.
 
     The blind spot this overlay exists for is narrow: the Changes API doesn't
     reliably report a folder as modified when a NEW run folder is created

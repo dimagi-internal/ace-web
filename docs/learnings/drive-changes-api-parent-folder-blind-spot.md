@@ -118,7 +118,18 @@ That reads like one listing. It is **~10 uncached Drive round-trips**: the
 walk is done twice (`store.list_runs` and `_run_folders_and_states` each do
 it) and `bypass=True` means none of it is served from the TTL cache. Flat in
 the number of runs — the batching is fine — but paid on every warm request.
-It was most of an 8-9 second Workbench load, on the demo path, for months.
+
+**How much wall clock did that cost? Almost none — and the measurement is the
+lesson.** This was first written up as "most of an 8-9 second Workbench load".
+It wasn't. Measured on labs before and after the fix, a repeated warm request
+went ~390ms to ~425ms: no change. Ten Drive calls from inside ECS cost tens of
+milliseconds each, not seconds. The 8-9 seconds people actually feel is the
+**cold** load — 3-22s depending on the opp — which this fix does not touch.
+The wrong reading came from timing requests shortly after a deploy, when every
+request is cold, and taking "slow again and again" for "the steady state is
+slow". If you are attributing a wall-clock number to a code path, measure the
+same request before and after on the same box. A round-trip count is a good
+reason to fix something and a bad proxy for latency.
 
 **The perf guard did not catch it, and could not have.** It monkeypatched
 `apps.opps.sync.list_opp_runs` and asserted it was called exactly once. The
