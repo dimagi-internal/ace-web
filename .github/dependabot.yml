@@ -1,26 +1,44 @@
-# Watch the ONE dependency whose staleness is invisible here.
+# Keep ace-web on the NEWEST canopy SDK — automatically, not eventually.
 #
-# canopy-ui is first-party: canopy-web publishes it, ace-web consumes it at a
-# PINNED version, and canopy-web itself uses the workspace copy ("*") so it is
-# always current. That makes ace-web the only place a canopy-ui release can go
-# unnoticed — and it did, for seven months. ace-web sat on 0.6.1 while 0.7.0
-# shipped multiplayer fixes; the presence row showed you to yourself and a
-# teammate's co-edited draft rendered like placeholder text, on the deployed
-# site, with nothing anywhere reporting a version gap.
+# canopy-ui (the chat + presence kit) and canopy-client (token store / REST / WS)
+# are first-party: canopy-web publishes them, ace-web consumes them from npm,
+# and ace-web is meant to be on the latest of both at all times. Staleness here
+# is invisible — ace-web once sat on canopy-ui 0.6.1 for seven months while
+# 0.7.0 shipped multiplayer fixes; the presence row showed you to yourself and
+# a teammate's co-edited draft rendered like placeholder text, on the deployed
+# site, with nothing reporting a version gap.
 #
-# Deliberately scoped to canopy-ui alone rather than the whole npm tree. A full
-# ecosystem watch on a repo with no dependency automation at all would open a
-# wall of PRs on its first run, and the reliable outcome of that is everyone
-# ignoring the lot — including the one that matters. Widen it when someone
-# actively wants the rest.
+# The loop, end to end:
+#   1. canopy-web: merging a version bump publishes it
+#      (canopy-web/.github/workflows/publish-canopy-{ui,client}.yml).
+#   2. here: Dependabot checks DAILY and opens ONE grouped PR for both packages.
+#   3. here: .github/workflows/canopy-sdk-automerge.yml runs the frontend gate
+#      (tsc + vitest + build — not a required check in this repo) and, only if
+#      it passes, arms auto-merge; the required backend checks still gate it.
+#
+# The versions stay EXACT in package.json on purpose. With a lockfile and
+# `npm ci`, a range would not make ace-web pick up anything by itself — the
+# lockfile pins either way — and an exact pin means every version ace-web runs
+# is one its own CI has passed. "Always newest" is delivered by this loop, not
+# by loosening the pin.
+#
+# Deliberately scoped to the canopy packages rather than the whole npm tree: a
+# full ecosystem watch on a repo with no other dependency automation opens a
+# wall of PRs, and the reliable outcome is everyone ignoring the lot —
+# including the one that matters.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /frontend
     schedule:
-      interval: weekly
+      interval: daily
     allow:
       - dependency-name: canopy-ui
+      - dependency-name: canopy-client
+    groups:
+      # One PR per canopy release set, so the two can never land half-upgraded.
+      canopy-sdk:
+        patterns: [canopy-ui, canopy-client]
     commit-message:
       prefix: chore
     labels:
