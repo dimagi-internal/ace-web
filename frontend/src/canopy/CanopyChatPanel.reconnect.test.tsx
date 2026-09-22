@@ -33,6 +33,7 @@ const getCanopyTokenMock = vi.fn().mockResolvedValue("tok");
 vi.mock("./token", () => ({
   getCanopyToken: (...args: unknown[]) => getCanopyTokenMock(...args),
   peekCanopyToken: () => "tok",
+  canopyPrincipal: () => "user",
 }));
 
 vi.mock("./api", () => ({

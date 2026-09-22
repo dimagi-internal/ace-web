@@ -24,8 +24,12 @@ vi.mock("../api/apiClient", () => ({
 }));
 
 const getCanopyTokenMock = vi.fn();
+const principalMock = vi.fn(() => "user");
 vi.mock("./token", () => ({
   getCanopyToken: (...args: unknown[]) => getCanopyTokenMock(...args),
+  canopyPrincipal: () => principalMock(),
+  peekCanopyToken: () => null,
+  clearCanopyToken: () => undefined,
 }));
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -44,6 +48,8 @@ describe("canopy/api.ts", () => {
     vi.resetModules();
     postMock.mockReset();
     getCanopyTokenMock.mockReset();
+    principalMock.mockReset();
+    principalMock.mockReturnValue("user");
     fetchMock.mockReset();
     global.fetch = fetchMock as unknown as typeof global.fetch;
     getCanopyTokenMock.mockResolvedValue("tok-1");
@@ -275,5 +281,106 @@ describe("canopy/api.ts", () => {
       { id: "r-1", name: "runner-a", live_status: "online", ready: true, capabilities: { sessions: true } },
     ]);
     expect(fetchMock.mock.calls[0][0]).toBe("/canopy/api/harness/runners/");
+  });
+
+  // --- the two principals -----------------------------------------------
+  //
+  // Who canopy resolved this person to decides which ROUTES ace-web may call,
+  // and it is canopy's answer, not ours. A contact calling a user route gets a
+  // 403, not a smaller answer — so these assert the path, which is the thing
+  // that differs.
+
+  describe("a contact reaches the contact surface, and only it", () => {
+    beforeEach(() => {
+      principalMock.mockReturnValue("contact");
+    });
+
+    it("lists their own conversations, carrying the same opp filters", async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, []));
+      const { listCanopySessions } = await import("./api");
+      await listCanopySessions("https://canopy.test", {
+        opp_slug: "opp-a",
+        origin_key: "ace-web:team-a",
+        state: "active",
+      });
+      const url = String(fetchMock.mock.calls[0][0]);
+      expect(url).toContain("/api/contact/sessions?");
+      expect(url).toContain("opp_slug=opp-a");
+      expect(url).toContain("origin_key=ace-web%3Ateam-a");
+      // `state` is a user-list filter: nothing archives a contact's chat, and
+      // the contact route does not take it.
+      expect(url).not.toContain("state=");
+    });
+
+    it("maps a ContactSessionOut, telling them nothing about the fleet", async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(200, [
+          {
+            id: "s-1",
+            title: "Hello",
+            agent_slug: "ace",
+            status: "active",
+            created_at: "2026-09-22T00:00:00Z",
+            metadata: {},
+          },
+        ]),
+      );
+      const { listCanopySessions } = await import("./api");
+      const rows = await listCanopySessions("https://canopy.test");
+      expect(rows[0]).toEqual({
+        id: "s-1",
+        title: "Hello",
+        agent_slug: "ace",
+        updated_at: "2026-09-22T00:00:00Z",
+        runner_name: null,
+        runner_online: null,
+      });
+    });
+
+    it("reports 'maybe more history', because their detail carries no cursor", async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(200, {
+          id: "s-1", title: "t", agent_slug: "ace", status: "active",
+          created_at: "2026-09-22T00:00:00Z", metadata: {},
+        }),
+      );
+      const { getCanopySession } = await import("./api");
+      const detail = await getCanopySession("https://canopy.test", "s-1");
+      expect(String(fetchMock.mock.calls[0][0])).toContain("/api/contact/sessions/s-1");
+      expect(detail.has_more_before).toBe(true);
+      expect(detail.oldest_loaded_turn_index).toBeNull();
+    });
+
+    it("scrolls back, attaches and detaches on their own routes", async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { messages: [] }));
+      const api = await import("./api");
+      await api.fetchOlderMessages("https://canopy.test", "s-1", 4);
+      await api.attachCanopySession("https://canopy.test", "s-1");
+      await api.detachCanopySession("https://canopy.test", "s-1");
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+      expect(urls[0]).toContain("/api/contact/sessions/s-1/messages?before=4");
+      expect(urls[1]).toContain("/api/contact/sessions/s-1/attach");
+      expect(urls[2]).toContain("/api/contact/sessions/s-1/detach");
+      expect(urls.some((u) => u.includes("/api/canopy-sessions"))).toBe(false);
+    });
+
+    it("sends over HTTP, because their socket only listens", async () => {
+      fetchMock.mockResolvedValue(jsonResponse(200, { turn_id: "t-1" }));
+      const { sendCanopyMessage } = await import("./api");
+      await sendCanopyMessage("https://canopy.test", "s-1", "hi");
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(String(url)).toContain("/api/contact/sessions/s-1/send");
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(String(init.body))).toEqual({ text: "hi" });
+    });
+  });
+
+  it("a user keeps the user routes", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, []));
+    const { listCanopySessions } = await import("./api");
+    await listCanopySessions("https://canopy.test", { state: "active" });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("/api/canopy-sessions/?");
+    expect(url).toContain("state=active");
   });
 });

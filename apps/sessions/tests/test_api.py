@@ -704,11 +704,11 @@ def test_resume_interrupted_relaunches_graceful_cancel(member_client, monkeypatc
 # ---------------------------------------------------------------------------
 
 # Production's canopy wiring WITH the flag on. `config.settings.test` leaves
-# CANOPY_BASE_URL and CANOPY_APP_CREDENTIAL empty, and run_dispatch.enabled()
+# CANOPY_BASE_URL and CANOPY_SIGNING_KEY empty, and run_dispatch.enabled()
 # is an `and` chain that short-circuits on those BEFORE it reads the flag — so
 # a test that does not set them says nothing about the flag.
 _CANOPY_ON = dict(
-    CANOPY_BASE_URL="http://canopy.test", CANOPY_APP_CREDENTIAL="c",
+    CANOPY_BASE_URL="http://canopy.test", CANOPY_SIGNING_KEY="test-key",
     CANOPY_WORKSPACE="connect", CANOPY_AGENT_SLUG="ace", CANOPY_RUN_EXECUTION=True,
 )
 _CANOPY_CONFIGURED_BUT_UNFLAGGED = {
@@ -801,9 +801,9 @@ def test_resume_interrupted_does_not_redispatch_a_run_canopy_still_owns(
     )
     rows = [{"turn_id": "turn-1", "kind": "config", "reason": "no runner can take this session"}]
     with (
-        mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}),
-        mock.patch("apps.canopy.client.get_turn", return_value={"status": "queued"}),
-        mock.patch("apps.canopy.client.list_unclaimable", return_value=rows),
+        mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}),
+        mock.patch("apps.canopy.client.Principal.get_turn", return_value={"status": "queued"}),
+        mock.patch("apps.canopy.client.Principal.list_unclaimable", return_value=rows),
     ):
         resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
 
@@ -835,9 +835,9 @@ def test_resume_interrupted_still_resumes_a_run_whose_canopy_turn_died(
         "apps.canopy.run_dispatch.start_turn", lambda mid: dispatched.append(mid),
     )
     with (
-        mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}),
+        mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}),
         mock.patch(
-            "apps.canopy.client.get_turn",
+            "apps.canopy.client.Principal.get_turn",
             return_value={"status": "failed", "result_note": "boom"},
         ),
     ):
@@ -864,7 +864,7 @@ def test_resume_interrupted_does_not_resume_on_an_unreachable_canopy(
         "apps.canopy.run_dispatch.start_turn", lambda mid: dispatched.append(mid),
     )
     with mock.patch(
-        "apps.canopy.client.exchange_token", side_effect=CanopyError(502, "down"),
+        "apps.canopy.client.visitor_token", side_effect=CanopyError(502, "down"),
     ):
         resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
     assert dispatched == []
@@ -882,14 +882,14 @@ def test_resume_interrupted_consults_canopy_only_when_the_flag_is_on(
 
     from django.conf import settings
 
-    assert settings.CANOPY_BASE_URL and settings.CANOPY_APP_CREDENTIAL
+    assert settings.CANOPY_BASE_URL and settings.CANOPY_SIGNING_KEY
     client, workspace, user = member_client
     _make_canopy_dispatched(workspace, user, opp_run_id="20260604-0007")
     dispatched = []
     monkeypatch.setattr(
         "apps.canopy.run_dispatch.start_turn", lambda mid: dispatched.append(mid),
     )
-    with mock.patch("apps.canopy.client.exchange_token") as ex:
+    with mock.patch("apps.canopy.client.visitor_token") as ex:
         resp = client.post(f"/api/w/{workspace.slug}/sessions/resume-interrupted")
     ex.assert_not_called()
     assert resp.json()["count"] == 1
@@ -1125,7 +1125,7 @@ def test_structure_never_reaches_canopy_with_the_flag_off(member_client):
 
     from apps.sessions.models import IngestUpload, Message
 
-    assert settings.CANOPY_BASE_URL and settings.CANOPY_APP_CREDENTIAL
+    assert settings.CANOPY_BASE_URL and settings.CANOPY_SIGNING_KEY
     client, workspace, user = member_client
     session = _session_in(workspace, user)
     # A turn id present without a session id is the shape that would tempt a
@@ -1139,7 +1139,7 @@ def test_structure_never_reaches_canopy_with_the_flag_off(member_client):
         session=session, uploaded_by=user, raw_jsonl_gz=gzip.compress(_STRUCT_LINE),
         content_sha256="abc123",
     )
-    with mock.patch("apps.canopy.client.exchange_token") as ex:
+    with mock.patch("apps.canopy.client.visitor_token") as ex:
         resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
     ex.assert_not_called()
     assert resp.status_code == 200
@@ -1166,7 +1166,7 @@ def test_structure_of_a_hybrid_session_covers_its_local_phases_too(member_client
         session=session, turn_index=9, role="assistant", content={"text": ""},
         status="complete", canopy_turn_id="turn-a",
     )
-    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=b""):
         resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
     assert resp.status_code == 200
@@ -1189,7 +1189,7 @@ def test_structure_says_canopy_was_unreachable_rather_than_never_recorded(member
         session=session, turn_index=1, role="assistant", content={"text": ""},
         status="complete", canopy_turn_id="turn-a",
     )
-    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(502, "x")):
+    with mock.patch("apps.canopy.client.visitor_token", side_effect=CanopyError(502, "x")):
         resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
     assert resp.json()["unavailable_reason"] == "canopy-unreachable"
 

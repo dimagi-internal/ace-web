@@ -7,7 +7,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 
-from apps.canopy import run_dispatch
+from apps.canopy import client, run_dispatch
 from apps.sessions.models import Message, Session
 
 User = get_user_model()
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.django_db
 
 ON = dict(
     CANOPY_BASE_URL="http://canopy.test",
-    CANOPY_APP_CREDENTIAL="secret-cred",
+    CANOPY_SIGNING_KEY="test-key",
     CANOPY_WORKSPACE="connect",
     CANOPY_AGENT_SLUG="ace",
     CANOPY_RUN_EXECUTION=True,
@@ -26,7 +26,7 @@ ON = dict(
 # NOT overridden so the real settings default is what governs.
 #
 # This is load-bearing. `config.settings.test` leaves CANOPY_BASE_URL and
-# CANOPY_APP_CREDENTIAL empty, so `enabled()` short-circuits on those before it
+# CANOPY_SIGNING_KEY empty, so `enabled()` short-circuits on those before it
 # ever reads the flag — under bare test settings the off-path tests below pass
 # whether the flag defaults True or False, which makes them mute about the one
 # property they exist to protect. In production both are populated and the flag
@@ -51,15 +51,15 @@ def _run(**kw):
     return session, assistant
 
 
-def _patched(send_return=None):
+def _patched(send_return=None, kind="user"):
     return (
-        mock.patch("apps.canopy.client.exchange_token", return_value={"token": "usertok"}),
-        mock.patch("apps.canopy.client.create_run_session", return_value={"id": "sess-9"}),
-        mock.patch(
-            "apps.canopy.client.send_message",
+        mock.patch("apps.canopy.client.visitor_token", return_value={"token": "usertok", "kind": kind}),
+        mock.patch.object(client.Principal, "create_session", return_value={"id": "sess-9"}),
+        mock.patch.object(
+            client.Principal, "send",
             return_value=send_return or {"turn_id": "turn-9", "message": {}},
         ),
-        mock.patch("apps.canopy.client.stop_session", return_value={"cancelled": False}),
+        mock.patch.object(client.Principal, "stop", return_value={"cancelled": False}),
     )
 
 
@@ -67,7 +67,7 @@ def _patched(send_return=None):
 def test_disabled_by_default_is_a_noop():
     """Fully wired to canopy, flag left at its settings default: still a no-op."""
     session, assistant = _run()
-    assert settings.CANOPY_BASE_URL and settings.CANOPY_APP_CREDENTIAL  # flag is the only guard
+    assert settings.CANOPY_BASE_URL and settings.CANOPY_SIGNING_KEY  # flag is the only guard
     assert run_dispatch.enabled() is False
     assert run_dispatch.dispatch_turn(assistant.id) == ""
     session.refresh_from_db()
@@ -96,7 +96,7 @@ def test_reuses_the_existing_canopy_session_and_stops_its_stale_turn():
         run_dispatch.dispatch_turn(assistant.id)
     create_m.assert_not_called()
     stop_m.assert_called_once()
-    assert send_m.call_args.args[1] == "sess-existing"
+    assert send_m.call_args.args[0] == "sess-existing"
 
 
 @override_settings(**ON)
@@ -126,7 +126,7 @@ def test_dispatch_failure_marks_the_message_error_and_raises():
     from apps.canopy.client import CanopyError
 
     session, assistant = _run()
-    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(403, "nope")):
+    with mock.patch("apps.canopy.client.visitor_token", side_effect=CanopyError(403, "nope")):
         with pytest.raises(run_dispatch.DispatchError):
             run_dispatch.dispatch_turn(assistant.id)
     assistant.refresh_from_db()
@@ -148,7 +148,7 @@ def test_a_null_turn_id_from_canopy_is_a_dispatch_failure():
 @override_settings(**CONFIGURED_BUT_UNFLAGGED)
 def test_start_turn_spawns_the_subprocess_when_disabled():
     session, assistant = _run()
-    assert settings.CANOPY_BASE_URL and settings.CANOPY_APP_CREDENTIAL  # flag is the only guard
+    assert settings.CANOPY_BASE_URL and settings.CANOPY_SIGNING_KEY  # flag is the only guard
     with mock.patch("apps.sessions.turn_driver.start_turn_subprocess") as spawn:
         run_dispatch.start_turn(assistant.id)
     spawn.assert_called_once_with(assistant.id)
@@ -175,7 +175,7 @@ def test_start_turn_makes_no_outbound_canopy_call_when_disabled():
     at its settings default, so a flipped default reaches the network and fails.
     """
     session, assistant = _run()
-    assert settings.CANOPY_BASE_URL and settings.CANOPY_APP_CREDENTIAL  # flag is the only guard
+    assert settings.CANOPY_BASE_URL and settings.CANOPY_SIGNING_KEY  # flag is the only guard
     with mock.patch(
         "apps.canopy.client.urllib.request.urlopen",
         side_effect=AssertionError("canopy must not be called with the flag off"),
@@ -212,8 +212,45 @@ def test_a_failed_dispatch_does_not_stamp_the_heartbeat():
     from apps.canopy.client import CanopyError
 
     session, assistant = _run()
-    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(403, "nope")):
+    with mock.patch("apps.canopy.client.visitor_token", side_effect=CanopyError(403, "nope")):
         with pytest.raises(run_dispatch.DispatchError):
             run_dispatch.dispatch_turn(assistant.pk)
     session.refresh_from_db()
     assert session.driver_heartbeat_at is None
+
+
+@override_settings(**ON)
+def test_a_run_acts_as_its_owner_never_a_stand_in():
+    """ace-web carries out the owner's command, so canopy is asked for THAT
+    person — their account, or their contact — and nobody else."""
+    session, assistant = _run()
+    ex, create, send, stop = _patched()
+    with ex as vouch, create, send, stop:
+        run_dispatch.dispatch_turn(assistant.id)
+    vouch.assert_called_once_with("runner@dimagi.com")
+
+
+@override_settings(**ON)
+def test_an_owner_who_is_a_contact_runs_on_the_contact_surface():
+    session, assistant = _run()
+    with mock.patch("apps.canopy.client.visitor_token",
+                    return_value={"token": "ctok", "kind": "contact"}), \
+         mock.patch("apps.canopy.client.create_contact_session", return_value={"id": "sess-c"}) as cc, \
+         mock.patch("apps.canopy.client.create_run_session") as cr, \
+         mock.patch("apps.canopy.client._post", return_value={"turn_id": "turn-c"}) as post:
+        assert run_dispatch.dispatch_turn(assistant.id) == "turn-c"
+    cr.assert_not_called()
+    assert cc.call_args.args[0] == "ctok"
+    assert post.call_args.args[0] == "/api/contact/sessions/sess-c/send"
+
+
+@override_settings(**ON)
+def test_an_owner_with_no_email_is_refused_not_attributed_to_someone_else():
+    session, assistant = _run()
+    User.objects.filter(pk=session.owner_id).update(email="")
+    with mock.patch("apps.canopy.client.visitor_token") as vouch:
+        with pytest.raises(run_dispatch.DispatchError):
+            run_dispatch.dispatch_turn(assistant.id)
+    vouch.assert_not_called()
+    assistant.refresh_from_db()
+    assert assistant.status == "error"

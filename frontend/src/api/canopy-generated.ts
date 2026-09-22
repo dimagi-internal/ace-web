@@ -140,6 +140,124 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/canopy/api/contact/sessions": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * My conversations on this site
+         * @description The same host filters a user's list takes, over the contact's OWN
+         *     conversations only — a filter narrows, it never widens what `contact_session_q`
+         *     already allows.
+         */
+        readonly get: operations["apps_tokens_contact_api_list_sessions"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/canopy/api/contact/sessions/{session_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** One of my conversations */
+        readonly get: operations["apps_tokens_contact_api_get_session"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/canopy/api/contact/sessions/{session_id}/messages": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Earlier messages
+         * @description The SAME page a user's scroll-back returns (`MessagePageOut`), so a chat UI
+         *     renders a contact's conversation with the one renderer it already has.
+         *
+         *     (It used to hand-build rows from `m.body`, a field `Message` does not have —
+         *     every call on a conversation with a message in it was a 500.)
+         */
+        readonly get: operations["apps_tokens_contact_api_messages"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/canopy/api/contact/sessions/{session_id}/send": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Say something */
+        readonly post: operations["apps_tokens_contact_api_send"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/canopy/api/contact/sessions/{session_id}/attach": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * I am watching this conversation (stream it live)
+         * @description The same viewer signal a user's chat sends, so a contact watching their
+         *     own conversation sees the agent's reply as it is written, not when it lands.
+         */
+        readonly post: operations["apps_tokens_contact_api_attach"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/canopy/api/contact/sessions/{session_id}/detach": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** I stopped watching */
+        readonly post: operations["apps_tokens_contact_api_detach"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/canopy/api/harness/runners/": {
         readonly parameters: {
             readonly query?: never;
@@ -225,6 +343,64 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ContactSessionOut */
+        readonly ContactSessionOut: {
+            /** Id */
+            readonly id: string;
+            /** Agent Slug */
+            readonly agent_slug: string | null;
+            /** Title */
+            readonly title: string;
+            /** Status */
+            readonly status: string;
+            /** Created At */
+            readonly created_at: string;
+            /**
+             * Metadata
+             * @default {}
+             */
+            readonly metadata: {
+                readonly [key: string]: unknown;
+            };
+        };
+        /** ContactSendIn */
+        readonly ContactSendIn: {
+            /** Text */
+            readonly text: string;
+            /**
+             * Client Id
+             * @default
+             */
+            readonly client_id: string;
+        };
+        /** MessageOut */
+        readonly MessageOut: {
+            /** Turn Index */
+            readonly turn_index: number;
+            /** Role */
+            readonly role: string;
+            /** Plaintext */
+            readonly plaintext: string;
+            /** Content */
+            readonly content: {
+                readonly [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+        };
+        /**
+         * MessagePageOut
+         * @description One backward page of transcript for scroll-back ("Load earlier").
+         */
+        readonly MessagePageOut: {
+            /** Messages */
+            readonly messages: readonly components["schemas"]["MessageOut"][];
+            /** Has More Before */
+            readonly has_more_before: boolean;
+        };
         /** SessionDetailOut */
         readonly SessionDetailOut: {
             /**
@@ -285,10 +461,19 @@ export interface components {
              * @default false
              */
             readonly waiting_on_you: boolean;
+            /**
+             * Notify Every Completion
+             * @default false
+             */
+            readonly notify_every_completion: boolean;
             /** Messages */
             readonly messages: readonly components["schemas"]["MessageOut"][];
             /** Menu */
             readonly menu?: {
+                readonly [key: string]: unknown;
+            } | null;
+            /** Turn Status */
+            readonly turn_status?: {
                 readonly [key: string]: unknown;
             } | null;
             /**
@@ -314,6 +499,26 @@ export interface components {
             readonly pending: number;
             /** Last Finished At */
             readonly last_finished_at: string | null;
+        };
+        /**
+         * HealthCheck
+         * @description One feature a runner checked on itself. `warn` is "works, but a person
+         *     should know" (one Claude credential, no fallback); `fail` is "this feature
+         *     is off" (a package that did not import, so no transcripts).
+         */
+        readonly HealthCheck: {
+            /** Name */
+            readonly name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            readonly status: "ok" | "warn" | "fail";
+            /**
+             * Detail
+             * @default
+             */
+            readonly detail: string;
         };
         /** RunnerOut */
         readonly RunnerOut: {
@@ -375,6 +580,43 @@ export interface components {
              */
             readonly can_administer: boolean;
             readonly drill_rollup?: components["schemas"]["DrillRollup"] | null;
+            /** Health Checks */
+            readonly health_checks?: {
+                readonly [key: string]: components["schemas"]["HealthCheck"];
+            } | null;
+            /** Health Received At */
+            readonly health_received_at?: string | null;
+            /** Health Bootstrapped At */
+            readonly health_bootstrapped_at?: number | null;
+            /** Refresh Requested At */
+            readonly refresh_requested_at?: string | null;
+            /** Refresh Pending */
+            readonly refresh_pending?: boolean | null;
+        };
+        /**
+         * InitiatorOut
+         * @description Who asked for this turn, and how that was established.
+         */
+        readonly InitiatorOut: {
+            /** Kind */
+            readonly kind: string;
+            /** Via */
+            readonly via: string;
+            /** Assurance */
+            readonly assurance: string;
+            readonly user?: components["schemas"]["InitiatorPersonOut"] | null;
+            readonly contact?: components["schemas"]["InitiatorPersonOut"] | null;
+            /** Agent */
+            readonly agent?: string | null;
+        };
+        /** InitiatorPersonOut */
+        readonly InitiatorPersonOut: {
+            /** Id */
+            readonly id: number;
+            /** Email */
+            readonly email: string;
+            /** Name */
+            readonly name: string;
         };
         /** TurnOut */
         readonly TurnOut: {
@@ -407,6 +649,7 @@ export interface components {
             readonly claimed_by_name: string | null;
             /** Enqueued By Email */
             readonly enqueued_by_email: string | null;
+            readonly initiator: components["schemas"]["InitiatorOut"];
             /** Session Id */
             readonly session_id: string;
             /** Result Note */
@@ -530,34 +773,11 @@ export interface components {
              * @default false
              */
             readonly waiting_on_you: boolean;
-        };
-        /** MessageOut */
-        readonly MessageOut: {
-            /** Turn Index */
-            readonly turn_index: number;
-            /** Role */
-            readonly role: string;
-            /** Plaintext */
-            readonly plaintext: string;
-            /** Content */
-            readonly content: {
-                readonly [key: string]: unknown;
-            };
             /**
-             * Created At
-             * Format: date-time
+             * Notify Every Completion
+             * @default false
              */
-            readonly created_at: string;
-        };
-        /**
-         * MessagePageOut
-         * @description One backward page of transcript for scroll-back ("Load earlier").
-         */
-        readonly MessagePageOut: {
-            /** Messages */
-            readonly messages: readonly components["schemas"]["MessageOut"][];
-            /** Has More Before */
-            readonly has_more_before: boolean;
+            readonly notify_every_completion: boolean;
         };
         /**
          * TurnOutMinimal
@@ -812,6 +1032,156 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["PageStateOut"];
+                };
+            };
+        };
+    };
+    readonly apps_tokens_contact_api_list_sessions: {
+        readonly parameters: {
+            readonly query?: {
+                readonly source?: string;
+                readonly origin_key?: string;
+                readonly opp_slug?: string;
+                readonly opp_run_id?: string;
+                readonly resource?: string;
+                readonly page_path?: string;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": readonly components["schemas"]["ContactSessionOut"][];
+                };
+            };
+        };
+    };
+    readonly apps_tokens_contact_api_get_session: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly session_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ContactSessionOut"];
+                };
+            };
+        };
+    };
+    readonly apps_tokens_contact_api_messages: {
+        readonly parameters: {
+            readonly query: {
+                readonly before: number;
+                readonly limit?: number;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly session_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["MessagePageOut"];
+                };
+            };
+        };
+    };
+    readonly apps_tokens_contact_api_send: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly session_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ContactSendIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    readonly apps_tokens_contact_api_attach: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly session_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    readonly apps_tokens_contact_api_detach: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly session_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
                 };
             };
         };

@@ -1,6 +1,6 @@
 import { createRest, type CanopyRest, type TokenStore } from "canopy-client";
 
-import { clearCanopyToken, getCanopyToken, peekCanopyToken } from "./token";
+import { canopyPrincipal, clearCanopyToken, getCanopyToken, peekCanopyToken } from "./token";
 
 /**
  * Browser → canopy-web transport, from `canopy-client`.
@@ -72,6 +72,7 @@ const tokens: TokenStore = {
   // thing it was written to read.
   get: (force) => (force ? getCanopyToken(true) : getCanopyToken()),
   peek: () => peekCanopyToken(),
+  principal: () => canopyPrincipal(),
   clear: () => clearCanopyToken(),
 };
 

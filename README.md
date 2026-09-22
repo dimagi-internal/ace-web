@@ -124,7 +124,7 @@ set automatically by `config/settings/development.py`):
    folder shared with the configured service account if you want Drive
    features to work; otherwise opps will be empty.
 3. Chat is canopy-hosted, so trying it locally needs a local canopy-web
-   checkout running plus a `CANOPY_APP_CREDENTIAL` (see `CLAUDE.md`'s
+   checkout running plus a `CANOPY_SIGNING_KEY` (see `CLAUDE.md`'s
    "Chat is canopy-hosted, full stop" section) — without one,
    `GET /api/canopy/status` reports `enabled: false` and the chat surfaces
    show "chat is unreachable" rather than a dead page. `FakeCLIBackend`

@@ -11693,6 +11693,11 @@
           "expires_at": {
             "title": "Expires At",
             "type": "string"
+          },
+          "kind": {
+            "default": "user",
+            "title": "Kind",
+            "type": "string"
           }
         },
         "required": [

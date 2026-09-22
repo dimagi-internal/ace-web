@@ -153,6 +153,8 @@ Resources:
               Value: "us-east-1"
             - Name: CANOPY_AGENT_SLUG
               Value: "ace"
+            - Name: CANOPY_APP_NAME
+              Value: "ace-web"
             - Name: CANOPY_BASE_URL
               Value: "https://labs.connect.dimagi.com/canopy"
             - Name: CANOPY_PUBLIC_BASE_URL
@@ -188,8 +190,14 @@ Resources:
               ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/field-encryption-key-D40eTj"
             - Name: ANTHROPIC_API_KEY
               ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-anthropic-api-key-x6p0ij"
-            - Name: CANOPY_APP_CREDENTIAL
-              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/canopy-app-credential-cbuXNb"
+            # ace-web's Ed25519 private key. It signs a 60-second assertion
+            # naming the person whose command we are carrying out; canopy holds
+            # only the public half, on its `ace-web` Connected site. Replaced
+            # CANOPY_APP_CREDENTIAL, a shared secret that let ace-web mint a
+            # token for anyone in its allowed domains — and created the canopy
+            # user as a side effect.
+            - Name: CANOPY_SIGNING_KEY
+              ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:ace-web/canopy-signing-key-46JCHb"
             - Name: CONNECT_OAUTH_CLIENT_ID
               ValueFrom: "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ace-web-connect-oauth-client-id-jzsNCM"
             - Name: CONNECT_OAUTH_CLIENT_SECRET

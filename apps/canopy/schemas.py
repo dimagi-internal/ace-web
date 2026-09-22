@@ -28,6 +28,9 @@ class CanopyTokenOut(StrictModel):
 
     token: str
     expires_at: str
+    #: "user" (a canopy account, arriving as themselves) or "contact" (no canopy
+    #: account). canopy-client routes every call by it.
+    kind: str = "user"
 
 
 class CanopySessionCreateIn(StrictModel):

@@ -5,6 +5,7 @@ import {
   declareCanopyPageState,
   type CanopyPageState,
 } from "./api";
+import { canopyPrincipal } from "./token";
 
 /**
  * Keep canopy told what this surface is currently showing.
@@ -62,6 +63,11 @@ export function useCanopyPageState(
 
   useEffect(() => {
     if (!base || !sessionId || !serialised) return;
+    // Page state is a user's surface; the contact routes carry no
+    // `page-state`. Declaring it would 404 on every selection change and, as a
+    // 404 reads as transient here, retry forever. A contact's agent simply
+    // hears what they type instead of what they are looking at.
+    if (canopyPrincipal() === "contact") return;
 
     if (sentFor.current !== sessionId) {
       sentFor.current = sessionId;

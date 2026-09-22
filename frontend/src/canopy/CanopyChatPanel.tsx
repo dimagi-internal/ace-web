@@ -20,9 +20,10 @@ import {
   getCanopySession,
   listCanopyRunners,
   placeCanopySession,
+  sendCanopyMessage,
   type CanopyRunnerSummary,
 } from "./api";
-import { getCanopyToken } from "./token";
+import { canopyPrincipal, getCanopyToken } from "./token";
 import { useCanopyStatus } from "./useCanopyStatus";
 import { buildCanopyWsUrl } from "./ws";
 
@@ -226,11 +227,22 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
   // frames its reducer has always consumed, and proves the two reach identical
   // state; `buildCanopyWsUrl` ignoring the path it is handed is fine, because
   // the kit adds the protocol flag to the URL this builder RETURNS.
+  // A contact joins the socket as a LISTENER — canopy refuses a send it cannot
+  // attribute to a user id — so their message goes over REST and the reply
+  // streams back on the socket they already hold. The kit owns the difference
+  // (`sendOverHttp`, canopy-ui 0.11): the line appears and the wait begins
+  // before the round trip, as a member's does, and `onSend` stays one callback.
+  const asContact = canopyPrincipal() === "contact";
+  const sendOverHttp = useCallback(
+    (text: string) => sendCanopyMessage(base, sessionId, text),
+    [base, sessionId],
+  );
   const socket = useSessionSocket({
     sessionId,
     wsUrl,
     onTitleUpdated: handleTitleUpdated,
     protocol: "ag-ui",
+    sendOverHttp: asContact ? sendOverHttp : undefined,
   });
 
   // Viewer-liveness pair: tells the bound runner to start/stop streaming
@@ -299,12 +311,16 @@ function CanopyChatPanelBody({ sessionId, base, onTitleUpdated }: BodyProps) {
   // for a delegated user (see the function's own doc comment). Fetched
   // once; not part of offline detection.
   const refreshFleet = useCallback(() => {
+    // Not a contact's question. `/api/harness/runners/` is outside the contact
+    // surface entirely, so asking would be a guaranteed 403 — and which of our
+    // boxes runs their conversation is not something they are told.
+    if (asContact) return;
     listCanopyRunners(base)
       .then((r) => setFleetRunners(r))
       .catch(() => {
         /* non-fatal: keep the last-known fleet snapshot */
       });
-  }, [base]);
+  }, [base, asContact]);
 
   useEffect(() => {
     refreshFleet();

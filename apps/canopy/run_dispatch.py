@@ -35,22 +35,19 @@ def enabled() -> bool:
     return bool(
         settings.CANOPY_RUN_EXECUTION
         and settings.CANOPY_BASE_URL
-        and settings.CANOPY_APP_CREDENTIAL
+        and settings.CANOPY_SIGNING_KEY
     )
 
 
-def _actor_email(session) -> str:
-    """Whose canopy identity this run acts as. The owner, or the configured
-    fallback — never a guess. canopy's token-exchange 403s an email outside the
-    app credential's allowed_delegation_domains, and ace-web has no domain
-    filter of its own, so a refusal here is a real and reachable case."""
+def actor_email(session) -> str:
+    """The person this run is FOR — its owner, whose command ace-web is carrying
+    out. canopy resolves them to their account or their contact; there is no
+    fallback identity, because a run attributed to someone else is a run that
+    lies about who asked. No owner, no run."""
     email = (getattr(session.owner, "email", "") or "").strip()
-    if email:
-        return email
-    fallback = (settings.CANOPY_RUN_ACTOR_FALLBACK_EMAIL or "").strip()
-    if fallback:
-        return fallback
-    raise DispatchError("no canopy actor: session owner has no email and no fallback is set")
+    if not email:
+        raise DispatchError("this run has no owner to act for")
+    return email
 
 
 def _run_metadata(session) -> dict:
@@ -122,7 +119,7 @@ def dispatch_turn(assistant_message_id: int) -> str:
     session = assistant.session
 
     try:
-        token = client.exchange_token(_actor_email(session), ttl=3600)["token"]
+        person = client.act_as(actor_email(session))
 
         canopy_session_id = session.canopy_session_id
         if canopy_session_id:
@@ -130,20 +127,18 @@ def dispatch_turn(assistant_message_id: int) -> str:
             # turn keeps holding one_executing_turn_per_session and this send
             # queues behind a turn that will never finish.
             try:
-                client.stop_session(token, canopy_session_id)
+                person.stop(canopy_session_id)
             except client.CanopyError:
                 log.warning("canopy stop failed for session %s; continuing", canopy_session_id)
         else:
-            created = client.create_run_session(
-                token,
+            created = person.create_session(
                 title=session.title or f"ace-run: {session.opp_slug}/{session.opp_run_id}",
                 metadata=_run_metadata(session),
             )
             canopy_session_id = str(created["id"])
             Session.objects.filter(pk=session.pk).update(canopy_session_id=canopy_session_id)
 
-        sent = client.send_message(
-            token,
+        sent = person.send(
             canopy_session_id,
             text=_prompt_for(assistant),
             client_id=f"acerun:{assistant.pk}",

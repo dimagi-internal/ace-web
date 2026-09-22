@@ -28,6 +28,7 @@ dependencies = [
     "fastmcp>=3.2,<4",
     "python-json-logger>=2.0",
     "canopy-agent-runs",
+    "pyjwt[crypto]>=2.8",
 ]
 
 # The Django-free run-lifecycle core (read model + DriveRunStore) lives in the

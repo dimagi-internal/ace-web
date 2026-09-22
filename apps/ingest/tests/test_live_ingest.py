@@ -238,7 +238,7 @@ def test_a_hybrid_sessions_cost_covers_its_local_turns_as_well_as_canopys():
         status="complete", canopy_turn_id="turn-a",
     )
     canopy_bytes = _assistant_line(7).encode()
-    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=canopy_bytes):
         breakdown = live_ingest.recompute_cost_from_source(session)
     assert breakdown["totals"]["output_tokens"] == 12   # 5 local + 7 canopy
@@ -259,7 +259,7 @@ def test_a_multi_turn_canopy_session_sums_its_turns_tokens():
             status="complete", canopy_turn_id=turn,
         )
     blobs = {"turn-a": _assistant_line(5).encode(), "turn-b": _assistant_line(7).encode()}
-    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
          mock.patch(
              "apps.canopy.transcripts.fetch_turn_transcript",
              side_effect=lambda tok, tid, **kw: blobs[tid],
@@ -355,7 +355,7 @@ def test_a_local_turn_after_a_canopy_turn_neither_folds_bytes_nor_lowers_cost():
         session=session, turn_index=1, role="assistant", content={"text": ""},
         status="complete", canopy_turn_id="turn-a",
     )
-    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
          mock.patch(
              "apps.canopy.transcripts.fetch_turn_transcript", return_value=canopy_bytes
          ):
@@ -363,7 +363,7 @@ def test_a_local_turn_after_a_canopy_turn_neither_folds_bytes_nor_lowers_cost():
     assert composed["totals"]["output_tokens"] == 7
 
     # …now a local turn lands on the same session.
-    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
+    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
          mock.patch(
              "apps.canopy.transcripts.fetch_turn_transcript", return_value=canopy_bytes
          ):
@@ -450,9 +450,9 @@ def test_the_terminal_reconcile_forces_a_transcript_refresh():
         session=session, turn_index=1, role="assistant", content={"text": ""},
         status="pending", canopy_turn_id="turn-1",
     )
-    with mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}), \
-         mock.patch("apps.canopy.client.get_turn", return_value={"status": "done"}), \
-         mock.patch("apps.canopy.client.list_unclaimable", return_value=[]), \
+    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+         mock.patch("apps.canopy.client.Principal.get_turn", return_value={"status": "done"}), \
+         mock.patch("apps.canopy.client.Principal.list_unclaimable", return_value=[]), \
          mock.patch("apps.ingest.live_ingest.recompute_cost_from_source") as recompute:
         run_state.reconcile_session(session)
     assert recompute.call_args.kwargs.get("force_refresh") is True
