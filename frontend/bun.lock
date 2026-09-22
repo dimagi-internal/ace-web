@@ -8,7 +8,7 @@
         "@base-ui/react": "^1.3.0",
         "@fontsource-variable/geist": "^5.2.8",
         "canopy-client": "0.2.0",
-        "canopy-ui": "0.9.0",
+        "canopy-ui": "0.10.0",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "lucide-react": "^1.8.0",
@@ -445,7 +445,7 @@
 
     "canopy-client": ["canopy-client@0.2.0", "", {}, "sha512-UjJFWfaKKLG9T46nH2YNbJ/QPvoqZSpGtg23nfBNxt+/BLAfTFeSOl8lXIMyGNt8QT+ITm2KbVkwbf99LoQScQ=="],
 
-    "canopy-ui": ["canopy-ui@0.9.0", "", { "peerDependencies": { "@base-ui/react": "^1.3.0", "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "lucide-react": "^1.8.0", "react": "^19.0.0", "react-dom": "^19.0.0", "sonner": "^2.0.7", "tailwind-merge": "^3.5.0" }, "optionalPeers": ["lucide-react", "sonner"] }, "sha512-oO0WxCVS/RA1zzN8M4IdZrM0l0Twokh8dhrNYgi8d2eaa00LJFoANTnibvsFa5K2XNrpTmA+ZzU6hx0Mvj4N8g=="],
+    "canopy-ui": ["canopy-ui@0.10.0", "", { "peerDependencies": { "@base-ui/react": "^1.3.0", "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "lucide-react": "^1.8.0", "react": "^19.0.0", "react-dom": "^19.0.0", "sonner": "^2.0.7", "tailwind-merge": "^3.5.0" }, "optionalPeers": ["lucide-react", "sonner"] }, "sha512-ccukcMxlh+AENHGJWFHh+Ll64Sz9PkqLOcp6cX10uvMYaVG9jETAgmP1xqxvW9Ojv8jWihtThQztQHmcX97VXA=="],
 
     "ccount": ["ccount@2.0.1", "", {}, "sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg=="],
 

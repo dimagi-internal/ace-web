@@ -97,7 +97,18 @@ push to ace-web `main` (triggers `build-backend.yml`) followed by a deploy.
 - **Frontend**: React 19, Vite 5, TypeScript 5, Tailwind 3.4, react-router-dom 6.
   Served via nginx sidecar container in prod, built with bun. Canopy SDK packages
   from npm (unscoped): `canopy-ui` (shared chat + presence kit) and `canopy-client`
-  (token store / REST / WS primitives, adopted in PR #779).
+  (token store / REST / WS primitives, adopted in PR #779). **ace-web runs the
+  NEWEST of both, automatically**: canopy-web publishes on merging a version
+  bump; Dependabot here checks daily and opens one grouped PR
+  (`.github/dependabot.yml`); `canopy-sdk-automerge.yml` runs the frontend gate
+  (tsc + vitest + build — not a required check here, which is why it runs it
+  itself) and only then arms auto-merge. Pins stay EXACT on purpose: with a
+  lockfile a range would not update anything by itself, and exact means every
+  version ace-web runs passed its CI. One manual edge: `main protection` is
+  strict, so a bump PR that main overtakes while its checks run sits behind —
+  click "Update branch" or comment `@dependabot rebase` (a workflow cannot do
+  either usefully: Dependabot ignores bot comments, and a GITHUB_TOKEN push
+  runs no CI).
 - **DB**: PostgreSQL (shared AWS RDS `labs-*` instance, database `ace_web`; local
   Postgres via `docker compose`).
 - **Infra**: AWS ECS Fargate (cluster `labs-jj-cluster`, us-east-1) behind the

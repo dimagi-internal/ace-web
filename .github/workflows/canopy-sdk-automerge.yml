@@ -1,0 +1,82 @@
+name: Auto-merge canopy SDK bumps
+
+# The consuming half of "ace-web always runs the newest canopy-ui". Dependabot
+# opens the bump (see .github/dependabot.yml for the whole loop); this job
+# decides whether it may merge itself.
+#
+# It runs the FRONTEND gate itself — tsc + vitest + build, the same steps as
+# frontend.yml — because that check is not a required one in this repo's
+# ruleset (the required checks are all backend). `gh pr merge --auto` waits
+# only for REQUIRED checks, so without this a canopy-ui release that broke
+# ace-web's frontend would merge on green backend checks and ship a broken UI.
+# Duplicating frontend.yml's four steps is the price of that being impossible.
+#
+# Merge commit, not squash: it is how this repo merges (see git log).
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    # Dependabot PRs only. A human's PR touching the same file is theirs to
+    # merge.
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: What is this bump?
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Only the canopy packages. dependabot.yml allows nothing else today, but
+      # a later ecosystem added there must not inherit auto-merge by accident.
+      - name: Canopy packages only
+        id: scope
+        env:
+          NAMES: ${{ steps.meta.outputs.dependency-names }}
+        run: |
+          ok=true
+          IFS=', ' read -ra deps <<< "$NAMES"
+          for d in "${deps[@]}"; do
+            case "$d" in
+              canopy-ui|canopy-client) ;;
+              "") ;;
+              *) echo "not a canopy package: $d — leaving this PR for a human"; ok=false ;;
+            esac
+          done
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.scope.outputs.ok == 'true'
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        if: steps.scope.outputs.ok == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend gate — install, type check, test, build
+        if: steps.scope.outputs.ok == 'true'
+        working-directory: frontend
+        run: |
+          npm ci
+          npx tsc -b
+          npx vitest run
+          npx vite build
+
+      - name: Arm auto-merge
+        if: steps.scope.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --merge "$PR_URL"
