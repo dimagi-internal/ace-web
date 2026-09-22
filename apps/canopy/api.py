@@ -113,14 +113,13 @@ def sessions(
         metadata["opp_step_skill"] = body.opp_step_skill
 
     try:
-        vouched = client.visitor_token(request.user.email)
-        if vouched["kind"] == "user":
-            result = client.create_session(vouched["token"], title=body.title, metadata=metadata)
-        else:
-            # Someone with no canopy account is a CONTACT — the same chat, the
-            # same host link, on the surface a contact reaches.
-            result = client.create_contact_session(vouched["token"], title=body.title,
-                                                   metadata=metadata)
+        # canopy says who this person is — their own account, or a contact —
+        # and `Principal` is that answer. The branch lives there, once, so
+        # every later call (send, stop, transcripts) reaches the same surface
+        # this create did rather than each site deciding again.
+        result = client.act_as(request.user.email).create_session(
+            title=body.title, metadata=metadata,
+        )
     except client.CanopyError as exc:
         raise _upstream(exc) from exc
     return {"id": result["id"]}

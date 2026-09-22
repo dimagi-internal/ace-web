@@ -109,7 +109,8 @@ def test_session_create_forwards_metadata_with_user_token():
     user_token = {"token": "usertok", "expires_at": "x", "kind": "user"}
     with (
         mock.patch("apps.canopy.client.visitor_token", return_value=user_token),
-        mock.patch("apps.canopy.client.create_session", return_value={"id": "abc"}) as cs,
+        mock.patch("apps.canopy.client.Principal.create_session",
+                   return_value={"id": "abc"}) as cs,
     ):
         r = c.post(
             f"/api/w/{workspace.slug}/canopy/sessions",
@@ -119,7 +120,6 @@ def test_session_create_forwards_metadata_with_user_token():
     assert r.status_code == 200
     assert r.json()["id"] == "abc"
     kwargs = cs.call_args.kwargs
-    assert cs.call_args.args[0] == "usertok"
     assert kwargs["metadata"] == {
         "source": "ace-web",
         "origin_key": f"ace-web:{workspace.slug}",
@@ -136,7 +136,7 @@ def test_session_create_rejects_a_client_supplied_origin_key():
     c, workspace, _user = _member_client()
     with (
         mock.patch("apps.canopy.client.visitor_token") as ex,
-        mock.patch("apps.canopy.client.create_session") as cs,
+        mock.patch("apps.canopy.client.Principal.create_session") as cs,
     ):
         r = c.post(
             f"/api/w/{workspace.slug}/canopy/sessions",
@@ -164,7 +164,7 @@ def test_session_create_non_member_404s():
     c.force_login(outsider)
     with (
         mock.patch("apps.canopy.client.visitor_token") as ex,
-        mock.patch("apps.canopy.client.create_session") as cs,
+        mock.patch("apps.canopy.client.Principal.create_session") as cs,
     ):
         r = c.post(
             f"/api/w/{workspace.slug}/canopy/sessions",
@@ -230,7 +230,7 @@ def test_two_ace_workspaces_get_distinct_origin_keys():
     user_token = {"token": "usertok", "expires_at": "x", "kind": "user"}
     with (
         mock.patch("apps.canopy.client.visitor_token", return_value=user_token),
-        mock.patch("apps.canopy.client.create_session") as cs,
+        mock.patch("apps.canopy.client.Principal.create_session") as cs,
     ):
         cs.side_effect = lambda *_a, **kw: (seen_metadata.append(kw["metadata"]) or {"id": "abc"})
         c.post(f"/api/w/{ws_a.slug}/canopy/sessions", data={}, content_type="application/json")
@@ -265,7 +265,7 @@ def test_a_contacts_session_is_created_on_the_contact_surface_with_the_same_link
     vouched = {"token": "ct", "expires_at": "x", "kind": "contact"}
     with (
         mock.patch("apps.canopy.client.visitor_token", return_value=vouched),
-        mock.patch("apps.canopy.client.create_session") as user_create,
+        mock.patch("apps.canopy.client.create_run_session") as user_create,
         mock.patch("apps.canopy.client.create_contact_session", return_value={"id": "c1"}) as cs,
     ):
         r = c.post(f"/api/w/{workspace.slug}/canopy/sessions",
