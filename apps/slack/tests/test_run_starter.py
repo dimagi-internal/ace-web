@@ -45,7 +45,7 @@ PROD_SA_KEY = json.dumps(
 # prompt text is observable on the wire.
 CANOPY_ON = dict(
     CANOPY_BASE_URL="http://canopy.test",
-    CANOPY_APP_CREDENTIAL="secret-cred",
+    CANOPY_SIGNING_KEY="test-key",
     CANOPY_WORKSPACE="connect",
     CANOPY_AGENT_SLUG="ace",
     CANOPY_RUN_EXECUTION=True,
@@ -67,13 +67,14 @@ def _canopy_patches(send_return=None):
     """Patch the canopy client calls run_dispatch makes, leaving run_dispatch
     itself real so the prompt text is asserted on the actual wire payload."""
     return (
-        mock.patch("apps.canopy.client.exchange_token", return_value={"token": "usertok"}),
-        mock.patch("apps.canopy.client.create_run_session", return_value={"id": "sess-9"}),
+        mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "usertok", "kind": "user"}),
+        mock.patch("apps.canopy.client.Principal.create_session", return_value={"id": "sess-9"}),
         mock.patch(
-            "apps.canopy.client.send_message",
+            "apps.canopy.client.Principal.send",
             return_value=send_return or {"turn_id": "turn-9", "message": {}},
         ),
-        mock.patch("apps.canopy.client.stop_session", return_value={"cancelled": False}),
+        mock.patch("apps.canopy.client.Principal.stop", return_value={"cancelled": False}),
     )
 
 
@@ -146,7 +147,7 @@ def test_a_dispatch_failure_is_reported_to_slack_not_swallowed():
     from apps.canopy.client import CanopyError
 
     user, ws = _fixture()
-    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(403, "nope")):
+    with mock.patch("apps.canopy.client.visitor_token", side_effect=CanopyError(403, "nope")):
         with pytest.raises(run_starter.RunStartError) as exc:
             run_starter.start_run_from_slack(
                 slug_or_link="opp-a", user=user, workspace=ws,

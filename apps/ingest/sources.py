@@ -32,8 +32,6 @@ import hashlib
 import logging
 from dataclasses import dataclass
 
-from django.conf import settings
-
 log = logging.getLogger(__name__)
 
 # How long after a turn finishes its transcript is still treated as possibly
@@ -67,17 +65,10 @@ class TranscriptRead:
 
 
 def _actor_email(session) -> str:
-    """Whose canopy identity a transcript fetch acts as.
+    """The person whose run this is — `run_dispatch.actor_email`, the one rule."""
+    from apps.canopy.run_dispatch import actor_email
 
-    Mirrors `run_dispatch._actor_email`. A run dispatched under the fallback
-    identity (an owner with no email — the exact case the fallback exists for)
-    dispatches fine and reconciles fine; without the same fallback here it could
-    never fetch its own transcript, and the failure is a log line.
-    """
-    email = (getattr(session.owner, "email", "") or "").strip()
-    if email:
-        return email
-    return (settings.CANOPY_RUN_ACTOR_FALLBACK_EMAIL or "").strip()
+    return actor_email(session)
 
 
 def _canopy_turns(session) -> list[tuple[str, str]]:
@@ -196,8 +187,10 @@ def refresh_canopy_cache(session):
     if not turn_ids:
         return None
     try:
-        token = client.exchange_token(_actor_email(session), ttl=300)["token"]
-        blobs = [transcripts.fetch_turn_transcript(token, tid) for tid in turn_ids]
+        person = client.act_as(_actor_email(session))
+        blobs = [transcripts.fetch_turn_transcript(person.token, tid,
+                                                   path=person.transcript_path(tid))
+                 for tid in turn_ids]
     except Exception:  # noqa: BLE001 — never let a canopy blip break a read
         # `error`, not `warning`: there is no Sentry on this deployment, and a
         # refused encoding or an over-ceiling transcript is a real incident that

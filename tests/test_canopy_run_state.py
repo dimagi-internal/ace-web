@@ -13,7 +13,7 @@ User = get_user_model()
 pytestmark = pytest.mark.django_db
 
 ON = dict(
-    CANOPY_BASE_URL="http://canopy.test", CANOPY_APP_CREDENTIAL="c",
+    CANOPY_BASE_URL="http://canopy.test", CANOPY_SIGNING_KEY="test-key",
     CANOPY_WORKSPACE="connect", CANOPY_AGENT_SLUG="ace", CANOPY_RUN_EXECUTION=True,
 )
 
@@ -35,9 +35,12 @@ def _session_with_turn(turn_id="turn-1"):
 
 def _canopy(turn=None, unclaimable=()):
     return (
-        mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}),
-        mock.patch("apps.canopy.client.get_turn", return_value=turn or {"status": "queued"}),
-        mock.patch("apps.canopy.client.list_unclaimable", return_value=list(unclaimable)),
+        mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}),
+        mock.patch("apps.canopy.client.Principal.get_turn",
+                   return_value=turn or {"status": "queued"}),
+        mock.patch("apps.canopy.client.Principal.list_unclaimable",
+                   return_value=list(unclaimable)),
     )
 
 
@@ -127,7 +130,7 @@ def test_canopy_unreachable_is_unknown_never_running():
     from apps.canopy.client import CanopyError
 
     s = _session_with_turn()
-    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(502, "down")):
+    with mock.patch("apps.canopy.client.visitor_token", side_effect=CanopyError(502, "down")):
         out = run_state.execution_state(s)
     assert out["state"] == "unknown"
 
@@ -141,7 +144,7 @@ def test_an_unreachable_unclaimable_list_leaves_a_queued_turn_queued():
     s = _session_with_turn()
     ex, get, _ = _canopy(turn={"status": "queued"})
     unc = mock.patch(
-        "apps.canopy.client.list_unclaimable", side_effect=CanopyError(502, "down"),
+        "apps.canopy.client.Principal.list_unclaimable", side_effect=CanopyError(502, "down"),
     )
     with ex, get, unc:
         assert run_state.execution_state(s)["state"] == "queued"
@@ -178,13 +181,14 @@ def test_the_newest_assistant_turn_is_the_one_reported():
     )
     seen = []
 
-    def _get_turn(_token, turn_id):
+    def _get_turn(turn_id):
         seen.append(turn_id)
         return {"status": "running"}
 
     with (
-        mock.patch("apps.canopy.client.exchange_token", return_value={"token": "t"}),
-        mock.patch("apps.canopy.client.get_turn", side_effect=_get_turn),
+        mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}),
+        mock.patch("apps.canopy.client.Principal.get_turn", side_effect=_get_turn),
     ):
         out = run_state.execution_state(s)
     assert seen == ["turn-2"]
@@ -259,7 +263,7 @@ def test_reconcile_leaves_everything_alone_when_canopy_is_unreachable():
     from apps.canopy.client import CanopyError
 
     s = _session_with_turn()
-    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(502, "down")):
+    with mock.patch("apps.canopy.client.visitor_token", side_effect=CanopyError(502, "down")):
         out = run_state.reconcile_session(s)
     assert out["state"] == "unknown"
     assert Message.objects.get(session=s, role="assistant").status == "pending"
@@ -273,7 +277,7 @@ def test_reconcile_does_not_stamp_a_heartbeat_when_canopy_is_unreachable():
 
     s = _session_with_turn()
     assert s.driver_heartbeat_at is None
-    with mock.patch("apps.canopy.client.exchange_token", side_effect=CanopyError(502, "down")):
+    with mock.patch("apps.canopy.client.visitor_token", side_effect=CanopyError(502, "down")):
         run_state.reconcile_session(s)
     s.refresh_from_db()
     assert s.driver_heartbeat_at is None
@@ -378,7 +382,7 @@ def test_reconcile_command_skips_sessions_that_never_went_to_canopy():
 
     _session_with_turn(turn_id="")  # no canopy_session_id
     out = StringIO()
-    with mock.patch("apps.canopy.client.exchange_token") as ex:
+    with mock.patch("apps.canopy.client.visitor_token") as ex:
         call_command("reconcile_canopy_runs", stdout=out)
     ex.assert_not_called()
     assert out.getvalue().strip() == ""

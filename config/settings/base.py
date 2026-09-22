@@ -286,11 +286,21 @@ SLACK_DEFAULT_INSTALLATION_ID = env("SLACK_DEFAULT_INSTALLATION_ID", default="")
 ACE_PUBLIC_BASE_URL = env("ACE_PUBLIC_BASE_URL",
                           default="https://labs.connect.dimagi.com/ace")
 
-# --- canopy-web hosted chat (Part 2 cutover; spec lives in canopy-web) -------
-# Server-side base for outbound calls (token exchange, session create).
+# --- canopy-web: hosted chat AND run execution -----------------------------------
+# Server-side base for outbound calls.
 CANOPY_BASE_URL = env("CANOPY_BASE_URL", default="")
-# Registered AppCredential raw value (canopy: manage.py create_app_credential).
-CANOPY_APP_CREDENTIAL = env("CANOPY_APP_CREDENTIAL", default="")
+# ace-web is a CONNECTED SITE in canopy (Connected sites, workspace `connect`).
+# Everything it does there — a chat, a run, the background work that finishes a
+# run — is done AS the person whose command it is carrying out (their canopy
+# account, or their contact if they have none; apps/canopy/client.py::act_as).
+# It signs a short-lived assertion per person with this PRIVATE
+# Ed25519 key (PEM, a Secrets Manager entry — never committed); canopy verifies it
+# against the public half registered there. CANOPY_APP_NAME is the site's name.
+CANOPY_APP_NAME = env("CANOPY_APP_NAME", default="ace-web")
+CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
+# Who assertions are addressed to (canopy's EMBED_ASSERTION_AUDIENCE, which
+# defaults to its own base URL). Empty = CANOPY_BASE_URL.
+CANOPY_ASSERTION_AUDIENCE = env("CANOPY_ASSERTION_AUDIENCE", default="")
 # Browser-facing base: same-origin path prefix on labs, vite proxy path in dev.
 CANOPY_PUBLIC_BASE_URL = env("CANOPY_PUBLIC_BASE_URL", default="/canopy")
 CANOPY_WORKSPACE = env("CANOPY_WORKSPACE", default="connect")
@@ -302,11 +312,6 @@ CANOPY_AGENT_SLUG = env("CANOPY_AGENT_SLUG", default="ace")
 # exists: with none online, every enqueued turn sits QUEUED forever, so
 # flipping this on takes ACE runs from "works" to "nothing runs".
 CANOPY_RUN_EXECUTION = env.bool("CANOPY_RUN_EXECUTION", default=False)
-# Whose canopy identity a run acts as when the owning ace-web user's email is
-# not delegable (canopy's token-exchange 403s a domain outside the app
-# credential's allowed_delegation_domains). Empty = no fallback: dispatch
-# fails loudly rather than silently attributing one human's run to another.
-CANOPY_RUN_ACTOR_FALLBACK_EMAIL = env("CANOPY_RUN_ACTOR_FALLBACK_EMAIL", default="")
 # Ceiling on a single turn transcript fetched from canopy. canopy's own per-turn
 # cap is 100 MB; this is ace-web's defensive limit on what it will pull into a
 # web worker's memory to re-derive cost/structure from.

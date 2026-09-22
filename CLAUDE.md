@@ -250,13 +250,27 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   canopy-web; the browser talks to canopy **directly** (same-origin
   `/canopy/*` on labs; a vite proxy in dev), using the shared `canopy-ui/chat`
   kit. ace-web's own backend (`apps/canopy`) keeps exactly one
-  responsibility: identity brokering. Token-exchange flow: (1) ace-web holds
-  a registered canopy `AppCredential`; (2) server-side,
-  `apps/canopy/client.exchange_token` trades that credential + the signed-in
-  user's email for a short-lived canopy `DelegatedToken` via
-  `POST {canopy}/api/auth/token-exchange`; (3) the SPA uses that token as
-  `Authorization: Bearer` on canopy REST and `?token=` on the canopy chat
-  WebSocket — never the app credential itself. `POST
+  responsibility: **acting as the person whose command it is carrying
+  out**. ace-web is a canopy **Connected site**: (1) it holds an Ed25519
+  private key (`CANOPY_SIGNING_KEY`); canopy holds only the public half on
+  its `ace-web` site row, so canopy's database contains nothing that can
+  impersonate anyone; (2) server-side, `apps/canopy/client.act_as(email)`
+  signs a 60-second, single-use assertion naming that person and trades it at
+  `POST {canopy}/api/auth/contact-token` for a short-lived token; (3) the SPA
+  uses that token as `Authorization: Bearer` on canopy REST and `?token=` on
+  the canopy chat WebSocket — never the signing key. **Who that person is, is
+  canopy's answer, not ours**: an existing canopy user at one of the site's
+  resolvable domains arrives as THEMSELVES (their own ACL); anyone else
+  arrives as a **contact** — a real principal with its own surface
+  (`/api/contact/…`), not a degraded user, and never a newly created account.
+  `client.Principal` is that answer, and it routes every later call to the
+  right surface, so nothing else in ace-web branches on it. **There is no
+  fallback identity**: a run whose owner has no email is refused
+  (`DispatchError`), because a run attributed to someone else is a run that
+  lies about who asked. This replaced `CANOPY_APP_CREDENTIAL` + token-exchange,
+  a shared secret that minted a token for any address in ace-web's allowed
+  domains and JIT-created the canopy user as a side effect.
+  `POST
   /api/w/{workspace_slug}/canopy/sessions` (workspace-scoped, not the flat
   `/api/canopy/sessions` an earlier draft used) additionally bakes in opp
   linkage (`opp_slug`/`opp_run_id`/`opp_step_skill` metadata) AND stamps
@@ -274,21 +288,20 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   session UUID can't read that chat. `origin_key` is still ours and still
   required for LIST scoping.
   Ops + deploy prerequisites (undocumented failure modes if any is
-  missed): (1) a registered prod `AppCredential` on canopy-web (name
-  `ace-web`, allowed domains matching `ACE_ALLOWED_EMAIL_DOMAINS`), its raw
-  value in AWS Secrets Manager (`ace-web/canopy-app-credential`), and
-  `CANOPY_APP_CREDENTIAL`'s `ValueFrom` in `deploy/aws/ace-web.cfn.yaml`
-  pointed at that secret's ARN — without it `GET /api/canopy/status` reports
-  `enabled: false` and chat is unreachable (see below); (2) a canopy `Agent`
-  with slug matching `CANOPY_AGENT_SLUG` (default `ace`) must exist in the
-  canopy workspace named by `CANOPY_WORKSPACE` — `createCanopySession` 404s
-  otherwise; (3) canopy workspace membership is NOT a manual prerequisite —
-  token-exchange provisions it (and the user, JIT) from the `AppCredential`'s
-  `provision_workspace` + `provision_role`, create-only; the prod credential
-  provisions onto `connect`, hence `{"workspace": "connect"}` in exchange
-  responses. Do NOT re-add a manual invite step; (4) the
-  signed-in user's email domain must be in the `AppCredential`'s allowed
-  domains — otherwise `token-exchange` 403s and every canopy call fails.
+  missed): (1) the `ace-web` **Connected site** on canopy-web must carry our
+  PUBLIC key, the `connect` workspace, `resolvable_domains` covering
+  `ACE_ALLOWED_EMAIL_DOMAINS`, and agent `ace`; the private half lives in AWS
+  Secrets Manager (`ace-web/canopy-signing-key`) with `CANOPY_SIGNING_KEY`'s
+  `ValueFrom` in `deploy/aws/ace-web.cfn.yaml` pointed at it — without it
+  `GET /api/canopy/status` reports `enabled: false` and chat is unreachable;
+  (2) a canopy `Agent` with slug matching `CANOPY_AGENT_SLUG` (default `ace`)
+  must exist in the workspace named by `CANOPY_WORKSPACE` —
+  `createCanopySession` 404s otherwise; (3) `aud` must match: we sign
+  `CANOPY_BASE_URL` (override with `CANOPY_ASSERTION_AUDIENCE`) and canopy
+  verifies against its own public URL, so a canopy rename breaks every
+  assertion in flight; (4) a domain NOT in the site's `resolvable_domains`
+  still works — those people arrive as contacts rather than as their canopy
+  account, which is a narrower ACL, not an error.
   None of these 404/403s are silent in the UI: `useCanopyStatus()` gates
   every chat surface (`ChatPage.tsx`'s `CanopyChatRoutePage`,
   `ChatRedirectPage`, `RecentSessionsSidebar`, `WorkbenchChatPane`) and

@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import logging
 
-from django.conf import settings
-
 from . import client
 
 log = logging.getLogger(__name__)
@@ -89,12 +87,11 @@ def execution_state(session) -> dict:
 
     turn_id = message.canopy_turn_id
     try:
-        token = client.exchange_token(
-            (getattr(session.owner, "email", "") or settings.CANOPY_RUN_ACTOR_FALLBACK_EMAIL),
-            ttl=300,
-        )["token"]
-        turn = client.get_turn(token, turn_id)
-    except client.CanopyError as exc:
+        from apps.canopy.run_dispatch import DispatchError, actor_email
+
+        person = client.act_as(actor_email(session))
+        turn = person.get_turn(turn_id)
+    except (client.CanopyError, DispatchError) as exc:
         log.warning("canopy unreachable reading turn %s: %s", turn_id, exc)
         return _out(UNKNOWN, detail=str(exc), turn_id=turn_id,
                     session_id=session.canopy_session_id)
@@ -108,7 +105,7 @@ def execution_state(session) -> dict:
         # simply absent from the list — that grace is canopy's, and we do not
         # add a second one here.
         try:
-            rows = client.list_unclaimable(token)
+            rows = person.list_unclaimable()
         except client.CanopyError:
             # An enrichment failure must not demote a turn we KNOW is queued.
             rows = []

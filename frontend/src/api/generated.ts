@@ -4989,6 +4989,11 @@ export interface components {
             readonly token: string;
             /** Expires At */
             readonly expires_at: string;
+            /**
+             * Kind
+             * @default user
+             */
+            readonly kind: string;
         };
         /**
          * HealthCheckOut

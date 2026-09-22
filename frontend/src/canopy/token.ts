@@ -29,11 +29,21 @@ async function requestToken() {
   if (!response.ok || error || !data) {
     throw new Error(`Failed to fetch canopy token: ${response.status}`);
   }
-  const body = data as unknown as { token: string; expires_at: string };
+  const body = data as unknown as { token: string; expires_at: string; kind?: string };
   // The package's contract is `expiresAt`; ace's endpoint says `expires_at`.
   // A non-parseable value is treated as already-expired by the store rather
   // than cached as NaN.
-  return { token: body.token, expiresAt: body.expires_at };
+  // `kind` says WHICH principal canopy resolved this person to — their own
+  // canopy account, or a contact. ace-web does not decide it and must not
+  // guess: the same signed assertion yields a user at a domain the site may
+  // resolve and a contact everywhere else, and the two reach different
+  // surfaces. Anything unrecognised is treated as a user by the package,
+  // which is the narrower read (a contact's routes would 403 loudly).
+  return {
+    token: body.token,
+    expiresAt: body.expires_at,
+    kind: body.kind === "contact" ? ("contact" as const) : ("user" as const),
+  };
 }
 
 const store = createTokenStore(requestToken);
@@ -55,6 +65,13 @@ export function getCanopyToken(force = false): Promise<string> {
  *  put the token in a query string. `null` before the first mint. */
 export function peekCanopyToken(): string | null {
   return store.peek();
+}
+
+/** Who the cached token is for. `user` until a mint says otherwise — so a
+ *  caller that asks before the first mint gets the same answer the package's
+ *  own store gives, rather than a third state nothing handles. */
+export function canopyPrincipal(): "user" | "contact" {
+  return store.principal();
 }
 
 /** Drop the cached token. For a sign-out or an account switch. */

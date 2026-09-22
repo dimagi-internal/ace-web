@@ -1,8 +1,10 @@
 """Django Ninja router for the apps.canopy identity-brokering surface.
 
-ace-web's one remaining chat responsibility: exchange its registered
-``AppCredential`` for a short-lived per-user delegated canopy token, and a
-session-create wrapper that bakes in opp linkage. Everything else (session
+ace-web's one remaining chat responsibility: vouch for the person using it
+(a signed assertion — canopy's SDK host contract) and get back their canopy
+token, which is a USER token if they have a canopy account and a CONTACT token
+otherwise — both first-class; and a session-create wrapper that bakes in opp
+linkage for either. Everything else (session
 list, messages, WS) is browser → canopy-web directly.
 
 Session-create is mounted workspace-scoped (``/api/w/{workspace_slug}/canopy/
@@ -44,7 +46,9 @@ workspace_router = Router(auth=session_auth, tags=["canopy"])
 
 
 def _enabled() -> bool:
-    return bool(settings.CANOPY_BASE_URL) and bool(settings.CANOPY_APP_CREDENTIAL)
+    """Hosted chat is on when ace-web can vouch for its people: a canopy base
+    URL and the signing key canopy knows ace-web by (Connected sites)."""
+    return bool(settings.CANOPY_BASE_URL) and bool(settings.CANOPY_SIGNING_KEY)
 
 
 def _upstream(exc: client.CanopyError) -> ProblemError:
@@ -71,14 +75,16 @@ def token(request: HttpRequest) -> dict:
     if not _enabled():
         raise ProblemError(503, "canopy hosted chat is not configured", type_=TYPE_UPSTREAM)
     try:
-        exchanged = client.exchange_token(request.user.email, ttl=3600)
+        vouched = client.visitor_token(request.user.email)
     except client.CanopyError as exc:
         raise _upstream(exc) from exc
     # Pick fields explicitly rather than passing canopy's raw dict through a
-    # strict (extra="forbid") response schema — canopy adding a field to its
-    # exchange response would otherwise 500 every token mint on this end
-    # with no ace-web deploy involved (I4).
-    return {"token": exchanged["token"], "expires_at": exchanged["expires_at"]}
+    # strict (extra="forbid") response schema — canopy adding a field would
+    # otherwise 500 every token mint on this end with no ace-web deploy (I4).
+    # `kind` is passed through: a user and a contact are both first-class, and
+    # canopy-client routes every call by it.
+    return {"token": vouched["token"], "expires_at": vouched["expires_at"],
+            "kind": vouched["kind"]}
 
 
 @workspace_router.post("/sessions", response={200: CanopySessionCreateOut})
@@ -107,8 +113,13 @@ def sessions(
         metadata["opp_step_skill"] = body.opp_step_skill
 
     try:
-        user_token = client.exchange_token(request.user.email, ttl=3600)
-        result = client.create_session(user_token["token"], title=body.title, metadata=metadata)
+        # canopy says who this person is — their own account, or a contact —
+        # and `Principal` is that answer. The branch lives there, once, so
+        # every later call (send, stop, transcripts) reaches the same surface
+        # this create did rather than each site deciding again.
+        result = client.act_as(request.user.email).create_session(
+            title=body.title, metadata=metadata,
+        )
     except client.CanopyError as exc:
         raise _upstream(exc) from exc
     return {"id": result["id"]}

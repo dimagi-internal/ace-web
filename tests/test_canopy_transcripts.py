@@ -23,7 +23,7 @@ from django.test import override_settings
 
 from apps.canopy import transcripts
 
-ENABLED = dict(CANOPY_BASE_URL="http://canopy.test", CANOPY_APP_CREDENTIAL="c")
+ENABLED = dict(CANOPY_BASE_URL="http://canopy.test", CANOPY_SIGNING_KEY="test-key")
 
 
 class _Stream(io.BytesIO):
@@ -239,7 +239,7 @@ def test_a_multi_member_transcript_round_trips_intact_over_real_http(canopy_serv
     """THE test this client exists for. Every member's content must come back —
     a client that reads one chunk, or inflates only the first gzip member,
     returns a prefix of this and produces a wrong cost number with no symptom."""
-    with override_settings(CANOPY_BASE_URL=canopy_server, CANOPY_APP_CREDENTIAL="c"):
+    with override_settings(CANOPY_BASE_URL=canopy_server, CANOPY_SIGNING_KEY="test-key"):
         out = transcripts.fetch_turn_transcript("tok", "plaintext")
 
     assert out == PLAINTEXT
@@ -271,6 +271,6 @@ def test_httpx_truncates_the_gzip_scheme_our_client_refuses_it(canopy_server):
     assert truncated.content == MEMBERS[0]      # ← the silent bug, demonstrated
     assert truncated.content != PLAINTEXT
 
-    with override_settings(CANOPY_BASE_URL=canopy_server, CANOPY_APP_CREDENTIAL="c"):
+    with override_settings(CANOPY_BASE_URL=canopy_server, CANOPY_SIGNING_KEY="test-key"):
         with pytest.raises(transcripts.TranscriptEncodingError):
             transcripts.fetch_turn_transcript("tok", "gzipped")

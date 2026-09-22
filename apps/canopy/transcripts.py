@@ -70,12 +70,13 @@ def _refuse_if_encoded(resp) -> None:
         )
 
 
-def fetch_turn_transcript(user_token: str, turn_id: str, *, max_bytes: int | None = None) -> bytes:
+def fetch_turn_transcript(user_token: str, turn_id: str, *, max_bytes: int | None = None,
+                          path: str | None = None) -> bytes:
     """The turn's raw JSONL, byte for byte. Empty bytes when nothing was ever
     appended — absence of a transcript is not absence of a turn."""
     ceiling = max_bytes or settings.CANOPY_TRANSCRIPT_MAX_BYTES
     req = urllib.request.Request(
-        f"{settings.CANOPY_BASE_URL}/api/harness/turns/{turn_id}/transcript",
+        f"{settings.CANOPY_BASE_URL}{path or f'/api/harness/turns/{turn_id}/transcript'}",
         headers={"Authorization": f"Bearer {user_token}"},
         method="GET",
     )

@@ -52,6 +52,15 @@ const CONSUMED = [
   ['post', '/canopy/api/canopy-sessions/{session_id}/detach'],
   ['post', '/canopy/api/canopy-sessions/{session_id}/place'],
   ['put', '/canopy/api/canopy-sessions/{session_id}/page-state'],
+  // The contact surface. A visitor ace-web vouches for who has no canopy
+  // account is a CONTACT, and reaches these instead of the routes above —
+  // same conversation, different principal, so both halves are consumed.
+  ['get', '/canopy/api/contact/sessions'],
+  ['get', '/canopy/api/contact/sessions/{session_id}'],
+  ['get', '/canopy/api/contact/sessions/{session_id}/messages'],
+  ['post', '/canopy/api/contact/sessions/{session_id}/send'],
+  ['post', '/canopy/api/contact/sessions/{session_id}/attach'],
+  ['post', '/canopy/api/contact/sessions/{session_id}/detach'],
   ['get', '/canopy/api/harness/runners/'],
   ['get', '/canopy/api/harness/sessions'],
   ['get', '/canopy/api/harness/turns/'],

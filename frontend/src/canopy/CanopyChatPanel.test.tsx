@@ -46,6 +46,7 @@ vi.mock("./useCanopyStatus", () => ({
 vi.mock("./token", () => ({
   getCanopyToken: vi.fn().mockResolvedValue("tok"),
   peekCanopyToken: vi.fn().mockReturnValue("tok"),
+  canopyPrincipal: vi.fn().mockReturnValue("user"),
 }));
 
 vi.mock("./api", () => ({

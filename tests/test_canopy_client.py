@@ -12,7 +12,7 @@ User = get_user_model()
 
 pytestmark = pytest.mark.django_db
 
-ENABLED = dict(CANOPY_BASE_URL="http://canopy.test", CANOPY_APP_CREDENTIAL="secret-cred")
+ENABLED = dict(CANOPY_BASE_URL="http://canopy.test", CANOPY_SIGNING_KEY="test-private-key")
 
 
 def _login(client):
@@ -61,12 +61,12 @@ def test_status_enabled_and_shapes():
 def test_token_exchanges_for_request_user():
     c = Client()
     user = _login(c)
-    exchanged = {"token": "t", "expires_at": "x"}
-    with mock.patch("apps.canopy.client.exchange_token", return_value=exchanged) as ex:
+    exchanged = {"token": "t", "expires_at": "x", "kind": "user"}
+    with mock.patch("apps.canopy.client.visitor_token", return_value=exchanged) as ex:
         r = c.post("/api/canopy/token")
     assert r.status_code == 200
-    assert r.json()["token"] == "t"
-    ex.assert_called_once_with(user.email, ttl=3600)
+    assert r.json() == {"token": "t", "expires_at": "x", "kind": "user"}
+    ex.assert_called_once_with(user.email)
 
 
 @override_settings(**ENABLED)
@@ -77,11 +77,11 @@ def test_token_picks_fields_and_ignores_upstream_extras():
     every token mint on this end with no ace-web deploy involved."""
     c = Client()
     _login(c)
-    exchanged = {"token": "t", "expires_at": "x", "some_new_upstream_field": "whatever"}
-    with mock.patch("apps.canopy.client.exchange_token", return_value=exchanged):
+    exchanged = {"token": "t", "expires_at": "x", "kind": "user", "some_new_upstream_field": "w"}
+    with mock.patch("apps.canopy.client.visitor_token", return_value=exchanged):
         r = c.post("/api/canopy/token")
     assert r.status_code == 200
-    assert r.json() == {"token": "t", "expires_at": "x"}
+    assert r.json() == {"token": "t", "expires_at": "x", "kind": "user"}
 
 
 def test_token_503_when_disabled():
@@ -106,10 +106,11 @@ def test_token_401_when_anonymous():
 @override_settings(**ENABLED)
 def test_session_create_forwards_metadata_with_user_token():
     c, workspace, _user = _member_client()
-    user_token = {"token": "usertok", "expires_at": "x"}
+    user_token = {"token": "usertok", "expires_at": "x", "kind": "user"}
     with (
-        mock.patch("apps.canopy.client.exchange_token", return_value=user_token),
-        mock.patch("apps.canopy.client.create_session", return_value={"id": "abc"}) as cs,
+        mock.patch("apps.canopy.client.visitor_token", return_value=user_token),
+        mock.patch("apps.canopy.client.Principal.create_session",
+                   return_value={"id": "abc"}) as cs,
     ):
         r = c.post(
             f"/api/w/{workspace.slug}/canopy/sessions",
@@ -119,7 +120,6 @@ def test_session_create_forwards_metadata_with_user_token():
     assert r.status_code == 200
     assert r.json()["id"] == "abc"
     kwargs = cs.call_args.kwargs
-    assert cs.call_args.args[0] == "usertok"
     assert kwargs["metadata"] == {
         "source": "ace-web",
         "origin_key": f"ace-web:{workspace.slug}",
@@ -135,8 +135,8 @@ def test_session_create_rejects_a_client_supplied_origin_key():
     gets a 422, never a silently-ignored-or-honored value."""
     c, workspace, _user = _member_client()
     with (
-        mock.patch("apps.canopy.client.exchange_token") as ex,
-        mock.patch("apps.canopy.client.create_session") as cs,
+        mock.patch("apps.canopy.client.visitor_token") as ex,
+        mock.patch("apps.canopy.client.Principal.create_session") as cs,
     ):
         r = c.post(
             f"/api/w/{workspace.slug}/canopy/sessions",
@@ -163,8 +163,8 @@ def test_session_create_non_member_404s():
     outsider = User.objects.create_user(email="outsider@example.com")
     c.force_login(outsider)
     with (
-        mock.patch("apps.canopy.client.exchange_token") as ex,
-        mock.patch("apps.canopy.client.create_session") as cs,
+        mock.patch("apps.canopy.client.visitor_token") as ex,
+        mock.patch("apps.canopy.client.Principal.create_session") as cs,
     ):
         r = c.post(
             f"/api/w/{workspace.slug}/canopy/sessions",
@@ -227,10 +227,10 @@ def test_two_ace_workspaces_get_distinct_origin_keys():
     c.force_login(user)
 
     seen_metadata = []
-    user_token = {"token": "usertok", "expires_at": "x"}
+    user_token = {"token": "usertok", "expires_at": "x", "kind": "user"}
     with (
-        mock.patch("apps.canopy.client.exchange_token", return_value=user_token),
-        mock.patch("apps.canopy.client.create_session") as cs,
+        mock.patch("apps.canopy.client.visitor_token", return_value=user_token),
+        mock.patch("apps.canopy.client.Principal.create_session") as cs,
     ):
         cs.side_effect = lambda *_a, **kw: (seen_metadata.append(kw["metadata"]) or {"id": "abc"})
         c.post(f"/api/w/{ws_a.slug}/canopy/sessions", data={}, content_type="application/json")
@@ -239,3 +239,73 @@ def test_two_ace_workspaces_get_distinct_origin_keys():
     assert seen_metadata[0]["origin_key"] == "ace-web:team-a"
     assert seen_metadata[1]["origin_key"] == "ace-web:team-b"
     assert seen_metadata[0]["origin_key"] != seen_metadata[1]["origin_key"]
+
+
+# ---------------------------------------------------------------------------
+# Both principals are first-class: someone with no canopy account is a CONTACT
+# and gets the same chat, on the surface a contact reaches — never an error,
+# never a fallback identity.
+# ---------------------------------------------------------------------------
+
+
+@override_settings(**ENABLED)
+def test_a_person_without_a_canopy_account_chats_as_a_contact():
+    c = Client()
+    _login(c)
+    vouched = {"token": "ct", "expires_at": "x", "kind": "contact"}
+    with mock.patch("apps.canopy.client.visitor_token", return_value=vouched):
+        r = c.post("/api/canopy/token")
+    assert r.status_code == 200
+    assert r.json() == {"token": "ct", "expires_at": "x", "kind": "contact"}
+
+
+@override_settings(**ENABLED)
+def test_a_contacts_session_is_created_on_the_contact_surface_with_the_same_link():
+    c, workspace, _user = _member_client()
+    vouched = {"token": "ct", "expires_at": "x", "kind": "contact"}
+    with (
+        mock.patch("apps.canopy.client.visitor_token", return_value=vouched),
+        mock.patch("apps.canopy.client.create_run_session") as user_create,
+        mock.patch("apps.canopy.client.create_contact_session", return_value={"id": "c1"}) as cs,
+    ):
+        r = c.post(f"/api/w/{workspace.slug}/canopy/sessions",
+                   data={"title": "T", "opp_slug": "field-hep"}, content_type="application/json")
+    assert r.status_code == 200 and r.json()["id"] == "c1"
+    user_create.assert_not_called()
+    assert cs.call_args.args[0] == "ct"
+    assert cs.call_args.kwargs["metadata"] == {
+        "source": "ace-web", "origin_key": f"ace-web:{workspace.slug}", "opp_slug": "field-hep"}
+
+
+def test_the_assertion_is_what_canopy_verifies(settings):
+    """Signed with the private key; readable with the public half canopy holds;
+    addressed to canopy; short-lived; single-use; a verified email."""
+    import jwt
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    from apps.canopy import client
+
+    priv = ed25519.Ed25519PrivateKey.generate()
+    settings.CANOPY_SIGNING_KEY = priv.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption()).decode()
+    settings.CANOPY_APP_NAME = "ace-web"
+    settings.CANOPY_BASE_URL = "https://labs.connect.dimagi.com/canopy/"
+    settings.CANOPY_ASSERTION_AUDIENCE = ""
+    pub = priv.public_key().public_bytes(serialization.Encoding.PEM,
+                                         serialization.PublicFormat.SubjectPublicKeyInfo)
+    claims = jwt.decode(client._assertion("Alice@Dimagi.com"), pub, algorithms=["EdDSA"],
+                        audience="https://labs.connect.dimagi.com/canopy")
+    assert claims["iss"] == "ace-web" and claims["sub"] == "alice@dimagi.com"
+    assert claims["email"] == "alice@dimagi.com" and claims["email_verified"] is True
+    assert claims["exp"] - claims["iat"] <= 120 and claims["jti"]
+
+
+def test_no_signing_key_is_a_clear_error_not_a_fallback(settings):
+    from apps.canopy import client
+
+    settings.CANOPY_SIGNING_KEY = ""
+    with pytest.raises(client.CanopyError) as exc:
+        client._assertion("a@dimagi.com")
+    assert exc.value.status == 503

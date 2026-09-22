@@ -3,6 +3,7 @@ import { CanopyRestError } from "canopy-client";
 import { apiClient } from "../api/apiClient";
 import type { components as canopy } from "../api/canopy-generated";
 import { canopyRest } from "./client";
+import { canopyPrincipal } from "./token";
 
 /**
  * api.ts — browser → canopy-web REST.
@@ -45,6 +46,7 @@ type EmdashSessionOut = canopy["schemas"]["EmdashSessionOut"];
 type TurnOut = canopy["schemas"]["TurnOut"];
 type TurnEventsOut = canopy["schemas"]["TurnEventsOut"];
 type MessagePageOut = canopy["schemas"]["MessagePageOut"];
+type ContactSessionOut = canopy["schemas"]["ContactSessionOut"];
 
 export interface CanopySessionSummary {
   id: string;
@@ -117,6 +119,29 @@ async function canopyJson<T>(base: string, path: string, init?: RequestInit): Pr
 }
 
 /**
+ * Which principal this browser is talking as.
+ *
+ * canopy answers it at mint time: a person with a canopy account at one of the
+ * site's resolvable domains is that USER, and everyone else is a CONTACT — a
+ * first-class principal with its own surface, not a degraded user. Nothing here
+ * decides it, and nothing may assume it: the two reach different routes, and a
+ * contact calling a user route gets a 403 rather than a smaller answer.
+ *
+ * `user` before the first mint, which is the same answer canopy-client's own
+ * store gives — every caller below awaits a token first, so by the time the
+ * route is chosen the mint has happened.
+ */
+function isContact(): boolean {
+  return canopyPrincipal() === "contact";
+}
+
+/** The session root for whoever we are. The paths differ; the shapes the
+ *  panel reads do not. */
+function sessionsRoot(): string {
+  return isContact() ? "/api/contact/sessions" : "/api/canopy-sessions";
+}
+
+/**
  * canopy_sessions.schemas.SessionOut has no `updated_at` field — it's
  * `last_activity_at` (mapped to our `updated_at`). `metadata` is NOT part of
  * SessionOut at all (it never was — an earlier draft of this mapping
@@ -134,6 +159,27 @@ function mapSessionSummary(raw: SessionOut): CanopySessionSummary {
   };
 }
 
+/**
+ * The same summary, from `ContactSessionOut`.
+ *
+ * A contact's row carries no `last_activity_at`, `runner_name` or
+ * `runner_online`: those describe the fleet, and a contact is told nothing
+ * about which of our boxes is running their conversation. `created_at` stands
+ * in for the sort key, and the runner fields stay null — which the panel
+ * already reads as "no binding to be offline", so the placement banner never
+ * offers a contact a machine they cannot see.
+ */
+function mapContactSummary(raw: ContactSessionOut): CanopySessionSummary {
+  return {
+    id: raw.id,
+    title: raw.title,
+    agent_slug: raw.agent_slug ?? null,
+    updated_at: raw.created_at,
+    runner_name: null,
+    runner_online: null,
+  };
+}
+
 export async function listCanopySessions(
   base: string,
   filters: { opp_slug?: string; opp_run_id?: string; state?: string; origin_key?: string } = {},
@@ -141,12 +187,24 @@ export async function listCanopySessions(
   const params = new URLSearchParams({ source: "ace-web" });
   if (filters.opp_slug) params.set("opp_slug", filters.opp_slug);
   if (filters.opp_run_id) params.set("opp_run_id", filters.opp_run_id);
-  if (filters.state) params.set("state", filters.state);
   // Scopes the list to THIS ace workspace (C1) — canopy filters on the
   // opaque metadata.origin_key it never otherwise interprets. Omitted (no
   // filter applied) only when the caller has no ace workspace to scope by.
   if (filters.origin_key) params.set("origin_key", filters.origin_key);
 
+  if (isContact()) {
+    // A contact's list is already their OWN conversations, so `state` has no
+    // meaning here (nothing archives a contact's chat) and the contact route
+    // does not take it. Every other filter is the same one, by the same name —
+    // canopy took the user list's filters wholesale for parity.
+    const rows = await canopyJson<ContactSessionOut[]>(
+      base,
+      `/api/contact/sessions?${params.toString()}`,
+    );
+    return rows.map(mapContactSummary);
+  }
+
+  if (filters.state) params.set("state", filters.state);
   const rows = await canopyJson<SessionOut[]>(
     base,
     `/api/canopy-sessions/?${params.toString()}`,
@@ -163,6 +221,16 @@ export async function listCanopySessions(
  * (fix-round-1 review, Important 2).
  */
 export async function getCanopySession(base: string, id: string): Promise<CanopySessionDetail> {
+  if (isContact()) {
+    const raw = await canopyJson<ContactSessionOut>(
+      base,
+      `/api/contact/sessions/${encodeURIComponent(id)}`,
+    );
+    // No scroll-back cursor on a contact's detail, so report "maybe" and let
+    // the first backward page answer it — an empty page is the honest "no
+    // more", where guessing `false` here would hide history that exists.
+    return { ...mapContactSummary(raw), has_more_before: true, oldest_loaded_turn_index: null };
+  }
   const raw = await canopyJson<SessionDetailOut>(
     base,
     `/api/canopy-sessions/${encodeURIComponent(id)}`,
@@ -210,7 +278,7 @@ export async function fetchOlderMessages(
 ): Promise<MessagePageOut> {
   return canopyJson<MessagePageOut>(
     base,
-    `/api/canopy-sessions/${encodeURIComponent(id)}/messages?before=${encodeURIComponent(String(before))}`,
+    `${sessionsRoot()}/${encodeURIComponent(id)}/messages?before=${encodeURIComponent(String(before))}`,
   );
 }
 
@@ -219,14 +287,34 @@ export async function fetchOlderMessages(
 // stop once the last viewer leaves. Best-effort — callers (CanopyChatPanel)
 // fire these on mount/unmount and never block rendering on the result.
 export async function attachCanopySession(base: string, id: string): Promise<void> {
-  await canopyFetch(base, `/api/canopy-sessions/${encodeURIComponent(id)}/attach`, {
+  await canopyFetch(base, `${sessionsRoot()}/${encodeURIComponent(id)}/attach`, {
     method: "POST",
   });
 }
 
 export async function detachCanopySession(base: string, id: string): Promise<void> {
-  await canopyFetch(base, `/api/canopy-sessions/${encodeURIComponent(id)}/detach`, {
+  await canopyFetch(base, `${sessionsRoot()}/${encodeURIComponent(id)}/detach`, {
     method: "POST",
+  });
+}
+
+/**
+ * A contact's send, over HTTP.
+ *
+ * A contact joins the session socket as a LISTENER — they hear the agent, and
+ * canopy refuses a send on a socket it cannot attribute to a user id. So the
+ * message goes over REST and the reply streams back on the socket they already
+ * hold. The chat kit does the rest (`sendOverHttp`): the line appears and the
+ * wait starts before the round trip, exactly as a member's does.
+ */
+export async function sendCanopyMessage(
+  base: string,
+  id: string,
+  text: string,
+): Promise<unknown> {
+  return canopyJson<unknown>(base, `/api/contact/sessions/${encodeURIComponent(id)}/send`, {
+    method: "POST",
+    body: JSON.stringify({ text }),
   });
 }
 
