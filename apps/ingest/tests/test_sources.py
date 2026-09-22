@@ -56,7 +56,8 @@ def _turn(session, turn_index, canopy_turn_id, *, status="complete", completed_a
 def _canopy_up(fetched):
     """Patch the two canopy calls `refresh_canopy_cache` makes."""
     return (
-        mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}),
+        mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}),
         mock.patch(
             "apps.canopy.transcripts.fetch_turn_transcript",
             side_effect=lambda tok, tid, **kw: fetched[tid],
@@ -128,7 +129,8 @@ def test_turn_order_follows_turn_index_not_row_creation_order():
 def test_the_canopy_fetch_is_cached_and_not_refetched():
     _user, s = _session(canopy_session_id="sess-1")
     _turn(s, 1, "turn-a")
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=LINE_A) as fetch:
         sources.session_raw_jsonl(s)
         sources.session_raw_jsonl(s)
@@ -285,7 +287,8 @@ def test_a_fetch_failure_never_seats_a_cache_claiming_turns_it_does_not_hold():
             raise TranscriptTooLarge("too big")
         return LINE_A
 
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", side_effect=_boom):
         assert sources.session_raw_jsonl(s) == LINE_A
     row = IngestUpload.objects.get(session=s)
@@ -364,7 +367,8 @@ def test_refresh_records_the_cache_metadata_over_the_bytes_it_actually_stored():
 def test_a_fetch_acts_as_the_runs_owner():
     user, s = _session(canopy_session_id="sess-1")
     _turn(s, 1, "turn-a")
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}) as ex, \
+    with mock.patch("apps.canopy.client.visitor_token",
+                    return_value={"token": "t", "kind": "user"}) as ex, \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=LINE_A):
         assert sources.session_raw_jsonl(s) == LINE_A
     assert ex.call_args.args[0] == user.email
@@ -387,7 +391,8 @@ def test_an_owner_with_no_email_fetches_nothing_rather_than_borrowing_an_identit
 def test_a_contact_owners_transcript_is_read_from_the_contact_surface():
     user, s = _session(canopy_session_id="sess-1")
     _turn(s, 1, "turn-a")
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "c", "kind": "contact"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                    return_value={"token": "c", "kind": "contact"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=LINE_A) as f:
         sources.session_raw_jsonl(s)
     assert f.call_args.kwargs["path"] == "/api/contact/turns/turn-a/transcript"
@@ -403,7 +408,8 @@ def test_a_turn_that_only_just_finished_is_refetched_even_though_its_id_is_cache
 
     _user, s = _session(canopy_session_id="sess-1")
     _turn(s, 1, "turn-a", completed_at=timezone.now())   # just now
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=LINE_A) as f:
         sources.session_raw_jsonl(s)
         sources.session_raw_jsonl(s)
@@ -418,7 +424,8 @@ def test_a_still_running_turn_is_refetched_every_read():
     by timestamp while its transcript is actively growing."""
     _user, s = _session(canopy_session_id="sess-1")
     _turn(s, 1, "turn-a", status="streaming")   # settled timestamp, live turn
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=LINE_A) as f:
         sources.session_raw_jsonl(s)
         sources.session_raw_jsonl(s)
@@ -434,7 +441,8 @@ def test_a_terminal_turn_with_no_completed_at_still_settles():
     msg = _turn(s, 1, "turn-a", completed_at=None)
     # `.update()` bypasses auto_now, which `.save()` would overwrite.
     Message.objects.filter(pk=msg.pk).update(updated_at=_settled())
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=LINE_A) as f:
         sources.session_raw_jsonl(s)
         sources.session_raw_jsonl(s)
@@ -445,7 +453,8 @@ def test_a_terminal_turn_with_no_completed_at_still_settles():
 def test_a_terminal_turn_with_no_completed_at_is_provisional_while_it_is_fresh():
     _user, s = _session(canopy_session_id="sess-1")
     _turn(s, 1, "turn-a", completed_at=None)   # updated_at is now
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=LINE_A) as f:
         sources.session_raw_jsonl(s)
         sources.session_raw_jsonl(s)
@@ -487,7 +496,8 @@ def test_an_empty_transcript_for_a_completed_turn_is_not_treated_as_success():
     _turn(s, 1, "turn-a")            # status="complete"
     _turn(s, 3, "turn-b")
     blobs = {"turn-a": LINE_A, "turn-b": b""}
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch(
              "apps.canopy.transcripts.fetch_turn_transcript",
              side_effect=lambda tok, tid, **kw: blobs[tid],
@@ -505,7 +515,8 @@ def test_an_empty_transcript_for_a_turn_that_never_ran_is_fine():
     _turn(s, 1, "turn-a")
     _turn(s, 3, "turn-b", status="error")   # canopy:cancelled — never executed
     blobs = {"turn-a": LINE_A, "turn-b": b""}
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch(
              "apps.canopy.transcripts.fetch_turn_transcript",
              side_effect=lambda tok, tid, **kw: blobs[tid],
@@ -524,7 +535,8 @@ def test_a_permanently_404ing_turn_reads_as_incomplete_not_as_the_whole_run():
 
     user, s = _session(canopy_session_id="sess-1")
     _hybrid(user, s)
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch(
              "apps.canopy.transcripts.fetch_turn_transcript",
              side_effect=CanopyError(404, "no such turn"),
@@ -541,7 +553,8 @@ def test_a_permanently_404ing_turn_recovers_by_itself_once_canopy_answers():
 
     user, s = _session(canopy_session_id="sess-1")
     _hybrid(user, s)
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch(
              "apps.canopy.transcripts.fetch_turn_transcript",
              side_effect=CanopyError(404, "no such turn"),
@@ -561,7 +574,8 @@ def test_force_refresh_bypasses_a_cache_that_looks_perfectly_fresh():
     that reason."""
     _user, s = _session(canopy_session_id="sess-1")
     _turn(s, 1, "turn-a")
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=LINE_A) as f:
         sources.session_raw_jsonl(s)
         sources.session_raw_jsonl(s)                       # cached

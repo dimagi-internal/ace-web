@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import logging
 
-from django.conf import settings
-
 from . import client
 
 log = logging.getLogger(__name__)

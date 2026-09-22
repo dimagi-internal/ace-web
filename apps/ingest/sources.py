@@ -32,8 +32,6 @@ import hashlib
 import logging
 from dataclasses import dataclass
 
-from django.conf import settings
-
 log = logging.getLogger(__name__)
 
 # How long after a turn finishes its transcript is still treated as possibly
@@ -190,7 +188,8 @@ def refresh_canopy_cache(session):
         return None
     try:
         person = client.act_as(_actor_email(session))
-        blobs = [transcripts.fetch_turn_transcript(person.token, tid, path=person.transcript_path(tid))
+        blobs = [transcripts.fetch_turn_transcript(person.token, tid,
+                                                   path=person.transcript_path(tid))
                  for tid in turn_ids]
     except Exception:  # noqa: BLE001 — never let a canopy blip break a read
         # `error`, not `warning`: there is no Sentry on this deployment, and a

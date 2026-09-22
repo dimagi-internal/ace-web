@@ -35,9 +35,12 @@ def _session_with_turn(turn_id="turn-1"):
 
 def _canopy(turn=None, unclaimable=()):
     return (
-        mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}),
-        mock.patch("apps.canopy.client.Principal.get_turn", return_value=turn or {"status": "queued"}),
-        mock.patch("apps.canopy.client.Principal.list_unclaimable", return_value=list(unclaimable)),
+        mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}),
+        mock.patch("apps.canopy.client.Principal.get_turn",
+                   return_value=turn or {"status": "queued"}),
+        mock.patch("apps.canopy.client.Principal.list_unclaimable",
+                   return_value=list(unclaimable)),
     )
 
 
@@ -183,7 +186,8 @@ def test_the_newest_assistant_turn_is_the_one_reported():
         return {"status": "running"}
 
     with (
-        mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}),
+        mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}),
         mock.patch("apps.canopy.client.Principal.get_turn", side_effect=_get_turn),
     ):
         out = run_state.execution_state(s)

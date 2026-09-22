@@ -801,7 +801,8 @@ def test_resume_interrupted_does_not_redispatch_a_run_canopy_still_owns(
     )
     rows = [{"turn_id": "turn-1", "kind": "config", "reason": "no runner can take this session"}]
     with (
-        mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}),
+        mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}),
         mock.patch("apps.canopy.client.Principal.get_turn", return_value={"status": "queued"}),
         mock.patch("apps.canopy.client.Principal.list_unclaimable", return_value=rows),
     ):
@@ -835,7 +836,8 @@ def test_resume_interrupted_still_resumes_a_run_whose_canopy_turn_died(
         "apps.canopy.run_dispatch.start_turn", lambda mid: dispatched.append(mid),
     )
     with (
-        mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}),
+        mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}),
         mock.patch(
             "apps.canopy.client.Principal.get_turn",
             return_value={"status": "failed", "result_note": "boom"},
@@ -1166,7 +1168,8 @@ def test_structure_of_a_hybrid_session_covers_its_local_phases_too(member_client
         session=session, turn_index=9, role="assistant", content={"text": ""},
         status="complete", canopy_turn_id="turn-a",
     )
-    with mock.patch("apps.canopy.client.visitor_token", return_value={"token": "t", "kind": "user"}), \
+    with mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "t", "kind": "user"}), \
          mock.patch("apps.canopy.transcripts.fetch_turn_transcript", return_value=b""):
         resp = client.get(f"/api/w/{workspace.slug}/sessions/{session.slug}/structure")
     assert resp.status_code == 200

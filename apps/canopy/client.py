@@ -59,7 +59,7 @@ def _assertion(email: str) -> str:
 
     if not settings.CANOPY_SIGNING_KEY or not settings.CANOPY_APP_NAME:
         raise CanopyError(503, "CANOPY_SIGNING_KEY and CANOPY_APP_NAME must be set")
-    now = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    now = int(dt.datetime.now(dt.UTC).timestamp())
     email = (email or "").strip().lower()
     return jwt.encode(
         {
@@ -183,7 +183,8 @@ class Principal:
         return _get(f"{root}/{turn_id}", bearer=self.token)
 
     def list_unclaimable(self) -> list:
-        path = "/api/contact/turns/unclaimable" if self.is_contact else "/api/harness/turns/unclaimable"
+        root = "/api/contact/turns" if self.is_contact else "/api/harness/turns"
+        path = f"{root}/unclaimable"
         return _get(path, bearer=self.token)
 
     def transcript_path(self, turn_id: str) -> str:

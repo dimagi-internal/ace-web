@@ -53,7 +53,8 @@ def _run(**kw):
 
 def _patched(send_return=None, kind="user"):
     return (
-        mock.patch("apps.canopy.client.visitor_token", return_value={"token": "usertok", "kind": kind}),
+        mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "usertok", "kind": kind}),
         mock.patch.object(client.Principal, "create_session", return_value={"id": "sess-9"}),
         mock.patch.object(
             client.Principal, "send",
@@ -235,9 +236,11 @@ def test_an_owner_who_is_a_contact_runs_on_the_contact_surface():
     session, assistant = _run()
     with mock.patch("apps.canopy.client.visitor_token",
                     return_value={"token": "ctok", "kind": "contact"}), \
-         mock.patch("apps.canopy.client.create_contact_session", return_value={"id": "sess-c"}) as cc, \
+         mock.patch("apps.canopy.client.create_contact_session",
+                    return_value={"id": "sess-c"}) as cc, \
          mock.patch("apps.canopy.client.create_run_session") as cr, \
-         mock.patch("apps.canopy.client._post", return_value={"turn_id": "turn-c"}) as post:
+         mock.patch("apps.canopy.client._post",
+                    return_value={"turn_id": "turn-c"}) as post:
         assert run_dispatch.dispatch_turn(assistant.id) == "turn-c"
     cr.assert_not_called()
     assert cc.call_args.args[0] == "ctok"

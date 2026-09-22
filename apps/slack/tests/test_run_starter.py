@@ -67,7 +67,8 @@ def _canopy_patches(send_return=None):
     """Patch the canopy client calls run_dispatch makes, leaving run_dispatch
     itself real so the prompt text is asserted on the actual wire payload."""
     return (
-        mock.patch("apps.canopy.client.visitor_token", return_value={"token": "usertok", "kind": "user"}),
+        mock.patch("apps.canopy.client.visitor_token",
+                   return_value={"token": "usertok", "kind": "user"}),
         mock.patch("apps.canopy.client.Principal.create_session", return_value={"id": "sess-9"}),
         mock.patch(
             "apps.canopy.client.Principal.send",
