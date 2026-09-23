@@ -5820,6 +5820,64 @@
         ]
       }
     },
+    "/api/canopy/jwks": {
+      "get": {
+        "operationId": "apps_canopy_api_jwks",
+        "summary": "Public keys for the assertions ace-web signs",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "description": "The keys that verify ace-web's assertions about its own users.\n\nRegister this URL on canopy (Connected sites \u2192 \"Where your site publishes\nits keys\") instead of pasting a key: rotating then means publishing the new\nkey here and switching what we sign with, and canopy follows on its own.",
+        "tags": [
+          "canopy"
+        ]
+      }
+    },
+    "/api/canopy/on-behalf-token": {
+      "post": {
+        "operationId": "apps_canopy_api_on_behalf_token",
+        "summary": "Trade a canopy assertion for a token acting as its subject",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnBehalfTokenOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "Verify canopy's on-behalf-of assertion and return an ace-web token for\nthe person it names.\n\nA canopy agent answering one of our users calls this once, then uses the\ntoken as an ordinary Bearer. Every existing per-user rule in ace-web then\napplies to what it reads, with nothing new to teach them \u2014 which is the\npoint: the agent stops reading as itself.",
+        "tags": [
+          "canopy"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnBehalfIn"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "apps_common_api_health",
@@ -11705,6 +11763,52 @@
           "expires_at"
         ],
         "title": "CanopyTokenOut",
+        "type": "object"
+      },
+      "OnBehalfTokenOut": {
+        "additionalProperties": false,
+        "description": "A short-lived ace-web token that acts as that person.",
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "acting_as": {
+            "title": "Acting As",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "acting_as"
+        ],
+        "title": "OnBehalfTokenOut",
+        "type": "object"
+      },
+      "OnBehalfIn": {
+        "additionalProperties": false,
+        "description": "Canopy's signed statement about who its agent is answering.",
+        "properties": {
+          "assertion": {
+            "title": "Assertion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assertion"
+        ],
+        "title": "OnBehalfIn",
         "type": "object"
       },
       "HealthCheckOut": {

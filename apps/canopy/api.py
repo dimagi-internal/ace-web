@@ -30,7 +30,7 @@ from ninja import Path, Router
 
 from apps.api.auth import session_auth
 from apps.api.deps import resolve_workspace_for_member
-from apps.api.errors import TYPE_UPSTREAM, ProblemError
+from apps.api.errors import TYPE_AUTH, TYPE_UPSTREAM, ProblemError
 
 from . import client
 from .schemas import (
@@ -38,6 +38,8 @@ from .schemas import (
     CanopySessionCreateOut,
     CanopyStatusOut,
     CanopyTokenOut,
+    OnBehalfIn,
+    OnBehalfTokenOut,
 )
 
 router = Router(auth=session_auth, tags=["canopy"])
@@ -123,3 +125,54 @@ def sessions(
     except client.CanopyError as exc:
         raise _upstream(exc) from exc
     return {"id": result["id"]}
+
+
+# --- the reverse direction: canopy's agent acting as one of our users ---------
+#
+# `auth=None` on both, and that is the design rather than an omission. The
+# first publishes a PUBLIC key, which a verifier must be able to read before it
+# trusts anything. The second is authenticated BY THE ASSERTION: canopy's
+# signature is the credential, which is the whole reason there is no shared
+# secret between the two systems any more.
+public_router = Router(auth=None, tags=["canopy"])
+
+
+@public_router.get("/jwks", response=dict, auth=None,
+                   summary="Public keys for the assertions ace-web signs")
+def jwks(request: HttpRequest) -> dict:
+    """The keys that verify ace-web's assertions about its own users.
+
+    Register this URL on canopy (Connected sites → "Where your site publishes
+    its keys") instead of pasting a key: rotating then means publishing the new
+    key here and switching what we sign with, and canopy follows on its own.
+    """
+    from . import client
+
+    return {"keys": client.published_jwks()}
+
+
+@public_router.post("/on-behalf-token", response={200: OnBehalfTokenOut}, auth=None,
+                    summary="Trade a canopy assertion for a token acting as its subject")
+def on_behalf_token(request: HttpRequest, payload: OnBehalfIn) -> dict:
+    """Verify canopy's on-behalf-of assertion and return an ace-web token for
+    the person it names.
+
+    A canopy agent answering one of our users calls this once, then uses the
+    token as an ordinary Bearer. Every existing per-user rule in ace-web then
+    applies to what it reads, with nothing new to teach them — which is the
+    point: the agent stops reading as itself.
+    """
+    from . import onbehalf
+
+    try:
+        raw, token = onbehalf.token_for(payload.assertion)
+    except onbehalf.OnBehalfError as exc:
+        # 401 for "this assertion is no good", 422 for "it is good and names
+        # nobody here" — they need different fixes, so they read differently.
+        status = 422 if exc.code in ("unknown_subject", "incomplete") else 401
+        raise ProblemError(status, exc.message, type_=TYPE_AUTH) from exc
+    return {
+        "token": raw,
+        "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+        "acting_as": token.user.email,
+    }

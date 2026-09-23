@@ -2293,6 +2293,56 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/api/canopy/jwks": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Public keys for the assertions ace-web signs
+         * @description The keys that verify ace-web's assertions about its own users.
+         *
+         *     Register this URL on canopy (Connected sites → "Where your site publishes
+         *     its keys") instead of pasting a key: rotating then means publishing the new
+         *     key here and switching what we sign with, and canopy follows on its own.
+         */
+        readonly get: operations["apps_canopy_api_jwks"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/api/canopy/on-behalf-token": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Trade a canopy assertion for a token acting as its subject
+         * @description Verify canopy's on-behalf-of assertion and return an ace-web token for
+         *     the person it names.
+         *
+         *     A canopy agent answering one of our users calls this once, then uses the
+         *     token as an ordinary Bearer. Every existing per-user rule in ace-web then
+         *     applies to what it reads, with nothing new to teach them — which is the
+         *     point: the agent stops reading as itself.
+         */
+        readonly post: operations["apps_canopy_api_on_behalf_token"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/api/health": {
         readonly parameters: {
             readonly query?: never;
@@ -4994,6 +5044,26 @@ export interface components {
              * @default user
              */
             readonly kind: string;
+        };
+        /**
+         * OnBehalfTokenOut
+         * @description A short-lived ace-web token that acts as that person.
+         */
+        readonly OnBehalfTokenOut: {
+            /** Token */
+            readonly token: string;
+            /** Expires At */
+            readonly expires_at?: string | null;
+            /** Acting As */
+            readonly acting_as: string;
+        };
+        /**
+         * OnBehalfIn
+         * @description Canopy's signed statement about who its agent is answering.
+         */
+        readonly OnBehalfIn: {
+            /** Assertion */
+            readonly assertion: string;
         };
         /**
          * HealthCheckOut
@@ -8077,6 +8147,52 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["CanopyTokenOut"];
+                };
+            };
+        };
+    };
+    readonly apps_canopy_api_jwks: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": {
+                        readonly [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    readonly apps_canopy_api_on_behalf_token: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["OnBehalfIn"];
+            };
+        };
+        readonly responses: {
+            /** @description OK */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["OnBehalfTokenOut"];
                 };
             };
         };

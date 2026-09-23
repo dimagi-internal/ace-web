@@ -52,3 +52,19 @@ class CanopySessionCreateOut(StrictModel):
     """POST /api/w/{workspace_slug}/canopy/sessions response."""
 
     id: str
+
+
+class OnBehalfIn(StrictModel):
+    """Canopy's signed statement about who its agent is answering."""
+
+    assertion: str
+
+
+class OnBehalfTokenOut(StrictModel):
+    """A short-lived ace-web token that acts as that person."""
+
+    token: str
+    expires_at: str | None = None
+    #: Echoed so the caller can see WHO it ended up acting as, rather than
+    #: inferring it from the assertion it sent.
+    acting_as: str

@@ -41,6 +41,14 @@ class PersonalToken(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
+    #: When this stops working. NULL means never, which is what a CLI token is
+    #: and why the column is nullable rather than defaulted — the long-lived
+    #: tokens this model was built for have no expiry to invent.
+    #:
+    #: Set for a token minted from a canopy on-behalf-of assertion: that one
+    #: stands for somebody who is not present, so it should outlive the answer
+    #: it was minted for by as little as possible.
+    expires_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "personal_tokens"
@@ -49,18 +57,31 @@ class PersonalToken(models.Model):
         return f"Token {self.label!r} for {self.user_id}"
 
     @classmethod
-    def create_for_user(cls, *, user, label: str) -> tuple[str, "PersonalToken"]:
+    def create_for_user(cls, *, user, label: str,
+                        ttl_seconds: int | None = None) -> tuple[str, "PersonalToken"]:
+        from datetime import timedelta
+
+        from django.utils import timezone
+
         raw = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(raw.encode()).hexdigest()
-        token = cls.objects.create(user=user, token_hash=token_hash, label=label)
+        expires_at = (timezone.now() + timedelta(seconds=ttl_seconds)) if ttl_seconds else None
+        token = cls.objects.create(user=user, token_hash=token_hash, label=label,
+                                   expires_at=expires_at)
         return raw, token
 
     @classmethod
     def lookup(cls, raw: str) -> "PersonalToken | None":
+        from django.db.models import Q
+        from django.utils import timezone
+
         token_hash = hashlib.sha256(raw.encode()).hexdigest()
         try:
+            # An expiry nothing checks is a comment. Filtered in the QUERY so
+            # every caller of `lookup` gets it, rather than each remembering.
             return cls.objects.select_related("user").get(
-                token_hash=token_hash, revoked_at__isnull=True
+                Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()),
+                token_hash=token_hash, revoked_at__isnull=True,
             )
         except cls.DoesNotExist:
             return None
