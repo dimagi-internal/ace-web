@@ -77,7 +77,71 @@ def _assertion(email: str) -> str:
         },
         settings.CANOPY_SIGNING_KEY,
         algorithm="EdDSA",
+        # Names WHICH key signed this, so canopy can hold two during a
+        # rotation and still pick the right one.
+        headers={"kid": active_kid()},
     )
+
+
+def _jwk_from_private(pem: str) -> dict:
+    """The PUBLIC half of a PEM private key, as a JWK with an RFC 7638 `kid`.
+
+    Derived from the key rather than configured beside it: a `kid` that does
+    not change with the key gives canopy nothing to select on during a
+    rotation, and a second setting to keep in step is a second thing to get
+    wrong.
+    """
+    import base64
+    import hashlib
+
+    from cryptography.hazmat.primitives import serialization
+    from jwt.algorithms import OKPAlgorithm
+
+    key = serialization.load_pem_private_key(pem.encode(), password=None)
+    jwk = OKPAlgorithm.to_jwk(key.public_key(), as_dict=True)
+    jwk.update({"use": "sig", "alg": "EdDSA"})
+    canonical = json.dumps({"crv": jwk["crv"], "kty": jwk["kty"], "x": jwk["x"]},
+                           separators=(",", ":"), sort_keys=True).encode()
+    jwk["kid"] = base64.urlsafe_b64encode(hashlib.sha256(canonical).digest()).decode().rstrip("=")
+    return jwk
+
+
+def active_kid() -> str:
+    return _jwk_from_private(settings.CANOPY_SIGNING_KEY)["kid"]
+
+
+def published_jwks() -> list[dict]:
+    """Every key canopy should currently accept from us: the one we sign with,
+    plus any retired public halves still inside their rollover window.
+
+    Without the retired half, switching signer refuses every assertion already
+    in flight and every one canopy checks against a cache it has not refreshed.
+    """
+    from cryptography.hazmat.primitives import serialization
+    from jwt.algorithms import OKPAlgorithm
+
+    if not settings.CANOPY_SIGNING_KEY:
+        return []
+    out = [_jwk_from_private(settings.CANOPY_SIGNING_KEY)]
+    seen = {out[0]["kid"]}
+    for pem in [p.strip() for p in (settings.CANOPY_RETIRED_PUBLIC_KEYS or "").split("|")
+                if p.strip()]:
+        try:
+            pub = serialization.load_pem_public_key(pem.encode())
+            jwk = OKPAlgorithm.to_jwk(pub, as_dict=True)
+            jwk.update({"use": "sig", "alg": "EdDSA"})
+            import base64
+            import hashlib
+            canonical = json.dumps({"crv": jwk["crv"], "kty": jwk["kty"], "x": jwk["x"]},
+                                   separators=(",", ":"), sort_keys=True).encode()
+            jwk["kid"] = base64.urlsafe_b64encode(
+                hashlib.sha256(canonical).digest()).decode().rstrip("=")
+        except Exception:  # noqa: BLE001 - a bad retired key must not hide the live one
+            continue
+        if jwk["kid"] not in seen:
+            seen.add(jwk["kid"])
+            out.append(jwk)
+    return out
 
 
 def visitor_token(email: str) -> dict:

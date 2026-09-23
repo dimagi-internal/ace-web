@@ -301,6 +301,12 @@ CANOPY_SIGNING_KEY = env("CANOPY_SIGNING_KEY", default="").replace("\\n", "\n")
 # Who assertions are addressed to (canopy's EMBED_ASSERTION_AUDIENCE, which
 # defaults to its own base URL). Empty = CANOPY_BASE_URL.
 CANOPY_ASSERTION_AUDIENCE = env("CANOPY_ASSERTION_AUDIENCE", default="")
+
+# Public halves of keys ace-web signed with recently, still published at
+# /api/canopy/jwks while canopy's caches age out. Pipe-separated PEMs. Rotating
+# without this refuses every assertion already in flight the moment the signer
+# changes, which turns a rotation into a scheduled outage.
+CANOPY_RETIRED_PUBLIC_KEYS = env("CANOPY_RETIRED_PUBLIC_KEYS", default="").replace("\\n", "\n")
 # Browser-facing base: same-origin path prefix on labs, vite proxy path in dev.
 CANOPY_PUBLIC_BASE_URL = env("CANOPY_PUBLIC_BASE_URL", default="/canopy")
 CANOPY_WORKSPACE = env("CANOPY_WORKSPACE", default="connect")

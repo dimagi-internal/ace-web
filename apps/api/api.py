@@ -135,6 +135,7 @@ def _auth_smoke(request: HttpRequest) -> dict:
 
 from apps.activity.api import router as activity_router  # noqa: E402
 from apps.auth.api import router as auth_router  # noqa: E402
+from apps.canopy.api import public_router as canopy_public_router  # noqa: E402
 from apps.canopy.api import router as canopy_router  # noqa: E402
 from apps.canopy.api import workspace_router as canopy_workspace_router  # noqa: E402, I001
 from apps.common.api import router as common_router  # noqa: E402
@@ -171,5 +172,6 @@ api.add_router("/tokens", tokens_router)
 api.add_router("/auth", auth_router)
 api.add_router("/sessions/sweep", sessions_sweep_router)
 api.add_router("/canopy", canopy_router)
+api.add_router("/canopy", canopy_public_router)
 api.add_router("", common_router)
 api.add_router("", presence_router)
