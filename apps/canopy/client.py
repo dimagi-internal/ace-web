@@ -148,7 +148,13 @@ def visitor_token(email: str) -> dict:
     """A canopy token for the person whose command ace-web is carrying out —
     `kind` "user" when they have a canopy account (arriving as themselves),
     "contact" otherwise. Both are first-class."""
-    resp = _post("/api/auth/contact-token", {"assertion": _assertion(email)}, bearer="")
+    # `agent_slug` names the canopy TENANT this token is for. A site's name is
+    # unique only within a canopy workspace (canopy-web #960), so without it
+    # canopy has to guess from the name alone — and refuses (409
+    # ambiguous_issuer) the day a second workspace registers an `ace-web`.
+    resp = _post("/api/auth/contact-token",
+                 {"assertion": _assertion(email), "agent_slug": settings.CANOPY_AGENT_SLUG},
+                 bearer="")
     resp.setdefault("kind", "contact")
     return resp
 

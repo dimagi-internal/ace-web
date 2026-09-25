@@ -309,3 +309,19 @@ def test_no_signing_key_is_a_clear_error_not_a_fallback(settings):
     with pytest.raises(client.CanopyError) as exc:
         client._assertion("a@dimagi.com")
     assert exc.value.status == 503
+
+
+def test_the_visitor_token_names_the_agent_so_canopy_knows_the_tenant():
+    """canopy-web #960: `iss` names a site only within one canopy workspace.
+    Without `agent_slug`, a second workspace registering `ace-web` would make
+    every sign-in here a 409."""
+    from apps.canopy import client as canopy_client
+
+    with mock.patch.object(canopy_client, "_assertion", return_value="signed"), \
+            mock.patch.object(canopy_client, "_post", return_value={"token": "t"}) as post, \
+            override_settings(CANOPY_AGENT_SLUG="ace"):
+        canopy_client.visitor_token("jj@dimagi.com")
+
+    path, body = post.call_args.args[:2]
+    assert path == "/api/auth/contact-token"
+    assert body == {"assertion": "signed", "agent_slug": "ace"}
