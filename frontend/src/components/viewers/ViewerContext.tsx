@@ -16,7 +16,10 @@ export type ViewerTarget =
   | {
       readonly type: "file";
       readonly fileId: string;
+      /** The file's name — shown as-is in the provenance line. */
       readonly name: string;
+      /** A readable title, when the filename isn't one. */
+      readonly title?: string;
       readonly driveLink?: string | null;
       /** The skill that wrote it, for the header. */
       readonly skill?: string | null;
@@ -140,7 +143,7 @@ function ViewerDialog({ target, onClose }: { target: ViewerTarget | null; onClos
 }
 
 export function targetTitle(target: ViewerTarget): string {
-  return target.type === "product" ? target.product.title : target.name;
+  return target.type === "product" ? target.product.title : (target.title ?? target.name);
 }
 
 /** Title + provenance line: what it is, which phase, which skill made it.
@@ -152,6 +155,7 @@ export function ViewerHeading({ target, eyebrow }: { target: ViewerTarget; eyebr
   const skill = product ? product.producer : target.type === "file" ? target.skill : null;
   const provenance = [
     product ? meta.label : null,
+    target.type === "file" && target.title ? target.name : null,
     product ? api?.phaseLabel(product.phase) : null,
     skill ? `made by ${api?.skillLabel(skill) ?? skill}` : null,
   ]

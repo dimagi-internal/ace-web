@@ -35,6 +35,7 @@ import { Glossed } from "@/components/glossary/Glossed";
 import {
   phasesFinishedAt,
   productsAtBeat,
+  documentTitle,
   revealIndexOf,
   stepDocuments,
 } from "@/components/replay/cursor";
@@ -425,6 +426,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
           type: "file",
           fileId: a.drive_file_id,
           name: a.name || a.path,
+          title: documentTitle(a.name || a.path),
           driveLink: a.drive_web_link,
           skill: e.skill,
         });

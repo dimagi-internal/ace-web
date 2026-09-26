@@ -6,6 +6,7 @@ import {
   highlightBeats,
   phasesFinishedAt,
   productsAtBeat,
+  documentTitle,
   revealIndexOf,
   stepDocuments,
 } from "../cursor";
@@ -104,5 +105,28 @@ describe("stepDocuments", () => {
     expect(stepDocuments(step).map((a) => a.name)).toEqual(["summary.md", "pdd.md"]);
     expect(stepDocuments(step, new Set(["c"])).map((a) => a.name)).toEqual(["summary.md"]);
     expect(stepDocuments(undefined)).toEqual([]);
+  });
+});
+
+describe("documents in the spotlight", () => {
+  const art = (name: string) => ({
+    name, drive_file_id: name, drive_web_link: "", mime_type: "", size_bytes: null, path: name,
+  });
+
+  it("puts the step's own document before its eval / QA reports", () => {
+    const step = {
+      artifacts: [art("pdd-to-deliver-app-eval_report.md"), art("pdd-to-deliver-app_summary.md")],
+    } as unknown as import("@/api/types.ws").Step;
+    expect(stepDocuments(step).map((a) => a.name)).toEqual([
+      "pdd-to-deliver-app_summary.md",
+      "pdd-to-deliver-app-eval_report.md",
+    ]);
+  });
+
+  it("titles a document readably from its filename", () => {
+    expect(documentTitle("pdd-to-deliver-app-eval_report.md")).toBe("PDD to deliver app eval report");
+    expect(documentTitle("3-ocs/ocs-chatbot-qa_transcript-deep.md")).toBe(
+      "OCS chatbot QA transcript deep",
+    );
   });
 });

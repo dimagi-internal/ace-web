@@ -137,9 +137,30 @@ export function stepDocuments(
   alreadyShown: ReadonlySet<string> = new Set(),
 ): Artifact[] {
   if (!step) return [];
-  return step.artifacts.filter(
+  const docs = step.artifacts.filter(
     (a) => /\.(md|markdown)$/i.test(a.name || a.path) && !alreadyShown.has(a.drive_file_id),
   );
+  // The step's own document first; its QA / eval reports after it.
+  const isReview = (a: Artifact) => /-(qa|eval)[_.]/i.test(a.name || a.path);
+  return [...docs.filter((a) => !isReview(a)), ...docs.filter(isReview)];
+}
+
+const TITLE_ACRONYMS = new Set(["pdd", "qa", "ocs", "llo", "flw", "hq", "ux", "faq", "uat", "ppi"]);
+
+/** A readable name for a document ACE wrote, from its filename:
+ *  `pdd-to-deliver-app-eval_report.md` → "PDD to deliver app eval report". */
+export function documentTitle(filename: string): string {
+  const stem = filename.replace(/^.*\//, "").replace(/\.(md|markdown)$/i, "");
+  const words = stem.split(/[-_\s]+/).filter(Boolean);
+  return words
+    .map((w, i) =>
+      TITLE_ACRONYMS.has(w.toLowerCase())
+        ? w.toUpperCase()
+        : i === 0
+          ? w[0].toUpperCase() + w.slice(1)
+          : w.toLowerCase(),
+    )
+    .join(" ");
 }
 
 /**
