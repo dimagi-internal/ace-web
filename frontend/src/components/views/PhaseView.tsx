@@ -32,15 +32,20 @@ import { PendingEditsBar } from "@/components/views/decisions/PendingEditsBar";
 import { ForkWithEditsDialog } from "@/components/views/decisions/ForkWithEditsDialog";
 import { PresenceStrip } from "@/components/views/PresenceStrip";
 import { Glossed } from "@/components/glossary/Glossed";
-import { phasesFinishedAt, productsAtBeat, revealIndexOf } from "@/components/replay/cursor";
+import {
+  phasesFinishedAt,
+  productsAtBeat,
+  revealIndexOf,
+  stepDocuments,
+} from "@/components/replay/cursor";
 import { FlowPanel } from "@/components/replay/FlowPanel";
 import { ReplayBar } from "@/components/replay/ReplayBar";
-import { Spotlight } from "@/components/replay/Spotlight";
+import { itemKey, Spotlight } from "@/components/replay/Spotlight";
 import type { Replay } from "@/components/replay/useReplay";
 import { ProductsStrip } from "@/components/viewers/ProductsStrip";
 import { appStructureArtifact } from "@/components/viewers/ProductViewer";
 import { prefetchViews } from "@/components/viewers/viewCache";
-import { ViewerProvider } from "@/components/viewers/ViewerContext";
+import { ViewerProvider, type ViewerTarget } from "@/components/viewers/ViewerContext";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -404,11 +409,33 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
   );
   const justRevealed = useMemo(() => new Set(beatProducts.map((p) => p.id)), [beatProducts]);
 
-  // The spotlight: pop up what this beat just built.
-  const [spotlight, setSpotlight] = useState<ReplayProduct[] | null>(null);
+  // The spotlight: pop up what this beat just built — its products, then any
+  // markdown the step wrote that isn't already one of them.
+  const productFileIds = useMemo(
+    () => new Set(products.map((p) => p.file_id).filter((id): id is string => !!id)),
+    [products],
+  );
+  const beatItems = useMemo<ViewerTarget[]>(() => {
+    const items: ViewerTarget[] = beatProducts.map((p) => ({ type: "product", product: p }));
+    const e = replay.beat.event;
+    if (replay.active && e?.kind === "step_end" && e.skill) {
+      const step = snapshot.current_run.steps.find((st) => st.skill_name === e.skill);
+      for (const a of stepDocuments(step, productFileIds)) {
+        items.push({
+          type: "file",
+          fileId: a.drive_file_id,
+          name: a.name || a.path,
+          driveLink: a.drive_web_link,
+          skill: e.skill,
+        });
+      }
+    }
+    return items;
+  }, [beatProducts, replay.active, replay.beat.event, snapshot.current_run.steps, productFileIds]);
+  const [spotlight, setSpotlight] = useState<ViewerTarget[] | null>(null);
   useEffect(() => {
-    setSpotlight(replay.spotlights && beatProducts.length > 0 ? beatProducts : null);
-  }, [beatProducts, replay.spotlights]);
+    setSpotlight(replay.spotlights && beatItems.length > 0 ? beatItems : null);
+  }, [beatItems, replay.spotlights]);
 
   // Warm every product's view as soon as a replay starts, so each one pops up
   // already loaded rather than spinning on Drive in front of an audience.
@@ -420,6 +447,9 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
       const structure =
         p.kind === "commcare_app" ? appStructureArtifact(p, snapshot.current_run.steps) : null;
       if (structure) ids.add(structure.drive_file_id);
+    }
+    for (const st of snapshot.current_run.steps) {
+      for (const a of stepDocuments(st)) ids.add(a.drive_file_id);
     }
     const signal = { cancelled: false };
     void prefetchViews(
@@ -646,8 +676,8 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
         )}
       {spotlight && (
         <Spotlight
-          key={spotlight.map((p) => p.id).join("|")}
-          products={spotlight}
+          key={spotlight.map(itemKey).join("|")}
+          items={spotlight}
           replay={replay}
           onClose={() => setSpotlight(null)}
         />

@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { DemoEvent, DemoTimeline, ReplayProduct } from "@/api/replay";
 
-import { highlightBeats, phasesFinishedAt, productsAtBeat, revealIndexOf } from "../cursor";
+import {
+  highlightBeats,
+  phasesFinishedAt,
+  productsAtBeat,
+  revealIndexOf,
+  stepDocuments,
+} from "../cursor";
 import { groupSpans, phaseGroupOf } from "../phaseGroups";
 
 function evt(p: Partial<DemoEvent> & Pick<DemoEvent, "seq" | "kind" | "phase">): DemoEvent {
@@ -83,5 +89,20 @@ describe("phase groups", () => {
       { label: null, from: 5, count: 1 },
       { label: "Partner & launch", from: 6, count: 1 },
     ]);
+  });
+});
+
+describe("stepDocuments", () => {
+  const art = (name: string, id: string) => ({
+    name, drive_file_id: id, drive_web_link: "", mime_type: "", size_bytes: null, path: `x/${name}`,
+  });
+  const step = {
+    artifacts: [art("summary.md", "a"), art("verdict.yaml", "b"), art("pdd.md", "c")],
+  } as unknown as import("@/api/types.ws").Step;
+
+  it("pops up a step's markdown, not its YAML, and not what a product already shows", () => {
+    expect(stepDocuments(step).map((a) => a.name)).toEqual(["summary.md", "pdd.md"]);
+    expect(stepDocuments(step, new Set(["c"])).map((a) => a.name)).toEqual(["summary.md"]);
+    expect(stepDocuments(undefined)).toEqual([]);
   });
 });

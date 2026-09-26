@@ -15,6 +15,7 @@ import { WorkbenchChatPane } from "../components/opps/WorkbenchChatPane";
 import { WorkbenchHeader } from "../components/opps/WorkbenchHeader";
 import { RunsTable } from "../components/opps/RunsTable";
 import { ViewSwitcher, type ViewTab } from "../components/views/ViewSwitcher";
+import { stepDocuments } from "../components/replay/cursor";
 import { useReplay } from "../components/replay/useReplay";
 import { WorkbenchLayout, usePaneCollapsed } from "../components/workbench";
 import { useOppCostRollup } from "../hooks/useOppCostRollup";
@@ -65,17 +66,23 @@ export default function OppWorkbenchPage() {
   const costRollup = useOppCostRollup(slug, workspaceSlug);
   // Replay is started from the tab row but plays on the Phases view, so the
   // page owns it. Lazily fetched — costs nothing until someone presses it.
-  const decisions = state.kind === "loaded" ? state.snapshot.current_run.decisions : undefined;
-  const decisionSkills = useMemo(
-    () => new Set((decisions ?? []).map((d) => d.skill).filter(Boolean)),
-    [decisions],
-  );
+  // Skills worth a stop in replay's highlights mode: they recorded decisions
+  // or wrote a markdown document (which pops up as the step finishes).
+  const currentRun = state.kind === "loaded" ? state.snapshot.current_run : undefined;
+  const notableSkills = useMemo(() => {
+    const out = new Set<string>();
+    for (const d of currentRun?.decisions ?? []) if (d.skill) out.add(d.skill);
+    for (const st of currentRun?.steps ?? []) {
+      if (stepDocuments(st).length > 0) out.add(st.skill_name);
+    }
+    return out;
+  }, [currentRun]);
   const replay = useReplay(
     workspaceSlug ?? "",
     slug,
     state.kind === "loaded" ? state.snapshot.current_run.run_id : null,
     undefined,
-    decisionSkills,
+    notableSkills,
   );
   const { collapsed: chatCollapsed, toggle: toggleChatCollapsed } =
     usePaneCollapsed("ace.workbench.chatPaneCollapsed");
