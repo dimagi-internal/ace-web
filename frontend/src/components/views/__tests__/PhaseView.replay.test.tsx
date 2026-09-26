@@ -173,7 +173,7 @@ describe("PhaseView in replay", () => {
     const spotlight = screen.getByRole("dialog", { name: /Just built/ });
     // PDD product first, then the step's own idea-to-pdd.md as a second tab.
     expect(within(spotlight).getByText("1 of 2", { exact: false })).toBeInTheDocument();
-    expect(within(spotlight).getByRole("button", { name: "idea-to-pdd.md" })).toBeInTheDocument();
+    expect(within(spotlight).getByRole("button", { name: "Idea to PDD" })).toBeInTheDocument();
   });
 
   it("lands a decision only once its skill has finished", () => {

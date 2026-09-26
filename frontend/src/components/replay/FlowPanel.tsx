@@ -214,7 +214,7 @@ export function FlowPanel({ replay, steps, phases }: Props) {
                         <OutputRow
                           key={o.path}
                           output={o}
-                          phases={[...new Set(o.consumers.map((c) => phaseTag(c.phase)).filter(Boolean))] as string[]}
+                          phases={usedInPhases(o, phaseOrdinal)}
                           usedBy={o.consumers.map((c) => label(c.skill)).join(", ")}
                           file={done ? reachedFile(o.path) : null}
                           onOpen={openFile}
@@ -339,6 +339,16 @@ function IconButton({ label, onClick, icon }: { label: string; onClick: () => vo
       {icon}
     </button>
   );
+}
+
+/** "Phase 3", "Phase 5"… for the phases that read an output, in order. */
+function usedInPhases(output: FlowOutput, ordinal: ReadonlyMap<string, number>): string[] {
+  const nums = new Set<number>();
+  for (const c of output.consumers) {
+    const n = c.phase ? ordinal.get(c.phase) : undefined;
+    if (n != null) nums.add(n);
+  }
+  return [...nums].sort((a, b) => a - b).map((n) => `Phase ${n}`);
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
