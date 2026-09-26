@@ -5,7 +5,11 @@ export interface ParsedMarkdown {
   body: string;
 }
 
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+// Trailing spaces/tabs on the fence lines are tolerated: Drive's markdown
+// export ends every line of a Google Doc with two spaces (markdown's
+// hard-break marker), so an ACE doc's front matter arrives as "---  " and a
+// strict fence left it rendered as giant setext headings.
+const FRONTMATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
 export function parseFrontmatter(content: string): ParsedMarkdown {
   const stripped = content.replace(/^\uFEFF/, "");

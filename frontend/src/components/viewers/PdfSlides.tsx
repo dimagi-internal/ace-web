@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 interface Props {
   /** Object URL of the PDF (from the view cache). */
@@ -40,8 +40,11 @@ export function PdfSlides({ src, unit = "Page", maxHeight = "62vh" }: Props) {
     setError(null);
     void (async () => {
       try {
-        const pdfjs = await import("pdfjs-dist");
-        const worker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+        // The LEGACY build: pdf.js 6's modern build calls Math.sumPrecise,
+        // which only the newest browsers have (it logged "Math.sumPrecise is
+        // not a function" on the first deploy check). Legacy polyfills it.
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const worker = await import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url");
         pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
         const task = pdfjs.getDocument({ url: src });
         loading = task;
