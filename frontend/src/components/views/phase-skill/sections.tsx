@@ -8,10 +8,21 @@
 // chip helpers.
 import { AlertTriangle, ExternalLink, RotateCcw } from "lucide-react";
 
-import type { JudgeCriterionValue, Step } from "@/api/types.ws";
+import type { Decision, JudgeCriterionValue, Step } from "@/api/types.ws";
+import { Glossed } from "@/components/glossary/Glossed";
+import { useViewer } from "@/components/viewers/ViewerContext";
 import { cn } from "@/lib/utils";
 
+/** Statuses after which nothing more will be written for the step — a
+ *  missing verdict is missing, not pending. */
+const FINISHED_STATUSES = new Set(["complete", "qa-failed", "judge-fail", "error", "skipped"]);
+
+export function isFinished(status: string): boolean {
+  return FINISHED_STATUSES.has(status);
+}
+
 export function ProducerSection({ step }: { step: Step }) {
+  const viewer = useViewer();
   return (
     <section className="mb-3">
       <SectionHeader
@@ -31,15 +42,37 @@ export function ProducerSection({ step }: { step: Step }) {
       ) : (
         <ul className="flex flex-col gap-1">
           {step.artifacts.map((a) => (
-            <li key={a.drive_file_id}>
+            <li key={a.drive_file_id} className="flex items-center gap-1.5">
+              {viewer ? (
+                // Opens in the page; the icon beside it still goes to Drive.
+                <button
+                  type="button"
+                  onClick={() =>
+                    viewer.open({
+                      type: "file",
+                      fileId: a.drive_file_id,
+                      name: a.name || a.path,
+                      driveLink: a.drive_web_link,
+                      skill: step.skill_name,
+                    })
+                  }
+                  className="font-mono text-[11px] text-foreground hover:text-primary hover:underline"
+                  title="Open here"
+                >
+                  {a.path}
+                </button>
+              ) : (
+                <span className="font-mono text-[11px] text-foreground">{a.path}</span>
+              )}
               <a
                 href={a.drive_web_link}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-[11px] text-foreground hover:text-primary"
+                className="text-muted-foreground hover:text-primary"
+                title="Open in Drive"
+                aria-label={`Open ${a.path} in Drive`}
               >
-                <span className="font-mono">{a.path}</span>
-                <ExternalLink className="h-2.5 w-2.5 opacity-60" />
+                <ExternalLink className="h-2.5 w-2.5 opacity-70" />
               </a>
             </li>
           ))}
@@ -132,7 +165,14 @@ export function QASection({ step }: { step: Step }) {
   );
 }
 
-export function EvalSection({ step }: { step: Step }) {
+export function EvalSection({
+  step,
+  finished = isFinished(step.status),
+}: {
+  step: Step;
+  /** Nothing more will be written for this step (see PhaseSkillRow). */
+  finished?: boolean;
+}) {
   const judge = step.judge;
   const qaFailed = step.qa_result?.verdict === "fail";
   const evalSkill = `${step.skill_name}-eval`;
@@ -160,6 +200,16 @@ export function EvalSection({ step }: { step: Step }) {
         <section className="mb-1 rounded border border-dashed border-border/50 px-3 py-2">
           <SectionHeader source="Eval · — none defined" title="No eval skill for this producer" badge="—" badgeTone="muted" />
           <p className="text-[11px] text-muted-foreground/80">No eval defined for this producer yet.</p>
+        </section>
+      );
+    }
+    if (finished) {
+      return (
+        <section className="mb-1 rounded border border-dashed border-border/50 px-3 py-2">
+          <SectionHeader source={`Eval · ${evalSkill}`} title="No score recorded" badge="—" badgeTone="muted" />
+          <p className="text-[11px] text-muted-foreground/80">
+            This step has an eval, but no score was recorded for this run.
+          </p>
         </section>
       );
     }
@@ -221,6 +271,54 @@ export function EvalSection({ step }: { step: Step }) {
           ran {judge.evaluated_at}
         </div>
       )}
+    </section>
+  );
+}
+
+/**
+ * What this skill decided — each question, the answer the run went with, and
+ * whether a person overrode the AI's default. The decisions ARE much of the
+ * story of a run, and in a replay they land here as the step finishes.
+ */
+export function DecisionsSection({ decisions }: { decisions: readonly Decision[] }) {
+  return (
+    <section className="mb-3 rounded border border-sky-500/25 bg-sky-500/5 px-3 py-2">
+      <SectionHeader
+        source="Decisions"
+        title={`${decisions.length} made`}
+        badge={
+          decisions.some((d) => d.status === "overridden")
+            ? `${decisions.filter((d) => d.status === "overridden").length} overridden`
+            : undefined
+        }
+        badgeTone="muted"
+      />
+      <ul className="flex flex-col gap-1.5">
+        {decisions.map((d) => {
+          const overridden = d.status === "overridden";
+          return (
+            <li key={d.id} className="text-[11px]">
+              <div className="text-muted-foreground">
+                <Glossed text={d.question} />
+              </div>
+              <div className="flex flex-wrap items-baseline gap-1.5">
+                <span className="font-medium text-foreground">
+                  <Glossed text={overridden ? d.override : d.ai_default} />
+                </span>
+                {overridden ? (
+                  <span className="rounded bg-sky-500/15 px-1 text-[10px] text-sky-500">
+                    overridden · AI said “{d.ai_default}”
+                  </span>
+                ) : (
+                  <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">
+                    AI default
+                  </span>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

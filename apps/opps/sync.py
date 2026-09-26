@@ -86,6 +86,12 @@ class RunDetail:
     # clock a finished run actually has. Empty for runs that predate the
     # convention. See apps/opps/replay.py.
     phase_timings: dict[str, dict] = field(default_factory=dict)
+    # Raw ``phases.<phase>.products`` blocks off run_state.yaml — the typed
+    # handoffs (PDD, apps, Connect opportunity, chatbot, training pack…).
+    # Projected into a flat catalogue by apps/opps/run_products.py for the
+    # Phases screen and the replay. Empty for runs that predate the
+    # products contract.
+    phase_products: dict[str, dict] = field(default_factory=dict)
     # Per-run decisions log (added with the decisions-log framework, May
     # 2026). Each row carries its own ``phase`` tag; the UI groups them
     # per phase. Empty list when the run predates the framework or hasn't

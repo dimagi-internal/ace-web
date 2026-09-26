@@ -478,3 +478,20 @@ def test_map_run_detail_extracts_phase_timings():
 
 def test_map_run_detail_phase_timings_empty_without_run_state():
     assert fm.map_run_detail(_complete_run()).phase_timings == {}
+
+
+def test_map_run_detail_carries_phase_products():
+    """The typed handoffs ride the snapshot so the Phases screen can show what
+    the run built without its own Drive read. Empty blocks are omitted."""
+    rd = fm.map_run_detail(
+        _complete_run(),
+        run_state={
+            "phases": {
+                "idea-to-design": {"status": "done", "products": {"pdd": {"file_id": "p"}}},
+                "commcare-setup": {"status": "done", "products": {}},
+                "closeout": {"status": "skipped"},
+            }
+        },
+    )
+    assert rd.phase_products == {"idea-to-design": {"pdd": {"file_id": "p"}}}
+    assert fm.map_run_detail(_complete_run()).phase_products == {}

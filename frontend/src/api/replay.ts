@@ -11,6 +11,7 @@
  * Spec: docs/specs/2026-09-17-ace-demo-player-design.md
  */
 import { apiClient } from "./apiClient";
+import type { RunProduct } from "./types.ws";
 
 /** How a run's clock was established.
  *
@@ -93,6 +94,35 @@ export interface LadderPhase {
   readonly steps: readonly LadderStep[];
 }
 
+/** A product plus the beat that made it. */
+export interface ReplayProduct extends RunProduct {
+  /** Index into `events` of the beat that brought it into being — its
+   *  producer's step_end, else its phase's last step_end. Null when no beat
+   *  in this run places it (shown at the final beat). */
+  readonly reveal_seq: number | null;
+}
+
+export interface FlowInput {
+  readonly path: string;
+  readonly description: string;
+  /** Producing skill, `"external"` for a human-provided input, or null. */
+  readonly producer: string | null;
+  readonly producer_phase: string | null;
+}
+
+export interface FlowOutput {
+  readonly path: string;
+  readonly description: string;
+  readonly consumers: readonly { readonly skill: string; readonly phase: string | null }[];
+}
+
+/** What a skill DECLARES it takes in and hands on, per the plugin's artifact
+ *  manifest — the plan, not a trace of this run's reads. */
+export interface SkillFlow {
+  readonly inputs: readonly FlowInput[];
+  readonly outputs: readonly FlowOutput[];
+}
+
 export interface DemoTimeline {
   readonly timing_source: TimingSource;
   readonly origin: string | null;
@@ -100,6 +130,10 @@ export interface DemoTimeline {
   readonly events: readonly DemoEvent[];
   /** The run's whole plan, phase by phase. */
   readonly ladder: readonly LadderPhase[];
+  /** What the run built, each with the beat it appears at (schema v2). */
+  readonly products?: readonly ReplayProduct[];
+  /** Per skill: what it took in and handed on (schema v2). */
+  readonly flow?: Readonly<Record<string, SkillFlow>>;
 }
 
 export type ReplayActData = DemoTimeline;

@@ -114,3 +114,39 @@ describe("useReplay — step-through", () => {
     await waitFor(() => expect(result.current.error).toBe("boom"));
   });
 });
+
+describe("useReplay — highlights and holding", () => {
+  it("in highlights mode, Next jumps to the next highlight beat", async () => {
+    const { highlightBeats } = await import("../cursor");
+    const { result } = await started();
+    const expected = highlightBeats(result.current.timeline!);
+    act(() => result.current.toggleHighlights());
+    expect(result.current.highlightsOnly).toBe(true);
+    act(() => result.current.next());
+    expect(result.current.beat.index).toBe(expected.find((h) => h > 0));
+    act(() => result.current.next());
+    act(() => result.current.prev());
+    expect(result.current.beat.index).toBe(expected.find((h) => h > 0));
+  });
+
+  it("auto-play waits while something holds the beat", async () => {
+    const { result } = await started(1000);
+    vi.useFakeTimers();
+    act(() => result.current.toggle());
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current.beat.index).toBe(1);
+    act(() => result.current.hold(true));
+    act(() => vi.advanceTimersByTime(5000));
+    expect(result.current.beat.index).toBe(1);
+    act(() => result.current.hold(false));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current.beat.index).toBe(2);
+  });
+
+  it("pop-ups are on by default and can be switched off", async () => {
+    const { result } = await started();
+    expect(result.current.spotlights).toBe(true);
+    act(() => result.current.toggleSpotlights());
+    expect(result.current.spotlights).toBe(false);
+  });
+});

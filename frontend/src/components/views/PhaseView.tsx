@@ -3,12 +3,20 @@ import { useSearchParams } from "react-router-dom";
 import { ChevronRight, GitFork, Workflow } from "lucide-react";
 import { toast } from "sonner";
 
-import { saveDecisionOverrides } from "@/api/opps";
+import { artifactViewUrl, saveDecisionOverrides } from "@/api/opps";
+import type { ReplayProduct } from "@/api/replay";
 import {
   buildDecisionOverridesExport,
   downloadDecisionOverrides,
 } from "@/components/views/decisions/localExport";
-import type { OppSnapshot, PhaseInfo, SavedDecisionOverride, Step } from "@/api/types.ws";
+import type {
+  Decision,
+  OppSnapshot,
+  PhaseInfo,
+  RunProduct,
+  SavedDecisionOverride,
+  Step,
+} from "@/api/types.ws";
 import { ForkOppDialog } from "@/components/opps/ForkOppDialog";
 import { Button } from "canopy-ui/ui";
 import { DecisionsPanel } from "@/components/views/DecisionsPanel";
@@ -23,8 +31,16 @@ import { computeForkPoint } from "@/components/views/decisions/forkPoint";
 import { PendingEditsBar } from "@/components/views/decisions/PendingEditsBar";
 import { ForkWithEditsDialog } from "@/components/views/decisions/ForkWithEditsDialog";
 import { PresenceStrip } from "@/components/views/PresenceStrip";
+import { Glossed } from "@/components/glossary/Glossed";
+import { phasesFinishedAt, productsAtBeat, revealIndexOf } from "@/components/replay/cursor";
+import { FlowPanel } from "@/components/replay/FlowPanel";
 import { ReplayBar } from "@/components/replay/ReplayBar";
+import { Spotlight } from "@/components/replay/Spotlight";
 import type { Replay } from "@/components/replay/useReplay";
+import { ProductsStrip } from "@/components/viewers/ProductsStrip";
+import { appStructureArtifact } from "@/components/viewers/ProductViewer";
+import { prefetchViews } from "@/components/viewers/viewCache";
+import { ViewerProvider } from "@/components/viewers/ViewerContext";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -340,12 +356,89 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
   const selectedPhaseRunning = selectedPhaseInfo
     ? isPhaseRunning(selectedPhaseInfo.name)
     : false;
-  // Editing is disabled while the phase is running (mid-run write race)
-  // or when we don't have a workspaceSlug to scope the fork POST to —
-  // an empty slug would silently 404 against `/api/w//opps/...`.
-  const editingDisabled = selectedPhaseRunning || !workspaceSlug;
+  // Editing is disabled while the phase is running (mid-run write race),
+  // when we don't have a workspaceSlug to scope the fork POST to — an empty
+  // slug would silently 404 against `/api/w//opps/...` — and during a
+  // replay, which shows the run as it was, not a place to change it.
+  const editingDisabled = selectedPhaseRunning || !workspaceSlug || replay.active;
+
+  const runId = snapshot.current_run.run_id;
+  const runLive = snapshot.current_run.status === "running";
+
+  // Decisions as they land. In a replay a decision appears when the skill
+  // that made it finishes; one with no skill of its own in this run lands
+  // when its phase's last step does. Out of replay, all of them.
+  const shownDecisions = useMemo<Decision[]>(() => {
+    if (!replay.active || !replay.timeline) return allDecisions;
+    const finishedPhases = phasesFinishedAt(replay.timeline, replay.beat.index);
+    const runSkills = new Set(snapshot.current_run.steps.map((st) => st.skill_name));
+    return allDecisions.filter((d) =>
+      d.skill && runSkills.has(d.skill)
+        ? replay.reveal.done.has(d.skill)
+        : finishedPhases.has(d.phase),
+    );
+  }, [allDecisions, replay.active, replay.timeline, replay.beat.index, replay.reveal, snapshot.current_run.steps]);
+  const decisionsBySkill = useMemo(() => {
+    const m = new Map<string, Decision[]>();
+    for (const d of shownDecisions) {
+      if (!d.skill) continue;
+      const arr = m.get(d.skill);
+      if (arr) arr.push(d);
+      else m.set(d.skill, [d]);
+    }
+    return m;
+  }, [shownDecisions]);
+
+  // What the run built. In a replay each product carries the beat that made
+  // it, and stays a placeholder until the cursor gets there.
+  const replayProducts: readonly ReplayProduct[] | null =
+    replay.active && replay.timeline ? (replay.timeline.products ?? []) : null;
+  const products: readonly RunProduct[] = replayProducts ?? snapshot.current_run.products ?? [];
+  const isRevealed = replayProducts
+    ? (p: RunProduct) => revealIndexOf(p as ReplayProduct, replay.total) <= replay.beat.index
+    : undefined;
+  const beatProducts = useMemo(
+    () =>
+      replay.active && replay.timeline ? productsAtBeat(replay.timeline, replay.beat.index) : [],
+    [replay.active, replay.timeline, replay.beat.index],
+  );
+  const justRevealed = useMemo(() => new Set(beatProducts.map((p) => p.id)), [beatProducts]);
+
+  // The spotlight: pop up what this beat just built.
+  const [spotlight, setSpotlight] = useState<ReplayProduct[] | null>(null);
+  useEffect(() => {
+    setSpotlight(replay.spotlights && beatProducts.length > 0 ? beatProducts : null);
+  }, [beatProducts, replay.spotlights]);
+
+  // Warm every product's view as soon as a replay starts, so each one pops up
+  // already loaded rather than spinning on Drive in front of an audience.
+  useEffect(() => {
+    if (!replay.active || !replay.timeline || !workspaceSlug) return;
+    const ids = new Set<string>();
+    for (const p of replay.timeline.products ?? []) {
+      if (p.file_id) ids.add(p.file_id);
+      const structure =
+        p.kind === "commcare_app" ? appStructureArtifact(p, snapshot.current_run.steps) : null;
+      if (structure) ids.add(structure.drive_file_id);
+    }
+    const signal = { cancelled: false };
+    void prefetchViews(
+      [...ids].map((id) => artifactViewUrl(workspaceSlug, oppSlug, runId, id)),
+      signal,
+    );
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [replay.active, replay.timeline, workspaceSlug, oppSlug, runId, snapshot.current_run.steps]);
 
   return (
+    <ViewerProvider
+      workspaceSlug={workspaceSlug}
+      oppSlug={oppSlug}
+      runId={runId}
+      steps={snapshot.current_run.steps}
+      phases={phases}
+    >
     <div className="flex h-full flex-col overflow-hidden">
       <PresenceStrip viewers={uniqueEditors} />
       {replay.active && (
@@ -353,13 +446,20 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
           <ReplayBar replay={replay} />
         </div>
       )}
+      {products.length > 0 && (
+        <div className={cn("px-4", replay.active ? "pb-3" : "border-b border-border py-2.5")}>
+          <ProductsStrip
+            products={products}
+            isRevealed={isRevealed}
+            justRevealed={replay.active ? justRevealed : undefined}
+          />
+        </div>
+      )}
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-[340px] shrink-0 overflow-y-auto border-r border-border bg-background p-4">
           <ul className="flex flex-col gap-2">
             {phases.map((phase) => {
-              const phaseDecisions = (
-                snapshot.current_run.decisions ?? []
-              ).filter((d) => d.phase === phase.name);
+              const phaseDecisions = shownDecisions.filter((d) => d.phase === phase.name);
               return (
                 <li key={phase.name}>
                   <div
@@ -409,7 +509,7 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
               <div className="flex-1 overflow-y-auto px-4 pb-6">
                 <DecisionsPanel
                   phase={selectedPhaseInfo.name}
-                  decisions={allDecisions}
+                  decisions={shownDecisions}
                   savedOverrides={savedOverrides}
                   editBuffer={editingDisabled ? undefined : editState.buffer}
                   onEdit={
@@ -480,6 +580,8 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
                                 oppSlug={oppSlug}
                                 runId={snapshot.current_run.run_id}
                                 autoOpen={isCurrent}
+                                decisions={decisionsBySkill.get(step.skill_name)}
+                                runLive={runLive}
                               />
                             </div>
                           </li>
@@ -496,6 +598,14 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
             </div>
           )}
         </section>
+        {replay.active && replay.timeline && (
+          <aside
+            aria-label="Flow"
+            className="w-[300px] shrink-0 border-l border-border bg-background"
+          >
+            <FlowPanel replay={replay} steps={snapshot.current_run.steps} phases={phases} />
+          </aside>
+        )}
       </div>
       <PendingEditsBar
         count={editState.buffer.length}
@@ -534,7 +644,16 @@ export function PhaseView({ snapshot, oppSlug, workspaceSlug, replay, sendDecisi
             affectedDocs={affectedDocs}
           />
         )}
+      {spotlight && (
+        <Spotlight
+          key={spotlight.map((p) => p.id).join("|")}
+          products={spotlight}
+          replay={replay}
+          onClose={() => setSpotlight(null)}
+        />
+      )}
     </div>
+    </ViewerProvider>
   );
 }
 
@@ -612,7 +731,7 @@ function PhaseTile({
         className="truncate text-sm font-semibold text-foreground"
         title={phase.display_name}
       >
-        {phase.display_name}
+        <Glossed text={phase.display_name} />
       </div>
       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
         <span className="tabular-nums">
@@ -681,7 +800,7 @@ function PhasePanelHeader({
             Phase {phase.ordinal} · {phase.agent}
           </div>
           <h2 className="mt-1 text-xl font-semibold text-foreground">
-            {phase.display_name}
+            <Glossed text={phase.display_name} />
           </h2>
         </div>
         <div className="flex shrink-0 items-center gap-2">

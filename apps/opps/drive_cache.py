@@ -318,6 +318,10 @@ class CachedDriveClient(DriveClient):
         # Binary content is large and per-file unique; no caching layer.
         return self._inner.get_binary(file_id)
 
+    def export_bytes(self, file_id: str, export_mime: str) -> bytes:
+        # Same reasoning as get_binary: large, per-file, not worth caching.
+        return self._inner.export_bytes(file_id, export_mime)
+
     def copy_file(
         self, file_id: str, new_parent_id: str, new_name: str | None = None
     ) -> str:

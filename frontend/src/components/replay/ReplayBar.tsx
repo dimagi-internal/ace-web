@@ -1,10 +1,13 @@
 import { useEffect, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, Sparkles, X, Zap } from "lucide-react";
 
 import { Button } from "canopy-ui/ui";
 import type { DemoEvent, DemoTimeline } from "@/api/replay";
+import { Glossed } from "@/components/glossary/Glossed";
+import { cn } from "@/lib/utils";
 
 import { stepFailed } from "./cursor";
+import { groupSpans } from "./phaseGroups";
 import { buildPhasePalette, phaseColor } from "./phaseColor";
 import type { Replay } from "./useReplay";
 
@@ -17,7 +20,9 @@ import type { Replay } from "./useReplay";
  * and jump anywhere with a click.
  *
  * Keyboard-first, because whoever drives this is usually talking over it:
- * → next, ← back, space play/pause, R start over, Esc leave.
+ * → next, ← back, space play/pause, R start over, H highlights only,
+ * P product pop-ups on/off, Esc leave. Shortcuts stand down while a dialog
+ * (a viewer, the spotlight) is open — its own keys win.
  */
 export function ReplayBar({ replay }: { replay: Replay }) {
   const { timeline } = replay;
@@ -28,6 +33,7 @@ export function ReplayBar({ replay }: { replay: Replay }) {
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (target?.isContentEditable) return;
+      if (document.querySelector('[role="dialog"]')) return;
       if (e.key === " ") {
         e.preventDefault();
         replay.toggle();
@@ -39,6 +45,10 @@ export function ReplayBar({ replay }: { replay: Replay }) {
         replay.prev();
       } else if (e.key.toLowerCase() === "r") {
         replay.restart();
+      } else if (e.key.toLowerCase() === "h") {
+        replay.toggleHighlights();
+      } else if (e.key.toLowerCase() === "p") {
+        replay.toggleSpotlights();
       } else if (e.key === "Escape") {
         replay.stop();
       }
@@ -123,6 +133,23 @@ export function ReplayBar({ replay }: { replay: Replay }) {
           <Describe event={replay.beat.event} />
         </p>
 
+        <div className="flex items-center gap-1">
+          <Toggle
+            on={replay.highlightsOnly}
+            onClick={replay.toggleHighlights}
+            icon={<Zap className="size-3.5" />}
+            label="Highlights"
+            title="Step only between phase starts and steps that built, failed or decided something (H)"
+          />
+          <Toggle
+            on={replay.spotlights}
+            onClick={replay.toggleSpotlights}
+            icon={<Sparkles className="size-3.5" />}
+            label="Pop-ups"
+            title="Pop each product up on screen as the step that made it finishes (P)"
+          />
+        </div>
+
         <Button size="sm" variant="ghost" onClick={replay.stop} title="Leave replay (Esc)">
           <X className="mr-1 size-3.5" />
           Exit replay
@@ -144,7 +171,7 @@ function Describe({ event }: { event: DemoEvent | null }) {
     return (
       <>
         <span className="text-muted-foreground">Starting phase </span>
-        {event.phase_display}
+        <Glossed text={event.phase_display} />
       </>
     );
   }
@@ -153,17 +180,17 @@ function Describe({ event }: { event: DemoEvent | null }) {
     return (
       <>
         <span className="text-muted-foreground">Running </span>
-        {name}
+        <Glossed text={name} />
       </>
     );
   }
   return stepFailed(event) ? (
     <>
-      {name} <span className="text-destructive">did not pass its own review</span>
+      <Glossed text={name} /> <span className="text-destructive">did not pass its own review</span>
     </>
   ) : (
     <>
-      {name} <span className="text-muted-foreground">finished</span>
+      <Glossed text={name} /> <span className="text-muted-foreground">finished</span>
     </>
   );
 }
@@ -207,9 +234,24 @@ function StepTrack({
     return out;
   }, [events]);
   const palette = useMemo(() => buildPhasePalette(runs.map((r) => r.phase)), [runs]);
+  const groups = useMemo(() => groupSpans(runs.map((r) => r.phase)), [runs]);
 
   return (
-    <div className="mt-3 flex w-full gap-0.5" role="list" aria-label="Steps in this run">
+    <>
+    {groups.some((g) => g.label) && (
+      <div className="mt-3 flex w-full gap-0.5" aria-hidden>
+        {groups.map((g) => (
+          <div
+            key={`${g.label}-${g.from}`}
+            className="min-w-0 border-b border-border/70 pb-0.5 text-center text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            style={{ flexGrow: g.count, flexBasis: 0 }}
+          >
+            <span className="truncate">{g.label ?? ""}</span>
+          </div>
+        ))}
+      </div>
+    )}
+    <div className="mt-1.5 flex w-full gap-0.5" role="list" aria-label="Steps in this run">
       {runs.map((run) => {
         const color = phaseColor(palette, run.phase);
         const containsCurrent = current >= run.from && current < run.from + run.count;
@@ -252,12 +294,45 @@ function StepTrack({
               }}
               title={run.label}
             >
-              {run.label}
+              <Glossed text={run.label} />
             </span>
           </div>
         );
       })}
     </div>
+    </>
+  );
+}
+
+function Toggle({
+  on,
+  onClick,
+  icon,
+  label,
+  title,
+}: {
+  on: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  title: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      title={title}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors",
+        on
+          ? "border-primary/50 bg-primary/10 text-primary"
+          : "border-border text-muted-foreground hover:bg-accent",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

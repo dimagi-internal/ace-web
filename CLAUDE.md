@@ -100,7 +100,10 @@ push to ace-web `main` (triggers `build-backend.yml`) followed by a deploy.
   (token store / REST / WS primitives, adopted in PR #779). **ace-web runs the
   NEWEST of both, automatically**: canopy-web publishes on merging a version
   bump; Dependabot here checks daily and opens one grouped PR
-  (`.github/dependabot.yml`); `canopy-sdk-automerge.yml` runs the frontend gate
+  (`.github/dependabot.yml`); `dependabot.yml` exempts both from Dependabot's default 3-day release
+  cooldown — without that, canopy's release cadence kept every new version
+  inside the window and the loop opened zero PRs; `canopy-sdk-automerge.yml`
+  runs the frontend gate
   (tsc + vitest + build — not a required check here, which is why it runs it
   itself) and only then arms auto-merge. Pins stay EXACT on purpose: with a
   lockfile a range would not update anything by itself, and exact means every
@@ -474,6 +477,20 @@ that is reconstructible from Drive via `videos_sync_library --direction=import`.
   `--replay-phase-1..10` at `:root`/`.dark`. Frontend:
   `frontend/src/components/replay/`. Spec + why it isn't a standalone player:
   `docs/specs/2026-09-17-ace-demo-player-design.md` (see the addenda).
+  **What the run built** (spec `docs/specs/2026-09-26-replay-show-what-it-built-design.md`):
+  the snapshot carries `current_run.products` — `run_state`'s
+  `phases.<phase>.products.*` flattened by `apps/opps/run_products.py` (it
+  WALKS the blocks, so a new product shows up without code; snapshot cache
+  v11). The Phases screen shows them as a strip; in replay each carries
+  `reveal_seq` (its producer's step_end, else its phase's last) and pops up in
+  a **Spotlight** on that beat, stays a kind-only placeholder before it, and a
+  right-rail **Flow** panel shows what the current skill took in / handed on
+  from the plugin manifest's `producedBy`/`consumedBy` (the declared flow, not
+  a trace). Viewers (`frontend/src/components/viewers/`, `ViewerProvider`) open
+  any run file in-page via `GET …/artifacts/{id}/view` — the id must belong to
+  the run (step artifact, product file id, or run-folder child); Slides come
+  back as PDF, Sheets as CSV, prose Docs as markdown. Decisions land when their
+  skill finishes; glossary terms (`lib/glossary.ts`) get hover definitions.
 - **Run compare** (`/w/<ws>/opps/<slug>/compare?base=<run>&head=<run>`; tick two runs
   on the Runs tab): "What the later run did differently" — new decisions, decisions
   answered differently, new checks, then (collapsed) anything dropped and a plain

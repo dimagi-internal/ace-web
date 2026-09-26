@@ -331,6 +331,43 @@ export interface Run {
   notes: string;
   steps: Step[];
   decisions: Decision[];
+  /** What the run built — its `phases.<phase>.products.*` handoffs,
+   *  flattened server-side by apps/opps/run_products.py. Absent on a
+   *  snapshot cached before v11. */
+  products?: RunProduct[];
+}
+
+/** Kinds `apps/opps/run_products.py` infers. `document`/`deck`/`sheet` are
+ *  Drive files; the rest are live things in another system. */
+export type RunProductKind =
+  | "document"
+  | "deck"
+  | "sheet"
+  | "commcare_app"
+  | "connect_opportunity"
+  | "connect_program"
+  | "chatbot"
+  | "dashboard"
+  | "solicitation"
+  | "link";
+
+export interface RunProduct {
+  /** `<phase>:<dotted key>` — stable within a run. */
+  id: string;
+  phase: string;
+  /** Dotted path under `products` (list indexes included). */
+  key: string;
+  kind: RunProductKind;
+  title: string;
+  subtitle: string | null;
+  url: string | null;
+  /** Drive file id when the product is a Drive file — opens in the viewer. */
+  file_id: string | null;
+  facts: { label: string; value: string }[];
+  /** The skill that wrote it, per the plugin's attribution; null if unattributed. */
+  producer: string | null;
+  /** OCS widget credentials, when the chatbot can be embedded. */
+  chatbot: { public_id: string; embed_key: string } | null;
 }
 
 export interface RunSummary {

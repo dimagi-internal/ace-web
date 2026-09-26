@@ -387,6 +387,23 @@ export function artifactBodyUrl(
   );
 }
 
+/** A run file (step artifact or product) shaped for the in-page viewer:
+ *  markdown for prose Docs, PDF for decks, CSV for sheets, bytes for media.
+ *  The response's Content-Type is what the viewer dispatches on. */
+export function artifactViewUrl(
+  workspaceSlug: string,
+  slug: string,
+  runId: string,
+  fileId: string,
+): string {
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  return (
+    `${base}/api/w/${encodeURIComponent(workspaceSlug)}/opps/${encodeURIComponent(slug)}` +
+    `/artifacts/${encodeURIComponent(fileId)}/view` +
+    `?run_id=${encodeURIComponent(runId)}`
+  );
+}
+
 /** writeArtifact has no v2 endpoint — will be addressed in a future PR. */
 export function writeArtifact(
   _workspaceSlug: string,

@@ -2,10 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChevronRight, ExternalLink } from "lucide-react";
 
-import type { Step } from "@/api/types.ws";
+import type { Decision, Step } from "@/api/types.ws";
+import { Glossed } from "@/components/glossary/Glossed";
 import { cn } from "@/lib/utils";
 
-import { EvalSection, ProducerSection, QASection } from "./phase-skill/sections";
+import {
+  DecisionsSection,
+  EvalSection,
+  isFinished,
+  ProducerSection,
+  QASection,
+} from "./phase-skill/sections";
 
 interface Props {
   step: Step;
@@ -16,6 +23,11 @@ interface Props {
    *  Only rows this opened are auto-closed again; a row someone opened by
    *  hand stays open as the cursor moves on. */
   autoOpen?: boolean;
+  /** Decisions this skill recorded (already filtered to the replay cursor). */
+  decisions?: readonly Decision[];
+  /** The run is still going: a finished producer's eval may yet land, so a
+   *  missing score is pending, not missing. */
+  runLive?: boolean;
 }
 
 /**
@@ -31,7 +43,15 @@ interface Props {
  * defined, eval skipped because QA gated, etc.) we render a labeled stub
  * rather than hiding it, so the absence is itself visible.
  */
-export function PhaseSkillRow({ step, oppSlug, runId, autoOpen = false }: Props) {
+export function PhaseSkillRow({
+  step,
+  oppSlug,
+  runId,
+  autoOpen = false,
+  decisions = [],
+  runLive = false,
+}: Props) {
+  const finished = isFinished(step.status) && !runLive;
   const [open, setOpen] = useState(false);
   const openedByReplay = useRef(false);
 
@@ -72,10 +92,15 @@ export function PhaseSkillRow({ step, oppSlug, runId, autoOpen = false }: Props)
           className="w-[170px] shrink-0 truncate font-semibold text-foreground"
           title={step.skill_name}
         >
-          {step.display_name || step.skill_name}
+          <Glossed text={step.display_name || step.skill_name} />
         </span>
-        <QAChip step={step} />
-        <EvalChip scorePct={judgeScorePct} hasJudge={step.has_judge} qaFailed={step.qa_result?.verdict === "fail"} />
+        <QAChip step={step} finished={finished} />
+        <EvalChip
+          scorePct={judgeScorePct}
+          hasJudge={step.has_judge}
+          qaFailed={step.qa_result?.verdict === "fail"}
+          finished={finished}
+        />
         <span
           className="flex-1 truncate text-[11px] text-muted-foreground"
           title={step.preview_text}
@@ -92,8 +117,9 @@ export function PhaseSkillRow({ step, oppSlug, runId, autoOpen = false }: Props)
       {open && (
         <div className="animate-in fade-in slide-in-from-top-1 duration-150 border-t border-border px-3 py-3">
           <ProducerSection step={step} />
+          {decisions.length > 0 && <DecisionsSection decisions={decisions} />}
           <QASection step={step} />
-          <EvalSection step={step} />
+          <EvalSection step={step} finished={finished} />
           <div className="mt-3 flex items-center gap-3 border-t border-border pt-2 text-[11px]">
             <Link
               to={`/w/${workspaceSlug}/opps/${encodeURIComponent(oppSlug)}/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(step.skill_name)}?view=workbench`}
@@ -135,7 +161,7 @@ function statusVisual(status: string): { glyph: string; color: string; label: st
   return { glyph: "○", color: "text-muted-foreground", label: status };
 }
 
-function QAChip({ step }: { step: Step }) {
+function QAChip({ step, finished }: { step: Step; finished: boolean }) {
   const qa = step.qa_result;
   if (!qa) {
     return (
@@ -173,8 +199,24 @@ function QAChip({ step }: { step: Step }) {
       </span>
     );
   }
+  // Neither pass nor fail. On a step that has finished that is a verdict
+  // ("incomplete", "warn"), not something still running — say which.
+  if (finished) {
+    return (
+      <span
+        className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-semibold text-amber-500"
+        title={`QA verdict: ${qa.verdict || "none recorded"}`}
+      >
+        <span>QA</span>
+        <span className="font-normal">{qa.verdict || "?"}</span>
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-semibold text-amber-500">
+    <span
+      className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-semibold text-amber-500"
+      title="QA running"
+    >
       <span>QA</span>
       <span>⏳</span>
     </span>
@@ -185,10 +227,13 @@ function EvalChip({
   scorePct,
   hasJudge,
   qaFailed,
+  finished,
 }: {
   scorePct: number | null;
   hasJudge: boolean;
   qaFailed: boolean;
+  /** The step itself is done — a missing score will never arrive. */
+  finished: boolean;
 }) {
   if (qaFailed) {
     return (
@@ -213,8 +258,25 @@ function EvalChip({
     );
   }
   if (scorePct === null) {
+    // An hourglass on a finished step reads as "still running" forever
+    // (FLW Training Guide, Phase 6). Only a step that is actually running
+    // or pending gets one.
+    if (finished) {
+      return (
+        <span
+          className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-border/60 bg-transparent px-1.5 text-[10px] font-semibold text-muted-foreground"
+          title="This step has an eval, but no score was recorded for this run"
+        >
+          <span>Eval</span>
+          <span className="font-normal">no score</span>
+        </span>
+      );
+    }
     return (
-      <span className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-semibold text-amber-500">
+      <span
+        className="inline-flex h-[18px] shrink-0 items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-semibold text-amber-500"
+        title="Eval pending"
+      >
         <span>Eval</span>
         <span>⏳</span>
       </span>

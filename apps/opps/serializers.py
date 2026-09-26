@@ -15,6 +15,7 @@ edit in the plugin, not a code change here.
 from __future__ import annotations
 
 import datetime
+import logging
 from typing import Any
 
 from django.conf import settings
@@ -29,6 +30,8 @@ from apps.opps.sync import (
     StepSnapshot,
 )
 from apps.system.reader import load_system_overview
+
+log = logging.getLogger(__name__)
 
 _SYSTEM_OVERVIEW_CACHE: dict[str, Any] | None = None
 
@@ -255,7 +258,27 @@ def serialize_run_detail(run: RunDetail) -> dict:
         # Redis snapshot cache, so an entry written before the field existed
         # deserialises without it.
         "phase_timings": dict(getattr(run, "phase_timings", None) or {}),
+        "products": _run_products(run),
     }
+
+
+def _run_products(run: RunDetail) -> list[dict]:
+    """The run's products catalogue (apps/opps/run_products.py).
+
+    Guarded: the catalogue is a projection for display, and a run_state shape
+    it has never seen must cost the products strip, never the snapshot.
+    """
+    from apps.opps import skills
+    from apps.opps.run_products import build_products
+
+    try:
+        return build_products(
+            getattr(run, "phase_products", None) or {},
+            phase_order=skills.all_phases(),
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("serialize_run_detail: products catalogue failed", exc_info=True)
+        return []
 
 
 def serialize_opp_card(opp: OppManifest, current_run: RunDetail | None) -> dict:

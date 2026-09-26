@@ -48,11 +48,12 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from typing import Any
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Statuses that mean "this step did not run", and so contributes no event.
 _INERT_STATUSES = frozenset({"pending", "skipped"})
@@ -359,6 +360,131 @@ def build_ladder(snapshot: dict) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # acts
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# products — what the run built, and the beat each one appears at
+# --------------------------------------------------------------------------- #
+def build_products(snapshot: dict, events: list[dict]) -> list[dict]:
+    """The run's products catalogue, each stamped with ``reveal_seq``.
+
+    ``reveal_seq`` is the beat that made the product: its producer's
+    ``step_end``, or — when the plugin attributes the key to no skill — the
+    last ``step_end`` of its phase. The honesty rule applies: the replay may
+    not show a product before the beat that brought it into being. ``None``
+    means no beat in this run places it (its phase recorded no steps, as a
+    fork's carried phases can); the player shows those at the final beat.
+    """
+    catalogue = (snapshot.get("current_run") or {}).get("products") or []
+    by_skill: dict[str, int] = {}
+    by_phase: dict[str, int] = {}
+    for e in events:
+        if e.get("kind") != "step_end":
+            continue
+        if e.get("skill"):
+            by_skill[e["skill"]] = e["seq"]
+        by_phase[e.get("phase") or ""] = e["seq"]
+
+    out = []
+    for item in catalogue:
+        if not isinstance(item, dict):
+            continue
+        producer = item.get("producer")
+        seq = by_skill.get(producer) if producer else None
+        if seq is None:
+            seq = by_phase.get(item.get("phase") or "")
+        out.append({**item, "reveal_seq": seq})
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# flow — what each skill took in and handed on
+# --------------------------------------------------------------------------- #
+#: Agents whose reads are bookkeeping rather than hand-offs: the orchestrator
+#: reads nearly everything to decide what runs next, and listing it as a
+#: consumer of every file buries the real downstream skills.
+_BOOKKEEPING_CONSUMERS = frozenset({"ace-orchestrator"})
+
+
+def _first_sentence(text: str, limit: int = 180) -> str:
+    text = " ".join(str(text or "").split())
+    if not text:
+        return ""
+    cut = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
+    if len(cut) > limit:
+        cut = cut[: limit - 1].rstrip() + "…"
+    return cut
+
+
+def _manifest_artifacts() -> list[dict]:
+    """The plugin's artifact manifest, as ``apps.system.reader`` parses it."""
+    from django.conf import settings
+
+    from apps.system.reader import load_system_overview
+
+    try:
+        overview = load_system_overview(getattr(settings, "ACE_PLUGIN_PATH", "") or "")
+    except Exception:  # noqa: BLE001 — the flow panel is optional
+        log.warning("replay: artifact manifest unavailable", exc_info=True)
+        return []
+    arts = overview.get("artifacts") or []
+    return [a for a in arts if isinstance(a, dict)]
+
+
+def build_flow(ladder: list[dict], manifest: list[dict] | None = None) -> dict[str, dict]:
+    """``{skill: {inputs, outputs}}`` for every skill in the run's plan.
+
+    Read from the plugin's artifact manifest (``lib/artifact-manifest.ts``):
+    each entry declares the skill that produces it (``producedBy``) and the
+    skills that read it (``consumedBy``). That is the DECLARED flow — what the
+    plugin says each skill hands on — not a trace of this run's reads, and the
+    panel labels it that way.
+
+    * ``inputs``  — entries this skill consumes that something else produced.
+    * ``outputs`` — entries this skill produces, with who reads them.
+
+    Producer and consumer phases come from the run's own ladder where the
+    skill is in it, so they number the way the rest of the screen does.
+    """
+    manifest = _manifest_artifacts() if manifest is None else manifest
+    phase_of: dict[str, str] = {}
+    for phase in ladder:
+        for step in phase.get("steps") or []:
+            if step.get("skill"):
+                phase_of[step["skill"]] = phase.get("phase") or ""
+
+    flow: dict[str, dict] = {skill: {"inputs": [], "outputs": []} for skill in phase_of}
+    for entry in manifest:
+        path = str(entry.get("path") or "")
+        if not path:
+            continue
+        producer = str(entry.get("produced_by") or "")
+        consumers = [
+            str(c) for c in (entry.get("consumed_by") or [])
+            if isinstance(c, str) and c
+        ]
+        description = _first_sentence(entry.get("description") or "")
+        for consumer in consumers:
+            if consumer not in flow or consumer == producer:
+                continue
+            flow[consumer]["inputs"].append({
+                "path": path,
+                "description": description,
+                "producer": producer or None,
+                "producer_phase": phase_of.get(producer) or entry.get("phase") or None,
+            })
+        if producer in flow:
+            downstream = [
+                c for c in consumers if c != producer and c not in _BOOKKEEPING_CONSUMERS
+            ]
+            flow[producer]["outputs"].append({
+                "path": path,
+                "description": description,
+                "consumers": [
+                    {"skill": c, "phase": phase_of.get(c)} for c in dict.fromkeys(downstream)
+                ],
+            })
+    return flow
+
+
 def build_acts(snapshot: dict) -> tuple[list[dict], dict]:
     """The act list and capability map for one run.
 
@@ -369,13 +495,19 @@ def build_acts(snapshot: dict) -> tuple[list[dict], dict]:
     """
     timeline = build_timeline(snapshot)
     has_events = bool(timeline["events"])
+    ladder = build_ladder(snapshot)
     acts = [
         {
             "id": "timeline",
             "title": "The run",
             "available": has_events,
             "unavailable_reason": None if has_events else "This run has no completed steps yet.",
-            "data": {**timeline, "ladder": build_ladder(snapshot)},
+            "data": {
+                **timeline,
+                "ladder": ladder,
+                "products": build_products(snapshot, timeline["events"]),
+                "flow": build_flow(ladder),
+            },
         },
     ]
     return acts, {a["id"]: a["available"] for a in acts}
